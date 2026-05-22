@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<XMLDB PATH="local/jedomi/db" VERSION="20260514" COMMENT="XMLDB file for local_jedomi plugin - Telegram integration tables">
+    <TABLES>
+        <TABLE NAME="local_jedomi_telegram_links" COMMENT="Links between Moodle users and Telegram chat IDs">
+            <FIELDS>
+                <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+                <FIELD NAME="userid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+                <FIELD NAME="chatid" TYPE="char" LENGTH="32" NOTNULL="true" SEQUENCE="false"/>
+                <FIELD NAME="username" TYPE="char" LENGTH="64" NOTNULL="false" SEQUENCE="false"/>
+                <FIELD NAME="confirmed" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+                <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+                <FIELD NAME="lastproactivesent" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+            </FIELDS>
+            <KEYS>
+                <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+                <KEY NAME="userid" TYPE="unique" FIELDS="userid"/>
+                <KEY NAME="chatid" TYPE="unique" FIELDS="chatid"/>
+            </KEYS>
+        </TABLE>
+
+        <TABLE NAME="local_jedomi_telegram_sessions" COMMENT="Conversational context per Telegram chat_id (TTL 30min)">
+            <FIELDS>
+                <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+                <FIELD NAME="chatid" TYPE="char" LENGTH="32" NOTNULL="true" SEQUENCE="false"/>
+                <FIELD NAME="messages" TYPE="text" NOTNULL="false" SEQUENCE="false"/>
+                <FIELD NAME="lastactivity" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+            </FIELDS>
+            <KEYS>
+                <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+                <KEY NAME="chatid" TYPE="unique" FIELDS="chatid"/>
+            </KEYS>
+            <INDEXES>
+                <INDEX NAME="lastactivity_idx" UNIQUE="false" FIELDS="lastactivity"/>
+            </INDEXES>
+        </TABLE>
+
+        <TABLE NAME="local_jedomi_telegram_pending_actions" COMMENT="Pending confirmation actions from inline buttons">
+            <FIELDS>
+                <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+                <FIELD NAME="callbackid" TYPE="char" LENGTH="64" NOTNULL="true" SEQUENCE="false"/>
+                <FIELD NAME="chatid" TYPE="char" LENGTH="32" NOTNULL="true" SEQUENCE="false"/>
+                <FIELD NAME="actionjson" TYPE="text" NOTNULL="true" SEQUENCE="false"/>
+                <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+            </FIELDS>
+            <KEYS>
+                <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+                <KEY NAME="callbackid" TYPE="unique" FIELDS="callbackid"/>
+            </KEYS>
+            <INDEXES>
+                <INDEX NAME="chatid_idx" UNIQUE="false" FIELDS="chatid"/>
+                <INDEX NAME="timecreated_idx" UNIQUE="false" FIELDS="timecreated"/>
+            </INDEXES>
+        </TABLE>
+
+        <TABLE NAME="local_jedomi_telegram_rate_limit" COMMENT="Rate limiting per Telegram chat_id">
+            <FIELDS>
+                <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+                <FIELD NAME="chatid" TYPE="char" LENGTH="32" NOTNULL="true" SEQUENCE="false"/>
+                <FIELD NAME="windowstart" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+                <FIELD NAME="msgcount" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+                <FIELD NAME="blockeduntil" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+            </FIELDS>
+            <KEYS>
+                <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+                <KEY NAME="chatid" TYPE="unique" FIELDS="chatid"/>
+            </KEYS>
+        </TABLE>
+    </TABLES>
+</XMLDB>

@@ -1,0 +1,572 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   Jedomi AI Sidebar — Lovable.dev Design System
+   Paleta: blanco puro / grises suaves / acento violeta único
+   Espaciado: sistema base 4px  (4 · 8 · 12 · 16 · 20 · 24 · 32)
+   Tipografía: Inter / system-ui, 14px cuerpo, 12px labels, 1.5 line-height
+   ───────────────────────────────────────────────────────────────────────────── */
+
+:root {
+    /* ── Superficie ──────────────────────────────────────────────── */
+    --j-bg:          #FFFFFF;
+    --j-surface:     #F9FAFB;
+    --j-surface-2:   #F3F4F6;
+    --j-border:      #E5E7EB;
+
+    /* ── Texto ───────────────────────────────────────────────────── */
+    --j-text:        #111827;
+    --j-text-2:      #374151;
+    --j-muted:       #6B7280;
+    --j-muted-2:     #9CA3AF;
+
+    /* ── Acento único (violeta) ──────────────────────────────────── */
+    --j-accent:      #7C3AED;
+    --j-accent-d:    #6D28D9;
+    --j-accent-l:    #EDE9FE;
+
+    /* ── Burbujas ────────────────────────────────────────────────── */
+    --j-user-bg:     #7C3AED;
+    --j-user-text:   #FFFFFF;
+    --j-ai-bg:       #F9FAFB;
+    --j-ai-text:     #111827;
+
+    /* ── Elevación (soft shadow hacia la derecha) ────────────────── */
+    --j-shadow:      4px 0 20px -4px rgba(0,0,0,0.06), 2px 0 8px -2px rgba(0,0,0,0.04);
+
+    /* ── Layout ──────────────────────────────────────────────────── */
+    --j-width:       400px;
+    --j-pad:         20px;
+}
+
+/* ── Utility ───────────────────────────────────────────────────────────────── */
+.jedomi-hidden { display: none !important; }
+
+/* ── Sidebar — pegado al borde izquierdo, sin radio exterior ───────────────── */
+.jedomi-sidebar {
+    position: fixed; top: 0; left: 0; height: 100vh;
+    width: var(--j-width); max-width: 100vw;
+    background: var(--j-bg);
+    border-right: 1px solid var(--j-border);
+    box-shadow: var(--j-shadow);
+    z-index: 99999;
+    display: flex; flex-direction: column;
+    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 14px; line-height: 1.5; color: var(--j-text);
+    transition: transform 0.28s cubic-bezier(.22,.61,.36,1);
+}
+.jedomi-closed { transform: translateX(-100%); }
+.jedomi-open   { transform: translateX(0); }
+
+/* ── Overlay (mobile) ──────────────────────────────────────────────────────── */
+#jedomi-overlay {
+    position: fixed; inset: 0; z-index: 99998;
+    background: rgba(0,0,0,0.18);
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.28s ease;
+}
+#jedomi-overlay.jedomi-open { opacity: 1; pointer-events: auto; }
+
+/* ── Trigger FAB ───────────────────────────────────────────────────────────── */
+.jedomi-trigger {
+    position: fixed; bottom: 24px; left: 24px; z-index: 99997;
+    background: var(--j-accent);
+    border: 2px solid rgba(255,255,255,0.25);
+    border-radius: 50%; width: 56px; height: 56px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; overflow: hidden;
+    box-shadow: 0 4px 20px rgba(124,58,237,0.35), 0 0 0 3px rgba(255,255,255,0.12);
+    transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.4s ease;
+}
+.jedomi-trigger:hover {
+    transform: scale(1.07);
+    box-shadow: 0 6px 28px rgba(124,58,237,0.45), 0 0 0 4px rgba(255,255,255,0.2);
+}
+.jedomi-trigger svg { width: 28px; height: 28px; }
+.jedomi-trigger-label { display: none; }
+
+/* Glint — franja de luz que barre la superficie cada 15s */
+.jedomi-trigger::before {
+    content: '';
+    position: absolute; top: 0; left: -80%; width: 50%; height: 100%;
+    background: linear-gradient(100deg,
+        rgba(255,255,255,0)    0%,
+        rgba(255,255,255,0.10) 50%,
+        rgba(255,255,255,0)    100%);
+    transform: skewX(-20deg); pointer-events: none;
+}
+.jedomi-trigger.jedomi-glowing::before {
+    animation: jedomi-glint 0.85s ease-in-out forwards;
+}
+@keyframes jedomi-glint { from { left: -80%; } to { left: 140%; } }
+.jedomi-trigger.jedomi-glowing { filter: none !important; }
+
+/* ── Header — justify-content space-between ────────────────────────────────── */
+.jedomi-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px var(--j-pad);
+    border-bottom: 1px solid var(--j-border);
+    background: var(--j-bg);
+    flex-shrink: 0; min-height: 56px;
+}
+.jedomi-header-info { display: flex; align-items: center; gap: 10px; }
+.jedomi-logo {
+    width: 32px; height: 32px; flex-shrink: 0;
+    background: var(--j-accent);
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 2px 8px rgba(124,58,237,0.25);
+}
+.jedomi-logo svg { width: 18px; height: 18px; color: white; stroke: white; }
+.jedomi-header-info strong {
+    font-size: 15px; font-weight: 600;
+    color: var(--j-text); display: block; line-height: 1.2;
+    letter-spacing: -0.01em;
+}
+.jedomi-context-badge {
+    font-size: 11px; color: var(--j-accent); font-weight: 500;
+    background: var(--j-accent-l); padding: 2px 8px;
+    border-radius: 20px; display: inline-block; margin-top: 3px;
+    max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.jedomi-header-actions { display: flex; gap: 2px; align-items: center; }
+
+/* ── Icon buttons ──────────────────────────────────────────────────────────── */
+.jedomi-btn-icon {
+    background: none; border: none; border-radius: 8px;
+    padding: 6px; cursor: pointer; color: var(--j-muted);
+    transition: background 0.2s, color 0.2s;
+    display: flex; align-items: center; justify-content: center;
+    min-width: 32px; min-height: 32px;
+}
+.jedomi-btn-icon:hover { background: var(--j-surface); color: var(--j-text); }
+.jedomi-btn-icon svg { pointer-events: none; }
+
+/* ── Messages — flex-1, cuerpo libre entre header e input ─────────────────── */
+.jedomi-messages {
+    flex: 1; overflow-y: auto; overflow-x: hidden;
+    padding: var(--j-pad);
+    display: flex; flex-direction: column;
+    gap: 16px; scroll-behavior: smooth;
+}
+.jedomi-messages::-webkit-scrollbar { width: 3px; }
+.jedomi-messages::-webkit-scrollbar-thumb { background: var(--j-border); border-radius: 4px; }
+
+.jedomi-message { display: flex; max-width: 100%; }
+.jedomi-message-user      { justify-content: flex-end; }
+.jedomi-message-assistant { justify-content: flex-start; }
+
+/* Burbujas con radio 16px */
+.jedomi-bubble {
+    padding: 12px 16px; border-radius: 16px;
+    font-size: 14px; line-height: 1.6;
+    max-width: 85%; word-break: break-word;
+}
+.jedomi-message-user .jedomi-bubble {
+    background: var(--j-user-bg); color: var(--j-user-text);
+    border-bottom-right-radius: 4px;
+}
+.jedomi-message-assistant .jedomi-bubble {
+    background: var(--j-ai-bg); color: var(--j-ai-text);
+    border-bottom-left-radius: 4px;
+    border: 1px solid var(--j-border);
+}
+.jedomi-bubble p { margin: 0 0 8px; }
+.jedomi-bubble p:last-child { margin-bottom: 0; }
+.jedomi-bubble a {
+    color: var(--j-accent); text-decoration: none;
+    font-weight: 500; border-bottom: 1px solid rgba(124,58,237,0.25);
+}
+.jedomi-bubble strong { font-weight: 600; }
+.jedomi-bubble code {
+    background: var(--j-accent-l); border-radius: 4px;
+    padding: 1px 5px; font-size: 12.5px; color: var(--j-accent);
+    font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+}
+.jedomi-bubble pre {
+    background: #0F172A; color: #E2E8F0;
+    border-radius: 10px; padding: 14px;
+    overflow-x: auto; font-size: 12px; margin: 8px 0;
+}
+.jedomi-bubble table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 13px; }
+.jedomi-bubble th, .jedomi-bubble td {
+    padding: 8px 12px; border: 1px solid var(--j-border); text-align: left;
+}
+.jedomi-bubble th {
+    background: var(--j-surface-2); font-weight: 600;
+    font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.04em; color: var(--j-muted);
+}
+.jedomi-bubble img.jedomi-msg-image {
+    max-width: 100%; border-radius: 10px; margin-top: 8px; display: block;
+}
+
+/* ── Thinking colapsable ───────────────────────────────────────────────────── */
+.jedomi-thinking-wrapper { flex-shrink: 0; }
+.jedomi-thinking-bar {
+    width: 100%; display: flex; align-items: center; gap: 8px;
+    padding: 8px var(--j-pad); background: var(--j-bg);
+    border: none; border-top: 1px solid var(--j-border);
+    cursor: pointer; font-family: inherit; text-align: left;
+    transition: background 0.2s;
+}
+.jedomi-thinking-bar:hover { background: var(--j-surface); }
+.jedomi-thinking-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--j-accent); flex-shrink: 0;
+    animation: jPulse 1.4s infinite ease-in-out;
+}
+@keyframes jPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+.jedomi-thinking-lbl {
+    flex: 1; font-size: 12px; color: var(--j-muted);
+    font-style: italic; font-weight: 500;
+}
+.jedomi-thinking-chevron {
+    color: var(--j-muted); flex-shrink: 0;
+    transition: transform 0.25s ease;
+}
+.jedomi-thinking-wrapper.jedomi-thinking-expanded .jedomi-thinking-chevron {
+    transform: rotate(180deg);
+}
+.jedomi-thinking {
+    display: none; gap: 5px;
+    padding: 8px var(--j-pad) 10px;
+    align-items: center;
+}
+.jedomi-thinking-wrapper.jedomi-thinking-expanded .jedomi-thinking { display: flex; }
+.jedomi-thinking span {
+    width: 7px; height: 7px; background: var(--j-accent); border-radius: 50%;
+    animation: jBounce 1.2s infinite ease-in-out; opacity: 0.7;
+}
+.jedomi-thinking span:nth-child(2) { animation-delay: 0.18s; }
+.jedomi-thinking span:nth-child(3) { animation-delay: 0.36s; }
+@keyframes jBounce {
+    0%, 80%, 100% { transform: scale(0.65); opacity: 0.4; }
+    40%           { transform: scale(1.15); opacity: 1; }
+}
+
+/* ── Quick actions ─────────────────────────────────────────────────────────── */
+.jedomi-quick-actions {
+    padding: 12px var(--j-pad);
+    flex-shrink: 0;
+    display: flex; gap: 6px; flex-wrap: wrap;
+    border-top: 1px solid var(--j-border);
+    border-bottom: 1px solid var(--j-border);
+    background: var(--j-bg);
+}
+.jedomi-quick-btn {
+    background: var(--j-surface);
+    border: 1px solid var(--j-border);
+    border-radius: 20px;
+    padding: 5px 12px 5px 8px;
+    font-size: 12px; font-weight: 500; color: var(--j-text-2);
+    cursor: pointer; transition: all 0.2s;
+    white-space: nowrap; display: flex; align-items: center; gap: 5px;
+    font-family: inherit;
+}
+.jedomi-quick-btn svg { color: var(--j-muted); flex-shrink: 0; }
+.jedomi-quick-btn:hover {
+    background: var(--j-accent); color: white;
+    border-color: var(--j-accent); transform: translateY(-1px);
+}
+.jedomi-quick-btn:hover svg { color: rgba(255,255,255,0.85); }
+
+/* ── Input area — protagonista, fijo abajo ─────────────────────────────────── */
+.jedomi-input-area {
+    padding: 16px var(--j-pad);
+    background: var(--j-bg);
+    flex-shrink: 0;
+}
+/* Cápsula redondeada que se ilumina al focus */
+.jedomi-input-row {
+    display: flex; align-items: flex-end; gap: 8px;
+    background: var(--j-surface);
+    border: 1.5px solid var(--j-border);
+    border-radius: 16px;
+    padding: 10px 10px 10px 16px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    cursor: text;
+}
+.jedomi-input-row:focus-within {
+    border-color: var(--j-accent);
+    box-shadow: 0 0 0 3px rgba(124,58,237,0.08);
+    background: var(--j-bg);
+}
+.jedomi-input {
+    flex: 1; border: none; background: transparent;
+    font-size: 14px; color: var(--j-text); resize: none;
+    max-height: 120px; outline: none;
+    font-family: inherit; line-height: 1.5; padding: 0;
+    cursor: text;
+}
+.jedomi-input::placeholder { color: var(--j-muted-2); }
+.jedomi-input-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.jedomi-input-icon {
+    background: none; border: none; border-radius: 7px;
+    padding: 6px; cursor: pointer; color: var(--j-muted);
+    display: flex; align-items: center; justify-content: center;
+    transition: background 0.2s, color 0.2s;
+}
+.jedomi-input-icon:hover { background: var(--j-border); color: var(--j-text); }
+.jedomi-send-btn {
+    background: var(--j-accent); color: white; border: none;
+    border-radius: 10px; padding: 8px 12px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: background 0.2s, transform 0.1s; flex-shrink: 0;
+    min-width: 36px; min-height: 36px;
+}
+.jedomi-send-btn:hover { background: var(--j-accent-d); transform: scale(1.05); }
+.jedomi-send-btn:disabled { background: var(--j-border); cursor: not-allowed; transform: none; }
+
+/* ── Attach (+) dropdown ──────────────────────────────────────────────────── */
+.jedomi-attach-wrap { position: relative; }
+.jedomi-attach-menu {
+    position: absolute; bottom: calc(100% + 6px); left: 50%;
+    transform: translateX(-50%);
+    background: white; border: 1px solid var(--j-border);
+    border-radius: 10px; box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+    padding: 4px; display: flex; flex-direction: column; gap: 2px;
+    min-width: 120px; z-index: 10;
+}
+.jedomi-attach-option {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 10px; border: none; background: none;
+    font-size: 12px; font-weight: 500; color: var(--j-text-2);
+    border-radius: 7px; cursor: pointer; transition: background 0.15s;
+    font-family: inherit; text-align: left; white-space: nowrap;
+}
+.jedomi-attach-option:hover { background: var(--j-surface); color: var(--j-text); }
+.jedomi-attach-option svg { width: 14px; height: 14px; flex-shrink: 0; }
+
+/* ── Image preview ─────────────────────────────────────────────────────────── */
+.jedomi-image-preview {
+    display: flex; align-items: center; gap: 10px;
+    margin-top: 8px; padding: 8px 12px;
+    background: var(--j-surface); border-radius: 10px;
+    border: 1px solid var(--j-border);
+}
+.jedomi-image-preview img { height: 48px; width: 48px; object-fit: cover; border-radius: 8px; }
+.jedomi-image-preview span { font-size: 12px; color: var(--j-muted); flex: 1; }
+
+/* ── Message actions ───────────────────────────────────────────────────────── */
+.jedomi-msg-actions {
+    display: flex; gap: 4px; padding: 6px 2px 2px;
+    margin-top: 4px; opacity: 0; transition: opacity 0.15s;
+}
+.jedomi-message-assistant:hover .jedomi-msg-actions,
+.jedomi-bubble:hover .jedomi-msg-actions { opacity: 1; }
+.jedomi-user-actions { justify-content: flex-end; padding: 4px 0 0; }
+.jedomi-message-user:hover .jedomi-user-actions { opacity: 1; }
+.jedomi-action-btn {
+    background: none; border: none; border-radius: 6px;
+    font-size: 11px; cursor: pointer; padding: 3px 6px;
+    color: var(--j-muted); transition: background 0.15s;
+    display: flex; align-items: center; gap: 3px; font-family: inherit;
+}
+.jedomi-action-btn:hover { background: var(--j-surface-2); color: var(--j-text); }
+
+/* ── Tool status ───────────────────────────────────────────────────────────── */
+.jedomi-tool-status {
+    display: inline-flex; align-items: center; gap: 6px;
+    color: var(--j-accent); font-size: 13px; font-weight: 500;
+    animation: jFade 0.8s infinite alternate;
+}
+@keyframes jFade { from { opacity: 0.5; } to { opacity: 1; } }
+
+/* ── Moodle links ──────────────────────────────────────────────────────────── */
+.jedomi-moodle-link {
+    display: inline-flex; align-items: center; gap: 4px;
+    color: var(--j-accent); text-decoration: none;
+    background: var(--j-accent-l); border-radius: 6px; padding: 2px 8px;
+    font-size: 13px; font-weight: 500; border: 1px solid rgba(124,58,237,0.15);
+    transition: background 0.2s;
+}
+.jedomi-moodle-link:hover { background: var(--j-accent); color: white; }
+.jedomi-link-badge { font-size: 11px; opacity: 0.7; }
+
+/* ── Drop zone overlay ────────────────────────────────────────────────────── */
+.jedomi-dropzone {
+    position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+    z-index: 100000; pointer-events: none;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(124,58,237,0.08);
+    backdrop-filter: blur(4px);
+    transition: opacity 0.2s ease;
+}
+.jedomi-dropzone.jedomi-hidden { display: none; }
+.jedomi-dropzone-inner {
+    pointer-events: none;
+    display: flex; flex-direction: column; align-items: center; gap: 12px;
+    padding: 32px 48px;
+    background: white;
+    border: 2px dashed var(--j-accent);
+    border-radius: 16px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.10);
+}
+.jedomi-dropzone-inner svg {
+    color: var(--j-accent);
+    animation: jDropBounce 1.6s ease-in-out infinite;
+}
+.jedomi-dropzone-text {
+    font-size: 16px; font-weight: 600; color: var(--j-text);
+    font-family: 'Inter', system-ui, sans-serif;
+}
+@keyframes jDropBounce {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-6px); }
+}
+
+/* ── Footer disclaimer ────────────────────────────────────────────────────── */
+.jedomi-footer {
+    flex-shrink: 0; text-align: center;
+    padding: 0 var(--j-pad) 4px;
+    margin-top: -4px;
+    background: var(--j-bg);
+}
+.jedomi-disclaimer {
+    font-size: 10.5px; color: var(--j-muted-2);
+    line-height: 1.4; letter-spacing: 0.01em;
+}
+
+/* ── Overlay ───────────────────────────────────────────────────────────────── */
+.jedomi-overlay {
+    position: fixed !important; inset: 0 !important;
+    background: rgba(0,0,0,0.15) !important; z-index: 99997 !important;
+}
+@media (min-width: 768px) { .jedomi-overlay { display: none !important; } }
+
+/* ── Tablas ────────────────────────────────────────────────────────────────── */
+.jedomi-table-wrap { margin: 10px 0; overflow: visible; }
+.jedomi-table-scroll {
+    overflow-x: auto; border-radius: 8px;
+    border: 1px solid var(--j-border);
+}
+.jedomi-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.jedomi-bubble .jedomi-table th, .jedomi-table th {
+    background: var(--j-surface-2) !important; color: var(--j-muted) !important;
+    font-weight: 600 !important; font-size: 11px !important;
+    text-transform: uppercase !important; letter-spacing: 0.04em !important;
+    padding: 8px 12px !important; text-align: left !important;
+    border-bottom: 1px solid var(--j-border) !important; white-space: nowrap !important;
+}
+.jedomi-bubble .jedomi-table td, .jedomi-table td {
+    padding: 8px 12px !important;
+    border-bottom: 1px solid var(--j-border) !important;
+    color: var(--j-text) !important; font-size: 12.5px !important;
+}
+.jedomi-table tbody tr:nth-child(even) td { background: var(--j-surface) !important; }
+.jedomi-table tbody tr:hover td { background: var(--j-accent-l) !important; }
+.jedomi-table td:last-child { font-weight: 500; }
+.jedomi-csv-btn {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 11.5px; font-weight: 600; padding: 5px 12px;
+    margin: 6px 0 4px; background: var(--j-surface-2);
+    border: 1px solid var(--j-border); border-radius: 6px;
+    color: var(--j-muted); cursor: pointer; transition: all 0.2s;
+}
+.jedomi-csv-btn:hover {
+    background: var(--j-accent); border-color: var(--j-accent);
+    color: white; transform: translateY(-1px);
+}
+
+/* ── Expand modes ──────────────────────────────────────────────────────────── */
+.jedomi-sidebar.jedomi-expand-half { width: 50vw !important; }
+.jedomi-sidebar.jedomi-expand-full {
+    width: 100vw !important; left: 0 !important; border-radius: 0 !important;
+}
+.jedomi-expand-half .jedomi-messages,
+.jedomi-expand-full .jedomi-messages { padding: 20px 10% !important; }
+.jedomi-expand-half .jedomi-bubble,
+.jedomi-expand-full .jedomi-bubble { max-width: 720px !important; }
+
+/* ── Confirmación de envío ─────────────────────────────────────────────────── */
+.jedomi-send-confirm {
+    margin-top: 12px; padding: 16px;
+    background: var(--j-surface); border: 1.5px solid var(--j-border);
+    border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+}
+.jedomi-confirm-msg {
+    font-size: 13.5px; font-weight: 600; color: var(--j-text); margin-bottom: 8px;
+}
+.jedomi-confirm-preview {
+    font-size: 12px; color: var(--j-muted); font-style: italic;
+    margin-bottom: 12px; padding: 8px 12px;
+    background: var(--j-bg); border-left: 3px solid var(--j-accent);
+    border-radius: 6px; line-height: 1.5;
+}
+.jedomi-confirm-btns { display: flex; gap: 8px; margin-top: 4px; }
+.jedomi-confirm-yes, .jedomi-confirm-no {
+    padding: 8px 16px; border-radius: 8px; border: none;
+    font-size: 13px; font-weight: 600; cursor: pointer;
+    transition: all 0.2s; letter-spacing: 0.01em;
+}
+.jedomi-confirm-yes {
+    background: #10B981; color: white;
+    box-shadow: 0 2px 6px rgba(16,185,129,0.3);
+}
+.jedomi-confirm-yes:hover { background: #059669; transform: translateY(-1px); }
+.jedomi-confirm-no {
+    background: var(--j-surface-2); color: var(--j-muted);
+    border: 1px solid var(--j-border);
+}
+.jedomi-confirm-no:hover { background: var(--j-border); color: var(--j-text); }
+
+/* ── Acciones destructivas ─────────────────────────────────────────────────── */
+.jedomi-action-pending {
+    margin-top: 12px; padding: 14px 16px;
+    border-radius: 12px; border-left: 4px solid;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+.jedomi-action-pending--critical { background: #FEF2F2; border-color: #EF4444; }
+.jedomi-action-pending--high     { background: #FFFBEB; border-color: #F59E0B; }
+.jedomi-action-pending--medium   { background: #FEFCE8; border-color: #EAB308; }
+.jedomi-action-warning {
+    font-size: 13.5px; font-weight: 700; margin-bottom: 10px; line-height: 1.4;
+}
+.jedomi-action-pending--critical .jedomi-action-warning { color: #DC2626; }
+.jedomi-action-pending--high     .jedomi-action-warning { color: #D97706; }
+.jedomi-action-pending--medium   .jedomi-action-warning { color: #CA8A04; }
+.jedomi-action-desc {
+    font-size: 12.5px; color: var(--j-text-2); padding: 8px 12px;
+    background: rgba(0,0,0,0.04); border-radius: 6px; margin-bottom: 12px;
+    font-family: ui-monospace, monospace; word-break: break-all;
+}
+.jedomi-type-confirm-wrap {
+    margin: 10px 0 12px; font-size: 12px; color: var(--j-muted);
+}
+.jedomi-type-confirm-wrap label {
+    display: block; margin-bottom: 6px; font-weight: 600; color: var(--j-text);
+}
+.jedomi-type-confirm {
+    width: 100%; padding: 8px 12px;
+    background: var(--j-bg); border: 1.5px solid var(--j-border);
+    border-radius: 8px; color: var(--j-text);
+    font-size: 13px; font-family: ui-monospace, monospace;
+    box-sizing: border-box; transition: border-color 0.2s, box-shadow 0.2s;
+}
+.jedomi-type-confirm:focus {
+    outline: none; border-color: #EF4444;
+    box-shadow: 0 0 0 3px rgba(239,68,68,0.08);
+}
+.jedomi-action-result { margin-top: 8px; font-size: 12px; min-height: 18px; color: var(--j-muted); }
+
+/* ── Voice recording ───────────────────────────────────────────────────────── */
+@keyframes jedomi-pulse-rec {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.5); }
+    50%      { box-shadow: 0 0 0 6px rgba(239,68,68,0); }
+}
+.jedomi-input-icon.recording {
+    color: #EF4444 !important;
+    animation: jedomi-pulse-rec 1s infinite;
+    background: rgba(239,68,68,0.08) !important; border-radius: 50%;
+}
+#jedomi-voice-btn { position: relative; overflow: visible !important; }
+#jedomi-voice-btn.recording {
+    color: #EF4444 !important;
+    background: rgba(239,68,68,0.1) !important; border-radius: 50% !important;
+}
+
+/* ── Responsive ────────────────────────────────────────────────────────────── */
+@media (max-width: 767px) {
+    .jedomi-sidebar { width: 100vw !important; }
+    .jedomi-trigger { bottom: 16px; left: 16px; width: 52px; height: 52px; }
+    .jedomi-bubble  { max-width: 92%; }
+}

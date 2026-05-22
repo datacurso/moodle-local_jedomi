@@ -1,0 +1,368 @@
+<?php
+// ── Plugin identity ───────────────────────────────────────────────────────────
+$string['pluginname']      = 'Jedomi AI Sidebar';
+
+// ── Sidebar UI ────────────────────────────────────────────────────────────────
+$string['sidebar_title']   = 'Jedomi AI';
+$string['open_sidebar']    = 'Open Jedomi AI';
+$string['close']           = 'Close (Esc)';
+$string['new_conversation']= 'New conversation';
+$string['export_conversation'] = 'Export conversation';
+$string['toggle_thinking'] = 'Toggle thinking animation';
+$string['half_width']      = 'Half width';
+$string['full_width']      = 'Full width';
+
+// ── Input area ────────────────────────────────────────────────────────────────
+$string['attach']           = 'Attach';
+$string['attach_file']      = 'Attach PDF/CSV';
+$string['attach_image']     = 'Attach image';
+$string['chat_placeholder'] = 'Ask Jedomi...';
+$string['file']             = 'File';
+$string['image']            = 'Image';
+$string['message_input']    = 'Message Jedomi';
+$string['send']             = 'Send';
+$string['voice_input']      = 'Voice input';
+
+// ── Greeting ──────────────────────────────────────────────────────────────────
+$string['greeting']        = 'Hi, {name}!';
+$string['hello']           = "I'm Jedomi, your Moodle AI assistant. Ask me about courses, users, grades or settings.";
+$string['thinking']        = 'Thinking...';
+
+// ── New conversation ──────────────────────────────────────────────────────────
+$string['new_conversation_msg'] = 'New conversation started. How can I help you?';
+
+// ── Image / file attachment ───────────────────────────────────────────────────
+$string['analyze_image']       = 'Analyze this image.';
+$string['attached_file_info']  = '[Attached file: {$a}]';
+$string['attached_image']      = 'Attached image';
+$string['csv_download']        = '📥 Download CSV';
+$string['file_csv']            = 'CSV: {rows} rows, {columns} columns';
+$string['file_loaded']         = 'loaded';
+$string['file_loaded_hint']    = 'You can ask questions about its content.';
+$string['file_pdf']            = 'PDF: {pages} pages';
+$string['file_process_error']  = 'Could not process';
+$string['file_text']           = 'Text: {chars} characters';
+$string['processing_file']     = 'Processing {$a}...';
+
+// ── Tool execution status ─────────────────────────────────────────────────────
+$string['tool_sql_read']          = 'Querying database...';
+$string['tool_api_call']          = 'Executing Moodle action...';
+$string['tool_schema_lookup']     = 'Looking up table...';
+$string['tool_webservice_lookup'] = 'Looking up API function...';
+
+// ── Message actions ───────────────────────────────────────────────────────────
+$string['action_copy']         = 'Copy';
+$string['action_helpful']      = 'Helpful';
+$string['action_improve']      = 'Improve';
+$string['action_improve_title']= 'Needs work';
+$string['action_edit']         = 'Edit';
+$string['action_edit_title']   = 'Edit message';
+
+// ── Bulk message confirmation ─────────────────────────────────────────────────
+$string['confirm_send_bulk']       = 'Send this message to {count} student(s)?';
+$string['yes_send']                = 'Yes, send';
+$string['cancel']                  = 'Cancel';
+$string['sending']                 = 'Sending...';
+$string['cancelled']               = 'Cancelled.';
+$string['messages_sent']           = '{sent} message(s) sent as Moodle internal messages.';
+$string['messages_sent_fail']      = '({failed} failed)';
+$string['messages_recipients_note']= 'Recipients will see them in their Moodle message inbox.';
+$string['no_messages_sent']        = 'No messages sent.';
+$string['unknown_error']           = 'Unknown error';
+$string['connection_error']        = 'Connection error:';
+
+// ── Gateway error ─────────────────────────────────────────────────────────────
+$string['gateway_error_title'] = 'Could not connect to the Jedomi Gateway.';
+$string['gateway_error_hint']  = 'Make sure the service is running:';
+
+// ── Microphone ────────────────────────────────────────────────────────────────
+$string['listening']        = 'Listening...';
+$string['mic_error']        = 'Could not access the microphone. Please check your browser permissions.';
+$string['silence_detected'] = 'Silence...';
+$string['transcribing']     = 'Transcribing...';
+$string['waiting_voice']    = 'Waiting for voice...';
+
+// ── Confirmation system (destructive actions) ────────────────────────────────
+$string['confirm_type_to_proceed'] = 'Type CONFIRM to proceed:';
+$string['confirm_btn_yes']         = 'Confirm';
+$string['confirm_btn_no']          = 'Cancel';
+$string['confirm_executing']       = 'Executing...';
+$string['confirm_done']            = 'Action executed successfully.';
+$string['confirm_cancelled']       = 'Action cancelled.';
+
+// ── Context labels (sidebar badge) ───────────────────────────────────────────
+$string['ctx_activity']  = 'Activity';
+$string['ctx_admin']     = 'Administration';
+$string['ctx_calendar']  = 'Calendar';
+$string['ctx_course']    = 'Course';
+$string['ctx_dashboard'] = 'Dashboard';
+$string['ctx_files']     = 'Files';
+$string['ctx_grades']    = 'Grades';
+$string['ctx_messages']  = 'Messages';
+$string['ctx_profile']   = 'Profile';
+
+// ── Quick actions: Admin ──────────────────────────────────────────────────────
+$string['qa_admin_active_users_label']    = 'Active users';
+$string['qa_admin_active_users_msg']      = 'How many active users are there in the system?';
+$string['qa_admin_alerts_label']          = 'Alerts';
+$string['qa_admin_alerts_msg']            = 'What requires immediate attention today?';
+$string['qa_admin_at_risk_label']         = 'At risk';
+$string['qa_admin_at_risk_msg']           = 'Which students are at risk of failing in course {$a}?';
+$string['qa_admin_empty_cohorts_label']   = 'Empty cohorts';
+$string['qa_admin_empty_cohorts_msg']     = 'Are there cohorts with no members assigned?';
+$string['qa_admin_external_emails_label'] = 'External emails';
+$string['qa_admin_external_emails_msg']   = 'Are there users with non-institutional emails?';
+$string['qa_admin_gdpr_pending_label']    = 'GDPR pending';
+$string['qa_admin_gdpr_pending_msg']      = 'Are there pending GDPR deletion requests?';
+$string['qa_admin_inactive_label']        = 'Inactive';
+$string['qa_admin_inactive_msg']          = 'Which students haven\'t accessed course {$a} in the last 30 days?';
+$string['qa_admin_missing_work_label']    = 'Missing work';
+$string['qa_admin_missing_work_msg']      = 'Which students haven\'t submitted activities in course {$a}?';
+$string['qa_admin_overview_label']        = 'Overview';
+$string['qa_admin_overview_msg']          = 'Give me a summary of the overall platform status';
+$string['qa_admin_performance_label']     = 'Performance';
+$string['qa_admin_performance_msg']       = 'Show me the grade ranking for course {$a}';
+$string['qa_admin_security_label']        = 'Security';
+$string['qa_admin_security_msg']          = 'Are there users with suspicious characters in their names?';
+$string['qa_admin_storage_label']         = 'Storage';
+$string['qa_admin_storage_msg']           = 'Which course has the heaviest files uploaded?';
+$string['qa_admin_top_courses_label']     = 'Top courses';
+$string['qa_admin_top_courses_msg']       = 'Which courses have the best performance?';
+$string['qa_admin_top_student_label']     = 'Top student';
+$string['qa_admin_top_student_msg']       = 'Who is the top student in course {$a}?';
+
+// ── Quick actions: Manager ────────────────────────────────────────────────────
+$string['qa_manager_at_risk_label']       = 'At risk';
+$string['qa_manager_at_risk_msg']         = 'Which students are at risk in course {$a}?';
+$string['qa_manager_enrolled_label']      = 'Enrolled';
+$string['qa_manager_enrolled_msg']        = 'How many students are enrolled in course {$a}?';
+$string['qa_manager_global_risk_label']   = 'Global risk';
+$string['qa_manager_global_risk_msg']     = 'Are there students at risk of failing in any course?';
+$string['qa_manager_inactive_label']      = 'Inactive';
+$string['qa_manager_inactive_msg']        = 'Which students haven\'t accessed course {$a} in the last 14 days?';
+$string['qa_manager_inactive_users_label'] = 'Inactive users';
+$string['qa_manager_inactive_users_msg']  = 'Which users haven\'t accessed the system in the last 30 days?';
+$string['qa_manager_no_teacher_label']    = 'No teacher';
+$string['qa_manager_no_teacher_msg']      = 'Are there courses with no teacher assigned?';
+$string['qa_manager_overview_label']      = 'Overview';
+$string['qa_manager_overview_msg']        = 'Give me a summary of course {$a}';
+$string['qa_manager_top_courses_label']   = 'Top courses';
+$string['qa_manager_top_courses_msg']     = 'Which courses have the most activity this week?';
+
+// ── Quick actions: Teacher ────────────────────────────────────────────────────
+$string['qa_teacher_at_risk_label']       = 'At risk';
+$string['qa_teacher_at_risk_msg']         = 'Which students are at risk in course {$a}?';
+$string['qa_teacher_my_alerts_label']     = 'My alerts';
+$string['qa_teacher_my_alerts_msg']       = 'Are there students at risk in any of my courses?';
+$string['qa_teacher_my_courses_label']    = 'My courses';
+$string['qa_teacher_my_courses_msg']      = 'In which courses am I currently a teacher?';
+$string['qa_teacher_missing_work_label']  = 'Missing work';
+$string['qa_teacher_missing_work_msg']    = 'Who hasn\'t submitted the latest assignment in course {$a}?';
+$string['qa_teacher_never_logged_label']  = 'Never logged in';
+$string['qa_teacher_never_logged_msg']    = 'Which students never accessed course {$a}?';
+$string['qa_teacher_notify_group_label']  = 'Notify group';
+$string['qa_teacher_notify_group_msg']    = 'Draft a message for students in course {$a} reminding them of pending activities';
+$string['qa_teacher_performance_label']   = 'Performance';
+$string['qa_teacher_performance_msg']     = 'What is the average grade in course {$a}?';
+$string['qa_teacher_top_students_label']  = 'Top students';
+$string['qa_teacher_top_students_msg']    = 'Who has more than 90 points in course {$a}?';
+
+// ── Quick actions: Student ────────────────────────────────────────────────────
+$string['qa_student_help_label']          = 'Help';
+$string['qa_student_help_msg']            = 'I don\'t understand the content of course {$a}. Can you explain?';
+$string['qa_student_my_courses_label']    = 'My courses';
+$string['qa_student_my_courses_msg']      = 'Which courses am I currently enrolled in?';
+$string['qa_student_my_grade_label']      = 'My grade';
+$string['qa_student_my_grade_msg']        = 'What is my average in course {$a}?';
+$string['qa_student_my_grades_label']     = 'My grades';
+$string['qa_student_my_grades_msg']       = 'What is my overall average across all my courses?';
+$string['qa_student_my_progress_label']   = 'My progress';
+$string['qa_student_my_progress_msg']     = 'How many activities have I completed in course {$a}?';
+$string['qa_student_my_tasks_label']      = 'My tasks';
+$string['qa_student_my_tasks_msg']        = 'What assignments do I have pending in course {$a}?';
+$string['qa_student_this_week_label']     = 'This week';
+$string['qa_student_this_week_msg']       = 'What activities and deadlines do I have coming up?';
+
+// ── Admin settings ────────────────────────────────────────────────────────────
+$string['settings']        = 'Jedomi Settings';
+// ── Admin tabs ────────────────────────────────────────────────────────────────
+$string['settings_redirect_help']     = 'Jedomi settings are managed in a dedicated page with a tabbed interface.';
+$string['open_admin_settings']        = 'Open Jedomi Settings';
+$string['tab_general']                = 'General';
+$string['tab_privacy']                = 'Privacy';
+// ── General tab headings ──────────────────────────────────────────────────────
+$string['gateway_heading']            = 'Gateway connection';
+$string['gateway_heading_help']       = 'Connection settings for the Jedomi AI backend.';
+$string['security_heading']           = 'Security';
+$string['security_heading_help']      = 'Tokens and secrets shared between Moodle and the Gateway.';
+$string['improvement_heading']        = 'Continuous improvement';
+$string['improvement_heading_help']   = 'Optional data collection to improve Jedomi over time.';
+$string['enabled_help']               = 'Show or hide the Jedomi sidebar across the entire site.';
+// ── Privacy tab headings ──────────────────────────────────────────────────────
+$string['privacy_access_heading']     = 'Access control';
+$string['privacy_access_heading_help']= 'Who can see and use the Jedomi sidebar.';
+$string['role_visibility_label']      = 'Show sidebar by role';
+$string['role_visibility_help']       = 'Toggle OFF to hide the Jedomi sidebar from users with that role. Site admins always see it.';
+$string['privacy_anon_heading']       = 'Data anonymization';
+$string['privacy_anon_heading_help']  = 'Control how conversation data is anonymized before storage.';
+$string['hide_from_guests_help']      = 'When enabled, guests and unauthenticated users will not see the sidebar.';
+// ── Anonymization descriptions ────────────────────────────────────────────────
+$string['anon_basic_desc']            = 'Replaces names and emails. Keeps most context intact.';
+$string['anon_strict_desc']           = 'Replaces names, emails, IDs and free text. Maximum privacy.';
+$string['anon_feedback_only_desc']    = 'Stores only ratings and feedback buttons. No conversation text.';
+$string['gateway_url']     = 'Gateway URL';
+$string['gateway_url_help']= 'URL of the Jedomi Gateway. Example: http://localhost:8765';
+$string['api_key']         = 'API Key';
+$string['model']           = 'Model';
+$string['enabled']         = 'Enable Jedomi sidebar';
+$string['spt_secret']      = 'Permission token secret';
+$string['spt_secret_help'] = 'Shared secret between Moodle and the Jedomi Gateway for signing permission tokens. Must match JEDOMI_SPT_SECRET in your .env file.';
+$string['collect_training_data']     = 'Collect anonymized conversations for training';
+$string['collect_training_data_help']= 'When enabled, conversations are stored anonymously to improve future model versions. No personal data is retained.';
+$string['anonymization_level']       = 'Anonymization level';
+$string['anonymization_level_help']  = 'How aggressively to anonymize stored conversations.';
+$string['anon_basic']                = 'Basic (names and emails)';
+$string['anon_strict']               = 'Strict (names, emails, IDs, free text)';
+$string['anon_feedback_only']        = 'Feedback only (no conversation text stored)';
+$string['training_data_title']       = 'Jedomi Training Data';
+$string['course_availability_heading']     = 'Course availability';
+$string['course_availability_heading_help']= 'Control which courses show the Jedomi sidebar.';
+$string['course_mode']               = 'Availability mode';
+$string['course_mode_help']          = 'Select how to control course availability.';
+$string['course_mode_all']           = 'All courses (default)';
+$string['course_mode_whitelist']     = 'Only selected courses (whitelist)';
+$string['course_mode_blacklist']     = 'All courses except selected (blacklist)';
+$string['course_list']               = 'Course IDs';
+$string['course_list_help']          = 'Enter course IDs separated by commas or line breaks. Example: 5, 10, 23. Leave empty for no restriction.';
+$string['hide_from_guests']          = 'Hide from guest users';
+$string['category_list']             = 'Category IDs';
+$string['category_list_help']        = 'Enter category IDs separated by commas. All courses in these categories (including subcategories) will be included. Example: 2, 5, 8';
+
+// ── WS / security errors ──────────────────────────────────────────────────────
+$string['non_select_rejected']    = 'Only SELECT queries are allowed.';
+$string['query_timeout']          = 'Query timed out.';
+$string['execute_sql_error']      = 'Database error executing query.';
+$string['unauthorized']           = 'Unauthorized.';
+$string['read_file_blocked']      = 'Access to this file is not allowed.';
+$string['read_file_not_allowed']  = 'This path is not in the allowed list.';
+$string['file_not_found']         = 'File not found or not readable.';
+$string['config_key_blocked']     = 'This configuration key is blocked for security reasons.';
+$string['path_not_allowed']       = 'This path is not allowed.';
+$string['drop_files_here']            = 'Drop files here';
+$string['manage_course_availability'] = 'Manage course availability';
+$string['course_mode_include']        = 'Show only in selected courses';
+$string['course_mode_include_desc']   = 'The sidebar will appear only in the courses you choose below.';
+$string['course_mode_exclude']        = 'Hide in selected courses';
+$string['course_mode_exclude_desc']   = 'The sidebar will appear everywhere except the courses you choose below.';
+$string['course_mode_all_desc']       = 'The sidebar will appear on all courses site-wide.';
+$string['course_availability_courses'] = 'Selected courses';
+$string['course_search_placeholder']  = 'Search by name or shortname...';
+$string['course_search_hint']         = 'Type at least 2 characters to search.';
+$string['course_none_selected']       = 'No courses selected yet.';
+$string['course_search_noresults']    = 'No courses found.';
+$string['course_remove']              = 'Remove course';
+$string['ai_disclaimer']          = 'Jedomi is an AI and can make mistakes.';
+
+// ── Telegram integration ──────────────────────────────────────────────────────
+$string['tab_integrations']                = 'Integrations';
+$string['telegram_heading']                = 'Telegram';
+$string['telegram_heading_help']           = 'Connect Jedomi to a Telegram bot so users can chat via Telegram.';
+$string['telegram_enabled']                = 'Enable Telegram integration';
+$string['telegram_bot_token']              = 'Bot token';
+$string['telegram_bot_token_help']         = 'Paste the token from @BotFather. It is encrypted before storage.';
+$string['telegram_webhook_url']            = 'Webhook URL';
+$string['telegram_webhook_url_help']      = 'Copy this URL into @BotFather with /setwebhook.';
+$string['telegram_webhook_secret']         = 'Webhook secret';
+$string['telegram_webhook_secret_help']    = 'Random secret appended to the webhook URL for security. Regenerate if compromised.';
+$string['telegram_connection_status']     = 'Connection status';
+$string['telegram_status_connected']      = 'Connected';
+$string['telegram_status_disconnected']    = 'Disconnected';
+$string['telegram_status_pending']         = 'Pending — paste webhook URL in @BotFather';
+$string['telegram_rate_limit']             = 'Rate limit';
+$string['telegram_rate_limit_help']        = 'Maximum messages per minute a user can send. 0 = unlimited.';
+$string['telegram_cooldown']              = 'Cooldown';
+$string['telegram_cooldown_help']           = 'Minutes to block a user after exceeding the rate limit.';
+$string['telegram_role_visible']          = 'Allow Telegram for role: {role}';
+$string['telegram_role_visibility_help']   = 'Toggle OFF to prevent users with this role from linking or receiving Telegram messages. Admins always have access.';
+$string['telegram_link_title']            = 'Link Telegram';
+$string['telegram_link_generate']         = 'Generate code';
+$string['telegram_link_code_expiry']      = 'This code expires in 10 minutes.';
+$string['telegram_linked_as']              = 'Linked as @{username}';
+$string['telegram_not_linked']            = 'Not linked';
+$string['telegram_link_instructions']      = 'Open Telegram, find your bot, and send /start followed by the code.';
+$string['telegram_msg_link_first']       = 'Link your account first: go to your Moodle profile and click "Link Telegram".';
+$string['telegram_msg_rate_limited']     = 'Too many messages. Please wait {minutes} minutes.';
+$string['telegram_msg_role_blocked']     = 'Your role does not have access to Jedomi Telegram.';
+$string['telegram_msg_confirm']          = 'Confirm';
+$string['telegram_msg_cancel']            = 'Cancel';
+$string['telegram_msg_executing']         = 'Executing...';
+$string['telegram_msg_done']              = 'Done.';
+$string['telegram_msg_expired_code']      = 'Invalid or expired code. Generate a new one from your Moodle profile.';
+$string['telegram_msg_unlinked']          = 'Unlinked. Send /start to link again.';
+$string['unlink']                        = 'Unlink';
+$string['regenerate']                    = 'Regenerate secret';
+$string['cleanup_telegram_sessions']     = 'Jedomi — Clean up expired Telegram sessions';
+$string['encryption_failed']             = 'Encryption failed. Check your server OpenSSL configuration.';
+$string['decryption_failed']             = 'Decryption failed. The token may have been corrupted or the site salt changed.';
+
+// ── Telegram setup guide ──────────────────────────────────────────────────────
+$string['copytoclipboard']               = 'Copy to clipboard';
+$string['telegram_setup_guide']          = 'Setup Guide';
+$string['telegram_setup_guide_help']     = 'Follow these steps to connect Jedomi to Telegram. Once configured, users can link their accounts from their profile.';
+$string['telegram_setup_done']           = 'Integration configured';
+$string['telegram_setup_done_help']      = 'Telegram is active. Users with permitted roles can link their accounts from their Moodle profile.';
+$string['telegram_setup_show']           = 'Show setup guide';
+$string['telegram_setup_hide']           = 'Hide guide';
+
+$string['telegram_step_admin_title']     = 'Administrator Setup';
+$string['telegram_step_admin_help']      = 'Only needs to be done once. Requires access to Telegram.';
+$string['telegram_step1_title']          = 'Create a bot in @BotFather';
+$string['telegram_step1_desc']           = 'Open Telegram, search for <strong>@BotFather</strong>, send <code>/newbot</code>, choose a name and username. Copy the token it gives you (format: <code>123456:ABC-DEF...</code>).';
+$string['telegram_step2_title']          = 'Paste the token and save';
+$string['telegram_step2_desc']           = 'Paste the token in the <strong>Bot token</strong> field below, enable the integration toggle, and click <strong>Save changes</strong>.';
+$string['telegram_step3_title']          = 'Register the webhook in Telegram';
+$string['telegram_step3_desc']           = 'Copy the <strong>Webhook URL</strong> shown after saving. Then go to @BotFather and run: <code>/setwebhook</code>. Or use this curl command:';
+$string['telegram_step3_note']           = 'For local development (DDEV), use ngrok to get a public HTTPS URL first: <code>ngrok http https://moodle2.ddev.site --host-header=moodle2.ddev.site</code>';
+$string['telegram_step4_title']          = 'Configure role access (optional)';
+$string['telegram_step4_desc']           = 'Use the role toggles below to control which Moodle roles can use Telegram. Site admins always have access regardless of this setting.';
+
+$string['telegram_step_user_title']      = 'User Setup (each user does this once)';
+$string['telegram_step_user_help']       = 'After the admin configures the bot, users link their own Telegram accounts.';
+$string['telegram_stepU1_title']         = 'Go to your Moodle profile';
+$string['telegram_stepU1_desc']          = 'Click your name in the top bar → <strong>Profile</strong>. You will see a <strong>Jedomi AI</strong> section with the <em>Link Telegram</em> link.';
+$string['telegram_stepU2_title']         = 'Generate a linking code';
+$string['telegram_stepU2_desc']          = 'Click <strong>Generate code</strong>. A 6-character code appears, valid for 10 minutes.';
+$string['telegram_stepU3_title']         = 'Send /start to the bot';
+$string['telegram_stepU3_desc']          = 'In Telegram, open your institution\'s bot and send: <code>/start YOUR_CODE</code>. The bot confirms the link instantly.';
+$string['telegram_stepU4_title']         = 'Start chatting';
+$string['telegram_stepU4_desc']          = 'Send any message to the bot. Jedomi answers with real data from your Moodle. To unlink, send <code>/desvincular</code> or use your profile page.';
+
+// ── WS Discovery / Execution ────────────────────────────────────────────────
+$string['tab_apis']                = 'APIs';
+$string['tab_apis_heading']        = 'Web Service Allowlists';
+$string['tab_apis_heading_help']   = 'Configure which Moodle web services each role can access through Jedomi.';
+$string['api_role_admin']          = 'Admin';
+$string['api_role_manager']        = 'Manager';
+$string['api_role_teacher']        = 'Teacher';
+$string['api_role_student']        = 'Student';
+$string['filter_all']              = 'All';
+$string['filter_read']             = 'Read only';
+$string['filter_write']            = 'Write only';
+$string['filter_type']             = 'Type:';
+$string['component_all']           = 'All components';
+$string['ws_name']                 = 'Name';
+$string['ws_description']          = 'Description';
+$string['ws_component']            = 'Component';
+$string['ws_type']                 = 'Type';
+$string['ws_type_read']            = 'Read';
+$string['ws_type_write']           = 'Write';
+$string['ws_type_all']             = 'All types';
+$string['search_ws_placeholder']   = 'Search web services...';
+$string['ws_not_in_allowlist']     = 'This web service is not in your role\'s allowlist.';
+$string['ws_not_found']            = 'Web service function not found.';
+$string['ws_execute_error']        = 'Error executing web service: {$a}';
+$string['ws_no_services']          = 'No web services configured for this role.';
+$string['ws_pagination']           = 'Page {$a->page} of {$a->pages} ({$a->total} services)';
+$string['ws_none_found']           = 'No web services match your filters.';
+$string['tool_ws_discover_desc']   = 'Discover available web services for your current role, grouped by component with parameter schemas.';
+$string['tool_ws_execute_desc']    = 'Execute a Moodle web service function on behalf of the current user. Use AFTER ws_discover.';

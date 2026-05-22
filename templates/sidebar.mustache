@@ -1,0 +1,88 @@
+{{!
+    Jedomi AI Sidebar — injected on every Moodle page
+    @template local_jedomi/sidebar
+}}
+
+<!-- Jedomi Trigger Button -->
+<button
+    id="jedomi-trigger"
+    class="jedomi-trigger"
+    aria-label="Abrir Jedomi AI"
+    title="Jedomi AI"
+    data-gateway="{{gateway_url}}"
+    data-apikey="{{api_key}}"
+    data-model="{{model}}"
+    data-context="{{context}}"
+>
+    <span class="jedomi-trigger-icon">✨</span>
+    <span class="jedomi-trigger-label">Jedomi</span>
+</button>
+
+<!-- Jedomi Sidebar Drawer -->
+<div id="jedomi-sidebar" class="jedomi-sidebar jedomi-closed" role="dialog" aria-label="{{#strings}}{{title}}{{/strings}}">
+
+    <!-- Header -->
+    <div class="jedomi-header">
+        <div class="jedomi-header-info">
+            <span class="jedomi-logo">✨</span>
+            <div>
+                <strong>Jedomi</strong>
+                <small id="jedomi-context-label" class="jedomi-context-badge"></small>
+            </div>
+        </div>
+        <div class="jedomi-header-actions">
+            <button id="jedomi-clear" class="jedomi-btn-icon" title="Nueva conversación">🗑️</button>
+            <button id="jedomi-close" class="jedomi-btn-icon" title="Cerrar">✕</button>
+        </div>
+    </div>
+
+    <!-- Messages area -->
+    <div id="jedomi-messages" class="jedomi-messages">
+        <div class="jedomi-message jedomi-message-assistant">
+            <div class="jedomi-bubble">
+                Hola, <strong>{{user_name}}</strong> 👋<br>
+                Soy Jedomi, tu asistente de Moodle.
+                Preguntame cualquier cosa sobre cursos, notas, alumnos o configuraciones.
+            </div>
+        </div>
+    </div>
+
+    <!-- Thinking indicator -->
+    <div id="jedomi-thinking" class="jedomi-thinking jedomi-hidden">
+        <span></span><span></span><span></span>
+    </div>
+
+    <!-- Input area -->
+    <div class="jedomi-input-area">
+
+        <!-- Quick actions (contextual, shown según dónde está el usuario) -->
+        <div id="jedomi-quick-actions" class="jedomi-quick-actions"></div>
+
+        <!-- Text input -->
+        <div class="jedomi-input-row">
+            <textarea
+                id="jedomi-input"
+                class="jedomi-input"
+                placeholder="{{#strings}}{{placeholder}}{{/strings}}"
+                rows="1"
+                aria-label="Mensaje a Jedomi"
+            ></textarea>
+            <div class="jedomi-input-buttons">
+                <button id="jedomi-voice-btn" class="jedomi-btn-icon jedomi-btn-voice" title="Hablar">🎤</button>
+                <button id="jedomi-image-btn" class="jedomi-btn-icon" title="Subir imagen">📷</button>
+                <button id="jedomi-send" class="jedomi-btn-send" title="Enviar">→</button>
+            </div>
+        </div>
+
+        <!-- Hidden file input for image upload -->
+        <input type="file" id="jedomi-image-input" accept="image/*" class="jedomi-hidden" aria-hidden="true">
+        <!-- Image preview -->
+        <div id="jedomi-image-preview" class="jedomi-image-preview jedomi-hidden">
+            <img id="jedomi-preview-img" src="" alt="Imagen adjunta">
+            <button id="jedomi-remove-image" class="jedomi-btn-icon">✕</button>
+        </div>
+    </div>
+</div>
+
+<!-- Overlay for mobile -->
+<div id="jedomi-overlay" class="jedomi-overlay jedomi-hidden"></div>
