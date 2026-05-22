@@ -445,6 +445,26 @@ function local_jedomi_get_tool_definitions(string $role): array {
         ],
     ];
 
+    // describe_tables — todos los roles. Batch version of describe_table.
+    $tools[] = [
+        'type' => 'function',
+        'function' => [
+            'name'        => 'describe_tables',
+            'description' => 'Describe la estructura de MÚLTIPLES tablas en una sola llamada (más eficiente que llamar describe_table varias veces). Devuelve columnas, tipos y claves de cada tabla.',
+            'parameters'  => [
+                'type'       => 'object',
+                'properties' => [
+                    'tables' => [
+                        'type'        => 'array',
+                        'items'       => ['type' => 'string'],
+                        'description' => 'Lista de nombres de tablas (ej: ["course", "user", "grade_grades"])',
+                    ],
+                ],
+                'required' => ['tables'],
+            ],
+        ],
+    ];
+
     // search_tables — todos los roles.
     $tools[] = [
         'type' => 'function',
@@ -512,29 +532,49 @@ function local_jedomi_get_tool_definitions(string $role): array {
         ];
     }
 
-    // ws_discover — todos los roles.
+    // ws_search — todos los roles. Semantic keyword search returning full function docs.
     $tools[] = [
         'type' => 'function',
         'function' => [
-            'name'        => 'ws_discover',
-            'description' => get_string('tool_ws_discover_desc', 'local_jedomi'),
+            'name'        => 'ws_search',
+            'description' => 'Search Moodle web service functions by intent or keywords in ENGLISH. '
+                . 'Returns the most relevant matches with full description, '
+                . 'parameters (* = required), and return structure. '
+                . 'ALWAYS call ws_search before ws_execute.',
             'parameters'  => [
                 'type'       => 'object',
                 'properties' => [
-                    'filter' => [
+                    'query' => [
                         'type'        => 'string',
-                        'description' => 'Texto para filtrar funciones por nombre o componente (opcional)',
+                        'description' => 'Intent or keywords in ENGLISH (e.g. "create user", "enrol student", "get course grades")',
                     ],
-                    'page' => [
+                    'limit' => [
                         'type'        => 'integer',
-                        'description' => 'Número de página (empieza en 1, opcional, default: 1)',
-                    ],
-                    'per_page' => [
-                        'type'        => 'integer',
-                        'description' => 'Resultados por página (opcional, default: 50, max: 200)',
+                        'description' => 'Máximo de resultados a devolver (default: 6, max: 15)',
                     ],
                 ],
-                'required'   => [],
+                'required' => ['query'],
+            ],
+        ],
+    ];
+
+    // ws_describe — todos los roles. Full docs for a single known WS function.
+    $tools[] = [
+        'type' => 'function',
+        'function' => [
+            'name'        => 'ws_describe',
+            'description' => 'Get full documentation (description, parameters with * = required, return type) '
+                . 'for a specific web service function when you already know its exact name. '
+                . 'ALWAYS call this AFTER ws_search and BEFORE ws_execute to verify required fields.',
+            'parameters'  => [
+                'type'       => 'object',
+                'properties' => [
+                    'wsname' => [
+                        'type'        => 'string',
+                        'description' => 'Exact function name (e.g. core_user_create_users)',
+                    ],
+                ],
+                'required' => ['wsname'],
             ],
         ],
     ];
@@ -555,7 +595,10 @@ function local_jedomi_get_tool_definitions(string $role): array {
                         ],
                         'params' => [
                             'type'        => 'string',
-                            'description' => 'JSON-encoded parameters for the web service function',
+                            'description' => 'JSON-encoded parameters for the web service function. '
+                                . 'MUST include every * (required) field. '
+                                . 'If the user did not provide a value, generate a sensible default '
+                                . '(e.g. random password, current timestamp, empty array).',
                         ],
                     ],
                     'required' => ['wsname', 'params'],

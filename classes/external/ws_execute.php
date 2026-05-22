@@ -135,6 +135,12 @@ class ws_execute extends external_api {
 
             // ── Gate 4: call target WS (native capabilities inside) ──────────
             $result = $ref->invokeArgs(null, $callargs);
+        } catch (\invalid_parameter_exception $e) {
+            $detail = $e->getMessage();
+            if (method_exists($e, 'getDebugInfo') && $e->getDebugInfo()) {
+                $detail .= ' | debug: ' . $e->getDebugInfo();
+            }
+            throw new \moodle_exception('ws_execute_error', 'local_jedomi', '', $detail);
         } catch (\moodle_exception $e) {
             throw $e;
         } catch (\Exception $e) {

@@ -24,32 +24,6 @@ while (ob_get_level() > 1) {
     ob_end_clean();
 }
 
-/**
- * Map tool function names from the gateway's format to canonical PHP names.
- *
- * The gateway transforms model output: search_tables → searchtables.
- * We need to match both variants.
- *
- * NOTA: usamos define() en vez de const para evitar un bug de OPcache
- * con revalidate_freq + file_update_protection que impide que las
- * constantes compile-time se recacheen correctamente tras ediciones.
- */
-define('TOOL_NAME_MAP', [
-    'searchtables'   => 'search_tables',
-    'search_tables'  => 'search_tables',
-    'executesql'     => 'execute_sql',
-    'execute_sql'    => 'execute_sql',
-    'wsdiscover'     => 'ws_discover',
-    'ws_discover'    => 'ws_discover',
-    'wsexecute'      => 'ws_execute',
-    'ws_execute'     => 'ws_execute',
-    'describetables' => 'describe_tables',
-    'describe_tables' => 'describe_tables',
-    'describetable'  => 'describe_table',
-    'describe_table' => 'describe_table',
-    'getsiteconfig'  => 'get_site_config',
-    'get_site_config'=> 'get_site_config',
-]);
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
@@ -184,18 +158,6 @@ function build_system_message(string $role, array $spt, array $context = []): ar
 
     $content = "You are Jedomi, an AI assistant integrated into Moodle ({$sitename}).\n";
     $content .= "Your function is to help users (role: {$role}) answer questions about the site using the available tools.\n\n";
-
-    $content .= "AVAILABLE TOOLS — use ONLY these tool names, exactly as written:\n";
-    $content .= "1. ws_discover — List available web service functions for your role. Parameters: filter (keyword, optional), page (1-based, optional), per_page (default 50, optional).\n";
-    $content .= "2. ws_execute — Execute a web service function. Parameters: ws_name (function name), params (object of parameters).\n";
-    $content .= "3. execute_sql — Run SELECT queries on the {$dblabel} database. Parameters: sql (SQL with ? placeholders, REQUIRED), params (array of values, optional). Use {tablename} syntax (e.g. {course}).\n";
-    $content .= "4. describe_table — Describe ONE table's columns, types and keys. Parameter: tablename (table name, REQUIRED).\n";
-    $content .= "5. describe_tables — Describe MULTIPLE tables in ONE call (fast, batch). Parameter: tables (array of table names, REQUIRED). Use this instead of calling describe_table 5 times.\n";
-    $content .= "6. search_tables — Find tables by keyword. Parameter: query (keyword, REQUIRED).\n";
-    $content .= "7. get_site_config — Get Moodle configuration values. Parameter: keys (array of config key names).\n\n";
-    $content .= "Tool call format: <|tool_call|>call:FUNCTION_NAME{parameter: \"value\"}<tool_call|>\n";
-    $content .= "IMPORTANT: Use the EXACT parameter names listed above. For example: call:describe_table{tablename: \"course\"} NOT call:describe_table{table: \"course\"}.\n\n";
-
     $content .= "SQL CONFIDENCE RULE:\n";
     $content .= "You know Moodle core schema tables like the back of your hand. These are STABLE across versions:\n";
     $content .= "  course, user, grade_items, grade_grades, enrol, user_enrolments, context, role_assignments,\n";
@@ -237,7 +199,21 @@ function build_system_message(string $role, array $spt, array $context = []): ar
     $content .= "    1. execute_sql: SELECT u.id, u.email FROM {user} u JOIN {role_assignments} ... (find users)\n";
     $content .= "    2. Then use that user data to craft a WS call if needed.\n";
     $content .= "  This is more powerful than using either tool alone.\n\n";
-    $content .= "  Path A (WS-first): ws_discover → ws_execute — safest, use when a WS exists for the question.\n";
+    $content .= "  Path A (WS-first): ws_search(query) → ws_describe → ws_execute — safest, use when a WS exists.\n";
+    $content .= "  WS STRATEGY (MANDATORY when using Path A):\n";
+    $content .= "    1. ALWAYS call ws_search first with the action in ENGLISH (e.g. 'create user', 'enrol student', 'get course grades').\n";
+    $content .= "    2. Read the result: check 'name' (exact function name), 'params' (* = REQUIRED — must be present in the JSON).\n";
+    $content .= "    3. Call ws_describe with the exact 'name' to confirm the full parameter schema before executing.\n";
+    $content .= "    4. Call ws_execute with the EXACT 'name' and a JSON containing EVERY * (required) field.\n";
+    $content .= "       If the user did not provide a value for a required field, generate a sensible default rather than omitting it.\n";
+    $content .= "       Example: for core_user_create_users, if no password is given, generate a secure random password.\n";
+    $content .= "    NEVER invent or guess a WS function name. NEVER call ws_execute without first calling ws_search.\n";
+    $content .= "  WS ERROR HANDLING:\n";
+    $content .= "    - If ws_execute returns an error, read the full error message in the result.\n";
+    $content .= "    - Common causes: missing required (*) field, invalid type, duplicate unique value.\n";
+    $content .= "    - If error mentions a missing field, add that field with a sensible default and retry.\n";
+    $content .= "    - If error says duplicate value, inform the user that the item already exists.\n";
+    $content .= "    - Do NOT retry more than once with the same parameters.\n";
     $content .= "  Path B (SQL): execute_sql — most flexible, use for custom aggregations, cross-table, or when no WS matches.\n";
     $content .= "  Path C (Discovery): search_tables / describe_table — ONLY when you need to inspect the schema (e.g., before writing SQL, or after a SQL error).\n";
     $content .= "  Tip: Use {tablename} syntax (e.g. {course}) for Moodle tables — no need to know the prefix.\n";
@@ -289,33 +265,39 @@ function sse_send(string $event, $data): void {
 }
 
 /**
- * Call the AI API with streaming, but buffer the raw SSE into a complete
- * response buffer instead of forwarding to the client.
+ * Call the AI API with streaming (buffered) using native OpenAI function calling.
+ *
+ * Passes tool definitions to the model and returns either a structured text
+ * response or a list of tool_calls to execute. Streaming is preserved for the
+ * final text response phase (streamed to client via stream_sse_content).
+ *
+ * Gemma 4 via Ollama streams tool_call arguments across multiple SSE chunks;
+ * this function accumulates them before returning.
  *
  * @param  string $model    Model name.
  * @param  array  $messages Conversation messages.
- * @param  array  $spt      SPT payload.
- * @return string           The complete assistant response text.
+ * @param  array  $spt      SPT payload (unused directly — auth via sesskey).
+ * @param  array  $tools    OpenAI-format tool definitions to pass to the model.
+ * @return array            ['type'=>'text',       'content'=>'...']
+ *                          ['type'=>'tool_calls', 'tool_calls'=>[...]]
+ *                          ['type'=>'error',      'error'=>'...']
  */
-function call_ai_api_buffer(string $model, array $messages, array $spt): string {
-    // Call the AI model DIRECTLY via OpenAI-compatible API.
-    // NO gateway — the model API is at 192.168.1.28:8080.
-    $apiUrl  = rtrim(get_config('local_jedomi', 'gateway_url') ?: 'http://192.168.1.28:8080', '/');
-    $apiKey  = get_config('local_jedomi', 'api_key') ?: 'jedomi-local-key';
+function call_ai_api_buffer(string $model, array $messages, array $spt, array $tools = []): array {
+    $apiUrl = rtrim(get_config('local_jedomi', 'gateway_url') ?: 'http://192.168.1.28:8080', '/');
+    $apiKey = get_config('local_jedomi', 'api_key') ?: 'jedomi-local-key';
 
-    // Standard OpenAI chat completions payload.
-    // The model does NOT support function_calling — tools are described in system prompt text.
     $payload = [
         'model'      => $model,
         'messages'   => $messages,
         'stream'     => true,
-        'max_tokens' => 16384,  // Room for reasoning + response. Model needs to think.
+        'max_tokens' => 16384,
     ];
+    if (!empty($tools)) {
+        $payload['tools']       = $tools;
+        $payload['tool_choice'] = 'auto';
+    }
 
-    $buffer  = '';  // Full raw SSE text
-    $textBuf = '';  // Extracted delta.content (actual response)
-    $reasonBuf = ''; // Fallback: Gemma reasoning_content (thinking tokens, discarded when content exists)
-
+    $buffer = '';
     $ch = curl_init($apiUrl . '/v1/chat/completions');
     curl_setopt_array($ch, [
         CURLOPT_POST           => true,
@@ -325,7 +307,7 @@ function call_ai_api_buffer(string $model, array $messages, array $spt): string 
             'Authorization: Bearer ' . $apiKey,
         ],
         CURLOPT_RETURNTRANSFER => false,
-        CURLOPT_TIMEOUT        => 180,   // 3 min for slow reasoning models
+        CURLOPT_TIMEOUT        => 180,
         CURLOPT_CONNECTTIMEOUT => 10,
         CURLOPT_WRITEFUNCTION  => function ($ch, $data) use (&$buffer) {
             $buffer .= $data;
@@ -334,20 +316,22 @@ function call_ai_api_buffer(string $model, array $messages, array $spt): string 
     ]);
 
     curl_exec($ch);
-    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $httpCode  = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $curlError = curl_error($ch);
     curl_close($ch);
 
     if ($httpCode !== 200 || empty($buffer)) {
-        $bufLen = strlen($buffer);
-        $bufPreview = substr($buffer, 0, 500);
-        error_log("[local_jedomi] AI API error: http=$httpCode curl='$curlError' bufLen=$bufLen empty=" . (empty($buffer) ? 'yes' : 'no') . " preview=" . json_encode($bufPreview, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_IGNORE));
-        return '';
+        $buf_preview = substr($buffer, 0, 500);
+        error_log("[local_jedomi] AI API error: http=$httpCode curl='$curlError' preview="
+            . json_encode($buf_preview, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_IGNORE));
+        return ['type' => 'error', 'error' => 'ai_api_error'];
     }
 
-    // Parse SSE buffer — extract content tokens from streaming response.
-    // Gemma-4 sends reasoning_content (thinking in English) BEFORE delta.content (response in Spanish).
-    // We return content if present; fall back to reasoning only when no content exists.
+    $text_buf = '';
+    $reason_buf = ''; // Gemma reasoning_content (thinking tokens — fallback only).
+    $tool_calls_acc = []; // Indexed by tool_call index, accumulated across SSE chunks.
+    $finish_reason = '';
+
     $lines = explode("\n", $buffer);
     foreach ($lines as $line) {
         $line = trim($line);
@@ -358,140 +342,73 @@ function call_ai_api_buffer(string $model, array $messages, array $spt): string 
         if ($raw === '[DONE]') {
             break;
         }
-
         $json = json_decode($raw, true);
         if (!$json) {
             continue;
         }
 
-        // delta.content = actual response (always prefer this).
-        if (isset($json['choices'][0]['delta']['content']) && $json['choices'][0]['delta']['content'] !== null) {
-            $textBuf .= $json['choices'][0]['delta']['content'];
-            continue;
+        $delta = $json['choices'][0]['delta'] ?? [];
+        $finish_reason = $json['choices'][0]['finish_reason'] ?? $finish_reason;
+
+        // Accumulate text content.
+        if (isset($delta['content']) && $delta['content'] !== null) {
+            $text_buf .= $delta['content'];
         }
-        // reasoning_content = thinking tokens (Gemma). Collected as fallback only.
-        if (isset($json['choices'][0]['delta']['reasoning_content'])
-            && $json['choices'][0]['delta']['reasoning_content'] !== null) {
-            $reasonBuf .= $json['choices'][0]['delta']['reasoning_content'];
-            continue;
+        // Gemma reasoning_content (thinking tokens — fallback only).
+        if (isset($delta['reasoning_content']) && $delta['reasoning_content'] !== null) {
+            $reason_buf .= $delta['reasoning_content'];
         }
-    }
-
-    // Return content if available (discards reasoning — keeps response clean).
-    if (!empty($textBuf)) {
-        return $textBuf;
-    }
-
-    // Fallback: no content found, use reasoning (better than empty response).
-    if (!empty($reasonBuf)) {
-        error_log("[local_jedomi] SSE fallback: returning reasoning_content (no delta.content found, "
-            . strlen($reasonBuf) . " chars)");
-        return $reasonBuf;
-    }
-
-    // If nothing extracted but buffer was valid, log the raw SSE (first 2KB) for diagnosis.
-    if (!empty($buffer)) {
-        error_log("[local_jedomi] SSE parse warning: buffer populated but no content or reasoning extracted. First 2KB: "
-            . json_encode(substr($buffer, 0, 2048), JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_IGNORE));
-    }
-
-    return '';
-}
-
-/**
- * Parse an AI response for <|toolcall|> markers.
- *
- * The model uses text markers. Observed formats (ALL variants):
- *
- * Native (model directo):
- *   <|tool_call>call:search_tables{keyword: 'course'}<tool_call|>
- *   <|tool_call>call:execute_sql{query: "SELECT ..."}<tool_call|>
- *
- * Gateway-transformed:
- *   <|toolcall>call:searchtables{keyword:<|"|>course<|"|>}<tool_call|>
- *   <|toolcall>call:getsiteconfig{key:"sitename"}<toolcall|>
- *
- * @param  string $content The raw response text.
- * @return array|null      ['name' (canonical), 'args' (array), 'raw' (full marker)] or null.
- */
-function parse_toolcall_marker(string $content): array|null {
-    // Unified regex: handles ALL observed variants of <|toolcall|>call:func{args}<tool_call|>
-    $patterns = [
-        // Matches both native format (tool_call with underscore)
-        // and gateway format (toolcall without underscore).
-        '/<\|tool_?call\|?>\s*call:(\w+)\s*(\{.*\})\s*<tool_?call\|>/s',
-        '/<\|tool_?call\|?>\s*call:(\w+)/s',
-    ];
-
-    foreach ($patterns as $pat) {
-        if (preg_match($pat, $content, $m)) {
-            $rawName = $m[1];
-            $canonical = TOOL_NAME_MAP[$rawName] ?? $rawName;
-            $args = [];
-
-            if (isset($m[2]) && $m[2] !== '{}' && $m[2] !== '[]') {
-                $argsJson = str_replace('<|"|>', '"', $m[2]);
-                $args = json_decode($argsJson, true);
-                if ($args === null) {
-                    $args = parse_relaxed_json($argsJson);
+        // Accumulate tool_calls streamed across multiple delta chunks.
+        // Ollama streams arguments token-by-token; some versions send an object directly.
+        if (!empty($delta['tool_calls'])) {
+            foreach ($delta['tool_calls'] as $tc) {
+                $idx = $tc['index'] ?? 0;
+                if (!isset($tool_calls_acc[$idx])) {
+                    $tool_calls_acc[$idx] = [
+                        'id'       => $tc['id'] ?? '',
+                        'type'     => $tc['type'] ?? 'function',
+                        'function' => ['name' => '', 'arguments' => ''],
+                    ];
                 }
-                if ($args === null) {
-                    $args = ['raw' => $argsJson];
+                if (!empty($tc['id'])) {
+                    $tool_calls_acc[$idx]['id'] = $tc['id'];
+                }
+                if (!empty($tc['function']['name'])) {
+                    $tool_calls_acc[$idx]['function']['name'] = $tc['function']['name'];
+                }
+                if (isset($tc['function']['arguments'])) {
+                    $arg = $tc['function']['arguments'];
+                    // Some Ollama versions send arguments as a pre-decoded object.
+                    if (is_array($arg)) {
+                        $tool_calls_acc[$idx]['function']['arguments'] = json_encode($arg, JSON_UNESCAPED_UNICODE);
+                    } else {
+                        $tool_calls_acc[$idx]['function']['arguments'] .= $arg;
+                    }
                 }
             }
-
-            return [
-                'name' => $canonical,
-                'args' => is_array($args) ? $args : [],
-                'raw'  => $m[0],
-            ];
         }
     }
-    return null;
-}
 
-/**
- * Parse JSON with relaxed syntax (keys without quotes, single quotes).
- *
- * @param  string $jsonString The malformed JSON.
- * @return array|null         Decoded array or null on failure.
- */
-function parse_relaxed_json(string $jsonString): array|null {
-    // Step 1: Add quotes to unquoted keys.
-    $fixed = preg_replace('/(\w+)(?=\s*:)/', '"$1"', $jsonString);
-
-    // Try decoding with double-quoted keys (handles SQL with single-quoted strings).
-    $result = json_decode($fixed, true);
-    if (is_array($result)) {
-        return $result;
-    }
-
-    // Step 2: Replace single-quoted VALUES with double-quoted values (for {keyword: 'course'} format).
-    // Uses regex instead of blind str_replace to avoid breaking SQL strings containing single quotes.
-    $fixed2 = preg_replace('/:\s*\'(.*?)\'\s*([,}\]])/', ':"$1"$2', $fixed);
-    $result = json_decode($fixed2, true);
-    if (is_array($result)) {
-        return $result;
-    }
-
-    // Step 3: Quote bare word values (e.g. ws_name:core_course_get_courses).
-    $fixed3 = preg_replace('/:\s*([a-zA-Z_][\w:.\/-]*?)\s*([,}\]])/', ':"$1"$2', $fixed2);
-    $result = json_decode($fixed3, true);
-    if (is_array($result)) {
-        return $result;
-    }
-
-    // Last resort: extract key-value pairs manually.
-    preg_match_all('/(\w+)\s*:\s*(?:"([^"]*)"|\'([^\']*)\'|(\w+))/', $jsonString, $matches, PREG_SET_ORDER);
-    if (!empty($matches)) {
-        $result = [];
-        foreach ($matches as $m) {
-            $result[$m[1]] = $m[2] ?: $m[3] ?: $m[4] ?: '';
+    // Tool calls detected — ensure every entry has a non-empty id.
+    if (!empty($tool_calls_acc) || $finish_reason === 'tool_calls') {
+        ksort($tool_calls_acc);
+        $tool_calls = array_values($tool_calls_acc);
+        foreach ($tool_calls as &$tc) {
+            if (empty($tc['id'])) {
+                $tc['id'] = 'call_' . substr(md5($tc['function']['name'] . microtime()), 0, 12);
+            }
         }
-        return $result;
+        unset($tc);
+        return ['type' => 'tool_calls', 'tool_calls' => $tool_calls];
     }
 
-    return null;
+    // Text response: prefer content, fall back to reasoning (Gemma thinking tokens).
+    $text = !empty($text_buf) ? $text_buf : $reason_buf;
+    if (empty($text) && !empty($buffer)) {
+        error_log("[local_jedomi] SSE parse warning: no content or tool_calls extracted. First 2KB: "
+            . json_encode(substr($buffer, 0, 2048), JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_IGNORE));
+    }
+    return ['type' => 'text', 'content' => $text];
 }
 
 /**
@@ -504,9 +421,6 @@ function parse_relaxed_json(string $jsonString): array|null {
  * @return string       JSON-encoded result.
  */
 function execute_tool_by_name(string $name, array $args, string $role): string {
-    // Normalize just in case.
-    $name = TOOL_NAME_MAP[$name] ?? $name;
-
     switch ($name) {
         case 'describe_tables':
             return describe_tables_tool($args);
@@ -518,8 +432,10 @@ function execute_tool_by_name(string $name, array $args, string $role): string {
             return execute_sql_tool($args, $role);
         case 'get_site_config':
             return get_site_config_tool($args, $role);
-        case 'ws_discover':
-            return ws_discover_tool($args, $role);
+        case 'ws_search':
+            return ws_search_tool($args, $role);
+        case 'ws_describe':
+            return ws_describe_tool($args, $role);
         case 'ws_execute':
             return ws_execute_tool($args, $role);
         default:
@@ -553,13 +469,13 @@ function execute_sql_tool(array $args, string $role): string {
     } catch (\Exception $e) {
         // Include the real DB error message so the model can diagnose (e.g. "Unknown column", "Table not found").
         $realError = $e->getMessage();
-        if (method_exists($e, 'debuginfo') && !empty($e->debuginfo)) {
+        if ($e instanceof \dml_exception && !empty($e->debuginfo)) {
             $realError .= ' | DBG: ' . $e->debuginfo;
         }
         $prev = $e->getPrevious();
         if ($prev) {
             $realError .= ' | PREV: ' . $prev->getMessage();
-            if (method_exists($prev, 'debuginfo') && !empty($prev->debuginfo)) {
+            if ($prev instanceof \dml_exception && !empty($prev->debuginfo)) {
                 $realError .= ' | PREV_DBG: ' . $prev->debuginfo;
             }
         }
@@ -570,11 +486,11 @@ function execute_sql_tool(array $args, string $role): string {
 }
 
 /**
- * Run the tool-calling loop with <|toolcall> marker parsing.
+ * Run the tool-calling loop using native OpenAI function calling.
  *
- * The model generates <|toolcall>call:function{...}<tool_call|> markers as text.
- * We: 1) Call AI (streaming, buffered), 2) Parse markers, 3) Execute tools,
- * 4) Re-inject results, 5) Loop until no more tools, 6) Stream final response.
+ * Passes tool definitions to the model via the API. The model returns structured
+ * tool_calls (no text parsing). Tool results are re-injected as role=tool messages
+ * (OpenAI standard). Final text response is streamed to the client via SSE.
  *
  * @param string $model    Model name.
  * @param array  $messages Conversation messages (passed by reference, mutated).
@@ -582,154 +498,163 @@ function execute_sql_tool(array $args, string $role): string {
  * @param string $role     User role.
  */
 function run_tool_loop(string $model, array &$messages, array $spt, string $role): void {
-    $queryHistory = [];   // Track successful SQL queries for cross-reference.
-    $describedTables = []; // Cache describe_tables results (table name → schema).
+    $query_history = [];    // Track successful SQL queries for cross-reference.
+    $described_tables = []; // Cache describe_table/describe_tables results.
+    $tools = local_jedomi_get_tool_definitions($role);
 
     for ($i = 0; $i < 10; $i++) {
-        // Send a keepalive so the client knows we're thinking.
         echo ": thinking\n\n";
         ob_flush();
         flush();
 
-        // Call AI with streaming but buffer the response.
-        $responseText = call_ai_api_buffer($model, $messages, $spt);
+        $response = call_ai_api_buffer($model, $messages, $spt, $tools);
 
-        if (empty($responseText)) {
+        if ($response['type'] === 'error') {
             echo "data: {\"error\":\"ai_api_error\"}\n\n";
             ob_flush();
             flush();
             return;
         }
 
-        // Parse for tool call markers.
-        $toolCall = parse_toolcall_marker($responseText);
-
-        if (!$toolCall) {
-            // No tool calls — stream the final response to client.
-            stream_sse_content($responseText);
+        if ($response['type'] === 'text') {
+            // No tool calls — stream the final response to the client.
+            stream_sse_content($response['content']);
             return;
         }
 
-        // Notify client that we're executing a tool.
-        echo "data: " . json_encode([
-            '_jedomi_tool_executing' => [
-                'tool' => $toolCall['name'],
-                'args' => $toolCall['args'],
-            ],
-        ], JSON_UNESCAPED_UNICODE) . "\n\n";
-        ob_flush();
-        flush();
+        // type === 'tool_calls': execute each one and collect results.
+        $tool_calls = $response['tool_calls'];
 
-        // ── Describe cache: intercept describe_tables/describe_table ──────────
-        $fromCache = false;
-        $intercepted = false;
+        // Add the assistant message with tool_calls to conversation history.
+        $messages[] = [
+            'role'       => 'assistant',
+            'content'    => null,
+            'tool_calls' => $tool_calls,
+        ];
 
-        if ($toolCall['name'] === 'describe_tables') {
-            $tables = $toolCall['args']['tables'] ?? [];
-            $missing = array_diff($tables, array_keys($describedTables));
-            if (empty($missing) && !empty($tables)) {
-                // All tables already cached → return cached.
-                $result = json_encode(['tables' => array_intersect_key($describedTables, array_flip($tables))]);
-                $fromCache = true;
-                $intercepted = true;
-            }
-        } elseif ($toolCall['name'] === 'describe_table') {
-            $tbl = $toolCall['args']['tablename'] ?? $toolCall['args']['table_name'] ?? $toolCall['args']['table'] ?? '';
-            if ($tbl !== '' && isset($describedTables[$tbl])) {
-                $result = json_encode($describedTables[$tbl]);
-                $fromCache = true;
-                $intercepted = true;
-            }
-        }
+        foreach ($tool_calls as $tc) {
+            $name = $tc['function']['name'];
+            $tc_id = $tc['id'];
+            $args_raw = $tc['function']['arguments'];
+            $args = is_array($args_raw) ? $args_raw : (json_decode($args_raw, true) ?? []);
 
-        if (!$intercepted) {
-            // Execute the tool normally.
-            $result = execute_tool_by_name($toolCall['name'], $toolCall['args'], $role);
-        }
-
-        // Cache describe results for future iterations.
-        $resultDecoded = json_decode($result, true);
-        if ($toolCall['name'] === 'describe_tables' && !$fromCache && !isset($resultDecoded['error'])) {
-            foreach ($resultDecoded['tables'] ?? [] as $tblName => $tblSchema) {
-                $describedTables[$tblName] = $tblSchema;
-            }
-        }
-        if ($toolCall['name'] === 'describe_table' && !$fromCache && !isset($resultDecoded['error'])) {
-            $tbl = $toolCall['args']['tablename'] ?? $toolCall['args']['table_name'] ?? $toolCall['args']['table'] ?? '';
-            if ($tbl !== '') {
-                $describedTables[$tbl] = $resultDecoded;
-            }
-        }
-
-        // If successful SQL query, save to history for cross-reference by subsequent calls.
-        if ($toolCall['name'] === 'execute_sql' && !isset($resultDecoded['error'])) {
-            // execute_sql returns: {rows: [{json_row: "..."}], row_count: N, truncated, execution_ms}.
-            $rows = $resultDecoded['rows'] ?? [];
-            $firstRow = !empty($rows) ? ($rows[0]['json_row'] ?? null) : null;
-            $firstRowDecoded = $firstRow ? json_decode($firstRow, true) : null;
-            $queryHistory[] = [
-                'sql'     => $toolCall['args']['sql'] ?? $toolCall['args']['query'] ?? '?',
-                'params'  => $toolCall['args']['params'] ?? [],
-                'rows'    => $resultDecoded['row_count'] ?? count($rows),
-                'columns' => $firstRowDecoded ? array_keys($firstRowDecoded) : [],
-            ];
-        }
-
-        // Build enriched result with query history + described tables context.
-        $enrichedResult = $result;
-        $extraNotes = [];
-        if (!empty($queryHistory)) {
-            $refs = [];
-            foreach ($queryHistory as $idx => $qh) {
-                $refs[] = "#{$idx}: {$qh['sql']} → {$qh['rows']} rows, cols=[" . implode(', ', $qh['columns']) . ']';
-            }
-            $extraNotes[] = "-- QUERY HISTORY (successful queries in this conversation) --\n"
-                . implode("\n", $refs);
-        }
-        if (!empty($describedTables)) {
-            $extraNotes[] = "-- DESCRIBED TABLES (already known in this conversation) --\n"
-                . implode(', ', array_keys($describedTables));
-        }
-        if (!empty($extraNotes)) {
-            $enrichedResult .= "\n\n" . implode("\n\n", $extraNotes) . "\n---";
-        }
-
-        // Notify client if result came from cache.
-        if ($fromCache) {
+            // Notify the client that a tool is being executed.
             echo "data: " . json_encode([
-                '_jedomi_tool_cache' => [
-                    'tool'   => $toolCall['name'],
-                    'tables' => $toolCall['name'] === 'describe_tables'
-                        ? ($toolCall['args']['tables'] ?? [])
-                        : [$toolCall['args']['tablename'] ?? $toolCall['args']['table_name'] ?? $toolCall['args']['table'] ?? ''],
+                '_jedomi_tool_executing' => ['tool' => $name, 'args' => $args],
+            ], JSON_UNESCAPED_UNICODE) . "\n\n";
+            ob_flush();
+            flush();
+
+            // ── Describe cache: intercept describe_tables / describe_table ─────────────
+            $from_cache = false;
+            $result = null;
+
+            if ($name === 'describe_tables') {
+                $tables = $args['tables'] ?? [];
+                $missing = array_diff($tables, array_keys($described_tables));
+                if (empty($missing) && !empty($tables)) {
+                    $result = json_encode(['tables' => array_intersect_key($described_tables, array_flip($tables))]);
+                    $from_cache = true;
+                }
+            } elseif ($name === 'describe_table') {
+                $tbl = $args['tablename'] ?? $args['table_name'] ?? $args['table'] ?? '';
+                if ($tbl !== '' && isset($described_tables[$tbl])) {
+                    $result = json_encode($described_tables[$tbl]);
+                    $from_cache = true;
+                }
+            }
+
+            if ($result === null) {
+                try {
+                    $result = execute_tool_by_name($name, $args, $role);
+                } catch (\Throwable $e) {
+                    $result = json_encode([
+                        'error' => 'tool_failed',
+                        'tool'  => $name,
+                        'detail' => get_class($e) . ': ' . $e->getMessage(),
+                    ]);
+                }
+            }
+
+            // Update schema cache.
+            $result_decoded = json_decode($result, true);
+            if ($name === 'describe_tables' && !$from_cache && !isset($result_decoded['error'])) {
+                foreach ($result_decoded['tables'] ?? [] as $tbl_name => $tbl_schema) {
+                    $described_tables[$tbl_name] = $tbl_schema;
+                }
+            }
+            if ($name === 'describe_table' && !$from_cache && !isset($result_decoded['error'])) {
+                $tbl = $args['tablename'] ?? $args['table_name'] ?? $args['table'] ?? '';
+                if ($tbl !== '') {
+                    $described_tables[$tbl] = $result_decoded;
+                }
+            }
+
+            // Track successful SQL queries for context in subsequent calls.
+            if ($name === 'execute_sql' && !isset($result_decoded['error'])) {
+                $rows = $result_decoded['rows'] ?? [];
+                $first_row = !empty($rows) ? ($rows[0]['json_row'] ?? null) : null;
+                $first_decoded = $first_row ? json_decode($first_row, true) : null;
+                $query_history[] = [
+                    'sql'     => $args['sql'] ?? $args['query'] ?? '?',
+                    'params'  => $args['params'] ?? [],
+                    'rows'    => $result_decoded['row_count'] ?? count($rows),
+                    'columns' => $first_decoded ? array_keys($first_decoded) : [],
+                ];
+            }
+
+            // Build enriched result with query history + described tables context.
+            $enriched_result = $result;
+            $extra_notes = [];
+            if (!empty($query_history)) {
+                $refs = [];
+                foreach ($query_history as $idx => $qh) {
+                    $refs[] = "#{$idx}: {$qh['sql']} → {$qh['rows']} rows, cols=[" . implode(', ', $qh['columns']) . ']';
+                }
+                $extra_notes[] = "-- QUERY HISTORY (successful queries in this conversation) --\n"
+                    . implode("\n", $refs);
+            }
+            if (!empty($described_tables)) {
+                $extra_notes[] = "-- DESCRIBED TABLES (already known in this conversation) --\n"
+                    . implode(', ', array_keys($described_tables));
+            }
+            if (!empty($extra_notes)) {
+                $enriched_result .= "\n\n" . implode("\n\n", $extra_notes) . "\n---";
+            }
+
+            // Notify client if result came from cache.
+            if ($from_cache) {
+                echo "data: " . json_encode([
+                    '_jedomi_tool_cache' => [
+                        'tool'   => $name,
+                        'tables' => $name === 'describe_tables'
+                            ? ($args['tables'] ?? [])
+                            : [$args['tablename'] ?? $args['table_name'] ?? $args['table'] ?? ''],
+                    ],
+                ], JSON_UNESCAPED_UNICODE) . "\n\n";
+                ob_flush();
+                flush();
+            }
+
+            // Send result summary to client.
+            echo "data: " . json_encode([
+                '_jedomi_tool_result' => [
+                    'tool'    => $name,
+                    'summary' => ($from_cache ? '[cached] ' : '') . summarize_tool_result($name, $result),
                 ],
             ], JSON_UNESCAPED_UNICODE) . "\n\n";
             ob_flush();
             flush();
+
+            // Inject tool result as role=tool message (OpenAI standard format).
+            $messages[] = [
+                'role'         => 'tool',
+                'tool_call_id' => $tc_id,
+                'content'      => $enriched_result,
+            ];
         }
-
-        // Send result summary to client.
-        echo "data: " . json_encode([
-            '_jedomi_tool_result' => [
-                'tool'    => $toolCall['name'],
-                'summary' => ($fromCache ? '[cached] ' : '') . summarize_tool_result($toolCall['name'], $result),
-            ],
-        ], JSON_UNESCAPED_UNICODE) . "\n\n";
-        ob_flush();
-        flush();
-
-        // Add tool call + result to conversation.
-        $messages[] = [
-            'role'    => 'assistant',
-            'content' => $toolCall['raw'],
-        ];
-        $messages[] = [
-            'role'    => 'user',
-            'content' => "FUNCTION RESULT for {$toolCall['name']}:\n{$enrichedResult}",
-        ];
     }
 
-    // Max iterations.
     stream_sse_content("Lo siento, no pude completar la operación después de varios intentos.");
 }
 
@@ -749,7 +674,8 @@ function summarize_tool_result(string $name, string $result): string {
         'describe_table' => 'table structure retrieved',
         'search_tables' => (is_array($decoded) ? count($decoded) : 0) . ' matching tables',
         'get_site_config' => 'config data retrieved',
-        'ws_discover' => ($decoded['total'] ?? 0) . ' web services discovered',
+        'ws_search'   => count($decoded['results'] ?? []) . ' functions found',
+            'ws_describe' => 'function details retrieved',
         'ws_execute' => 'web service executed successfully',
         default => 'done',
     };
@@ -864,132 +790,79 @@ function get_site_config_tool(array $args, string $role): string {
 }
 
 /**
- * Classify a web service function as read (Lectura) or write (Escritura)
- * based on naming conventions.
+ * WS Search tool — semantic keyword search over available web service functions.
  *
- * @param  string $wsname The web service function name.
- * @return string         'Lectura', 'Escritura', or empty if unknown.
- */
-function classify_ws_access(string $wsname): string {
-    // Extract the action part after the component prefix.
-    // e.g. "core_course_get_courses" → action is after "core_course_"
-    $parts = explode('_', $wsname);
-    $action = end($parts);
-
-    // Read keywords (lectura).
-    if (preg_match('/^(get|view|search|list|is|check|validate|export|download|fetch|retrieve|count|exists)$/i', $action)) {
-        return 'Lectura';
-    }
-
-    // Also check the full name for compound read patterns.
-    if (preg_match('/_(get|view|search|list|check|export|download|fetch|retrieve)_/i', $wsname)) {
-        return 'Lectura';
-    }
-
-    // Write keywords (escritura).
-    if (preg_match('/^(create|update|delete|add|remove|set|edit|save|insert|upload|import|purge|reset|restore|reorder|toggle|approve|reject|block|unblock|lock|unlock|archive|trash|publish|unpublish|submit|enrol|unenrol|assign|unassign|mark|flag|clear|move|copy|duplicate|switch|change|revoke|grant)$/i', $action)) {
-        return 'Escritura';
-    }
-    if (preg_match('/_(create|update|delete|add|remove|save|insert|upload|import|purge|enrol|assign|grant|revoke)_/i', $wsname)) {
-        return 'Escritura';
-    }
-
-    return '';
-}
-
-/**
- * Build a categorized entry for a web service function.
+ * Returns the top-N most relevant functions with full compact documentation
+ * (description, parameter structure, return structure), so the AI can determine
+ * the correct function name and parameter shape before calling ws_execute.
  *
- * @param  string      $wsname The web service function name.
- * @param  string|null $component The component name (optional).
- * @return array
- */
-function build_ws_entry(string $wsname, ?string $component = null): array {
-    $entry = [
-        'name' => $wsname,
-        'mode' => classify_ws_access($wsname),
-    ];
-    try { $schema = local_jedomi_get_ws_schema($wsname); } catch (\Exception $e) { $schema = null; }
-    if ($schema !== null) {
-        $entry['schema'] = $schema;
-    }
-    if ($component !== null) {
-        $entry['component'] = $component;
-    }
-    return $entry;
-}
-
-/**
- * WS Discover tool — returns available web services for the current role.
- *
- * Accepts optional filter, page, and per_page parameters for large result sets.
- *
- * @param  array  $args Tool arguments (filter, page, per_page).
+ * @param  array  $args Tool arguments (query, limit).
  * @param  string $role The user's resolved role.
  * @return string       JSON-encoded result.
  */
-function ws_discover_tool(array $args, string $role): string {
-    global $DB;
+function ws_search_tool(array $args, string $role): string {
+    try {
+        $query = trim($args['query'] ?? $args['keyword'] ?? $args['filter'] ?? '');
+        $limit = max(1, min(15, (int) ($args['limit'] ?? 6)));
 
-    $filter   = trim($args['filter'] ?? $args['keyword'] ?? '');
-    $page     = max(1, (int) ($args['page'] ?? 1));
-    $perPage  = max(5, min(200, (int) ($args['per_page'] ?? $args['limit'] ?? 50)));
+        if (empty($query)) {
+            return json_encode(['error' => 'query is required']);
+        }
 
-    $allowlist = local_jedomi_get_role_allowlist($role);
-    $all = [];
+        $allowlist = local_jedomi_get_role_allowlist($role);
 
-    if (empty($allowlist)) {
+        if (empty($allowlist) && $role !== 'admin') {
+            return json_encode(['results' => [], 'note' => 'No web services configured for your role']);
+        }
+
+        // For admin, pass empty allowlist so ws_indexer pre-filters from DB.
+        $wsnames = $role === 'admin' ? [] : $allowlist;
+
+        $results = \local_jedomi\schema\ws_indexer::search($query, $wsnames, $limit);
+
+        return json_encode([
+            'results' => $results,
+            'count'   => count($results),
+            'note'    => count($results) === 0
+                ? 'No matching functions found. Try different keywords.'
+                : 'Use the exact "name" field with ws_execute. Check "params" for required(*) parameters.',
+        ]);
+    } catch (\Throwable $e) {
+        return json_encode([
+            'error' => 'ws_search failed: ' . get_class($e) . ': ' . $e->getMessage(),
+        ]);
+    }
+}
+
+/**
+ * WS Describe tool — returns full compact documentation for a specific WS function.
+ *
+ * @param  array  $args Tool arguments (wsname).
+ * @param  string $role The user's resolved role.
+ * @return string       JSON-encoded result.
+ */
+function ws_describe_tool(array $args, string $role): string {
+    try {
+        $wsname = trim($args['wsname'] ?? $args['name'] ?? $args['ws_name'] ?? '');
+
+        if (empty($wsname)) {
+            return json_encode(['error' => 'wsname is required']);
+        }
+
+        // Permission check: non-admin must have function in allowlist.
         if ($role !== 'admin') {
-            return json_encode([
-                'discovery' => [],
-                'total' => 0,
-                'note' => get_string('ws_no_services', 'local_jedomi'),
-            ]);
+            $allowlist = local_jedomi_get_role_allowlist($role);
+            if (!empty($allowlist) && !in_array($wsname, $allowlist, true)) {
+                return json_encode(['error' => 'permission_denied: function not in allowlist']);
+            }
         }
-        // Admin ve TODAS las funciones.
-        $records = $DB->get_records('external_functions', null, 'component, name', 'name, component');
-        foreach ($records as $ws) {
-            $all[] = build_ws_entry($ws->name, $ws->component);
-        }
-    } else {
-        foreach ($allowlist as $wsname) {
-            $ws = $DB->get_record('external_functions', ['name' => $wsname], 'name, component');
-            if (!$ws) { continue; }
-            $all[] = build_ws_entry($wsname, $ws->component);
-        }
+
+        return json_encode(\local_jedomi\schema\ws_indexer::describe($wsname));
+    } catch (\Throwable $e) {
+        return json_encode([
+            'error' => 'ws_describe failed: ' . get_class($e) . ': ' . $e->getMessage(),
+        ]);
     }
-
-    // Apply keyword filter (matches name and component).
-    if ($filter !== '') {
-        $filterLower = strtolower($filter);
-        $all = array_values(array_filter($all, function ($e) use ($filterLower) {
-            return strpos(strtolower($e['name']), $filterLower) !== false
-                || strpos(strtolower($e['component'] ?? ''), $filterLower) !== false;
-        }));
-    }
-
-    $total = count($all);
-
-    // Paginate.
-    $offset = ($page - 1) * $perPage;
-    $pageEntries = array_slice($all, $offset, $perPage);
-
-    // Group by component for the response.
-    $grouped = [];
-    $nonAdminGrouped = !empty($allowlist);
-    foreach ($pageEntries as $entry) {
-        $comp = $entry['component'] ?? 'other';
-        unset($entry['component']);
-        $grouped[$comp][] = $entry;
-    }
-
-    return json_encode([
-        'discovery'    => $grouped,
-        'total'        => $total,
-        'page'         => $page,
-        'per_page'     => $perPage,
-        'total_pages'  => (int) ceil($total / $perPage),
-    ]);
 }
 
 /**
@@ -1004,6 +877,7 @@ function ws_execute_tool(array $args, string $role): string {
         $wsname = $args['wsname'] ?? $args['ws_name'] ?? '';
         $raw = $args['params'] ?? '{}';
         $params = is_array($raw) ? json_encode($raw) : $raw;
+
         $result = \local_jedomi\external\ws_execute::execute(
             $wsname,
             $params,
@@ -1013,8 +887,24 @@ function ws_execute_tool(array $args, string $role): string {
             true    // skip_hmac
         );
         return json_encode($result);
-    } catch (\Exception $e) {
-        return json_encode(['error' => $e->getMessage()]);
+    } catch (\moodle_exception $e) {
+        $detail = $e->getMessage();
+        if (method_exists($e, 'getDebugInfo') && $e->getDebugInfo()) {
+            $detail .= ' | debug: ' . $e->getDebugInfo();
+        }
+        return json_encode([
+            'error'    => 'ws_execute failed: ' . $detail,
+            'wsname'   => $wsname ?? '',
+            'params'   => $params ?? '{}',
+            'errclass' => get_class($e),
+        ]);
+    } catch (\Throwable $e) {
+        return json_encode([
+            'error'    => 'ws_execute failed: ' . $e->getMessage(),
+            'wsname'   => $wsname ?? '',
+            'params'   => $params ?? '{}',
+            'errclass' => get_class($e),
+        ]);
     }
 }
 

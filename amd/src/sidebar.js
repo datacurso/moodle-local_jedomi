@@ -924,7 +924,8 @@ define(['core/log'], function(Log) {
                         execute_sql:    '💾 ' + (S2.tool_execute_sql || 'Consultando base de datos...'),
                         describe_table: '📋 ' + (S2.tool_describe_table || 'Describiendo tabla...'),
                         get_site_config:'⚙️ ' + (S2.tool_get_site_config || 'Obteniendo configuración...'),
-                        ws_discover:    '🔌 ' + (S2.tool_ws_discover || 'Descubriendo servicios web...'),
+                        ws_search:      '� ' + (S2.tool_ws_search || 'Buscando funciones web...'),
+                        ws_describe:    '📖 ' + (S2.tool_ws_describe || 'Describiendo función web...'),
                         ws_execute:     '⚡ ' + (S2.tool_ws_execute || 'Ejecutando acción...'),
                     };
                     streamBubble.inner.innerHTML =
@@ -1161,8 +1162,9 @@ AVAILABLE TOOLS (you MUST use these for any data question):
 - describe_table: Describe a table's columns. Parameter: table (table name without prefix).
 - search_tables: Find tables by keyword. Parameter: keyword.
 - get_site_config: Get Moodle configuration values. Parameter: key (config name).
-- ws_discover: List available web service functions for your role.
-- ws_execute: Execute a web service function. Parameters: ws_name, params (object).
+- ws_search: Search web service functions by intent in ENGLISH. Parameters: query (e.g. 'create user'). Always call BEFORE ws_execute.
+- ws_describe: Get full docs for a specific WS function by exact name. Call AFTER ws_search and BEFORE ws_execute to confirm required params.
+- ws_execute: Execute a web service function. Parameters: wsname, params (JSON with ALL * fields present).
 
 ANTI-HALLUCINATION RULES (CRITICAL — NEVER violate these):
 1. CRITICAL: You MUST call a tool BEFORE answering ANY question about site data (user counts, grades, courses, activity, config, etc.). NEVER guess numbers.
@@ -1170,9 +1172,10 @@ ANTI-HALLUCINATION RULES (CRITICAL — NEVER violate these):
 3. If you don't know the answer, say "I don't know" — do NOT make up information.
 4. Only use execute_sql for SELECT queries. Never modify data.
 5. Use bound parameters (?) instead of concatenating values in SQL.
-6. Prefer WS tools (ws_discover + ws_execute) over SQL when possible.
-7. Respect privacy: do not reveal personal data of other users unless authorized.
-8. Do NOT fabricate tool calls. Only call tools that actually exist.
+6. WS STRATEGY (MANDATORY): 1) ws_search(query in ENGLISH) → 2) ws_describe(exact name) → 3) ws_execute with ALL * (required) fields present. If user didn't provide a value, generate a sensible default. NEVER guess function names.
+7. WS ERROR HANDLING: If ws_execute returns an error, read the full message. Common causes: missing required field, invalid type, duplicate unique value. Fix and retry once. Do NOT retry with same parameters.
+8. Respect privacy: do not reveal personal data of other users unless authorized.
+9. Do NOT fabricate tool calls. Only call tools that actually exist.
 
 GENERAL INSTRUCTIONS:
 - Always respond in the language the user is writing in.
