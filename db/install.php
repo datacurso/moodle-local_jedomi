@@ -30,32 +30,5 @@ defined('MOODLE_INTERNAL') || die();
  * Runs after local_jedomi is installed.
  */
 function xmldb_local_jedomi_install(): bool {
-    global $CFG;
-
-    require_once($CFG->libdir . '/filelib.php');
-
-    $src  = $CFG->dirroot . '/local/jedomi/aiprovider';
-    $dest = $CFG->dirroot . '/ai/provider/jedomi';
-
-    // Only copy if the bundle is present and the target doesn't exist yet.
-    if (!is_dir($src)) {
-        return true; // Bundle not present — skip silently.
-    }
-
-    if (is_dir($dest)) {
-        return true; // Already installed — skip.
-    }
-
-    // Copy the bundled aiprovider files to the Moodle AI provider directory.
-    if (!fullcopy($src, $dest)) {
-        // Non-fatal: the admin can install aiprovider_jedomi manually.
-        debugging('local_jedomi: could not copy aiprovider bundle to ' . $dest
-            . '. Please install aiprovider_jedomi manually.', DEBUG_NORMAL);
-        return true;
-    }
-
-    // Reset Moodle's component cache so it detects the new plugin.
-    core_component::reset();
-
     return true;
 }
