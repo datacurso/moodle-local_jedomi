@@ -46,6 +46,7 @@ class handler {
      */
     public static function run(string $model, array $messages, string $role, array $spt): void {
         $tools = spt_validator::get_tool_definitions($role);
+        $hasexecutedtool = false;
 
         for ($i = 0; $i < 10; $i++) {
             echo ": thinking\n\n";
@@ -62,6 +63,14 @@ class handler {
             }
 
             if ($response['type'] === 'text') {
+                if (!$hasexecutedtool && self::is_live_data_request($messages)) {
+                    $messages[] = [
+                        'role' => 'system',
+                        'content' => 'Before answering this request, you must call at least one tool to fetch current site data. If tools are unavailable or denied, explicitly state that you cannot verify with live data.',
+                    ];
+                    continue;
+                }
+
                 // No tool calls — stream the final response to the client.
                 self::stream_sse_content($response['content']);
                 return;
@@ -116,10 +125,34 @@ class handler {
                     'tool_call_id' => $tc_id,
                     'content'      => $result,
                 ];
+                $hasexecutedtool = true;
             }
         }
 
         self::stream_sse_content("Lo siento, no pude completar la operación después de varios intentos.");
+    }
+
+    /**
+     * Heuristic check for requests that usually need live site data.
+     *
+     * @param array $messages Conversation messages.
+     * @return bool
+     */
+    private static function is_live_data_request(array $messages): bool {
+        $latestuser = '';
+        for ($i = count($messages) - 1; $i >= 0; $i--) {
+            if (($messages[$i]['role'] ?? '') === 'user') {
+                $latestuser = (string)($messages[$i]['content'] ?? '');
+                break;
+            }
+        }
+
+        if ($latestuser === '') {
+            return false;
+        }
+
+        $text = \core_text::strtolower($latestuser);
+        return (bool)preg_match('/\b(curso|cursos|course|courses|usuario|usuarios|user|users|nota|notas|grade|grades|calificacion|calificaciones|inscrito|inscritos|enrolled|disponible|disponibles|available|listar|lista|list|cuanto|cuantos|cuantas|how many|count|total|existe|exists)\b/u', $text);
     }
 
     /**
@@ -304,6 +337,7 @@ class handler {
             return json_encode(['error' => 'permission_denied']);
         }
         $sql    = $args['sql'] ?? $args['query'] ?? '';
+        $sql    = self::normalize_moodle_table_placeholders($sql);
         $params = $args['params'] ?? [];
         if (!is_array($params)) {
             $params = [$params];
@@ -327,9 +361,32 @@ class handler {
                     $realError .= ' | PREV_DBG: ' . $prev->debuginfo;
                 }
             }
+            if (strpos($sql, '{') === false) {
+                $realError .= ' | HINT: In Moodle SQL, table names should use braces (e.g. {course}, {user}).';
+            }
             error_log("[local_jedomi] execute_sql_tool error: class=" . get_class($e) . " msg=" . json_encode($realError, JSON_UNESCAPED_UNICODE));
             return json_encode(['error' => $realError]);
         }
+    }
+
+    /**
+     * Normalize SQL by wrapping plain table names in FROM/JOIN with Moodle braces.
+     *
+     * Example: FROM course -> FROM {course}
+     *
+     * @param string $sql
+     * @return string
+     */
+    private static function normalize_moodle_table_placeholders(string $sql): string {
+        return (string)preg_replace_callback(
+            '/\b(FROM|JOIN)\s+([a-z][a-z0-9_]*)\b/i',
+            static function(array $matches): string {
+                $keyword = $matches[1];
+                $table = $matches[2];
+                return $keyword . ' {' . $table . '}';
+            },
+            $sql
+        );
     }
 
     /**

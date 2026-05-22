@@ -79,10 +79,12 @@ class system_message {
         $content .= "3. Call tools, then answer with real results.\n\n";
 
         $content .= "TOOL RULES:\n";
-        $content .= "- Never invent data. If data is needed, call a tool first.\n";
+        $content .= "- Never invent data.\n";
+        $content .= "- For any request about current site data (lists, counts, availability, status), call at least one tool before answering.\n";
         $content .= "- For web services, discover first (ws_search/ws_describe), execute after.\n";
         $content .= "- For SQL, use execute_sql only for SELECT statements and parameterized values.\n";
-        $content .= "- If a tool fails, explain the error briefly and retry once only when a clear fix exists.\n";
+        $content .= "- If a tool fails or permissions are denied, report that explicitly and do not guess results.\n";
+        $content .= "- Retry once only when a clear fix exists.\n";
         $content .= "- If a tool already provides enough data, stop and respond.\n\n";
 
         $content .= "RESPONSE RULES:\n";
