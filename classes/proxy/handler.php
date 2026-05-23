@@ -334,8 +334,6 @@ class handler {
         \local_jedomi_log('TOOL_CALL', ['tool' => $name, 'args' => $args, 'role' => $role]);
 
         switch ($name) {
-            case 'describe_tables':
-                return self::describe_tables_tool($args);
             case 'describe_table':
                 return self::describe_table_tool($args);
             case 'search_tables':
@@ -429,22 +427,6 @@ class handler {
      * @param  array  $args Tool arguments (tables).
      * @return string       JSON-encoded result.
      */
-    private static function describe_tables_tool(array $args): string {
-        try {
-            $tables = $args['tables'] ?? [];
-            if (!is_array($tables) || empty($tables)) {
-                return json_encode(['error' => 'tables must be a non-empty array']);
-            }
-            $results = [];
-            foreach ($tables as $t) {
-                $results[$t] = \local_jedomi\schema\table_descriptor::describe((string) $t);
-            }
-            return json_encode(['tables' => $results]);
-        } catch (\Exception $e) {
-            return json_encode(['error' => $e->getMessage()]);
-        }
-    }
-
     /**
      * Describe table tool (single).
      *
@@ -462,18 +444,36 @@ class handler {
     }
 
     /**
-     * Search tables tool.
+     * Search tables tool — semantic search over install.xml definitions.
      *
-     * @param  array  $args Tool arguments (query).
+     * Unlike the old table_descriptor::search_tables (plain string match),
+     * this searches across table names, table COMMENTS, field names,
+     * and field COMMENTS from install.xml files — same approach as ws_search.
+     *
+     * @param  array  $args Tool arguments (query, limit).
      * @return string       JSON-encoded result.
      */
     private static function search_tables_tool(array $args): string {
         try {
-            $keyword = $args['query'] ?? $args['keyword'] ?? '';
-            $result = \local_jedomi\schema\table_descriptor::search_tables($keyword);
-            return json_encode($result);
-        } catch (\Exception $e) {
-            return json_encode(['error' => $e->getMessage()]);
+            $query  = trim($args['query'] ?? $args['keyword'] ?? '');
+            $limit  = max(1, min(15, (int) ($args['limit'] ?? 8)));
+
+            if (empty($query)) {
+                return json_encode(['error' => 'query is required']);
+            }
+
+            $results = \local_jedomi\schema\table_indexer::search($query, $limit);
+
+            return json_encode([
+                'tables' => $results,
+                'count'  => count($results),
+                'note'   => count($results) === 0
+                    ? 'No matching tables found. Try different keywords.'
+                    : 'Use the exact "name" with describe_table or execute_sql. '
+                      . 'Table names shown as provided — use {tablename} in SQL queries.',
+            ]);
+        } catch (\Throwable $e) {
+            return json_encode(['error' => 'search_tables failed: ' . $e->getMessage()]);
         }
     }
 
@@ -694,7 +694,7 @@ class handler {
         return match ($name) {
             'execute_sql' => ($decoded['row_count'] ?? count($decoded['rows'] ?? [])) . ' rows returned',
             'describe_table' => 'table structure retrieved',
-            'search_tables' => (is_array($decoded) ? count($decoded) : 0) . ' matching tables',
+            'search_tables' => ($decoded['count'] ?? count($decoded['tables'] ?? $decoded) ?? 0) . ' matching tables',
             'get_site_config' => 'config data retrieved',
             'ws_search'   => count($decoded['results'] ?? []) . ' functions found',
             'ws_describe' => 'function details retrieved',
