@@ -450,13 +450,21 @@ function local_jedomi_get_tool_definitions(string $role): array {
         'type' => 'function',
         'function' => [
             'name'        => 'search_tables',
-            'description' => 'Busca tablas en la base de datos por nombre. Devuelve lista de tablas que contienen el texto buscado. Cacheado 24h.',
+            'description' => 'Search Moodle tables by intent or keywords in ENGLISH. '
+                . 'Searches across table names AND their COMMENT descriptions from install.xml '
+                . '(same approach as ws_search). Returns the most relevant matches with '
+                . 'name, comment (description), field names, and field comments. '
+                . 'ALWAYS use search_tables before describe_table or execute_sql.',
             'parameters'  => [
                 'type'       => 'object',
                 'properties' => [
                     'query' => [
                         'type'        => 'string',
-                        'description' => 'Texto a buscar en el nombre de la tabla (ej: grade, user, course)',
+                        'description' => 'Intent or keywords in ENGLISH (e.g. "user grades", "course enrolment", "student")',
+                    ],
+                    'limit' => [
+                        'type'        => 'integer',
+                        'description' => 'Maximum results (default: 8, max: 15)',
                     ],
                 ],
                 'required' => ['query'],
@@ -512,29 +520,50 @@ function local_jedomi_get_tool_definitions(string $role): array {
         ];
     }
 
-    // ws_discover — todos los roles.
+    // ws_search — todos los roles. Semantic keyword search returning full function docs.
     $tools[] = [
         'type' => 'function',
         'function' => [
-            'name'        => 'ws_discover',
-            'description' => get_string('tool_ws_discover_desc', 'local_jedomi'),
+            'name'        => 'ws_search',
+            'description' => 'Search Moodle web service functions by intent or keywords in ENGLISH. '
+                . 'Returns the most relevant matches with full description, '
+                . 'parameters (* = required), and return structure. '
+                . 'If results include what you need: STOP searching — call ws_describe on the exact name, '
+                . 'then ws_execute. Do NOT call ws_search again for the same task.',
             'parameters'  => [
                 'type'       => 'object',
                 'properties' => [
-                    'filter' => [
+                    'query' => [
                         'type'        => 'string',
-                        'description' => 'Texto para filtrar funciones por nombre o componente (opcional)',
+                        'description' => 'Intent or keywords in ENGLISH (e.g. "create user", "enrol student", "get course grades")',
                     ],
-                    'page' => [
+                    'limit' => [
                         'type'        => 'integer',
-                        'description' => 'Número de página (empieza en 1, opcional, default: 1)',
-                    ],
-                    'per_page' => [
-                        'type'        => 'integer',
-                        'description' => 'Resultados por página (opcional, default: 50, max: 200)',
+                        'description' => 'Máximo de resultados a devolver (default: 6, max: 15)',
                     ],
                 ],
-                'required'   => [],
+                'required' => ['query'],
+            ],
+        ],
+    ];
+
+    // ws_describe — todos los roles. Full docs for a single known WS function.
+    $tools[] = [
+        'type' => 'function',
+        'function' => [
+            'name'        => 'ws_describe',
+            'description' => 'Get full documentation (description, parameters with * = required, return type) '
+                . 'for a specific web service function when you already know its exact name. '
+                . 'ALWAYS call this AFTER ws_search and BEFORE ws_execute to verify required fields.',
+            'parameters'  => [
+                'type'       => 'object',
+                'properties' => [
+                    'wsname' => [
+                        'type'        => 'string',
+                        'description' => 'Exact function name (e.g. core_user_create_users)',
+                    ],
+                ],
+                'required' => ['wsname'],
             ],
         ],
     ];
@@ -555,13 +584,17 @@ function local_jedomi_get_tool_definitions(string $role): array {
                         ],
                         'params' => [
                             'type'        => 'string',
-                            'description' => 'JSON-encoded parameters for the web service function',
+                            'description' => 'JSON-encoded parameters for the web service function. '
+                                . 'MUST include every * (required) field. '
+                                . 'If the user did not provide a value, generate a sensible default '
+                                . '(e.g. random password, current timestamp, empty array).',
                         ],
                     ],
                     'required' => ['wsname', 'params'],
                 ],
             ],
         ];
+
     }
 
     return $tools;
@@ -868,4 +901,37 @@ function local_jedomi_classify_ws_access(string $wsname): string {
     }
 
     return '';
+}
+
+/**
+ * Write an entry to the Jedomi debug log.
+ *
+ * Logs are stored in {$CFG->dataroot}/local/jedomi/jedomi.log
+ * in a human-readable format with timestamp and structured context.
+ *
+ * @param string $message Short description of what happened.
+ * @param mixed  $data    Optional context data (array, string, or anything json-serializable).
+ */
+function local_jedomi_log(string $message, mixed $data = null): void {
+    global $CFG;
+
+    static $logdir = null;
+    static $logfile = null;
+
+    if ($logdir === null) {
+        $logdir = $CFG->dataroot . '/local/jedomi';
+        check_dir_exists($logdir, true, true);
+        $logfile = $logdir . '/jedomi.log';
+    }
+
+    $timestamp = date('Y-m-d H:i:s.v');
+    $entry = "[{$timestamp}] {$message}";
+
+    if ($data !== null) {
+        $encoded = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_IGNORE);
+        $entry .= ' | ' . $encoded;
+    }
+
+    $entry .= "\n";
+    file_put_contents($logfile, $entry, FILE_APPEND | LOCK_EX);
 }
