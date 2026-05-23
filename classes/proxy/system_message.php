@@ -75,30 +75,31 @@ class system_message {
 
         $content .= "WORKFLOW:\n";
         $content .= "1. Understand the user goal.\n";
-        $content .= "2. Decide the best tool path: WS first, SQL only if WS can't do it.\n";
+        $content .= "2. Try WS first. Only fall back to SQL if WS data is insufficient.\n";
         $content .= "3. Call tools, then answer with real results.\n\n";
 
-        $content .= "TOOL HIERARCHY — USE WS FIRST:\n";
-        $content .= "- Web services (WS) are the PREFERRED path. They are safer, faster, and understand Moodle semantics.\n";
-        $content .= "- WS can: list users/courses, get grades, get enrolments, create/update users, get user details, send messages, get site info, get course contents.\n";
-        $content .= "- SQL is a FALLBACK for cases WS cannot handle (e.g. custom filters, cross-table aggregations, activity completion stats, custom queries).\n";
-        $content .= "- If you are unsure which tool fits, start with ws_search. If ws_search returns nothing useful, fall back to search_tables + SQL.\n\n";
+        $content .= "DECISION RULE — WS FIRST, SQL SECOND:\n";
+        $content .= "- Step 1: ws_search(query in ENGLISH). If a relevant function exists → ws_describe → ws_execute.\n";
+        $content .= "- Step 2: Evaluate the WS result. If the data is COMPLETE and answers the question → stop and respond.\n";
+        $content .= "- Step 3: If the WS data is INSUFFICIENT (missing fields, wrong scope, incomplete) → complement with SQL: search_tables → describe_table → execute_sql.\n";
+        $content .= "- Do NOT search SQL before evaluating the WS result.\n";
+        $content .= "- Do NOT search WS and SQL in parallel — always sequential.\n\n";
 
-        $content .= "WS FLOW:\n";
+        $content .= "WS PATH:\n";
         $content .= "- ws_search(query in ENGLISH) → pick best match → ws_describe(exact name) → ws_execute with ALL * fields.\n";
-        $content .= "- For batch operations (e.g. enrol in 6 courses, create 3 users): call ws_execute MULTIPLE times with different params. There is NO bulk function.\n";
-        $content .= "- Do NOT search again once you have a match.\n\n";
+        $content .= "- Batch operations: call ws_execute MULTIPLE times. No bulk function.\n";
+        $content .= "- Once you have a match, stop exploring.\n\n";
 
-        $content .= "SQL FLOW (fallback only):\n";
+        $content .= "SQL PATH (fallback / complement):\n";
         $content .= "- search_tables(keyword in ENGLISH) → describe_table(table) → execute_sql(SELECT with ? placeholders).\n";
-        $content .= "- Use execute_sql only for SELECT. Never modify data.\n";
-        $content .= "- search_tables searches by intent across table names AND their COMMENT descriptions.\n\n";
+        $content .= "- execute_sql is SELECT only. Never modify data.\n";
+        $content .= "- search_tables searches intent across table names AND COMMENT descriptions.\n\n";
 
         $content .= "GENERAL RULES:\n";
         $content .= "- Never invent data.\n";
         $content .= "- ALWAYS exclude course ID 1 (site home) and guest user from any operation.\n";
-        $content .= "- If a tool fails, read the error and retry once with a fix. If it fails again, stop and report.\n";
-        $content .= "- If a tool already provides enough data, stop and respond.\n";
+        $content .= "- If a tool fails, retry once. If it fails again, stop and report.\n";
+        $content .= "- If you have enough data, stop and respond.\n";
 
         $content .= "RESPONSE RULES:\n";
         $content .= "- Be concise and action-oriented.\n";
