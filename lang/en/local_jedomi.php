@@ -422,7 +422,7 @@ $string['dblabel_pgsql'] = 'PostgreSQL';
 // ── Tool descriptions (lib.php) ──────────────────────────────────────
 $string['tool_describe_table_desc'] = 'Obtiene la estructura (columnas, tipos, claves, indices, foreign keys) de una tabla de la base de datos de Moodle. Cacheado 24h.';
 $string['tool_describe_table_tablename'] = 'Nombre de la tabla (ej: course, user, grade_grades)';
-$string['tool_search_tables_desc'] = 'Search Moodle tables by intent or keywords in ENGLISH. Searches across table names AND their COMMENT descriptions from install.xml (same approach as ws_search). Returns the most relevant matches with name, comment (description), field names, and field comments. ALWAYS use search_tables before describe_table or execute_sql.';
+$string['tool_search_tables_desc'] = 'Search Moodle tables by intent or keywords in ENGLISH. FALLBACK for when web services cannot provide the needed data. Only use this AFTER confirming no relevant web service exists. Searches across table names AND their COMMENT descriptions from install.xml. Returns name, comment, field names, and field comments.';
 $string['tool_search_tables_query'] = 'Intent or keywords in ENGLISH (e.g. "user grades", "course enrolment", "student")';
 $string['tool_search_tables_limit'] = 'Maximum results (default: 8, max: 15)';
 $string['tool_execute_sql_desc'] = 'Ejecuta una consulta SELECT en la base de datos de Moodle y devuelve las filas como JSON. SOLO lectura. Limite: 100 filas, timeout 5 segundos.';
@@ -430,7 +430,7 @@ $string['tool_execute_sql_sql'] = 'Consulta SELECT a ejecutar. Usa ? como placeh
 $string['tool_execute_sql_params'] = 'Parametros vinculados para la consulta (opcional)';
 $string['tool_get_site_config_desc'] = 'Obtiene configuracion del sitio Moodle (sitename, lang, timezone, etc.). Solo disponible para administradores.';
 $string['tool_get_site_config_keys'] = 'Lista de claves de configuracion. Validas: sitename, siteurl, lang, country, timezone, maxbytes, passwordpolicy, enrol_plugins_enabled, auth_plugins_enabled';
-$string['tool_ws_search_desc'] = 'Search Moodle web service functions by intent or keywords in ENGLISH. Returns the most relevant matches with full description, parameters (* = required), and return structure. If results include what you need: STOP searching — call ws_describe on the exact name, then ws_execute. Do NOT call ws_search again for the same task.';
+$string['tool_ws_search_desc'] = 'Search Moodle web service functions by intent or keywords in ENGLISH. Returns the most relevant matches with full description, parameters (* = required), and return structure. If results include what you need: STOP searching entirely — call ws_describe on the exact name, then ws_execute. Do NOT call SQL tools (search_tables, describe_table, execute_sql) when WS already covers your need. Do NOT call ws_search again for the same task.';
 $string['tool_ws_search_query'] = 'Intent or keywords in ENGLISH (e.g. "create user", "enrol student", "get course grades")';
 $string['tool_ws_search_limit'] = 'Máximo de resultados a devolver (default: 6, max: 15)';
 $string['tool_ws_describe_desc'] = 'Get full documentation (description, parameters with * = required, return type) for a specific web service function when you already know its exact name. ALWAYS call this AFTER ws_search and BEFORE ws_execute to verify required fields.';

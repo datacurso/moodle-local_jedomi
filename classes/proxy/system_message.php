@@ -75,23 +75,31 @@ class system_message {
 
         $content .= "WORKFLOW:\n";
         $content .= "1. Understand the user goal.\n";
-        $content .= "2. Decide if the best path is WS, SQL, or both.\n";
+        $content .= "2. Try WS first. Only fall back to SQL if WS data is insufficient.\n";
         $content .= "3. Call tools, then answer with real results.\n\n";
 
-        $content .= "TOOL RULES:\n";
+        $content .= "DECISION RULE — WS FIRST, SQL SECOND:\n";
+        $content .= "- Step 1: ws_search(query in ENGLISH). If a relevant function exists → ws_describe → ws_execute.\n";
+        $content .= "- Step 2: Evaluate the WS result. If the data is COMPLETE and answers the question → stop and respond.\n";
+        $content .= "- Step 3: If the WS data is INSUFFICIENT (missing fields, wrong scope, incomplete) → complement with SQL: search_tables → describe_table → execute_sql.\n";
+        $content .= "- Do NOT search SQL before evaluating the WS result.\n";
+        $content .= "- Do NOT search WS and SQL in parallel — always sequential.\n\n";
+
+        $content .= "WS PATH:\n";
+        $content .= "- ws_search(query in ENGLISH) → pick best match → ws_describe(exact name) → ws_execute with ALL * fields.\n";
+        $content .= "- Batch operations: call ws_execute MULTIPLE times. No bulk function.\n";
+        $content .= "- Once you have a match, stop exploring.\n\n";
+
+        $content .= "SQL PATH (fallback / complement):\n";
+        $content .= "- search_tables(keyword in ENGLISH) → describe_table(table) → execute_sql(SELECT with ? placeholders).\n";
+        $content .= "- execute_sql is SELECT only. Never modify data.\n";
+        $content .= "- search_tables searches intent across table names AND COMMENT descriptions.\n\n";
+
+        $content .= "GENERAL RULES:\n";
         $content .= "- Never invent data.\n";
-        $content .= "- For any request about current site data (lists, counts, availability, status), call at least one tool before answering.\n";
-        $content .= "- For web services, discover first (ws_search/ws_describe), execute after.\n";
-        $content .= "- ONCE ws_search returns good matches: pick the best one, call ws_describe to verify parameters, then call ws_execute. Do NOT search again for the same task.\n";
-        $content .= "- For batch operations (same action on multiple items, e.g. enrol in 6 courses): call ws_execute MULTIPLE times with different parameters. There is NO bulk function — execute sequentially, once per item.\n";
-        $content .= "- For tables/SQL: discover first (search_tables), describe structure (describe_table), execute after (execute_sql). Same flow as WS.\n";
-        $content .= "- search_tables searches by intent across table names AND their COMMENT descriptions — use keywords in ENGLISH.\n";
-        $content .= "- ALWAYS exclude course ID 1 (the site home course) from any operation — both SQL queries and WS calls.\n";
-        $content .= "- ALWAYS exclude the guest user (username 'guest') from any operation.\n";
-        $content .= "- For SQL, use execute_sql only for SELECT statements and parameterized values.\n";
-        $content .= "- If a tool fails or permissions are denied, report that explicitly and do not guess results.\n";
-        $content .= "- Retry once only when a clear fix exists.\n";
-        $content .= "- If a tool already provides enough data, stop and respond.\n\n";
+        $content .= "- ALWAYS exclude course ID 1 (site home) and guest user from any operation.\n";
+        $content .= "- If a tool fails, retry once. If it fails again, stop and report.\n";
+        $content .= "- If you have enough data, stop and respond.\n";
 
         $content .= "RESPONSE RULES:\n";
         $content .= "- Be concise and action-oriented.\n";
