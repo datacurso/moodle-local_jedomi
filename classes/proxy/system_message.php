@@ -101,6 +101,7 @@ class system_message {
 
         $content .= "Current context:\n";
         $content .= "- Moodle version: {$release}\n";
+        $content .= "- Site: {$sitename} ({$CFG->wwwroot})\n";
         $content .= "- Database: {$dblabel}\n";
         $content .= "- Location: {$location}\n";
         $content .= "- Page: {$pageTitle} ({$pageUrl})\n";
