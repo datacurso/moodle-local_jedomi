@@ -100,7 +100,13 @@ class system_message {
         $content .= "- admin_describe(name) → see required parameters for an operation.\n";
         $content .= "- admin_execute(name, params) → execute the operation.\n";
         $content .= "- COMBINE with WS: use ws_search/ws_execute FIRST to gather context (course info, sections, users), THEN call admin_execute to do the action.\n";
-        $content .= "- Example: to create a 'page' in section 1 of course X → ws_execute(core_course_get_courses_by_field) to verify course → admin_execute(create_mod, {courseid: X, resource_type: 'page', section: 1, parameters: {name: '...', content: '...', ...}}).\n";
+        $content .= "- Example: to create a 'page' in section 1 of course X → ws_execute(core_course_get_courses_by_field) to verify course → admin_execute(create_mod, {courseid: X, resource_type: 'page', section: 1, parameters: {name: '...', content: '...', ...}}).\n\n";
+
+        $content .= "DOCUMENT READ PATH:\n";
+        $content .= "- When the user asks to read, analyze, summarize, or explain a document/file attached to a course resource → use document_read(cmid).\n";
+        $content .= "- The cmid is available in the context below as \"Activity cmid\" when on an activity page.\n";
+        $content .= "- document_read returns each page as a base64 image — you SEE the original layout, tables, images, and formatting.\n";
+        $content .= "- Analyze the images and answer the user's question about the document content.\n\n";
 
         $content .= "GENERAL RULES:\n";
         $content .= "- Never invent data.\n";
@@ -121,6 +127,13 @@ class system_message {
         $content .= "- Location: {$location}\n";
         $content .= "- Page: {$pageTitle} ({$pageUrl})\n";
         $content .= isset($locLabels[$location]) ? "- {$locLabels[$location]}\n" : '';
+
+        // Add activity cmid when available.
+        $cmid = $context['activity_id'] ?? 0;
+        if ($cmid > 0) {
+            $content .= "- Activity cmid: {$cmid}\n";
+        }
+
         $content .= "- User role: {$role}\n";
 
         return ['role' => 'system', 'content' => $content];
