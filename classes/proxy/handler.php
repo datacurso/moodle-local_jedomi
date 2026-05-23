@@ -103,7 +103,7 @@ class handler {
                     $result = json_encode([
                         'error' => 'loop_detected',
                         'tool' => $name,
-                        'detail' => 'Repeated identical tool call blocked. Use a different tool or execute with new parameters.',
+                        'detail' => get_string('error_tool_loop_detected', 'local_jedomi'),
                     ]);
                     \local_jedomi_log('LOOP_DETECTED', ['tool' => $name, 'args' => $args, 'count' => $toolrepeatcounts[$callkey]]);
                 } else {
@@ -140,7 +140,7 @@ class handler {
         }
 
         \local_jedomi_log('RUN_FALLBACK_ITERATIONS_EXCEEDED', ['iteration_count' => 10]);
-        self::stream_sse_content("Lo siento, no pude completar la operación después de varios intentos.");
+        self::stream_sse_content(get_string('error_fallback_iterations', 'local_jedomi'));
     }
 
     /**
@@ -363,7 +363,7 @@ class handler {
             case 'ws_execute':
                 return self::ws_execute_tool($args, $role);
             default:
-                return json_encode(['error' => "Unknown tool: {$name}"]);
+                return json_encode(['error' => get_string('error_unknown_tool', 'local_jedomi', $name)]);
         }
     }
 
@@ -407,7 +407,7 @@ class handler {
                 }
             }
             if (strpos($sql, '{') === false) {
-                $realError .= ' | HINT: In Moodle SQL, table names should use braces (e.g. {course}, {user}).';
+                $realError .= get_string('hint_sql_braces', 'local_jedomi');
             }
             \local_jedomi_log('EXECUTE_SQL_ERROR', ['sql' => $sql, 'params' => $params, 'error' => $realError]);
             error_log("[local_jedomi] execute_sql_tool error: class=" . get_class($e) . " msg=" . json_encode($realError, JSON_UNESCAPED_UNICODE));
@@ -482,12 +482,11 @@ class handler {
                 'tables' => $results,
                 'count'  => count($results),
                 'note'   => count($results) === 0
-                    ? 'No matching tables found. Try different keywords.'
-                    : 'Use the exact "name" with describe_table or execute_sql. '
-                      . 'Table names shown as provided — use {tablename} in SQL queries.',
+                    ? get_string('note_tables_not_found', 'local_jedomi')
+                    : get_string('note_tables_found', 'local_jedomi'),
             ]);
         } catch (\Throwable $e) {
-            return json_encode(['error' => 'search_tables failed: ' . $e->getMessage()]);
+            return json_encode(['error' => get_string('error_search_tables_failed', 'local_jedomi', $e->getMessage())]);
         }
     }
 
@@ -539,7 +538,7 @@ class handler {
             $allowlist = \local_jedomi_get_role_allowlist($role);
 
             if (empty($allowlist) && $role !== 'admin') {
-                return json_encode(['results' => [], 'note' => 'No web services configured for your role']);
+                return json_encode(['results' => [], 'note' => get_string('note_ws_none_configured', 'local_jedomi')]);
             }
 
             $wsnames = $role === 'admin' ? [] : $allowlist;
@@ -557,12 +556,12 @@ class handler {
                 'results' => $results,
                 'count'   => count($results),
                 'note'    => count($results) === 0
-                    ? 'No matching functions found. Try different keywords.'
-                    : 'Use the exact "name" field with ws_execute. Check "params" for required(*) parameters.',
+                    ? get_string('note_ws_not_found', 'local_jedomi')
+                    : get_string('note_ws_found', 'local_jedomi'),
             ]);
         } catch (\Throwable $e) {
             return json_encode([
-                'error' => 'ws_search failed: ' . get_class($e) . ': ' . $e->getMessage(),
+                'error' => get_string('error_ws_search_failed', 'local_jedomi', get_class($e) . ': ' . $e->getMessage()),
             ]);
         }
     }
@@ -592,7 +591,7 @@ class handler {
             return json_encode(\local_jedomi\schema\ws_indexer::describe($wsname));
         } catch (\Throwable $e) {
             return json_encode([
-                'error' => 'ws_describe failed: ' . get_class($e) . ': ' . $e->getMessage(),
+                'error' => get_string('error_ws_describe_failed', 'local_jedomi', get_class($e) . ': ' . $e->getMessage()),
             ]);
         }
     }
@@ -624,11 +623,11 @@ class handler {
         } catch (\moodle_exception $e) {
             $detail = $e->getMessage();
             if (method_exists($e, 'getDebugInfo') && $e->getDebugInfo()) {
-                $detail .= ' | debug: ' . $e->getDebugInfo();
+                $detail .= get_string('ws_debug_prefix', 'local_jedomi') . $e->getDebugInfo();
             }
             \local_jedomi_log('WS_EXECUTE_ERROR', ['wsname' => $wsname ?? '', 'params' => $params ?? '{}', 'error' => $detail]);
             return json_encode([
-                'error'    => 'ws_execute failed: ' . $detail,
+                'error'    => get_string('error_ws_execute_failed', 'local_jedomi', $detail),
                 'wsname'   => $wsname ?? '',
                 'params'   => $params ?? '{}',
                 'errclass' => get_class($e),
@@ -636,7 +635,7 @@ class handler {
         } catch (\Throwable $e) {
             \local_jedomi_log('WS_EXECUTE_ERROR', ['wsname' => $wsname ?? '', 'params' => $params ?? '{}', 'error' => $e->getMessage()]);
             return json_encode([
-                'error'    => 'ws_execute failed: ' . $e->getMessage(),
+                'error'    => get_string('error_ws_execute_failed', 'local_jedomi', $e->getMessage()),
                 'wsname'   => $wsname ?? '',
                 'params'   => $params ?? '{}',
                 'errclass' => get_class($e),
@@ -700,20 +699,20 @@ class handler {
     private static function summarize_tool_result(string $name, string $result): string {
         $decoded = json_decode($result, true);
         if (!$decoded) {
-            return 'error: invalid JSON response';
+            return get_string('summary_invalid_json', 'local_jedomi');
         }
         if (isset($decoded['error'])) {
-            return 'error: ' . $decoded['error'];
+            return get_string('summary_error_prefix', 'local_jedomi') . $decoded['error'];
         }
         return match ($name) {
-            'execute_sql' => ($decoded['row_count'] ?? count($decoded['rows'] ?? [])) . ' rows returned',
-            'describe_table' => 'table structure retrieved',
-            'search_tables' => ($decoded['count'] ?? count($decoded['tables'] ?? $decoded) ?? 0) . ' matching tables',
-            'get_site_config' => 'config data retrieved',
-            'ws_search'   => count($decoded['results'] ?? []) . ' functions found',
-            'ws_describe' => 'function details retrieved',
-            'ws_execute' => 'web service executed successfully',
-            default => 'done',
+            'execute_sql' => ($decoded['row_count'] ?? count($decoded['rows'] ?? [])) . get_string('summary_rows_returned', 'local_jedomi'),
+            'describe_table' => get_string('summary_table_structure', 'local_jedomi'),
+            'search_tables' => ($decoded['count'] ?? count($decoded['tables'] ?? $decoded) ?? 0) . get_string('summary_matching_tables', 'local_jedomi'),
+            'get_site_config' => get_string('summary_config_data', 'local_jedomi'),
+            'ws_search'   => count($decoded['results'] ?? []) . get_string('summary_functions_found', 'local_jedomi'),
+            'ws_describe' => get_string('summary_function_details', 'local_jedomi'),
+            'ws_execute' => get_string('summary_ws_executed', 'local_jedomi'),
+            default => get_string('summary_done', 'local_jedomi'),
         };
     }
 }

@@ -59,13 +59,13 @@ class ws_indexer {
             ['name' => $wsname]
         );
         if (!$record) {
-            return ['error' => 'Function not found: ' . $wsname];
+            return ['error' => get_string('ws_function_not_found', 'local_jedomi', $wsname)];
         }
 
         try {
             $info = external_api::external_function_info($record);
         } catch (\Throwable $e) {
-            return ['error' => 'Cannot load function info: ' . $e->getMessage()];
+            return ['error' => get_string('ws_cannot_load_info', 'local_jedomi', $e->getMessage())];
         }
 
         $result = self::build_compact_info($record, $info);

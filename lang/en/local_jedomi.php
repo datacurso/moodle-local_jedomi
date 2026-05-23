@@ -367,3 +367,92 @@ $string['ws_none_found']           = 'No web services match your filters.';
 $string['tool_ws_search_desc']     = 'Search web service functions by intent or keywords and return the most relevant ones with full parameter and return type descriptions.';
 $string['tool_ws_describe_desc']   = 'Get complete documentation (description, parameters, return type) for a specific web service function by exact name.';
 $string['tool_ws_execute_desc']    = 'Execute a Moodle web service function on behalf of the current user. Use AFTER ws_search to get the exact function name and parameters. For batch operations (same action on multiple items), call this function MULTIPLE times — once per item.';
+
+// ── Tool execution errors ────────────────────────────────────────────
+$string['error_tool_loop_detected'] = 'Repeated identical tool call blocked. Use a different tool or execute with new parameters.';
+$string['error_fallback_iterations'] = 'Sorry, I could not complete the operation after several attempts.';
+$string['error_unknown_tool'] = 'Unknown tool: {$a}';
+$string['error_permission_denied'] = 'permission_denied';
+$string['error_query_required'] = 'query is required';
+$string['error_search_tables_failed'] = 'search_tables failed: {$a}';
+$string['error_ws_search_failed'] = 'ws_search failed: {$a}';
+$string['error_ws_describe_failed'] = 'ws_describe failed: {$a}';
+$string['error_ws_execute_failed'] = 'ws_execute failed: {$a}';
+$string['error_wsname_required'] = 'wsname is required';
+$string['error_permission_denied_ws'] = 'permission_denied: function not in allowlist';
+$string['error_tool_failed'] = 'tool_failed';
+
+// ── Tool hints ───────────────────────────────────────────────────────
+$string['hint_sql_braces'] = ' | HINT: In Moodle SQL, table names should use braces (e.g. {course}, {user}).';
+
+// ── Tool result notes ────────────────────────────────────────────────
+$string['note_tables_not_found'] = 'No matching tables found. Try different keywords.';
+$string['note_tables_found'] = 'Use the exact "name" with describe_table or execute_sql. Table names shown as provided — use {tablename} in SQL queries.';
+$string['note_ws_none_configured'] = 'No web services configured for your role';
+$string['note_ws_not_found'] = 'No matching functions found. Try different keywords.';
+$string['note_ws_found'] = 'Use the exact "name" field with ws_execute. Check "params" for required(*) parameters.';
+
+// ── SSE tool result summaries ────────────────────────────────────────
+$string['summary_invalid_json'] = 'error: invalid JSON response';
+$string['summary_error_prefix'] = 'error: ';
+$string['summary_rows_returned'] = ' rows returned';
+$string['summary_table_structure'] = 'table structure retrieved';
+$string['summary_matching_tables'] = ' matching tables';
+$string['summary_config_data'] = 'config data retrieved';
+$string['summary_functions_found'] = ' functions found';
+$string['summary_function_details'] = 'function details retrieved';
+$string['summary_ws_executed'] = 'web service executed successfully';
+$string['summary_done'] = 'done';
+
+// ── Context labels (system prompt) ───────────────────────────────────
+$string['ctx_loc_course'] = 'Currently viewing a course';
+$string['ctx_loc_course_id'] = ' (ID: {$a}).';
+$string['ctx_loc_activity'] = 'Currently in an activity of type';
+$string['ctx_loc_activity_suffix'] = '".';
+$string['ctx_loc_gradebook'] = 'Currently viewing the gradebook.';
+$string['ctx_loc_admin'] = 'Currently in the Moodle administration panel.';
+$string['ctx_loc_dashboard'] = 'Currently on the Moodle dashboard.';
+$string['ctx_loc_messages'] = 'Currently in the messages section.';
+$string['ctx_loc_profile'] = 'Currently viewing a user profile.';
+$string['ctx_loc_calendar'] = 'Currently viewing the calendar.';
+$string['ctx_loc_files'] = 'Currently in the files area.';
+$string['dblabel_mysql'] = 'MySQL/MariaDB';
+$string['dblabel_pgsql'] = 'PostgreSQL';
+
+// ── Tool descriptions (lib.php) ──────────────────────────────────────
+$string['tool_describe_table_desc'] = 'Obtiene la estructura (columnas, tipos, claves, indices, foreign keys) de una tabla de la base de datos de Moodle. Cacheado 24h.';
+$string['tool_describe_table_tablename'] = 'Nombre de la tabla (ej: course, user, grade_grades)';
+$string['tool_search_tables_desc'] = 'Search Moodle tables by intent or keywords in ENGLISH. Searches across table names AND their COMMENT descriptions from install.xml (same approach as ws_search). Returns the most relevant matches with name, comment (description), field names, and field comments. ALWAYS use search_tables before describe_table or execute_sql.';
+$string['tool_search_tables_query'] = 'Intent or keywords in ENGLISH (e.g. "user grades", "course enrolment", "student")';
+$string['tool_search_tables_limit'] = 'Maximum results (default: 8, max: 15)';
+$string['tool_execute_sql_desc'] = 'Ejecuta una consulta SELECT en la base de datos de Moodle y devuelve las filas como JSON. SOLO lectura. Limite: 100 filas, timeout 5 segundos.';
+$string['tool_execute_sql_sql'] = 'Consulta SELECT a ejecutar. Usa ? como placeholder para parametros. Ejemplo: SELECT id, fullname FROM {course} WHERE category = ?';
+$string['tool_execute_sql_params'] = 'Parametros vinculados para la consulta (opcional)';
+$string['tool_get_site_config_desc'] = 'Obtiene configuracion del sitio Moodle (sitename, lang, timezone, etc.). Solo disponible para administradores.';
+$string['tool_get_site_config_keys'] = 'Lista de claves de configuracion. Validas: sitename, siteurl, lang, country, timezone, maxbytes, passwordpolicy, enrol_plugins_enabled, auth_plugins_enabled';
+$string['tool_ws_search_desc'] = 'Search Moodle web service functions by intent or keywords in ENGLISH. Returns the most relevant matches with full description, parameters (* = required), and return structure. If results include what you need: STOP searching — call ws_describe on the exact name, then ws_execute. Do NOT call ws_search again for the same task.';
+$string['tool_ws_search_query'] = 'Intent or keywords in ENGLISH (e.g. "create user", "enrol student", "get course grades")';
+$string['tool_ws_search_limit'] = 'Máximo de resultados a devolver (default: 6, max: 15)';
+$string['tool_ws_describe_desc'] = 'Get full documentation (description, parameters with * = required, return type) for a specific web service function when you already know its exact name. ALWAYS call this AFTER ws_search and BEFORE ws_execute to verify required fields.';
+$string['tool_ws_describe_wsname'] = 'Exact function name (e.g. core_user_create_users)';
+$string['tool_ws_execute_wsname'] = 'Web service function name (e.g. core_course_get_courses)';
+$string['tool_ws_execute_params'] = 'JSON-encoded parameters for the web service function. MUST include every * (required) field. If the user did not provide a value, generate a sensible default (e.g. random password, current timestamp, empty array).';
+
+// ── External WS errors ───────────────────────────────────────────────
+$string['ws_function_not_found'] = 'Function not found: {$a}';
+$string['ws_cannot_load_info'] = 'Cannot load function info: {$a}';
+
+// ── Table descriptor errors ──────────────────────────────────────────
+$string['table_not_found'] = 'Table not found: {$a}';
+
+// ── Set site config ──────────────────────────────────────────────────
+$string['config_key_blocked_msg'] = 'Key is blocked for security reasons.';
+$string['config_updated_msg'] = 'Config \'{$a}\' updated successfully.';
+
+// ── Run task ─────────────────────────────────────────────────────────
+$string['task_not_found_msg'] = 'task_not_found';
+$string['task_instantiation_failed_msg'] = 'task_instantiation_failed';
+
+// ── WS execute errors ────────────────────────────────────────────────
+$string['ws_method_not_exists'] = 'Method {$a} does not exist';
+$string['ws_debug_prefix'] = ' | debug: ';

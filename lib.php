@@ -431,13 +431,13 @@ function local_jedomi_get_tool_definitions(string $role): array {
         'type' => 'function',
         'function' => [
             'name'        => 'describe_table',
-            'description' => 'Obtiene la estructura (columnas, tipos, claves, indices, foreign keys) de una tabla de la base de datos de Moodle. Cacheado 24h.',
+            'description' => get_string('tool_describe_table_desc', 'local_jedomi'),
             'parameters'  => [
                 'type'       => 'object',
                 'properties' => [
                     'tablename' => [
                         'type'        => 'string',
-                        'description' => 'Nombre de la tabla (ej: course, user, grade_grades)',
+                        'description' => get_string('tool_describe_table_tablename', 'local_jedomi'),
                     ],
                 ],
                 'required' => ['tablename'],
@@ -450,21 +450,17 @@ function local_jedomi_get_tool_definitions(string $role): array {
         'type' => 'function',
         'function' => [
             'name'        => 'search_tables',
-            'description' => 'Search Moodle tables by intent or keywords in ENGLISH. '
-                . 'Searches across table names AND their COMMENT descriptions from install.xml '
-                . '(same approach as ws_search). Returns the most relevant matches with '
-                . 'name, comment (description), field names, and field comments. '
-                . 'ALWAYS use search_tables before describe_table or execute_sql.',
+            'description' => get_string('tool_search_tables_desc', 'local_jedomi'),
             'parameters'  => [
                 'type'       => 'object',
                 'properties' => [
                     'query' => [
                         'type'        => 'string',
-                        'description' => 'Intent or keywords in ENGLISH (e.g. "user grades", "course enrolment", "student")',
+                        'description' => get_string('tool_search_tables_query', 'local_jedomi'),
                     ],
                     'limit' => [
                         'type'        => 'integer',
-                        'description' => 'Maximum results (default: 8, max: 15)',
+                        'description' => get_string('tool_search_tables_limit', 'local_jedomi'),
                     ],
                 ],
                 'required' => ['query'],
@@ -478,18 +474,18 @@ function local_jedomi_get_tool_definitions(string $role): array {
             'type' => 'function',
             'function' => [
                 'name'        => 'execute_sql',
-                'description' => 'Ejecuta una consulta SELECT en la base de datos de Moodle y devuelve las filas como JSON. SOLO lectura. Limite: 100 filas, timeout 5 segundos.',
+                'description' => get_string('tool_execute_sql_desc', 'local_jedomi'),
                 'parameters'  => [
                     'type'       => 'object',
                     'properties' => [
                         'sql' => [
                             'type'        => 'string',
-                            'description' => 'Consulta SELECT a ejecutar. Usa ? como placeholder para parametros. Ejemplo: SELECT id, fullname FROM {course} WHERE category = ?',
+                            'description' => get_string('tool_execute_sql_sql', 'local_jedomi'),
                         ],
                         'params' => [
                             'type'        => 'array',
                             'items'       => ['type' => 'string'],
-                            'description' => 'Parametros vinculados para la consulta (opcional)',
+                            'description' => get_string('tool_execute_sql_params', 'local_jedomi'),
                         ],
                     ],
                     'required' => ['sql'],
@@ -504,14 +500,14 @@ function local_jedomi_get_tool_definitions(string $role): array {
             'type' => 'function',
             'function' => [
                 'name'        => 'get_site_config',
-                'description' => 'Obtiene configuracion del sitio Moodle (sitename, lang, timezone, etc.). Solo disponible para administradores.',
+                'description' => get_string('tool_get_site_config_desc', 'local_jedomi'),
                 'parameters'  => [
                     'type'       => 'object',
                     'properties' => [
                         'keys' => [
                             'type'        => 'array',
                             'items'       => ['type' => 'string'],
-                            'description' => 'Lista de claves de configuracion. Validas: sitename, siteurl, lang, country, timezone, maxbytes, passwordpolicy, enrol_plugins_enabled, auth_plugins_enabled',
+                            'description' => get_string('tool_get_site_config_keys', 'local_jedomi'),
                         ],
                     ],
                     'required' => ['keys'],
@@ -525,21 +521,17 @@ function local_jedomi_get_tool_definitions(string $role): array {
         'type' => 'function',
         'function' => [
             'name'        => 'ws_search',
-            'description' => 'Search Moodle web service functions by intent or keywords in ENGLISH. '
-                . 'Returns the most relevant matches with full description, '
-                . 'parameters (* = required), and return structure. '
-                . 'If results include what you need: STOP searching — call ws_describe on the exact name, '
-                . 'then ws_execute. Do NOT call ws_search again for the same task.',
+            'description' => get_string('tool_ws_search_desc', 'local_jedomi'),
             'parameters'  => [
                 'type'       => 'object',
                 'properties' => [
                     'query' => [
                         'type'        => 'string',
-                        'description' => 'Intent or keywords in ENGLISH (e.g. "create user", "enrol student", "get course grades")',
+                        'description' => get_string('tool_ws_search_query', 'local_jedomi'),
                     ],
                     'limit' => [
                         'type'        => 'integer',
-                        'description' => 'Máximo de resultados a devolver (default: 6, max: 15)',
+                        'description' => get_string('tool_ws_search_limit', 'local_jedomi'),
                     ],
                 ],
                 'required' => ['query'],
@@ -552,15 +544,13 @@ function local_jedomi_get_tool_definitions(string $role): array {
         'type' => 'function',
         'function' => [
             'name'        => 'ws_describe',
-            'description' => 'Get full documentation (description, parameters with * = required, return type) '
-                . 'for a specific web service function when you already know its exact name. '
-                . 'ALWAYS call this AFTER ws_search and BEFORE ws_execute to verify required fields.',
+            'description' => get_string('tool_ws_describe_desc', 'local_jedomi'),
             'parameters'  => [
                 'type'       => 'object',
                 'properties' => [
                     'wsname' => [
                         'type'        => 'string',
-                        'description' => 'Exact function name (e.g. core_user_create_users)',
+                        'description' => get_string('tool_ws_describe_wsname', 'local_jedomi'),
                     ],
                 ],
                 'required' => ['wsname'],
@@ -580,14 +570,11 @@ function local_jedomi_get_tool_definitions(string $role): array {
                     'properties' => [
                         'wsname' => [
                             'type'        => 'string',
-                            'description' => 'Web service function name (e.g. core_course_get_courses)',
+                            'description' => get_string('tool_ws_execute_wsname', 'local_jedomi'),
                         ],
                         'params' => [
                             'type'        => 'string',
-                            'description' => 'JSON-encoded parameters for the web service function. '
-                                . 'MUST include every * (required) field. '
-                                . 'If the user did not provide a value, generate a sensible default '
-                                . '(e.g. random password, current timestamp, empty array).',
+                            'description' => get_string('tool_ws_execute_params', 'local_jedomi'),
                         ],
                     ],
                     'required' => ['wsname', 'params'],

@@ -50,22 +50,22 @@ class system_message {
         $pageTitle  = $context['page_title'] ?? '';
 
         $locLabels = [
-            'course'    => 'Currently viewing a course' . ($courseName ? " \"{$courseName}\"" : '') . " (ID: {$courseId}).",
-            'activity'  => 'Currently in an activity of type "' . ($context['activity_type'] ?? 'unknown') . '".',
-            'grades'    => 'Currently viewing the gradebook.',
-            'admin'     => 'Currently in the Moodle administration panel.',
-            'dashboard' => 'Currently on the Moodle dashboard.',
-            'messages'  => 'Currently in the messages section.',
-            'profile'   => 'Currently viewing a user profile.',
-            'calendar'  => 'Currently viewing the calendar.',
-            'files'     => 'Currently in the files area.',
+            'course'    => get_string('ctx_loc_course', 'local_jedomi') . ($courseName ? " \"{$courseName}\"" : '') . get_string('ctx_loc_course_id', 'local_jedomi', $courseId),
+            'activity'  => get_string('ctx_loc_activity', 'local_jedomi') . ' "' . ($context['activity_type'] ?? 'unknown') . get_string('ctx_loc_activity_suffix', 'local_jedomi'),
+            'grades'    => get_string('ctx_loc_gradebook', 'local_jedomi'),
+            'admin'     => get_string('ctx_loc_admin', 'local_jedomi'),
+            'dashboard' => get_string('ctx_loc_dashboard', 'local_jedomi'),
+            'messages'  => get_string('ctx_loc_messages', 'local_jedomi'),
+            'profile'   => get_string('ctx_loc_profile', 'local_jedomi'),
+            'calendar'  => get_string('ctx_loc_calendar', 'local_jedomi'),
+            'files'     => get_string('ctx_loc_files', 'local_jedomi'),
         ];
 
         // Detect database type automatically from Moodle config.
         $dbtype = $CFG->dbtype;
         $dblabel = match ($dbtype) {
-            'mysqli', 'mariadb' => 'MySQL/MariaDB',
-            'pgsql'             => 'PostgreSQL',
+            'mysqli', 'mariadb' => get_string('dblabel_mysql', 'local_jedomi'),
+            'pgsql'             => get_string('dblabel_pgsql', 'local_jedomi'),
             default             => $dbtype,
         };
 

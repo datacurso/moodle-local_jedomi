@@ -105,7 +105,7 @@ class run_task extends external_api {
                     'task_class'   => $task_class,
                     'status'       => 'error',
                     'run_id'       => '',
-                    'output'       => json_encode(['error' => 'task_not_found', 'task_class' => $task_class]),
+                    'output'       => json_encode(['error' => get_string('task_not_found_msg', 'local_jedomi'), 'task_class' => $task_class]),
                     'execution_ms' => $execution_ms,
                 ];
             }
@@ -162,7 +162,7 @@ class run_task extends external_api {
             return [
                 'task_class'   => $task_class,
                 'status'       => 'error',
-                'output'       => json_encode(['error' => 'task_instantiation_failed']),
+                'output'       => json_encode(['error' => get_string('task_instantiation_failed_msg', 'local_jedomi')]),
                 'execution_ms' => $execution_ms,
             ];
         }
