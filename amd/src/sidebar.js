@@ -1047,9 +1047,15 @@ define(['core/log'], function(Log) {
         const payload = {
             model:    cfg.model || 'jedomi-e4b',
             messages: truncated,
-            spt:      cfg.spt,               // el proxy espera el objeto, no string
-            sesskey:  cfg.sesskey,            // para require_sesskey() del proxy
-            context:  cfg.context || {},      // página actual (location, course, etc.)
+            spt:      cfg.spt,
+            sesskey:  cfg.sesskey,
+            context:  {
+                ...cfg.context,
+                page_url:   window.location.href,
+                page_title: document.title.replace(/\s*[|\-]\s*Moodle.*$/i, '').trim(),
+                location:   getCurrentLocation(),
+                course_id:  getCourseidFromUrl(),
+            },
         };
 
         const res = await fetch(cfg.chatproxy_url, {
@@ -1111,7 +1117,13 @@ define(['core/log'], function(Log) {
             messages: messages,
             spt:      cfg.spt,
             sesskey:  cfg.sesskey,
-            context:  cfg.context || {},
+            context:  {
+                ...cfg.context,
+                page_url:   window.location.href,
+                page_title: document.title.replace(/\s*[|\-]\s*Moodle.*$/i, '').trim(),
+                location:   getCurrentLocation(),
+                course_id:  getCourseidFromUrl(),
+            },
         };
         const res = await fetch(cfg.chatproxy_url, {
             method:  'POST',
