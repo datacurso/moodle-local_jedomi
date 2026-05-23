@@ -366,4 +366,4 @@ $string['ws_pagination']           = 'Page {$a->page} of {$a->pages} ({$a->total
 $string['ws_none_found']           = 'No web services match your filters.';
 $string['tool_ws_search_desc']     = 'Search web service functions by intent or keywords and return the most relevant ones with full parameter and return type descriptions.';
 $string['tool_ws_describe_desc']   = 'Get complete documentation (description, parameters, return type) for a specific web service function by exact name.';
-$string['tool_ws_execute_desc']    = 'Execute a Moodle web service function on behalf of the current user. Use AFTER ws_search to get the exact function name and parameters.';
+$string['tool_ws_execute_desc']    = 'Execute a Moodle web service function on behalf of the current user. Use AFTER ws_search to get the exact function name and parameters. For batch operations (same action on multiple items), call this function MULTIPLE times — once per item.';

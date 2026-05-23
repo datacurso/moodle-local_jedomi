@@ -49,9 +49,9 @@ class handler {
         \local_jedomi_log('RUN_START', ['model' => $model, 'role' => $role, 'user_message_count' => count($messages)]);
 
         $tools = spt_validator::get_tool_definitions($role);
-        $hasexecutedtool = false;
+        $toolrepeatcounts = [];
 
-        for ($i = 0; $i < 10; $i++) {
+        for ($i = 0; $i < 50; $i++) {
             echo ": thinking\n\n";
             ob_flush();
             flush();
@@ -67,14 +67,6 @@ class handler {
 
             if ($response['type'] === 'text') {
                 \local_jedomi_log('AI_RESPONSE_TEXT', ['iteration' => $i, 'preview' => mb_substr($response['content'], 0, 200)]);
-                if (!$hasexecutedtool && self::is_live_data_request($messages)) {
-                    $messages[] = [
-                        'role' => 'system',
-                        'content' => 'Before answering this request, you must call at least one tool to fetch current site data. If tools are unavailable or denied, explicitly state that you cannot verify with live data.',
-                    ];
-                    continue;
-                }
-
                 // No tool calls — stream the final response to the client.
                 self::stream_sse_content($response['content']);
                 return;
@@ -97,6 +89,9 @@ class handler {
                 $args_raw = $tc['function']['arguments'];
                 $args = is_array($args_raw) ? $args_raw : (json_decode($args_raw, true) ?? []);
 
+                $callkey = $name . '|' . self::stable_tool_args_signature($args);
+                $toolrepeatcounts[$callkey] = ($toolrepeatcounts[$callkey] ?? 0) + 1;
+
                 // Notify the client that a tool is being executed.
                 echo "data: " . json_encode([
                     '_jedomi_tool_executing' => ['tool' => $name, 'args' => $args],
@@ -104,14 +99,23 @@ class handler {
                 ob_flush();
                 flush();
 
-                try {
-                    $result = self::execute_tool_by_name($name, $args, $role);
-                } catch (\Throwable $e) {
+                if ($toolrepeatcounts[$callkey] > 2) {
                     $result = json_encode([
-                        'error' => 'tool_failed',
-                        'tool'  => $name,
-                        'detail' => get_class($e) . ': ' . $e->getMessage(),
+                        'error' => 'loop_detected',
+                        'tool' => $name,
+                        'detail' => 'Repeated identical tool call blocked. Use a different tool or execute with new parameters.',
                     ]);
+                    \local_jedomi_log('LOOP_DETECTED', ['tool' => $name, 'args' => $args, 'count' => $toolrepeatcounts[$callkey]]);
+                } else {
+                    try {
+                        $result = self::execute_tool_by_name($name, $args, $role);
+                    } catch (\Throwable $e) {
+                        $result = json_encode([
+                            'error' => 'tool_failed',
+                            'tool'  => $name,
+                            'detail' => get_class($e) . ': ' . $e->getMessage(),
+                        ]);
+                    }
                 }
 
                 // Send result summary to client.
@@ -130,7 +134,6 @@ class handler {
                     'tool_call_id' => $tc_id,
                     'content'      => $result,
                 ];
-                $hasexecutedtool = true;
 
                 \local_jedomi_log('TOOL_RESULT', ['tool' => $name, 'summary' => self::summarize_tool_result($name, $result)]);
             }
@@ -141,26 +144,37 @@ class handler {
     }
 
     /**
-     * Heuristic check for requests that usually need live site data.
+     * Build a deterministic signature for tool arguments.
      *
-     * @param array $messages Conversation messages.
-     * @return bool
+     * @param  array $args Tool arguments.
+     * @return string
      */
-    private static function is_live_data_request(array $messages): bool {
-        $latestuser = '';
-        for ($i = count($messages) - 1; $i >= 0; $i--) {
-            if (($messages[$i]['role'] ?? '') === 'user') {
-                $latestuser = (string)($messages[$i]['content'] ?? '');
-                break;
-            }
+    private static function stable_tool_args_signature(array $args): string {
+        $normalized = self::sort_recursive($args);
+        return hash('sha256', json_encode($normalized, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_IGNORE));
+    }
+
+    /**
+     * Recursively sort associative arrays for stable hashing.
+     *
+     * @param  mixed $value
+     * @return mixed
+     */
+    private static function sort_recursive($value) {
+        if (!is_array($value)) {
+            return $value;
         }
 
-        if ($latestuser === '') {
-            return false;
+        $islist = array_keys($value) === range(0, count($value) - 1);
+        if ($islist) {
+            return array_map(static fn($v) => self::sort_recursive($v), $value);
         }
 
-        $text = \core_text::strtolower($latestuser);
-        return (bool)preg_match('/\b(curso|cursos|course|courses|usuario|usuarios|user|users|nota|notas|grade|grades|calificacion|calificaciones|inscrito|inscritos|enrolled|disponible|disponibles|available|listar|lista|list|cuanto|cuantos|cuantas|how many|count|total|existe|exists)\b/u', $text);
+        ksort($value);
+        foreach ($value as $k => $v) {
+            $value[$k] = self::sort_recursive($v);
+        }
+        return $value;
     }
 
     /**
@@ -516,7 +530,7 @@ class handler {
     private static function ws_search_tool(array $args, string $role): string {
         try {
             $query = trim($args['query'] ?? $args['keyword'] ?? $args['filter'] ?? '');
-            $limit = max(1, min(15, (int) ($args['limit'] ?? 6)));
+            $limit = max(1, min(15, (int) ($args['limit'] ?? 8)));
 
             if (empty($query)) {
                 return json_encode(['error' => 'query is required']);

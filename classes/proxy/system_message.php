@@ -82,6 +82,12 @@ class system_message {
         $content .= "- Never invent data.\n";
         $content .= "- For any request about current site data (lists, counts, availability, status), call at least one tool before answering.\n";
         $content .= "- For web services, discover first (ws_search/ws_describe), execute after.\n";
+        $content .= "- ONCE ws_search returns good matches: pick the best one, call ws_describe to verify parameters, then call ws_execute. Do NOT search again for the same task.\n";
+        $content .= "- For batch operations (same action on multiple items, e.g. enrol in 6 courses): call ws_execute MULTIPLE times with different parameters. There is NO bulk function — execute sequentially, once per item.\n";
+        $content .= "- For tables/SQL: discover first (search_tables), describe structure (describe_table), execute after (execute_sql). Same flow as WS.\n";
+        $content .= "- search_tables searches by intent across table names AND their COMMENT descriptions — use keywords in ENGLISH.\n";
+        $content .= "- ALWAYS exclude course ID 1 (the site home course) from any operation — both SQL queries and WS calls.\n";
+        $content .= "- ALWAYS exclude the guest user (username 'guest') from any operation.\n";
         $content .= "- For SQL, use execute_sql only for SELECT statements and parameterized values.\n";
         $content .= "- If a tool fails or permissions are denied, report that explicitly and do not guess results.\n";
         $content .= "- Retry once only when a clear fix exists.\n";

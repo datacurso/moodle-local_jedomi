@@ -362,4 +362,4 @@ $string['ws_pagination']           = 'Página {$a->page} de {$a->pages} ({$a->to
 $string['ws_none_found']           = 'Ningún servicio web coincide con tus filtros.';
 $string['tool_ws_search_desc']     = 'Buscar funciones de servicios web por intención o palabras clave y devolver las más relevantes con descripciones completas de parámetros y tipos de retorno.';
 $string['tool_ws_describe_desc']   = 'Obtener documentación completa (descripción, parámetros, tipo de retorno) de una función de servicio web específica por su nombre exacto.';
-$string['tool_ws_execute_desc']    = 'Ejecutá un servicio web de Moodle en nombre del usuario actual. Usalo DESPUÉS de ws_search para obtener el nombre exacto de la función y los parámetros.';
+$string['tool_ws_execute_desc']    = 'Ejecutá un servicio web de Moodle en nombre del usuario actual. Usalo DESPUÉS de ws_search para obtener el nombre exacto de la función y los parámetros. Para operaciones batch (misma acción en múltiples items), llamá esta función VARIAS VECES — una por cada item.';
