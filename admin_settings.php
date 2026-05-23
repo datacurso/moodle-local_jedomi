@@ -50,6 +50,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && confirm_sesskey()) {
             set_config('gateway_url',           required_param('gateway_url',           PARAM_URL),     'local_jedomi');
             set_config('api_key',               required_param('api_key',               PARAM_TEXT),    'local_jedomi');
             set_config('model',                 required_param('model',                 PARAM_TEXT),    'local_jedomi');
+            set_config('docservice_url',        optional_param('docservice_url',        '',             PARAM_URL),     'local_jedomi');
             set_config('spt_secret',            required_param('spt_secret',            PARAM_TEXT),    'local_jedomi');
             set_config('collect_training_data', optional_param('collect_training_data', 0, PARAM_INT),  'local_jedomi');
 
@@ -321,10 +322,21 @@ echo '</ul>';
                 <label class="form-label-main" for="jedomi-model">
                     <?php echo get_string('model', 'local_jedomi'); ?>
                 </label>
-                <input type="text" id="jedomi-model" name="model"
-                       class="form-control" style="max-width:280px"
-                       value="<?php echo s($cfg['model']); ?>">
-            </div>
+                    <input type="text" id="jedomi-model" name="model"
+                           class="form-control" style="max-width:280px"
+                           value="<?php echo s($cfg['model']); ?>">
+                </div>
+
+                <div class="mt-3">
+                    <label class="form-label-main" for="jedomi-docservice">
+                        <?php echo get_string('docservice_url', 'local_jedomi'); ?>
+                    </label>
+                    <input type="url" id="jedomi-docservice" name="docservice_url"
+                           class="form-control" style="max-width:480px"
+                           value="<?php echo s($cfg['docservice_url'] ?? ''); ?>"
+                           placeholder="http://localhost:8000">
+                    <p class="form-text"><?php echo get_string('docservice_url_help', 'local_jedomi'); ?></p>
+                </div>
 
         </div>
     </div>
