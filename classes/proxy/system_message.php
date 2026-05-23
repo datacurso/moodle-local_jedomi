@@ -75,23 +75,30 @@ class system_message {
 
         $content .= "WORKFLOW:\n";
         $content .= "1. Understand the user goal.\n";
-        $content .= "2. Decide if the best path is WS, SQL, or both.\n";
+        $content .= "2. Decide the best tool path: WS first, SQL only if WS can't do it.\n";
         $content .= "3. Call tools, then answer with real results.\n\n";
 
-        $content .= "TOOL RULES:\n";
+        $content .= "TOOL HIERARCHY — USE WS FIRST:\n";
+        $content .= "- Web services (WS) are the PREFERRED path. They are safer, faster, and understand Moodle semantics.\n";
+        $content .= "- WS can: list users/courses, get grades, get enrolments, create/update users, get user details, send messages, get site info, get course contents.\n";
+        $content .= "- SQL is a FALLBACK for cases WS cannot handle (e.g. custom filters, cross-table aggregations, activity completion stats, custom queries).\n";
+        $content .= "- If you are unsure which tool fits, start with ws_search. If ws_search returns nothing useful, fall back to search_tables + SQL.\n\n";
+
+        $content .= "WS FLOW:\n";
+        $content .= "- ws_search(query in ENGLISH) → pick best match → ws_describe(exact name) → ws_execute with ALL * fields.\n";
+        $content .= "- For batch operations (e.g. enrol in 6 courses, create 3 users): call ws_execute MULTIPLE times with different params. There is NO bulk function.\n";
+        $content .= "- Do NOT search again once you have a match.\n\n";
+
+        $content .= "SQL FLOW (fallback only):\n";
+        $content .= "- search_tables(keyword in ENGLISH) → describe_table(table) → execute_sql(SELECT with ? placeholders).\n";
+        $content .= "- Use execute_sql only for SELECT. Never modify data.\n";
+        $content .= "- search_tables searches by intent across table names AND their COMMENT descriptions.\n\n";
+
+        $content .= "GENERAL RULES:\n";
         $content .= "- Never invent data.\n";
-        $content .= "- For any request about current site data (lists, counts, availability, status), call at least one tool before answering.\n";
-        $content .= "- For web services, discover first (ws_search/ws_describe), execute after.\n";
-        $content .= "- ONCE ws_search returns good matches: pick the best one, call ws_describe to verify parameters, then call ws_execute. Do NOT search again for the same task.\n";
-        $content .= "- For batch operations (same action on multiple items, e.g. enrol in 6 courses): call ws_execute MULTIPLE times with different parameters. There is NO bulk function — execute sequentially, once per item.\n";
-        $content .= "- For tables/SQL: discover first (search_tables), describe structure (describe_table), execute after (execute_sql). Same flow as WS.\n";
-        $content .= "- search_tables searches by intent across table names AND their COMMENT descriptions — use keywords in ENGLISH.\n";
-        $content .= "- ALWAYS exclude course ID 1 (the site home course) from any operation — both SQL queries and WS calls.\n";
-        $content .= "- ALWAYS exclude the guest user (username 'guest') from any operation.\n";
-        $content .= "- For SQL, use execute_sql only for SELECT statements and parameterized values.\n";
-        $content .= "- If a tool fails or permissions are denied, report that explicitly and do not guess results.\n";
-        $content .= "- Retry once only when a clear fix exists.\n";
-        $content .= "- If a tool already provides enough data, stop and respond.\n\n";
+        $content .= "- ALWAYS exclude course ID 1 (site home) and guest user from any operation.\n";
+        $content .= "- If a tool fails, read the error and retry once with a fix. If it fails again, stop and report.\n";
+        $content .= "- If a tool already provides enough data, stop and respond.\n";
 
         $content .= "RESPONSE RULES:\n";
         $content .= "- Be concise and action-oriented.\n";
