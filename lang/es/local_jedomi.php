@@ -363,3 +363,92 @@ $string['ws_none_found']           = 'Ningún servicio web coincide con tus filt
 $string['tool_ws_search_desc']     = 'Buscar funciones de servicios web por intención o palabras clave y devolver las más relevantes con descripciones completas de parámetros y tipos de retorno.';
 $string['tool_ws_describe_desc']   = 'Obtener documentación completa (descripción, parámetros, tipo de retorno) de una función de servicio web específica por su nombre exacto.';
 $string['tool_ws_execute_desc']    = 'Ejecutá un servicio web de Moodle en nombre del usuario actual. Usalo DESPUÉS de ws_search para obtener el nombre exacto de la función y los parámetros. Para operaciones batch (misma acción en múltiples items), llamá esta función VARIAS VECES — una por cada item.';
+
+// ── Tool execution errors ────────────────────────────────────────────
+$string['error_tool_loop_detected'] = 'Llamada a herramienta repetida bloqueada. Usá otra herramienta o ejecutá con nuevos parámetros.';
+$string['error_fallback_iterations'] = 'Lo siento, no pude completar la operación después de varios intentos.';
+$string['error_unknown_tool'] = 'Herramienta desconocida: {$a}';
+$string['error_permission_denied'] = 'permission_denied';
+$string['error_query_required'] = 'query is required';
+$string['error_search_tables_failed'] = 'search_tables failed: {$a}';
+$string['error_ws_search_failed'] = 'ws_search failed: {$a}';
+$string['error_ws_describe_failed'] = 'ws_describe failed: {$a}';
+$string['error_ws_execute_failed'] = 'ws_execute failed: {$a}';
+$string['error_wsname_required'] = 'wsname is required';
+$string['error_permission_denied_ws'] = 'permission_denied: function not in allowlist';
+$string['error_tool_failed'] = 'tool_failed';
+
+// ── Tool hints ───────────────────────────────────────────────────────
+$string['hint_sql_braces'] = ' | PISTA: En SQL de Moodle, los nombres de tablas deben usar llaves (ej: {course}, {user}).';
+
+// ── Tool result notes ────────────────────────────────────────────────
+$string['note_tables_not_found'] = 'No se encontraron tablas. Probá con otras palabras clave.';
+$string['note_tables_found'] = 'Usá el nombre exacto con describe_table o execute_sql. Los nombres de tabla se muestran como están — usá {tablename} en las consultas SQL.';
+$string['note_ws_none_configured'] = 'No hay servicios web configurados para tu rol';
+$string['note_ws_not_found'] = 'No se encontraron funciones. Probá con otras palabras clave.';
+$string['note_ws_found'] = 'Usá el campo "name" exacto con ws_execute. Revisá "params" para los parámetros requeridos(*).';
+
+// ── SSE tool result summaries ────────────────────────────────────────
+$string['summary_invalid_json'] = 'error: respuesta JSON inválida';
+$string['summary_error_prefix'] = 'error: ';
+$string['summary_rows_returned'] = ' filas devueltas';
+$string['summary_table_structure'] = 'estructura de tabla recuperada';
+$string['summary_matching_tables'] = ' tablas coincidentes';
+$string['summary_config_data'] = 'datos de configuración recuperados';
+$string['summary_functions_found'] = ' funciones encontradas';
+$string['summary_function_details'] = 'detalles de función recuperados';
+$string['summary_ws_executed'] = 'servicio web ejecutado correctamente';
+$string['summary_done'] = 'listo';
+
+// ── Context labels (system prompt) ───────────────────────────────────
+$string['ctx_loc_course'] = 'Viendo actualmente un curso';
+$string['ctx_loc_course_id'] = ' (ID: {$a}).';
+$string['ctx_loc_activity'] = 'Actualmente en una actividad de tipo';
+$string['ctx_loc_activity_suffix'] = '".';
+$string['ctx_loc_gradebook'] = 'Viendo actualmente el libro de calificaciones.';
+$string['ctx_loc_admin'] = 'Actualmente en el panel de administración de Moodle.';
+$string['ctx_loc_dashboard'] = 'Actualmente en el dashboard de Moodle.';
+$string['ctx_loc_messages'] = 'Actualmente en la sección de mensajes.';
+$string['ctx_loc_profile'] = 'Viendo actualmente un perfil de usuario.';
+$string['ctx_loc_calendar'] = 'Viendo actualmente el calendario.';
+$string['ctx_loc_files'] = 'Actualmente en el área de archivos.';
+$string['dblabel_mysql'] = 'MySQL/MariaDB';
+$string['dblabel_pgsql'] = 'PostgreSQL';
+
+// ── Tool descriptions (lib.php) ──────────────────────────────────────
+$string['tool_describe_table_desc'] = 'Obtiene la estructura (columnas, tipos, claves, índices, foreign keys) de una tabla de la base de datos de Moodle. Cacheado 24h.';
+$string['tool_describe_table_tablename'] = 'Nombre de la tabla (ej: course, user, grade_grades)';
+$string['tool_search_tables_desc'] = 'Busca tablas de Moodle por intención o palabras clave en INGLÉS. Busca en nombres de tablas Y sus descripciones COMMENT de install.xml. Devuelve los resultados más relevantes con nombre, descripción, nombres de campos y comentarios de campos. Usá SIEMPRE search_tables antes de describe_table o execute_sql.';
+$string['tool_search_tables_query'] = 'Intención o palabras clave en INGLÉS (ej: "user grades", "course enrolment", "student")';
+$string['tool_search_tables_limit'] = 'Máximo de resultados (default: 8, max: 15)';
+$string['tool_execute_sql_desc'] = 'Ejecuta una consulta SELECT en la base de datos de Moodle y devuelve las filas como JSON. SOLO lectura. Límite: 100 filas, timeout 5 segundos.';
+$string['tool_execute_sql_sql'] = 'Consulta SELECT a ejecutar. Usá ? como placeholder para parámetros. Ejemplo: SELECT id, fullname FROM {course} WHERE category = ?';
+$string['tool_execute_sql_params'] = 'Parámetros vinculados para la consulta (opcional)';
+$string['tool_get_site_config_desc'] = 'Obtiene configuración del sitio Moodle (sitename, lang, timezone, etc.). Solo disponible para administradores.';
+$string['tool_get_site_config_keys'] = 'Lista de claves de configuración. Válidas: sitename, siteurl, lang, country, timezone, maxbytes, passwordpolicy, enrol_plugins_enabled, auth_plugins_enabled';
+$string['tool_ws_search_desc'] = 'Busca funciones de servicios web de Moodle por intención o palabras clave en INGLÉS. Devuelve las más relevantes con descripción completa, parámetros (* = requerido) y estructura de retorno. Si los resultados incluyen lo que necesitás: DEJÁ de buscar — llamá ws_describe con el nombre exacto, luego ws_execute. No llamés ws_search de nuevo para la misma tarea.';
+$string['tool_ws_search_query'] = 'Intención o palabras clave en INGLÉS (ej: "create user", "enrol student", "get course grades")';
+$string['tool_ws_search_limit'] = 'Máximo de resultados a devolver (default: 6, max: 15)';
+$string['tool_ws_describe_desc'] = 'Obtené documentación completa (descripción, parámetros con * = requerido, tipo de retorno) para una función de servicio web específica cuando ya sabés su nombre exacto. LLAMÁ esto SIEMPRE DESPUÉS de ws_search y ANTES de ws_execute para verificar los campos requeridos.';
+$string['tool_ws_describe_wsname'] = 'Nombre exacto de la función (ej: core_user_create_users)';
+$string['tool_ws_execute_wsname'] = 'Nombre de la función del servicio web (ej: core_course_get_courses)';
+$string['tool_ws_execute_params'] = 'Parámetros codificados en JSON para la función del servicio web. DEBE incluir todos los campos * (requerido). Si el usuario no proporcionó un valor, generá un valor predeterminado sensato (ej: contraseña aleatoria, timestamp actual, array vacío).';
+
+// ── External WS errors ───────────────────────────────────────────────
+$string['ws_function_not_found'] = 'Función no encontrada: {$a}';
+$string['ws_cannot_load_info'] = 'No se puede cargar información de la función: {$a}';
+
+// ── Table descriptor errors ──────────────────────────────────────────
+$string['table_not_found'] = 'Tabla no encontrada: {$a}';
+
+// ── Set site config ──────────────────────────────────────────────────
+$string['config_key_blocked_msg'] = 'Esta clave de configuración está bloqueada por seguridad.';
+$string['config_updated_msg'] = 'Config \'{$a}\' actualizada correctamente.';
+
+// ── Run task ─────────────────────────────────────────────────────────
+$string['task_not_found_msg'] = 'task_not_found';
+$string['task_instantiation_failed_msg'] = 'task_instantiation_failed';
+
+// ── WS execute errors ────────────────────────────────────────────────
+$string['ws_method_not_exists'] = 'El método {$a} no existe';
+$string['ws_debug_prefix'] = ' | debug: ';

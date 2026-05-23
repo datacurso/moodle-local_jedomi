@@ -27,7 +27,7 @@ class table_descriptor {
         global $DB, $CFG;
 
         if (empty($tablename)) {
-            return ['error' => 'Table not found: ' . $tablename];
+            return ['error' => get_string('table_not_found', 'local_jedomi', $tablename)];
         }
 
         $cache = \cache::make('local_jedomi', 'schema_cache');
@@ -48,7 +48,7 @@ class table_descriptor {
         $columns = [];
         $dbcolumns = $DB->get_columns($lookup);
         if (empty($dbcolumns)) {
-            return ['error' => 'Table not found: ' . $tablename];
+            return ['error' => get_string('table_not_found', 'local_jedomi', $tablename)];
         }
         foreach ($dbcolumns as $name => $col) {
             $columns[$name] = [

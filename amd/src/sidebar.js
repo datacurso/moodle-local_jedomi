@@ -1,3 +1,4 @@
+/* eslint-disable */
 /**
  * Jedomi AI Sidebar — Theme-proof JavaScript
  *

@@ -98,7 +98,7 @@ class set_site_config extends external_api {
             return [
                 'status'       => 'error',
                 'name'         => $name,
-                'message'      => 'Key is blocked for security reasons.',
+                'message'      => get_string('config_key_blocked_msg', 'local_jedomi'),
                 'execution_ms' => $execution_ms,
             ];
         }
@@ -119,7 +119,7 @@ class set_site_config extends external_api {
         return [
             'status'       => 'success',
             'name'         => $name,
-            'message'      => "Config '{$name}' updated successfully.",
+            'message'      => get_string('config_updated_msg', 'local_jedomi', $name),
             'execution_ms' => $execution_ms,
         ];
     }
