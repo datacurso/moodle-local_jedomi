@@ -368,8 +368,6 @@ class handler {
                 return self::admin_describe_tool($args, $role);
             case 'admin_execute':
                 return self::admin_execute_tool($args, $role);
-            case 'document_read':
-                return self::document_read_tool($args, $role);
             default:
                 return json_encode(['error' => get_string('error_unknown_tool', 'local_jedomi', $name)]);
         }
@@ -686,100 +684,6 @@ class handler {
 
         $result = \local_jedomi\schema\cli_registry::execute($name, $params);
         return json_encode($result);
-    }
-
-    /**
-     * Read a PDF document from a course module and convert to images.
-     */
-    private static function document_read_tool(array $args, string $role): string {
-        global $CFG, $DB;
-
-        $cmid = (int) ($args['cmid'] ?? 0);
-        $dpi  = (int) ($args['dpi'] ?? 150);
-        $fmt  = in_array($args['fmt'] ?? 'JPEG', ['JPEG', 'PNG'], true) ? $args['fmt'] : 'JPEG';
-
-        if ($cmid <= 0) {
-            return json_encode(['error' => 'invalid cmid']);
-        }
-
-        // Role check — teacher+.
-        $allowed = ['teacher', 'editingteacher', 'manager', 'admin'];
-        if (!in_array($role, $allowed, true)) {
-            return json_encode(['error' => 'permission_denied']);
-        }
-
-        // Service URL.
-        $serviceurl = rtrim(get_config('local_jedomi', 'docservice_url') ?: 'http://localhost:8000', '/');
-        if (empty($serviceurl)) {
-            return json_encode(['error' => 'document service not configured']);
-        }
-
-        try {
-            // Load the course module and context.
-            [$cm, $modname, $modinstance] = get_module_from_cmid($cmid);
-            $context = \context_module::instance($cmid);
-
-            // Check capability to view this module.
-            require_capability('mod/resource:view', $context);
-
-            // Get file from the resource file area.
-            $fs = get_file_storage();
-            $files = $fs->get_area_files($context->id, 'mod_resource', 'content', 0, 'sortorder DESC, id ASC', false);
-
-            if (empty($files)) {
-                return json_encode(['error' => 'no files found in this resource']);
-            }
-
-            $file = reset($files);
-            $filename = $file->get_filename();
-            $mimetype = $file->get_mimetype();
-
-            if ($mimetype !== 'application/pdf') {
-                return json_encode(['error' => 'file is not a PDF: ' . $filename, 'mimetype' => $mimetype]);
-            }
-
-            // Save to temp and send to service.
-            $tmpdir  = make_temp_directory('jedomi/docread');
-            $tmppath = $tmpdir . '/' . $filename;
-            $file->copy_content_to($tmppath);
-
-            $ch = curl_init($serviceurl . '/api/v1/pdf/to-images?dpi=' . $dpi . '&fmt=' . $fmt);
-            curl_setopt_array($ch, [
-                CURLOPT_POST           => true,
-                CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_TIMEOUT        => 120,
-                CURLOPT_POSTFIELDS     => ['file' => new \CURLFile($tmppath, 'application/pdf', $filename)],
-            ]);
-            $response = curl_exec($ch);
-            $httpcode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            $curlerr  = curl_error($ch);
-            curl_close($ch);
-
-            unlink($tmppath);
-
-            if ($curlerr) {
-                return json_encode(['error' => 'document service request failed: ' . $curlerr]);
-            }
-
-            if ($httpcode !== 200) {
-                return json_encode(['error' => 'document service returned HTTP ' . $httpcode, 'response' => $response]);
-            }
-
-            $data = json_decode($response, true);
-            if (!isset($data['pages']) || empty($data['pages'])) {
-                return json_encode(['error' => 'document service returned no pages']);
-            }
-
-            return json_encode([
-                'filename'   => $filename,
-                'total_pages'=> $data['total_pages'],
-                'dpi'        => $data['dpi'],
-                'pages'      => $data['pages'],
-            ]);
-
-        } catch (\Throwable $e) {
-            return json_encode(['error' => 'document read failed: ' . $e->getMessage()]);
-        }
     }
 
     /**
