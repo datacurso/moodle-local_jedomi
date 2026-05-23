@@ -445,38 +445,26 @@ function local_jedomi_get_tool_definitions(string $role): array {
         ],
     ];
 
-    // describe_tables — todos los roles. Batch version of describe_table.
-    $tools[] = [
-        'type' => 'function',
-        'function' => [
-            'name'        => 'describe_tables',
-            'description' => 'Describe la estructura de MÚLTIPLES tablas en una sola llamada (más eficiente que llamar describe_table varias veces). Devuelve columnas, tipos y claves de cada tabla.',
-            'parameters'  => [
-                'type'       => 'object',
-                'properties' => [
-                    'tables' => [
-                        'type'        => 'array',
-                        'items'       => ['type' => 'string'],
-                        'description' => 'Lista de nombres de tablas (ej: ["course", "user", "grade_grades"])',
-                    ],
-                ],
-                'required' => ['tables'],
-            ],
-        ],
-    ];
-
     // search_tables — todos los roles.
     $tools[] = [
         'type' => 'function',
         'function' => [
             'name'        => 'search_tables',
-            'description' => 'Busca tablas en la base de datos por nombre. Devuelve lista de tablas que contienen el texto buscado. Cacheado 24h.',
+            'description' => 'Search Moodle tables by intent or keywords in ENGLISH. '
+                . 'Searches across table names AND their COMMENT descriptions from install.xml '
+                . '(same approach as ws_search). Returns the most relevant matches with '
+                . 'name, comment (description), field names, and field comments. '
+                . 'ALWAYS use search_tables before describe_table or execute_sql.',
             'parameters'  => [
                 'type'       => 'object',
                 'properties' => [
                     'query' => [
                         'type'        => 'string',
-                        'description' => 'Texto a buscar en el nombre de la tabla (ej: grade, user, course)',
+                        'description' => 'Intent or keywords in ENGLISH (e.g. "user grades", "course enrolment", "student")',
+                    ],
+                    'limit' => [
+                        'type'        => 'integer',
+                        'description' => 'Maximum results (default: 8, max: 15)',
                     ],
                 ],
                 'required' => ['query'],
@@ -540,7 +528,8 @@ function local_jedomi_get_tool_definitions(string $role): array {
             'description' => 'Search Moodle web service functions by intent or keywords in ENGLISH. '
                 . 'Returns the most relevant matches with full description, '
                 . 'parameters (* = required), and return structure. '
-                . 'ALWAYS call ws_search before ws_execute.',
+                . 'If results include what you need: STOP searching — call ws_describe on the exact name, '
+                . 'then ws_execute. Do NOT call ws_search again for the same task.',
             'parameters'  => [
                 'type'       => 'object',
                 'properties' => [
@@ -605,6 +594,7 @@ function local_jedomi_get_tool_definitions(string $role): array {
                 ],
             ],
         ];
+
     }
 
     return $tools;
@@ -911,4 +901,37 @@ function local_jedomi_classify_ws_access(string $wsname): string {
     }
 
     return '';
+}
+
+/**
+ * Write an entry to the Jedomi debug log.
+ *
+ * Logs are stored in {$CFG->dataroot}/local/jedomi/jedomi.log
+ * in a human-readable format with timestamp and structured context.
+ *
+ * @param string $message Short description of what happened.
+ * @param mixed  $data    Optional context data (array, string, or anything json-serializable).
+ */
+function local_jedomi_log(string $message, mixed $data = null): void {
+    global $CFG;
+
+    static $logdir = null;
+    static $logfile = null;
+
+    if ($logdir === null) {
+        $logdir = $CFG->dataroot . '/local/jedomi';
+        check_dir_exists($logdir, true, true);
+        $logfile = $logdir . '/jedomi.log';
+    }
+
+    $timestamp = date('Y-m-d H:i:s.v');
+    $entry = "[{$timestamp}] {$message}";
+
+    if ($data !== null) {
+        $encoded = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_IGNORE);
+        $entry .= ' | ' . $encoded;
+    }
+
+    $entry .= "\n";
+    file_put_contents($logfile, $entry, FILE_APPEND | LOCK_EX);
 }

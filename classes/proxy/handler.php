@@ -45,9 +45,13 @@ class handler {
      * @param array  $spt      SPT payload.
      */
     public static function run(string $model, array $messages, string $role, array $spt): void {
-        $tools = spt_validator::get_tool_definitions($role);
+        require_once(__DIR__ . '/../../lib.php');
+        \local_jedomi_log('RUN_START', ['model' => $model, 'role' => $role, 'user_message_count' => count($messages)]);
 
-        for ($i = 0; $i < 10; $i++) {
+        $tools = spt_validator::get_tool_definitions($role);
+        $toolrepeatcounts = [];
+
+        for ($i = 0; $i < 50; $i++) {
             echo ": thinking\n\n";
             ob_flush();
             flush();
@@ -62,6 +66,7 @@ class handler {
             }
 
             if ($response['type'] === 'text') {
+                \local_jedomi_log('AI_RESPONSE_TEXT', ['iteration' => $i, 'preview' => mb_substr($response['content'], 0, 200)]);
                 // No tool calls — stream the final response to the client.
                 self::stream_sse_content($response['content']);
                 return;
@@ -69,6 +74,7 @@ class handler {
 
             // type === 'tool_calls': execute each one and collect results.
             $tool_calls = $response['tool_calls'];
+            \local_jedomi_log('AI_TOOL_CALLS', ['iteration' => $i, 'tool_calls_count' => count($tool_calls), 'tool_names' => array_map(fn($tc) => $tc['function']['name'] ?? '?', $tool_calls)]);
 
             // Add the assistant message with tool_calls to conversation history.
             $messages[] = [
@@ -83,6 +89,9 @@ class handler {
                 $args_raw = $tc['function']['arguments'];
                 $args = is_array($args_raw) ? $args_raw : (json_decode($args_raw, true) ?? []);
 
+                $callkey = $name . '|' . self::stable_tool_args_signature($args);
+                $toolrepeatcounts[$callkey] = ($toolrepeatcounts[$callkey] ?? 0) + 1;
+
                 // Notify the client that a tool is being executed.
                 echo "data: " . json_encode([
                     '_jedomi_tool_executing' => ['tool' => $name, 'args' => $args],
@@ -90,14 +99,23 @@ class handler {
                 ob_flush();
                 flush();
 
-                try {
-                    $result = self::execute_tool_by_name($name, $args, $role);
-                } catch (\Throwable $e) {
+                if ($toolrepeatcounts[$callkey] > 2) {
                     $result = json_encode([
-                        'error' => 'tool_failed',
-                        'tool'  => $name,
-                        'detail' => get_class($e) . ': ' . $e->getMessage(),
+                        'error' => 'loop_detected',
+                        'tool' => $name,
+                        'detail' => 'Repeated identical tool call blocked. Use a different tool or execute with new parameters.',
                     ]);
+                    \local_jedomi_log('LOOP_DETECTED', ['tool' => $name, 'args' => $args, 'count' => $toolrepeatcounts[$callkey]]);
+                } else {
+                    try {
+                        $result = self::execute_tool_by_name($name, $args, $role);
+                    } catch (\Throwable $e) {
+                        $result = json_encode([
+                            'error' => 'tool_failed',
+                            'tool'  => $name,
+                            'detail' => get_class($e) . ': ' . $e->getMessage(),
+                        ]);
+                    }
                 }
 
                 // Send result summary to client.
@@ -116,10 +134,47 @@ class handler {
                     'tool_call_id' => $tc_id,
                     'content'      => $result,
                 ];
+
+                \local_jedomi_log('TOOL_RESULT', ['tool' => $name, 'summary' => self::summarize_tool_result($name, $result)]);
             }
         }
 
+        \local_jedomi_log('RUN_FALLBACK_ITERATIONS_EXCEEDED', ['iteration_count' => 10]);
         self::stream_sse_content("Lo siento, no pude completar la operación después de varios intentos.");
+    }
+
+    /**
+     * Build a deterministic signature for tool arguments.
+     *
+     * @param  array $args Tool arguments.
+     * @return string
+     */
+    private static function stable_tool_args_signature(array $args): string {
+        $normalized = self::sort_recursive($args);
+        return hash('sha256', json_encode($normalized, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_IGNORE));
+    }
+
+    /**
+     * Recursively sort associative arrays for stable hashing.
+     *
+     * @param  mixed $value
+     * @return mixed
+     */
+    private static function sort_recursive($value) {
+        if (!is_array($value)) {
+            return $value;
+        }
+
+        $islist = array_keys($value) === range(0, count($value) - 1);
+        if ($islist) {
+            return array_map(static fn($v) => self::sort_recursive($v), $value);
+        }
+
+        ksort($value);
+        foreach ($value as $k => $v) {
+            $value[$k] = self::sort_recursive($v);
+        }
+        return $value;
     }
 
     /**
@@ -148,6 +203,15 @@ class handler {
             $payload['tool_choice'] = 'auto';
         }
 
+        // Log conversation context sent to AI (last 5 messages, truncated).
+        $contextpreview = array_map(static fn(array $msg): array => [
+            'role' => $msg['role'] ?? '?',
+            'content_preview' => isset($msg['content']) && is_string($msg['content'])
+                ? mb_substr($msg['content'], 0, 150) : (isset($msg['tool_calls']) ? 'tool_calls:' . count($msg['tool_calls']) : ''),
+            'tool_call_id' => $msg['tool_call_id'] ?? null,
+        ], array_slice($messages, -5));
+        \local_jedomi_log('AI_API_REQUEST', ['model' => $model, 'messages_count' => count($messages), 'last_messages' => $contextpreview]);
+
         $buffer = '';
         $ch = curl_init($apiUrl . '/v1/chat/completions');
         curl_setopt_array($ch, [
@@ -173,6 +237,7 @@ class handler {
 
         if ($httpCode !== 200 || empty($buffer)) {
             $buf_preview = substr($buffer, 0, 500);
+            \local_jedomi_log('AI_API_ERROR', ['http_code' => $httpCode, 'curl_error' => $curlError, 'preview' => $buf_preview]);
             error_log("[local_jedomi] AI API error: http=$httpCode curl='$curlError' preview="
                 . json_encode($buf_preview, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_IGNORE));
             return ['type' => 'error', 'error' => 'ai_api_error'];
@@ -249,15 +314,23 @@ class handler {
                 }
             }
             unset($tc);
+
+            $toolnames = array_map(static fn($tc) => $tc['function']['name'], $tool_calls);
+            \local_jedomi_log('AI_API_RESPONSE_TOOL_CALLS', ['function_count' => count($tool_calls), 'functions' => $toolnames]);
+
             return ['type' => 'tool_calls', 'tool_calls' => $tool_calls];
         }
 
         // Text response: prefer content, fall back to reasoning (Gemma thinking tokens).
         $text = !empty($text_buf) ? $text_buf : $reason_buf;
         if (empty($text) && !empty($buffer)) {
+            \local_jedomi_log('AI_API_RESPONSE_EMPTY', ['buffer_preview' => substr($buffer, 0, 500)]);
             error_log("[local_jedomi] SSE parse warning: no content or tool_calls extracted. First 2KB: "
                 . json_encode(substr($buffer, 0, 2048), JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_IGNORE));
         }
+
+        \local_jedomi_log('AI_API_RESPONSE_TEXT', ['length' => mb_strlen($text), 'preview' => mb_substr($text, 0, 200)]);
+
         return ['type' => 'text', 'content' => $text];
     }
 
@@ -270,9 +343,11 @@ class handler {
      * @return string       JSON-encoded result.
      */
     private static function execute_tool_by_name(string $name, array $args, string $role): string {
+        // Log every tool invocation with full args.
+        require_once(__DIR__ . '/../../lib.php');
+        \local_jedomi_log('TOOL_CALL', ['tool' => $name, 'args' => $args, 'role' => $role]);
+
         switch ($name) {
-            case 'describe_tables':
-                return self::describe_tables_tool($args);
             case 'describe_table':
                 return self::describe_table_tool($args);
             case 'search_tables':
@@ -304,10 +379,14 @@ class handler {
             return json_encode(['error' => 'permission_denied']);
         }
         $sql    = $args['sql'] ?? $args['query'] ?? '';
+        $sql    = self::normalize_moodle_table_placeholders($sql);
         $params = $args['params'] ?? [];
         if (!is_array($params)) {
             $params = [$params];
         }
+
+        \local_jedomi_log('EXECUTE_SQL', ['sql' => $sql, 'params' => $params]);
+
         try {
             $result = \local_jedomi\external\execute_sql::execute(
                 $sql,
@@ -327,9 +406,33 @@ class handler {
                     $realError .= ' | PREV_DBG: ' . $prev->debuginfo;
                 }
             }
+            if (strpos($sql, '{') === false) {
+                $realError .= ' | HINT: In Moodle SQL, table names should use braces (e.g. {course}, {user}).';
+            }
+            \local_jedomi_log('EXECUTE_SQL_ERROR', ['sql' => $sql, 'params' => $params, 'error' => $realError]);
             error_log("[local_jedomi] execute_sql_tool error: class=" . get_class($e) . " msg=" . json_encode($realError, JSON_UNESCAPED_UNICODE));
             return json_encode(['error' => $realError]);
         }
+    }
+
+    /**
+     * Normalize SQL by wrapping plain table names in FROM/JOIN with Moodle braces.
+     *
+     * Example: FROM course -> FROM {course}
+     *
+     * @param string $sql
+     * @return string
+     */
+    private static function normalize_moodle_table_placeholders(string $sql): string {
+        return (string)preg_replace_callback(
+            '/\b(FROM|JOIN)\s+([a-z][a-z0-9_]*)\b/i',
+            static function(array $matches): string {
+                $keyword = $matches[1];
+                $table = $matches[2];
+                return $keyword . ' {' . $table . '}';
+            },
+            $sql
+        );
     }
 
     /**
@@ -338,22 +441,6 @@ class handler {
      * @param  array  $args Tool arguments (tables).
      * @return string       JSON-encoded result.
      */
-    private static function describe_tables_tool(array $args): string {
-        try {
-            $tables = $args['tables'] ?? [];
-            if (!is_array($tables) || empty($tables)) {
-                return json_encode(['error' => 'tables must be a non-empty array']);
-            }
-            $results = [];
-            foreach ($tables as $t) {
-                $results[$t] = \local_jedomi\schema\table_descriptor::describe((string) $t);
-            }
-            return json_encode(['tables' => $results]);
-        } catch (\Exception $e) {
-            return json_encode(['error' => $e->getMessage()]);
-        }
-    }
-
     /**
      * Describe table tool (single).
      *
@@ -371,18 +458,36 @@ class handler {
     }
 
     /**
-     * Search tables tool.
+     * Search tables tool — semantic search over install.xml definitions.
      *
-     * @param  array  $args Tool arguments (query).
+     * Unlike the old table_descriptor::search_tables (plain string match),
+     * this searches across table names, table COMMENTS, field names,
+     * and field COMMENTS from install.xml files — same approach as ws_search.
+     *
+     * @param  array  $args Tool arguments (query, limit).
      * @return string       JSON-encoded result.
      */
     private static function search_tables_tool(array $args): string {
         try {
-            $keyword = $args['query'] ?? $args['keyword'] ?? '';
-            $result = \local_jedomi\schema\table_descriptor::search_tables($keyword);
-            return json_encode($result);
-        } catch (\Exception $e) {
-            return json_encode(['error' => $e->getMessage()]);
+            $query  = trim($args['query'] ?? $args['keyword'] ?? '');
+            $limit  = max(1, min(15, (int) ($args['limit'] ?? 8)));
+
+            if (empty($query)) {
+                return json_encode(['error' => 'query is required']);
+            }
+
+            $results = \local_jedomi\schema\table_indexer::search($query, $limit);
+
+            return json_encode([
+                'tables' => $results,
+                'count'  => count($results),
+                'note'   => count($results) === 0
+                    ? 'No matching tables found. Try different keywords.'
+                    : 'Use the exact "name" with describe_table or execute_sql. '
+                      . 'Table names shown as provided — use {tablename} in SQL queries.',
+            ]);
+        } catch (\Throwable $e) {
+            return json_encode(['error' => 'search_tables failed: ' . $e->getMessage()]);
         }
     }
 
@@ -425,7 +530,7 @@ class handler {
     private static function ws_search_tool(array $args, string $role): string {
         try {
             $query = trim($args['query'] ?? $args['keyword'] ?? $args['filter'] ?? '');
-            $limit = max(1, min(15, (int) ($args['limit'] ?? 6)));
+            $limit = max(1, min(15, (int) ($args['limit'] ?? 8)));
 
             if (empty($query)) {
                 return json_encode(['error' => 'query is required']);
@@ -440,6 +545,13 @@ class handler {
             $wsnames = $role === 'admin' ? [] : $allowlist;
 
             $results = \local_jedomi\schema\ws_indexer::search($query, $wsnames, $limit);
+
+            \local_jedomi_log('WS_SEARCH_RESULTS', [
+                'query' => $query,
+                'count' => count($results),
+                'names' => array_map(fn($r) => $r['name'] ?? '?', $results),
+                'descriptions' => array_map(fn($r) => mb_substr($r['description'] ?? '', 0, 120), $results),
+            ]);
 
             return json_encode([
                 'results' => $results,
@@ -498,6 +610,8 @@ class handler {
             $raw = $args['params'] ?? '{}';
             $params = is_array($raw) ? json_encode($raw) : $raw;
 
+            \local_jedomi_log('WS_EXECUTE', ['wsname' => $wsname, 'params' => $params]);
+
             $result = \local_jedomi\external\ws_execute::execute(
                 $wsname,
                 $params,
@@ -512,6 +626,7 @@ class handler {
             if (method_exists($e, 'getDebugInfo') && $e->getDebugInfo()) {
                 $detail .= ' | debug: ' . $e->getDebugInfo();
             }
+            \local_jedomi_log('WS_EXECUTE_ERROR', ['wsname' => $wsname ?? '', 'params' => $params ?? '{}', 'error' => $detail]);
             return json_encode([
                 'error'    => 'ws_execute failed: ' . $detail,
                 'wsname'   => $wsname ?? '',
@@ -519,6 +634,7 @@ class handler {
                 'errclass' => get_class($e),
             ]);
         } catch (\Throwable $e) {
+            \local_jedomi_log('WS_EXECUTE_ERROR', ['wsname' => $wsname ?? '', 'params' => $params ?? '{}', 'error' => $e->getMessage()]);
             return json_encode([
                 'error'    => 'ws_execute failed: ' . $e->getMessage(),
                 'wsname'   => $wsname ?? '',
@@ -592,7 +708,7 @@ class handler {
         return match ($name) {
             'execute_sql' => ($decoded['row_count'] ?? count($decoded['rows'] ?? [])) . ' rows returned',
             'describe_table' => 'table structure retrieved',
-            'search_tables' => (is_array($decoded) ? count($decoded) : 0) . ' matching tables',
+            'search_tables' => ($decoded['count'] ?? count($decoded['tables'] ?? $decoded) ?? 0) . ' matching tables',
             'get_site_config' => 'config data retrieved',
             'ws_search'   => count($decoded['results'] ?? []) . ' functions found',
             'ws_describe' => 'function details retrieved',
