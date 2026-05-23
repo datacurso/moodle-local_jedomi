@@ -45,6 +45,9 @@ class handler {
      * @param array  $spt      SPT payload.
      */
     public static function run(string $model, array $messages, string $role, array $spt): void {
+        require_once(__DIR__ . '/../../lib.php');
+        \local_jedomi_log('RUN_START', ['model' => $model, 'role' => $role, 'user_message_count' => count($messages)]);
+
         $tools = spt_validator::get_tool_definitions($role);
         $hasexecutedtool = false;
 
@@ -63,6 +66,7 @@ class handler {
             }
 
             if ($response['type'] === 'text') {
+                \local_jedomi_log('AI_RESPONSE_TEXT', ['iteration' => $i, 'preview' => mb_substr($response['content'], 0, 200)]);
                 if (!$hasexecutedtool && self::is_live_data_request($messages)) {
                     $messages[] = [
                         'role' => 'system',
@@ -78,6 +82,7 @@ class handler {
 
             // type === 'tool_calls': execute each one and collect results.
             $tool_calls = $response['tool_calls'];
+            \local_jedomi_log('AI_TOOL_CALLS', ['iteration' => $i, 'tool_calls_count' => count($tool_calls), 'tool_names' => array_map(fn($tc) => $tc['function']['name'] ?? '?', $tool_calls)]);
 
             // Add the assistant message with tool_calls to conversation history.
             $messages[] = [
@@ -126,9 +131,12 @@ class handler {
                     'content'      => $result,
                 ];
                 $hasexecutedtool = true;
+
+                \local_jedomi_log('TOOL_RESULT', ['tool' => $name, 'summary' => self::summarize_tool_result($name, $result)]);
             }
         }
 
+        \local_jedomi_log('RUN_FALLBACK_ITERATIONS_EXCEEDED', ['iteration_count' => 10]);
         self::stream_sse_content("Lo siento, no pude completar la operación después de varios intentos.");
     }
 
@@ -181,6 +189,15 @@ class handler {
             $payload['tool_choice'] = 'auto';
         }
 
+        // Log conversation context sent to AI (last 5 messages, truncated).
+        $contextpreview = array_map(static fn(array $msg): array => [
+            'role' => $msg['role'] ?? '?',
+            'content_preview' => isset($msg['content']) && is_string($msg['content'])
+                ? mb_substr($msg['content'], 0, 150) : (isset($msg['tool_calls']) ? 'tool_calls:' . count($msg['tool_calls']) : ''),
+            'tool_call_id' => $msg['tool_call_id'] ?? null,
+        ], array_slice($messages, -5));
+        \local_jedomi_log('AI_API_REQUEST', ['model' => $model, 'messages_count' => count($messages), 'last_messages' => $contextpreview]);
+
         $buffer = '';
         $ch = curl_init($apiUrl . '/v1/chat/completions');
         curl_setopt_array($ch, [
@@ -206,6 +223,7 @@ class handler {
 
         if ($httpCode !== 200 || empty($buffer)) {
             $buf_preview = substr($buffer, 0, 500);
+            \local_jedomi_log('AI_API_ERROR', ['http_code' => $httpCode, 'curl_error' => $curlError, 'preview' => $buf_preview]);
             error_log("[local_jedomi] AI API error: http=$httpCode curl='$curlError' preview="
                 . json_encode($buf_preview, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_IGNORE));
             return ['type' => 'error', 'error' => 'ai_api_error'];
@@ -282,15 +300,23 @@ class handler {
                 }
             }
             unset($tc);
+
+            $toolnames = array_map(static fn($tc) => $tc['function']['name'], $tool_calls);
+            \local_jedomi_log('AI_API_RESPONSE_TOOL_CALLS', ['function_count' => count($tool_calls), 'functions' => $toolnames]);
+
             return ['type' => 'tool_calls', 'tool_calls' => $tool_calls];
         }
 
         // Text response: prefer content, fall back to reasoning (Gemma thinking tokens).
         $text = !empty($text_buf) ? $text_buf : $reason_buf;
         if (empty($text) && !empty($buffer)) {
+            \local_jedomi_log('AI_API_RESPONSE_EMPTY', ['buffer_preview' => substr($buffer, 0, 500)]);
             error_log("[local_jedomi] SSE parse warning: no content or tool_calls extracted. First 2KB: "
                 . json_encode(substr($buffer, 0, 2048), JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_IGNORE));
         }
+
+        \local_jedomi_log('AI_API_RESPONSE_TEXT', ['length' => mb_strlen($text), 'preview' => mb_substr($text, 0, 200)]);
+
         return ['type' => 'text', 'content' => $text];
     }
 
@@ -303,6 +329,10 @@ class handler {
      * @return string       JSON-encoded result.
      */
     private static function execute_tool_by_name(string $name, array $args, string $role): string {
+        // Log every tool invocation with full args.
+        require_once(__DIR__ . '/../../lib.php');
+        \local_jedomi_log('TOOL_CALL', ['tool' => $name, 'args' => $args, 'role' => $role]);
+
         switch ($name) {
             case 'describe_tables':
                 return self::describe_tables_tool($args);
@@ -342,6 +372,9 @@ class handler {
         if (!is_array($params)) {
             $params = [$params];
         }
+
+        \local_jedomi_log('EXECUTE_SQL', ['sql' => $sql, 'params' => $params]);
+
         try {
             $result = \local_jedomi\external\execute_sql::execute(
                 $sql,
@@ -364,6 +397,7 @@ class handler {
             if (strpos($sql, '{') === false) {
                 $realError .= ' | HINT: In Moodle SQL, table names should use braces (e.g. {course}, {user}).';
             }
+            \local_jedomi_log('EXECUTE_SQL_ERROR', ['sql' => $sql, 'params' => $params, 'error' => $realError]);
             error_log("[local_jedomi] execute_sql_tool error: class=" . get_class($e) . " msg=" . json_encode($realError, JSON_UNESCAPED_UNICODE));
             return json_encode(['error' => $realError]);
         }
@@ -498,6 +532,13 @@ class handler {
 
             $results = \local_jedomi\schema\ws_indexer::search($query, $wsnames, $limit);
 
+            \local_jedomi_log('WS_SEARCH_RESULTS', [
+                'query' => $query,
+                'count' => count($results),
+                'names' => array_map(fn($r) => $r['name'] ?? '?', $results),
+                'descriptions' => array_map(fn($r) => mb_substr($r['description'] ?? '', 0, 120), $results),
+            ]);
+
             return json_encode([
                 'results' => $results,
                 'count'   => count($results),
@@ -555,6 +596,8 @@ class handler {
             $raw = $args['params'] ?? '{}';
             $params = is_array($raw) ? json_encode($raw) : $raw;
 
+            \local_jedomi_log('WS_EXECUTE', ['wsname' => $wsname, 'params' => $params]);
+
             $result = \local_jedomi\external\ws_execute::execute(
                 $wsname,
                 $params,
@@ -569,6 +612,7 @@ class handler {
             if (method_exists($e, 'getDebugInfo') && $e->getDebugInfo()) {
                 $detail .= ' | debug: ' . $e->getDebugInfo();
             }
+            \local_jedomi_log('WS_EXECUTE_ERROR', ['wsname' => $wsname ?? '', 'params' => $params ?? '{}', 'error' => $detail]);
             return json_encode([
                 'error'    => 'ws_execute failed: ' . $detail,
                 'wsname'   => $wsname ?? '',
@@ -576,6 +620,7 @@ class handler {
                 'errclass' => get_class($e),
             ]);
         } catch (\Throwable $e) {
+            \local_jedomi_log('WS_EXECUTE_ERROR', ['wsname' => $wsname ?? '', 'params' => $params ?? '{}', 'error' => $e->getMessage()]);
             return json_encode([
                 'error'    => 'ws_execute failed: ' . $e->getMessage(),
                 'wsname'   => $wsname ?? '',
