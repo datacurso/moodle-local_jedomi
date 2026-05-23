@@ -438,6 +438,16 @@ $string['tool_ws_describe_wsname'] = 'Exact function name (e.g. core_user_create
 $string['tool_ws_execute_wsname'] = 'Web service function name (e.g. core_course_get_courses)';
 $string['tool_ws_execute_params'] = 'JSON-encoded parameters for the web service function. MUST include every * (required) field. If the user did not provide a value, generate a sensible default (e.g. random password, current timestamp, empty array).';
 
+// ── Admin CLI tools (non-WS actions) ─────────────────────────────────
+$string['tool_admin_search_desc'] = 'Search for CLI operations available to administrators (e.g. backup, purge caches, run scheduled tasks). Use this to discover what operations exist before describing or executing them.';
+$string['tool_admin_search_query'] = 'Search keywords to find relevant admin operations.';
+$string['tool_admin_search_limit'] = 'Maximum number of results to return (default: 8, max: 20).';
+$string['tool_admin_describe_desc'] = 'Get full documentation (parameters, types, required fields) for a specific admin CLI operation by name. Use this AFTER admin_search and BEFORE admin_execute to verify required parameters.';
+$string['tool_admin_describe_name'] = 'Operation name (e.g. backup, scheduled_task, purge_caches).';
+$string['tool_admin_execute_desc'] = 'Execute an admin CLI operation to create or modify Moodle data. Requires admin or manager role. USE WITH CAUTION — these operations modify the database. COMBINE with WS tools: first use ws_search/ws_execute to discover courses, sections, users, or verify data, then call admin_execute with the gathered info. Example flow: ws_execute(core_course_get_courses_by_field) to find course → admin_execute(create_mod, ...) to create an activity.';
+$string['tool_admin_execute_name'] = 'Operation name (e.g. backup, scheduled_task, purge_caches).';
+$string['tool_admin_execute_params'] = 'JSON object of parameters for the operation (use admin_describe first to see required fields).';
+
 // ── External WS errors ───────────────────────────────────────────────
 $string['ws_function_not_found'] = 'Function not found: {$a}';
 $string['ws_cannot_load_info'] = 'Cannot load function info: {$a}';

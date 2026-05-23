@@ -362,6 +362,12 @@ class handler {
                 return self::ws_describe_tool($args, $role);
             case 'ws_execute':
                 return self::ws_execute_tool($args, $role);
+            case 'admin_search':
+                return self::admin_search_tool($args, $role);
+            case 'admin_describe':
+                return self::admin_describe_tool($args, $role);
+            case 'admin_execute':
+                return self::admin_execute_tool($args, $role);
             default:
                 return json_encode(['error' => get_string('error_unknown_tool', 'local_jedomi', $name)]);
         }
@@ -641,6 +647,43 @@ class handler {
                 'errclass' => get_class($e),
             ]);
         }
+    }
+
+    /**
+     * Search admin CLI operations by keyword.
+     */
+    private static function admin_search_tool(array $args, string $role): string {
+        if (!in_array($role, ['admin', 'manager'], true)) {
+            return json_encode(['error' => 'permission_denied']);
+        }
+
+        $query = trim($args['query'] ?? '');
+        $limit = min((int) ($args['limit'] ?? 8), 20);
+
+        $results = \local_jedomi\schema\cli_registry::search($query, $limit);
+        return json_encode(['results' => $results, 'count' => count($results)]);
+    }
+
+    private static function admin_describe_tool(array $args, string $role): string {
+        if (!in_array($role, ['admin', 'manager'], true)) {
+            return json_encode(['error' => 'permission_denied']);
+        }
+
+        $name  = trim($args['name'] ?? '');
+        $entry = \local_jedomi\schema\cli_registry::describe($name);
+        return json_encode($entry);
+    }
+
+    private static function admin_execute_tool(array $args, string $role): string {
+        if (!in_array($role, ['admin', 'manager'], true)) {
+            return json_encode(['error' => 'permission_denied']);
+        }
+
+        $name   = trim($args['name'] ?? '');
+        $params = $args['params'] ?? [];
+
+        $result = \local_jedomi\schema\cli_registry::execute($name, $params);
+        return json_encode($result);
     }
 
     /**
