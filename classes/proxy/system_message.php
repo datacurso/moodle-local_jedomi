@@ -95,6 +95,13 @@ class system_message {
         $content .= "- execute_sql is SELECT only. Never modify data.\n";
         $content .= "- search_tables searches intent across table names AND COMMENT descriptions.\n\n";
 
+        $content .= "ADMIN PATH (create/change things in Moodle):\n";
+        $content .= "- admin_search(query in ENGLISH) → discover what admin operations exist.\n";
+        $content .= "- admin_describe(name) → see required parameters for an operation.\n";
+        $content .= "- admin_execute(name, params) → execute the operation.\n";
+        $content .= "- COMBINE with WS: use ws_search/ws_execute FIRST to gather context (course info, sections, users), THEN call admin_execute to do the action.\n";
+        $content .= "- Example: to create a 'page' in section 1 of course X → ws_execute(core_course_get_courses_by_field) to verify course → admin_execute(create_mod, {courseid: X, resource_type: 'page', section: 1, parameters: {name: '...', content: '...', ...}}).\n";
+
         $content .= "GENERAL RULES:\n";
         $content .= "- Never invent data.\n";
         $content .= "- ALWAYS exclude course ID 1 (site home) and guest user from any operation.\n";

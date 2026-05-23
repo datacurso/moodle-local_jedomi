@@ -584,6 +584,69 @@ function local_jedomi_get_tool_definitions(string $role): array {
 
     }
 
+    // Admin CLI tools — search, describe, execute admin operations not exposed via WS.
+    if (in_array($role, ['admin', 'manager'], true)) {
+        $tools[] = [
+            'type' => 'function',
+            'function' => [
+                'name'        => 'admin_search',
+                'description' => get_string('tool_admin_search_desc', 'local_jedomi'),
+                'parameters'  => [
+                    'type'       => 'object',
+                    'properties' => [
+                        'query' => [
+                            'type'        => 'string',
+                            'description' => get_string('tool_admin_search_query', 'local_jedomi'),
+                        ],
+                        'limit' => [
+                            'type'        => 'integer',
+                            'description' => get_string('tool_admin_search_limit', 'local_jedomi'),
+                        ],
+                    ],
+                    'required' => ['query'],
+                ],
+            ],
+        ];
+        $tools[] = [
+            'type' => 'function',
+            'function' => [
+                'name'        => 'admin_describe',
+                'description' => get_string('tool_admin_describe_desc', 'local_jedomi'),
+                'parameters'  => [
+                    'type'       => 'object',
+                    'properties' => [
+                        'name' => [
+                            'type'        => 'string',
+                            'description' => get_string('tool_admin_describe_name', 'local_jedomi'),
+                        ],
+                    ],
+                    'required' => ['name'],
+                ],
+            ],
+        ];
+        $tools[] = [
+            'type' => 'function',
+            'function' => [
+                'name'        => 'admin_execute',
+                'description' => get_string('tool_admin_execute_desc', 'local_jedomi'),
+                'parameters'  => [
+                    'type'       => 'object',
+                    'properties' => [
+                        'name' => [
+                            'type'        => 'string',
+                            'description' => get_string('tool_admin_execute_name', 'local_jedomi'),
+                        ],
+                        'params' => [
+                            'type'        => 'object',
+                            'description' => get_string('tool_admin_execute_params', 'local_jedomi'),
+                        ],
+                    ],
+                    'required' => ['name'],
+                ],
+            ],
+        ];
+    }
+
     return $tools;
 }
 
