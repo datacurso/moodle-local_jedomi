@@ -45,6 +45,13 @@ define(['core/log'], function(Log) {
         lock:    '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>',
         cpu:     '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>',
         plus:    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>',
+        // Tool status icons (SVG profesionales, no emojis)
+        search:  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>',
+        db:      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>',
+        clipboard:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>',
+        gear:    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
+        book:    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>',
+        zap:     '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>',
     };
 
     // ── State ─────────────────────────────────────────────────────────────────
@@ -304,7 +311,7 @@ define(['core/log'], function(Log) {
     <div class="jedomi-input-area">
         <div class="jedomi-input-row" onclick="document.getElementById('jedomi-input')?.focus()">
             <textarea id="jedomi-input" class="jedomi-input"
-                placeholder="${S.placeholder || 'Ask Jedomi about courses, users, grades...'}"
+                placeholder="${S.chat_placeholder || 'Ask Jedomi about courses, users, grades...'}"
                 rows="1" aria-label="${S.message_input || 'Message Jedomi'}"></textarea>
             <div class="jedomi-input-actions">
                 <button id="jedomi-voice-btn" class="jedomi-input-icon" title="${S.voice_input || 'Voice input'}">${SVG.mic}</button>
@@ -920,17 +927,30 @@ define(['core/log'], function(Log) {
                     // toolEvent is {tool: "search_tables", args: {...}}
                     const toolName = typeof toolEvent === 'string' ? toolEvent : (toolEvent?.tool || 'unknown');
                     const S2 = cfg.strings || {};
-                    const labels = {
-                        search_tables:  '🔍 ' + (S2.tool_search_tables || 'Buscando tablas...'),
-                        execute_sql:    '💾 ' + (S2.tool_execute_sql || 'Consultando base de datos...'),
-                        describe_table: '📋 ' + (S2.tool_describe_table || 'Describiendo tabla...'),
-                        get_site_config:'⚙️ ' + (S2.tool_get_site_config || 'Obteniendo configuración...'),
-                        ws_search:      '🔍 ' + (S2.tool_ws_search || 'Buscando funciones web...'),
-                        ws_describe:    '📖 ' + (S2.tool_ws_describe || 'Describiendo función web...'),
-                        ws_execute:     '⚡ ' + (S2.tool_ws_execute || 'Ejecutando acción...'),
+                    const toolIcons = {
+                        search_tables:  SVG.search,
+                        execute_sql:    SVG.db,
+                        describe_table: SVG.clipboard,
+                        get_site_config:SVG.gear,
+                        ws_search:      SVG.search,
+                        ws_describe:    SVG.book,
+                        ws_execute:     SVG.zap,
                     };
+                    const toolLabels = {
+                        search_tables:  S2.tool_search_tables || 'Buscando tablas...',
+                        execute_sql:    S2.tool_execute_sql || 'Consultando base de datos...',
+                        describe_table: S2.tool_describe_table || 'Analizando tabla...',
+                        get_site_config:S2.tool_get_site_config || 'Obteniendo configuración...',
+                        ws_search:      S2.tool_ws_search || 'Buscando funciones webservices...',
+                        ws_describe:    S2.tool_ws_describe || 'Analizando función webservice...',
+                        ws_execute:     S2.tool_ws_execute || 'Ejecutando acción...',
+                    };
+
+                    const label = toolLabels[toolName] || (S2.tool_unknown || 'Ejecutando herramienta...');
+                    const icon  = toolIcons[toolName] || SVG.zap;
+
                     streamBubble.inner.innerHTML =
-                        `<span class="jedomi-tool-status">${labels[toolName] || '🔧 ' + toolName}</span>`;
+                        `<span class="jedomi-tool-status">${icon} ${label}</span>`;
                     streamBubble.el.classList.remove('jedomi-hidden');
                     setThinking(false);
                     streamBubble.thinking = false;
@@ -1458,7 +1478,7 @@ GENERAL INSTRUCTIONS:
                 if (audioChunks.length === 0 || !speechDetected) {
                     setRecordingState(false);
                     const input = g('jedomi-input');
-                    if (input) input.placeholder = cfg.strings?.placeholder || 'Ask Jedomi...';
+                    if (input) input.placeholder = cfg.strings?.chat_placeholder || 'Ask Jedomi...';
                     return;
                 }
 
@@ -1467,7 +1487,7 @@ GENERAL INSTRUCTIONS:
                 const input = g('jedomi-input');
                 if (input) input.placeholder = '🎙️ ' + (cfg.strings?.transcribing || 'Transcribing...');
                 await transcribeAudio(blob);
-                if (input) input.placeholder = cfg.strings?.placeholder || 'Ask Jedomi...';
+                if (input) input.placeholder = cfg.strings?.chat_placeholder || 'Ask Jedomi...';
             };
             mediaRecorder.start(100); // chunks cada 100ms para respuesta rápida
             isRecording    = true;
