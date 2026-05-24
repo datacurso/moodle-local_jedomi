@@ -50,6 +50,13 @@ $string['tool_api_call']          = 'Executing Moodle action...';
 $string['tool_schema_lookup']     = 'Looking up table...';
 $string['tool_webservice_lookup'] = 'Looking up API function...';
 $string['tool_get_site_config']    = 'Getting site configuration...';
+$string['tool_execute_sql']       = 'Querying database...';
+$string['tool_search_tables']     = 'Searching tables...';
+$string['tool_describe_table']    = 'Analyzing table...';
+$string['tool_ws_search']         = 'Looking up webservice functions...';
+$string['tool_ws_describe']       = 'Getting webservice function details...';
+$string['tool_ws_execute']        = 'Executing web service...';
+$string['tool_unknown']           = 'Running tool...';
 
 // ── Message actions ───────────────────────────────────────────────────────────
 $string['action_copy']         = 'Copy';
