@@ -88,5 +88,16 @@ function xmldb_local_jedomi_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2026051409, 'local', 'jedomi');
     }
 
+    if ($oldversion < 2026052402) {
+        // Add usercontext TEXT column to sessions table
+        $table = new xmldb_table('local_jedomi_telegram_sessions');
+        $field = new xmldb_field('usercontext', XMLDB_TYPE_TEXT, null, null, null, null, null, 'messages');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        upgrade_plugin_savepoint(true, 2026052402, 'local', 'jedomi');
+    }
+
     return true;
 }

@@ -53,14 +53,14 @@ class handler {
 
         for ($i = 0; $i < 50; $i++) {
             echo ": thinking\n\n";
-            ob_flush();
+            if (ob_get_level()) { ob_flush(); }
             flush();
 
             $response = self::call_ai_api_buffer($model, $messages, $spt, $tools);
 
             if ($response['type'] === 'error') {
                 echo "data: {\"error\":\"ai_api_error\"}\n\n";
-                ob_flush();
+                if (ob_get_level()) { ob_flush(); }
                 flush();
                 return;
             }
@@ -96,7 +96,7 @@ class handler {
                 echo "data: " . json_encode([
                     '_jedomi_tool_executing' => ['tool' => $name, 'args' => $args],
                 ], JSON_UNESCAPED_UNICODE) . "\n\n";
-                ob_flush();
+                if (ob_get_level()) { ob_flush(); }
                 flush();
 
                 if ($toolrepeatcounts[$callkey] > 2) {
@@ -125,7 +125,7 @@ class handler {
                         'summary' => self::summarize_tool_result($name, $result),
                     ],
                 ], JSON_UNESCAPED_UNICODE) . "\n\n";
-                ob_flush();
+                if (ob_get_level()) { ob_flush(); }
                 flush();
 
                 // Inject tool result as role=tool message (OpenAI standard format).
@@ -830,7 +830,7 @@ class handler {
             JSON_UNESCAPED_UNICODE
         );
         echo "data: {$payload}\n\n";
-        ob_flush();
+        if (ob_get_level()) { ob_flush(); }
         flush();
     }
 
@@ -842,7 +842,7 @@ class handler {
     private static function stream_sse_content(string $content): void {
         if (empty($content)) {
             echo "data: [DONE]\n\n";
-            ob_flush();
+            if (ob_get_level()) { ob_flush(); }
             flush();
             return;
         }
@@ -852,12 +852,12 @@ class handler {
             echo "data: " . json_encode([
                 'choices' => [['delta' => ['content' => $chunk]]],
             ], JSON_UNESCAPED_UNICODE) . "\n\n";
-            ob_flush();
+            if (ob_get_level()) { ob_flush(); }
             flush();
             usleep(2000);
         }
         echo "data: [DONE]\n\n";
-        ob_flush();
+        if (ob_get_level()) { ob_flush(); }
         flush();
     }
 

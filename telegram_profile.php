@@ -185,6 +185,20 @@ echo $OUTPUT->header();
                 &nbsp;⏳ <span id="jd-countdown" style="font-weight:600;color:#1e40af">10:00</span>
             </p>
 
+            <!-- Option A: Deep Link — Primary Action -->
+            <div style="margin-bottom:1.25rem">
+                <a href="https://t.me/<?php echo s($bot_username); ?>?start=<?php echo s($generated_code); ?>"
+                   target="_blank" rel="noopener"
+                   class="btn btn-success btn-lg d-block w-100"
+                   style="padding:.875rem 1rem;font-size:1.05rem;border-radius:.625rem;font-weight:600">
+                    <i class="fa fa-telegram mr-2"></i>
+                    Abrir en Telegram (Automático)
+                </a>
+                <p class="text-center text-muted mt-2 mb-0" style="font-size:.8125rem">
+                    Te lleva directo a @<?php echo s($bot_username); ?> con tu código listo para vincular
+                </p>
+            </div>
+
             <!-- Steps to link -->
             <div style="border:1px solid #e5e7eb;border-radius:.5rem;padding:1rem;background:#f9fafb;margin-bottom:1rem">
 
@@ -196,7 +210,7 @@ echo $OUTPUT->header();
                             Tap the button below to open the bot directly, or search for
                             <strong>@<?php echo s($bot_username); ?></strong> in Telegram.
                         </p>
-                        <a href="https://t.me/<?php echo s($bot_username); ?>"
+                        <a href="https://t.me/<?php echo s($bot_username); ?>?start=<?php echo s($generated_code); ?>"
                            target="_blank" rel="noopener"
                            class="btn btn-sm"
                            style="background:#0088cc;color:#fff;border:none;border-radius:.375rem;font-size:.8125rem">
@@ -232,6 +246,27 @@ echo $OUTPUT->header();
                             The bot will confirm the link instantly. After that, send any message to start using Jedomi from Telegram.
                         </p>
                     </div>
+                </div>
+            </div>
+
+            <!-- Option B: Manual — Fallback for PC users without Telegram app -->
+            <div style="border:1px solid #e5e7eb;border-radius:.5rem;padding:1rem;background:#f9fafb;margin-bottom:1rem">
+                <p style="font-size:.8125rem;font-weight:600;color:#6b7280;margin-bottom:.75rem;display:flex;align-items:center;gap:.375rem">
+                    <i class="fa fa-info-circle" style="color:#9ca3af"></i>
+                    ¿No tienes la app de Telegram?
+                </p>
+                <p style="font-size:.8375rem;color:#374151;margin-bottom:.625rem">
+                    Si estás en PC sin la app, abre Telegram en tu móvil, busca
+                    <strong>@<?php echo s($bot_username); ?></strong> y envía este mensaje:
+                </p>
+                <div style="background:#1e293b;color:#7dd3fc;border-radius:.375rem;padding:.5rem .75rem;
+                            font-family:monospace;font-size:.9375rem;display:flex;align-items:center;justify-content:space-between">
+                    <span>/start <?php echo s($generated_code); ?></span>
+                    <button type="button"
+                            onclick="navigator.clipboard.writeText('/start <?php echo s($generated_code); ?>');this.innerHTML='<i class=\'fa fa-check\' style=\'color:#16a34a\'></i>';setTimeout(()=>this.innerHTML='<i class=\'fa fa-copy\'></i>',1500)"
+                            style="background:none;border:none;color:#7dd3fc;cursor:pointer;padding:.1rem .25rem">
+                        <i class="fa fa-copy"></i>
+                    </button>
                 </div>
             </div>
 

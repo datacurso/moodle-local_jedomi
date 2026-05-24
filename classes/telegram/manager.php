@@ -32,13 +32,17 @@ class manager {
     private const CODE_TTL = 600; // 10 minutes
 
     /**
-     * Derive the encryption key from $CFG->passwordsaltmain + pepper.
+     * Derive the encryption key from site secret + pepper.
+     *
+     * Uses $CFG->passwordsaltmain when available (set in config.php),
+     * falls back to $CFG->siteidentifier which always exists.
      *
      * @return string 32-byte raw key
      */
     private static function derive_key(): string {
         global $CFG;
-        return hash('sha256', $CFG->passwordsaltmain . self::PEPPER, true);
+        $secret = $CFG->passwordsaltmain ?? $CFG->siteidentifier ?? 'jedomi_default_secret';
+        return hash('sha256', $secret . self::PEPPER, true);
     }
 
     /**
@@ -125,12 +129,103 @@ class manager {
     }
 
     /**
-     * Regenerate the webhook secret (invalidates old webhooks).
+     * Regenerate the webhook secret (invalidates old webhooks)
+     * AND automatically updates the webhook URL in Telegram.
+     *
+     * After changing the secret locally, this method:
+     *  1. Deletes the old webhook (drops pending updates)
+     *  2. Sets the new webhook URL with the fresh secret
+     *
+     * If the bot token is not configured, only the local secret is rotated
+     * (the webhook registration will happen when the token is saved later).
+     *
+     * @return string The new secret
      */
     public static function regenerate_webhook_secret(): string {
         $secret = bin2hex(random_bytes(16));
         set_config('telegram_webhook_secret', $secret, 'local_jedomi');
+
+        // Update Telegram webhook with the new secret.
+        self::register_webhook();
+
         return $secret;
+    }
+
+    /**
+     * Register (or re-register) the webhook URL in Telegram using the current
+     * bot token and current webhook secret.
+     *
+     * Deletes any existing webhook first (with drop_pending_updates=true) so
+     * Telegram retries pending updates with the new URL immediately.
+     *
+     * Stores the result (success/error) in config for UI visibility.
+     *
+     * @return bool Whether the webhook was registered successfully
+     */
+    public static function register_webhook(): bool {
+        $token = self::get_bot_token();
+        if (!$token) {
+            self::set_last_webhook_error('No bot token configured — webhook not registered');
+            return false;
+        }
+
+        $client = new api_client($token);
+        $webhook_url = self::get_webhook_url();
+
+        // Delete old webhook first (clears stale pending updates).
+        $deleted = $client->delete_webhook();
+        if (!$deleted) {
+            self::set_last_webhook_error('Failed to delete previous webhook — token may be invalid');
+            return false;
+        }
+
+        // Set the new webhook URL.
+        $ok = $client->set_webhook($webhook_url);
+        if ($ok) {
+            self::clear_last_webhook_error();
+        } else {
+            self::set_last_webhook_error('setWebhook failed — check the URL is HTTPS and reachable');
+        }
+
+        return $ok;
+    }
+
+    /**
+     * Persist the last webhook API error message so it's visible in the admin UI.
+     *
+     * @param string $message
+     */
+    public static function set_last_webhook_error(string $message): void {
+        set_config('telegram_webhook_last_error', $message, 'local_jedomi');
+        set_config('telegram_webhook_error', 1, 'local_jedomi');
+        set_config('telegram_webhook_error_time', time(), 'local_jedomi');
+    }
+
+    /**
+     * Clear the last webhook error (marks as healthy).
+     */
+    public static function clear_last_webhook_error(): void {
+        set_config('telegram_webhook_last_error', '', 'local_jedomi');
+        set_config('telegram_webhook_error', 0, 'local_jedomi');
+        set_config('telegram_webhook_error_time', 0, 'local_jedomi');
+    }
+
+    /**
+     * Get the last webhook error message (empty string if none).
+     *
+     * @return string
+     */
+    public static function get_last_webhook_error(): string {
+        return (string) get_config('local_jedomi', 'telegram_webhook_last_error');
+    }
+
+    /**
+     * Get the timestamp of the last webhook error (0 if none).
+     *
+     * @return int
+     */
+    public static function get_last_webhook_error_time(): int {
+        return (int) get_config('local_jedomi', 'telegram_webhook_error_time');
     }
 
     /**

@@ -708,7 +708,7 @@ function local_jedomi_generate_spt(string $role): array {
         foreach ($courses as $c) {
             $ctx = context_course::instance($c->id);
             if (has_capability('moodle/course:manageactivities', $ctx)) {
-                $course_ids_owned[] = $c->id;
+                $course_ids_owned[] = (int)$c->id;
             }
         }
     } elseif ($role === 'admin') {
@@ -718,7 +718,7 @@ function local_jedomi_generate_spt(string $role): array {
         // Para student: lista de cursos inscritos (usada por el gateway para filtrar)
         $courses = enrol_get_users_courses($USER->id, true);
         foreach ($courses as $c) {
-            $course_ids_enrolled[] = $c->id;
+            $course_ids_enrolled[] = (int)$c->id;
         }
     }
 
@@ -751,6 +751,83 @@ function local_jedomi_generate_spt(string $role): array {
     return $payload;
 }
 
+/**
+ * Generate an SPT (Secure Payload Token) for a specific user (not global $USER).
+ *
+ * Used by the Telegram webhook where there is no page context or global $USER.
+ * Creates a self-signed payload with user identity, capabilities, course lists,
+ * and HMAC signature for the gateway to verify.
+ *
+ * @param  int    $userid The user ID to generate the SPT for.
+ * @param  string $role   The Jedomi role shortname (admin|manager|teacher|student).
+ * @return array          The signed SPT payload, or empty array if user not found/deleted.
+ */
+function local_jedomi_generate_spt_for_user(int $userid, string $role): array {
+    global $CFG, $DB;
+
+    $sysctx = context_system::instance();
+    $user = $DB->get_record('user', ['id' => $userid, 'deleted' => 0], 'id, username, firstname, lastname');
+    if (!$user) {
+        return [];
+    }
+
+    // Capabilities for this specific user (not global $USER).
+    $capabilities = [
+        'can_view_all_grades'   => has_capability('moodle/grade:viewall', $sysctx, $userid),
+        'can_manage_users'      => has_capability('moodle/user:update', $sysctx, $userid),
+        'can_send_messages'     => has_capability('moodle/site:sendmessage', $sysctx, $userid),
+        'can_manage_courses'    => has_capability('moodle/course:update', $sysctx, $userid),
+        'can_view_reports'      => has_capability('moodle/course:viewhiddenactivities', $sysctx, $userid),
+        'can_enrol_users'       => has_capability('enrol/manual:enrol', $sysctx, $userid),
+        'can_access_all_groups' => has_capability('moodle/site:accessallgroups', $sysctx, $userid),
+    ];
+
+    // Course lists based on role (same logic as generate_spt but for specific user).
+    $course_ids_owned = [];
+    $course_ids_enrolled = [];
+
+    if ($role === 'teacher' || $role === 'manager') {
+        $courses = enrol_get_users_courses($userid, true, ['id']);
+        foreach ($courses as $c) {
+            $ctx = context_course::instance($c->id);
+            if (has_capability('moodle/course:manageactivities', $ctx, $userid)) {
+                $course_ids_owned[] = (int)$c->id;
+            }
+        }
+    } elseif ($role === 'student') {
+        $courses = enrol_get_users_courses($userid, true, ['id']);
+        foreach ($courses as $c) {
+            $course_ids_enrolled[] = (int)$c->id;
+        }
+    }
+    // Admin: no course list (full access).
+
+    $tools = local_jedomi_get_tool_definitions($role);
+
+    $payload = [
+        'userid'              => $userid,
+        'username'            => $user->username,
+        'role'                => $role,
+        'course_id'           => 0,
+        'course_ids_owned'    => $course_ids_owned,
+        'course_ids_enrolled' => $course_ids_enrolled,
+        'capabilities'        => $capabilities,
+        'tools'               => $tools,
+        'moodle_url'          => $CFG->wwwroot,
+        'expires'             => time() + 1800,
+    ];
+
+    // Same HMAC signing as the existing generate_spt function.
+    $static_secret = get_config('local_jedomi', 'spt_secret') ?: 'jedomi-spt-secret';
+
+    ksort($payload);
+    $to_sign = json_encode($payload);
+    $signature = hash_hmac('sha256', $to_sign, $static_secret);
+
+    $payload['signature'] = $signature;
+    return $payload;
+}
+
 function local_jedomi_get_user_role(): string {
     global $USER, $COURSE;
 
@@ -774,6 +851,46 @@ function local_jedomi_get_user_role(): string {
 
     // 4. Fuera de un curso específico: student con tools propias (grades, calendar, cursos inscritos).
     //    Un docente que navega fuera de un curso obtiene acceso student — seguro y aceptable.
+    return 'student';
+}
+
+/**
+ * Determine a user's Jedomi role WITHOUT depending on $COURSE or $PAGE globals.
+ *
+ * Used by the Telegram webhook where there is no page context or current course.
+ * Checks admin status via get_admins(), manager via system-level capability,
+ * teacher via manageactivities in any enrolled course, and falls back to student.
+ *
+ * @param  int    $userid The user ID to check.
+ * @return string         'admin', 'manager', 'teacher', or 'student'.
+ */
+function local_jedomi_get_user_role_for_user(int $userid): string {
+
+    // 1. Check if user is site admin via get_admins().
+    $admins = get_admins();
+    foreach ($admins as $admin) {
+        if ((int) $admin->id === $userid) {
+            return 'admin';
+        }
+    }
+
+    $sysctx = context_system::instance();
+
+    // 2. Manager: has moodle/user:update at system level.
+    if (has_capability('moodle/user:update', $sysctx, $userid)) {
+        return 'manager';
+    }
+
+    // 3. Teacher: has moodle/course:manageactivities in ANY of their enrolled courses.
+    $courses = enrol_get_users_courses($userid, true, ['id']);
+    foreach ($courses as $c) {
+        $ctx = context_course::instance($c->id);
+        if (has_capability('moodle/course:manageactivities', $ctx, $userid)) {
+            return 'teacher';
+        }
+    }
+
+    // 4. Fallback: student.
     return 'student';
 }
 
@@ -929,20 +1046,42 @@ function local_jedomi_convert_external_structure($struct): ?array {
  * @return array|null         JSON-serializable schema, or null on failure.
  */
 function local_jedomi_get_ws_schema(string $wsname): ?array {
+    global $DB;
     $classname = local_jedomi_resolve_ws_classname($wsname);
     if (!$classname || !class_exists($classname)) {
         return null;
     }
     try {
-        $ref = new ReflectionMethod($classname, 'execute_parameters');
-        if (!$ref->isStatic()) {
-            return null;
+        // Try execute_parameters() first (single-method WS classes like
+        // local_jedomi\external\ws_execute).
+        if (method_exists($classname, 'execute_parameters')) {
+            $ref = new ReflectionMethod($classname, 'execute_parameters');
+            if ($ref->isStatic()) {
+                $params = @$ref->invoke(null);
+                if ($params instanceof \core_external\external_function_parameters) {
+                    return local_jedomi_convert_external_structure($params);
+                }
+            }
         }
-        $params = @$ref->invoke(null);
-        if (!$params instanceof \core_external\external_function_parameters) {
-            return null;
+
+        // Fallback: try {methodname}_parameters() for multi-method classes
+        // like core_course_external where the WS name maps to create_categories()
+        // and the schema method is create_categories_parameters().
+        $record = $DB->get_record('external_functions', ['name' => $wsname], 'methodname');
+        if ($record && !empty($record->methodname)) {
+            $methodname = $record->methodname . '_parameters';
+            if (method_exists($classname, $methodname)) {
+                $ref = new ReflectionMethod($classname, $methodname);
+                if ($ref->isStatic()) {
+                    $params = @$ref->invoke(null);
+                    if ($params instanceof \core_external\external_function_parameters) {
+                        return local_jedomi_convert_external_structure($params);
+                    }
+                }
+            }
         }
-        return local_jedomi_convert_external_structure($params);
+
+        return null;
     } catch (\Exception $e) {
         return null;
     }
@@ -992,26 +1131,28 @@ function local_jedomi_classify_ws_access(string $wsname): string {
  * @param string $message Short description of what happened.
  * @param mixed  $data    Optional context data (array, string, or anything json-serializable).
  */
-function local_jedomi_log(string $message, mixed $data = null): void {
-    global $CFG;
+if (!function_exists('local_jedomi_log')) {
+    function local_jedomi_log(string $message, mixed $data = null): void {
+        global $CFG;
 
-    static $logdir = null;
-    static $logfile = null;
+        static $logdir = null;
+        static $logfile = null;
 
-    if ($logdir === null) {
-        $logdir = $CFG->dataroot . '/local/jedomi';
-        check_dir_exists($logdir, true, true);
-        $logfile = $logdir . '/jedomi.log';
+        if ($logdir === null) {
+            $logdir = $CFG->dataroot . '/local/jedomi';
+            check_dir_exists($logdir, true, true);
+            $logfile = $logdir . '/jedomi.log';
+        }
+
+        $timestamp = date('Y-m-d H:i:s.v');
+        $entry = "[{$timestamp}] {$message}";
+
+        if ($data !== null) {
+            $encoded = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_IGNORE);
+            $entry .= ' | ' . $encoded;
+        }
+
+        $entry .= "\n";
+        file_put_contents($logfile, $entry, FILE_APPEND | LOCK_EX);
     }
-
-    $timestamp = date('Y-m-d H:i:s.v');
-    $entry = "[{$timestamp}] {$message}";
-
-    if ($data !== null) {
-        $encoded = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_IGNORE);
-        $entry .= ' | ' . $encoded;
-    }
-
-    $entry .= "\n";
-    file_put_contents($logfile, $entry, FILE_APPEND | LOCK_EX);
 }

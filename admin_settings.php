@@ -101,26 +101,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && confirm_sesskey()) {
 
             $token = optional_param('telegram_bot_token', '', PARAM_TEXT);
             if ($token !== '') {
-                \local_jedomi\telegram\manager::set_bot_token($token);
-                // Verify token immediately via getMe and cache the bot username
+                // Verify token FIRST via getMe before saving anything
                 $client = new \local_jedomi\telegram\api_client($token);
                 $bot_info = $client->get_me();
                 if ($bot_info) {
+                    // Token validated — save everything.
+                    \local_jedomi\telegram\manager::set_bot_token($token);
                     set_config('telegram_bot_username',  $bot_info['username'],   'local_jedomi');
                     set_config('telegram_bot_firstname', $bot_info['first_name'], 'local_jedomi');
                     set_config('telegram_bot_verified',  1,                       'local_jedomi');
+
+                    // Auto-register webhook — delete old first, then set new.
+                    $client->delete_webhook();
+                    $webhook_url = \local_jedomi\telegram\manager::get_webhook_url();
+                    $webhook_ok = $client->set_webhook($webhook_url);
+                    if ($webhook_ok) {
+                        \local_jedomi\telegram\manager::clear_last_webhook_error();
+                    } else {
+                        \local_jedomi\telegram\manager::set_last_webhook_error(
+                            'setWebhook failed after token save — check the URL is HTTPS and reachable'
+                        );
+                    }
                 } else {
-                    set_config('telegram_bot_verified',  0, 'local_jedomi');
+                    // Token invalid — show error, do NOT save
+                    set_config('telegram_bot_verified', 0, 'local_jedomi');
+                    redirect(new moodle_url($pageurl, ['tab' => 'integrations']),
+                        get_string('telegram_msg_token_invalid', 'local_jedomi'),
+                        null, \core\output\notification::NOTIFY_ERROR);
                 }
             }
 
-            // Regenerate secret if requested
+            // Regenerate secret if requested.
+            // manager::regenerate_webhook_secret() handles both local rotation
+            // AND Telegram API update automatically.
             if (optional_param('telegram_regenerate_secret', 0, PARAM_INT)) {
                 \local_jedomi\telegram\manager::regenerate_webhook_secret();
             }
 
             set_config('telegram_rate_limit', optional_param('telegram_rate_limit', 30, PARAM_INT), 'local_jedomi');
             set_config('telegram_cooldown',   optional_param('telegram_cooldown',   5,  PARAM_INT), 'local_jedomi');
+            set_config('telegram_max_turns', optional_param('telegram_max_turns', 10, PARAM_INT), 'local_jedomi');
+            set_config('telegram_gateway_timeout', optional_param('telegram_gateway_timeout', 120, PARAM_INT), 'local_jedomi');
 
             // Save per-role visibility for Telegram (reuse same hidden_roles logic with prefix)
             $telegram_hidden = [];
@@ -638,9 +659,12 @@ echo '</ul>';
         'bot_username'    => get_config('local_jedomi', 'telegram_bot_username')  ?: '',
         'bot_firstname'   => get_config('local_jedomi', 'telegram_bot_firstname') ?: '',
         'bot_verified'    => (int)(get_config('local_jedomi', 'telegram_bot_verified') ?? 0),
+        'webhook_error'   => (int)(get_config('local_jedomi', 'telegram_webhook_error') ?? 0),
         'webhook_url'     => \local_jedomi\telegram\manager::get_webhook_url(),
         'rate_limit'      => \local_jedomi\telegram\manager::get_rate_limit(),
         'cooldown'        => \local_jedomi\telegram\manager::get_cooldown(),
+        'max_turns'       => (int)(get_config('local_jedomi', 'telegram_max_turns') ?: 10),
+        'gateway_timeout' => (int)(get_config('local_jedomi', 'telegram_gateway_timeout') ?: 120),
     ];
     $telegram_hidden_role_ids = array_filter(
         array_map('intval', explode(',', get_config('local_jedomi', 'telegram_hidden_roles') ?: ''))
@@ -814,11 +838,64 @@ echo '</ul>';
                 <div class="mt-3 d-flex align-items-center gap-2 flex-wrap">
                     <button type="submit" name="telegram_regenerate_secret" value="1"
                             class="btn btn-outline-warning btn-sm"
-                            onclick="return confirm('<?php echo get_string('telegram_webhook_secret_help', 'local_jedomi'); ?> Continue?')">
+                            onclick="return confirm('<?php echo str_replace("'", "\'", get_string('telegram_webhook_secret_help', 'local_jedomi')); ?> Continue?')">
                         <i class="fa fa-refresh mr-1"></i><?php echo get_string('regenerate', 'local_jedomi'); ?>
                     </button>
                     <span class="form-text"><?php echo get_string('telegram_webhook_secret_help', 'local_jedomi'); ?></span>
                 </div>
+
+                <?php // ── Webhook status block ────────────────────────────── ?>
+                <?php if ($telegram_cfg['bot_token_set']): ?>
+                <div class="mt-3" style="padding:.75rem 1rem;border-radius:.5rem;border:1px solid #e5e7eb;background:#fafafa">
+                    <div class="d-flex align-items-center justify-content-between mb-2">
+                        <strong style="font-size:.875rem;color:#374151">
+                            <i class="fa fa-plug mr-1" style="color:#7c3aed"></i>
+                            <?php echo get_string('telegram_webhook_status', 'local_jedomi'); ?>
+                        </strong>
+                        <button type="button" class="btn btn-outline-secondary btn-sm"
+                                onclick="jdCheckWebhook()"
+                                id="jd-webhook-check-btn"
+                                style="font-size:.75rem">
+                            <i class="fa fa-sync mr-1"></i><?php echo get_string('check_webhook', 'local_jedomi'); ?>
+                        </button>
+                    </div>
+
+                    <!-- Cached status (loaded from config) -->
+                    <div id="jd-webhook-status">
+                        <?php
+                        $last_error = \local_jedomi\telegram\manager::get_last_webhook_error();
+                        $error_time = \local_jedomi\telegram\manager::get_last_webhook_error_time();
+                        ?>
+                        <?php if (!empty($last_error)): ?>
+                        <div class="d-flex align-items-start gap-2" style="font-size:.8125rem;color:#9a3412">
+                            <i class="fa fa-exclamation-triangle" style="color:#ea580c;flex-shrink:0;margin-top:2px"></i>
+                            <div>
+                                <strong style="display:block"><?php echo get_string('webhook_error', 'local_jedomi'); ?></strong>
+                                <span><?php echo s($last_error); ?></span>
+                                <?php if ($error_time): ?>
+                                <span class="text-muted" style="display:block;font-size:.75rem;margin-top:2px">
+                                    <?php echo userdate($error_time, get_string('strftimedatetime', 'langconfig')); ?>
+                                </span>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                        <?php elseif ($error_time > 0): ?>
+                        <div style="font-size:.8125rem;color:#166534">
+                            <i class="fa fa-check-circle" style="color:#16a34a"></i>
+                            <?php echo get_string('webhook_ok', 'local_jedomi'); ?>
+                        </div>
+                        <?php else: ?>
+                        <div style="font-size:.8125rem;color:#6b7280">
+                            <i class="fa fa-minus-circle" style="color:#9ca3af"></i>
+                            <?php echo get_string('webhook_not_checked', 'local_jedomi'); ?>
+                        </div>
+                        <?php endif; ?>
+                    </div>
+
+                    <!-- Live check result (populated by JS) -->
+                    <div id="jd-webhook-live" style="display:none;margin-top:.5rem;padding-top:.5rem;border-top:1px dashed #d1d5db"></div>
+                </div>
+                <?php endif; ?>
 
             </div>
         </div>
@@ -850,9 +927,23 @@ echo '</ul>';
                                value="<?php echo $telegram_cfg['cooldown']; ?>" style="width:90px">
                         <p class="form-text"><?php echo get_string('telegram_cooldown_help', 'local_jedomi'); ?></p>
                     </div>
+                    <div>
+                        <label class="form-label-main">
+                            <?php echo get_string('telegram_max_turns', 'local_jedomi'); ?>
+                        </label>
+                        <input type="number" name="telegram_max_turns" class="form-control" min="1" max="100"
+                               value="<?php echo $telegram_cfg['max_turns']; ?>" style="width:90px">
+                        <p class="form-text"><?php echo get_string('telegram_max_turns_help', 'local_jedomi'); ?></p>
+                    </div>
+                    <div>
+                        <label class="form-label-main">
+                            <?php echo get_string('telegram_gateway_timeout', 'local_jedomi'); ?>
+                        </label>
+                        <input type="number" name="telegram_gateway_timeout" class="form-control" min="5" max="300"
+                               value="<?php echo $telegram_cfg['gateway_timeout']; ?>" style="width:90px">
+                        <p class="form-text"><?php echo get_string('telegram_gateway_timeout_help', 'local_jedomi'); ?></p>
+                    </div>
                 </div>
-            </div>
-        </div>
 
         <?php // ── Sub-section 3: Access Control (collapsed by default) ──────── ?>
         <div class="jd-sub" id="jd-sub-access">
@@ -920,15 +1011,19 @@ echo '</ul>';
                         <p style="font-size:.8rem;color:#374151;margin:.125rem 0 0;line-height:1.5">
                             <?php echo get_string($dk, 'local_jedomi'); ?>
                         </p>
-                        <?php if ($curl): ?>
-                        <div style="background:#1e293b;border-radius:.3rem;padding:.4rem .6rem;margin-top:.375rem;
-                                    font-size:.7rem;color:#7dd3fc;word-break:break-all;font-family:monospace">
-                            curl "https://api.telegram.org/botTOKEN/setWebhook?url=<?php echo s($telegram_cfg['webhook_url']); ?>"
-                            <button type="button"
-                                    onclick="navigator.clipboard.writeText('curl &quot;https://api.telegram.org/botTOKEN/setWebhook?url=<?php echo s($telegram_cfg['webhook_url']); ?>&quot;')"
-                                    style="background:none;border:none;color:#94a3b8;cursor:pointer;padding:.1rem .25rem">
-                                <i class="fa fa-copy" style="font-size:.75rem"></i>
-                            </button>
+                        <?php if ($is_configured): ?>
+                        <div class="d-flex align-items-center gap-2 mt-2"
+                             style="font-size:.8125rem;padding:.5rem .75rem;border-radius:.375rem;
+                                    background:#f0fdf4;border:1px solid #bbf7d0;color:#166534">
+                            <i class="fa fa-check-circle" style="color:#16a34a"></i>
+                            <span><strong>Webhook configurado automáticamente</strong> — al guardar el token, el sistema registró el webhook automáticamente.</span>
+                        </div>
+                        <?php elseif ($telegram_cfg['bot_token_set']): ?>
+                        <div class="d-flex align-items-center gap-2 mt-2"
+                             style="font-size:.8125rem;padding:.5rem .75rem;border-radius:.375rem;
+                                    background:#fff7ed;border:1px solid #fed7aa;color:#9a3412">
+                            <i class="fa fa-exclamation-triangle" style="color:#ea580c"></i>
+                            <span><strong>⚠️ Webhook no registrado</strong> — intente guardar el token nuevamente.</span>
                         </div>
                         <?php endif; ?>
                     </div>
@@ -991,6 +1086,34 @@ echo '</ul>';
 
 </div><!-- /.jd-int-list -->
 </form>
+
+<?php if ($telegram_cfg['bot_token_set'] && $telegram_cfg['webhook_error']):
+    $last_webhook_error = \local_jedomi\telegram\manager::get_last_webhook_error();
+    $last_webhook_time  = \local_jedomi\telegram\manager::get_last_webhook_error_time();
+?>
+<div class="alert alert-warning d-flex align-items-start gap-2 mt-3" style="border-radius:.5rem">
+    <i class="fa fa-exclamation-triangle fa-lg" style="flex-shrink:0;color:#d97706;margin-top:2px"></i>
+    <div>
+        <strong>⚠️ <?php echo get_string('webhook_error_alert_title', 'local_jedomi'); ?></strong><br>
+        <small>
+            <?php echo get_string('webhook_error_alert_desc', 'local_jedomi'); ?>
+            <?php if (!empty($last_webhook_error)): ?>
+            <br><br>
+            <strong><?php echo get_string('webhook_error_detail', 'local_jedomi'); ?></strong>
+            <code style="display:block;margin-top:4px;padding:6px 8px;background:#fff3cd;border-radius:4px;font-size:.8125rem">
+                <?php echo s($last_webhook_error); ?>
+            </code>
+                <?php if ($last_webhook_time): ?>
+                <span class="text-muted" style="display:block;font-size:.75rem;margin-top:2px">
+                    <?php echo userdate($last_webhook_time, get_string('strftimedatetime', 'langconfig')); ?>
+                </span>
+                <?php endif; ?>
+            <?php endif; ?>
+        </small>
+    </div>
+</div>
+<?php endif; ?>
+
 <?php endif; ?>
 
 
@@ -1243,6 +1366,86 @@ echo '</ul>';
 </div><!-- /.jedomi-adm -->
 
 <script>
+// ── Webhook live check ────────────────────────────────────────────────────
+function jdCheckWebhook() {
+    var btn   = document.getElementById('jd-webhook-check-btn');
+    var live  = document.getElementById('jd-webhook-live');
+    if (!btn || !live) return;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa fa-spinner fa-pulse mr-1"></i> Checking...';
+    live.style.display = 'none';
+
+    var url = '<?php echo (new moodle_url('/local/jedomi/ajax/telegram_webhook_status.php'))->out(false); ?>'
+        + '?sesskey=<?php echo sesskey(); ?>';
+
+    fetch(url).then(function(r){ return r.json(); }).then(function(d){
+        if (!d.ok) {
+            live.innerHTML = '<div class="d-flex align-items-start gap-2" style="font-size:.8125rem;color:#9a3412">'
+                + '<i class="fa fa-times-circle" style="color:#dc2626;flex-shrink:0;margin-top:2px"></i>'
+                + '<div><strong style="display:block">API Error</strong>'
+                + '<span>' + (d.error || 'Unknown error') + '</span></div></div>';
+        } else {
+            var pending = d.pending_update_count || 0;
+            var lastErr = d.last_error_message || '';
+            var lastUrl = d.url || '';
+            var stored  = d.stored_error || {};
+
+            // Build the status display
+            var html = '<div style="font-size:.8125rem">';
+
+            // Webhook URL
+            html += '<div class="mb-2"><strong style="color:#374151">Webhook URL:</strong><br>'
+                + '<code style="font-size:.75rem;word-break:break-all">' + escHtml(lastUrl) + '</code></div>';
+
+            // Pending updates
+            var pendingColor = pending > 0 ? '#ea580c' : '#16a34a';
+            html += '<div class="mb-2"><strong style="color:#374151">Pending updates:</strong> '
+                + '<span style="font-weight:600;color:' + pendingColor + '">' + pending + '</span></div>';
+
+            // Last error from Telegram
+            if (lastErr) {
+                html += '<div class="d-flex align-items-start gap-2 mb-2" style="color:#9a3412;background:#fff7ed;padding:.5rem .75rem;border-radius:.375rem;border:1px solid #fed7aa">'
+                    + '<i class="fa fa-exclamation-triangle" style="color:#ea580c;flex-shrink:0;margin-top:2px"></i>'
+                    + '<div><strong>Telegram error:</strong><br><span>' + escHtml(lastErr) + '</span></div></div>';
+            }
+
+            // Stored error from our last registration
+            if (stored.message) {
+                html += '<div class="d-flex align-items-start gap-2" style="color:#9a3412;background:#fff7ed;padding:.5rem .75rem;border-radius:.375rem;border:1px solid #fed7aa">'
+                    + '<i class="fa fa-info-circle" style="color:#d97706;flex-shrink:0;margin-top:2px"></i>'
+                    + '<div><strong>Last registration result:</strong><br><span>' + escHtml(stored.message) + '</span>'
+                    + (stored.time ? '<br><span class="text-muted" style="font-size:.75rem">' + (new Date(stored.time * 1000)).toLocaleString() + '</span>' : '')
+                    + '</div></div>';
+            }
+
+            if (!lastErr && !stored.message) {
+                html += '<div style="color:#166534"><i class="fa fa-check-circle" style="color:#16a34a"></i> '
+                    + 'Webhook is healthy.</div>';
+            }
+
+            html += '</div>';
+            live.innerHTML = html;
+        }
+        live.style.display = 'block';
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa fa-sync mr-1"></i>Check webhook';
+    }).catch(function(err){
+        live.innerHTML = '<div class="d-flex align-items-start gap-2" style="font-size:.8125rem;color:#9a3412">'
+            + '<i class="fa fa-times-circle" style="color:#dc2626;flex-shrink:0;margin-top:2px"></i>'
+            + '<div><strong>Network error</strong><br><span>' + escHtml(err.message) + '</span></div></div>';
+        live.style.display = 'block';
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa fa-sync mr-1"></i>Check webhook';
+    });
+}
+
+function escHtml(s) {
+    if (typeof s !== 'string') s = String(s || '');
+    var d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+}
+
 // ── Integrations accordion ─────────────────────────────────────────────────
 function jdIntToggle(platform, enabled) {
     var body  = document.getElementById('jd-body-' + platform);
@@ -1425,6 +1628,7 @@ function jdSubToggle(subId) {
 })();
 </script>
 
+<?php if ($tab === 'apis'): ?>
 <!-- ── WS table AJAX (filters, type pills, pagination) ─────────────────── -->
 <script>
 (function(){
@@ -1564,5 +1768,6 @@ function jdSubToggle(subId) {
     });
 })();
 </script>
+<?php endif; ?>
 <?php
 echo $OUTPUT->footer();

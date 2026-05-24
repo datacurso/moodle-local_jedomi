@@ -925,7 +925,7 @@ define(['core/log'], function(Log) {
                         execute_sql:    '💾 ' + (S2.tool_execute_sql || 'Consultando base de datos...'),
                         describe_table: '📋 ' + (S2.tool_describe_table || 'Describiendo tabla...'),
                         get_site_config:'⚙️ ' + (S2.tool_get_site_config || 'Obteniendo configuración...'),
-                        ws_search:      '� ' + (S2.tool_ws_search || 'Buscando funciones web...'),
+                        ws_search:      '🔍 ' + (S2.tool_ws_search || 'Buscando funciones web...'),
                         ws_describe:    '📖 ' + (S2.tool_ws_describe || 'Describiendo función web...'),
                         ws_execute:     '⚡ ' + (S2.tool_ws_execute || 'Ejecutando acción...'),
                     };

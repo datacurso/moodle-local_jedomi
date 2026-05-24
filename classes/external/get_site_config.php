@@ -37,6 +37,7 @@ class get_site_config extends external_api {
     private const ALLOWLIST = [
         'sitename',
         'siteurl',
+        'wwwroot',
         'lang',
         'country',
         'timezone',
@@ -121,6 +122,10 @@ class get_site_config extends external_api {
             }
 
             $value = get_config('core', $key);
+            // Fallback: model often asks for "siteurl" but Moodle stores it as "wwwroot".
+            if ($value === false && $key === 'siteurl') {
+                $value = get_config('core', 'wwwroot');
+            }
             if ($value === false) {
                 // Key not set in this Moodle installation — omit.
                 continue;
