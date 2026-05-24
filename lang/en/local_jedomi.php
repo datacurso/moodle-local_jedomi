@@ -49,6 +49,7 @@ $string['tool_sql_read']          = 'Querying database...';
 $string['tool_api_call']          = 'Executing Moodle action...';
 $string['tool_schema_lookup']     = 'Looking up table...';
 $string['tool_webservice_lookup'] = 'Looking up API function...';
+$string['tool_get_site_config']    = 'Getting site configuration...';
 
 // ── Message actions ───────────────────────────────────────────────────────────
 $string['action_copy']         = 'Copy';
@@ -267,6 +268,14 @@ $string['ai_disclaimer']          = 'Jedomi is an AI and can make mistakes.';
 $string['tab_integrations']                = 'Integrations';
 $string['telegram_heading']                = 'Telegram';
 $string['telegram_heading_help']           = 'Connect Jedomi to a Telegram bot so users can chat via Telegram.';
+$string['telegram_webhook_status']         = 'Webhook Status';
+$string['check_webhook']                   = 'Check webhook';
+$string['webhook_error']                   = 'Last webhook error:';
+$string['webhook_ok']                      = 'Webhook is configured and healthy.';
+$string['webhook_error_alert_title']       = 'Webhook registration issue';
+$string['webhook_error_alert_desc']        = 'The bot token was saved and validated, but the webhook could not be registered with Telegram.';
+$string['webhook_error_detail']            = 'Error details:';
+$string['webhook_not_checked']             = 'Not checked yet. Click "Check webhook" to verify.';
 $string['telegram_enabled']                = 'Enable Telegram integration';
 $string['telegram_bot_token']              = 'Bot token';
 $string['telegram_bot_token_help']         = 'Paste the token from @BotFather. It is encrypted before storage.';
@@ -299,6 +308,44 @@ $string['telegram_msg_executing']         = 'Executing...';
 $string['telegram_msg_done']              = 'Done.';
 $string['telegram_msg_expired_code']      = 'Invalid or expired code. Generate a new one from your Moodle profile.';
 $string['telegram_msg_unlinked']          = 'Unlinked. Send /start to link again.';
+$string['telegram_msg_linked_success']    = '✅ Linked to Moodle as <b>{$a->fullname}</b> ({$a->username})';
+$string['telegram_msg_provide_code']      = '🔗 Please provide your link code.\n\nExample: /start ABC123';
+$string['telegram_msg_token_invalid']      = 'Invalid bot token. Check the token from @BotFather and try again.';
+$string['telegram_msg_max_iterations']     = '⚠️ Too many steps. Please simplify your request.';
+$string['telegram_still_working']          = '🔄 Still working on it, hang tight…';
+$string['telegram_msg_timeout']            = '⏳ This task is too complex for the time limit. Try splitting it into smaller steps or send it again and I\'ll continue where I left off.';
+$string['telegram_msg_new_conversation']   = '🗑️ Conversation cleared. Start fresh!';
+
+// ── Telegram help / commands ──────────────────────────────────
+$string['telegram_help_heading']          = '🤖 <b>Jedomi Bot — Available Commands</b>';
+$string['telegram_help_start']            = '🔗 <b>/start CODE</b> — Link your Moodle account to Telegram';
+$string['telegram_help_help']             = '❓ <b>/help</b> — Show this help message';
+$string['telegram_help_new']              = '🗑️ <b>/new</b> or <b>/nuevo</b> — Clear conversation and start fresh';
+$string['telegram_help_unlink']           = '🚫 <b>/desvincular</b> or <b>/unlink</b> — Unlink your Telegram from Moodle';
+$string['telegram_help_footer']           = 'After linking, send any message and I\'ll forward it to Jedomi AI for a response.';
+
+// ── Telegram inline keyboard labels ───────────────────────────
+$string['telegram_keyboard_new']          = '📝 New conversation';
+$string['telegram_keyboard_help']         = '❓ Help';
+$string['telegram_keyboard_unlink']       = '🚫 Unlink';
+$string['telegram_keyboard_howto_link']   = '🔗 How to link?';
+
+// ── Telegram error codes ──────────────────────────────────────
+$string['error_telegram_e001']            = '❌ Chatbot not configured (E001). Contact your administrator.';
+$string['error_telegram_e002']            = '❌ Failed to send message to Telegram (E002). Please try again.';
+$string['error_telegram_e003']            = '❌ Unexpected Telegram response (E003). Please try again.';
+$string['error_telegram_e004']            = '❌ Connection to Jedomi failed (E004). Please try again later.';
+$string['error_telegram_e005']            = '❌ Jedomi service returned an error (E005). Please try again.';
+$string['error_telegram_e006']            = '❌ Invalid response from Jedomi service (E006). Please try again.';
+$string['error_telegram_e007']            = '❌ Invalid webhook secret (E007). Contact your administrator.';
+$string['error_telegram_e008']            = '❌ You do not have permission to query course ID {$a}. Only courses where you have editing permissions are allowed.';
+
+// ── Telegram config ───────────────────────────────────────────
+$string['telegram_progress']              = '🤔 Jedomi is thinking…';
+$string['telegram_max_turns']             = 'Maximum conversation turns';
+$string['telegram_max_turns_help']        = 'Number of messages kept in Telegram conversation history (1-100). Lower values save tokens.';
+$string['telegram_gateway_timeout']       = 'Gateway timeout (seconds)';
+$string['telegram_gateway_timeout_help']  = 'Maximum seconds to wait for the Jedomi Gateway to respond (5-300).';
 $string['unlink']                        = 'Unlink';
 $string['regenerate']                    = 'Regenerate secret';
 $string['cleanup_telegram_sessions']     = 'Jedomi — Clean up expired Telegram sessions';

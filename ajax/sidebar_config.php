@@ -18,6 +18,9 @@ header('Content-Type: application/json; charset=utf-8');
 try {
     require_login();
 
+    // Set page URL to prevent Moodle debugging notice in lib.php::local_jedomi_get_page_context().
+    $PAGE->set_url('/local/jedomi/ajax/sidebar_config.php');
+
     // Accept sesskey OR a pre-generated SPT (signed permission token).
     $spt_raw = optional_param('spt', '', PARAM_RAW);
     if (empty($spt_raw)) {
