@@ -495,7 +495,12 @@ class webhook_handler {
             if ($timeout > 300) { $timeout = 300; }
 
             // ── Restore checkpoint if a previous attempt was killed ──
-            $checkpoint = session::get_context($state_key);
+            try {
+                $checkpoint = session::get_context($state_key);
+            } catch (\Exception $e) {
+                error_log('[GATELOOP] checkpoint read FAILED for chat ' . $chat_id . ': ' . $e->getMessage());
+                $checkpoint = null;
+            }
             if (!empty($checkpoint) && !empty($checkpoint['messages'])) {
                 $last_user_msg = '';
                 for ($i = count($checkpoint['messages']) - 1; $i >= 0; $i--) {
@@ -507,6 +512,9 @@ class webhook_handler {
                 }
                 if ($last_user_msg === $text) {
                     $messages = $checkpoint['messages'];
+                    $cp_json = json_encode($checkpoint, JSON_UNESCAPED_UNICODE);
+                    error_log(sprintf('[GATELOOP] checkpoint restored chat=%s iter=%d state_bytes=%d msg_count=%d',
+                        $chat_id, $checkpoint['iteration'] ?? 0, strlen($cp_json), count($checkpoint['messages'])));
                 } else {
                     session::set_context($state_key, []);
                 }
@@ -524,9 +532,13 @@ class webhook_handler {
         } else {
             $state = session::get_context($state_key);
             if (empty($state) || empty($state['messages'])) {
+                error_log('[GATELOOP] self-ping empty state for chat ' . $chat_id . ', nothing to continue');
                 return; // Nothing to continue.
             }
             $messages = $state['messages'];
+            $state_json_check = json_encode($state, JSON_UNESCAPED_UNICODE);
+            error_log(sprintf('[GATELOOP] self-ping restored chat=%s iter=%d state_bytes=%d msg_count=%d',
+                $chat_id, $state['iteration'] ?? 0, strlen($state_json_check), count($messages)));
 
             // Reload user context cache (already cached from first run).
             $user_ctx = session::get_context($chat_id);
@@ -587,16 +599,28 @@ class webhook_handler {
             . "- admin_execute(name, params) — execute admin operation\n"
             . "- get_site_config(keys) — read site configuration\n\n"
             . "RECOMMENDED FLOW: ws_search → ws_describe → ws_execute.\n\n"
+            . "⚡ PARALLEL TOOLS: You can call MULTIPLE tools in a single response.\n"
+            . "  Need 3 searches? Call ws_search 3 times at once.\n"
+            . "  Need 2 describes? Call ws_describe 2 times at once.\n"
+            . "  This is MUCH faster than doing them one by one.\n\n"
             . "⚡ TELEGRAM RULES:\n"
             . "- The user is WAITING. Don't do extra iterations.\n"
             . "- Use ONLY Telegram HTML: <b>bold</b>, <i>italic</i>, <code>code</code>.\n"
-            . "NO markdown. Be concise.\n\n"
+            . "- NO markdown. NEVER use **bold** or *italic* — use <b> and <i>.\n"
+            . "- Be concise, direct, respond in {$user_lang} only.\n\n"
+            . "⚡ YOU HAVE MANY ITERATIONS — DO NOT GIVE UP:\n"
+            . "- You have up to 50 tool call rounds. Use them.\n"
+            . "- Never say 'too many steps' or 'simplify your request'.\n"
+            . "- Just keep calling tools until you have the data to answer.\n"
+            . "- Complex tasks need more rounds — that is OK.\n\n"
             . "⚡ CRITICAL — NEVER DO THIS:\n"
             . "- Do NOT describe a plan or list steps you are about to take.\n"
             . "- Do NOT say 'I will search for X' or 'Let me verify Y'.\n"
-            . "- Do NOT apologize and then promise to fix things.\n"
+            . "- Do NOT show your reasoning or chain of thought.\n"
+            . "- Respond in the user's language ONLY ({$user_lang}).\n"
             . "- JUST CALL THE TOOL. Get the data. Respond with the result.\n"
-            . "- If you need info → call the tool directly, no narration.\n\n"
+            . "- If you need info → call the tool directly, no narration.\n"
+            . "- Your final text response must be in {$user_lang}.\n\n"
             . "Context: {$release}, {$sitename}, DB: {$dblabel}, User: {$userid}, Role: {$role}, Lang: {$user_lang}\n"
             . "Admin: " . ($role === 'admin' ? 'YES' : 'NO') . "\n"
             . "Tools: " . implode(', ', $tool_names) . "\n"
@@ -611,17 +635,51 @@ class webhook_handler {
         $LOOP_START = time();
         $MAX_ITERATIONS = 50;
         $hard_guard = 55; // seconds — chain to next worker before FPM kills us
+
+        // Extend PHP execution limit to cover our hard guard + buffer.
+        // Without this, php max_execution_time or fpm request_terminate_timeout
+        // (often 30s on shared hosts) kills the worker while cURL waits,
+        // producing NO error log — just a silent hang.
+        $old_limit = @ini_get('max_execution_time');
+        @set_time_limit($hard_guard + 20); // 75s total, safe for most hosts
+        error_log(sprintf('[GATELOOP] time_limit: old=%s new=%d hard_guard=%d',
+            $old_limit ?: 'unlimited', $hard_guard + 20, $hard_guard));
+
         $toolrepeatcounts = [];
         $progress_sent_first = false;
         $sent_timeout_warning = false;
 
-        // Start from saved iteration (or 0 on first run).
         for ($iteration = (int)($state['iteration'] ?? 0); $iteration < $MAX_ITERATIONS; $iteration++) {
             $elapsed = time() - $LOOP_START;
 
+            if ($iteration > 0) {
+                error_log(sprintf('[GATELOOP] iter_top chat=%s iter=%d elapsed=%ds msg_count=%d',
+                    $chat_id, $iteration, $elapsed, count($messages)));
+            }
+
             // ── Hard guard (~55s): save state + self_ping → next worker ──
+            // IMPORTANT: save $iteration + 1 (NEXT expected iteration),
+            // NOT $iteration (current). The for loop increments AFTER the
+            // body, so saving $iteration means the next worker re-does it.
             if ($elapsed >= $hard_guard) {
-                $state['iteration'] = $iteration;
+                error_log(sprintf('[GATELOOP] hard_guard chat=%s iter=%d elapsed=%d self-pinging',
+                    $chat_id, $iteration, $elapsed));
+                $state['iteration'] = $iteration + 1;
+                $state['messages'] = $messages;
+                $state['is_locked'] = true;
+                session::set_context($state_key, $state);
+                self::self_ping($chat_id);
+                return;
+            }
+
+            // ── Soft guard (~40s): send a keepalive so the user knows we're alive ──
+            // ── Medium guard (~20s): self-ping so the next worker continues
+            // before FPM request_terminate_timeout (often 30s on shared hosts)
+            // silently kills this worker. Only on internal iterations (>0).
+            if ($elapsed >= 20 && $iteration > 0) {
+                error_log(sprintf('[GATELOOP] medium_guard chat=%s iter=%d elapsed=%d self-pinging',
+                    $chat_id, $iteration, $elapsed));
+                $state['iteration'] = $iteration + 1;
                 $state['messages'] = $messages;
                 $state['is_locked'] = true;
                 session::set_context($state_key, $state);
@@ -676,28 +734,39 @@ class webhook_handler {
                 },
             ]);
 
+            error_log(sprintf('[GATELOOP] calling_gateway chat=%s iter=%d elapsed=%ds curl_timeout=%ds payload_bytes=%d msg_count=%d',
+                $chat_id, $iteration, time() - $LOOP_START, $curl_timeout,
+                strlen(json_encode($payload, JSON_UNESCAPED_UNICODE)), count($messages)));
+
             curl_exec($ch);
             $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
             $curl_errno = curl_errno($ch);
             $curl_error = curl_error($ch);
             curl_close($ch);
 
+            // ── Log Gateway response for debugging ──
+            error_log(sprintf('[GATEWAY] iter=%d http=%d curl_errno=%d curl_err=%s sse_bytes=%d',
+                $iteration, $http_code, $curl_errno, $curl_error ?: 'none', strlen($sse_buffer)));
+
             // ── Gateway errors ──
             if ($curl_errno !== 0) {
                 if ($curl_errno === CURLE_OPERATION_TIMEDOUT) {
+                    error_log('[GATEWAY] Timeout on iter ' . $iteration . ', self-pinging');
                     // Gateway timed out but there may be more time left for
                     // FPM. Self-ping to continue with remaining iterations.
-                    $state['iteration'] = $iteration;
+                    $state['iteration'] = $iteration + 1;
                     $state['messages'] = $messages;
                     $state['is_locked'] = true;
                     session::set_context($state_key, $state);
                     self::self_ping($chat_id);
                 } else {
+                    error_log('[GATEWAY] cURL error on iter ' . $iteration . ': ' . $curl_error);
                     (new api_client())->send_message($chat_id, get_string('error_telegram_e004', 'local_jedomi'));
                 }
                 return;
             }
             if ($http_code !== 200) {
+                error_log('[GATEWAY] HTTP ' . $http_code . ' on iter ' . $iteration . ', body: ' . substr($sse_buffer, 0, 200));
                 (new api_client())->send_message($chat_id, get_string('error_telegram_e005', 'local_jedomi'));
                 return;
             }
@@ -705,6 +774,7 @@ class webhook_handler {
             // ── Parse SSE buffer (same parser as web version) ──
             $result = self::parse_sse_buffer($sse_buffer);
             if ($result === null) {
+                error_log('[GATEWAY] SSE parse failed on iter ' . $iteration . ', buffer: ' . substr($sse_buffer, 0, 200));
                 (new api_client())->send_message($chat_id, get_string('error_telegram_e006', 'local_jedomi'));
                 return;
             }
@@ -794,7 +864,25 @@ class webhook_handler {
                 // 2. Convert markdown links [text](url) to HTML <a href>.
                 $content = preg_replace('/\[([^\]]+)\]\(([^)]+)\)/', '<a href="$2">$1</a>', $content);
 
-                // 3. Normalize Telegram variants: <strong>→<b>, <em>→<i>, <ins>→<u>,
+                // 3. Convert markdown formatting to Telegram HTML (defense-in-depth,
+                //    the model often uses **bold** or *italic* despite instructions).
+                //    Order matters: bold before italic, inline code before formatting.
+                // 3a. ``` code blocks → <pre>
+                $content = preg_replace('/```(\w*)\s*\n?(.*?)```/s', '<pre>$2</pre>', $content) ?? $content;
+                // 3b. ``inline code`` (double) → <pre>
+                $content = preg_replace('/``([^`]+)``/', '<pre>$1</pre>', $content) ?? $content;
+                // 3c. `inline code` (single) → <code>  (before formatting to avoid ** inside code)
+                $content = preg_replace('/`([^`]+)`/', '<code>$1</code>', $content) ?? $content;
+                // 3d. ~~strikethrough~~ → <s>
+                $content = preg_replace('/~~([^~]+)~~/', '<s>$1</s>', $content) ?? $content;
+                // 3e. __underline__ → <u>  (before **bold** to avoid conflict)
+                $content = preg_replace('/__([^_]+)__/', '<u>$1</u>', $content) ?? $content;
+                // 3f. **bold** → <b> (double asterisk first, so single *italic* doesn't consume it)
+                $content = preg_replace('/\*\*([^*]+)\*\*/', '<b>$1</b>', $content) ?? $content;
+                // 3g. *italic* → <i> (single asterisk, only if not already wrapped)
+                $content = preg_replace('/\*([^*]+)\*/', '<i>$1</i>', $content) ?? $content;
+
+                // 4. Normalize Telegram variants: <strong>→<b>, <em>→<i>, <ins>→<u>,
                 //    <strike>/<del>→<s>, <span class="tg-spoiler">→<tg-spoiler>.
                 $replacements = [
                     '/<strong\b[^>]*>/i' => '<b>',
@@ -810,13 +898,13 @@ class webhook_handler {
                 ];
                 $display = preg_replace(array_keys($replacements), array_values($replacements), $content);
 
-                // 4. Strip DISALLOWED tags via strip_tags.
+                // 5. Strip DISALLOWED tags via strip_tags.
                 $display = strip_tags($display,
                     '<b><i><u><s><tg-spoiler><span><blockquote><a><code><pre><tg-emoji>');
 
-                // 5. Strip attributes per Telegram rules using preg_replace_callback
+                // 6. Strip attributes per Telegram rules using preg_replace_callback
                 //    (handles attributes in ANY order, unlike plain regex).
-                // 5a. <span class="tg-spoiler"> → <tg-spoiler>.
+                // 6a. <span class="tg-spoiler"> → <tg-spoiler>.
                 $display = preg_replace_callback('/<span\b[^>]*>/i', function($m) {
                     if (preg_match('/class="tg-spoiler"/i', $m[0])) {
                         return '<tg-spoiler>';
@@ -824,16 +912,16 @@ class webhook_handler {
                     return '';
                 }, $display);
                 $display = str_replace('</span>', '', $display);
-                // 5b. Strip attributes from <b>, <i>, <u>, <s>, <tg-spoiler>, <blockquote>, <pre>.
+                // 6b. Strip attributes from <b>, <i>, <u>, <s>, <tg-spoiler>, <blockquote>, <pre>.
                 $display = preg_replace('/<(b|i|u|s|tg-spoiler|blockquote|pre)\b[^>]*>/i', '<$1>', $display);
-                // 5c. <code> → keep class="language-*" if present, else strip all.
+                // 6c. <code> → keep class="language-*" if present, else strip all.
                 $display = preg_replace_callback('/<code\b[^>]*>/i', function($m) {
                     if (preg_match('/class="language-([^"]*)"/i', $m[0], $cm)) {
                         return '<code class="language-' . $cm[1] . '">';
                     }
                     return '<code>';
                 }, $display);
-                // 5d. <a> → keep href only (double or single quotes).
+                // 6d. <a> → keep href only (double or single quotes).
                 $display = preg_replace_callback('/<a\b[^>]*>/i', function($m) {
                     if (preg_match('/href="([^"]*)"/i', $m[0], $hm)) {
                         return '<a href="' . $hm[1] . '">';
@@ -843,7 +931,7 @@ class webhook_handler {
                     }
                     return '';
                 }, $display);
-                // 5e. <tg-emoji> → keep emoji-id only.
+                // 6e. <tg-emoji> → keep emoji-id only.
                 $display = preg_replace_callback('/<tg-emoji\b[^>]*>/i', function($m) {
                     if (preg_match('/emoji-id="([^"]*)"/i', $m[0], $em)) {
                         return '<tg-emoji emoji-id="' . $em[1] . '">';
@@ -851,7 +939,7 @@ class webhook_handler {
                     return '';
                 }, $display);
 
-                // 6. Escape bare & that aren't already entities.
+                // 7. Escape bare & that aren't already entities.
                 $display = preg_replace('/&(?!(?:#[0-9]+|#x[0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]*);)/', '&amp;', $display);
 
                 // If sanitisation emptied the text, send original as plain text.
@@ -863,6 +951,8 @@ class webhook_handler {
                 }
 
                 // ── Release lock before sending final response ──
+                error_log('[GATELOOP] text response for chat ' . $chat_id . ' at iter ' . $iteration
+                    . ', elapsed=' . (time() - $LOOP_START) . 's, len=' . strlen($display));
                 session::set_context($state_key, []);
                 (new api_client())->send_message($chat_id, $display);
                 return;
@@ -885,15 +975,21 @@ class webhook_handler {
                 ksort($args);
                 $callkey = $name . '|' . md5(json_encode($args));
                 $toolrepeatcounts[$callkey] = ($toolrepeatcounts[$callkey] ?? 0) + 1;
-                if ($toolrepeatcounts[$callkey] > 3) {
+                $repeat_count = $toolrepeatcounts[$callkey];
+                if ($repeat_count > 8) {
+                    error_log(sprintf('[GATELOOP] loop_detected chat=%s iter=%d tool=%s key=%s count=%d',
+                        $chat_id, $iteration, $name, $callkey, $repeat_count));
                     $looping = true;
                     break;
+                } elseif ($repeat_count >= 4) {
+                    error_log(sprintf('[GATELOOP] loop_warning chat=%s iter=%d tool=%s key=%s count=%d',
+                        $chat_id, $iteration, $name, $callkey, $repeat_count));
                 }
 
                 try {
                     $tool_result = self::execute_tool($name, $args, $userid, $role, $user_ctx['course_ids_owned']);
-                    if (mb_strlen($tool_result) > 2000) {
-                        $tool_result = mb_substr($tool_result, 0, 2000) . "\n... (truncated)";
+                    if (mb_strlen($tool_result) > 1024) {
+                        $tool_result = mb_substr($tool_result, 0, 1024) . "\n... (truncated)";
                     }
                 } catch (\Exception $e) {
                     $tool_result = 'Error executing ' . $name . ': ' . $e->getMessage();
@@ -906,12 +1002,31 @@ class webhook_handler {
             }
 
             // ── Save checkpoint with updated iteration + messages ──
-            $state['iteration'] = $iteration;
+            $state['iteration'] = $iteration + 1;
             $state['messages'] = $messages;
             $state['is_locked'] = true;
-            session::set_context($state_key, $state);
+
+            $state_json = json_encode($state, JSON_UNESCAPED_UNICODE);
+            error_log(sprintf('[GATELOOP] state_save chat=%s iter=%d state_bytes=%d msg_count=%d',
+                $chat_id, $iteration, strlen($state_json), count($messages)));
+
+            try {
+                session::set_context($state_key, $state);
+            } catch (\Exception $e) {
+                error_log('[GATELOOP] STATE SAVE FAILED for chat ' . $chat_id
+                    . ' iter=' . $iteration . ' bytes=' . strlen($state_json)
+                    . ' err=' . $e->getMessage());
+                // Fallback: release lock and inform user, don't crash silently.
+                session::set_context($state_key, []);
+                (new api_client())->send_message($chat_id,
+                    '⚠️ Lo siento, tuve un problema al guardar el progreso. '
+                    . 'Por favor intentá de nuevo con /new.');
+                return;
+            }
 
             if ($looping) {
+                error_log('[GATELOOP] loop_exit for chat ' . $chat_id . ' at iter ' . $iteration
+                    . ', elapsed=' . (time() - $LOOP_START) . 's');
                 session::set_context($state_key, []);
                 (new api_client())->send_message($chat_id, get_string('telegram_msg_max_iterations', 'local_jedomi'));
                 return;
@@ -919,6 +1034,7 @@ class webhook_handler {
         }
 
         // ── Max iterations reached ──
+        error_log('[GATELOOP] max iterations reached for chat ' . $chat_id);
         session::set_context($state_key, []);
         (new api_client())->send_message($chat_id, get_string('telegram_msg_max_iterations', 'local_jedomi'));
     }
@@ -1292,8 +1408,16 @@ class webhook_handler {
                 $entries = ws_indexer::search($query, [], $limit);
                 $results = [];
                 foreach ($entries as $entry) {
-                    $results[] = "• <b>" . s($entry['name']) . "</b> (" . s($entry['component']) . ")"
+                    $line = "• <b>" . s($entry['name']) . "</b> (" . s($entry['component']) . ")"
                         . " — " . s($entry['description']);
+                    // Append param signature like the web version does.
+                    if (!empty($entry['params']) && $entry['params'] !== '(none)') {
+                        $line .= "\n   Params: " . s($entry['params']);
+                    }
+                    if (!empty($entry['returns']) && $entry['returns'] !== 'void') {
+                        $line .= "\n   Returns: " . s($entry['returns']);
+                    }
+                    $results[] = $line;
                 }
                 if (empty($results)) {
                     return "No web services found matching: " . s($query);
@@ -1305,18 +1429,21 @@ class webhook_handler {
                 if (empty($wsname)) {
                     return "Web service name required.";
                 }
-                $schema = \local_jedomi_get_ws_schema($wsname);
-                if ($schema === null) {
+                $info = ws_indexer::describe($wsname);
+                if (isset($info['error'])) {
                     return "Web service not found: " . s($wsname);
                 }
-                $result = "🔌 <b>" . s($wsname) . "</b>\n";
-                $result .= "Type: " . ($schema['type'] ?? 'object') . "\n";
-                if (!empty($schema['keys'])) {
-                    $result .= "Parameters:\n";
-                    foreach ($schema['keys'] as $key => $def) {
-                        $req = !empty($def['required']) ? ' (required)' : '';
-                        $result .= "  • " . s($key) . ": " . ($def['type'] ?? 'mixed') . $req . "\n";
-                    }
+
+                $result = "🔌 <b>" . s($info['name']) . "</b>\n";
+                if (!empty($info['description'])) {
+                    $result .= s($info['description']) . "\n";
+                }
+                $result .= "Component: " . s($info['component']) . " | Type: " . s($info['type']) . "\n";
+                if (!empty($info['params']) && $info['params'] !== '(none)') {
+                    $result .= "Parameters: " . s($info['params']) . "\n";
+                }
+                if (!empty($info['returns']) && $info['returns'] !== 'void') {
+                    $result .= "Returns: " . s($info['returns']);
                 }
                 return $result;
 
@@ -1402,8 +1529,8 @@ class webhook_handler {
                     $result = $ref->invokeArgs(null, $callargs);
 
                     $json = json_encode($result);
-                    if (mb_strlen($json) > 4000) {
-                        $json = mb_substr($json, 0, 4000) . "\n... (truncated)";
+                    if (mb_strlen($json) > 2048) {
+                        $json = mb_substr($json, 0, 2048) . "\n... (truncated)";
                     }
                     return $json;
 

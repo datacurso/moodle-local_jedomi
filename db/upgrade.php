@@ -14,7 +14,7 @@ defined('MOODLE_INTERNAL') || die();
  * @return bool
  */
 function xmldb_local_jedomi_upgrade(int $oldversion): bool {
-    global $DB;
+    global $DB, $CFG;
 
     $dbman = $DB->get_manager();
 
@@ -97,6 +97,22 @@ function xmldb_local_jedomi_upgrade(int $oldversion): bool {
         }
 
         upgrade_plugin_savepoint(true, 2026052402, 'local', 'jedomi');
+    }
+
+    if ($oldversion < 2026052405) {
+        // Change usercontext column from TEXT to MEDIUMTEXT (MySQL/MariaDB) to
+        // prevent silent truncation when tool loop state exceeds 64KB.
+        // PostgreSQL already uses unlimited TEXT, so this is MySQL/MariaDB only.
+        $table = new xmldb_table('local_jedomi_telegram_sessions');
+        $field = new xmldb_field('usercontext', XMLDB_TYPE_TEXT, null, null, null, null, null, 'messages');
+        if ($dbman->field_exists($table, $field)) {
+            $dbtype = $CFG->dbtype ?? 'mysqli';
+            if (in_array($dbtype, ['mysqli', 'mariadb'], true)) {
+                $DB->execute("ALTER TABLE {local_jedomi_telegram_sessions} MODIFY COLUMN usercontext MEDIUMTEXT");
+            }
+            // PostgreSQL TEXT is already unlimited — no change needed.
+        }
+        upgrade_plugin_savepoint(true, 2026052405, 'local', 'jedomi');
     }
 
     return true;
