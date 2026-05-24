@@ -50,7 +50,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && confirm_sesskey()) {
             set_config('gateway_url',           required_param('gateway_url',           PARAM_URL),     'local_jedomi');
             set_config('api_key',               required_param('api_key',               PARAM_TEXT),    'local_jedomi');
             set_config('model',                 required_param('model',                 PARAM_TEXT),    'local_jedomi');
-            set_config('docservice_url',        optional_param('docservice_url',        '',             PARAM_URL),     'local_jedomi');
+            set_config('docservice_url',        optional_param('docservice_url',        '',             PARAM_TEXT),    'local_jedomi');
             set_config('spt_secret',            required_param('spt_secret',            PARAM_TEXT),    'local_jedomi');
             set_config('collect_training_data', optional_param('collect_training_data', 0, PARAM_INT),  'local_jedomi');
 
@@ -158,6 +158,7 @@ $cfg = [
     'gateway_url'           => get_config('local_jedomi', 'gateway_url') ?: 'http://localhost:8765',
     'api_key'               => get_config('local_jedomi', 'api_key')     ?: '',
     'model'                 => get_config('local_jedomi', 'model')        ?: 'jedomi-e4b',
+    'docservice_url'        => get_config('local_jedomi', 'docservice_url') ?: '',
     'spt_secret'            => get_config('local_jedomi', 'spt_secret')   ?: '',
     'collect_training_data' => (function() {
         $v = get_config('local_jedomi', 'collect_training_data');

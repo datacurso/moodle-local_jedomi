@@ -129,11 +129,42 @@ class handler {
                 flush();
 
                 // Inject tool result as role=tool message (OpenAI standard format).
-                $messages[] = [
-                    'role'         => 'tool',
-                    'tool_call_id' => $tc_id,
-                    'content'      => $result,
-                ];
+                // Special case: document_read returns base64 images — inject as multimodal content.
+                if ($name === 'document_read') {
+                    $decoded = json_decode($result, true);
+                    if ($decoded && !empty($decoded['pages'])) {
+                        $fmt = strtolower($decoded['pages'][0]['format'] ?? 'jpeg');
+                        $content_parts = [
+                            ['type' => 'text', 'text' =>
+                                "Document \"{$decoded['filename']}\" ({$decoded['total_pages']} pages) converted to images:"],
+                        ];
+                        foreach ($decoded['pages'] as $page) {
+                            $content_parts[] = [
+                                'type' => 'image_url',
+                                'image_url' => [
+                                    'url' => "data:image/{$fmt};base64,{$page['image']}",
+                                ],
+                            ];
+                        }
+                        $messages[] = [
+                            'role'    => 'user',
+                            'content' => $content_parts,
+                        ];
+                    } else {
+                        // Fallback: plain text error.
+                        $messages[] = [
+                            'role'         => 'tool',
+                            'tool_call_id' => $tc_id,
+                            'content'      => $result,
+                        ];
+                    }
+                } else {
+                    $messages[] = [
+                        'role'         => 'tool',
+                        'tool_call_id' => $tc_id,
+                        'content'      => $result,
+                    ];
+                }
 
                 \local_jedomi_log('TOOL_RESULT', ['tool' => $name, 'summary' => self::summarize_tool_result($name, $result)]);
             }
@@ -699,7 +730,7 @@ class handler {
         $fmt  = in_array($args['fmt'] ?? 'JPEG', ['JPEG', 'PNG'], true) ? $args['fmt'] : 'JPEG';
 
         if ($cmid <= 0) {
-            return json_encode(['error' => 'invalid cmid']);
+            return json_encode(['error' => 'cmid is required']);
         }
 
         // Role check — teacher+.
@@ -708,37 +739,38 @@ class handler {
             return json_encode(['error' => 'permission_denied']);
         }
 
-        // Service URL.
         $serviceurl = rtrim(get_config('local_jedomi', 'docservice_url') ?: 'http://localhost:8000', '/');
         if (empty($serviceurl)) {
             return json_encode(['error' => 'document service not configured']);
         }
 
         try {
-            // Load the course module and context.
-            [$cm, $modname, $modinstance] = get_module_from_cmid($cmid);
             $context = \context_module::instance($cmid);
+            $cm      = get_coursemodule_from_id('', $cmid, 0, false, MUST_EXIST);
+            require_capability('moodle/course:view', $context->get_course_context());
 
-            // Check capability to view this module.
-            require_capability('mod/resource:view', $context);
+            // Single query: find all PDFs in this module context (any activity type).
+            $sql = "SELECT id, filename, filepath, mimetype, component, filearea, itemid
+                      FROM {files}
+                     WHERE contextid = ?
+                       AND filename != '.'
+                       AND mimetype = 'application/pdf'";
+            $rows = $DB->get_records_sql($sql, [$context->id]);
 
-            // Get file from the resource file area.
-            $fs = get_file_storage();
-            $files = $fs->get_area_files($context->id, 'mod_resource', 'content', 0, 'sortorder DESC, id ASC', false);
-
-            if (empty($files)) {
-                return json_encode(['error' => 'no files found in this resource']);
+            if (empty($rows)) {
+                return json_encode(['error' => 'no PDF files found in this activity']);
             }
 
-            $file = reset($files);
+            $row  = reset($rows);
+            $fs   = get_file_storage();
+            $file = $fs->get_file_by_id($row->id);
+            if (!$file) {
+                return json_encode(['error' => 'file not found in storage']);
+            }
+
             $filename = $file->get_filename();
-            $mimetype = $file->get_mimetype();
 
-            if ($mimetype !== 'application/pdf') {
-                return json_encode(['error' => 'file is not a PDF: ' . $filename, 'mimetype' => $mimetype]);
-            }
-
-            // Save to temp and send to service.
+            // Send to document-to-image service.
             $tmpdir  = make_temp_directory('jedomi/docread');
             $tmppath = $tmpdir . '/' . $filename;
             $file->copy_content_to($tmppath);
@@ -762,7 +794,7 @@ class handler {
             }
 
             if ($httpcode !== 200) {
-                return json_encode(['error' => 'document service returned HTTP ' . $httpcode, 'response' => $response]);
+                return json_encode(['error' => 'document service returned HTTP ' . $httpcode]);
             }
 
             $data = json_decode($response, true);
@@ -771,10 +803,11 @@ class handler {
             }
 
             return json_encode([
-                'filename'   => $filename,
-                'total_pages'=> $data['total_pages'],
-                'dpi'        => $data['dpi'],
-                'pages'      => $data['pages'],
+                'cmid'        => $cmid,
+                'filename'    => $filename,
+                'total_pages' => $data['total_pages'],
+                'dpi'         => $data['dpi'],
+                'pages'       => $data['pages'],
             ]);
 
         } catch (\Throwable $e) {

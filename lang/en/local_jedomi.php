@@ -468,8 +468,8 @@ $string['ws_method_not_exists'] = 'Method {$a} does not exist';
 $string['ws_debug_prefix'] = ' | debug: ';
 
 // ── Document reader ─────────────────────────────────────────────────
-$string['tool_document_read_desc'] = 'Read a PDF file attached to a course activity/resource. Converts the PDF to images so the AI can see the EXACT original layout, tables, images, and text formatting. Use this when the user asks about a document or file in the course.';
-$string['tool_document_read_cmid'] = 'Course module ID (cmid) of the resource or activity that has the file.';
+$string['tool_document_read_desc'] = 'Read a PDF file from ANY course activity using its cmid (course module ID). Converts PDF pages to base64 images so you see the EXACT original layout, tables, images, and formatting. Use this when the user asks about a document. The cmid is available in the context when viewing an activity page.';
+$string['tool_document_read_cmid'] = 'Course module ID (cmid) of the activity. Get it from the page context when viewing an activity, or discover it via ws_search/ws_execute first.';
 $string['tool_document_read_dpi'] = 'Image resolution (default: 150). Higher values = better quality but more tokens.';
 $string['tool_document_read_fmt'] = 'Image format: JPEG (smaller) or PNG (lossless). Default: JPEG.';
 $string['docservice_url'] = 'Document-to-image service URL';

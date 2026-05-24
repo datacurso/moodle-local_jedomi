@@ -103,10 +103,10 @@ class system_message {
         $content .= "- Example: to create a 'page' in section 1 of course X → ws_execute(core_course_get_courses_by_field) to verify course → admin_execute(create_mod, {courseid: X, resource_type: 'page', section: 1, parameters: {name: '...', content: '...', ...}}).\n\n";
 
         $content .= "DOCUMENT READ PATH:\n";
-        $content .= "- When the user asks to read, analyze, summarize, or explain a document/file attached to a course resource → use document_read(cmid).\n";
+        $content .= "- When the user asks to read, analyze, summarize, or explain a document/file from any course activity → use document_read(cmid).\n";
         $content .= "- The cmid is available in the context below as \"Activity cmid\" when on an activity page.\n";
-        $content .= "- document_read returns each page as a base64 image — you SEE the original layout, tables, images, and formatting.\n";
-        $content .= "- Analyze the images and answer the user's question about the document content.\n\n";
+        $content .= "- If you don't know the cmid, first discover it: ws_search for functions like core_course_get_courses_by_field or core_course_get_contents, then ws_execute to find the activity cmid.\n";
+        $content .= "- document_read returns each page as a base64 image — you SEE the original layout, tables, images, and formatting. Analyze them to answer.\n\n";
 
         $content .= "GENERAL RULES:\n";
         $content .= "- Never invent data.\n";
