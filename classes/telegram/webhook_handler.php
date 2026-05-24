@@ -1525,8 +1525,12 @@ class webhook_handler {
                     }
                 }
 
+                // Wrap in delegated transaction so inner start_delegated_transaction()
+                // calls (from external_* methods) delegate to us and actually commit.
+                $transaction = $DB->start_delegated_transaction();
                 try {
                     $result = $ref->invokeArgs(null, $callargs);
+                    $transaction->allow_commit();
 
                     $json = json_encode($result);
                     if (mb_strlen($json) > 2048) {
@@ -1535,8 +1539,10 @@ class webhook_handler {
                     return $json;
 
                 } catch (\moodle_exception $e) {
+                    $transaction->rollback($e);
                     return json_encode(['error' => 'Error en ' . $wsname . ': ' . $e->getMessage()]);
                 } catch (\Throwable $e) {
+                    $transaction->rollback($e);
                     return json_encode(['error' => 'Error ejecutando ' . $wsname . ': ' . $e->getMessage()]);
                 }
 
