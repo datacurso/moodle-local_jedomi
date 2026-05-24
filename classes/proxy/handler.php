@@ -129,11 +129,42 @@ class handler {
                 flush();
 
                 // Inject tool result as role=tool message (OpenAI standard format).
-                $messages[] = [
-                    'role'         => 'tool',
-                    'tool_call_id' => $tc_id,
-                    'content'      => $result,
-                ];
+                // Special case: document_read returns base64 images — inject as multimodal content.
+                if ($name === 'document_read') {
+                    $decoded = json_decode($result, true);
+                    if ($decoded && !empty($decoded['pages'])) {
+                        $fmt = strtolower($decoded['pages'][0]['format'] ?? 'jpeg');
+                        $content_parts = [
+                            ['type' => 'text', 'text' =>
+                                "Document \"{$decoded['filename']}\" ({$decoded['total_pages']} pages) converted to images:"],
+                        ];
+                        foreach ($decoded['pages'] as $page) {
+                            $content_parts[] = [
+                                'type' => 'image_url',
+                                'image_url' => [
+                                    'url' => "data:image/{$fmt};base64,{$page['image']}",
+                                ],
+                            ];
+                        }
+                        $messages[] = [
+                            'role'    => 'user',
+                            'content' => $content_parts,
+                        ];
+                    } else {
+                        // Fallback: plain text error.
+                        $messages[] = [
+                            'role'         => 'tool',
+                            'tool_call_id' => $tc_id,
+                            'content'      => $result,
+                        ];
+                    }
+                } else {
+                    $messages[] = [
+                        'role'         => 'tool',
+                        'tool_call_id' => $tc_id,
+                        'content'      => $result,
+                    ];
+                }
 
                 \local_jedomi_log('TOOL_RESULT', ['tool' => $name, 'summary' => self::summarize_tool_result($name, $result)]);
             }
@@ -368,6 +399,8 @@ class handler {
                 return self::admin_describe_tool($args, $role);
             case 'admin_execute':
                 return self::admin_execute_tool($args, $role);
+            case 'document_read':
+                return self::document_read_tool($args, $role);
             default:
                 return json_encode(['error' => get_string('error_unknown_tool', 'local_jedomi', $name)]);
         }
@@ -684,6 +717,102 @@ class handler {
 
         $result = \local_jedomi\schema\cli_registry::execute($name, $params);
         return json_encode($result);
+    }
+
+    /**
+     * Read a PDF document from a course module and convert to images.
+     */
+    private static function document_read_tool(array $args, string $role): string {
+        global $CFG, $DB;
+
+        $cmid = (int) ($args['cmid'] ?? 0);
+        $dpi  = (int) ($args['dpi'] ?? 150);
+        $fmt  = in_array($args['fmt'] ?? 'JPEG', ['JPEG', 'PNG'], true) ? $args['fmt'] : 'JPEG';
+
+        if ($cmid <= 0) {
+            return json_encode(['error' => 'cmid is required']);
+        }
+
+        // Role check — teacher+.
+        $allowed = ['teacher', 'editingteacher', 'manager', 'admin'];
+        if (!in_array($role, $allowed, true)) {
+            return json_encode(['error' => 'permission_denied']);
+        }
+
+        $serviceurl = rtrim(get_config('local_jedomi', 'docservice_url') ?: 'http://localhost:8000', '/');
+        if (empty($serviceurl)) {
+            return json_encode(['error' => 'document service not configured']);
+        }
+
+        try {
+            $context = \context_module::instance($cmid);
+            $cm      = get_coursemodule_from_id('', $cmid, 0, false, MUST_EXIST);
+            require_capability('moodle/course:view', $context->get_course_context());
+
+            // Single query: find all PDFs in this module context (any activity type).
+            $sql = "SELECT id, filename, filepath, mimetype, component, filearea, itemid
+                      FROM {files}
+                     WHERE contextid = ?
+                       AND filename != '.'
+                       AND mimetype = 'application/pdf'";
+            $rows = $DB->get_records_sql($sql, [$context->id]);
+
+            if (empty($rows)) {
+                return json_encode(['error' => 'no PDF files found in this activity']);
+            }
+
+            $row  = reset($rows);
+            $fs   = get_file_storage();
+            $file = $fs->get_file_by_id($row->id);
+            if (!$file) {
+                return json_encode(['error' => 'file not found in storage']);
+            }
+
+            $filename = $file->get_filename();
+
+            // Send to document-to-image service.
+            $tmpdir  = make_temp_directory('jedomi/docread');
+            $tmppath = $tmpdir . '/' . $filename;
+            $file->copy_content_to($tmppath);
+
+            $ch = curl_init($serviceurl . '/api/v1/pdf/to-images?dpi=' . $dpi . '&fmt=' . $fmt);
+            curl_setopt_array($ch, [
+                CURLOPT_POST           => true,
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_TIMEOUT        => 120,
+                CURLOPT_POSTFIELDS     => ['file' => new \CURLFile($tmppath, 'application/pdf', $filename)],
+            ]);
+            $response = curl_exec($ch);
+            $httpcode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $curlerr  = curl_error($ch);
+            curl_close($ch);
+
+            unlink($tmppath);
+
+            if ($curlerr) {
+                return json_encode(['error' => 'document service request failed: ' . $curlerr]);
+            }
+
+            if ($httpcode !== 200) {
+                return json_encode(['error' => 'document service returned HTTP ' . $httpcode]);
+            }
+
+            $data = json_decode($response, true);
+            if (!isset($data['pages']) || empty($data['pages'])) {
+                return json_encode(['error' => 'document service returned no pages']);
+            }
+
+            return json_encode([
+                'cmid'        => $cmid,
+                'filename'    => $filename,
+                'total_pages' => $data['total_pages'],
+                'dpi'         => $data['dpi'],
+                'pages'       => $data['pages'],
+            ]);
+
+        } catch (\Throwable $e) {
+            return json_encode(['error' => 'document read failed: ' . $e->getMessage()]);
+        }
     }
 
     /**
