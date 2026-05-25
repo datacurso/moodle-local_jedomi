@@ -19,4 +19,13 @@ $tasks = [
         'month'     => '*',
         'dayofweek' => '*',
     ],
+    [
+        'classname' => \local_jedomi\task\agent_runner::class,
+        'blocking'  => 0,
+        'minute'    => '*',      // every minute
+        'hour'      => '*',
+        'day'       => '*',
+        'month'     => '*',
+        'dayofweek' => '*',
+    ],
 ];

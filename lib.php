@@ -584,6 +584,80 @@ function local_jedomi_get_tool_definitions(string $role): array {
 
     }
 
+    // Agent tools — create, list, and delete scheduled AI agents.
+    if (in_array($role, ['admin', 'manager'], true)) {
+        $tools[] = [
+            'type' => 'function',
+            'function' => [
+                'name'        => 'create_agent',
+                'description' => get_string('tool_create_agent_desc', 'local_jedomi'),
+                'parameters'  => [
+                    'type'       => 'object',
+                    'properties' => [
+                        'prompt' => [
+                            'type'        => 'string',
+                            'description' => get_string('tool_create_agent_prompt', 'local_jedomi'),
+                        ],
+                        'schedule_cron' => [
+                            'type'        => 'string',
+                            'description' => get_string('tool_create_agent_schedule', 'local_jedomi'),
+                        ],
+                        'context_type' => [
+                            'type'        => 'string',
+                            'enum'        => ['site', 'course', 'category', 'user'],
+                            'description' => get_string('tool_create_agent_context_type', 'local_jedomi'),
+                        ],
+                        'context_id' => [
+                            'type'        => 'integer',
+                            'description' => get_string('tool_create_agent_context_id', 'local_jedomi'),
+                        ],
+                        'enabled' => [
+                            'type'        => 'boolean',
+                            'description' => get_string('tool_create_agent_enabled', 'local_jedomi'),
+                        ],
+                    ],
+                    'required' => ['prompt', 'schedule_cron'],
+                ],
+            ],
+        ];
+
+        $tools[] = [
+            'type' => 'function',
+            'function' => [
+                'name'        => 'list_agents',
+                'description' => get_string('tool_list_agents_desc', 'local_jedomi'),
+                'parameters'  => [
+                    'type'       => 'object',
+                    'properties' => [
+                        'status' => [
+                            'type'        => 'string',
+                            'enum'        => ['enabled', 'disabled'],
+                            'description' => get_string('tool_list_agents_status', 'local_jedomi'),
+                        ],
+                    ],
+                ],
+            ],
+        ];
+
+        $tools[] = [
+            'type' => 'function',
+            'function' => [
+                'name'        => 'delete_agent',
+                'description' => get_string('tool_delete_agent_desc', 'local_jedomi'),
+                'parameters'  => [
+                    'type'       => 'object',
+                    'properties' => [
+                        'id' => [
+                            'type'        => 'integer',
+                            'description' => get_string('tool_delete_agent_id', 'local_jedomi'),
+                        ],
+                    ],
+                    'required' => ['id'],
+                ],
+            ],
+        ];
+    }
+
     // Admin CLI tools — search, describe, execute admin operations not exposed via WS.
     if (in_array($role, ['admin', 'manager'], true)) {
         $tools[] = [

@@ -115,5 +115,144 @@ function xmldb_local_jedomi_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2026052405, 'local', 'jedomi');
     }
 
+    if ($oldversion < 2026052408) {
+        // Add iteration column for optimistic concurrency in tool loop state.
+        // Multiple HTTP workers (original + self-pings) compete for the same
+        // state key. The iteration column lets set_context() reject stale writes
+        // where another worker already saved a newer state.
+        $table = new xmldb_table('local_jedomi_telegram_sessions');
+        $field = new xmldb_field('iteration', XMLDB_TYPE_INTEGER, '10', null, null, null, null, 'usercontext');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+        upgrade_plugin_savepoint(true, 2026052408, 'local', 'jedomi');
+    }
+
+    if ($oldversion < 2026052409) {
+
+        // ── Table: local_jedomi_agents ─────────────────────────────────────────
+        $table = new xmldb_table('local_jedomi_agents');
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+        $table->add_field('userid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('prompt', XMLDB_TYPE_TEXT, null, null, XMLDB_NOTNULL, null, null);
+        $table->add_field('schedule_cron', XMLDB_TYPE_CHAR, '64', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('context_type', XMLDB_TYPE_CHAR, '20', null, XMLDB_NOTNULL, null, 'site');
+        $table->add_field('context_id', XMLDB_TYPE_INTEGER, '10', null, null, null, null);
+        $table->add_field('role_filter', XMLDB_TYPE_TEXT, null, null, null, null, null);
+        $table->add_field('enabled', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '1');
+        $table->add_field('lastrun', XMLDB_TYPE_INTEGER, '10', null, null, null, null);
+        $table->add_field('nextrun', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('failcount', XMLDB_TYPE_INTEGER, '3', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('timemodified', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+        $table->add_index('enabled_nextrun_idx', XMLDB_INDEX_NOTUNIQUE, ['enabled', 'nextrun']);
+        if (!$dbman->table_exists($table)) {
+            $dbman->create_table($table);
+        }
+
+        // ── Table: local_jedomi_agent_cache ────────────────────────────────────
+        $table = new xmldb_table('local_jedomi_agent_cache');
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+        $table->add_field('agentid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('context_hash', XMLDB_TYPE_CHAR, '64', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('result_json', XMLDB_TYPE_TEXT, null, null, XMLDB_NOTNULL, null, null);
+        $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+        $table->add_index('agentid_context_hash_idx', XMLDB_INDEX_UNIQUE, ['agentid', 'context_hash']);
+        if (!$dbman->table_exists($table)) {
+            $dbman->create_table($table);
+        }
+
+        upgrade_plugin_savepoint(true, 2026052409, 'local', 'jedomi');
+    }
+
+    if ($oldversion < 2026052412) {
+        // Ensure agent tables exist. The 2026052409 step might have been
+        // skipped if the DB version was bumped directly, so we create them
+        // here as a safe fallback (table_exists() guards against duplicates).
+        $table = new xmldb_table('local_jedomi_agents');
+        if (!$dbman->table_exists($table)) {
+            $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+            $table->add_field('userid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('prompt', XMLDB_TYPE_TEXT, null, null, XMLDB_NOTNULL, null, null);
+            $table->add_field('schedule_cron', XMLDB_TYPE_CHAR, '64', null, XMLDB_NOTNULL, null, null);
+            $table->add_field('context_type', XMLDB_TYPE_CHAR, '20', null, XMLDB_NOTNULL, null, 'site');
+            $table->add_field('context_id', XMLDB_TYPE_INTEGER, '10', null, null, null, null);
+            $table->add_field('role_filter', XMLDB_TYPE_TEXT, null, null, null, null, null);
+            $table->add_field('enabled', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '1');
+            $table->add_field('lastrun', XMLDB_TYPE_INTEGER, '10', null, null, null, null);
+            $table->add_field('nextrun', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('failcount', XMLDB_TYPE_INTEGER, '3', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('timemodified', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+            $table->add_index('enabled_nextrun_idx', XMLDB_INDEX_NOTUNIQUE, ['enabled', 'nextrun']);
+            $dbman->create_table($table);
+        }
+
+        $table = new xmldb_table('local_jedomi_agent_cache');
+        if (!$dbman->table_exists($table)) {
+            $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+            $table->add_field('agentid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('context_hash', XMLDB_TYPE_CHAR, '64', null, XMLDB_NOTNULL, null, null);
+            $table->add_field('result_json', XMLDB_TYPE_TEXT, null, null, XMLDB_NOTNULL, null, null);
+            $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+            $table->add_index('agentid_context_hash_idx', XMLDB_INDEX_UNIQUE, ['agentid', 'context_hash']);
+            $dbman->create_table($table);
+        }
+
+        // Force capability refresh — registers manageagents + assigns archetypes.
+        upgrade_plugin_savepoint(true, 2026052412, 'local', 'jedomi');
+    }
+
+    if ($oldversion < 2026052413) {
+        // Clear corrupted agent cache entries. Previously the agent_runner was
+        // caching the full raw HTTP response (entire gateway JSON) instead of
+        // the extracted assistant content. This left nested JSON in the cache.
+        // Purging the cache forces fresh AI calls on the next cron cycle.
+        $DB->delete_records('local_jedomi_agent_cache', []);
+        upgrade_plugin_savepoint(true, 2026052413, 'local', 'jedomi');
+    }
+
+    if ($oldversion < 2026052414) {
+
+        // ── Table: local_jedomi_query_log ─────────────────────────────────────
+        $table = new xmldb_table('local_jedomi_query_log');
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+        $table->add_field('agentid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('query', XMLDB_TYPE_TEXT, null, null, XMLDB_NOTNULL, null, null);
+        $table->add_field('duration_ms', XMLDB_TYPE_NUMBER, '10,2', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('rowcount', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+        $table->add_index('duration_idx', XMLDB_INDEX_NOTUNIQUE, ['duration_ms']);
+        $table->add_index('timecreated_idx', XMLDB_INDEX_NOTUNIQUE, ['timecreated']);
+        if (!$dbman->table_exists($table)) {
+            $dbman->create_table($table);
+        }
+
+        // ── Agent web service allowlist setting (default from ws_tool) ───────
+        set_config('agent_ws_allowlist', implode(',', \local_jedomi\agent\tool\ws_tool::DEFAULT_ALLOWED), 'local_jedomi');
+
+        upgrade_plugin_savepoint(true, 2026052414, 'local', 'jedomi');
+    }
+
+    if ($oldversion < 2026052415) {
+
+        // ── Add "name" column to local_jedomi_agents ─────────────────────────
+        $table = new xmldb_table('local_jedomi_agents');
+        $field = new xmldb_field('name', XMLDB_TYPE_CHAR, '255', null, null, null, null, 'userid');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        // Remove the WS allowlist setting (obsolete — permission-based now).
+        unset_config('agent_ws_allowlist', 'local_jedomi');
+
+        upgrade_plugin_savepoint(true, 2026052415, 'local', 'jedomi');
+    }
+
     return true;
 }

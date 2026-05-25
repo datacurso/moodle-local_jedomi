@@ -76,6 +76,10 @@ $string['connection_error']        = 'Error de conexión:';
 $string['gateway_error_title'] = 'No pude conectarme al Gateway Jedomi.';
 $string['gateway_error_hint']  = 'Verificá que el servicio esté corriendo:';
 
+// ── Session expired ───────────────────────────────────────────────────────────
+$string['session_expired_title'] = 'Sesión expirada.';
+$string['session_expired_hint']  = 'Tu sesión de Moodle expiró. Recargá la página para continuar.';
+
 // ── Microphone ────────────────────────────────────────────────────────────────
 $string['listening']        = 'Escuchando...';
 $string['mic_error']        = 'No se pudo acceder al micrófono. Verificá los permisos del navegador.';
@@ -210,7 +214,9 @@ $string['settings']        = 'Configuración de Jedomi';
 $string['gateway_url']     = 'URL del Gateway';
 $string['gateway_url_help']= 'URL del Gateway de Jedomi. Ejemplo: http://localhost:8765';
 $string['api_key']         = 'API Key';
-$string['model']           = 'Modelo';
+$string['model']                     = 'Modelo';
+$string['max_tokens']                = 'Tokens máximos';
+$string['max_tokens_help']           = 'Máximo de tokens de salida por respuesta (default: 16384). Aumentalo para respuestas más largas, reducilo para velocidad & costo.';
 $string['enabled']         = 'Activar sidebar de Jedomi';
 $string['spt_secret']      = 'Secreto del token de permisos';
 $string['spt_secret_help'] = 'Secreto compartido entre Moodle y el Gateway para firmar los tokens de permisos. Debe coincidir con SPT_SECRET en el .env.';
@@ -272,6 +278,10 @@ $string['webhook_error_alert_title']       = 'Problema con el registro del webho
 $string['webhook_error_alert_desc']        = 'El token del bot se guardó correctamente, pero no se pudo registrar el webhook en Telegram.';
 $string['webhook_error_detail']            = 'Detalles del error:';
 $string['webhook_not_checked']             = 'Sin verificar. Hacé clic en "Verificar webhook" para comprobar.';
+$string['drop_pending_updates']            = 'Eliminar pendientes';
+$string['drop_pending_updates_help']       = 'Limpia la cola de actualizaciones de Telegram para que mensajes viejos no se procesen al reconectar el webhook. Útil durante pruebas.';
+$string['drop_pending_success']            = '✅ Pendientes eliminados correctamente.';
+$string['drop_pending_fail']               = '❌ Error al eliminar pendientes — revisá la respuesta de la API de Telegram.';
 $string['telegram_enabled']                = 'Habilitar integración con Telegram';
 $string['telegram_bot_token']              = 'Token del bot';
 $string['telegram_bot_token_help']         = 'Pegá el token de @BotFather. Se encripta antes de guardarlo.';
@@ -349,6 +359,79 @@ $string['encryption_failed']             = 'Falló la encriptación. Verificá l
 $string['decryption_failed']             = 'Falló la desencriptación. El token puede estar corrompido o el salt del sitio cambió.';
 
 // ── Guía de configuración de Telegram ────────────────────────────────────────
+// ── Agentes Programados ───────────────────────────────────────────────────────
+$string['tab_profiler']              = 'Perfil de Consultas';
+$string['tab_agents']                = 'Agentes';
+$string['agent_heading']             = 'Agentes de IA Programados';
+$string['agent_heading_help']        = 'Configurá agentes de IA que se ejecutan automáticamente y envían resultados por Telegram.';
+$string['agent_summary']             = 'Resumen';
+$string['agent_by_role']             = 'Agentes por Rol';
+$string['agent_by_status']           = 'Agentes por Estado';
+$string['agent_executions_30d']      = 'Ejecuciones (30 días)';
+$string['agent_filters']             = 'Filtros';
+$string['agent_filter_role']         = 'Rol';
+$string['agent_filter_status']       = 'Estado';
+$string['agent_filter_context']      = 'Contexto';
+$string['agent_search']              = 'Buscar prompt...';
+$string['agent_apply_filters']       = 'Aplicar Filtros';
+$string['agent_table']               = 'Todos los Agentes';
+$string['agent_creator']             = 'Creador';
+$string['agent_prompt']              = 'Prompt';
+$string['agent_context']             = 'Contexto';
+$string['agent_schedule']            = 'Programación';
+$string['agent_status']              = 'Estado';
+$string['agent_lastrun']             = 'Última ejecución';
+$string['agent_nextrun']             = 'Próxima ejecución';
+$string['agent_actions']             = 'Acciones';
+$string['agent_edit']                = 'Editar';
+$string['agent_disable']             = 'Desactivar';
+$string['agent_delete']              = 'Eliminar';
+$string['agent_create']              = 'Crear Agente';
+$string['agent_purge']               = 'Eliminar Agentes';
+$string['agent_purge_confirm']       = 'Esto va a eliminar todos los agentes que coincidan y sus resultados cacheados. ¿Continuar?';
+$string['agent_no_results']          = 'No se encontraron agentes con esos filtros.';
+$string['agent_create_success']      = 'Agente creado correctamente.';
+$string['agent_created_with_name']   = 'Agente &quot;{name}&quot; creado correctamente.';
+$string['agent_created_no_name']     = 'Agente creado sin nombre. Editá el agente para agregarle un nombre.';
+$string['agent_preview']             = 'Vista previa';
+$string['agent_preview_result']      = 'Resultado de la vista previa';
+$string['agent_preview_error']       = 'La vista previa falló. Revisá la configuración del gateway y el prompt.';
+$string['agent_update_success']      = 'Agente actualizado correctamente.';
+$string['agent_delete_confirm']      = '¿Eliminar este agente? Esta acción no se puede deshacer.';
+$string['agent_disabled']            = 'Desactivado';
+$string['agent_enabled']             = 'Activo';
+$string['agent_failing']             = 'Fallando';
+$string['agent_run_now']             = 'Ejecutar ahora';
+$string['agent_schedule_presets']    = 'Programación predefinida';
+$string['agent_every_5min']          = 'Cada 5 minutos';
+$string['agent_every_15min']         = 'Cada 15 minutos';
+$string['agent_every_30min']         = 'Cada 30 minutos';
+$string['agent_every_1h']            = 'Cada hora';
+$string['agent_every_6h']            = 'Cada 6 horas';
+$string['agent_daily']               = 'Diario';
+$string['agent_weekly']              = 'Semanal';
+$string['agent_custom_cron']         = 'Personalizado (expresión cron)';
+$string['agent_context_type_site']   = 'Sitio';
+$string['agent_context_type_course'] = 'Curso';
+$string['agent_context_type_category'] = 'Categoría';
+$string['agent_context_type_user']   = 'Usuario';
+$string['agent_prompt_placeholder']  = 'Ej: "Resumí la actividad nueva del sitio y notificame"';
+$string['agent_status_all']          = 'Todos';
+$string['agent_filter_apply']        = 'Aplicar';
+$string['agent_filter_reset']        = 'Reiniciar';
+$string['agent_purge_context']       = 'Tipo de contexto';
+$string['agent_purge_context_help']  = 'Eliminar todos los agentes de un contexto específico.';
+$string['agent_purge_btn']           = 'Eliminar';
+$string['agent_purge_success']       = '{$a} agente(s) eliminados correctamente.';
+$string['agent_error_load']          = 'Error al cargar agentes.';
+$string['agent_error_create']        = 'Error al crear agente: {$a}';
+$string['agent_error_update']        = 'Error al actualizar agente: {$a}';
+$string['agent_error_delete']        = 'Error al eliminar agente: {$a}';
+$string['agent_not_found']           = 'Agente no encontrado.';
+$string['agent_run_queued']          = 'Agente encolado para ejecución (próximo ciclo de cron).';
+$string['agent_runner_task']         = 'Jedomi — Ejecutar agentes de IA programados';
+$string['agent_enable']              = 'Activar';
+
 $string['copytoclipboard']               = 'Copiar al portapapeles';
 $string['telegram_setup_guide']          = 'Guía de configuración';
 $string['telegram_setup_guide_help']     = 'Seguí estos pasos para conectar Jedomi con Telegram. Una vez configurado, los usuarios pueden vincular sus cuentas desde su perfil.';
@@ -481,6 +564,18 @@ $string['tool_ws_describe_wsname'] = 'Nombre exacto de la función (ej: core_use
 $string['tool_ws_execute_wsname'] = 'Nombre de la función del servicio web (ej: core_course_get_courses)';
 $string['tool_ws_execute_params'] = 'Parámetros codificados en JSON para la función del servicio web. DEBE incluir todos los campos * (requerido). Si el usuario no proporcionó un valor, generá un valor predeterminado sensato (ej: contraseña aleatoria, timestamp actual, array vacío).';
 
+// ── Herramientas de Agentes ───────────────────────────────────────────────────
+$string['tool_create_agent_desc'] = 'Create a scheduled AI agent. The agent will execute the given prompt on a recurring schedule, cache results, and send notifications via Telegram (if linked). Only available to admins and managers.';
+$string['tool_create_agent_prompt'] = 'The task description or instruction the AI agent will execute each time it runs. Be specific about what data to fetch, analyze, or report. Example: "Summarize new enrollments from the last 24 hours" or "Check for students at risk in course 42".';
+$string['tool_create_agent_schedule'] = 'Cron expression defining how often the agent runs. Common presets: "*/5 * * * *" = every 5 minutes, "*/30 * * * *" = every 30 minutes, "0 * * * *" = hourly, "0 0 * * *" = daily at midnight, "0 0 * * 0" = weekly on Sunday.';
+$string['tool_create_agent_context_type'] = 'Scope of execution: "site" for global, "course" for a specific course, "category" for a course category, "user" for a specific user. Defaults to "site".';
+$string['tool_create_agent_context_id'] = 'The ID of the course, category, or user. Required when context_type is not "site".';
+$string['tool_create_agent_enabled'] = 'Whether the agent starts enabled. Default: true. Set to false to create inactive.';
+$string['tool_list_agents_desc'] = 'List all configured scheduled AI agents, optionally filtered by status or context. Returns agent ID, prompt excerpt, schedule, context, status, last run, next run.';
+$string['tool_list_agents_status'] = 'Optional filter: "enabled" for active agents, "disabled" for inactive. Empty = all.';
+$string['tool_delete_agent_desc'] = 'Delete a scheduled AI agent by ID. Permanent — removes agent and all cached results. Cannot be undone.';
+$string['tool_delete_agent_id'] = 'The numeric ID of the agent to delete. Use list_agents to find the ID.';
+
 // ── External WS errors ───────────────────────────────────────────────
 $string['ws_function_not_found'] = 'Función no encontrada: {$a}';
 $string['ws_cannot_load_info'] = 'No se puede cargar información de la función: {$a}';
@@ -499,3 +594,28 @@ $string['task_instantiation_failed_msg'] = 'task_instantiation_failed';
 // ── WS execute errors ────────────────────────────────────────────────
 $string['ws_method_not_exists'] = 'El método {$a} no existe';
 $string['ws_debug_prefix'] = ' | debug: ';
+
+// ── Agent SQL profiler ───────────────────────────────────────────────
+$string['query_profiler'] = 'Perfil de Consultas';
+$string['query_profiler_heading'] = 'Perfil de Consultas SQL';
+$string['query_profiler_desc'] = 'Registra todas las consultas SQL ejecutadas por agentes, incluyendo tiempo de ejecución y cantidad de filas. Usá el filtro para encontrar consultas lentas.';
+$string['query_profiler_total'] = 'Consultas totales';
+$string['query_profiler_slow'] = 'Consultas lentas (>1s)';
+$string['query_profiler_avg'] = 'Duración promedio';
+$string['query_profiler_max'] = 'Duración máxima';
+$string['query_profiler_sort_duration'] = 'Duración';
+$string['query_profiler_sort_time'] = 'Momento';
+$string['query_profiler_sort_query'] = 'Consulta';
+$string['query_profiler_empty'] = 'Todavía no hay consultas registradas. Los agentes registrarán consultas aquí cuando usen la herramienta SQL.';
+$string['query_profiler_threshold'] = 'Umbral de consulta lenta (ms)';
+$string['query_profiler_recent'] = 'Consultas recientes';
+$string['query_profiler_slowest'] = 'Consultas más lentas (promedio)';
+
+// ── Agent WS allowlist ───────────────────────────────────────────────
+$string['agent_ws_allowlist'] = 'Lista permitida de WS para agentes';
+$string['agent_ws_allowlist_help'] = 'Lista separada por comas de funciones de webservice de Moodle que los agentes pueden llamar. Dejá vacío para usar el conjunto predeterminado.';
+
+// ── Agent name ───────────────────────────────────────────────────────
+$string['agent_name'] = 'Nombre';
+$string['agent_name_placeholder'] = 'ej. Reporte Diario';
+$string['agent_unnamed'] = 'Agente';
