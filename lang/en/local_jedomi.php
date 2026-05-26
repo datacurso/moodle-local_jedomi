@@ -50,6 +50,13 @@ $string['tool_api_call']          = 'Executing Moodle action...';
 $string['tool_schema_lookup']     = 'Looking up table...';
 $string['tool_webservice_lookup'] = 'Looking up API function...';
 $string['tool_get_site_config']    = 'Getting site configuration...';
+$string['tool_execute_sql']       = 'Querying database...';
+$string['tool_search_tables']     = 'Searching tables...';
+$string['tool_describe_table']    = 'Analyzing table...';
+$string['tool_ws_search']         = 'Looking up webservice functions...';
+$string['tool_ws_describe']       = 'Getting webservice function details...';
+$string['tool_ws_execute']        = 'Executing web service...';
+$string['tool_unknown']           = 'Running tool...';
 
 // ── Message actions ───────────────────────────────────────────────────────────
 $string['action_copy']         = 'Copy';
@@ -633,3 +640,10 @@ $string['agent_ws_allowlist_help'] = 'Comma-separated list of Moodle web service
 $string['agent_name'] = 'Name';
 $string['agent_name_placeholder'] = 'e.g. Daily Report';
 $string['agent_unnamed'] = 'Agent';
+// ── Document reader ─────────────────────────────────────────────────
+$string['tool_document_read_desc'] = 'Read a PDF file from ANY course activity using its cmid (course module ID). Converts PDF pages to base64 images so you see the EXACT original layout, tables, images, and formatting. Use this when the user asks about a document. The cmid is available in the context when viewing an activity page.';
+$string['tool_document_read_cmid'] = 'Course module ID (cmid) of the activity. Get it from the page context when viewing an activity, or discover it via ws_search/ws_execute first.';
+$string['tool_document_read_dpi'] = 'Image resolution (default: 150). Higher values = better quality but more tokens.';
+$string['tool_document_read_fmt'] = 'Image format: JPEG (smaller) or PNG (lossless). Default: JPEG.';
+$string['docservice_url'] = 'Document-to-image service URL';
+$string['docservice_url_help'] = 'URL of the document-to-image service that converts PDFs to base64 images (e.g. http://localhost:8000).';

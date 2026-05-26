@@ -721,6 +721,36 @@ function local_jedomi_get_tool_definitions(string $role): array {
         ];
     }
 
+    // Document reader — available for teacher / editingteacher and above.
+    if (in_array($role, ['teacher', 'editingteacher', 'manager', 'admin'], true)) {
+        $tools[] = [
+            'type' => 'function',
+            'function' => [
+                'name'        => 'document_read',
+                'description' => get_string('tool_document_read_desc', 'local_jedomi'),
+                'parameters'  => [
+                    'type'       => 'object',
+                    'properties' => [
+                        'cmid' => [
+                            'type'        => 'integer',
+                            'description' => get_string('tool_document_read_cmid', 'local_jedomi'),
+                        ],
+                        'dpi' => [
+                            'type'        => 'integer',
+                            'description' => get_string('tool_document_read_dpi', 'local_jedomi'),
+                        ],
+                        'fmt' => [
+                            'type'        => 'string',
+                            'enum'        => ['JPEG', 'PNG'],
+                            'description' => get_string('tool_document_read_fmt', 'local_jedomi'),
+                        ],
+                    ],
+                    'required' => ['cmid'],
+                ],
+            ],
+        ];
+    }
+
     return $tools;
 }
 

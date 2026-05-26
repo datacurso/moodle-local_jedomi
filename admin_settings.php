@@ -51,6 +51,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && confirm_sesskey()) {
             set_config('api_key',               required_param('api_key',               PARAM_TEXT),    'local_jedomi');
             set_config('model',                 required_param('model',                 PARAM_TEXT),    'local_jedomi');
             set_config('max_tokens',            optional_param('max_tokens',           16384, PARAM_INT),'local_jedomi');
+            set_config('docservice_url',        optional_param('docservice_url',        '',             PARAM_TEXT),    'local_jedomi');
             set_config('spt_secret',            required_param('spt_secret',            PARAM_TEXT),    'local_jedomi');
             set_config('collect_training_data', optional_param('collect_training_data', 0, PARAM_INT),  'local_jedomi');
 
@@ -179,6 +180,7 @@ $cfg = [
     'gateway_url'           => get_config('local_jedomi', 'gateway_url') ?: 'http://localhost:8765',
     'api_key'               => get_config('local_jedomi', 'api_key')     ?: '',
     'model'                 => get_config('local_jedomi', 'model')        ?: 'jedomi-e4b',
+    'docservice_url'        => get_config('local_jedomi', 'docservice_url') ?: '',
     'spt_secret'            => get_config('local_jedomi', 'spt_secret')   ?: '',
     'collect_training_data' => (function() {
         $v = get_config('local_jedomi', 'collect_training_data');
@@ -345,10 +347,21 @@ echo '</ul>';
                 <label class="form-label-main" for="jedomi-model">
                     <?php echo get_string('model', 'local_jedomi'); ?>
                 </label>
-                <input type="text" id="jedomi-model" name="model"
-                       class="form-control" style="max-width:280px"
-                       value="<?php echo s($cfg['model']); ?>">
-            </div>
+                    <input type="text" id="jedomi-model" name="model"
+                           class="form-control" style="max-width:280px"
+                           value="<?php echo s($cfg['model']); ?>">
+                </div>
+
+                <div class="mt-3">
+                    <label class="form-label-main" for="jedomi-docservice">
+                        <?php echo get_string('docservice_url', 'local_jedomi'); ?>
+                    </label>
+                    <input type="url" id="jedomi-docservice" name="docservice_url"
+                           class="form-control" style="max-width:480px"
+                           value="<?php echo s($cfg['docservice_url'] ?? ''); ?>"
+                           placeholder="http://localhost:8000">
+                    <p class="form-text"><?php echo get_string('docservice_url_help', 'local_jedomi'); ?></p>
+                </div>
 
             <!-- Max Tokens -->
             <div class="mt-3">
