@@ -314,7 +314,7 @@ define(['core/log'], function(Log) {
                 placeholder="${S.chat_placeholder || 'Ask Jedomi about courses, users, grades...'}"
                 rows="1" aria-label="${S.message_input || 'Message Jedomi'}"></textarea>
             <div class="jedomi-input-actions">
-                <button id="jedomi-voice-btn" class="jedomi-input-icon" title="${S.voice_input || 'Voice input'}">${SVG.mic}</button>
+                <button id="jedomi-voice-btn" class="jedomi-input-icon" title="${S.voice_input || 'Voice input'}" style="display:none">${SVG.mic}</button>
                 <div class="jedomi-attach-wrap">
                     <button id="jedomi-attach-btn" class="jedomi-input-icon" title="${S.attach || 'Attach'}">${SVG.plus}</button>
                     <div id="jedomi-attach-menu" class="jedomi-attach-menu jedomi-hidden">
