@@ -2,7 +2,7 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'local_jedomi';
-$plugin->version   = 2026052420; // 20: agent panel improvements: tool metrics, preview args+cache, profiler tab
+$plugin->version   = 2026052503; // 03: semantic cache — tool plan replay with fresh data + LLM reformulation
 // 20: agent panel improvements: tool metrics, preview args+cache, profiler tab
 // 19: fix telegram stuck loop: lock release, TTL, lastactivity, guard 20→40, TOCTOU
 // 18: <|tool_call|> format support, profiler data in preview, final cleanup all tokens

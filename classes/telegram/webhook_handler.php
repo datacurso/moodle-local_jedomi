@@ -875,7 +875,37 @@ class webhook_handler {
                     }
                 }
 
-                // Try Pattern 2: <|tool_call|> (Llama 3 style) — only if pattern 1 didn't match.
+                // Try Pattern 2 (broader): allow JSON inline after `call:` with optional newline
+                // before END_TOOL_CALL. Handles variations where the model omits newlines.
+                if (empty($toolCalls)) {
+                    $tcPattern1b = '/(?:TOOL_CALL|call):\s*(\w+)\s*\n?(.+?)(?:\n\s*)?END_TOOL_CALL[^\n]*/si';
+                    if (preg_match_all($tcPattern1b, $content, $tcMatches2, PREG_SET_ORDER)) {
+                        $remainingText = trim(preg_replace($tcPattern1b, '', $content));
+                        foreach ($tcMatches2 as $m) {
+                            $toolName = trim($m[1]);
+                            $argsJson = trim($m[2]);
+                            json_decode($argsJson);
+                            if (json_last_error() !== JSON_ERROR_NONE) {
+                                if (preg_match('/\{.*\}/s', $argsJson, $jsonMatch)) {
+                                    $argsJson = $jsonMatch[0];
+                                }
+                            }
+                            json_decode($argsJson);
+                            if (json_last_error() === JSON_ERROR_NONE) {
+                                $toolCalls[] = [
+                                    'id' => 'text_' . md5(uniqid('', true)),
+                                    'type' => 'function',
+                                    'function' => [
+                                        'name' => $toolName,
+                                        'arguments' => $argsJson,
+                                    ],
+                                ];
+                            }
+                        }
+                    }
+                }
+
+                // Try Pattern 3: <|tool_call|> (Llama 3 style) — only if patterns 1&2 didn't match.
                 if (empty($toolCalls) && preg_match_all($tcPattern2, $content, $tcMatches, PREG_SET_ORDER)) {
                     $remainingText = trim(preg_replace($tcPattern2, '', $content));
                     foreach ($tcMatches as $m) {
@@ -904,6 +934,36 @@ class webhook_handler {
                     }
                 }
 
+                // ── Ultra-broad fallback: if content still looks like it has tool calls
+                //    but no regex matched, try grabbing everything between 'call:\w+' and
+                //    'END_TOOL_CALL' as raw JSON. This catches unusual line breaks/whitespace.
+                if (empty($toolCalls) && preg_match('/\b(?:TOOL_CALL|call):\s*\w+/i', $content)) {
+                    $tcUltra = '/(?:TOOL_CALL|call):\s*(\w+)\s*\n?(.+?)\s*END_TOOL_CALL\s*/si';
+                    if (preg_match_all($tcUltra, $content, $tcMatches3, PREG_SET_ORDER)) {
+                        $remainingText = trim(preg_replace($tcUltra, '', $content));
+                        foreach ($tcMatches3 as $m) {
+                            $toolName = trim($m[1]);
+                            // Accept whatever text is between call and END_TOOL_CALL,
+                            // attempt to extract a JSON object.
+                            $raw = trim($m[2]);
+                            if (preg_match('/\{.*\}/s', $raw, $jsonMatch)) {
+                                $raw = $jsonMatch[0];
+                            }
+                            json_decode($raw);
+                            if (json_last_error() === JSON_ERROR_NONE) {
+                                $toolCalls[] = [
+                                    'id' => 'ultra_' . md5(uniqid('', true)),
+                                    'type' => 'function',
+                                    'function' => [
+                                        'name' => $toolName,
+                                        'arguments' => $raw,
+                                    ],
+                                ];
+                            }
+                        }
+                    }
+                }
+
                 if (!empty($toolCalls)) {
                     $message = [
                         'tool_calls' => $toolCalls,
@@ -911,6 +971,12 @@ class webhook_handler {
                     ];
                     $content = $remainingText ?: '';
                     $has_tools = true;
+                } else if (preg_match('/\b(?:TOOL_CALL|call):\s*\w+/i', $content)) {
+                    // Log when content looks like it should have tool calls but none parsed.
+                    debugging(
+                        'Telegram: unparseable tool call in content — ' . mb_substr($content, 0, 500),
+                        DEBUG_DEVELOPER
+                    );
                 }
             }
 
@@ -1372,7 +1438,7 @@ class webhook_handler {
 
             case 'execute_sql':
                 // SQL is ONLY SELECT — safe read-only.
-                $sql = $args['sql'] ?? '';
+                $sql = $args['sql'] ?? $args['query'] ?? '';
                 if (empty($sql)) {
                     return "SQL query required.";
                 }

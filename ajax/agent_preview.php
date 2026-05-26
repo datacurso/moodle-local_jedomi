@@ -46,34 +46,117 @@ if (empty($model))       { $model       = 'jedomi-e4b'; }
 $max_tokens = (int) get_config('local_jedomi', 'max_tokens');
 if ($max_tokens < 256) { $max_tokens = 16384; }
 
-// ── Build messages ───────────────────────────────────────────────────────
-$tools = tool_executor::get_definitions(0, (int) $USER->id);
+// ── Build messages (same rich context as web chat) ─────────────────────
+require_once(__DIR__ . '/../lib.php');
+$role = \local_jedomi_get_user_role_for_user((int) $USER->id);
+$tools = \local_jedomi_get_tool_definitions($role);
 
-$systemContent = $prompt;
+$spt = ['course_id' => 0];
+$context = ['location' => 'site', 'course_name' => ''];
+$system = \local_jedomi\proxy\system_message::build($role, $spt, $context);
+
 if (!empty($tools)) {
-    $systemContent .= "\n\n=== TOOLS ===\nYou have tools to get REAL data.\n";
+    $system['content'] .= "\n\n=== AVAILABLE TOOLS ===\n";
     foreach ($tools as $t) {
         $fn = $t['function'] ?? [];
-        $systemContent .= '- ' . ($fn['name'] ?? '?') . ': ' . ($fn['description'] ?? '') . "\n";
+        $system['content'] .= '- ' . ($fn['name'] ?? '?') . ': ' . ($fn['description'] ?? '') . "\n";
     }
-    $systemContent .= "\n=== HOW TO USE A TOOL ===\n"
-        . "If you need data, output EXACTLY:\n"
-        . "TOOL_CALL: tool_name\n{\"param\": \"value\"}\nEND_TOOL_CALL\n"
-        . "Then I'll run the tool and show you the result.\n"
-        . "When you have the data, answer with the FINAL RESULT.";
 }
 
 $messages = [
-    ['role' => 'system', 'content' => $systemContent],
+    $system,
+    ['role' => 'user', 'content' => $prompt],
 ];
 
 // ── Check agent cache ─────────────────────────────────────────────────────
-$cache_hash = md5($prompt);
+$cache_hash = md5(trim($prompt));
 $cached = $DB->get_record('local_jedomi_agent_cache', [
     'agentid' => 0,
     'context_hash' => $cache_hash,
 ]);
 if ($cached && !empty($cached->result_json)) {
+    // ── Try semantic cache plan replay ──────────────────────────────────────
+    if (!empty($cached->plan_json)) {
+        $plan = json_decode($cached->plan_json, true);
+        if (is_array($plan) && !empty($plan)) {
+            $replayProfiler = [];
+            $replayFailed = false;
+            foreach ($plan as $step) {
+                $toolStart = microtime(true);
+                $toolResult = tool_executor::execute($step['tool'], $step['arguments']);
+                $toolDuration = (microtime(true) - $toolStart) * 1000;
+                $resultInfo = json_decode($toolResult, true);
+                if (!empty($resultInfo['error'])) {
+                    $replayFailed = true;
+                    break;
+                }
+                $replayProfiler[] = [
+                    'tool' => $step['tool'],
+                    'arguments' => $step['arguments'],
+                    'result_preview' => mb_substr($toolResult, 0, 5000),
+                    'duration_ms' => round($resultInfo['duration_ms'] ?? $toolDuration, 2),
+                    'row_count' => $resultInfo['row_count'] ?? 0,
+                    'error' => $resultInfo['error'] ?? null,
+                ];
+            }
+
+            if (!$replayFailed && !empty($replayProfiler)) {
+                // Build fresh context for reformulation.
+                $freshCtx = "Updated tool results:\n";
+                foreach ($replayProfiler as $fr) {
+                    $freshCtx .= "\n--- {$fr['tool']} ---\n{$fr['result_preview']}\n";
+                }
+
+                $cachedResult = json_decode($cached->result_json, true);
+                $cachedAnswer = $cachedResult['answer'] ?? $cached->result_json;
+
+                $reformMessages = [
+                    ['role' => 'system', 'content' => 'You previously answered a question. Below are updated tool results. Reformulate your answer using the new data. Keep the same style and structure.'],
+                    ['role' => 'user', 'content' => "Previous answer:\n{$cachedAnswer}\n\n{$freshCtx}"],
+                ];
+
+                $ch = curl_init($gateway_url . '/v1/chat/completions');
+                curl_setopt_array($ch, [
+                    CURLOPT_POST           => true,
+                    CURLOPT_POSTFIELDS     => json_encode([
+                        'model' => $model,
+                        'messages' => $reformMessages,
+                        'stream' => false,
+                        'max_tokens' => $max_tokens,
+                    ], JSON_UNESCAPED_UNICODE),
+                    CURLOPT_RETURNTRANSFER => true,
+                    CURLOPT_TIMEOUT        => 120,
+                    CURLOPT_HTTPHEADER     => [
+                        'Content-Type: application/json',
+                        'Authorization: Bearer ' . $api_key,
+                    ],
+                ]);
+                $reformResponse = curl_exec($ch);
+                $reformHttp = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                curl_close($ch);
+
+                if ($reformHttp === 200) {
+                    $reformResult = json_decode($reformResponse, true);
+                    $reformAnswer = $reformResult['choices'][0]['message']['content'] ?? '';
+                    if (!empty(trim($reformAnswer))) {
+                        echo json_encode([
+                            'ok' => true,
+                            'answer' => $reformAnswer,
+                            'rounds' => 0,
+                            'profiler' => $replayProfiler,
+                            'total_time_ms' => round(array_sum(array_column($replayProfiler, 'duration_ms')), 2),
+                            'cached' => true,
+                            'cached_at' => $cached->timecreated,
+                            'reformulated' => true,
+                        ], JSON_UNESCAPED_UNICODE);
+                        exit;
+                    }
+                }
+            }
+        }
+    }
+
+    // ── Fallback: plain text cache ──────────────────────────────────────────
     $cached_result = json_decode($cached->result_json, true);
     if ($cached_result && is_array($cached_result)) {
         echo json_encode([
@@ -81,6 +164,7 @@ if ($cached && !empty($cached->result_json)) {
             'answer' => $cached_result['answer'] ?? $cached->result_json,
             'rounds' => 0,
             'profiler' => $cached_result['profiler'] ?? [],
+            'conversation' => $cached_result['conversation'] ?? [],
             'total_time_ms' => 0,
             'cached' => true,
             'cached_at' => $cached->timecreated,
@@ -91,8 +175,11 @@ if ($cached && !empty($cached->result_json)) {
 
 // ── Multi-turn loop (same as agent_runner) ────────────────────────────────
 $finalAnswer = '';
-$maxRounds = 10;
-$profilerEntries = []; // Collect profiler data for the UI.
+$maxRounds = 15;
+$profilerEntries = [];
+$plan = [];
+$toolcallCounts = [];
+$loopBroken = false;
 
 for ($round = 1; $round <= $maxRounds; $round++) {
     $payload = [
@@ -159,44 +246,87 @@ for ($round = 1; $round <= $maxRounds; $round++) {
     foreach ($allToolCalls as $tc) {
         $funcName = $tc['function']['name'] ?? '?';
         $funcArgs = $tc['function']['arguments'] ?? '{}';
+        $tcId = $tc['id'] ?? 'tc_' . uniqid();
 
-        $toolStart = microtime(true);
-        $toolResult = tool_executor::execute($funcName, $funcArgs);
-        $toolDuration = (microtime(true) - $toolStart) * 1000;
+        // ── Loop detection ──────────────────────────────────────────────
+        $decodedArgs = is_string($funcArgs) ? json_decode($funcArgs, true) : $funcArgs;
+        $stableArgs = is_array($decodedArgs)
+            ? hash('sha256', json_encode($decodedArgs, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_IGNORE))
+            : md5($funcArgs);
+        $callkey = $funcName . '|' . $stableArgs;
+        $toolcallCounts[$callkey] = ($toolcallCounts[$callkey] ?? 0) + 1;
 
-        // Extract profiler info from tool result JSON.
+        $loopDetected = $toolcallCounts[$callkey] > 5;
+        if ($loopDetected) {
+            $toolResult = json_encode([
+                'error' => 'loop_detected',
+                'tool' => $funcName,
+                'detail' => 'Same tool with same arguments called ' . $toolcallCounts[$callkey] . ' times.',
+            ]);
+            $loopBroken = true;
+        } else {
+            $plan[] = [
+                'tool' => $funcName,
+                'arguments' => $funcArgs,
+            ];
+
+            $toolStart = microtime(true);
+            $toolResult = tool_executor::execute($funcName, $funcArgs);
+            $toolDuration = (microtime(true) - $toolStart) * 1000;
+
+            if (strlen($toolResult) > 64000) {
+                $toolResult = mb_substr($toolResult, 0, 64000)
+                    . "\n\n[Result truncated at 64000 characters]";
+            }
+        }
+
+        // Profile every call (including loop_detected for visibility).
         $resultInfo = json_decode($toolResult, true);
+        $resultPreview = is_string($toolResult)
+            ? mb_substr($toolResult, 0, 5000)
+            : mb_substr(json_encode($toolResult, JSON_UNESCAPED_UNICODE), 0, 5000);
         $profilerEntries[] = [
             'tool' => $funcName,
             'arguments' => $funcArgs,
-            'duration_ms' => round($resultInfo['duration_ms'] ?? $toolDuration, 2),
+            'result_preview' => $resultPreview,
+            'duration_ms' => round($resultInfo['duration_ms'] ?? ($toolDuration ?? 0), 2),
             'row_count' => $resultInfo['row_count'] ?? 0,
             'error' => $resultInfo['error'] ?? null,
         ];
 
-        if (strlen($toolResult) > 64000) {
-            $toolResult = mb_substr($toolResult, 0, 64000)
-                . "\n\n[Result truncated at 64000 characters]";
-        }
-
         $messages[] = [
             'role' => 'tool',
-            'tool_call_id' => $tc['id'] ?? 'tc_' . uniqid(),
+            'tool_call_id' => $tcId,
             'content' => $toolResult,
         ];
     }
 
-    // After first tool execution, remove tools so model must respond.
-    $tools = [];
-    $messages[] = [
-        'role' => 'system',
-        'content' => 'You now have the data. Provide your FINAL ANSWER now.',
-    ];
+    if ($loopBroken) {
+        break;
+    }
 }
 
 // ── Safety net + cleanup ─────────────────────────────────────────────────
-if (empty($finalAnswer) && !empty($content)) {
-    $finalAnswer = $content;
+if (empty($finalAnswer)) {
+    if ($loopBroken) {
+        $finalAnswer = 'The agent encountered an issue while fetching data. Please try again later.';
+    } else if (!empty($content)) {
+        $finalAnswer = $content;
+    } else {
+        // Fallback: last non-error tool result.
+        foreach (array_reverse($messages ?? []) as $msg) {
+            if (($msg['role'] ?? '') === 'tool' && !empty($msg['content'])) {
+                $decoded = json_decode($msg['content'], true);
+                if (!empty($decoded['error'])) {
+                    continue;
+                }
+                $finalAnswer = is_string($msg['content'])
+                    ? $msg['content']
+                    : json_encode($msg['content'], JSON_UNESCAPED_UNICODE);
+                break;
+            }
+        }
+    }
 }
 
 // Strip any TOOL_CALL blocks that leaked into final answer.
@@ -211,10 +341,29 @@ if (empty($finalAnswer)) {
 }
 
 // ── Save to cache ─────────────────────────────────────────────────────────
+// Strip tool payload from messages before caching (not needed for display).
+$cachableMessages = $messages;
+array_walk($cachableMessages, function (&$msg) {
+    unset($msg['tool_calls']);
+});
 $cache_data = json_encode([
     'answer' => $finalAnswer,
     'profiler' => $profilerEntries,
+    'conversation' => $cachableMessages,
 ]);
+
+// Only save semantic plan if all tools are readonly.
+$allReadonly = true;
+if (!empty($plan)) {
+    foreach ($plan as $p) {
+        if (!\local_jedomi\agent\agent_manager::is_tool_readonly($p['tool'])) {
+            $allReadonly = false;
+            break;
+        }
+    }
+}
+$plan_json = (!empty($plan) && $allReadonly) ? json_encode($plan, JSON_UNESCAPED_UNICODE) : null;
+
 $existing_cache = $DB->get_record('local_jedomi_agent_cache', [
     'agentid' => 0,
     'context_hash' => $cache_hash,
@@ -223,6 +372,7 @@ if ($existing_cache) {
     $DB->update_record('local_jedomi_agent_cache', (object) [
         'id' => $existing_cache->id,
         'result_json' => $cache_data,
+        'plan_json' => $plan_json,
         'timecreated' => time(),
     ]);
 } else {
@@ -230,6 +380,7 @@ if ($existing_cache) {
         'agentid' => 0,
         'context_hash' => $cache_hash,
         'result_json' => $cache_data,
+        'plan_json' => $plan_json,
         'timecreated' => time(),
     ]);
 }
@@ -239,6 +390,7 @@ echo json_encode([
     'answer' => $finalAnswer,
     'rounds' => $round ?? 0,
     'profiler' => $profilerEntries,
+    'conversation' => $cachableMessages,
     'total_time_ms' => round(array_sum(array_column($profilerEntries, 'duration_ms')), 2),
 ], JSON_UNESCAPED_UNICODE);
 

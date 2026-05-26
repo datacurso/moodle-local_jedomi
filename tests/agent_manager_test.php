@@ -279,6 +279,116 @@ final class agent_manager_test extends \advanced_testcase {
     }
 
     // ========================
+    // Cache — Semantic Plan
+    // ========================
+
+    /**
+     * Test set_cached_plan stores and get_cached_plan retrieves plan + answer.
+     */
+    public function test_set_get_cached_plan(): void {
+        $agent = $this->create_agent_record();
+        $hash = sha1('test_context');
+        $plan = [
+            ['tool' => 'execute_sql', 'arguments' => '{"sql": "SELECT 1"}'],
+            ['tool' => 'search_tables', 'arguments' => '{"query": "users"}'],
+        ];
+        $answer = 'Here are the results.';
+
+        agent_manager::set_cached_plan($agent->id, $hash, $plan, $answer);
+        $retrieved = agent_manager::get_cached_plan($agent->id, $hash);
+
+        $this->assertNotNull($retrieved);
+        $this->assertEquals($plan, $retrieved['plan']);
+        $this->assertEquals($answer, $retrieved['answer']);
+    }
+
+    /**
+     * Test get_cached_plan returns null when no plan_json exists.
+     */
+    public function test_get_cached_plan_no_plan(): void {
+        $agent = $this->create_agent_record();
+        $hash = sha1('no_plan');
+
+        // Store a plain text result (no plan_json).
+        agent_manager::set_cached_result($agent->id, $hash, '"some result"');
+
+        $retrieved = agent_manager::get_cached_plan($agent->id, $hash);
+        $this->assertNull($retrieved);
+    }
+
+    /**
+     * Test get_cached_plan returns null for non-existent cache.
+     */
+    public function test_get_cached_plan_not_found(): void {
+        $result = agent_manager::get_cached_plan(999, sha1('nope'));
+        $this->assertNull($result);
+    }
+
+    /**
+     * Test set_cached_plan with same agent+hash updates existing row.
+     */
+    public function test_set_cached_plan_updates_existing(): void {
+        $agent = $this->create_agent_record();
+        $hash = sha1('context');
+
+        agent_manager::set_cached_plan($agent->id, $hash, [
+            ['tool' => 'execute_sql', 'arguments' => '{}'],
+        ], 'First answer');
+
+        agent_manager::set_cached_plan($agent->id, $hash, [
+            ['tool' => 'search_tables', 'arguments' => '{}'],
+        ], 'Second answer');
+
+        $retrieved = agent_manager::get_cached_plan($agent->id, $hash);
+        $this->assertNotNull($retrieved);
+        $this->assertEquals('search_tables', $retrieved['plan'][0]['tool']);
+        $this->assertEquals('Second answer', $retrieved['answer']);
+    }
+
+    // ========================
+    // is_tool_readonly
+    // ========================
+
+    /**
+     * Test is_tool_readonly returns true for known read-only tools.
+     */
+    public function test_is_tool_readonly_known_readonly(): void {
+        $readonlyTools = [
+            'execute_sql',
+            'search_tables',
+            'describe_table',
+            'get_site_config',
+            'ws_search',
+            'ws_describe',
+            'admin_search',
+            'admin_describe',
+        ];
+        foreach ($readonlyTools as $tool) {
+            $this->assertTrue(
+                agent_manager::is_tool_readonly($tool),
+                "Expected {$tool} to be read-only"
+            );
+        }
+    }
+
+    /**
+     * Test is_tool_readonly returns false for ws_execute (conservative).
+     */
+    public function test_is_tool_readonly_ws_execute(): void {
+        $this->assertFalse(agent_manager::is_tool_readonly('ws_execute'));
+        $this->assertFalse(agent_manager::is_tool_readonly('call_webservice'));
+    }
+
+    /**
+     * Test is_tool_readonly returns false for unknown tools (safe fallback).
+     */
+    public function test_is_tool_readonly_unknown_tool(): void {
+        $this->assertFalse(agent_manager::is_tool_readonly('create_user'));
+        $this->assertFalse(agent_manager::is_tool_readonly('delete_course'));
+        $this->assertFalse(agent_manager::is_tool_readonly('enrol_user'));
+    }
+
+    // ========================
     // CRUD — get_due_agents
     // ========================
 

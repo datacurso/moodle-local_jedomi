@@ -99,7 +99,7 @@ class handler {
                 if (ob_get_level()) { ob_flush(); }
                 flush();
 
-                if ($toolrepeatcounts[$callkey] > 2) {
+                if ($toolrepeatcounts[$callkey] > 5) {
                     $result = json_encode([
                         'error' => 'loop_detected',
                         'tool' => $name,

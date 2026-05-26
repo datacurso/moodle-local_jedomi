@@ -47,6 +47,7 @@ class tool_executor {
      * @return string            Result to return as a "tool" role message.
      */
     public static function execute(string $name, string $arguments): string {
+        require_once(__DIR__ . '/../../lib.php');
         $tools = self::get_tools();
         $tool = $tools[$name] ?? null;
 

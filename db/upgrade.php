@@ -254,5 +254,39 @@ function xmldb_local_jedomi_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2026052415, 'local', 'jedomi');
     }
 
+    if ($oldversion < 2026052501) {
+        // Migrate result_json column from TEXT to MEDIUMTEXT (MySQL/MariaDB)
+        // so that full conversation data fits without truncation.
+        // PostgreSQL TEXT is already unlimited — no change needed.
+        $table = new xmldb_table('local_jedomi_agent_cache');
+        $field = new xmldb_field('result_json', XMLDB_TYPE_TEXT, null, null, XMLDB_NOTNULL, null, null, 'context_hash');
+        if ($dbman->field_exists($table, $field)) {
+            $dbtype = $CFG->dbtype ?? 'mysqli';
+            if (in_array($dbtype, ['mysqli', 'mariadb'], true)) {
+                $DB->execute("ALTER TABLE {local_jedomi_agent_cache} MODIFY COLUMN result_json MEDIUMTEXT NOT NULL");
+            }
+        }
+        upgrade_plugin_savepoint(true, 2026052501, 'local', 'jedomi');
+    }
+
+    if ($oldversion < 2026052502) {
+        // Purge agent cache — previous versions may have cached raw TOOL_CALL
+        // text content instead of the final answer. Clearing cache ensures fresh
+        // AI calls produce clean results.
+        $DB->delete_records('local_jedomi_agent_cache', []);
+        upgrade_plugin_savepoint(true, 2026052502, 'local', 'jedomi');
+    }
+
+    if ($oldversion < 2026052503) {
+        // Add plan_json column — stores the execution plan (tool chain) for
+        // semantic cache replay on HIT.
+        $table = new xmldb_table('local_jedomi_agent_cache');
+        $field = new xmldb_field('plan_json', XMLDB_TYPE_TEXT, null, null, null, null, null, 'result_json');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+        upgrade_plugin_savepoint(true, 2026052503, 'local', 'jedomi');
+    }
+
     return true;
 }

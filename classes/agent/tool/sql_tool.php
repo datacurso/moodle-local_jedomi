@@ -95,7 +95,11 @@ class sql_tool implements agent_tool {
 
         try {
             // Use a direct ADOdb connection with a query-level timeout hint.
-            $DB->execute("SET SESSION MAX_EXECUTION_TIME = 30000");
+            try {
+                $DB->execute("SET SESSION MAX_EXECUTION_TIME = 30000");
+            } catch (\Exception $e) {
+                // MySQL/MariaDB version may not support this variable — ignore.
+            }
 
             $records = $DB->get_records_sql($query, [], 0, 1000);
 

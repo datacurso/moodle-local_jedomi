@@ -477,6 +477,128 @@ class agent_manager {
         $DB->delete_records('local_jedomi_agent_cache', ['agentid' => $agentid]);
     }
 
+    // ── Cache: Preview ─────────────────────────────────────────────────────────
+
+    /**
+     * Delete a single preview cache entry by context_hash.
+     *
+     * Preview entries have agentid = 0 (they are not attached to any agent).
+     *
+     * @param string $context_hash The md5 hash of the preview prompt.
+     * @return bool True if a row was deleted.
+     */
+    public static function clear_preview_cache(string $context_hash): bool {
+        global $DB;
+        $deleted = $DB->delete_records('local_jedomi_agent_cache', [
+            'agentid' => 0,
+            'context_hash' => $context_hash,
+        ]);
+        return $deleted > 0;
+    }
+
+    // ── Cache: Semantic Plan ──────────────────────────────────────────────────
+
+    /**
+     * Store an execution plan alongside the answer for semantic cache replay.
+     *
+     * If a row with the same (agentid, context_hash) already exists, its
+     * plan_json, result_json, and timecreated are updated.
+     *
+     * @param int    $agentid
+     * @param string $context_hash
+     * @param array  $plan   Ordered tool calls: [['tool' => 'x', 'arguments' => '{}'], ...].
+     * @param string $answer Final answer text for reformulation context.
+     */
+    public static function set_cached_plan(int $agentid, string $context_hash, array $plan, string $answer): void {
+        global $DB;
+
+        $existing = $DB->get_record('local_jedomi_agent_cache', [
+            'agentid' => $agentid,
+            'context_hash' => $context_hash,
+        ], 'id');
+
+        $record = (object) [
+            'result_json' => $answer,
+            'plan_json' => json_encode($plan, JSON_UNESCAPED_UNICODE),
+            'timecreated' => time(),
+        ];
+
+        if ($existing) {
+            $record->id = $existing->id;
+            $DB->update_record('local_jedomi_agent_cache', $record);
+        } else {
+            $record->agentid = $agentid;
+            $record->context_hash = $context_hash;
+            $DB->insert_record('local_jedomi_agent_cache', $record);
+        }
+    }
+
+    /**
+     * Get the cached plan and answer for a specific agent context.
+     *
+     * @param  int    $agentid
+     * @param  string $context_hash
+     * @return array|null ['plan' => [...], 'answer' => '...'] or null if no plan.
+     */
+    public static function get_cached_plan(int $agentid, string $context_hash): ?array {
+        global $DB;
+
+        $record = $DB->get_record('local_jedomi_agent_cache', [
+            'agentid' => $agentid,
+            'context_hash' => $context_hash,
+        ], 'plan_json, result_json');
+
+        if (!$record || empty($record->plan_json)) {
+            return null;
+        }
+
+        $plan = json_decode($record->plan_json, true);
+        if (!is_array($plan)) {
+            return null;
+        }
+
+        return [
+            'plan' => $plan,
+            'answer' => $record->result_json ?? '',
+        ];
+    }
+
+    /**
+     * Check whether a tool name is read-only (safe to replay in semantic cache).
+     *
+     * Write tools like user creation, enrolment, etc. MUST NOT be replayed
+     * because they would create duplicate data.
+     *
+     * @param  string $toolname
+     * @return bool
+     */
+    public static function is_tool_readonly(string $toolname): bool {
+        // Known read-only tools.
+        $readonly = [
+            'execute_sql',
+            'search_tables',
+            'describe_table',
+            'get_site_config',
+            'ws_search',
+            'ws_describe',
+            'admin_search',
+            'admin_describe',
+        ];
+        if (in_array($toolname, $readonly, true)) {
+            return true;
+        }
+
+        // ws_execute / call_webservice: check the actual WS being called.
+        // This is handled at plan-recording time by inspecting arguments,
+        // not by tool name alone — classify at call site.
+        if ($toolname === 'ws_execute' || $toolname === 'call_webservice') {
+            return false; // Conservatively assume write — caller must verify.
+        }
+
+        // Unknown tools default to NOT readonly (safe fallback).
+        return false;
+    }
+
     // ── Stats ─────────────────────────────────────────────────────────────────
 
     /**

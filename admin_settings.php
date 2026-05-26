@@ -2046,7 +2046,7 @@ function jdSubToggle(subId) {
                     <i class="fa fa-robot mr-1"></i><?php echo get_string('agent_preview_result', 'local_jedomi'); ?>
                     <span id="agent-preview-spinner" class="ml-2" style="display:none"><i class="fa fa-spinner fa-spin"></i></span>
                 </div>
-                <div id="agent-preview-body" style="padding:.75rem; font-size:.8125rem; background:#fff; min-height:60px; max-height:300px; overflow-y:auto; white-space:pre-wrap; word-break:break-word"></div>
+                <div id="agent-preview-body" style="padding:.75rem; font-size:.8125rem; background:#fff; min-height:60px; max-height:600px; overflow-y:auto; white-space:pre-wrap; word-break:break-word"></div>
             </div>
         </form>
     </div>
@@ -2112,6 +2112,7 @@ function jdSubToggle(subId) {
         d.textContent = s;
         return d.innerHTML;
     }
+    var esc = escHtml;
 
     function getFilters() {
         var f = {};
@@ -2556,10 +2557,112 @@ function jdSubToggle(subId) {
     }
 
     // ── Preview button ──────────────────────────────────────────────────────
-    var previewBtn = document.getElementById('agent-preview-btn');
-    if (previewBtn) {
+    // ── Preview: clear cache helper (exposed globally for inline onclick) ──
+    window.clearPreviewCache = function(hash) {
+        var fd = new URLSearchParams();
+        fd.set('sesskey', sesskey);
+        fd.set('hash', hash);
+        return fetch(baseUrl + 'agent_clear_cache.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: fd.toString()
+        }).then(function(r){ return r.json(); });
+    };
+
+    // ── Preview: render conversation timeline ───────────────────────────────
+    function renderTimeline(conversation) {
+        if (!conversation || !conversation.length) return '';
+        var html = '<div class="timeline" style="margin-bottom:10px;font-size:.8125rem">'
+            + '<strong style="display:block;margin-bottom:6px;color:#374151">Conversation Timeline</strong>';
+        conversation.forEach(function(msg, i){
+            var role = msg.role || 'unknown';
+            var roleLabel = role.charAt(0).toUpperCase() + role.slice(1);
+            var roleColor = role === 'user' ? '#2563eb' : (role === 'assistant' ? '#7c3aed' : '#6b7280');
+            var roleBg = role === 'user' ? '#eff6ff' : (role === 'assistant' ? '#f5f3ff' : '#f9fafb');
+            var content = msg.content ? msg.content.trim() : '';
+            html += '<div style="border:1px solid #e5e7eb;border-radius:6px;margin-bottom:4px;overflow:hidden">'
+                + '<div style="background:' + roleBg + ';padding:4px 8px;font-weight:600;font-size:.75rem;color:' + roleColor + ';border-bottom:1px solid #e5e7eb">'
+                + '<span class="badge" style="background:' + roleColor + ';color:#fff;padding:1px 6px;border-radius:3px;margin-right:4px">' + roleLabel + '</span>'
+                + ' Round ' + ((msg.round || 0) + 1) + '</div>';
+            if (content) {
+                html += '<div style="padding:6px 8px;white-space:pre-wrap;word-break:break-word;max-height:200px;overflow-y:auto">'
+                    + escHtml(content) + '</div>';
+            }
+            // ── Tool call arguments (if assistant message had tool_calls) ──
+            if (msg.tool_calls && msg.tool_calls.length) {
+                html += '<div style="padding:6px 8px;background:#fafafa;border-top:1px solid #e5e7eb">';
+                msg.tool_calls.forEach(function(tc){
+                    var toolName = tc.function && tc.function.name ? tc.function.name : (tc.name || 'tool');
+                    var toolArgs = tc.function && tc.function.arguments ? tc.function.arguments : (tc.arguments || '{}');
+                    html += '<details style="margin-bottom:4px">'
+                        + '<summary style="cursor:pointer;font-weight:600;color:#2563eb;font-size:.75rem">🛠 ' + esc(toolName) + '</summary>'
+                        + '<pre style="background:#f3f4f6;padding:6px;border-radius:4px;font-size:11px;overflow-x:auto;margin:4px 0 0;max-height:150px"><code>'
+                        + esc(typeof toolArgs === 'string' ? toolArgs : JSON.stringify(toolArgs, null, 2))
+                        + '</code></pre></details>';
+                });
+                html += '</div>';
+            }
+            // ── Tool results ──────────────────────────────────────────────
+            if (msg.tool_results && msg.tool_results.length) {
+                html += '<div style="padding:6px 8px;border-top:1px solid #e5e7eb">';
+                msg.tool_results.forEach(function(tr, ti){
+                    html += '<details style="margin-bottom:4px">'
+                        + '<summary style="cursor:pointer;font-weight:600;color:#059669;font-size:.75rem">📊 Result ' + (ti + 1) + '</summary>'
+                        + '<pre style="background:#ecfdf5;padding:6px;border-radius:4px;font-size:11px;overflow-x:auto;margin:4px 0 0;max-height:200px"><code>'
+                        + esc(typeof tr === 'string' ? tr.substring(0, 5000) : JSON.stringify(tr, null, 2).substring(0, 5000))
+                        + '</code></pre></details>';
+                });
+                html += '</div>';
+            }
+            html += '</div>';
+        });
+        html += '</div>';
+        return html;
+    }
+
+    // ── Preview: render profiler entries ────────────────────────────────────
+    function renderProfiler(profiler, totalTimeMs) {
+        if (!profiler || !profiler.length) return '';
+        var html = '<div class="profiler-entries" style="margin-top:10px">';
+        profiler.forEach(function(e){
+            var borderColor = e.error ? '#dc3545' : '#ddd';
+            html += '<div class="profiler-entry" style="border:1px solid ' + borderColor + ';border-radius:6px;padding:8px;margin-bottom:6px;font-size:.8125rem">';
+            html += '<div class="profiler-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px">';
+            html += '<strong>' + esc(e.tool) + '</strong>';
+            html += '<span>' + (e.duration_ms || 0).toFixed(1) + 'ms &middot; ' + (e.row_count || 0) + ' rows</span>';
+            if (e.error) {
+                html += '<span style="color:#dc3545">❌ ' + esc(e.error) + '</span>';
+            }
+            html += '</div>';
+            // ── Tool result preview (if available) ────────────────────
+            if (e.result_preview) {
+                html += '<details style="margin-top:4px"><summary style="cursor:pointer;font-size:.75rem;color:#059669">Result preview</summary>';
+                html += '<pre style="background:#ecfdf5;padding:6px;border-radius:4px;font-size:11px;overflow-x:auto;margin:4px 0 0;max-height:200px"><code>'
+                    + esc(e.result_preview) + '</code></pre>';
+                html += '</details>';
+            }
+            if (e.arguments) {
+                html += '<details style="margin-top:4px"><summary style="cursor:pointer;font-size:.75rem;color:#6b7280">Arguments</summary>';
+                html += '<pre style="background:#f5f5f5;padding:6px;border-radius:4px;font-size:11px;overflow-x:auto;margin:4px 0 0;max-height:200px"><code>'
+                    + esc(typeof e.arguments === 'string' ? e.arguments : JSON.stringify(e.arguments, null, 2))
+                    + '</code></pre>';
+                html += '</details>';
+            }
+            html += '</div>';
+        });
+        if (totalTimeMs) {
+            html += '<div style="padding:4px 0;font-size:.8125rem;color:#059669;font-weight:600">'
+                + '⚡ Total: ' + totalTimeMs.toFixed(1) + 'ms</div>';
+        }
+        html += '</div>';
+        return html;
+    }
+
+    var previewBtn2 = document.getElementById('agent-preview-btn');
+    if (previewBtn2) {
         var STR_PREVIEW_ERROR = <?php echo json_encode(get_string('agent_preview_error', 'local_jedomi')); ?>;
-        previewBtn.addEventListener('click', function(){
+        var lastPreviewHash = '';
+        previewBtn2.addEventListener('click', function(){
             var prompt = document.getElementById('agent-create-prompt');
             if (!prompt || !prompt.value.trim()) {
                 var msg = document.getElementById('agent-create-msg');
@@ -2581,12 +2684,8 @@ function jdSubToggle(subId) {
             fd.set('sesskey', sesskey);
             fd.set('prompt', prompt.value);
 
-            function escHtml(s) {
-                if (typeof s !== 'string') s = String(s || '');
-                var d2 = document.createElement('div');
-                d2.textContent = s;
-                return d2.innerHTML;
-            }
+            // Compute hash from prompt (same as PHP md5).
+            lastPreviewHash = md5(prompt.value.trim());
 
             fetch(baseUrl + 'agent_preview.php', {
                 method: 'POST',
@@ -2598,57 +2697,39 @@ function jdSubToggle(subId) {
                 if (spinner) spinner.style.display = 'none';
                 if (d.ok) {
                     var html = '';
-                    // ── Cache indicator ────────────────────────────
+                    // ── Cache indicator with "Clear" button ──────────
                     if (d.cached) {
-                        html += '<div class="alert alert-info" style="padding:8px;margin-bottom:8px;font-size:.8125rem">'
-                            + '📦 Cached result from ' + new Date(d.cached_at * 1000).toLocaleString() + '</div>';
+                        html += '<div class="alert alert-info d-flex align-items-center justify-content-between" style="padding:8px;margin-bottom:8px;font-size:.8125rem">'
+                            + '<span>📦 Cached result from ' + new Date(d.cached_at * 1000).toLocaleString() + '</span>'
+                            + '<button type="button" class="btn btn-sm btn-outline-danger" onclick="clearPreviewCache(\'' + lastPreviewHash + '\').then(function(r){if(r.ok){document.getElementById(\'agent-preview-btn\').click()}})">Clear cache</button>'
+                            + '</div>';
                     }
-                    // ── Profiler entries as cards ──────────────────
+                    // ── Conversation timeline ────────────────────────
+                    html += renderTimeline(d.conversation);
+                    // ── Profiler entries as cards ────────────────────
+                    html += renderProfiler(d.profiler, d.total_time_ms);
+                    // ── Separator ────────────────────────────────────
                     if (d.profiler && d.profiler.length) {
-                        html += '<div class="profiler-entries" style="margin-top:10px">';
-                        d.profiler.forEach(function(e){
-                            var borderColor = e.error ? '#dc3545' : '#ddd';
-                            html += '<div class="profiler-entry" style="border:1px solid ' + borderColor + ';border-radius:6px;padding:8px;margin-bottom:6px;font-size:.8125rem">';
-                            html += '<div class="profiler-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px">';
-                            html += '<strong>' + escHtml(e.tool) + '</strong>';
-                            html += '<span>' + (e.duration_ms || 0).toFixed(1) + 'ms &middot; ' + (e.row_count || 0) + ' rows</span>';
-                            if (e.error) {
-                                html += '<span style="color:#dc3545">❌ ' + escHtml(e.error) + '</span>';
-                            }
-                            html += '</div>';
-                            if (e.arguments) {
-                                html += '<details style="margin-top:4px"><summary style="cursor:pointer;font-size:.75rem;color:#6b7280">Arguments</summary>';
-                                html += '<pre style="background:#f5f5f5;padding:6px;border-radius:4px;font-size:11px;overflow-x:auto;margin:4px 0 0;max-height:200px"><code>'
-                                    + escHtml(typeof e.arguments === 'string' ? e.arguments : JSON.stringify(e.arguments, null, 2))
-                                    + '</code></pre>';
-                                html += '</details>';
-                            }
-                            html += '</div>';
-                        });
-                        if (d.total_time_ms) {
-                            html += '<div style="padding:4px 0;font-size:.8125rem;color:#059669;font-weight:600">'
-                                + '⚡ Total: ' + d.total_time_ms.toFixed(1) + 'ms</div>';
-                        }
-                        html += '</div>';
-                    }
-                    // ── Separator ──────────────────────────────────
-                    if (html) {
                         html += '<hr style="border:none;border-top:1px solid #e5e7eb;margin:.5rem 0">';
                     }
-                    // ── Answer (scrollable) ───────────────────────
+                    // ── Answer (scrollable) ─────────────────────────
                     html += '<div class="preview-answer" style="max-height:400px;overflow-y:auto;border:1px solid #ddd;border-radius:6px;padding:10px;margin-top:8px;white-space:pre-wrap;word-break:break-word;font-size:.8125rem;color:#1f2937;line-height:1.5">'
-                        + escHtml(d.answer) + '</div>';
+                        + esc(d.answer) + '</div>';
                     body.innerHTML = html;
                 } else {
-                    body.innerHTML = '<div style="color:#dc2626">⚠️ ' + escHtml(d.error || STR_PREVIEW_ERROR) + '</div>';
+                    body.innerHTML = '<div style="color:#dc2626">⚠️ ' + esc(d.error || STR_PREVIEW_ERROR) + '</div>';
                 }
             })
             .catch(function(err){
                 if (spinner) spinner.style.display = 'none';
-                body.innerHTML = '<div style="color:#dc2626">⚠️ ' + escHtml(err.message) + '</div>';
+                body.innerHTML = '<div style="color:#dc2626">⚠️ ' + esc(err.message) + '</div>';
             });
         });
     }
+
+    // ── MD5 helper (simple for hashing preview prompt) ──────────────────────
+    // https://css-tricks.com/snippets/javascript/javascript-md5/
+    function md5(s){function L(k,d){return(k<<d)|(k>>>(32-d))}function K(G,k){var I,d,F,H,x;F=(G&2147483648)+(k&2147483648)|0;I=(G&1073741824)+(k&1073741824)|0;d=(G&1073741823)+(k&1073741823)|0;return F^I^(((d&1073741824)>>30)|((d&1073741823)<<2))|0}function V(G){var k,d='',F='0123456789abcdef';for(k=7;k>=0;k--){d+=F.charAt((G>>(k*4))&15)}return d}var C=Array(80),k=0,d=0,F=0,x=0,H=0,I=0,j=0,Q=0,w=0,l=0,o=0,p=0,t=0,u=0,A=0,N=0,M=-1,B=0,z=0;G=unescape(encodeURIComponent(s));s='';for(k=0;k<G.length;k++){s+=String.fromCharCode(G.charCodeAt(k))}var Y=s.length;var Z=[1732584193,-271733879,-1732584194,271733878];var a;for(k=0;k<=Y+72;k+=512){var c,Z2=Z[0],E=Z[1],m=Z[2],n=Z[3];for(j=0;j<16;j++){C[j]=(s.charCodeAt(B)||0)+(s.charCodeAt(B+1)||0)*256+(s.charCodeAt(B+2)||0)*65536+(s.charCodeAt(B+3)||0)*16777216;B+=4}var W;for(j=16;j<80;j++){C[j]=L(C[j-3]^C[j-8]^C[j-14]^C[j-16],1)}for(j=0;j<80;j++){if(j<20){a=(E&m)|((~E)&n)}else if(j<40){a=E^m^n}else if(j<60){a=(E&m)|(E&n)|(m&n)}else{a=E^m^n}W=K(K(L(Z2,5),a),K(K(0,C[j]),j<20?1518500249:j<40?1859775393:j<60?2400959708:-1894007588));a=n;n=m;m=L(E,30);E=Z2;Z2=W}Z[0]=K(Z2,Z[0]);Z[1]=K(E,Z[1]);Z[2]=K(m,Z[2]);Z[3]=K(n,Z[3])}return V(Z[0])+V(Z[1])+V(Z[2])+V(Z[3])}
 
     // ── Purge form ────────────────────────────────────────────────────────
     var purgeForm = document.getElementById('agent-purge-form');

@@ -26,24 +26,18 @@ defined('MOODLE_INTERNAL') || die();
 class agent_runner extends \core\task\scheduled_task {
 
     /** Max tool call iterations per agent run. */
-    const MAX_TOOL_ITERATIONS = 10;
+    const MAX_TOOL_ITERATIONS = 50;
 
     public function get_name(): string {
         return get_string('agent_runner_task', 'local_jedomi');
     }
 
     /**
-     * Build tool-calling instructions that get appended to the system prompt.
+     * Build tool-calling instructions appended to the system prompt.
      *
-     * Uses a simple text-based protocol that works with ANY model:
-     *
-     *   TOOL_CALL: tool_name
-     *   {json_args}
-     *   END_TOOL_CALL
-     *
-     * The system parses this format, executes the tool, feeds the result back,
-     * and asks the model for a final answer. The model should call a tool ONCE
-     * and then respond with the final result.
+     * Lists available tools from lang string descriptions and provides
+     * workflow guidance (search_tables → describe_table → execute_sql).
+     * Native OpenAI tool_calls are used primarily; text protocol is a fallback.
      */
     private function build_tool_instructions(array $tools): string {
         if (empty($tools)) {
@@ -52,8 +46,8 @@ class agent_runner extends \core\task\scheduled_task {
 
         $lines = [
             "",
-            "=== TOOLS ===",
-            "You have tools to get REAL data from the database.",
+            "=== AVAILABLE TOOLS ===",
+            "You have tools to get REAL data from Moodle. Use them to answer the user's question.",
             "",
         ];
 
@@ -64,23 +58,18 @@ class agent_runner extends \core\task\scheduled_task {
 
         $lines = array_merge($lines, [
             "",
-            "=== HOW TO USE A TOOL ===",
-            "If you need data, output EXACTLY this (no extra text around it):",
+            "=== RECOMMENDED WORKFLOW ===",
+            "1. search_tables(keyword in ENGLISH) → find the correct table name for your question.",
+            "2. describe_table(tablename) → understand the table's columns and structure.",
+            "3. execute_sql(SELECT query) → retrieve actual data from the database.",
             "",
-            'TOOL_CALL: tool_name',
-            '{"param": "value"}',
-            "END_TOOL_CALL",
-            "",
-            "Example:",
-            'TOOL_CALL: execute_sql',
-            '{"query": "SELECT COUNT(*) FROM {user}"}',
-            "END_TOOL_CALL",
+            "Call at most 2 search_tables calls. Once you identify the table, move to describe_table and execute_sql.",
             "",
             "=== RULES ===",
-            "1. Call a tool ONCE when you need data.",
-            "2. When you get the result, respond with your FINAL ANSWER immediately.",
-            "3. Do NOT call tools multiple times. One call is enough.",
-            "4. Your final answer MUST be a complete response with the real data.",
+            "1. Call tools to get the data you need.",
+            "2. When you have enough data, stop and provide your FINAL ANSWER.",
+            "3. You have up to " . self::MAX_TOOL_ITERATIONS . " rounds total.",
+            "4. Your FINAL ANSWER MUST include the actual data, not tool descriptions.",
         ]);
 
         return implode("\n", $lines);
@@ -182,10 +171,44 @@ class agent_runner extends \core\task\scheduled_task {
     }
 
     /**
+     * Build a deterministic signature for tool arguments for loop detection.
+     *
+     * @param  array $args Tool arguments.
+     * @return string      SHA256 hash of sorted JSON.
+     */
+    private static function stable_args_signature(array $args): string {
+        $normalized = self::sort_recursive($args);
+        return hash('sha256', json_encode($normalized, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_IGNORE));
+    }
+
+    /**
+     * Recursively sort associative arrays for stable hashing.
+     *
+     * @param  mixed $value
+     * @return mixed
+     */
+    private static function sort_recursive($value) {
+        if (!is_array($value)) {
+            return $value;
+        }
+        $islist = array_keys($value) === range(0, count($value) - 1);
+        if ($islist) {
+            return array_map(static fn($v) => self::sort_recursive($v), $value);
+        }
+        ksort($value);
+        foreach ($value as $k => $v) {
+            $value[$k] = self::sort_recursive($v);
+        }
+        return $value;
+    }
+
+    /**
      * Execute due AI agents.
      */
     public function execute(): void {
         global $DB;
+
+        require_once(__DIR__ . '/../../lib.php');
 
         $start = time();
 
@@ -286,29 +309,153 @@ class agent_runner extends \core\task\scheduled_task {
                 );
 
                 if ($cached !== null) {
-                    mtrace("[AGENT] {$agentLabel} — cache HIT ({$context_hash}) — using cached result directly");
-                    error_log("[AGENT] {$agentLabel} — cache HIT ({$context_hash}) — using cached");
-                    $finalContent = $cached;
+                    $finalContent = '';
+
+                    // ── Try semantic plan replay first ────────────────────────────
+                    $cachedPlan = \local_jedomi\agent\agent_manager::get_cached_plan(
+                        $agent->id, $context_hash
+                    );
+
+                    if ($cachedPlan && !empty($cachedPlan['plan'])) {
+                        mtrace("[AGENT] {$agentLabel} — cache HIT plan ({$context_hash}) — replaying " . count($cachedPlan['plan']) . " tools");
+                        error_log("[AGENT] {$agentLabel} — cache HIT plan ({$context_hash}) — replaying tools");
+
+                        // Initialize tool instances with correct user context before replay.
+                        \local_jedomi\agent\tool_executor::get_definitions(
+                            $agent->id, (int) ($agent->userid ?? 0)
+                        );
+
+                        // Re-execute all tools from plan.
+                        $freshResults = [];
+                        $replayFailed = false;
+                        foreach ($cachedPlan['plan'] as $i => $step) {
+                            $toolResult = \local_jedomi\agent\tool_executor::execute(
+                                $step['tool'], $step['arguments']
+                            );
+                            $decoded = json_decode($toolResult, true);
+                            if (!empty($decoded['error'])) {
+                                mtrace("[AGENT] {$agentLabel} — replay tool {$step['tool']} FAILED: {$decoded['error']}");
+                                error_log("[AGENT] {$agentLabel} — replay tool {$step['tool']} FAILED: {$decoded['error']}");
+                                $replayFailed = true;
+                                break;
+                            }
+                            if (strlen($toolResult) > 64000) {
+                                $toolResult = mb_substr($toolResult, 0, 64000)
+                                    . "\n\n[Result truncated at 64000 characters]";
+                            }
+                            $freshResults[] = [
+                                'tool' => $step['tool'],
+                                'result' => $toolResult,
+                            ];
+                        }
+
+                        if (!$replayFailed) {
+                            // ── Build reformulation payload ──────────────────────
+                            $freshCtx = "Updated tool results:\n";
+                            foreach ($freshResults as $fr) {
+                                $freshCtx .= "\n--- {$fr['tool']} ---\n{$fr['result']}\n";
+                            }
+
+                            $reformMessages = [
+                                [
+                                    'role' => 'system',
+                                    'content' => 'You previously answered a question. Below are updated tool results. Reformulate your answer using the new data. Keep the same style and structure.',
+                                ],
+                                [
+                                    'role' => 'user',
+                                    'content' => "Previous answer:\n{$cachedPlan['answer']}\n\n{$freshCtx}",
+                                ],
+                            ];
+
+                            $gateway_url = rtrim(get_config('local_jedomi', 'gateway_url'), '/');
+                            $api_key = get_config('local_jedomi', 'api_key') ?: 'jedomi-local-key';
+                            $model = get_config('local_jedomi', 'model') ?: 'jedomi-e4b';
+                            $maxTokens = (int) get_config('local_jedomi', 'max_tokens');
+                            if ($maxTokens < 256) { $maxTokens = 16384; }
+                            if (empty($gateway_url)) { $gateway_url = 'http://localhost:8765'; }
+
+                            $reformStart = microtime(true);
+                            $ch = curl_init($gateway_url . '/v1/chat/completions');
+                            curl_setopt_array($ch, [
+                                CURLOPT_POST           => true,
+                                CURLOPT_POSTFIELDS     => json_encode([
+                                    'model' => $model,
+                                    'messages' => $reformMessages,
+                                    'stream' => false,
+                                    'max_tokens' => $maxTokens,
+                                ], JSON_UNESCAPED_UNICODE),
+                                CURLOPT_RETURNTRANSFER => true,
+                                CURLOPT_TIMEOUT        => 120,
+                                CURLOPT_HTTPHEADER     => [
+                                    'Content-Type: application/json',
+                                    'Authorization: Bearer ' . $api_key,
+                                ],
+                            ]);
+                            $reformResponse = curl_exec($ch);
+                            $reformHttp = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                            $reformErrno = curl_errno($ch);
+                            $reformError = curl_error($ch);
+                            $reformDuration = microtime(true) - $reformStart;
+                            curl_close($ch);
+
+                            if ($reformErrno !== 0) {
+                                mtrace("[AGENT] {$agentLabel} — reformulation curl error ({$reformError})");
+                                error_log("[AGENT] {$agentLabel} — reformulation curl error ({$reformError})");
+                            } else if ($reformHttp === 200) {
+                                $reformResult = json_decode($reformResponse, true);
+                                $reformContent = $reformResult['choices'][0]['message']['content'] ?? '';
+                                if (!empty(trim($reformContent))) {
+                                    $finalContent = $reformContent;
+                                    mtrace("[AGENT] {$agentLabel} — reformulated ({$reformDuration}s, " . strlen($finalContent) . "B)");
+                                    error_log("[AGENT] {$agentLabel} — reformulated ({$reformDuration}s, " . strlen($finalContent) . "B)");
+                                }
+                            }
+                        }
+                    }
+
+                    // ── Fallback: use cached answer text ────────────────────────
+                    if (empty($finalContent)) {
+                        mtrace("[AGENT] {$agentLabel} — cache HIT text ({$context_hash}) — using cached text");
+                        error_log("[AGENT] {$agentLabel} — cache HIT text ({$context_hash}) — using cached text");
+                        $finalContent = $cached;
+                    }
                     $totalDuration = 0.0;
                     $totalRounds = 0;
+                    // Guard: strip any leaked tool call blocks from cached content.
+                    $stripped = trim(preg_replace([
+                        '/(?:TOOL_CALL|call):\s*\w+\s*\n.*?\nEND_TOOL_CALL[^\n]*/si',
+                    ], '', $finalContent ?? ''));
+                    if (!empty($stripped)) {
+                        $finalContent = $stripped;
+                    }
                 } else {
                     mtrace("[AGENT] {$agentLabel} — cache MISS ({$context_hash})");
                     error_log("[AGENT] {$agentLabel} — cache MISS ({$context_hash})");
 
-                    // ── Tool definitions ─────────────────────────────────────
-                    $tools = \local_jedomi\agent\tool_executor::get_definitions(
-                        $agent->id, (int) ($agent->userid ?? 0)
+                    // ── Tool definitions (reuse web version's lang string descriptions) ──
+                    $role = \local_jedomi_get_user_role_for_user(
+                        (int) ($agent->userid ?? 0)
                     );
+                    $tools = \local_jedomi_get_tool_definitions($role);
 
-                    // ── Build messages ──────────────────────────────────────
-                    $systemContent = $agent->prompt;
+                    // ── Build messages (same rich context as web chat) ──────
+                    $spt = [
+                        'course_id' => (!empty($agent->context_type) && $agent->context_type === 'course')
+                            ? (int) $agent->context_id : 0,
+                    ];
+                    $context = [
+                        'location' => $agent->context_type ?? 'site',
+                        'course_name' => '',
+                    ];
+                    $system = \local_jedomi\proxy\system_message::build($role, $spt, $context);
                     $toolInstructions = $this->build_tool_instructions($tools);
                     if (!empty($toolInstructions)) {
-                        $systemContent .= $toolInstructions;
+                        $system['content'] .= "\n\n" . $toolInstructions;
                     }
 
                     $messages = [
-                        ['role' => 'system', 'content' => $systemContent],
+                        $system,
+                        ['role' => 'user', 'content' => $agent->prompt],
                     ];
 
                     // ── Gateway config ───────────────────────────────────────
@@ -335,6 +482,8 @@ class agent_runner extends \core\task\scheduled_task {
                     $finalContent = '';
                     $totalDuration = 0.0;
                     $totalRounds = 0;
+                    $plan = [];
+                    $toolcallCounts = [];
 
                     for ($round = 1; $round <= self::MAX_TOOL_ITERATIONS; $round++) {
                         $totalRounds = $round;
@@ -435,14 +584,35 @@ class agent_runner extends \core\task\scheduled_task {
                             $funcArgs = $tc['function']['arguments'] ?? '{}';
                             $tcId = $tc['id'] ?? 'tc_' . uniqid();
 
-                            mtrace("[AGENT] {$agentLabel} — executing tool: {$funcName}()");
-                            error_log("[AGENT] {$agentLabel} — executing tool: {$funcName}()");
+                            // ── Loop detection: hash by tool name + stable args ──
+                            $decodedArgs = is_string($funcArgs) ? json_decode($funcArgs, true) : $funcArgs;
+                            $stableArgs = is_array($decodedArgs) ? self::stable_args_signature($decodedArgs) : md5($funcArgs);
+                            $callkey = $funcName . '|' . $stableArgs;
+                            $toolcallCounts[$callkey] = ($toolcallCounts[$callkey] ?? 0) + 1;
 
-                            $toolResult = \local_jedomi\agent\tool_executor::execute($funcName, $funcArgs);
+                            if ($toolcallCounts[$callkey] > 5) {
+                                mtrace("[AGENT] {$agentLabel} — LOOP DETECTED: {$funcName} repeated {$toolcallCounts[$callkey]}x");
+                                error_log("[AGENT] {$agentLabel} — LOOP DETECTED: {$funcName} repeated {$toolcallCounts[$callkey]}x");
+                                $toolResult = json_encode([
+                                    'error' => 'loop_detected',
+                                    'tool' => $funcName,
+                                    'detail' => 'Same tool with same arguments called ' . $toolcallCounts[$callkey] . ' times. Try different parameters or a different tool.',
+                                ]);
+                            } else {
+                                mtrace("[AGENT] {$agentLabel} — executing tool: {$funcName}()");
+                                error_log("[AGENT] {$agentLabel} — executing tool: {$funcName}()");
 
-                            if (strlen($toolResult) > 64000) {
-                                $toolResult = mb_substr($toolResult, 0, 64000)
-                                    . "\n\n[Result truncated at 64000 characters]";
+                                $plan[] = [
+                                    'tool' => $funcName,
+                                    'arguments' => $funcArgs,
+                                ];
+
+                                $toolResult = \local_jedomi\agent\tool_executor::execute($funcName, $funcArgs);
+
+                                if (strlen($toolResult) > 64000) {
+                                    $toolResult = mb_substr($toolResult, 0, 64000)
+                                        . "\n\n[Result truncated at 64000 characters]";
+                                }
                             }
 
                             $messages[] = [
@@ -452,28 +622,66 @@ class agent_runner extends \core\task\scheduled_task {
                             ];
                         }
 
-                        // Remove tools so AI cannot call more on next round.
-                        $tools = [];
-                        $messages[] = [
-                            'role' => 'system',
-                            'content' => 'You now have the data. Provide your FINAL ANSWER now.',
-                        ];
                     }
 
                     // ── Safety net: if the for loop exhausted without a clean answer ──
-                    // This can happen if the model keeps returning TOOL_CALL text
-                    // even without tools in the payload.
-                    if (empty($finalContent) && !empty($content)) {
-                        $finalContent = $content;
-                        mtrace("[AGENT] {$agentLabel} — using last content as final ({$totalRounds}r)");
-                        error_log("[AGENT] {$agentLabel} — using last content as final ({$totalRounds}r)");
+                    // This can happen if:
+                    //   - The model returns empty content (some models do when they get tool results)
+                    //   - The model keeps returning TOOL_CALL text even without tools
+                    // Loop detection errors are fed back to the model as tool results so it
+                    // can self-correct (same behavior as the web proxy handler).
+                    if (empty($finalContent)) {
+                        // Try last loop iteration content first.
+                        if (!empty($content)) {
+                            $finalContent = $content;
+                        } else {
+                            // Fallback: extract content from the last non-error tool result.
+                            foreach (array_reverse($messages) as $msg) {
+                                if (($msg['role'] ?? '') === 'tool' && !empty($msg['content'])) {
+                                    $decoded = json_decode($msg['content'], true);
+                                    if (!empty($decoded['error'])) {
+                                        continue;
+                                    }
+                                    $finalContent = is_string($msg['content'])
+                                        ? $msg['content']
+                                        : json_encode($msg['content'], JSON_UNESCAPED_UNICODE);
+                                    break;
+                                }
+                            }
+                        }
+                        if (!empty($finalContent)) {
+                            mtrace("[AGENT] {$agentLabel} — fallback final ({$totalRounds}r, " . strlen($finalContent) . "B)");
+                            error_log("[AGENT] {$agentLabel} — fallback final ({$totalRounds}r, " . strlen($finalContent) . "B)");
+                        }
                     }
 
                     // ── Strip any TOOL_CALL or <|tool_call|> blocks that may have leaked ──
-                    $finalContent = trim(preg_replace([
+                    $hadToolCallBlocks = preg_match(
+                        '/(?:TOOL_CALL|call):\s*\w+/si', $finalContent ?? ''
+                    );
+                    $stripped = trim(preg_replace([
                         '/(?:TOOL_CALL|call):\s*\w+\s*\n.*?\nEND_TOOL_CALL[^\n]*/si',
                         '/<\|(?:tool_call|python_tag)\|>.*?<\|\\/\1\|>/si',
                     ], '', $finalContent ?? ''));
+
+                    if (!empty($stripped)) {
+                        $finalContent = $stripped;
+                    } else if ($hadToolCallBlocks) {
+                        // Content was ONLY tool call blocks — fallback to last tool result (skip errors).
+                        $finalContent = '';
+                        foreach (array_reverse($messages ?? []) as $msg) {
+                            if (($msg['role'] ?? '') === 'tool' && !empty($msg['content'])) {
+                                $decoded = json_decode($msg['content'], true);
+                                if (!empty($decoded['error'])) {
+                                    continue;
+                                }
+                                $finalContent = is_string($msg['content'])
+                                    ? $msg['content']
+                                    : json_encode($msg['content'], JSON_UNESCAPED_UNICODE);
+                                break;
+                            }
+                        }
+                    }
 
                     if (empty($finalContent)) {
                         $totalDurationFmt = number_format($totalDuration, 2);
@@ -485,11 +693,29 @@ class agent_runner extends \core\task\scheduled_task {
                     }
 
                     // ── Save cache ──────────────────────────────────────────
-                    \local_jedomi\agent\agent_manager::set_cached_result(
-                        $agent->id, $context_hash, $finalContent
-                    );
-                    mtrace("[AGENT] {$agentLabel} — cached (" . strlen($finalContent) . "B)");
-                    error_log("[AGENT] {$agentLabel} — cached (" . strlen($finalContent) . "B)");
+                    $allReadonly = true;
+                    if (!empty($plan)) {
+                        foreach ($plan as $p) {
+                            if (!\local_jedomi\agent\agent_manager::is_tool_readonly($p['tool'])) {
+                                $allReadonly = false;
+                                break;
+                            }
+                        }
+                    }
+                    if (!empty($plan) && $allReadonly) {
+                        \local_jedomi\agent\agent_manager::set_cached_plan(
+                            $agent->id, $context_hash, $plan, $finalContent
+                        );
+                        mtrace("[AGENT] {$agentLabel} — cached plan (" . count($plan) . " tools, " . strlen($finalContent) . "B answer)");
+                        error_log("[AGENT] {$agentLabel} — cached plan (" . count($plan) . " tools, " . strlen($finalContent) . "B answer)");
+                    } else {
+                        \local_jedomi\agent\agent_manager::set_cached_result(
+                            $agent->id, $context_hash, $finalContent
+                        );
+                        $why = empty($plan) ? 'no tools' : 'write tool detected';
+                        mtrace("[AGENT] {$agentLabel} — cached text ({$why}, " . strlen($finalContent) . "B)");
+                        error_log("[AGENT] {$agentLabel} — cached text ({$why}, " . strlen($finalContent) . "B)");
+                    }
                 }
 
                 // ── Mark run ────────────────────────────────────────────────
@@ -507,7 +733,7 @@ class agent_runner extends \core\task\scheduled_task {
                     );
 
                     if ($telegram_link && !empty($telegram_link->chatid)) {
-                        $summary = mb_substr(strip_tags($finalContent), 0, 200);
+                        $summary = mb_substr(strip_tags($finalContent), 0, 1500);
                         $msg = "🤖 <b>{$agentLabel}</b>\n";
                         $msg .= "✅ Executed successfully\n";
                         $msg .= "📅 " . userdate(time()) . "\n\n";
