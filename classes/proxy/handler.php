@@ -99,7 +99,7 @@ class handler {
                 if (ob_get_level()) { ob_flush(); }
                 flush();
 
-                if ($toolrepeatcounts[$callkey] > 2) {
+                if ($toolrepeatcounts[$callkey] > 5) {
                     $result = json_encode([
                         'error' => 'loop_detected',
                         'tool' => $name,
@@ -399,6 +399,17 @@ class handler {
                 return self::admin_describe_tool($args, $role);
             case 'admin_execute':
                 return self::admin_execute_tool($args, $role);
+
+            case 'create_agents':   // Model sometimes hallucinates plural form.
+            case 'create_agent':
+                return self::create_agent_tool($args, $role);
+            case 'list_agent':     // Model sometimes hallucinates singular form.
+            case 'list_agents':
+                return self::list_agents_tool($args, $role);
+            case 'delete_agents':   // Model sometimes hallucinates plural form.
+            case 'delete_agent':
+                return self::delete_agent_tool($args, $role);
+
             case 'document_read':
                 return self::document_read_tool($args, $role);
             default:
@@ -720,6 +731,103 @@ class handler {
     }
 
     /**
+     * Create a scheduled AI agent.
+     *
+     * @param  array  $args Tool arguments.
+     * @param  string $role User role.
+     * @return string       JSON result.
+     */
+    private static function create_agent_tool(array $args, string $role): string {
+        if (!in_array($role, ['admin', 'manager'], true)) {
+            return json_encode(['error' => 'permission_denied']);
+        }
+        $prompt = trim($args['prompt'] ?? '');
+        $schedule = trim($args['schedule_cron'] ?? '');
+        if (empty($prompt) || empty($schedule)) {
+            return json_encode(['error' => 'Both prompt and schedule_cron are required.']);
+        }
+        $parts = preg_split('/\s+/', $schedule);
+        if (count($parts) !== 5) {
+            return json_encode(['error' => 'Invalid cron expression. Use 5 fields.']);
+        }
+        global $USER;
+        $data = new \stdClass();
+        $data->userid = (int) ($args['userid'] ?? $USER->id);
+        $data->name = trim($args['name'] ?? '');
+        $data->prompt = $prompt;
+        $data->schedule_cron = $schedule;
+        $data->context_type = $args['context_type'] ?? 'site';
+        $data->context_id = isset($args['context_id']) ? (int) $args['context_id'] : null;
+        $data->enabled = isset($args['enabled']) ? (int) $args['enabled'] : 1;
+        $id = \local_jedomi\agent\agent_manager::create_agent($data);
+        $agent = \local_jedomi\agent\agent_manager::get_agent($id);
+        $label = $agent->name ?? "Agent #{$id}";
+        return json_encode([
+            'success' => true,
+            'agent_id' => $id,
+            'name' => $agent->name ?? '',
+            'message' => "✅ {$label} created successfully.",
+        ]);
+    }
+
+    /**
+     * List scheduled AI agents.
+     *
+     * @param  array  $args Tool arguments.
+     * @param  string $role User role.
+     * @return string       JSON result.
+     */
+    private static function list_agents_tool(array $args, string $role): string {
+        if (!in_array($role, ['admin', 'manager'], true)) {
+            return json_encode(['error' => 'permission_denied']);
+        }
+        $filters = [];
+        if (!empty($args['status'])) {
+            $filters['status'] = $args['status'];
+        }
+        $result = \local_jedomi\agent\agent_manager::get_agents($filters);
+        return json_encode([
+            'success' => true,
+            'total' => $result['total'],
+            'agents' => array_map(function($a) {
+                return [
+                    'id' => (int) $a->id,
+                    'prompt' => $a->prompt,
+                    'schedule_cron' => $a->schedule_cron,
+                    'context_type' => $a->context_type,
+                    'context_id' => $a->context_id ? (int) $a->context_id : null,
+                    'enabled' => (bool) $a->enabled,
+                    'lastrun' => $a->lastrun ? (int) $a->lastrun : null,
+                    'nextrun' => (int) $a->nextrun,
+                ];
+            }, $result['items']),
+        ]);
+    }
+
+    /**
+     * Delete a scheduled AI agent.
+     *
+     * @param  array  $args Tool arguments.
+     * @param  string $role User role.
+     * @return string       JSON result.
+     */
+    private static function delete_agent_tool(array $args, string $role): string {
+        if (!in_array($role, ['admin', 'manager'], true)) {
+            return json_encode(['error' => 'permission_denied']);
+        }
+        $id = (int) ($args['id'] ?? 0);
+        if ($id <= 0) {
+            return json_encode(['error' => 'Valid agent ID required.']);
+        }
+        $agent = \local_jedomi\agent\agent_manager::get_agent($id);
+        if (!$agent) {
+            return json_encode(['error' => "Agent #{$id} not found."]);
+        }
+        \local_jedomi\agent\agent_manager::delete_agent($id);
+        return json_encode([
+            'success' => true,
+            'message' => "Agent #{$id} deleted.",
+        ]);
      * Read a PDF document from a course module and convert to images.
      */
     private static function document_read_tool(array $args, string $role): string {

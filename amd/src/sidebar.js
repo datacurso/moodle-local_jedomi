@@ -1041,14 +1041,21 @@ define(['core/log'], function(Log) {
             _saveConversation(); // Persistir en localStorage
 
         } catch (err) {
-            Log.error('Jedomi gateway error', err);
+            Log.error('Jedomi error', err);
             setThinking(false);
-            streamBubble.inner.innerHTML = renderMarkdown(
-                `⚠️ **${cfg.strings?.gateway_error_title || 'Could not connect to the Jedomi Gateway.'}**\n\n` +
-                `URL: \`${cfg.gateway_url}\`\n\n` +
-                `${cfg.strings?.gateway_error_hint || 'Make sure the service is running:'}\n` +
-                `\`docker compose up jedomi-api\``
-            );
+            if (err.message === '__SESSION_EXPIRED__') {
+                streamBubble.inner.innerHTML = renderMarkdown(
+                    `⚠️ **${cfg.strings?.session_expired_title || 'Session expired.'}**\n\n` +
+                    `${cfg.strings?.session_expired_hint || 'Your Moodle session has expired. Please reload the page to continue.'}`
+                );
+            } else {
+                streamBubble.inner.innerHTML = renderMarkdown(
+                    `⚠️ **${cfg.strings?.gateway_error_title || 'Could not connect to the Jedomi Gateway.'}**\n\n` +
+                    `URL: \`${cfg.gateway_url}\`\n\n` +
+                    `${cfg.strings?.gateway_error_hint || 'Make sure the service is running:'}\n` +
+                    `\`docker compose up jedomi-api\``
+                );
+            }
             streamBubble.el.classList.remove('jedomi-hidden');
         } finally {
             setThinking(false);
@@ -1085,8 +1092,18 @@ define(['core/log'], function(Log) {
         });
 
         if (!res.ok) {
+            // Detectar sesión expirada (403 de chatproxy.php → sesskey/SPT inválido).
+            if (res.status === 403) {
+                throw new Error('__SESSION_EXPIRED__');
+            }
             const err = await res.json().catch(() => ({}));
             throw new Error(err.detail || err.error?.message || `HTTP ${res.status}`);
+        }
+
+        // Seguridad: si require_login() redirigió a login HTML, detectarlo.
+        const contentType = res.headers.get('content-type') || '';
+        if (contentType.includes('text/html')) {
+            throw new Error('__SESSION_EXPIRED__');
         }
 
         const reader  = res.body.getReader();
@@ -1151,8 +1168,15 @@ define(['core/log'], function(Log) {
             body:    JSON.stringify(payload),
         });
         if (!res.ok) {
+            if (res.status === 403) {
+                throw new Error('__SESSION_EXPIRED__');
+            }
             const err = await res.json().catch(() => ({}));
             throw new Error(err.error || `HTTP ${res.status}`);
+        }
+        const ct = res.headers.get('content-type') || '';
+        if (ct.includes('text/html')) {
+            throw new Error('__SESSION_EXPIRED__');
         }
         return res.json();
     };

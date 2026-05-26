@@ -24,6 +24,13 @@ $capabilities = [
             'manager' => CAP_ALLOW,
         ],
     ],
+    'local/jedomi:manageagents' => [
+        'captype'      => 'write',
+        'contextlevel' => CONTEXT_SYSTEM,
+        'archetypes'   => [
+            'manager' => CAP_ALLOW,
+        ],
+    ],
     // Allows a Moodle service account to call the CompanionWS functions.
     // Only the jedomi_companion service token should have this capability.
     // ALL other role archetypes are explicitly prohibited.

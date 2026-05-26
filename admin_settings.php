@@ -50,6 +50,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && confirm_sesskey()) {
             set_config('gateway_url',           required_param('gateway_url',           PARAM_URL),     'local_jedomi');
             set_config('api_key',               required_param('api_key',               PARAM_TEXT),    'local_jedomi');
             set_config('model',                 required_param('model',                 PARAM_TEXT),    'local_jedomi');
+            set_config('max_tokens',            optional_param('max_tokens',           16384, PARAM_INT),'local_jedomi');
             set_config('docservice_url',        optional_param('docservice_url',        '',             PARAM_TEXT),    'local_jedomi');
             set_config('spt_secret',            required_param('spt_secret',            PARAM_TEXT),    'local_jedomi');
             set_config('collect_training_data', optional_param('collect_training_data', 0, PARAM_INT),  'local_jedomi');
@@ -265,6 +266,8 @@ $tabs = [
     'privacy'    => ['icon' => 'fa-shield',         'label' => get_string('tab_privacy',      'local_jedomi')],
     'integrations'=> ['icon' => 'fa-plug',           'label' => get_string('tab_integrations', 'local_jedomi')],
     'apis'        => ['icon' => 'fa-cloud',          'label' => get_string('tab_apis',          'local_jedomi')],
+    'agents'      => ['icon' => 'fa-robot',          'label' => get_string('tab_agents',        'local_jedomi')],
+    'profiler'    => ['icon' => 'fa-chart-bar',    'label' => get_string('tab_profiler', 'local_jedomi')],
 ];
 
 echo '<ul class="nav nav-tabs mb-4" role="tablist">';
@@ -359,6 +362,20 @@ echo '</ul>';
                            placeholder="http://localhost:8000">
                     <p class="form-text"><?php echo get_string('docservice_url_help', 'local_jedomi'); ?></p>
                 </div>
+
+            <!-- Max Tokens -->
+            <div class="mt-3">
+                <label class="form-label-main" for="jedomi-max-tokens">
+                    <?php echo get_string('max_tokens', 'local_jedomi'); ?>
+                </label>
+                <input type="number" id="jedomi-max-tokens" name="max_tokens"
+                       class="form-control" style="max-width:140px"
+                       value="<?php echo (int)($cfg['max_tokens'] ?? 16384); ?>"
+                       min="256" max="128000" step="1">
+                <small class="form-text text-muted">
+                    <?php echo get_string('max_tokens_help', 'local_jedomi'); ?>
+                </small>
+            </div>
 
         </div>
     </div>
@@ -894,6 +911,18 @@ echo '</ul>';
 
                     <!-- Live check result (populated by JS) -->
                     <div id="jd-webhook-live" style="display:none;margin-top:.5rem;padding-top:.5rem;border-top:1px dashed #d1d5db"></div>
+
+                    <!-- Drop pending updates button -->
+                    <div style="margin-top:.5rem;padding-top:.5rem;border-top:1px dashed #d1d5db">
+                        <button type="button" class="btn btn-outline-danger btn-sm"
+                                onclick="jdDropPending()"
+                                id="jd-drop-pending-btn"
+                                style="font-size:.75rem">
+                            <i class="fa fa-trash-alt mr-1"></i><?php echo get_string('drop_pending_updates', 'local_jedomi'); ?>
+                        </button>
+                        <span class="form-text"><?php echo get_string('drop_pending_updates_help', 'local_jedomi'); ?></span>
+                        <div id="jd-drop-pending-result" style="display:none;font-size:.8125rem;margin-top:.375rem"></div>
+                    </div>
                 </div>
                 <?php endif; ?>
 
@@ -1439,6 +1468,42 @@ function jdCheckWebhook() {
     });
 }
 
+// ── Drop pending updates ───────────────────────────────────────────────────
+function jdDropPending() {
+    var btn    = document.getElementById('jd-drop-pending-btn');
+    var result = document.getElementById('jd-drop-pending-result');
+    if (!btn || !result) return;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa fa-spinner fa-pulse mr-1"></i> Dropping...';
+    result.style.display = 'none';
+
+    var url = '<?php echo (new moodle_url('/local/jedomi/ajax/telegram_drop_pending.php'))->out(false); ?>'
+        + '?sesskey=<?php echo sesskey(); ?>';
+
+    fetch(url).then(function(r){ return r.json(); }).then(function(d){
+        if (d.ok) {
+            result.innerHTML = '<span style="color:#166534">'
+                + '<?php echo get_string('drop_pending_success', 'local_jedomi'); ?>'
+                + '</span>';
+        } else {
+            result.innerHTML = '<span style="color:#9a3412">'
+                + '<?php echo get_string('drop_pending_fail', 'local_jedomi'); ?>'
+                + (d.error ? '<br><span class="text-muted" style="font-size:.75rem">' + escHtml(d.error) + '</span>' : '')
+                + '</span>';
+        }
+        result.style.display = 'block';
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa fa-trash-alt mr-1"></i><?php echo get_string('drop_pending_updates', 'local_jedomi'); ?>';
+    }).catch(function(err){
+        result.innerHTML = '<span style="color:#9a3412">'
+            + '<?php echo get_string('drop_pending_fail', 'local_jedomi'); ?>'
+            + '<br><span class="text-muted" style="font-size:.75rem">' + escHtml(err.message) + '</span></span>';
+        result.style.display = 'block';
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa fa-trash-alt mr-1"></i><?php echo get_string('drop_pending_updates', 'local_jedomi'); ?>';
+    });
+}
+
 function escHtml(s) {
     if (typeof s !== 'string') s = String(s || '');
     var d = document.createElement('div');
@@ -1768,6 +1833,1154 @@ function jdSubToggle(subId) {
     });
 })();
 </script>
+<?php endif; ?>
+
+<?php // ─────────────────────────────────── TAB: AGENTS ─────────────────────── ?>
+<?php if ($tab === 'agents'): ?>
+<style>
+.agent-chart-wrap { position:relative; min-height:160px; }
+.agent-role-scroll { max-height:150px; overflow-y:auto; border:1px solid #e5e7eb; border-radius:.375rem; padding:.5rem; }
+</style>
+
+<div style="max-width:780px; margin:0 auto; padding-bottom:2rem">
+
+<!-- ── Summary Card ──────────────────────────────────────────────────── -->
+<div class="card">
+    <div class="card-header">
+        <div class="card-icon" style="background:#e0e7ff"><i class="fa fa-chart-bar" style="color:#4f46e5"></i></div>
+        <div>
+            <h5><?php echo get_string('agent_summary', 'local_jedomi'); ?></h5>
+        </div>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-4">
+                <div class="agent-chart-wrap"><canvas id="agent-by-role-chart"></canvas></div>
+                <p class="text-center text-muted small mt-2"><?php echo get_string('agent_by_role', 'local_jedomi'); ?></p>
+            </div>
+            <div class="col-md-4">
+                <div class="agent-chart-wrap"><canvas id="agent-by-status-chart"></canvas></div>
+                <p class="text-center text-muted small mt-2"><?php echo get_string('agent_by_status', 'local_jedomi'); ?></p>
+            </div>
+            <div class="col-md-4">
+                <div class="agent-chart-wrap"><canvas id="agent-executions-chart"></canvas></div>
+                <p class="text-center text-muted small mt-2"><?php echo get_string('agent_executions_30d', 'local_jedomi'); ?></p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ── Filters Card ──────────────────────────────────────────────────── -->
+<div class="card">
+    <div class="card-body">
+        <div class="row align-items-end">
+            <div class="col-md-3">
+                <label class="form-label-main"><?php echo get_string('agent_filter_role', 'local_jedomi'); ?></label>
+                <select id="agent-filter-role" class="form-control form-control-sm">
+                    <option value=""><?php echo get_string('agent_status_all', 'local_jedomi'); ?></option>
+                    <?php foreach ($all_roles as $role): ?>
+                    <option value="<?php echo $role->id; ?>"><?php echo s($role->localname ?? $role->name); ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label-main"><?php echo get_string('agent_filter_status', 'local_jedomi'); ?></label>
+                <select id="agent-filter-status" class="form-control form-control-sm">
+                    <option value=""><?php echo get_string('agent_status_all', 'local_jedomi'); ?></option>
+                    <option value="1"><?php echo get_string('agent_enabled', 'local_jedomi'); ?></option>
+                    <option value="0"><?php echo get_string('agent_disabled', 'local_jedomi'); ?></option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label-main"><?php echo get_string('agent_filter_context', 'local_jedomi'); ?></label>
+                <select id="agent-filter-context" class="form-control form-control-sm">
+                    <option value=""><?php echo get_string('agent_status_all', 'local_jedomi'); ?></option>
+                    <option value="site"><?php echo get_string('agent_context_type_site', 'local_jedomi'); ?></option>
+                    <option value="course"><?php echo get_string('agent_context_type_course', 'local_jedomi'); ?></option>
+                    <option value="category"><?php echo get_string('agent_context_type_category', 'local_jedomi'); ?></option>
+                    <option value="user"><?php echo get_string('agent_context_type_user', 'local_jedomi'); ?></option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label-main"><?php echo get_string('agent_search', 'local_jedomi'); ?></label>
+                <input type="text" id="agent-filter-search" class="form-control form-control-sm" placeholder="<?php echo get_string('agent_search', 'local_jedomi'); ?>">
+            </div>
+            <div class="col-md-2">
+                <button class="btn btn-primary btn-sm btn-block" id="agent-apply-filters" style="width:100%">
+                    <?php echo get_string('agent_apply_filters', 'local_jedomi'); ?>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ── Agent Table ───────────────────────────────────────────────────── -->
+<div class="card">
+    <div class="card-header">
+        <div class="card-icon" style="background:#f3e8ff"><i class="fa fa-robot" style="color:#9333ea"></i></div>
+        <div>
+            <h5><?php echo get_string('agent_table', 'local_jedomi'); ?></h5>
+        </div>
+    </div>
+    <div class="card-body">
+        <div id="agent-table-msg" style="display:none" class="alert alert-danger"></div>
+        <div style="overflow-x:auto">
+            <table class="table table-sm table-hover" style="font-size:.875rem">
+                <thead>
+                    <tr>
+                        <th><?php echo get_string('agent_creator', 'local_jedomi'); ?></th>
+                        <th><?php echo get_string('agent_name', 'local_jedomi'); ?></th>
+                        <th><?php echo get_string('agent_prompt', 'local_jedomi'); ?></th>
+                        <th><?php echo get_string('agent_context', 'local_jedomi'); ?></th>
+                        <th><?php echo get_string('agent_schedule', 'local_jedomi'); ?></th>
+                        <th><?php echo get_string('agent_status', 'local_jedomi'); ?></th>
+                        <th><?php echo get_string('agent_lastrun', 'local_jedomi'); ?></th>
+                        <th><?php echo get_string('agent_nextrun', 'local_jedomi'); ?></th>
+                        <th><?php echo get_string('agent_actions', 'local_jedomi'); ?></th>
+                    </tr>
+                </thead>
+                <tbody id="agent-table-body">
+                    <tr><td colspan="9" class="text-center text-muted py-4"><?php echo get_string('loading', 'admin'); ?></td></tr>
+                </tbody>
+            </table>
+        </div>
+        <div id="agent-pagination" class="d-flex align-items-center justify-content-between flex-wrap gap-2"></div>
+    </div>
+</div>
+
+<!-- ── Create Agent Card ─────────────────────────────────────────────── -->
+<div class="card">
+    <div class="card-header">
+        <div class="card-icon" style="background:#dbeafe"><i class="fa fa-plus-circle" style="color:#2563eb"></i></div>
+        <div>
+            <h5 id="agent-create-heading"><?php echo get_string('agent_create', 'local_jedomi'); ?></h5>
+        </div>
+    </div>
+    <div class="card-body">
+        <div id="agent-create-msg" style="display:none" class="alert"></div>
+        <form id="agent-create-form">
+            <input type="hidden" name="sesskey" value="<?php echo sesskey(); ?>">
+            <input type="hidden" name="action" value="create">
+            <input type="hidden" id="agent-edit-id" name="id" value="">
+
+            <div class="form-group">
+                <label class="form-label-main" for="agent-create-prompt">
+                    <?php echo get_string('agent_prompt', 'local_jedomi'); ?>
+                </label>
+                <textarea id="agent-create-prompt" name="prompt" class="form-control" rows="3" required
+                          placeholder="<?php echo get_string('agent_prompt_placeholder', 'local_jedomi'); ?>"></textarea>
+            </div>
+
+            <div class="row">
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label class="form-label-main" for="agent-create-name">
+                            <?php echo get_string('agent_name', 'local_jedomi'); ?>
+                        </label>
+                        <input type="text" id="agent-create-name" name="name" class="form-control"
+                               placeholder="<?php echo get_string('agent_name_placeholder', 'local_jedomi'); ?>">
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label class="form-label-main" for="agent-schedule-select">
+                            <?php echo get_string('agent_schedule', 'local_jedomi'); ?>
+                        </label>
+                        <select id="agent-schedule-select" name="schedule_cron" class="form-control">
+                            <option value="*/5 * * * *"><?php echo get_string('agent_every_5min', 'local_jedomi'); ?></option>
+                            <option value="*/15 * * * *"><?php echo get_string('agent_every_15min', 'local_jedomi'); ?></option>
+                            <option value="*/30 * * * *"><?php echo get_string('agent_every_30min', 'local_jedomi'); ?></option>
+                            <option value="0 * * * *"><?php echo get_string('agent_every_1h', 'local_jedomi'); ?></option>
+                            <option value="0 */6 * * *"><?php echo get_string('agent_every_6h', 'local_jedomi'); ?></option>
+                            <option value="0 0 * * *"><?php echo get_string('agent_daily', 'local_jedomi'); ?></option>
+                            <option value="0 0 * * 0"><?php echo get_string('agent_weekly', 'local_jedomi'); ?></option>
+                            <option value="custom"><?php echo get_string('agent_custom_cron', 'local_jedomi'); ?></option>
+                        </select>
+                        <div id="agent-custom-cron-wrap" style="display:none;margin-top:.5rem">
+                            <input type="text" name="custom_cron" class="form-control form-control-sm" placeholder="* * * * *">
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label class="form-label-main" for="agent-create-context-type">
+                            <?php echo get_string('agent_filter_context', 'local_jedomi'); ?>
+                        </label>
+                        <select id="agent-create-context-type" name="context_type" class="form-control">
+                            <option value="site"><?php echo get_string('agent_context_type_site', 'local_jedomi'); ?></option>
+                            <option value="course"><?php echo get_string('agent_context_type_course', 'local_jedomi'); ?></option>
+                            <option value="category"><?php echo get_string('agent_context_type_category', 'local_jedomi'); ?></option>
+                            <option value="user"><?php echo get_string('agent_context_type_user', 'local_jedomi'); ?></option>
+                        </select>
+                    </div>
+                </div>
+                <div class="col-md-4" id="agent-create-context-id-wrap" style="display:none">
+                    <div class="form-group">
+                        <label class="form-label-main" for="agent-create-context-id">
+                            <?php echo get_string('agent_context', 'local_jedomi'); ?> ID
+                        </label>
+                        <input type="text" id="agent-create-context-id" name="context_id" class="form-control" placeholder="e.g. 42">
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-group mt-3">
+                <label class="form-label-main"><?php echo get_string('agent_filter_role', 'local_jedomi'); ?></label>
+                <div class="agent-role-scroll">
+                    <?php foreach ($all_roles as $role): ?>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox"
+                               name="role_filter[]" value="<?php echo $role->id; ?>"
+                               id="agent-role-<?php echo $role->id; ?>">
+                        <label class="form-check-label" for="agent-role-<?php echo $role->id; ?>">
+                            <?php echo s($role->localname ?? $role->name); ?>
+                        </label>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+
+            <div class="save-row d-flex align-items-center gap-2">
+                <button type="submit" class="btn btn-primary" id="agent-form-submit">
+                    <i class="fa fa-plus-circle mr-1"></i><span id="agent-submit-label"><?php echo get_string('agent_create', 'local_jedomi'); ?></span>
+                </button>
+                <button type="button" class="btn btn-outline-info" id="agent-preview-btn">
+                    <i class="fa fa-eye mr-1"></i><?php echo get_string('agent_preview', 'local_jedomi'); ?>
+                </button>
+                <button type="button" class="btn btn-outline-secondary ml-2" id="agent-edit-cancel" style="display:none">
+                    <?php echo get_string('cancel'); ?>
+                </button>
+            </div>
+            <!-- Visual separator before preview -->
+            <hr id="agent-preview-separator" style="display:none; border:none; border-top:2px solid #e5e7eb; margin:1rem 0">
+            <!-- Preview result panel (hidden by default) -->
+            <div id="agent-preview-panel" class="agent-preview-result" style="display:none; margin-top:0; border:1px solid #e5e7eb; border-radius:.5rem; overflow:hidden">
+                <div style="background:#f9fafb; padding:.625rem .75rem; font-weight:600; border-bottom:1px solid #e5e7eb; font-size:.875rem">
+                    <i class="fa fa-robot mr-1"></i><?php echo get_string('agent_preview_result', 'local_jedomi'); ?>
+                    <span id="agent-preview-spinner" class="ml-2" style="display:none"><i class="fa fa-spinner fa-spin"></i></span>
+                </div>
+                <div id="agent-preview-body" style="padding:.75rem; font-size:.8125rem; background:#fff; min-height:60px; max-height:600px; overflow-y:auto; white-space:pre-wrap; word-break:break-word"></div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ── Purge Card ────────────────────────────────────────────────────── -->
+<div class="card">
+    <div class="card-header">
+        <div class="card-icon" style="background:#fef2f2"><i class="fa fa-trash-alt" style="color:#dc2626"></i></div>
+        <div>
+            <h5><?php echo get_string('agent_purge', 'local_jedomi'); ?></h5>
+        </div>
+    </div>
+    <div class="card-body">
+        <form id="agent-purge-form">
+            <input type="hidden" name="sesskey" value="<?php echo sesskey(); ?>">
+            <div class="row align-items-end">
+                <div class="col-md-5">
+                    <div class="form-group">
+                        <label class="form-label-main" for="agent-purge-context-type">
+                            <?php echo get_string('agent_purge_context', 'local_jedomi'); ?>
+                        </label>
+                        <select id="agent-purge-context-type" name="context_type" class="form-control">
+                            <option value="site"><?php echo get_string('agent_context_type_site', 'local_jedomi'); ?></option>
+                            <option value="course"><?php echo get_string('agent_context_type_course', 'local_jedomi'); ?></option>
+                            <option value="category"><?php echo get_string('agent_context_type_category', 'local_jedomi'); ?></option>
+                            <option value="role"><?php echo get_string('agent_filter_role', 'local_jedomi'); ?></option>
+                        </select>
+                        <p class="form-text"><?php echo get_string('agent_purge_context_help', 'local_jedomi'); ?></p>
+                    </div>
+                </div>
+                <div class="col-md-4" id="agent-purge-context-id-wrap">
+                    <div class="form-group">
+                        <label class="form-label-main" for="agent-purge-context-id">
+                            <?php echo get_string('agent_context', 'local_jedomi'); ?> ID
+                        </label>
+                        <input type="text" id="agent-purge-context-id" name="context_id" class="form-control" placeholder="e.g. 42">
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <button type="submit" class="btn btn-danger" id="agent-purge-btn">
+                        <i class="fa fa-trash-alt mr-1"></i><?php echo get_string('agent_purge_btn', 'local_jedomi'); ?>
+                    </button>
+                </div>
+            </div>
+        </form>
+        <div id="agent-purge-msg" style="display:none" class="alert mt-2"></div>
+    </div>
+</div>
+
+</div>
+
+<!-- ── Agents Inline JavaScript ──────────────────────────────────────── -->
+<script>
+(function(){
+    var baseUrl = '<?php echo $CFG->wwwroot; ?>/local/jedomi/ajax/';
+    var sesskey = '<?php echo sesskey(); ?>';
+    var currentPage = 1;
+
+    function escHtml(s) {
+        if (typeof s !== 'string') s = String(s || '');
+        var d = document.createElement('div');
+        d.textContent = s;
+        return d.innerHTML;
+    }
+    var esc = escHtml;
+
+    function getFilters() {
+        var f = {};
+        var roleE = document.getElementById('agent-filter-role');
+        var statusE = document.getElementById('agent-filter-status');
+        var ctxE = document.getElementById('agent-filter-context');
+        var searchE = document.getElementById('agent-filter-search');
+        if (roleE && roleE.value) { f.role = roleE.value; }
+        if (statusE && statusE.value !== '') { f.status = statusE.value; }
+        if (ctxE && ctxE.value) { f.context_type = ctxE.value; }
+        if (searchE && searchE.value.trim()) { f.search = searchE.value.trim(); }
+        return f;
+    }
+
+    function qs(params) {
+        var p = new URLSearchParams();
+        p.set('sesskey', sesskey);
+        Object.keys(params).forEach(function(k){
+            if (params[k] !== undefined && params[k] !== '') p.set(k, params[k]);
+        });
+        return p.toString();
+    }
+
+    // ── Helpers: convert stats data to chart-friendly arrays ──────────────
+    function objToPairs(obj) {
+        var arr = [];
+        Object.keys(obj).forEach(function(k){ arr.push({label: k, count: obj[k]}); });
+        return arr;
+    }
+
+    // ── Charts ────────────────────────────────────────────────────────────
+    function loadStats(filters, cb) {
+        var params = {};
+        if (filters) { Object.keys(filters).forEach(function(k){ params['filters['+k+']'] = filters[k]; }); }
+
+        fetch(baseUrl + 'agent_stats.php?page=1&perpage=20&sesskey=' + sesskey
+              + '&filters=' + encodeURIComponent(JSON.stringify(filters || {})))
+            .then(function(r){ return r.json(); })
+            .then(function(d){
+                if (!d.ok) { console.warn('Stats error:', d.error); drawEmptyAll(); if (cb) cb(null); return; }
+                var charts = d.charts || {};
+                // by_role is an object {rolename: count}; by_status is {enabled:N,disabled:N}
+                drawPie('agent-by-role-chart', objToPairs(charts.by_role || {}));
+                drawBar('agent-by-status-chart', objToPairs(charts.by_status || {}));
+                // executions_30d is already [{day, count}]
+                drawBar('agent-executions-chart', charts.executions_30d || []);
+                if (cb) cb(d);
+            })
+            .catch(function(err){
+                console.error('Stats fetch failed:', err);
+                drawEmptyAll();
+                if (cb) cb(null);
+            });
+    }
+
+    function drawEmptyAll() {
+        ['agent-by-role-chart','agent-by-status-chart','agent-executions-chart'].forEach(function(id){
+            var c = document.getElementById(id);
+            if (!c) return;
+            var ctx = c.getContext('2d');
+            var p = c.parentElement;
+            c.width = (p ? p.clientWidth : 200) || 200;
+            c.height = (p ? p.clientHeight : 160) || 160;
+            ctx.clearRect(0, 0, c.width, c.height);
+            ctx.fillStyle = '#9ca3af';
+            ctx.font = '12px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(<?php echo json_encode(get_string('agent_error_load', 'local_jedomi')); ?>, c.width/2, c.height/2);
+        });
+    }
+
+    function drawPie(id, data) {
+        var canvas = document.getElementById(id);
+        if (!canvas) return;
+        var ctx = canvas.getContext('2d');
+        var p = canvas.parentElement;
+        canvas.width = (p ? p.clientWidth : 200) || 200;
+        canvas.height = (p ? p.clientHeight : 160) || 160;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if (!data || !data.length) {
+            ctx.fillStyle = '#9ca3af';
+            ctx.font = '12px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('No data', canvas.width/2, canvas.height/2);
+            return;
+        }
+        var cx = canvas.width / 2;
+        var cy = canvas.height / 2 - 10;
+        var r = Math.min(cx, cy) - 5;
+        var colors = ['#4f46e5','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#06b6d4','#84cc16'];
+        var total = data.reduce(function(s, o){ return s + parseInt(o.count || 0, 10); }, 0);
+        if (total === 0) {
+            ctx.fillStyle = '#9ca3af';
+            ctx.font = '12px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('No data', canvas.width/2, canvas.height/2);
+            return;
+        }
+        var start = -Math.PI / 2;
+        data.forEach(function(item, i){
+            var angle = (item.count / total) * 2 * Math.PI;
+            ctx.beginPath();
+            ctx.moveTo(cx, cy);
+            ctx.arc(cx, cy, r, start, start + angle);
+            ctx.closePath();
+            ctx.fillStyle = colors[i % colors.length];
+            ctx.fill();
+            if (angle > 0.3) {
+                var mid = start + angle / 2;
+                ctx.fillStyle = '#fff';
+                ctx.font = 'bold 10px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(Math.round(item.count / total * 100) + '%', cx + Math.cos(mid) * r * 0.6, cy + Math.sin(mid) * r * 0.6);
+            }
+            start += angle;
+        });
+        var ly = 5;
+        data.forEach(function(item, i){
+            ctx.fillStyle = colors[i % colors.length];
+            ctx.fillRect(4, ly, 8, 8);
+            ctx.fillStyle = '#374151';
+            ctx.font = '9px sans-serif';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'top';
+            ctx.fillText((item.label || '') + ' (' + item.count + ')', 15, ly);
+            ly += 13;
+        });
+    }
+
+    function drawBar(id, data) {
+        var canvas = document.getElementById(id);
+        if (!canvas) return;
+        var ctx = canvas.getContext('2d');
+        var p = canvas.parentElement;
+        canvas.width = (p ? p.clientWidth : 200) || 200;
+        canvas.height = (p ? p.clientHeight : 160) || 160;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if (!data || !data.length) {
+            ctx.fillStyle = '#9ca3af';
+            ctx.font = '12px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('No data', canvas.width/2, canvas.height/2);
+            return;
+        }
+        var pad = { t: 20, b: 18, l: 5, r: 5 };
+        var w = canvas.width - pad.l - pad.r;
+        var h = canvas.height - pad.t - pad.b;
+        var n = data.length;
+        var bw = Math.min(28, (w / n) - 2);
+        var max = 1;
+        data.forEach(function(o){ if (parseInt(o.count, 10) > max) max = parseInt(o.count, 10); });
+        var colors = ['#4f46e5','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#06b6d4','#84cc16'];
+        data.forEach(function(item, i){
+            var val = parseInt(item.count, 10) || 0;
+            var bh = (val / max) * h;
+            var x = pad.l + (w / n) * i + ((w / n) - bw) / 2;
+            var y = pad.t + h - bh;
+            ctx.fillStyle = colors[i % colors.length];
+            ctx.fillRect(x, y, bw, bh);
+            ctx.fillStyle = '#374151';
+            ctx.font = '8px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            var lbl = item.label || '';
+            if (lbl.length > 8) lbl = lbl.substring(0, 8) + '\u2026';
+            ctx.fillText(lbl, x + bw/2, canvas.height - pad.b + 3);
+            ctx.fillStyle = '#6b7280';
+            ctx.font = 'bold 9px sans-serif';
+            ctx.textBaseline = 'bottom';
+            ctx.fillText(val, x + bw/2, y - 1);
+        });
+    }
+
+    // ── Table: render from agent_stats.php rows ──────────────────────────
+    function loadAgents(filters, page, cb) {
+        var tbody = document.getElementById('agent-table-body');
+        if (tbody) {
+            tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">Loading\u2026</td></tr>';
+        }
+
+        fetch(baseUrl + 'agent_stats.php?page=' + (page||1) + '&perpage=20&sesskey=' + sesskey
+              + '&filters=' + encodeURIComponent(JSON.stringify(filters || {})))
+            .then(function(r){ return r.json(); })
+            .then(function(d){
+                if (!d.ok) { showTableError(d.error || 'Error'); if (cb) cb(null); return; }
+                if (tbody) tbody.innerHTML = renderTableRows(d.rows || []);
+                renderPagination(d.total || 0, d.page || 1);
+                if (cb) cb(d);
+            })
+            .catch(function(err){
+                console.error('Agent list error:', err);
+                showTableError(err.message || 'Network error');
+                if (cb) cb(null);
+            });
+    }
+
+    function renderTableRows(rows) {
+        if (!rows || !rows.length) {
+            return '<tr><td colspan="9" class="text-center text-muted py-4">'
+                + <?php echo json_encode(get_string('agent_no_results', 'local_jedomi')); ?> + '</td></tr>';
+        }
+        var html = '';
+        rows.forEach(function(r){
+            var promptExcerpt = (r.prompt || '').substring(0, 60);
+            if (r.prompt && r.prompt.length > 60) promptExcerpt += '\u2026';
+            var agentName = r.name || <?php echo json_encode(get_string('agent_unnamed', 'local_jedomi')); ?> + ' #' + r.id;
+            var statusLabel, statusClass;
+            if (parseInt(r.enabled, 10) === 1) {
+                statusLabel = <?php echo json_encode(get_string('agent_enabled', 'local_jedomi')); ?>;
+                statusClass = 'badge bg-success';
+            } else {
+                statusLabel = <?php echo json_encode(get_string('agent_disabled', 'local_jedomi')); ?>;
+                statusClass = 'badge bg-secondary';
+            }
+            var lastrunHtml = r.lastrun ? new Date(r.lastrun * 1000).toLocaleString() : '-';
+            var nextrunHtml = r.nextrun ? new Date(r.nextrun * 1000).toLocaleString() : '-';
+            html += '<tr>'
+                + '<td>' + escHtml(r.user_fullname || 'User #' + r.userid) + '</td>'
+                + '<td><strong>' + escHtml(agentName) + '</strong></td>'
+                + '<td>' + escHtml(promptExcerpt) + '</td>'
+                + '<td>' + escHtml(r.context_type) + (r.context_id ? ' #' + r.context_id : '') + '</td>'
+                + '<td><code>' + escHtml(r.schedule_cron) + '</code></td>'
+                + '<td><span class="' + statusClass + '">' + statusLabel + '</span></td>'
+                + '<td>' + lastrunHtml + '</td>'
+                + '<td>' + nextrunHtml + '</td>'
+                + '<td>'
+                + '<button class="btn btn-sm btn-outline-primary me-1" data-agent-action="edit" data-agent-id="' + r.id + '" title="<?php echo get_string('agent_edit', 'local_jedomi'); ?>"><i class="fa fa-pen"></i></button>'
+                + '<button class="btn btn-sm btn-outline-success me-1" data-agent-action="run" data-agent-id="' + r.id + '" title="<?php echo get_string('agent_run_now', 'local_jedomi'); ?>"><i class="fa fa-play"></i></button>'
+                + '<button class="btn btn-sm me-1" data-agent-action="toggle" data-agent-id="' + r.id + '" title="<?php echo get_string('agent_enable', 'local_jedomi'); ?>" style="border:1px solid ' + (parseInt(r.enabled,10)===1?'#22c55e':'#6b7280') + ';color:' + (parseInt(r.enabled,10)===1?'#22c55e':'#6b7280') + ';background:transparent"><i class="fa ' + (parseInt(r.enabled,10)===1?'fa-toggle-on':'fa-toggle-off') + '"></i></button>'
+                + '<button class="btn btn-sm btn-outline-secondary" data-agent-action="delete" data-agent-id="' + r.id + '" title="<?php echo get_string('agent_delete', 'local_jedomi'); ?>"><i class="fa fa-trash-alt"></i></button>'
+                + '</td>'
+                + '</tr>';
+        });
+        return html;
+    }
+
+    function renderPagination(total, page) {
+        var pw = document.getElementById('agent-pagination');
+        if (!pw) return;
+        var perpage = 20;
+        var pages = Math.ceil(total / perpage);
+        if (pages <= 1) { pw.innerHTML = ''; return; }
+        var html = '<span class="text-muted small">' + total + ' agents</span><nav><ul class="pagination pagination-sm mb-0">';
+        for (var i = 1; i <= pages; i++) {
+            var active = i === page ? ' active' : '';
+            html += '<li class="page-item' + active + '"><a class="page-link" href="#" data-page="' + i + '">' + i + '</a></li>';
+        }
+        html += '</ul></nav>';
+        pw.innerHTML = html;
+    }
+
+    function showTableError(msg) {
+        var tbody = document.getElementById('agent-table-body');
+        if (tbody) {
+            tbody.innerHTML = '<tr><td colspan="9" class="text-center text-danger py-4">'
+                + escHtml(msg) + '</td></tr>';
+        }
+    }
+
+    // ── Helpers: reset form to create mode ──────────────────────────────
+    function resetForm() {
+        document.getElementById('agent-create-form').reset();
+        document.getElementById('agent-edit-id').value = '';
+        document.getElementById('agent-edit-cancel').style.display = 'none';
+        document.getElementById('agent-create-heading').textContent = <?php echo json_encode(get_string('agent_create', 'local_jedomi')); ?>;
+        document.getElementById('agent-submit-label').textContent = <?php echo json_encode(get_string('agent_create', 'local_jedomi')); ?>;
+    }
+
+    // ── Delegated action handler (works for dynamically added buttons) ────
+    document.body.addEventListener('click', function(e){
+        var btn = e.target.closest && e.target.closest('[data-agent-action]');
+        if (!btn) return;
+        e.preventDefault();
+        var action = btn.dataset.agentAction;
+        var id = btn.dataset.agentId;
+        if (!id) return;
+        if (action === 'delete' && !confirm(<?php echo json_encode(get_string('agent_delete_confirm', 'local_jedomi')); ?>)) return;
+
+        // ── Edit: populate form ─────────────────────────────────────────────
+        if (action === 'edit') {
+            var body = new URLSearchParams();
+            body.set('sesskey', sesskey);
+            body.set('action', 'get');
+            body.set('id', id);
+            fetch(baseUrl + 'agent_create.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: body.toString()
+            })
+            .then(function(r){ return r.json(); })
+            .then(function(d){
+                if (!d.ok || !d.agent) { showTableError(d.error || 'Error'); return; }
+                var a = d.agent;
+                // Scroll to form
+                var heading = document.getElementById('agent-create-heading');
+                if (heading) heading.scrollIntoView({behavior:'smooth', block:'start'});
+                // Populate
+                document.getElementById('agent-create-name').value = a.name || '';
+                document.getElementById('agent-create-prompt').value = a.prompt || '';
+                var sched = document.getElementById('agent-schedule-select');
+                if (sched) sched.value = a.schedule_cron || '*/5 * * * *';
+                var ctx = document.getElementById('agent-create-context-type');
+                if (ctx) ctx.value = a.context_type || 'site';
+                var ctxId = document.getElementById('agent-create-context-id');
+                if (ctxId) ctxId.value = a.context_id || '';
+                // Role checkboxes
+                document.querySelectorAll('[name="role_filter[]"]').forEach(function(cb){
+                    cb.checked = a.role_ids && a.role_ids.indexOf(parseInt(cb.value,10)) !== -1;
+                });
+                // Set edit mode
+                document.getElementById('agent-edit-id').value = a.id;
+                document.getElementById('agent-edit-cancel').style.display = 'inline-block';
+                document.getElementById('agent-create-heading').textContent = <?php echo json_encode(get_string('agent_edit', 'local_jedomi')); ?>;
+                document.getElementById('agent-submit-label').textContent = <?php echo json_encode(get_string('agent_edit', 'local_jedomi')); ?>;
+                // Clear any previous message
+                var msg = document.getElementById('agent-create-msg');
+                if (msg) msg.style.display = 'none';
+            })
+            .catch(function(err){ showTableError(err.message); });
+            return;
+        }
+
+        // ── Delete / run / toggle ───────────────────────────────────────────
+        var body = new URLSearchParams();
+        body.set('sesskey', sesskey);
+        body.set('action', action);
+        body.set('id', id);
+
+        fetch(baseUrl + 'agent_create.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: body.toString()
+        })
+        .then(function(r){ return r.json(); })
+        .then(function(d){
+            if (!d.ok) { showTableError(d.error || 'Error'); return; }
+            if (action === 'run') {
+                var msg = document.getElementById('agent-table-msg');
+                if (msg) {
+                    msg.className = 'alert alert-success';
+                    msg.textContent = <?php echo json_encode(get_string('agent_run_queued', 'local_jedomi')); ?>;
+                    msg.style.display = 'block';
+                    setTimeout(function(){ msg.style.display = 'none'; }, 4000);
+                }
+            }
+            loadAgents(getFilters(), currentPage);
+            loadStats(getFilters());
+        })
+        .catch(function(err){
+            showTableError(err.message);
+        });
+    });
+
+    // ── Apply filters ─────────────────────────────────────────────────────
+    var applyBtn = document.getElementById('agent-apply-filters');
+    if (applyBtn) {
+        applyBtn.addEventListener('click', function(){
+            currentPage = 1;
+            loadStats(getFilters());
+            loadAgents(getFilters(), 1);
+        });
+    }
+
+    // ── Pagination (delegated) ────────────────────────────────────────────
+    var pagWrap = document.getElementById('agent-pagination');
+    if (pagWrap) {
+        pagWrap.addEventListener('click', function(e){
+            var link = e.target.closest('[data-page]');
+            if (!link) return;
+            e.preventDefault();
+            currentPage = parseInt(link.dataset.page, 10) || 1;
+            loadAgents(getFilters(), currentPage);
+        });
+    }
+
+    // ── Cancel edit button ────────────────────────────────────────────────
+    var cancelBtn = document.getElementById('agent-edit-cancel');
+    if (cancelBtn) {
+        cancelBtn.addEventListener('click', function(){
+            resetForm();
+            var msg = document.getElementById('agent-create-msg');
+            if (msg) msg.style.display = 'none';
+        });
+    }
+
+    // ── Create / Update form ──────────────────────────────────────────────
+    var createForm = document.getElementById('agent-create-form');
+    if (createForm) {
+        // PHP-resolved strings (once, at page load)
+        var STR_AGENT_ERROR_UPDATE = <?php echo json_encode(get_string('agent_error_update', 'local_jedomi')); ?>;
+        var STR_AGENT_ERROR_CREATE = <?php echo json_encode(get_string('agent_error_create', 'local_jedomi')); ?>;
+        var STR_AGENT_UPDATE_SUCCESS = <?php echo json_encode(get_string('agent_update_success', 'local_jedomi')); ?>;
+        var STR_AGENT_CREATE_SUCCESS = <?php echo json_encode(get_string('agent_create_success', 'local_jedomi')); ?>;
+
+        createForm.addEventListener('submit', function(e){
+            e.preventDefault();
+            var fd = new FormData(this);
+            fd.set('sesskey', sesskey);
+
+            var editId = document.getElementById('agent-edit-id').value;
+            var isUpdate = editId !== '';
+            fd.set('action', isUpdate ? 'update' : 'create');
+            if (isUpdate) fd.set('id', editId);
+
+            fetch(baseUrl + 'agent_create.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams(fd).toString()
+            })
+            .then(function(r){ return r.json(); })
+            .then(function(d){
+                var msg = document.getElementById('agent-create-msg');
+                if (!msg) return;
+                if (d.error) {
+                    msg.className = 'alert alert-danger';
+                    msg.textContent = d.error || (isUpdate ? STR_AGENT_ERROR_UPDATE : STR_AGENT_ERROR_CREATE);
+                    msg.style.display = 'block';
+                    return;
+                }
+                msg.className = 'alert alert-success';
+                var label;
+                if (isUpdate) {
+                    label = STR_AGENT_UPDATE_SUCCESS;
+                } else if (d.name && d.name.trim()) {
+                    label = '✅ ' + <?php echo json_encode(get_string('agent_created_with_name', 'local_jedomi')); ?>.replace('{name}', d.name.trim());
+                } else {
+                    label = '⚠️ ' + <?php echo json_encode(get_string('agent_created_no_name', 'local_jedomi')); ?>;
+                }
+                msg.textContent = label;
+                msg.style.display = 'block';
+                resetForm();
+                loadStats(getFilters());
+                loadAgents(getFilters(), currentPage);
+                setTimeout(function(){ msg.style.display = 'none'; }, 4000);
+            })
+            .catch(function(err){
+                var msg = document.getElementById('agent-create-msg');
+                if (msg) { msg.className = 'alert alert-danger'; msg.textContent = err.message; msg.style.display = 'block'; }
+            });
+        });
+    }
+
+    // ── Preview button ──────────────────────────────────────────────────────
+    // ── Preview: clear cache helper (exposed globally for inline onclick) ──
+    window.clearPreviewCache = function(hash) {
+        var fd = new URLSearchParams();
+        fd.set('sesskey', sesskey);
+        fd.set('hash', hash);
+        return fetch(baseUrl + 'agent_clear_cache.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: fd.toString()
+        }).then(function(r){ return r.json(); });
+    };
+
+    // ── Preview: render conversation timeline ───────────────────────────────
+    function renderTimeline(conversation) {
+        if (!conversation || !conversation.length) return '';
+        var html = '<div class="timeline" style="margin-bottom:10px;font-size:.8125rem">'
+            + '<strong style="display:block;margin-bottom:6px;color:#374151">Conversation Timeline</strong>';
+        conversation.forEach(function(msg, i){
+            var role = msg.role || 'unknown';
+            var roleLabel = role.charAt(0).toUpperCase() + role.slice(1);
+            var roleColor = role === 'user' ? '#2563eb' : (role === 'assistant' ? '#7c3aed' : '#6b7280');
+            var roleBg = role === 'user' ? '#eff6ff' : (role === 'assistant' ? '#f5f3ff' : '#f9fafb');
+            var content = msg.content ? msg.content.trim() : '';
+            html += '<div style="border:1px solid #e5e7eb;border-radius:6px;margin-bottom:4px;overflow:hidden">'
+                + '<div style="background:' + roleBg + ';padding:4px 8px;font-weight:600;font-size:.75rem;color:' + roleColor + ';border-bottom:1px solid #e5e7eb">'
+                + '<span class="badge" style="background:' + roleColor + ';color:#fff;padding:1px 6px;border-radius:3px;margin-right:4px">' + roleLabel + '</span>'
+                + ' Round ' + ((msg.round || 0) + 1) + '</div>';
+            if (content) {
+                html += '<div style="padding:6px 8px;white-space:pre-wrap;word-break:break-word;max-height:200px;overflow-y:auto">'
+                    + escHtml(content) + '</div>';
+            }
+            // ── Tool call arguments (if assistant message had tool_calls) ──
+            if (msg.tool_calls && msg.tool_calls.length) {
+                html += '<div style="padding:6px 8px;background:#fafafa;border-top:1px solid #e5e7eb">';
+                msg.tool_calls.forEach(function(tc){
+                    var toolName = tc.function && tc.function.name ? tc.function.name : (tc.name || 'tool');
+                    var toolArgs = tc.function && tc.function.arguments ? tc.function.arguments : (tc.arguments || '{}');
+                    html += '<details style="margin-bottom:4px">'
+                        + '<summary style="cursor:pointer;font-weight:600;color:#2563eb;font-size:.75rem">🛠 ' + esc(toolName) + '</summary>'
+                        + '<pre style="background:#f3f4f6;padding:6px;border-radius:4px;font-size:11px;overflow-x:auto;margin:4px 0 0;max-height:150px"><code>'
+                        + esc(typeof toolArgs === 'string' ? toolArgs : JSON.stringify(toolArgs, null, 2))
+                        + '</code></pre></details>';
+                });
+                html += '</div>';
+            }
+            // ── Tool results ──────────────────────────────────────────────
+            if (msg.tool_results && msg.tool_results.length) {
+                html += '<div style="padding:6px 8px;border-top:1px solid #e5e7eb">';
+                msg.tool_results.forEach(function(tr, ti){
+                    html += '<details style="margin-bottom:4px">'
+                        + '<summary style="cursor:pointer;font-weight:600;color:#059669;font-size:.75rem">📊 Result ' + (ti + 1) + '</summary>'
+                        + '<pre style="background:#ecfdf5;padding:6px;border-radius:4px;font-size:11px;overflow-x:auto;margin:4px 0 0;max-height:200px"><code>'
+                        + esc(typeof tr === 'string' ? tr.substring(0, 5000) : JSON.stringify(tr, null, 2).substring(0, 5000))
+                        + '</code></pre></details>';
+                });
+                html += '</div>';
+            }
+            html += '</div>';
+        });
+        html += '</div>';
+        return html;
+    }
+
+    // ── Preview: render profiler entries ────────────────────────────────────
+    function renderProfiler(profiler, totalTimeMs) {
+        if (!profiler || !profiler.length) return '';
+        var html = '<div class="profiler-entries" style="margin-top:10px">';
+        profiler.forEach(function(e){
+            var borderColor = e.error ? '#dc3545' : '#ddd';
+            html += '<div class="profiler-entry" style="border:1px solid ' + borderColor + ';border-radius:6px;padding:8px;margin-bottom:6px;font-size:.8125rem">';
+            html += '<div class="profiler-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px">';
+            html += '<strong>' + esc(e.tool) + '</strong>';
+            html += '<span>' + (e.duration_ms || 0).toFixed(1) + 'ms &middot; ' + (e.row_count || 0) + ' rows</span>';
+            if (e.error) {
+                html += '<span style="color:#dc3545">❌ ' + esc(e.error) + '</span>';
+            }
+            html += '</div>';
+            // ── Tool result preview (if available) ────────────────────
+            if (e.result_preview) {
+                html += '<details style="margin-top:4px"><summary style="cursor:pointer;font-size:.75rem;color:#059669">Result preview</summary>';
+                html += '<pre style="background:#ecfdf5;padding:6px;border-radius:4px;font-size:11px;overflow-x:auto;margin:4px 0 0;max-height:200px"><code>'
+                    + esc(e.result_preview) + '</code></pre>';
+                html += '</details>';
+            }
+            if (e.arguments) {
+                html += '<details style="margin-top:4px"><summary style="cursor:pointer;font-size:.75rem;color:#6b7280">Arguments</summary>';
+                html += '<pre style="background:#f5f5f5;padding:6px;border-radius:4px;font-size:11px;overflow-x:auto;margin:4px 0 0;max-height:200px"><code>'
+                    + esc(typeof e.arguments === 'string' ? e.arguments : JSON.stringify(e.arguments, null, 2))
+                    + '</code></pre>';
+                html += '</details>';
+            }
+            html += '</div>';
+        });
+        if (totalTimeMs) {
+            html += '<div style="padding:4px 0;font-size:.8125rem;color:#059669;font-weight:600">'
+                + '⚡ Total: ' + totalTimeMs.toFixed(1) + 'ms</div>';
+        }
+        html += '</div>';
+        return html;
+    }
+
+    var previewBtn2 = document.getElementById('agent-preview-btn');
+    if (previewBtn2) {
+        var STR_PREVIEW_ERROR = <?php echo json_encode(get_string('agent_preview_error', 'local_jedomi')); ?>;
+        var lastPreviewHash = '';
+        previewBtn2.addEventListener('click', function(){
+            var prompt = document.getElementById('agent-create-prompt');
+            if (!prompt || !prompt.value.trim()) {
+                var msg = document.getElementById('agent-create-msg');
+                if (msg) { msg.className = 'alert alert-warning'; msg.textContent = 'Write a prompt first.'; msg.style.display = 'block'; }
+                return;
+            }
+            var panel = document.getElementById('agent-preview-panel');
+            var body = document.getElementById('agent-preview-body');
+            var spinner = document.getElementById('agent-preview-spinner');
+            var separator = document.getElementById('agent-preview-separator');
+            if (!panel || !body) return;
+
+            panel.style.display = 'block';
+            if (separator) separator.style.display = 'block';
+            body.textContent = '';
+            if (spinner) spinner.style.display = 'inline';
+
+            var fd = new URLSearchParams();
+            fd.set('sesskey', sesskey);
+            fd.set('prompt', prompt.value);
+
+            // Compute hash from prompt (same as PHP md5).
+            lastPreviewHash = md5(prompt.value.trim());
+
+            fetch(baseUrl + 'agent_preview.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: fd.toString()
+            })
+            .then(function(r){ return r.json(); })
+            .then(function(d){
+                if (spinner) spinner.style.display = 'none';
+                if (d.ok) {
+                    var html = '';
+                    // ── Cache indicator with "Clear" button ──────────
+                    if (d.cached) {
+                        html += '<div class="alert alert-info d-flex align-items-center justify-content-between" style="padding:8px;margin-bottom:8px;font-size:.8125rem">'
+                            + '<span>📦 Cached result from ' + new Date(d.cached_at * 1000).toLocaleString() + '</span>'
+                            + '<button type="button" class="btn btn-sm btn-outline-danger" onclick="clearPreviewCache(\'' + lastPreviewHash + '\').then(function(r){if(r.ok){document.getElementById(\'agent-preview-btn\').click()}})">Clear cache</button>'
+                            + '</div>';
+                    }
+                    // ── Conversation timeline ────────────────────────
+                    html += renderTimeline(d.conversation);
+                    // ── Profiler entries as cards ────────────────────
+                    html += renderProfiler(d.profiler, d.total_time_ms);
+                    // ── Separator ────────────────────────────────────
+                    if (d.profiler && d.profiler.length) {
+                        html += '<hr style="border:none;border-top:1px solid #e5e7eb;margin:.5rem 0">';
+                    }
+                    // ── Answer (scrollable) ─────────────────────────
+                    html += '<div class="preview-answer" style="max-height:400px;overflow-y:auto;border:1px solid #ddd;border-radius:6px;padding:10px;margin-top:8px;white-space:pre-wrap;word-break:break-word;font-size:.8125rem;color:#1f2937;line-height:1.5">'
+                        + esc(d.answer) + '</div>';
+                    body.innerHTML = html;
+                } else {
+                    body.innerHTML = '<div style="color:#dc2626">⚠️ ' + esc(d.error || STR_PREVIEW_ERROR) + '</div>';
+                }
+            })
+            .catch(function(err){
+                if (spinner) spinner.style.display = 'none';
+                body.innerHTML = '<div style="color:#dc2626">⚠️ ' + esc(err.message) + '</div>';
+            });
+        });
+    }
+
+    // ── MD5 helper (simple for hashing preview prompt) ──────────────────────
+    // https://css-tricks.com/snippets/javascript/javascript-md5/
+    function md5(s){function L(k,d){return(k<<d)|(k>>>(32-d))}function K(G,k){var I,d,F,H,x;F=(G&2147483648)+(k&2147483648)|0;I=(G&1073741824)+(k&1073741824)|0;d=(G&1073741823)+(k&1073741823)|0;return F^I^(((d&1073741824)>>30)|((d&1073741823)<<2))|0}function V(G){var k,d='',F='0123456789abcdef';for(k=7;k>=0;k--){d+=F.charAt((G>>(k*4))&15)}return d}var C=Array(80),k=0,d=0,F=0,x=0,H=0,I=0,j=0,Q=0,w=0,l=0,o=0,p=0,t=0,u=0,A=0,N=0,M=-1,B=0,z=0;G=unescape(encodeURIComponent(s));s='';for(k=0;k<G.length;k++){s+=String.fromCharCode(G.charCodeAt(k))}var Y=s.length;var Z=[1732584193,-271733879,-1732584194,271733878];var a;for(k=0;k<=Y+72;k+=512){var c,Z2=Z[0],E=Z[1],m=Z[2],n=Z[3];for(j=0;j<16;j++){C[j]=(s.charCodeAt(B)||0)+(s.charCodeAt(B+1)||0)*256+(s.charCodeAt(B+2)||0)*65536+(s.charCodeAt(B+3)||0)*16777216;B+=4}var W;for(j=16;j<80;j++){C[j]=L(C[j-3]^C[j-8]^C[j-14]^C[j-16],1)}for(j=0;j<80;j++){if(j<20){a=(E&m)|((~E)&n)}else if(j<40){a=E^m^n}else if(j<60){a=(E&m)|(E&n)|(m&n)}else{a=E^m^n}W=K(K(L(Z2,5),a),K(K(0,C[j]),j<20?1518500249:j<40?1859775393:j<60?2400959708:-1894007588));a=n;n=m;m=L(E,30);E=Z2;Z2=W}Z[0]=K(Z2,Z[0]);Z[1]=K(E,Z[1]);Z[2]=K(m,Z[2]);Z[3]=K(n,Z[3])}return V(Z[0])+V(Z[1])+V(Z[2])+V(Z[3])}
+
+    // ── Purge form ────────────────────────────────────────────────────────
+    var purgeForm = document.getElementById('agent-purge-form');
+    if (purgeForm) {
+        purgeForm.addEventListener('submit', function(e){
+            e.preventDefault();
+            if (!confirm(<?php echo json_encode(get_string('agent_purge_confirm', 'local_jedomi')); ?>)) return;
+
+            var fd = new FormData(this);
+            fd.set('sesskey', sesskey);
+
+            fetch(baseUrl + 'agent_purge.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams(fd).toString()
+            })
+            .then(function(r){ return r.json(); })
+            .then(function(d){
+                var msg = document.getElementById('agent-purge-msg');
+                if (!msg) return;
+                if (d.error) {
+                    msg.className = 'alert alert-danger';
+                    msg.textContent = d.error || <?php echo json_encode(get_string('agent_error_load', 'local_jedomi')); ?>;
+                    msg.style.display = 'block';
+                    return;
+                }
+                msg.className = 'alert alert-success';
+                msg.textContent = <?php echo json_encode(get_string('agent_purge_success', 'local_jedomi')); ?>;
+                msg.style.display = 'block';
+                purgeForm.reset();
+                loadStats(getFilters());
+                loadAgents(getFilters(), currentPage);
+                setTimeout(function(){ msg.style.display = 'none'; }, 4000);
+            })
+            .catch(function(err){
+                var msg = document.getElementById('agent-purge-msg');
+                if (msg) { msg.className = 'alert alert-danger'; msg.textContent = err.message; msg.style.display = 'block'; }
+            });
+        });
+    }
+
+    // ── Schedule: show/hide custom cron input ────────────────────────────
+    var schedSel = document.getElementById('agent-schedule-select');
+    if (schedSel) {
+        schedSel.addEventListener('change', function(){
+            var wrap = document.getElementById('agent-custom-cron-wrap');
+            if (wrap) wrap.style.display = this.value === 'custom' ? 'block' : 'none';
+        });
+    }
+
+    // ── Create context type: show/hide context_id input ──────────────────
+    var ctxType = document.getElementById('agent-create-context-type');
+    if (ctxType) {
+        ctxType.addEventListener('change', function(){
+            var wrap = document.getElementById('agent-create-context-id-wrap');
+            if (wrap) wrap.style.display = this.value === 'site' ? 'none' : 'block';
+        });
+    }
+
+    // ── Purge context type: show/hide context_id input ───────────────────
+    var purgeCtx = document.getElementById('agent-purge-context-type');
+    if (purgeCtx) {
+        purgeCtx.addEventListener('change', function(){
+            var wrap = document.getElementById('agent-purge-context-id-wrap');
+            if (wrap) wrap.style.display = (this.value === 'site' || this.value === 'role') ? 'none' : 'block';
+        });
+    }
+
+    // ── Handle ?edit_agent=X from profiler links ─────────────────────────
+    (function(){
+        var params = new URLSearchParams(window.location.search);
+        var editId = params.get('edit_agent');
+        if (editId) {
+            // Wait for table to load, then trigger the edit button.
+            var check = setInterval(function(){
+                var btn = document.querySelector('[data-agent-action="edit"][data-agent-id="' + editId + '"]');
+                if (btn) {
+                    clearInterval(check);
+                    btn.click();
+                    btn.scrollIntoView({behavior:'smooth', block:'center'});
+                    // Remove the param from URL without reloading.
+                    params.delete('edit_agent');
+                    var newUrl = window.location.pathname + '?' + params.toString();
+                    window.history.replaceState(null, '', newUrl);
+                }
+            }, 500);
+            // Safety: stop checking after 15 seconds.
+            setTimeout(function(){ clearInterval(check); }, 15000);
+        }
+    })();
+
+    // ── Initial load ─────────────────────────────────────────────────────
+    loadStats(null, function(){ loadAgents(null, 1); });
+})();
+</script>
+<?php endif; ?>
+
+<?php // ──────────────────────────────── TAB: PROFILER ──────────────────────── ?>
+<?php if ($tab === 'profiler'): ?>
+<div style="max-width:780px; margin:0 auto; padding-bottom:2rem">
+
+<!-- ── Query Profiler Card ──────────────────────────────────────────── -->
+<div class="card">
+    <div class="card-header">
+        <div class="card-icon" style="background:#fef3c7"><i class="fa fa-tachometer-alt" style="color:#d97706"></i></div>
+        <div>
+            <h5><?php echo get_string('query_profiler_heading', 'local_jedomi'); ?></h5>
+        </div>
+    </div>
+    <div class="card-body">
+        <p class="text-muted small"><?php echo get_string('query_profiler_desc', 'local_jedomi'); ?></p>
+
+        <!-- Aggregate stats -->
+        <?php $qp_agg = \local_jedomi\agent\query_profiler::get_aggregate(); ?>
+        <div class="row text-center mb-3">
+            <div class="col-md-3">
+                <div class="badge badge-info" style="font-size:1rem;padding:.5rem 1rem">
+                    <?php echo $qp_agg->total_queries; ?>
+                </div>
+                <div class="small text-muted mt-1"><?php echo get_string('query_profiler_total', 'local_jedomi'); ?></div>
+            </div>
+            <div class="col-md-3">
+                <div class="badge badge-warning" style="font-size:1rem;padding:.5rem 1rem">
+                    <?php echo $qp_agg->slow_queries; ?>
+                </div>
+                <div class="small text-muted mt-1"><?php echo get_string('query_profiler_slow', 'local_jedomi'); ?></div>
+            </div>
+            <div class="col-md-3">
+                <div class="badge badge-secondary" style="font-size:1rem;padding:.5rem 1rem">
+                    <?php echo $qp_agg->avg_duration_ms; ?> ms
+                </div>
+                <div class="small text-muted mt-1"><?php echo get_string('query_profiler_avg', 'local_jedomi'); ?></div>
+            </div>
+            <div class="col-md-3">
+                <div class="badge badge-danger" style="font-size:1rem;padding:.5rem 1rem">
+                    <?php echo $qp_agg->max_duration_ms; ?> ms
+                </div>
+                <div class="small text-muted mt-1"><?php echo get_string('query_profiler_max', 'local_jedomi'); ?></div>
+            </div>
+        </div>
+
+        <!-- Filter bar -->
+        <form method="get" action="<?php echo $pageurl->out(false); ?>" class="form-inline mb-3">
+            <input type="hidden" name="tab" value="profiler">
+            <input type="hidden" name="qp_page" value="1">
+            <div class="row w-100">
+                <div class="col-md-4">
+                    <input type="number" name="qp_min_ms" class="form-control form-control-sm" style="width:100%"
+                           placeholder="Min duration (ms)" value="<?php echo optional_param('qp_min_ms', '', PARAM_INT); ?>">
+                </div>
+                <div class="col-md-2">
+                    <select name="qp_sort" class="form-control form-control-sm" style="width:100%">
+                        <option value="duration_ms" <?php echo (optional_param('qp_sort', 'duration_ms', PARAM_ALPHA) === 'duration_ms') ? 'selected' : ''; ?>>
+                            <?php echo get_string('query_profiler_sort_duration', 'local_jedomi'); ?>
+                        </option>
+                        <option value="timecreated" <?php echo (optional_param('qp_sort', 'duration_ms', PARAM_ALPHA) === 'timecreated') ? 'selected' : ''; ?>>
+                            <?php echo get_string('query_profiler_sort_time', 'local_jedomi'); ?>
+                        </option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-sm btn-primary" style="width:100%">
+                        <i class="fa fa-filter mr-1"></i><?php echo get_string('agent_apply_filters', 'local_jedomi'); ?>
+                    </button>
+                </div>
+            </div>
+        </form>
+
+        <!-- Slowest queries (top 10) -->
+        <?php if (!empty($qp_agg->slowest)): ?>
+        <h6 class="mt-3"><?php echo get_string('query_profiler_slowest', 'local_jedomi'); ?></h6>
+        <div style="overflow-x:auto">
+            <table class="table table-sm table-hover" style="font-size:.8rem">
+                <thead>
+                    <tr>
+                        <th><?php echo get_string('query_profiler_sort_query', 'local_jedomi'); ?></th>
+                        <th style="width:100px"><?php echo get_string('query_profiler_avg', 'local_jedomi'); ?></th>
+                        <th style="width:100px"><?php echo get_string('query_profiler_max', 'local_jedomi'); ?></th>
+                        <th style="width:80px">#</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($qp_agg->slowest as $sl): ?>
+                    <tr>
+                        <td><code style="font-size:.75rem;word-break:break-all"><?php echo s(mb_substr($sl->query, 0, 120)); ?></code></td>
+                        <td class="text-danger"><?php echo round($sl->avg_duration, 2); ?> ms</td>
+                        <td><?php echo round($sl->max_duration, 2); ?> ms</td>
+                        <td><?php echo $sl->exec_count; ?></td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+        <?php else: ?>
+        <div class="alert alert-info"><?php echo get_string('query_profiler_empty', 'local_jedomi'); ?></div>
+        <?php endif; ?>
+
+        <!-- Recent queries -->
+        <?php $qp_recent = \local_jedomi\agent\query_profiler::get_log(['sort' => 'timecreated', 'dir' => 'DESC', 'perpage' => 20]); ?>
+        <h6 class="mt-4"><?php echo get_string('query_profiler_recent', 'local_jedomi'); ?></h6>
+        <?php if (!empty($qp_recent['entries'])): ?>
+        <div style="overflow-x:auto">
+            <table class="table table-sm table-hover" style="font-size:.8rem">
+                <thead>
+                    <tr>
+                        <th style="width:60px">ID</th>
+                        <th style="width:80px"><?php echo get_string('agent_creator', 'local_jedomi'); ?></th>
+                        <th><?php echo get_string('query_profiler_sort_query', 'local_jedomi'); ?></th>
+                        <th style="width:70px"><?php echo get_string('query_profiler_sort_duration', 'local_jedomi'); ?></th>
+                        <th style="width:60px">Filas</th>
+                        <th style="width:80px"><?php echo get_string('query_profiler_sort_time', 'local_jedomi'); ?></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($qp_recent['entries'] as $qe):
+                        $qagent = $DB->get_record('local_jedomi_agents', ['id' => $qe->agentid]);
+                        $quser = $qagent ? $DB->get_record('user', ['id' => $qagent->userid]) : null;
+                        $agentLink = new \moodle_url('/local/jedomi/admin_settings.php', ['tab' => 'agents', 'edit_agent' => $qe->agentid]);
+                    ?>
+                    <tr>
+                        <td><a href="<?php echo $agentLink->out(false); ?>" class="badge badge-info" style="font-size:.75rem">Agent #<?php echo $qe->agentid; ?></a></td>
+                        <td><?php echo $quser ? s(fullname($quser)) : '?'; ?></td>
+                        <td><code style="font-size:.7rem;word-break:break-all"><?php echo s(mb_substr($qe->query, 0, 100)); ?></code></td>
+                        <td class="<?php echo $qe->duration_ms > 1000 ? 'text-danger' : ''; ?>"><?php echo round($qe->duration_ms, 2); ?> ms</td>
+                        <td><?php echo $qe->rowcount; ?></td>
+                        <td><?php echo userdate($qe->timecreated, get_string('strftimedatetime', 'langconfig')); ?></td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+        <?php else: ?>
+        <div class="alert alert-info mt-3"><?php echo get_string('query_profiler_empty', 'local_jedomi'); ?></div>
+        <?php endif; ?>
+    </div>
+</div>
+
+</div>
 <?php endif; ?>
 <?php
 echo $OUTPUT->footer();

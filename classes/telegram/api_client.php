@@ -343,4 +343,22 @@ class api_client {
 
         return $decoded;
     }
+
+    /**
+     * Send a chat action (typing indicator) to a chat.
+     *
+     * Telegram shows "Jedomi está escribiendo..." for ~6 seconds.
+     * Call at start of processing and re-send during long loops.
+     *
+     * @param string $chat_id Telegram chat ID.
+     * @param string $action  'typing', 'upload_photo', 'record_video', etc.
+     * @return bool True if Telegram accepted the action.
+     */
+    public function send_chat_action(string $chat_id, string $action = 'typing'): bool {
+        $result = $this->post('sendChatAction', [
+            'chat_id' => $chat_id,
+            'action'  => $action,
+        ]);
+        return $result !== null && !empty($result['ok']);
+    }
 }

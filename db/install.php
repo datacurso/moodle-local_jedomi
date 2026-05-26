@@ -30,5 +30,14 @@ defined('MOODLE_INTERNAL') || die();
  * Runs after local_jedomi is installed.
  */
 function xmldb_local_jedomi_install(): bool {
+    global $DB, $CFG;
+
+    // Change usercontext to MEDIUMTEXT for MySQL/MariaDB so that large
+    // tool loop states (tool calls + results) don't get silently truncated.
+    $dbtype = $CFG->dbtype ?? 'mysqli';
+    if (in_array($dbtype, ['mysqli', 'mariadb'], true)) {
+        $DB->execute("ALTER TABLE {local_jedomi_telegram_sessions} MODIFY COLUMN usercontext MEDIUMTEXT");
+    }
+
     return true;
 }

@@ -109,22 +109,48 @@ class session {
     /**
      * Store user context in the session cache for a chat_id.
      *
+     * Uses optimistic concurrency: if another worker already saved a state
+     * with a higher iteration, our write is silently skipped. This prevents
+     * stale self-ping state from overwriting the latest worker's progress.
+     *
      * @param string $chat_id
      * @param array $context
      */
     public static function set_context(string $chat_id, array $context): void {
         global $DB;
+
+        $newctx_json = json_encode($context, JSON_UNESCAPED_UNICODE);
+        $newiter = (int)($context['iteration'] ?? 0);
+
         $record = $DB->get_record('local_jedomi_telegram_sessions', ['chatid' => $chat_id]);
         if ($record) {
-            $record->usercontext = json_encode($context, JSON_UNESCAPED_UNICODE);
+            // ── Optimistic concurrency guard ──────────────────────────────
+            // Only overwrite if our iteration is strictly newer. If another
+            // worker (self-ping) already saved a state with a higher or equal
+            // iteration, our write is stale — skip it silently.
+            // Note: there is still a tiny race window between get_record and
+            // update_record, but workers are seconds apart, not microseconds.
+            $olditer = (int)($record->iteration ?? -1);
+            // Allow writes at iteration 0 (resets, stale lock release, /new).
+            // These are explicit clears that MUST overwrite the state even if
+            // the old iteration is higher. Only block true stale writes where
+            // a newer worker already progressed past us.
+            if ($newiter > 0 && $newiter <= $olditer) {
+                return;
+            }
+            $record->usercontext = $newctx_json;
+            $record->iteration = $newiter;
+            $record->lastactivity = time();
             $DB->update_record('local_jedomi_telegram_sessions', $record);
         } else {
-            $record = new \stdClass();
-            $record->chatid = $chat_id;
-            $record->usercontext = json_encode($context, JSON_UNESCAPED_UNICODE);
-            $record->userid = 0;
-            $record->messages = '[]';
-            $DB->insert_record('local_jedomi_telegram_sessions', $record);
+            $DB->insert_record('local_jedomi_telegram_sessions', (object)[
+                'chatid'       => $chat_id,
+                'usercontext'  => $newctx_json,
+                'iteration'    => $newiter,
+                'userid'       => 0,
+                'messages'     => '[]',
+                'lastactivity' => time(),
+            ]);
         }
     }
 
