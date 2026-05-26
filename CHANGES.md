@@ -1,5 +1,10 @@
 # Changes
 
+## 1.2.2 (2026-05-25)
+
+- Hide microphone button from sidebar input
+- Bump plugin version to 2026052511
+
 ## 1.2.1 (2026-05-24)
 
 - Replace emoji tool status icons with SVG icons
