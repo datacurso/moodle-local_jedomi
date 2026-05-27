@@ -303,6 +303,21 @@ class agent_runner extends \core\task\scheduled_task {
                 ];
                 $context_hash = hash('sha256', serialize($context_data));
 
+                // ── Pre-cache init (needed by both cache hit and miss paths) ──
+                $role = \local_jedomi_get_user_role_for_user(
+                    (int) ($agent->userid ?? 0)
+                );
+                $spt = [
+                    'course_id' => (!empty($agent->context_type) && $agent->context_type === 'course')
+                        ? (int) $agent->context_id : 0,
+                ];
+                $context = [
+                    'location' => $agent->context_type ?? 'site',
+                    'course_name' => '',
+                    'output' => 'telegram',
+                ];
+                $system = \local_jedomi\proxy\system_message::build($role, $spt, $context);
+
                 // ── Check cache ──────────────────────────────────────────────
                 $cached = \local_jedomi\agent\agent_manager::get_cached_result(
                     $agent->id, $context_hash
@@ -350,20 +365,21 @@ class agent_runner extends \core\task\scheduled_task {
                         }
 
                         if (!$replayFailed) {
-                            // ── Build reformulation payload ──────────────────────
-                            $freshCtx = "Updated tool results:\n";
+                            // ── Generate answer from fresh data ────────────────────
+                            // Replay succeeded — we have fresh tool results. Build a
+                            // single-round payload with the ORIGINAL context + fresh
+                            // data, so the AI answers based on current data without
+                            // needing to discover the approach again.
+                            $dataCtx = "Current data from the system:\n";
                             foreach ($freshResults as $fr) {
-                                $freshCtx .= "\n--- {$fr['tool']} ---\n{$fr['result']}\n";
+                                $dataCtx .= "\n--- {$fr['tool']} ---\n{$fr['result']}\n";
                             }
 
-                            $reformMessages = [
-                                [
-                                    'role' => 'system',
-                                    'content' => 'You previously answered a question. Below are updated tool results. Reformulate your answer using the new data. Keep the same style and structure.',
-                                ],
+                            $replayMessages = [
+                                $system,
                                 [
                                     'role' => 'user',
-                                    'content' => "Previous answer:\n{$cachedPlan['answer']}\n\n{$freshCtx}",
+                                    'content' => $agent->prompt . "\n\n" . $dataCtx,
                                 ],
                             ];
 
@@ -374,13 +390,13 @@ class agent_runner extends \core\task\scheduled_task {
                             if ($maxTokens < 256) { $maxTokens = 16384; }
                             if (empty($gateway_url)) { $gateway_url = 'http://localhost:8765'; }
 
-                            $reformStart = microtime(true);
+                            $replayStart = microtime(true);
                             $ch = curl_init($gateway_url . '/v1/chat/completions');
                             curl_setopt_array($ch, [
                                 CURLOPT_POST           => true,
                                 CURLOPT_POSTFIELDS     => json_encode([
                                     'model' => $model,
-                                    'messages' => $reformMessages,
+                                    'messages' => $replayMessages,
                                     'stream' => false,
                                     'max_tokens' => $maxTokens,
                                 ], JSON_UNESCAPED_UNICODE),
@@ -391,23 +407,23 @@ class agent_runner extends \core\task\scheduled_task {
                                     'Authorization: Bearer ' . $api_key,
                                 ],
                             ]);
-                            $reformResponse = curl_exec($ch);
-                            $reformHttp = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-                            $reformErrno = curl_errno($ch);
-                            $reformError = curl_error($ch);
-                            $reformDuration = microtime(true) - $reformStart;
+                            $replayResponse = curl_exec($ch);
+                            $replayHttp = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                            $replayErrno = curl_errno($ch);
+                            $replayError = curl_error($ch);
+                            $replayDuration = microtime(true) - $replayStart;
                             curl_close($ch);
 
-                            if ($reformErrno !== 0) {
-                                mtrace("[AGENT] {$agentLabel} — reformulation curl error ({$reformError})");
-                                error_log("[AGENT] {$agentLabel} — reformulation curl error ({$reformError})");
-                            } else if ($reformHttp === 200) {
-                                $reformResult = json_decode($reformResponse, true);
-                                $reformContent = $reformResult['choices'][0]['message']['content'] ?? '';
-                                if (!empty(trim($reformContent))) {
-                                    $finalContent = $reformContent;
-                                    mtrace("[AGENT] {$agentLabel} — reformulated ({$reformDuration}s, " . strlen($finalContent) . "B)");
-                                    error_log("[AGENT] {$agentLabel} — reformulated ({$reformDuration}s, " . strlen($finalContent) . "B)");
+                            if ($replayErrno !== 0) {
+                                mtrace("[AGENT] {$agentLabel} — replay answer curl error ({$replayError})");
+                                error_log("[AGENT] {$agentLabel} — replay answer curl error ({$replayError})");
+                            } else if ($replayHttp === 200) {
+                                $replayResult = json_decode($replayResponse, true);
+                                $replayContent = $replayResult['choices'][0]['message']['content'] ?? '';
+                                if (!empty(trim($replayContent))) {
+                                    $finalContent = $replayContent;
+                                    mtrace("[AGENT] {$agentLabel} — replay answer generated ({$replayDuration}s, " . strlen($finalContent) . "B)");
+                                    error_log("[AGENT] {$agentLabel} — replay answer generated ({$replayDuration}s, " . strlen($finalContent) . "B)");
                                 }
                             }
                         }
@@ -433,26 +449,9 @@ class agent_runner extends \core\task\scheduled_task {
                     error_log("[AGENT] {$agentLabel} — cache MISS ({$context_hash})");
 
                     // ── Tool definitions (reuse web version's lang string descriptions) ──
-                    $role = \local_jedomi_get_user_role_for_user(
-                        (int) ($agent->userid ?? 0)
-                    );
                     $tools = \local_jedomi_get_tool_definitions($role);
 
                     // ── Build messages (same rich context as web chat) ──────
-                    $spt = [
-                        'course_id' => (!empty($agent->context_type) && $agent->context_type === 'course')
-                            ? (int) $agent->context_id : 0,
-                    ];
-                    $context = [
-                        'location' => $agent->context_type ?? 'site',
-                        'course_name' => '',
-                    ];
-                    $system = \local_jedomi\proxy\system_message::build($role, $spt, $context);
-                    $toolInstructions = $this->build_tool_instructions($tools);
-                    if (!empty($toolInstructions)) {
-                        $system['content'] .= "\n\n" . $toolInstructions;
-                    }
-
                     $messages = [
                         $system,
                         ['role' => 'user', 'content' => $agent->prompt],
@@ -496,6 +495,7 @@ class agent_runner extends \core\task\scheduled_task {
                         ];
                         if (!empty($tools)) {
                             $payload['tools'] = $tools;
+                            $payload['tool_choice'] = 'auto';
                         }
 
                         // ── Gateway call ─────────────────────────────────────
@@ -574,10 +574,16 @@ class agent_runner extends \core\task\scheduled_task {
                         mtrace("[AGENT] {$agentLabel} — round {$round} {$toolCount} tool call(s) via {$via}");
                         error_log("[AGENT] {$agentLabel} — round {$round} {$toolCount} tool call(s) via {$via}");
 
-                        $messages[] = [
+                        $assistantMsg = [
                             'role' => 'assistant',
-                            'content' => $content ?: '[Tool call requested]',
                         ];
+                        if (!empty($nativeToolCalls)) {
+                            $assistantMsg['content'] = null;
+                            $assistantMsg['tool_calls'] = $nativeToolCalls;
+                        } else {
+                            $assistantMsg['content'] = $content ?: '[Tool call requested]';
+                        }
+                        $messages[] = $assistantMsg;
 
                         foreach ($allToolCalls as $tc) {
                             $funcName = $tc['function']['name'] ?? '?';
@@ -733,19 +739,11 @@ class agent_runner extends \core\task\scheduled_task {
                     );
 
                     if ($telegram_link && !empty($telegram_link->chatid)) {
-                        $summary = mb_substr(strip_tags($finalContent), 0, 1500);
-                        $msg = "🤖 <b>{$agentLabel}</b>\n";
-                        $msg .= "✅ Executed successfully\n";
-                        $msg .= "📅 " . userdate(time()) . "\n\n";
-                        $msg .= "<i>" . htmlspecialchars($summary, ENT_QUOTES, 'UTF-8') . "</i>\n\n";
-                        $dashboard_url = (new \moodle_url(
-                            '/local/jedomi/admin_settings.php',
-                            ['tab' => 'agents']
-                        ))->out(false);
-                        $msg .= "🔗 <a href=\"{$dashboard_url}\">Dashboard</a>";
-
-                        $client = new \local_jedomi\telegram\api_client();
-                        $sent = $client->send_message($telegram_link->chatid, $msg);
+                        $sent = \local_jedomi_send_agent_notification(
+                            $telegram_link->chatid,
+                            $agentLabel,
+                            $finalContent
+                        );
 
                         if ($sent) {
                             mtrace("[AGENT] {$agentLabel} — Telegram sent");

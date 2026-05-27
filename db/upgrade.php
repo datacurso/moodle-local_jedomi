@@ -233,9 +233,6 @@ function xmldb_local_jedomi_upgrade(int $oldversion): bool {
             $dbman->create_table($table);
         }
 
-        // ── Agent web service allowlist setting (default from ws_tool) ───────
-        set_config('agent_ws_allowlist', implode(',', \local_jedomi\agent\tool\ws_tool::DEFAULT_ALLOWED), 'local_jedomi');
-
         upgrade_plugin_savepoint(true, 2026052414, 'local', 'jedomi');
     }
 

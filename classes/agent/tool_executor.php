@@ -46,10 +46,20 @@ class tool_executor {
      * @param  string $arguments JSON-encoded arguments from the AI.
      * @return string            Result to return as a "tool" role message.
      */
+    /** @var array<string, string> Aliases for model-hallucinated plural forms. */
+    private const ALIASES = [
+        'create_agents' => 'create_agent',
+        'delete_agents' => 'delete_agent',
+    ];
+
     public static function execute(string $name, string $arguments): string {
         require_once(__DIR__ . '/../../lib.php');
+
+        // Resolve alias if the model sent a plural form.
+        $resolved = self::ALIASES[$name] ?? $name;
+
         $tools = self::get_tools();
-        $tool = $tools[$name] ?? null;
+        $tool = $tools[$resolved] ?? null;
 
         if (!$tool) {
             return json_encode(['error' => "Unknown tool: {$name}"]);
@@ -74,14 +84,30 @@ class tool_executor {
         if (empty(self::$instances) || $agentid > 0) {
             $wstool = new tool\ws_tool($userid);
             self::$instances = [
+                // Data tools.
                 'execute_sql' => new tool\sql_tool($agentid, $userid),
-                'call_webservice' => $wstool,
-                'ws_execute' => $wstool,
                 'describe_table' => new tool\describe_table_tool(),
                 'search_tables' => new tool\search_tables_tool(),
                 'get_site_config' => new tool\site_config_tool($userid),
+
+                // Web service tools.
+                'call_webservice' => $wstool,
+                'ws_execute' => $wstool,
                 'ws_search' => new tool\ws_search_tool(),
                 'ws_describe' => new tool\ws_describe_tool(),
+
+                // Agent management tools.
+                'create_agent' => new tool\create_agent_tool(),
+                'list_agents' => new tool\list_agents_tool(),
+                'delete_agent' => new tool\delete_agent_tool(),
+
+                // Admin tools.
+                'admin_search' => new tool\admin_search_tool(),
+                'admin_describe' => new tool\admin_describe_tool(),
+                'admin_execute' => new tool\admin_execute_tool(),
+
+                // Document reading.
+                'document_read' => new tool\document_read_tool(),
             ];
         }
         return self::$instances;

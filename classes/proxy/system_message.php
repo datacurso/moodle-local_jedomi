@@ -48,6 +48,7 @@ class system_message {
         $location   = $context['location'] ?? 'unknown';
         $pageUrl    = $context['page_url'] ?? '';
         $pageTitle  = $context['page_title'] ?? '';
+        $output     = $context['output'] ?? 'web';  // 'web' or 'telegram'
 
         $locLabels = [
             'course'    => get_string('ctx_loc_course', 'local_jedomi') . ($courseName ? " \"{$courseName}\"" : '') . get_string('ctx_loc_course_id', 'local_jedomi', $courseId),
@@ -88,7 +89,8 @@ class system_message {
         $content .= "WS PATH:\n";
         $content .= "- ws_search(query in ENGLISH) → pick best match → ws_describe(exact name) → ws_execute with ALL * fields.\n";
         $content .= "- Batch operations: call ws_execute MULTIPLE times. No bulk function.\n";
-        $content .= "- Once you have a match, stop exploring.\n\n";
+        $content .= "- Once you have a match, stop exploring.\n";
+        $content .= "- RETRY STRATEGY: If ws_execute returns \"Missing required key\" or \"Detectado valor de parámetro no válido\" for a field NOT marked with *, retry adding that field with a sensible default (\"\" for text, 0 for int, false for bool, [] for arrays).\n\n";
 
         $content .= "SQL PATH (fallback / complement):\n";
         $content .= "- search_tables(keyword in ENGLISH) → describe_table(table) → execute_sql(SELECT with ? placeholders).\n";
@@ -111,7 +113,7 @@ class system_message {
         $content .= "GENERAL RULES:\n";
         $content .= "- Never invent data.\n";
         $content .= "- ALWAYS exclude course ID 1 (site home) and guest user from any operation.\n";
-        $content .= "- If a tool fails, retry once. If it fails again, stop and report.\n";
+        $content .= "- If a tool fails, retry once (adjust params if applicable, see WS PATH for WS-specific retry). If it fails again, stop and report.\n";
         $content .= "- If you have enough data, stop and respond.\n";
 
         $content .= "RESPONSE RULES:\n";
@@ -119,6 +121,17 @@ class system_message {
         $content .= "- Use the user's language.\n";
         $content .= "- Respect permissions and privacy.\n";
         $content .= "- If something cannot be done, say why and propose the next best step.\n\n";
+
+        if ($output === 'telegram') {
+            $content .= "TELEGRAM FORMAT:\n";
+            $content .= "- Use ONLY Telegram HTML tags: <b>bold</b>, <i>italic</i>, <code>code</code>, <pre>pre</pre>.\n";
+            $content .= "- NO attributes on tags. NEVER use style, class, color, or any attribute.\n";
+            $content .= "  Just <b>text</b>, NOT <b style=\"...\">text</b>.\n";
+            $content .= "- NO markdown. NEVER use **bold** or *italic* — use <b> and <i>.\n";
+            $content .= "- NO HTML lists (<ul>, <ol>, <li>). Use plain text with dashes or numbers.\n";
+            $content .= "- NO HTML tables. Use plain text lines.\n";
+            $content .= "- Be concise — Telegram has a 4000 character limit.\n\n";
+        }
 
         $content .= "Current context:\n";
         $content .= "- Moodle version: {$release}\n";

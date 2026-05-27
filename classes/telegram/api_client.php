@@ -127,6 +127,15 @@ class api_client {
     }
 
     /**
+     * Returns the HTTP status code from the last API call.
+     *
+     * @return int
+     */
+    public function get_last_http_code(): int {
+        return $this->last_http_code;
+    }
+
+    /**
      * Send a text message to a chat.
      * Splits long messages into multiple chunks if they exceed Telegram's 4000-char limit.
      *
@@ -360,5 +369,93 @@ class api_client {
             'action'  => $action,
         ]);
         return $result !== null && !empty($result['ok']);
+    }
+
+    /**
+     * Send a document file to a chat (supports TXT, CSV, PDF, etc.).
+     *
+     * If the file path does not exist, falls back to send_message with a truncated
+     * version of the content so the user never loses the data.
+     *
+     * @param  int|string $chat_id   Telegram chat ID.
+     * @param  string     $filepath  Absolute path to the file on disk.
+     * @param  string     $caption   Optional caption (0-1024 chars, HTML supported).
+     * @return bool                  True if Telegram accepted the file.
+     */
+    public function send_document(int|string $chat_id, string $filepath, string $caption = ''): bool {
+        if (!file_exists($filepath) || !is_readable($filepath)) {
+            \local_jedomi_log('E004: send_document file not found: ' . $filepath);
+            return false;
+        }
+
+        $params = [
+            'chat_id'   => $chat_id,
+            'document'  => new \CURLFile($filepath),
+        ];
+        if (!empty($caption)) {
+            $params['caption'] = mb_substr($caption, 0, 1024);
+            $params['parse_mode'] = 'HTML';
+        }
+
+        $response = $this->post_multipart('sendDocument', $params);
+
+        // 400 with HTML parse_mode → retry caption as plain text.
+        if ($response === null && $this->last_http_code === 400 && !empty($caption)) {
+            unset($params['parse_mode']);
+            $response = $this->post_multipart('sendDocument', $params);
+        }
+
+        return $response !== null && !empty($response['ok']);
+    }
+
+    /**
+     * Send a POST request with multipart/form-data (for file uploads).
+     *
+     * @param  string     $method  API method name, e.g. "sendDocument".
+     * @param  array      $params  Params (CURLFile objects for file fields).
+     * @return array|null          Decoded JSON response, or null on failure.
+     */
+    private function post_multipart(string $method, array $params): ?array {
+        if (empty($this->token)) {
+            \local_jedomi_log('E001: no token configured');
+            return null;
+        }
+
+        $url = $this->base_url . '/' . $method;
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => $params,  // Array → libcurl uses multipart/form-data.
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT        => 60,
+        ]);
+
+        $response = curl_exec($ch);
+        $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curl_err = curl_error($ch);
+        curl_close($ch);
+        $this->last_http_code = $http_code;
+
+        if ($http_code !== 200 || $response === false) {
+            $snippet = $response !== false ? mb_substr($response, 0, 500) : 'no_response';
+            error_log('[TELEGRAM API ERR] HTTP ' . $http_code . ' method=' . $method . ' body=' . $snippet . ' curl_err=' . ($curl_err ?: 'none'));
+            \local_jedomi_log('E002: Telegram API HTTP error: method=' . $method . ' http=' . $http_code . ' body=' . $snippet . ' curl=' . ($curl_err ?: 'none'));
+            return null;
+        }
+
+        $decoded = json_decode($response, true);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            error_log('[TELEGRAM API ERR] JSON decode: ' . json_last_error_msg() . ' method=' . $method);
+            \local_jedomi_log('E003: Telegram JSON error: ' . json_last_error_msg());
+            return null;
+        }
+
+        if (!($decoded['ok'] ?? false)) {
+            $desc = $decoded['description'] ?? 'unknown';
+            \local_jedomi_log('Telegram API error: ' . $desc);
+            error_log('[TELEGRAM API ERR] method=' . $method . ' desc=' . $desc);
+        }
+
+        return $decoded;
     }
 }

@@ -503,7 +503,7 @@ $string['ws_pagination']           = 'Page {$a->page} of {$a->pages} ({$a->total
 $string['ws_none_found']           = 'No web services match your filters.';
 $string['tool_ws_search_desc']     = 'Search web service functions by intent or keywords and return the most relevant ones with full parameter and return type descriptions.';
 $string['tool_ws_describe_desc']   = 'Get complete documentation (description, parameters, return type) for a specific web service function by exact name.';
-$string['tool_ws_execute_desc']    = 'Execute a Moodle web service function on behalf of the current user. Use AFTER ws_search to get the exact function name and parameters. For batch operations (same action on multiple items), call this function MULTIPLE times — once per item.';
+$string['tool_ws_execute_desc']    = 'Execute a Moodle web service function on behalf of the current user. Use AFTER ws_search to get the exact function name and parameters. If the first attempt fails with "Missing required key" or "invalid parameter", retry with default values for optional fields. For batch operations (same action on multiple items), call this function MULTIPLE times — once per item.';
 
 // ── Tool execution errors ────────────────────────────────────────────
 $string['error_tool_loop_detected'] = 'Repeated identical tool call blocked. Use a different tool or execute with new parameters.';
@@ -573,7 +573,7 @@ $string['tool_ws_search_limit'] = 'Máximo de resultados a devolver (default: 6,
 $string['tool_ws_describe_desc'] = 'Get full documentation (description, parameters with * = required, return type) for a specific web service function when you already know its exact name. ALWAYS call this AFTER ws_search and BEFORE ws_execute to verify required fields.';
 $string['tool_ws_describe_wsname'] = 'Exact function name (e.g. core_user_create_users)';
 $string['tool_ws_execute_wsname'] = 'Web service function name (e.g. core_course_get_courses)';
-$string['tool_ws_execute_params'] = 'JSON-encoded parameters for the web service function. MUST include every * (required) field. If the user did not provide a value, generate a sensible default (e.g. random password, current timestamp, empty array).';
+$string['tool_ws_execute_params'] = 'JSON-encoded parameters for the web service function. MUST include every * (required) field. IMPORTANT: If the first attempt fails with "Detectado valor de parámetro no válido" or "Missing required key", the instance requires fields that the schema marks as optional. In that case, RETRY by adding default values for missing optional fields (e.g. description="", enrolmentkey="", idnumber="", visibility=0, participation=true).';
 
 // ── Agent tools ───────────────────────────────────────────────────────────────
 $string['tool_create_agent_desc'] = 'Create a scheduled AI agent. The agent will execute the given prompt on a recurring schedule, cache results, and send notifications via Telegram (if linked). Only available to admins and managers. Use this when a user wants to automate recurring AI tasks like daily summaries, monitoring, or periodic reports. Returns the new agent ID.';

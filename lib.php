@@ -1230,3 +1230,194 @@ if (!function_exists('local_jedomi_log')) {
         file_put_contents($logfile, $entry, FILE_APPEND | LOCK_EX);
     }
 }
+
+/**
+ * Convert HTML tables in a string to pipe-delimited plain text.
+ *
+ * Telegram's sendMessage HTML mode does NOT support <table>, <tr>, <td>, <th>.
+ * When the LLM returns a table, strip_tags removes all table tags and the
+ * data becomes unreadable (e.g. "IDName1Admin2buendata...").
+ *
+ * This function finds every <table>...</table> block, converts it to a
+ * pipe-delimited format, and wraps it in a <pre> block so the user sees
+ * a readable monospace table.
+ *
+ * @param  string $html The HTML content (may contain tables).
+ * @return string       Content with tables converted to pipe-delimited <pre> blocks.
+ */
+function local_jedomi_sanitize_html_tables(string $html): string {
+    return preg_replace_callback('/<table[^>]*>(.*?)<\/table>/is', function($tableMatch) {
+        $tableHtml = $tableMatch[1];
+
+        // ── Extract headers ────────────────────────────────────────────
+        $headers = [];
+        if (preg_match('/<tr[^>]*>(.*?)<\/tr>/is', $tableHtml, $headerRow)) {
+            preg_match_all('/<th[^>]*>(.*?)<\/th>/is', $headerRow[1], $headerCells);
+            foreach ($headerCells[1] as $cell) {
+                $headers[] = trim(strip_tags($cell));
+            }
+        }
+
+        // ── Extract rows ───────────────────────────────────────────────
+        $rows = [];
+        preg_match_all('/<tr[^>]*>(.*?)<\/tr>/is', $tableHtml, $rowMatches);
+        foreach ($rowMatches[1] as $rowHtml) {
+            preg_match_all('/<td[^>]*>(.*?)<\/td>/is', $rowHtml, $cellMatches);
+            $row = [];
+            foreach ($cellMatches[1] as $cell) {
+                $row[] = trim(strip_tags($cell));
+            }
+            if (!empty($row)) {
+                $rows[] = $row;
+            }
+        }
+
+        // If no <th> found, use first row as header.
+        if (empty($headers) && !empty($rows)) {
+            $headers = array_shift($rows);
+        }
+
+        // ── Build pipe-delimited output ────────────────────────────────
+        $allRows = [];
+        if (!empty($headers)) {
+            $allRows[] = $headers;
+        }
+        foreach ($rows as $row) {
+            $allRows[] = $row;
+        }
+
+        if (empty($allRows)) {
+            return ''; // Empty table → remove it.
+        }
+
+        // Calculate column widths.
+        $colCount = max(array_map('count', $allRows));
+        $widths = array_fill(0, $colCount, 0);
+        foreach ($allRows as $row) {
+            for ($i = 0; $i < $colCount; $i++) {
+                $cell = $row[$i] ?? '';
+                $widths[$i] = max($widths[$i], mb_strlen($cell));
+            }
+        }
+
+        // Format with padding.
+        $lines = [];
+        foreach ($allRows as $ri => $row) {
+            $parts = [];
+            for ($i = 0; $i < $colCount; $i++) {
+                $cell = $row[$i] ?? '';
+                $parts[] = str_pad($cell, $widths[$i]);
+            }
+            $lines[] = '| ' . implode(' | ', $parts) . ' |';
+
+            // Separator after header row.
+            if ($ri === 0 && !empty($headers)) {
+                $sepParts = [];
+                for ($i = 0; $i < $colCount; $i++) {
+                    $sepParts[] = str_repeat('-', $widths[$i]);
+                }
+                $lines[] = '|-' . implode('-|-', $sepParts) . '-|';
+            }
+        }
+
+        return '<pre>' . htmlspecialchars(implode("\n", $lines), ENT_QUOTES, 'UTF-8') . '</pre>';
+    }, $html) ?? $html;
+}
+
+/**
+ * Send an agent execution notification to Telegram.
+ *
+ * Decides automatically:
+ * - If text ≤ 3800 chars → sendMessage (HTML formatted).
+ * - If text > 3800 chars → write to a .txt file in dataroot/jedomi/telegram/,
+ *   send via sendDocument, then delete the temp file.
+ *
+ * @param  int|string $chatid    Telegram chat ID.
+ * @param  string     $agent     Agent label (name or "Agent #N").
+ * @param  string     $content   The AI's response text (raw, may contain HTML).
+ * @return bool                  True if sent successfully.
+ */
+function local_jedomi_send_agent_notification(int|string $chatid, string $agent, string $content): bool {
+    global $CFG;
+
+    // Sanitize HTML tables before any strip_tags call.
+    $content = \local_jedomi_sanitize_html_tables($content);
+
+    // ── Build caption (fits within Telegram's 1024-char limit) ─────────
+    // Header with agent name + status + date.
+    $agentLabel = strip_tags($agent);
+    $dateStr = userdate(time());
+    $header = "🤖 {$agentLabel}\n✅ Executed successfully\n📅 {$dateStr}\n\n";
+
+    // Plain-text summary (no HTML) — truncate so header + wrapper fits ≤ 1024.
+    $summary = mb_substr(strip_tags($content), 0, 1500);
+    $maxSummaryLen = 1024 - mb_strlen($header) - 7; // 7 = <i></i>
+    if ($maxSummaryLen < 0) $maxSummaryLen = 0;
+    $summary = mb_substr($summary, 0, $maxSummaryLen);
+
+    // ── Decision: message vs file ──────────────────────────────────────
+    $client = new \local_jedomi\telegram\api_client();
+
+    if (mb_strlen($content) < 3800) {
+        // Full content fits in a single message — send it inline.
+        $body = strip_tags($content);
+        $msg = $header . "<i>" . htmlspecialchars($body, ENT_QUOTES, 'UTF-8') . "</i>";
+        return $client->send_message($chatid, $msg);
+    }
+
+    // ── Large result → send as .txt file ──────────────────────────────
+    // Extract a brief one-line description from the AI response (first meaningful line,
+    // not a code fence or empty line). This goes in the caption so the user knows what
+    // the result is about without seeing the actual data.
+    $plaintext = strip_tags($content);
+    $lines = explode("\n", $plaintext);
+    $oneliner = '';
+    foreach ($lines as $line) {
+        $line = trim($line);
+        if (!empty($line) && !str_starts_with($line, '```')) {
+            $oneliner = $line;
+            break;
+        }
+    }
+    // Keep it short — truncate at first sentence boundary (~200 chars max).
+    if (mb_strlen($oneliner) > 200) {
+        $truncated = mb_substr($oneliner, 0, 197);
+        $lastSentence = max(
+            mb_strrpos($truncated, '.'),
+            mb_strrpos($truncated, '!'),
+            mb_strrpos($truncated, '?')
+        );
+        if ($lastSentence > 20) {
+            $oneliner = mb_substr($truncated, 0, $lastSentence + 1);
+        } else {
+            $oneliner = $truncated . '...';
+        }
+    }
+
+    // Caption: header + one-liner. No data preview. Full result goes in the file.
+    $caption = $header . htmlspecialchars($oneliner, ENT_QUOTES, 'UTF-8');
+
+    $tmpdir = $CFG->dataroot . '/jedomi/telegram';
+    check_dir_exists($tmpdir, true, true);
+
+    $filename = 'agent_' . time() . '_' . bin2hex(random_bytes(4)) . '.txt';
+    $filepath = $tmpdir . '/' . $filename;
+
+    // If the response has a fenced code block (```csv, ```sql, ```, etc.) or a
+    // <pre> block, extract just the content inside it for the file.
+    // Otherwise use the full stripped content.
+    $fileContent = strip_tags($content);
+    if (preg_match('/```(?:\w+)?\s*\n(.+?)\n```/s', $content, $m)) {
+        $fileContent = trim($m[1]);
+    } else if (preg_match('/<pre>(.+?)<\/pre>/s', $content, $m)) {
+        $fileContent = trim($m[1]);
+    }
+    $bytes = file_put_contents($filepath, $fileContent);
+
+    $sent = $client->send_document($chatid, $filepath, $caption);
+
+    // Clean up — file was sent, no longer needed.
+    @unlink($filepath);
+
+    return $sent;
+}

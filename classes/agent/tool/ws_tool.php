@@ -56,9 +56,10 @@ class ws_tool implements agent_tool {
     }
 
     public function execute(\stdClass $params): string {
-        global $CFG;
+        global $DB;
 
-        $function = trim($params->function ?? '');
+        // Accept both 'function' (this class's definition) and 'wsname' (lib.php definition — web chat compat).
+        $function = trim($params->function ?? $params->wsname ?? '');
         if (empty($function)) {
             return json_encode(['error' => 'Empty function name']);
         }
@@ -75,37 +76,63 @@ class ws_tool implements agent_tool {
         }
 
         // ── Prepare params ───────────────────────────────────────────────────
-        $args = $params->params ?? new \stdClass();
-        $args = (array) $args;
+        $callerParams = $params->params ?? new \stdClass();
+        $callerParams = (array) $callerParams;
 
-        // ── Call via internal external API ───────────────────────────────────
+        // ── Resolve target class + method (same approach as web chat handler) ──
+        // Do NOT use call_external_function — it requires a registered web service
+        // with a token. The agent runner is a cron task, not a WS client.
+        // Directly resolve and call the external function's class::method().
         try {
-            require_once($CFG->libdir . '/externallib.php');
-
-            // Pass the agent creator's userid — Moodle's permission system
-            // will check capabilities and return an error if unauthorized.
-            $result = \external_api::call_external_function(
-                $function,
-                $args,
-                true,   // $ajaxonly — true for security (no Ajax-only bypass)
-                $this->userid > 0 ? $this->userid : null
+            $funcRecord = $DB->get_record(
+                'external_functions',
+                ['name' => $function],
+                'classname, classpath, component, methodname'
             );
+            if (!$funcRecord) {
+                return json_encode(['error' => "Web service function '{$function}' not found"]);
+            }
 
-            if (!empty($result['error'])) {
-                $errorDetail = '';
-                if (isset($result['exception'])) {
-                    $ex = $result['exception'];
-                    $errorDetail = $ex->errorcode ?? $ex->message ?? 'Unknown error';
+            $classname = \local_jedomi_resolve_ws_classname($function);
+            if (!$classname || !class_exists($classname)) {
+                return json_encode(['error' => "Class '{$classname}' not found"]);
+            }
+
+            $methodname = $funcRecord->methodname;
+            if (!method_exists($classname, $methodname)) {
+                return json_encode(['error' => "Method '{$classname}::{$methodname}()' not found"]);
+            }
+
+            // ── Map params by name via reflection ────────────────────────────
+            $ref = new \ReflectionMethod($classname, $methodname);
+            $callargs = [];
+            foreach ($ref->getParameters() as $param) {
+                $name = $param->getName();
+                if (array_key_exists($name, $callerParams)) {
+                    $callargs[] = $callerParams[$name];
+                } elseif ($param->isDefaultValueAvailable()) {
+                    $callargs[] = $param->getDefaultValue();
+                } else {
+                    return json_encode(['error' => "Missing required parameter: {$name}"]);
                 }
-                return json_encode([
-                    'error' => 'Permission denied or function error: ' . $errorDetail,
-                    'function' => $function,
-                ]);
+            }
+
+            // ── Temporarily override $USER for capability checks ─────────────
+            global $USER;
+            $origUser = $USER;
+            if ($this->userid > 0) {
+                $USER = \core_user::get_user($this->userid, '*', MUST_EXIST);
+            }
+
+            try {
+                $result = $ref->invokeArgs(null, $callargs);
+            } finally {
+                $USER = $origUser;
             }
 
             return json_encode([
                 'success' => true,
-                'data' => $result['data'],
+                'data' => $result,
             ], JSON_UNESCAPED_UNICODE);
 
         } catch (\Exception $e) {

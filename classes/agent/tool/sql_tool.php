@@ -64,7 +64,8 @@ class sql_tool implements agent_tool {
             return json_encode(['error' => 'permission_denied']);
         }
 
-        $query = trim($params->query ?? '');
+        // Accept both 'query' (this class's definition) and 'sql' (lib.php definition — web chat compat).
+        $query = trim($params->query ?? $params->sql ?? '');
         if (empty($query)) {
             return json_encode(['error' => 'Empty query']);
         }

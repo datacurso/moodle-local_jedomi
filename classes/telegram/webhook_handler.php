@@ -1050,6 +1050,11 @@ class webhook_handler {
             if (!$has_tools) {
                 // ── Text response: send to Telegram ──
 
+                // 0. Convert HTML tables to pipe-delimited <pre> blocks.
+                //    Telegram does NOT support <table>/<tr>/<td> — strip_tags
+                //    would leave all data concatenated (unreadable).
+                $content = \local_jedomi_sanitize_html_tables($content);
+
                 // 1. Replace \[...\] and \(...\) with dollar signs for Moodle-style inline math.
                 // IMPORTANT: Use hex escapes \x5d (]) and \x29 ()) for the closing
                 // chars because \] and \) can trigger "unmatched closing parenthesis"
@@ -1070,6 +1075,13 @@ class webhook_handler {
                 $content = preg_replace('/``([^`]+)``/', '<pre>$1</pre>', $content) ?? $content;
                 // 3c. `inline code` (single) → <code>  (before formatting to avoid ** inside code)
                 $content = preg_replace('/`([^`]+)`/', '<code>$1</code>', $content) ?? $content;
+
+                // 3c-bis. Protect * inside <code>/<pre> from being consumed by bold/italic steps.
+                //         Replace * with &#42; (HTML entity) so "30 * * * *" inside <code> stays intact.
+                $content = preg_replace_callback('/<(code|pre)\b[^>]*>.*?<\/\1>/is', function($m) {
+                    return str_replace('*', '&#42;', $m[0]);
+                }, $content) ?? $content;
+
                 // 3d. ~~strikethrough~~ → <s>
                 $content = preg_replace('/~~([^~]+)~~/', '<s>$1</s>', $content) ?? $content;
                 // 3e. __underline__ → <u>  (before **bold** to avoid conflict)
@@ -1151,7 +1163,37 @@ class webhook_handler {
                 error_log('[GATELOOP] text response for chat ' . $chat_id . ' at iter ' . $iteration
                     . ', elapsed=' . (time() - $LOOP_START) . 's, len=' . strlen($display));
                 session::set_context($state_key, []);
-                (new api_client())->send_message($chat_id, $display);
+
+                // If the response is large (> 3800 chars) or contains tabular data
+                // (<pre> block), send as a .txt file instead of chunking multiple messages.
+                if (mb_strlen($display) > 3800 || preg_match('/<pre>/i', $display)) {
+                    $tmpdir = $CFG->dataroot . '/jedomi/telegram';
+                    check_dir_exists($tmpdir, true, true);
+                    $filename = 'chat_' . time() . '_' . bin2hex(random_bytes(4)) . '.txt';
+                    $filepath = $tmpdir . '/' . $filename;
+
+                    // Extract first meaningful line for the caption.
+                    $plaintext = strip_tags($display);
+                    $chatlines = explode("\n", $plaintext);
+                    $chatoneliner = '';
+                    foreach ($chatlines as $cline) {
+                        $cline = trim($cline);
+                        if (!empty($cline)) {
+                            $chatoneliner = $cline;
+                            break;
+                        }
+                    }
+                    if (mb_strlen($chatoneliner) > 200) {
+                        $chatoneliner = mb_substr($chatoneliner, 0, 197) . '...';
+                    }
+                    $chatcaption = "📄 {$chatoneliner}";
+
+                    file_put_contents($filepath, $plaintext);
+                    (new api_client())->send_document($chat_id, $filepath, $chatcaption);
+                    @unlink($filepath);
+                } else {
+                    (new api_client())->send_message($chat_id, $display);
+                }
                 return;
             }
 

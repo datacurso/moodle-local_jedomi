@@ -366,6 +366,18 @@ class handler {
     }
 
     /**
+     * Public entry point for CLI debug — delegates to the private dispatcher.
+     *
+     * @param  string $name Tool name.
+     * @param  array  $args Tool arguments.
+     * @param  string $role User role for permission checks.
+     * @return string       JSON-encoded result.
+     */
+    public static function run_tool(string $name, array $args, string $role): string {
+        return self::execute_tool_by_name($name, $args, $role);
+    }
+
+    /**
      * Execute a tool by name, dispatching to the correct handler.
      *
      * @param  string $name Tool name.
@@ -828,6 +840,9 @@ class handler {
             'success' => true,
             'message' => "Agent #{$id} deleted.",
         ]);
+    }
+
+    /**
      * Read a PDF document from a course module and convert to images.
      */
     private static function document_read_tool(array $args, string $role): string {

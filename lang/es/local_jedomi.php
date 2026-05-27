@@ -499,7 +499,7 @@ $string['ws_pagination']           = 'Página {$a->page} de {$a->pages} ({$a->to
 $string['ws_none_found']           = 'Ningún servicio web coincide con tus filtros.';
 $string['tool_ws_search_desc']     = 'Buscar funciones de servicios web por intención o palabras clave y devolver las más relevantes con descripciones completas de parámetros y tipos de retorno.';
 $string['tool_ws_describe_desc']   = 'Obtener documentación completa (descripción, parámetros, tipo de retorno) de una función de servicio web específica por su nombre exacto.';
-$string['tool_ws_execute_desc']    = 'Ejecutá un servicio web de Moodle en nombre del usuario actual. Usalo DESPUÉS de ws_search para obtener el nombre exacto de la función y los parámetros. Para operaciones batch (misma acción en múltiples items), llamá esta función VARIAS VECES — una por cada item.';
+$string['tool_ws_execute_desc']    = 'Ejecutá un servicio web de Moodle en nombre del usuario actual. Usalo DESPUÉS de ws_search para obtener el nombre exacto de la función y los parámetros. Si el primer intento falla por "campo requerido faltante", reintentá con valores predeterminados para los campos opcionales. Para operaciones batch (misma acción en múltiples items), llamá esta función VARIAS VECES — una por cada item.';
 
 // ── Tool execution errors ────────────────────────────────────────────
 $string['error_tool_loop_detected'] = 'Llamada a herramienta repetida bloqueada. Usá otra herramienta o ejecutá con nuevos parámetros.';
@@ -569,7 +569,7 @@ $string['tool_ws_search_limit'] = 'Máximo de resultados a devolver (default: 6,
 $string['tool_ws_describe_desc'] = 'Obtené documentación completa (descripción, parámetros con * = requerido, tipo de retorno) para una función de servicio web específica cuando ya sabés su nombre exacto. LLAMÁ esto SIEMPRE DESPUÉS de ws_search y ANTES de ws_execute para verificar los campos requeridos.';
 $string['tool_ws_describe_wsname'] = 'Nombre exacto de la función (ej: core_user_create_users)';
 $string['tool_ws_execute_wsname'] = 'Nombre de la función del servicio web (ej: core_course_get_courses)';
-$string['tool_ws_execute_params'] = 'Parámetros codificados en JSON para la función del servicio web. DEBE incluir todos los campos * (requerido). Si el usuario no proporcionó un valor, generá un valor predeterminado sensato (ej: contraseña aleatoria, timestamp actual, array vacío).';
+$string['tool_ws_execute_params'] = 'Parámetros codificados en JSON para la función del servicio web. DEBE incluir todos los campos * (requerido). IMPORTANTE: Si el primer intento falla con "Detectado valor de parámetro no válido" o "Missing required key", significa que la instancia requiere campos que el schema marca como opcionales. En ese caso, REINTENTÁ agregando valores predeterminados para los campos faltantes (ej: description="", enrolmentkey="", idnumber="", visibility=0, participation=true).';
 
 // ── Herramientas de Agentes ───────────────────────────────────────────────────
 $string['tool_create_agent_desc'] = 'Create a scheduled AI agent. The agent will execute the given prompt on a recurring schedule, cache results, and send notifications via Telegram (if linked). Only available to admins and managers.';
