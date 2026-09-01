@@ -82,7 +82,11 @@ class handler {
 
             // type === 'tool_calls': execute each one and collect results.
             $tool_calls = $response['tool_calls'];
-            \local_jedomi_log('AI_TOOL_CALLS', ['iteration' => $i, 'tool_calls_count' => count($tool_calls), 'tool_names' => array_map(fn($tc) => $tc['function']['name'] ?? '?', $tool_calls)]);
+            \local_jedomi_log('AI_TOOL_CALLS', [
+                'iteration' => $i,
+                'tool_calls_count' => count($tool_calls),
+                'tool_names' => array_map(fn($tc) => $tc['function']['name'] ?? '?', $tool_calls),
+            ]);
 
             // Add the assistant message with tool_calls to conversation history.
             $messages[] = [
@@ -250,10 +254,15 @@ class handler {
         $contextpreview = array_map(static fn(array $msg): array => [
             'role' => $msg['role'] ?? '?',
             'content_preview' => isset($msg['content']) && is_string($msg['content'])
-                ? mb_substr($msg['content'], 0, 150) : (isset($msg['tool_calls']) ? 'tool_calls:' . count($msg['tool_calls']) : ''),
+                ? mb_substr($msg['content'], 0, 150)
+                : (isset($msg['tool_calls']) ? 'tool_calls:' . count($msg['tool_calls']) : ''),
             'tool_call_id' => $msg['tool_call_id'] ?? null,
         ], array_slice($messages, -5));
-        \local_jedomi_log('AI_API_REQUEST', ['model' => $model, 'messages_count' => count($messages), 'last_messages' => $contextpreview]);
+        \local_jedomi_log('AI_API_REQUEST', [
+            'model' => $model,
+            'messages_count' => count($messages),
+            'last_messages' => $contextpreview,
+        ]);
 
         $buffer = '';
         $ch = curl_init($apiUrl . '/v1/chat/completions');
@@ -487,7 +496,8 @@ class handler {
                 $realError .= get_string('hint_sql_braces', 'local_jedomi');
             }
             \local_jedomi_log('EXECUTE_SQL_ERROR', ['sql' => $sql, 'params' => $params, 'error' => $realError]);
-            \local_jedomi_log("[local_jedomi] execute_sql_tool error: class=" . get_class($e) . " msg=" . json_encode($realError, JSON_UNESCAPED_UNICODE));
+            \local_jedomi_log("[local_jedomi] execute_sql_tool error: class=" . get_class($e)
+                . " msg=" . json_encode($realError, JSON_UNESCAPED_UNICODE));
             return json_encode(['error' => $realError]);
         }
     }
@@ -710,7 +720,11 @@ class handler {
                 'errclass' => get_class($e),
             ]);
         } catch (\Throwable $e) {
-            \local_jedomi_log('WS_EXECUTE_ERROR', ['wsname' => $wsname ?? '', 'params' => $params ?? '{}', 'error' => $e->getMessage()]);
+            \local_jedomi_log('WS_EXECUTE_ERROR', [
+                'wsname' => $wsname ?? '',
+                'params' => $params ?? '{}',
+                'error' => $e->getMessage(),
+            ]);
             return json_encode([
                 'error'    => get_string('error_ws_execute_failed', 'local_jedomi', $e->getMessage()),
                 'wsname'   => $wsname ?? '',
@@ -1036,9 +1050,11 @@ class handler {
             return get_string('summary_error_prefix', 'local_jedomi') . $decoded['error'];
         }
         return match ($name) {
-            'execute_sql' => ($decoded['row_count'] ?? count($decoded['rows'] ?? [])) . get_string('summary_rows_returned', 'local_jedomi'),
+            'execute_sql' => ($decoded['row_count'] ?? count($decoded['rows'] ?? []))
+                . get_string('summary_rows_returned', 'local_jedomi'),
             'describe_table' => get_string('summary_table_structure', 'local_jedomi'),
-            'search_tables' => ($decoded['count'] ?? count($decoded['tables'] ?? $decoded) ?? 0) . get_string('summary_matching_tables', 'local_jedomi'),
+            'search_tables' => ($decoded['count'] ?? count($decoded['tables'] ?? $decoded) ?? 0)
+                . get_string('summary_matching_tables', 'local_jedomi'),
             'get_site_config' => get_string('summary_config_data', 'local_jedomi'),
             'ws_search'   => count($decoded['results'] ?? []) . get_string('summary_functions_found', 'local_jedomi'),
             'ws_describe' => get_string('summary_function_details', 'local_jedomi'),

@@ -144,7 +144,10 @@ class run_task extends external_api {
                     'task_class'   => $task_class,
                     'status'       => 'error',
                     'run_id'       => '',
-                    'output'       => json_encode(['error' => get_string('task_not_found_msg', 'local_jedomi'), 'task_class' => $task_class]),
+                    'output'       => json_encode([
+                        'error' => get_string('task_not_found_msg', 'local_jedomi'),
+                        'task_class' => $task_class,
+                    ]),
                     'execution_ms' => $execution_ms,
                 ];
             }

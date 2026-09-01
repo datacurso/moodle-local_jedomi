@@ -57,13 +57,15 @@ class ws_search_tool implements agent_tool {
             'type' => 'function',
             'function' => [
                 'name' => 'ws_search',
-                'description' => 'Search Moodle web service functions by intent or keywords. Returns function name, component, description, params, returns.',
+                'description' => 'Search Moodle web service functions by intent or keywords.'
+                    . ' Returns function name, component, description, params, returns.',
                 'parameters' => [
                     'type' => 'object',
                     'properties' => [
                         'query' => [
                             'type' => 'string',
-                            'description' => 'Intent or keywords in ENGLISH (e.g. "create user", "enrol student", "get course grades").',
+                            'description' => 'Intent or keywords in ENGLISH'
+                                . ' (e.g. "create user", "enrol student", "get course grades").',
                         ],
                         'limit' => [
                             'type' => 'integer',

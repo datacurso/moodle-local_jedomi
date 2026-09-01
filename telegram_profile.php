@@ -85,6 +85,16 @@ if ($bot_available && $role_ok && $action === 'unlink' && confirm_sesskey()) {
 global $DB;
 $link = $DB->get_record('local_jedomi_telegram_links', ['userid' => $userid, 'confirmed' => 1]);
 
+// Pre-built markup snippets (kept out of the HTML section for line length).
+$settingsurl = (new moodle_url('/local/jedomi/admin_settings.php', ['tab' => 'integrations']))->out(false);
+$copycodejs = "navigator.clipboard.writeText('/start " . s($generated_code) . "');";
+$copyonclickdark = $copycodejs
+    . "this.innerHTML='<i class=\\'fa fa-check\\'></i>';"
+    . "setTimeout(()=>this.innerHTML='<i class=\\'fa fa-copy\\'></i>',1500)";
+$copyonclickgreen = $copycodejs
+    . "this.innerHTML='<i class=\\'fa fa-check\\' style=\\'color:#16a34a\\'></i>';"
+    . "setTimeout(()=>this.innerHTML='<i class=\\'fa fa-copy\\'></i>',1500)";
+
 echo $OUTPUT->header();
 ?>
 
@@ -122,7 +132,7 @@ echo $OUTPUT->header();
         <i class="fa fa-info-circle fa-lg" style="flex-shrink:0"></i>
         <div>
             <strong>Telegram not configured (admin only message)</strong><br>
-            <small>Go to <a href="<?php echo (new moodle_url('/local/jedomi/admin_settings.php', ['tab' => 'integrations']))->out(false); ?>">Jedomi Settings → Integrations</a>
+            <small>Go to <a href="<?php echo $settingsurl; ?>">Jedomi Settings → Integrations</a>
             to set up the Telegram bot. Once configured, users will see the Telegram linking option here.</small>
         </div>
     </div>
@@ -245,14 +255,15 @@ echo $OUTPUT->header();
                 <div class="jd-tg-step">
                     <div class="jd-tg-badge" style="background:#7c3aed">2</div>
                     <div>
-                        <strong style="font-size:.875rem"><?php echo get_string('telegram_stepU3_title', 'local_jedomi'); ?></strong>
+                        <strong style="font-size:.875rem"><?php
+                            echo get_string('telegram_stepU3_title', 'local_jedomi'); ?></strong>
                         <p style="font-size:.8125rem;color:#475569;margin:.2rem 0 .5rem">
                             Send this command to <strong>@<?php echo s($bot_username); ?></strong>:
                         </p>
                         <div class="jd-tg-cmd">
                             /start <?php echo s($generated_code); ?>
                             <button type="button"
-                                    onclick="navigator.clipboard.writeText('/start <?php echo s($generated_code); ?>');this.innerHTML='<i class=\'fa fa-check\'></i>';setTimeout(()=>this.innerHTML='<i class=\'fa fa-copy\'></i>',1500)"
+                                    onclick="<?php echo $copyonclickdark; ?>"
                                     style="background:none;border:none;color:#7dd3fc;cursor:pointer;padding:0">
                                 <i class="fa fa-copy"></i>
                             </button>
@@ -265,7 +276,8 @@ echo $OUTPUT->header();
                     <div>
                         <strong style="font-size:.875rem">Done!</strong>
                         <p style="font-size:.8125rem;color:#475569;margin:.2rem 0 0">
-                            The bot will confirm the link instantly. After that, send any message to start using Jedomi from Telegram.
+                            The bot will confirm the link instantly. After that, send any message
+                            to start using Jedomi from Telegram.
                         </p>
                     </div>
                 </div>
@@ -273,7 +285,8 @@ echo $OUTPUT->header();
 
             <!-- Option B: Manual — Fallback for PC users without Telegram app -->
             <div style="border:1px solid #e5e7eb;border-radius:.5rem;padding:1rem;background:#f9fafb;margin-bottom:1rem">
-                <p style="font-size:.8125rem;font-weight:600;color:#6b7280;margin-bottom:.75rem;display:flex;align-items:center;gap:.375rem">
+                <p style="font-size:.8125rem;font-weight:600;color:#6b7280;margin-bottom:.75rem;
+                          display:flex;align-items:center;gap:.375rem">
                     <i class="fa fa-info-circle" style="color:#9ca3af"></i>
                     ¿No tienes la app de Telegram?
                 </p>
@@ -285,7 +298,7 @@ echo $OUTPUT->header();
                             font-family:monospace;font-size:.9375rem;display:flex;align-items:center;justify-content:space-between">
                     <span>/start <?php echo s($generated_code); ?></span>
                     <button type="button"
-                            onclick="navigator.clipboard.writeText('/start <?php echo s($generated_code); ?>');this.innerHTML='<i class=\'fa fa-check\' style=\'color:#16a34a\'></i>';setTimeout(()=>this.innerHTML='<i class=\'fa fa-copy\'></i>',1500)"
+                            onclick="<?php echo $copyonclickgreen; ?>"
                             style="background:none;border:none;color:#7dd3fc;cursor:pointer;padding:.1rem .25rem">
                         <i class="fa fa-copy"></i>
                     </button>

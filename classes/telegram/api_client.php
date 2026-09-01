@@ -359,8 +359,10 @@ class api_client {
 
         if ($http_code !== 200 || $response === false) {
             $snippet = $response !== false ? mb_substr($response, 0, 500) : 'no_response';
-            \local_jedomi_log('[TELEGRAM API ERR] HTTP ' . $http_code . ' method=' . $method . ' body=' . $snippet . ' curl_err=' . ($curl_err ?: 'none'));
-            \local_jedomi_log('E002: Telegram API HTTP error: method=' . $method . ' http=' . $http_code . ' body=' . $snippet . ' curl=' . ($curl_err ?: 'none'));
+            \local_jedomi_log('[TELEGRAM API ERR] HTTP ' . $http_code . ' method=' . $method
+                . ' body=' . $snippet . ' curl_err=' . ($curl_err ?: 'none'));
+            \local_jedomi_log('E002: Telegram API HTTP error: method=' . $method
+                . ' http=' . $http_code . ' body=' . $snippet . ' curl=' . ($curl_err ?: 'none'));
             return null;
         }
 
@@ -465,8 +467,10 @@ class api_client {
 
         if ($http_code !== 200 || $response === false) {
             $snippet = $response !== false ? mb_substr($response, 0, 500) : 'no_response';
-            \local_jedomi_log('[TELEGRAM API ERR] HTTP ' . $http_code . ' method=' . $method . ' body=' . $snippet . ' curl_err=' . ($curl_err ?: 'none'));
-            \local_jedomi_log('E002: Telegram API HTTP error: method=' . $method . ' http=' . $http_code . ' body=' . $snippet . ' curl=' . ($curl_err ?: 'none'));
+            \local_jedomi_log('[TELEGRAM API ERR] HTTP ' . $http_code . ' method=' . $method
+                . ' body=' . $snippet . ' curl_err=' . ($curl_err ?: 'none'));
+            \local_jedomi_log('E002: Telegram API HTTP error: method=' . $method
+                . ' http=' . $http_code . ' body=' . $snippet . ' curl=' . ($curl_err ?: 'none'));
             return null;
         }
 

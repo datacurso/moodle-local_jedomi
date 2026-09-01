@@ -57,13 +57,15 @@ class ws_describe_tool implements agent_tool {
             'type' => 'function',
             'function' => [
                 'name' => 'ws_describe',
-                'description' => 'Get full documentation for a specific Moodle web service function: description, parameters with types, and return structure.',
+                'description' => 'Get full documentation for a specific Moodle web service'
+                    . ' function: description, parameters with types, and return structure.',
                 'parameters' => [
                     'type' => 'object',
                     'properties' => [
                         'wsname' => [
                             'type' => 'string',
-                            'description' => 'Exact web service function name (e.g. core_user_create_users, core_course_get_courses).',
+                            'description' => 'Exact web service function name'
+                                . ' (e.g. core_user_create_users, core_course_get_courses).',
                         ],
                     ],
                     'required' => ['wsname'],

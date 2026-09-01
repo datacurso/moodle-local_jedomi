@@ -110,7 +110,12 @@ class purge_caches extends external_api {
         );
 
         // --- HMAC authentication ---
-        self::verify_hmac('jedomi_purge_caches', $validated['hmac_timestamp'], $validated['payload_hash'], $validated['hmac_signature']);
+        self::verify_hmac(
+            'jedomi_purge_caches',
+            $validated['hmac_timestamp'],
+            $validated['payload_hash'],
+            $validated['hmac_signature']
+        );
 
         $start = microtime(true);
 

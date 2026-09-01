@@ -58,7 +58,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && confirm_sesskey()) {
             set_config('api_key',               required_param('api_key',               PARAM_TEXT),    'local_jedomi');
             set_config('model',                 required_param('model',                 PARAM_TEXT),    'local_jedomi');
             set_config('max_tokens',            optional_param('max_tokens',           16384, PARAM_INT),'local_jedomi');
-            set_config('docservice_url',        optional_param('docservice_url',        '',             PARAM_TEXT),    'local_jedomi');
+            set_config('docservice_url',
+                optional_param('docservice_url', '', PARAM_TEXT), 'local_jedomi');
             set_config('spt_secret',            required_param('spt_secret',            PARAM_TEXT),    'local_jedomi');
             set_config('collect_training_data', optional_param('collect_training_data', 0, PARAM_INT),  'local_jedomi');
 
@@ -341,7 +342,8 @@ echo '</ul>';
                            class="form-control"
                            value="<?php echo s($cfg['api_key']); ?>"
                            style="padding-right:2.5rem">
-                    <button type="button" onclick="var i=document.getElementById('jedomi-api-key');i.type=i.type==='password'?'text':'password'"
+                    <button type="button"
+                            onclick="var i=document.getElementById('jedomi-api-key');i.type=i.type==='password'?'text':'password'"
                             style="position:absolute;right:.625rem;top:50%;transform:translateY(-50%);
                                    background:none;border:none;color:#9ca3af;cursor:pointer">
                         <i class="fa fa-eye"></i>
@@ -408,7 +410,8 @@ echo '</ul>';
                            class="form-control"
                            value="<?php echo s($cfg['spt_secret']); ?>"
                            style="padding-right:2.5rem">
-                    <button type="button" onclick="var i=document.getElementById('jedomi-spt');i.type=i.type==='password'?'text':'password'"
+                    <button type="button"
+                            onclick="var i=document.getElementById('jedomi-spt');i.type=i.type==='password'?'text':'password'"
                             style="position:absolute;right:.625rem;top:50%;transform:translateY(-50%);
                                    background:none;border:none;color:#9ca3af;cursor:pointer">
                         <i class="fa fa-eye"></i>
@@ -478,9 +481,12 @@ echo '</ul>';
                 </label>
                 <?php
                 $modes = [
-                    'all'     => ['color' => '#10b981', 'icon' => 'fa-globe',       'label' => 'course_mode_all',     'desc' => 'course_mode_all_desc'],
-                    'exclude' => ['color' => '#f59e0b', 'icon' => 'fa-minus-circle', 'label' => 'course_mode_exclude', 'desc' => 'course_mode_exclude_desc'],
-                    'include' => ['color' => '#7c3aed', 'icon' => 'fa-check-circle', 'label' => 'course_mode_include', 'desc' => 'course_mode_include_desc'],
+                    'all'     => ['color' => '#10b981', 'icon' => 'fa-globe',
+                                  'label' => 'course_mode_all',     'desc' => 'course_mode_all_desc'],
+                    'exclude' => ['color' => '#f59e0b', 'icon' => 'fa-minus-circle',
+                                  'label' => 'course_mode_exclude', 'desc' => 'course_mode_exclude_desc'],
+                    'include' => ['color' => '#7c3aed', 'icon' => 'fa-check-circle',
+                                  'label' => 'course_mode_include', 'desc' => 'course_mode_include_desc'],
                 ];
                 foreach ($modes as $mval => $mdef):
                     $checked = ($cfg['course_mode'] === $mval);
@@ -530,7 +536,8 @@ echo '</ul>';
                         <?php echo get_string('course_none_selected', 'local_jedomi'); ?>
                     </span>
                     <?php else: ?>
-                    <span id="jedomi-no-courses" style="display:none" class="text-muted" style="font-size:.875rem;font-style:italic">
+                    <span id="jedomi-no-courses" style="display:none" class="text-muted"
+                          style="font-size:.875rem;font-style:italic">
                         <?php echo get_string('course_none_selected', 'local_jedomi'); ?>
                     </span>
                     <?php foreach ($selectedcourses as $sc): ?>
@@ -639,9 +646,12 @@ echo '</ul>';
 
                 <?php
                 $anonmodes = [
-                    'basic'    => ['icon' => 'fa-user',        'color' => '#10b981', 'label' => 'anon_basic',         'desc' => 'anon_basic_desc'],
-                    'strict'   => ['icon' => 'fa-user-secret', 'color' => '#7c3aed', 'label' => 'anon_strict',        'desc' => 'anon_strict_desc'],
-                    'feedback' => ['icon' => 'fa-comment',     'color' => '#f59e0b', 'label' => 'anon_feedback_only', 'desc' => 'anon_feedback_only_desc'],
+                    'basic'    => ['icon' => 'fa-user',        'color' => '#10b981',
+                                   'label' => 'anon_basic',         'desc' => 'anon_basic_desc'],
+                    'strict'   => ['icon' => 'fa-user-secret', 'color' => '#7c3aed',
+                                   'label' => 'anon_strict',        'desc' => 'anon_strict_desc'],
+                    'feedback' => ['icon' => 'fa-comment',     'color' => '#f59e0b',
+                                   'label' => 'anon_feedback_only', 'desc' => 'anon_feedback_only_desc'],
                 ];
                 foreach ($anonmodes as $aval => $adef):
                     $checked = ($cfg['anonymization_level'] === $aval);
@@ -810,7 +820,8 @@ echo '</ul>';
                     <div style="position:relative;max-width:480px">
                         <input type="password" id="jd-tg-token" name="telegram_bot_token"
                                class="form-control"
-                               placeholder="<?php echo $telegram_cfg['bot_token_set'] ? '●●●●●● (saved — leave blank to keep)' : 'Paste token from @BotFather'; ?>"
+                               placeholder="<?php echo $telegram_cfg['bot_token_set']
+                                   ? '●●●●●● (saved — leave blank to keep)' : 'Paste token from @BotFather'; ?>"
                                style="padding-right:2.5rem">
                         <button type="button"
                                 onclick="var i=document.getElementById('jd-tg-token');i.type=i.type==='password'?'text':'password'"
@@ -822,7 +833,8 @@ echo '</ul>';
                     <p class="form-text"><?php echo get_string('telegram_bot_token_help', 'local_jedomi'); ?></p>
 
                     <?php if ($telegram_cfg['bot_token_set']): ?>
-                    <div class="d-flex align-items-center gap-2 mt-1" style="font-size:.8125rem;padding:.4rem .7rem;border-radius:.375rem;
+                    <div class="d-flex align-items-center gap-2 mt-1"
+                         style="font-size:.8125rem;padding:.4rem .7rem;border-radius:.375rem;
                          background:<?php echo $telegram_cfg['bot_verified'] ? '#f0fdf4' : '#fff7ed'; ?>;
                          border:1px solid <?php echo $telegram_cfg['bot_verified'] ? '#bbf7d0' : '#fed7aa'; ?>">
                         <i class="fa <?php echo $telegram_cfg['bot_verified'] ? 'fa-check-circle' : 'fa-times-circle'; ?>"
@@ -835,7 +847,8 @@ echo '</ul>';
                             </span>
                         <?php else: ?>
                             <span style="color:#9a3412">
-                                <?php echo get_string('telegram_status_disconnected', 'local_jedomi'); ?> — invalid token, re-paste and save.
+                                <?php echo get_string('telegram_status_disconnected', 'local_jedomi'); ?> —
+                                invalid token, re-paste and save.
                             </span>
                         <?php endif; ?>
                     </div>
@@ -843,6 +856,11 @@ echo '</ul>';
                 </div>
 
                 <!-- Webhook URL -->
+                <?php
+                $copywebhookjs = "navigator.clipboard.writeText(document.getElementById('jd-webhook-url').value);"
+                    . "this.innerHTML='<i class=&quot;fa fa-check&quot;></i>';"
+                    . "setTimeout(()=>{this.innerHTML='<i class=&quot;fa fa-copy&quot;></i>'},1500)";
+                ?>
                 <div>
                     <label class="form-label-main">
                         <?php echo get_string('telegram_webhook_url', 'local_jedomi'); ?>
@@ -851,7 +869,7 @@ echo '</ul>';
                         <input type="text" id="jd-webhook-url" class="form-control" readonly
                                value="<?php echo s($telegram_cfg['webhook_url']); ?>">
                         <button type="button" class="btn btn-outline-secondary"
-                                onclick="navigator.clipboard.writeText(document.getElementById('jd-webhook-url').value);this.innerHTML='<i class=&quot;fa fa-check&quot;></i>';setTimeout(()=>{this.innerHTML='<i class=&quot;fa fa-copy&quot;></i>'},1500)"
+                                onclick="<?php echo $copywebhookjs; ?>"
                                 title="<?php echo get_string('copytoclipboard', 'local_jedomi'); ?>">
                             <i class="fa fa-copy"></i>
                         </button>
@@ -860,10 +878,11 @@ echo '</ul>';
                 </div>
 
                 <!-- Regenerate secret -->
+                <?php $confirmsecret = str_replace("'", "\'", get_string('telegram_webhook_secret_help', 'local_jedomi')); ?>
                 <div class="mt-3 d-flex align-items-center gap-2 flex-wrap">
                     <button type="submit" name="telegram_regenerate_secret" value="1"
                             class="btn btn-outline-warning btn-sm"
-                            onclick="return confirm('<?php echo str_replace("'", "\'", get_string('telegram_webhook_secret_help', 'local_jedomi')); ?> Continue?')">
+                            onclick="return confirm('<?php echo $confirmsecret; ?> Continue?')">
                         <i class="fa fa-refresh mr-1"></i><?php echo get_string('regenerate', 'local_jedomi'); ?>
                     </button>
                     <span class="form-text"><?php echo get_string('telegram_webhook_secret_help', 'local_jedomi'); ?></span>
@@ -918,7 +937,8 @@ echo '</ul>';
                     </div>
 
                     <!-- Live check result (populated by JS) -->
-                    <div id="jd-webhook-live" style="display:none;margin-top:.5rem;padding-top:.5rem;border-top:1px dashed #d1d5db"></div>
+                    <div id="jd-webhook-live"
+                         style="display:none;margin-top:.5rem;padding-top:.5rem;border-top:1px dashed #d1d5db"></div>
 
                     <!-- Drop pending updates button -->
                     <div style="margin-top:.5rem;padding-top:.5rem;border-top:1px dashed #d1d5db">
@@ -1025,7 +1045,8 @@ echo '</ul>';
             </div>
             <div class="jd-sub-body" id="jd-sbody-sub-guide" style="display:none">
 
-                <p class="mb-3" style="font-size:.8125rem;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.04em">
+                <p class="mb-3"
+                   style="font-size:.8125rem;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.04em">
                     🔧 <?php echo get_string('telegram_step_admin_title', 'local_jedomi'); ?>
                 </p>
                 <?php
@@ -1053,7 +1074,8 @@ echo '</ul>';
                              style="font-size:.8125rem;padding:.5rem .75rem;border-radius:.375rem;
                                     background:#f0fdf4;border:1px solid #bbf7d0;color:#166534">
                             <i class="fa fa-check-circle" style="color:#16a34a"></i>
-                            <span><strong>Webhook configurado automáticamente</strong> — al guardar el token, el sistema registró el webhook automáticamente.</span>
+                            <span><strong>Webhook configurado automáticamente</strong> — al guardar el token,
+                                el sistema registró el webhook automáticamente.</span>
                         </div>
                         <?php elseif ($telegram_cfg['bot_token_set']): ?>
                         <div class="d-flex align-items-center gap-2 mt-2"
@@ -1069,7 +1091,8 @@ echo '</ul>';
 
                 <hr style="margin:.625rem 0;border-color:#e5e7eb">
 
-                <p class="mb-3" style="font-size:.8125rem;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.04em">
+                <p class="mb-3"
+                   style="font-size:.8125rem;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.04em">
                     👤 <?php echo get_string('telegram_step_user_title', 'local_jedomi'); ?>
                 </p>
                 <?php
@@ -1292,7 +1315,8 @@ echo '</ul>';
                 <!-- Search -->
                 <div style="position:relative;flex:1;min-width:180px;max-width:320px">
                     <i class="fa fa-search"
-                       style="position:absolute;left:.625rem;top:50%;transform:translateY(-50%);color:#9ca3af;pointer-events:none"></i>
+                       style="position:absolute;left:.625rem;top:50%;transform:translateY(-50%);
+                              color:#9ca3af;pointer-events:none"></i>
                     <input type="text" name="ap_search" class="form-control form-control-sm ap-search-input"
                            placeholder="<?php echo get_string('search_ws_placeholder', 'local_jedomi'); ?>"
                            value="<?php echo s($ap_search); ?>"
@@ -1326,8 +1350,10 @@ echo '</ul>';
                 <thead>
                     <tr>
                         <th style="width:2rem">
+                            <?php $checkalljs = "document.querySelectorAll('.ap-ws-check')"
+                                . ".forEach(function(c){c.checked=this.checked}.bind(this))"; ?>
                             <input type="checkbox" id="ap-check-all"
-                                   onchange="document.querySelectorAll('.ap-ws-check').forEach(function(c){c.checked=this.checked}.bind(this))">
+                                   onchange="<?php echo $checkalljs; ?>">
                         </th>
                         <th><?php echo get_string('ws_name', 'local_jedomi'); ?></th>
                         <th><?php echo get_string('ws_description', 'local_jedomi'); ?></th>
@@ -1373,9 +1399,11 @@ echo '</ul>';
             </div>
 
             <!-- ── Pagination ─────────────────────────────────────────────── -->
-            <div id="ap-pagination" class="d-flex align-items-center justify-content-between flex-wrap gap-2" style="overflow-x:auto">
+            <div id="ap-pagination" class="d-flex align-items-center justify-content-between flex-wrap gap-2"
+                 style="overflow-x:auto">
                 <span class="text-muted" style="font-size:.8125rem">
-                    <?php echo get_string('ws_pagination', 'local_jedomi', ['page' => $ap_page, 'pages' => $ap_pages, 'total' => $ap_total]); ?>
+                    <?php echo get_string('ws_pagination', 'local_jedomi',
+                        ['page' => $ap_page, 'pages' => $ap_pages, 'total' => $ap_total]); ?>
                 </span>
                 <nav>
                     <ul class="pagination pagination-sm mb-0">
@@ -1441,17 +1469,22 @@ function jdCheckWebhook() {
 
             // Last error from Telegram
             if (lastErr) {
-                html += '<div class="d-flex align-items-start gap-2 mb-2" style="color:#9a3412;background:#fff7ed;padding:.5rem .75rem;border-radius:.375rem;border:1px solid #fed7aa">'
+                html += '<div class="d-flex align-items-start gap-2 mb-2" '
+                    + 'style="color:#9a3412;background:#fff7ed;padding:.5rem .75rem;'
+                    + 'border-radius:.375rem;border:1px solid #fed7aa">'
                     + '<i class="fa fa-exclamation-triangle" style="color:#ea580c;flex-shrink:0;margin-top:2px"></i>'
                     + '<div><strong>Telegram error:</strong><br><span>' + escHtml(lastErr) + '</span></div></div>';
             }
 
             // Stored error from our last registration
             if (stored.message) {
-                html += '<div class="d-flex align-items-start gap-2" style="color:#9a3412;background:#fff7ed;padding:.5rem .75rem;border-radius:.375rem;border:1px solid #fed7aa">'
+                html += '<div class="d-flex align-items-start gap-2" '
+                    + 'style="color:#9a3412;background:#fff7ed;padding:.5rem .75rem;'
+                    + 'border-radius:.375rem;border:1px solid #fed7aa">'
                     + '<i class="fa fa-info-circle" style="color:#d97706;flex-shrink:0;margin-top:2px"></i>'
                     + '<div><strong>Last registration result:</strong><br><span>' + escHtml(stored.message) + '</span>'
-                    + (stored.time ? '<br><span class="text-muted" style="font-size:.75rem">' + (new Date(stored.time * 1000)).toLocaleString() + '</span>' : '')
+                    + (stored.time ? '<br><span class="text-muted" style="font-size:.75rem">'
+                        + (new Date(stored.time * 1000)).toLocaleString() + '</span>' : '')
                     + '</div></div>';
             }
 
@@ -1668,12 +1701,14 @@ function jdSubToggle(subId) {
                     var selected = getSelectedIds();
                     var courses  = result.courses.filter(function(c){ return selected.indexOf(c.id) === -1; });
                     if (!courses.length) {
-                        dropdown.innerHTML = '<div style="padding:.75rem;color:#94a3b8;font-size:.875rem"><?php echo get_string('course_search_noresults', 'local_jedomi'); ?></div>';
+                        dropdown.innerHTML = '<div style="padding:.75rem;color:#94a3b8;font-size:.875rem">'
+                            + '<?php echo get_string('course_search_noresults', 'local_jedomi'); ?></div>';
                     } else {
                         dropdown.innerHTML = '';
                         courses.forEach(function(c){
                             var row = document.createElement('div');
-                            row.style.cssText = 'padding:.625rem .75rem;cursor:pointer;border-bottom:1px solid #f1f5f9;transition:background .1s';
+                            row.style.cssText = 'padding:.625rem .75rem;cursor:pointer;'
+                                + 'border-bottom:1px solid #f1f5f9;transition:background .1s';
                             row.innerHTML = '<strong style="font-size:.875rem">' + esc(c.shortname) + '</strong> '
                                 + '<span style="color:#64748b;font-size:.8125rem">' + esc(c.fullname) + '</span>'
                                 + '<br><span style="color:#94a3b8;font-size:.75rem">' + esc(c.categoryname) + '</span>';
@@ -1778,7 +1813,9 @@ function jdSubToggle(subId) {
             });
             // Re-bind select-all checkbox.
             var ca = document.getElementById('ap-check-all');
-            if (ca) ca.onchange = function(){ document.querySelectorAll('.ap-ws-check').forEach(function(c){c.checked=ca.checked;}); };
+            if (ca) ca.onchange = function(){
+                document.querySelectorAll('.ap-ws-check').forEach(function(c){c.checked=ca.checked;});
+            };
             if (tbody) tbody.style.opacity = '';
             if (cb) cb(s);
         }).catch(function(e){
@@ -1911,7 +1948,8 @@ function jdSubToggle(subId) {
             </div>
             <div class="col-md-3">
                 <label class="form-label-main"><?php echo get_string('agent_search', 'local_jedomi'); ?></label>
-                <input type="text" id="agent-filter-search" class="form-control form-control-sm" placeholder="<?php echo get_string('agent_search', 'local_jedomi'); ?>">
+                <input type="text" id="agent-filter-search" class="form-control form-control-sm"
+                       placeholder="<?php echo get_string('agent_search', 'local_jedomi'); ?>">
             </div>
             <div class="col-md-2">
                 <button class="btn btn-primary btn-sm btn-block" id="agent-apply-filters" style="width:100%">
@@ -2017,7 +2055,8 @@ function jdSubToggle(subId) {
                         <select id="agent-create-context-type" name="context_type" class="form-control">
                             <option value="site"><?php echo get_string('agent_context_type_site', 'local_jedomi'); ?></option>
                             <option value="course"><?php echo get_string('agent_context_type_course', 'local_jedomi'); ?></option>
-                            <option value="category"><?php echo get_string('agent_context_type_category', 'local_jedomi'); ?></option>
+                            <option value="category"><?php
+                                echo get_string('agent_context_type_category', 'local_jedomi'); ?></option>
                             <option value="user"><?php echo get_string('agent_context_type_user', 'local_jedomi'); ?></option>
                         </select>
                     </div>
@@ -2027,7 +2066,8 @@ function jdSubToggle(subId) {
                         <label class="form-label-main" for="agent-create-context-id">
                             <?php echo get_string('agent_context', 'local_jedomi'); ?> ID
                         </label>
-                        <input type="text" id="agent-create-context-id" name="context_id" class="form-control" placeholder="e.g. 42">
+                        <input type="text" id="agent-create-context-id" name="context_id" class="form-control"
+                               placeholder="e.g. 42">
                     </div>
                 </div>
             </div>
@@ -2050,7 +2090,8 @@ function jdSubToggle(subId) {
 
             <div class="save-row d-flex align-items-center gap-2">
                 <button type="submit" class="btn btn-primary" id="agent-form-submit">
-                    <i class="fa fa-plus-circle mr-1"></i><span id="agent-submit-label"><?php echo get_string('agent_create', 'local_jedomi'); ?></span>
+                    <i class="fa fa-plus-circle mr-1"></i><span id="agent-submit-label"><?php
+                        echo get_string('agent_create', 'local_jedomi'); ?></span>
                 </button>
                 <button type="button" class="btn btn-outline-info" id="agent-preview-btn">
                     <i class="fa fa-eye mr-1"></i><?php echo get_string('agent_preview', 'local_jedomi'); ?>
@@ -2062,12 +2103,16 @@ function jdSubToggle(subId) {
             <!-- Visual separator before preview -->
             <hr id="agent-preview-separator" style="display:none; border:none; border-top:2px solid #e5e7eb; margin:1rem 0">
             <!-- Preview result panel (hidden by default) -->
-            <div id="agent-preview-panel" class="agent-preview-result" style="display:none; margin-top:0; border:1px solid #e5e7eb; border-radius:.5rem; overflow:hidden">
-                <div style="background:#f9fafb; padding:.625rem .75rem; font-weight:600; border-bottom:1px solid #e5e7eb; font-size:.875rem">
+            <div id="agent-preview-panel" class="agent-preview-result"
+                 style="display:none; margin-top:0; border:1px solid #e5e7eb; border-radius:.5rem; overflow:hidden">
+                <div style="background:#f9fafb; padding:.625rem .75rem; font-weight:600;
+                            border-bottom:1px solid #e5e7eb; font-size:.875rem">
                     <i class="fa fa-robot mr-1"></i><?php echo get_string('agent_preview_result', 'local_jedomi'); ?>
                     <span id="agent-preview-spinner" class="ml-2" style="display:none"><i class="fa fa-spinner fa-spin"></i></span>
                 </div>
-                <div id="agent-preview-body" style="padding:.75rem; font-size:.8125rem; background:#fff; min-height:60px; max-height:600px; overflow-y:auto; white-space:pre-wrap; word-break:break-word"></div>
+                <div id="agent-preview-body"
+                     style="padding:.75rem; font-size:.8125rem; background:#fff; min-height:60px;
+                            max-height:600px; overflow-y:auto; white-space:pre-wrap; word-break:break-word"></div>
             </div>
         </form>
     </div>
@@ -2093,7 +2138,8 @@ function jdSubToggle(subId) {
                         <select id="agent-purge-context-type" name="context_type" class="form-control">
                             <option value="site"><?php echo get_string('agent_context_type_site', 'local_jedomi'); ?></option>
                             <option value="course"><?php echo get_string('agent_context_type_course', 'local_jedomi'); ?></option>
-                            <option value="category"><?php echo get_string('agent_context_type_category', 'local_jedomi'); ?></option>
+                            <option value="category"><?php
+                                echo get_string('agent_context_type_category', 'local_jedomi'); ?></option>
                             <option value="role"><?php echo get_string('agent_filter_role', 'local_jedomi'); ?></option>
                         </select>
                         <p class="form-text"><?php echo get_string('agent_purge_context_help', 'local_jedomi'); ?></p>
@@ -2247,7 +2293,8 @@ function jdSubToggle(subId) {
                 ctx.font = 'bold 10px sans-serif';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
-                ctx.fillText(Math.round(item.count / total * 100) + '%', cx + Math.cos(mid) * r * 0.6, cy + Math.sin(mid) * r * 0.6);
+                ctx.fillText(Math.round(item.count / total * 100) + '%',
+                    cx + Math.cos(mid) * r * 0.6, cy + Math.sin(mid) * r * 0.6);
             }
             start += angle;
         });
@@ -2361,10 +2408,20 @@ function jdSubToggle(subId) {
                 + '<td>' + lastrunHtml + '</td>'
                 + '<td>' + nextrunHtml + '</td>'
                 + '<td>'
-                + '<button class="btn btn-sm btn-outline-primary me-1" data-agent-action="edit" data-agent-id="' + r.id + '" title="<?php echo get_string('agent_edit', 'local_jedomi'); ?>"><i class="fa fa-pen"></i></button>'
-                + '<button class="btn btn-sm btn-outline-success me-1" data-agent-action="run" data-agent-id="' + r.id + '" title="<?php echo get_string('agent_run_now', 'local_jedomi'); ?>"><i class="fa fa-play"></i></button>'
-                + '<button class="btn btn-sm me-1" data-agent-action="toggle" data-agent-id="' + r.id + '" title="<?php echo get_string('agent_enable', 'local_jedomi'); ?>" style="border:1px solid ' + (parseInt(r.enabled,10)===1?'#22c55e':'#6b7280') + ';color:' + (parseInt(r.enabled,10)===1?'#22c55e':'#6b7280') + ';background:transparent"><i class="fa ' + (parseInt(r.enabled,10)===1?'fa-toggle-on':'fa-toggle-off') + '"></i></button>'
-                + '<button class="btn btn-sm btn-outline-secondary" data-agent-action="delete" data-agent-id="' + r.id + '" title="<?php echo get_string('agent_delete', 'local_jedomi'); ?>"><i class="fa fa-trash-alt"></i></button>'
+                + '<button class="btn btn-sm btn-outline-primary me-1" data-agent-action="edit" '
+                + 'data-agent-id="' + r.id + '" title="<?php echo get_string('agent_edit', 'local_jedomi'); ?>">'
+                + '<i class="fa fa-pen"></i></button>'
+                + '<button class="btn btn-sm btn-outline-success me-1" data-agent-action="run" '
+                + 'data-agent-id="' + r.id + '" title="<?php echo get_string('agent_run_now', 'local_jedomi'); ?>">'
+                + '<i class="fa fa-play"></i></button>'
+                + '<button class="btn btn-sm me-1" data-agent-action="toggle" data-agent-id="' + r.id + '" '
+                + 'title="<?php echo get_string('agent_enable', 'local_jedomi'); ?>" '
+                + 'style="border:1px solid ' + (parseInt(r.enabled,10)===1?'#22c55e':'#6b7280')
+                + ';color:' + (parseInt(r.enabled,10)===1?'#22c55e':'#6b7280') + ';background:transparent">'
+                + '<i class="fa ' + (parseInt(r.enabled,10)===1?'fa-toggle-on':'fa-toggle-off') + '"></i></button>'
+                + '<button class="btn btn-sm btn-outline-secondary" data-agent-action="delete" '
+                + 'data-agent-id="' + r.id + '" title="<?php echo get_string('agent_delete', 'local_jedomi'); ?>">'
+                + '<i class="fa fa-trash-alt"></i></button>'
                 + '</td>'
                 + '</tr>';
         });
@@ -2399,8 +2456,10 @@ function jdSubToggle(subId) {
         document.getElementById('agent-create-form').reset();
         document.getElementById('agent-edit-id').value = '';
         document.getElementById('agent-edit-cancel').style.display = 'none';
-        document.getElementById('agent-create-heading').textContent = <?php echo json_encode(get_string('agent_create', 'local_jedomi')); ?>;
-        document.getElementById('agent-submit-label').textContent = <?php echo json_encode(get_string('agent_create', 'local_jedomi')); ?>;
+        document.getElementById('agent-create-heading').textContent =
+            <?php echo json_encode(get_string('agent_create', 'local_jedomi')); ?>;
+        document.getElementById('agent-submit-label').textContent =
+            <?php echo json_encode(get_string('agent_create', 'local_jedomi')); ?>;
     }
 
     // ── Delegated action handler (works for dynamically added buttons) ────
@@ -2447,8 +2506,10 @@ function jdSubToggle(subId) {
                 // Set edit mode
                 document.getElementById('agent-edit-id').value = a.id;
                 document.getElementById('agent-edit-cancel').style.display = 'inline-block';
-                document.getElementById('agent-create-heading').textContent = <?php echo json_encode(get_string('agent_edit', 'local_jedomi')); ?>;
-                document.getElementById('agent-submit-label').textContent = <?php echo json_encode(get_string('agent_edit', 'local_jedomi')); ?>;
+                document.getElementById('agent-create-heading').textContent =
+                    <?php echo json_encode(get_string('agent_edit', 'local_jedomi')); ?>;
+                document.getElementById('agent-submit-label').textContent =
+                    <?php echo json_encode(get_string('agent_edit', 'local_jedomi')); ?>;
                 // Clear any previous message
                 var msg = document.getElementById('agent-create-msg');
                 if (msg) msg.style.display = 'none';
@@ -2559,7 +2620,9 @@ function jdSubToggle(subId) {
                 if (isUpdate) {
                     label = STR_AGENT_UPDATE_SUCCESS;
                 } else if (d.name && d.name.trim()) {
-                    label = '✅ ' + <?php echo json_encode(get_string('agent_created_with_name', 'local_jedomi')); ?>.replace('{name}', d.name.trim());
+                    label = '✅ '
+                        + <?php echo json_encode(get_string('agent_created_with_name', 'local_jedomi')); ?>
+                            .replace('{name}', d.name.trim());
                 } else {
                     label = '⚠️ ' + <?php echo json_encode(get_string('agent_created_no_name', 'local_jedomi')); ?>;
                 }
@@ -2602,8 +2665,10 @@ function jdSubToggle(subId) {
             var roleBg = role === 'user' ? '#eff6ff' : (role === 'assistant' ? '#f5f3ff' : '#f9fafb');
             var content = msg.content ? msg.content.trim() : '';
             html += '<div style="border:1px solid #e5e7eb;border-radius:6px;margin-bottom:4px;overflow:hidden">'
-                + '<div style="background:' + roleBg + ';padding:4px 8px;font-weight:600;font-size:.75rem;color:' + roleColor + ';border-bottom:1px solid #e5e7eb">'
-                + '<span class="badge" style="background:' + roleColor + ';color:#fff;padding:1px 6px;border-radius:3px;margin-right:4px">' + roleLabel + '</span>'
+                + '<div style="background:' + roleBg + ';padding:4px 8px;font-weight:600;'
+                + 'font-size:.75rem;color:' + roleColor + ';border-bottom:1px solid #e5e7eb">'
+                + '<span class="badge" style="background:' + roleColor
+                + ';color:#fff;padding:1px 6px;border-radius:3px;margin-right:4px">' + roleLabel + '</span>'
                 + ' Round ' + ((msg.round || 0) + 1) + '</div>';
             if (content) {
                 html += '<div style="padding:6px 8px;white-space:pre-wrap;word-break:break-word;max-height:200px;overflow-y:auto">'
@@ -2616,8 +2681,10 @@ function jdSubToggle(subId) {
                     var toolName = tc.function && tc.function.name ? tc.function.name : (tc.name || 'tool');
                     var toolArgs = tc.function && tc.function.arguments ? tc.function.arguments : (tc.arguments || '{}');
                     html += '<details style="margin-bottom:4px">'
-                        + '<summary style="cursor:pointer;font-weight:600;color:#2563eb;font-size:.75rem">🛠 ' + esc(toolName) + '</summary>'
-                        + '<pre style="background:#f3f4f6;padding:6px;border-radius:4px;font-size:11px;overflow-x:auto;margin:4px 0 0;max-height:150px"><code>'
+                        + '<summary style="cursor:pointer;font-weight:600;color:#2563eb;font-size:.75rem">'
+                        + '🛠 ' + esc(toolName) + '</summary>'
+                        + '<pre style="background:#f3f4f6;padding:6px;border-radius:4px;'
+                        + 'font-size:11px;overflow-x:auto;margin:4px 0 0;max-height:150px"><code>'
                         + esc(typeof toolArgs === 'string' ? toolArgs : JSON.stringify(toolArgs, null, 2))
                         + '</code></pre></details>';
                 });
@@ -2628,8 +2695,10 @@ function jdSubToggle(subId) {
                 html += '<div style="padding:6px 8px;border-top:1px solid #e5e7eb">';
                 msg.tool_results.forEach(function(tr, ti){
                     html += '<details style="margin-bottom:4px">'
-                        + '<summary style="cursor:pointer;font-weight:600;color:#059669;font-size:.75rem">📊 Result ' + (ti + 1) + '</summary>'
-                        + '<pre style="background:#ecfdf5;padding:6px;border-radius:4px;font-size:11px;overflow-x:auto;margin:4px 0 0;max-height:200px"><code>'
+                        + '<summary style="cursor:pointer;font-weight:600;color:#059669;font-size:.75rem">'
+                        + '📊 Result ' + (ti + 1) + '</summary>'
+                        + '<pre style="background:#ecfdf5;padding:6px;border-radius:4px;'
+                        + 'font-size:11px;overflow-x:auto;margin:4px 0 0;max-height:200px"><code>'
                         + esc(typeof tr === 'string' ? tr.substring(0, 5000) : JSON.stringify(tr, null, 2).substring(0, 5000))
                         + '</code></pre></details>';
                 });
@@ -2647,8 +2716,10 @@ function jdSubToggle(subId) {
         var html = '<div class="profiler-entries" style="margin-top:10px">';
         profiler.forEach(function(e){
             var borderColor = e.error ? '#dc3545' : '#ddd';
-            html += '<div class="profiler-entry" style="border:1px solid ' + borderColor + ';border-radius:6px;padding:8px;margin-bottom:6px;font-size:.8125rem">';
-            html += '<div class="profiler-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px">';
+            html += '<div class="profiler-entry" style="border:1px solid ' + borderColor
+                + ';border-radius:6px;padding:8px;margin-bottom:6px;font-size:.8125rem">';
+            html += '<div class="profiler-header" '
+                + 'style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px">';
             html += '<strong>' + esc(e.tool) + '</strong>';
             html += '<span>' + (e.duration_ms || 0).toFixed(1) + 'ms &middot; ' + (e.row_count || 0) + ' rows</span>';
             if (e.error) {
@@ -2657,14 +2728,18 @@ function jdSubToggle(subId) {
             html += '</div>';
             // ── Tool result preview (if available) ────────────────────
             if (e.result_preview) {
-                html += '<details style="margin-top:4px"><summary style="cursor:pointer;font-size:.75rem;color:#059669">Result preview</summary>';
-                html += '<pre style="background:#ecfdf5;padding:6px;border-radius:4px;font-size:11px;overflow-x:auto;margin:4px 0 0;max-height:200px"><code>'
+                html += '<details style="margin-top:4px">'
+                    + '<summary style="cursor:pointer;font-size:.75rem;color:#059669">Result preview</summary>';
+                html += '<pre style="background:#ecfdf5;padding:6px;border-radius:4px;'
+                    + 'font-size:11px;overflow-x:auto;margin:4px 0 0;max-height:200px"><code>'
                     + esc(e.result_preview) + '</code></pre>';
                 html += '</details>';
             }
             if (e.arguments) {
-                html += '<details style="margin-top:4px"><summary style="cursor:pointer;font-size:.75rem;color:#6b7280">Arguments</summary>';
-                html += '<pre style="background:#f5f5f5;padding:6px;border-radius:4px;font-size:11px;overflow-x:auto;margin:4px 0 0;max-height:200px"><code>'
+                html += '<details style="margin-top:4px">'
+                    + '<summary style="cursor:pointer;font-size:.75rem;color:#6b7280">Arguments</summary>';
+                html += '<pre style="background:#f5f5f5;padding:6px;border-radius:4px;'
+                    + 'font-size:11px;overflow-x:auto;margin:4px 0 0;max-height:200px"><code>'
                     + esc(typeof e.arguments === 'string' ? e.arguments : JSON.stringify(e.arguments, null, 2))
                     + '</code></pre>';
                 html += '</details>';
@@ -2687,7 +2762,11 @@ function jdSubToggle(subId) {
             var prompt = document.getElementById('agent-create-prompt');
             if (!prompt || !prompt.value.trim()) {
                 var msg = document.getElementById('agent-create-msg');
-                if (msg) { msg.className = 'alert alert-warning'; msg.textContent = 'Write a prompt first.'; msg.style.display = 'block'; }
+                if (msg) {
+                    msg.className = 'alert alert-warning';
+                    msg.textContent = 'Write a prompt first.';
+                    msg.style.display = 'block';
+                }
                 return;
             }
             var panel = document.getElementById('agent-preview-panel');
@@ -2720,9 +2799,13 @@ function jdSubToggle(subId) {
                     var html = '';
                     // ── Cache indicator with "Clear" button ──────────
                     if (d.cached) {
-                        html += '<div class="alert alert-info d-flex align-items-center justify-content-between" style="padding:8px;margin-bottom:8px;font-size:.8125rem">'
+                        html += '<div class="alert alert-info d-flex align-items-center justify-content-between" '
+                            + 'style="padding:8px;margin-bottom:8px;font-size:.8125rem">'
                             + '<span>📦 Cached result from ' + new Date(d.cached_at * 1000).toLocaleString() + '</span>'
-                            + '<button type="button" class="btn btn-sm btn-outline-danger" onclick="clearPreviewCache(\'' + lastPreviewHash + '\').then(function(r){if(r.ok){document.getElementById(\'agent-preview-btn\').click()}})">Clear cache</button>'
+                            + '<button type="button" class="btn btn-sm btn-outline-danger" '
+                            + 'onclick="clearPreviewCache(\'' + lastPreviewHash + '\')'
+                            + '.then(function(r){if(r.ok){document.getElementById(\'agent-preview-btn\').click()}})">'
+                            + 'Clear cache</button>'
                             + '</div>';
                     }
                     // ── Conversation timeline ────────────────────────
@@ -2734,7 +2817,9 @@ function jdSubToggle(subId) {
                         html += '<hr style="border:none;border-top:1px solid #e5e7eb;margin:.5rem 0">';
                     }
                     // ── Answer (scrollable) ─────────────────────────
-                    html += '<div class="preview-answer" style="max-height:400px;overflow-y:auto;border:1px solid #ddd;border-radius:6px;padding:10px;margin-top:8px;white-space:pre-wrap;word-break:break-word;font-size:.8125rem;color:#1f2937;line-height:1.5">'
+                    html += '<div class="preview-answer" style="max-height:400px;overflow-y:auto;'
+                        + 'border:1px solid #ddd;border-radius:6px;padding:10px;margin-top:8px;'
+                        + 'white-space:pre-wrap;word-break:break-word;font-size:.8125rem;color:#1f2937;line-height:1.5">'
                         + esc(d.answer) + '</div>';
                     body.innerHTML = html;
                 } else {
@@ -2750,7 +2835,25 @@ function jdSubToggle(subId) {
 
     // ── MD5 helper (simple for hashing preview prompt) ──────────────────────
     // https://css-tricks.com/snippets/javascript/javascript-md5/
-    function md5(s){function L(k,d){return(k<<d)|(k>>>(32-d))}function K(G,k){var I,d,F,H,x;F=(G&2147483648)+(k&2147483648)|0;I=(G&1073741824)+(k&1073741824)|0;d=(G&1073741823)+(k&1073741823)|0;return F^I^(((d&1073741824)>>30)|((d&1073741823)<<2))|0}function V(G){var k,d='',F='0123456789abcdef';for(k=7;k>=0;k--){d+=F.charAt((G>>(k*4))&15)}return d}var C=Array(80),k=0,d=0,F=0,x=0,H=0,I=0,j=0,Q=0,w=0,l=0,o=0,p=0,t=0,u=0,A=0,N=0,M=-1,B=0,z=0;G=unescape(encodeURIComponent(s));s='';for(k=0;k<G.length;k++){s+=String.fromCharCode(G.charCodeAt(k))}var Y=s.length;var Z=[1732584193,-271733879,-1732584194,271733878];var a;for(k=0;k<=Y+72;k+=512){var c,Z2=Z[0],E=Z[1],m=Z[2],n=Z[3];for(j=0;j<16;j++){C[j]=(s.charCodeAt(B)||0)+(s.charCodeAt(B+1)||0)*256+(s.charCodeAt(B+2)||0)*65536+(s.charCodeAt(B+3)||0)*16777216;B+=4}var W;for(j=16;j<80;j++){C[j]=L(C[j-3]^C[j-8]^C[j-14]^C[j-16],1)}for(j=0;j<80;j++){if(j<20){a=(E&m)|((~E)&n)}else if(j<40){a=E^m^n}else if(j<60){a=(E&m)|(E&n)|(m&n)}else{a=E^m^n}W=K(K(L(Z2,5),a),K(K(0,C[j]),j<20?1518500249:j<40?1859775393:j<60?2400959708:-1894007588));a=n;n=m;m=L(E,30);E=Z2;Z2=W}Z[0]=K(Z2,Z[0]);Z[1]=K(E,Z[1]);Z[2]=K(m,Z[2]);Z[3]=K(n,Z[3])}return V(Z[0])+V(Z[1])+V(Z[2])+V(Z[3])}
+    function md5(s){
+        function L(k,d){return(k<<d)|(k>>>(32-d))}
+        function K(G,k){var I,d,F,H,x;F=(G&2147483648)+(k&2147483648)|0;I=(G&1073741824)+(k&1073741824)|0;
+            d=(G&1073741823)+(k&1073741823)|0;return F^I^(((d&1073741824)>>30)|((d&1073741823)<<2))|0}
+        function V(G){var k,d='',F='0123456789abcdef';for(k=7;k>=0;k--){d+=F.charAt((G>>(k*4))&15)}return d}
+        var C=Array(80),k=0,d=0,F=0,x=0,H=0,I=0,j=0,Q=0,w=0,l=0,o=0,p=0,t=0,u=0,A=0,N=0,M=-1,B=0,z=0;
+        G=unescape(encodeURIComponent(s));s='';
+        for(k=0;k<G.length;k++){s+=String.fromCharCode(G.charCodeAt(k))}
+        var Y=s.length;var Z=[1732584193,-271733879,-1732584194,271733878];var a;
+        for(k=0;k<=Y+72;k+=512){var c,Z2=Z[0],E=Z[1],m=Z[2],n=Z[3];
+            for(j=0;j<16;j++){C[j]=(s.charCodeAt(B)||0)+(s.charCodeAt(B+1)||0)*256+(s.charCodeAt(B+2)||0)*65536
+                +(s.charCodeAt(B+3)||0)*16777216;B+=4}
+            var W;for(j=16;j<80;j++){C[j]=L(C[j-3]^C[j-8]^C[j-14]^C[j-16],1)}
+            for(j=0;j<80;j++){if(j<20){a=(E&m)|((~E)&n)}else if(j<40){a=E^m^n}
+                else if(j<60){a=(E&m)|(E&n)|(m&n)}else{a=E^m^n}
+                W=K(K(L(Z2,5),a),K(K(0,C[j]),j<20?1518500249:j<40?1859775393:j<60?2400959708:-1894007588));
+                a=n;n=m;m=L(E,30);E=Z2;Z2=W}
+            Z[0]=K(Z2,Z[0]);Z[1]=K(E,Z[1]);Z[2]=K(m,Z[2]);Z[3]=K(n,Z[3])}
+        return V(Z[0])+V(Z[1])+V(Z[2])+V(Z[3])}
 
     // ── Purge form ────────────────────────────────────────────────────────
     var purgeForm = document.getElementById('agent-purge-form');
@@ -2903,10 +3006,12 @@ function jdSubToggle(subId) {
                 </div>
                 <div class="col-md-2">
                     <select name="qp_sort" class="form-control form-control-sm" style="width:100%">
-                        <option value="duration_ms" <?php echo (optional_param('qp_sort', 'duration_ms', PARAM_ALPHA) === 'duration_ms') ? 'selected' : ''; ?>>
+                        <option value="duration_ms" <?php echo (optional_param('qp_sort', 'duration_ms', PARAM_ALPHA)
+                            === 'duration_ms') ? 'selected' : ''; ?>>
                             <?php echo get_string('query_profiler_sort_duration', 'local_jedomi'); ?>
                         </option>
-                        <option value="timecreated" <?php echo (optional_param('qp_sort', 'duration_ms', PARAM_ALPHA) === 'timecreated') ? 'selected' : ''; ?>>
+                        <option value="timecreated" <?php echo (optional_param('qp_sort', 'duration_ms', PARAM_ALPHA)
+                            === 'timecreated') ? 'selected' : ''; ?>>
                             <?php echo get_string('query_profiler_sort_time', 'local_jedomi'); ?>
                         </option>
                     </select>
@@ -2935,7 +3040,8 @@ function jdSubToggle(subId) {
                 <tbody>
                     <?php foreach ($qp_agg->slowest as $sl): ?>
                     <tr>
-                        <td><code style="font-size:.75rem;word-break:break-all"><?php echo s(mb_substr($sl->query, 0, 120)); ?></code></td>
+                        <td><code style="font-size:.75rem;word-break:break-all"><?php
+                            echo s(mb_substr($sl->query, 0, 120)); ?></code></td>
                         <td class="text-danger"><?php echo round($sl->avg_duration, 2); ?> ms</td>
                         <td><?php echo round($sl->max_duration, 2); ?> ms</td>
                         <td><?php echo $sl->exec_count; ?></td>
@@ -2949,7 +3055,8 @@ function jdSubToggle(subId) {
         <?php endif; ?>
 
         <!-- Recent queries -->
-        <?php $qp_recent = \local_jedomi\agent\query_profiler::get_log(['sort' => 'timecreated', 'dir' => 'DESC', 'perpage' => 20]); ?>
+        <?php $qp_recent = \local_jedomi\agent\query_profiler::get_log(
+            ['sort' => 'timecreated', 'dir' => 'DESC', 'perpage' => 20]); ?>
         <h6 class="mt-4"><?php echo get_string('query_profiler_recent', 'local_jedomi'); ?></h6>
         <?php if (!empty($qp_recent['entries'])): ?>
         <div style="overflow-x:auto">
@@ -2968,13 +3075,17 @@ function jdSubToggle(subId) {
                     <?php foreach ($qp_recent['entries'] as $qe):
                         $qagent = $DB->get_record('local_jedomi_agents', ['id' => $qe->agentid]);
                         $quser = $qagent ? $DB->get_record('user', ['id' => $qagent->userid]) : null;
-                        $agentLink = new \moodle_url('/local/jedomi/admin_settings.php', ['tab' => 'agents', 'edit_agent' => $qe->agentid]);
+                        $agentLink = new \moodle_url('/local/jedomi/admin_settings.php',
+                            ['tab' => 'agents', 'edit_agent' => $qe->agentid]);
                     ?>
                     <tr>
-                        <td><a href="<?php echo $agentLink->out(false); ?>" class="badge badge-info" style="font-size:.75rem">Agent #<?php echo $qe->agentid; ?></a></td>
+                        <td><a href="<?php echo $agentLink->out(false); ?>" class="badge badge-info"
+                               style="font-size:.75rem">Agent #<?php echo $qe->agentid; ?></a></td>
                         <td><?php echo $quser ? s(fullname($quser)) : '?'; ?></td>
-                        <td><code style="font-size:.7rem;word-break:break-all"><?php echo s(mb_substr($qe->query, 0, 100)); ?></code></td>
-                        <td class="<?php echo $qe->duration_ms > 1000 ? 'text-danger' : ''; ?>"><?php echo round($qe->duration_ms, 2); ?> ms</td>
+                        <td><code style="font-size:.7rem;word-break:break-all"><?php
+                            echo s(mb_substr($qe->query, 0, 100)); ?></code></td>
+                        <td class="<?php echo $qe->duration_ms > 1000 ? 'text-danger' : ''; ?>"><?php
+                            echo round($qe->duration_ms, 2); ?> ms</td>
                         <td><?php echo $qe->rowcount; ?></td>
                         <td><?php echo userdate($qe->timecreated, get_string('strftimedatetime', 'langconfig')); ?></td>
                     </tr>

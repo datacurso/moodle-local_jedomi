@@ -81,7 +81,10 @@ class site_config_tool implements agent_tool {
                         'keys' => [
                             'type' => 'array',
                             'items' => ['type' => 'string'],
-                            'description' => 'List of config keys. Allowed: sitename, siteurl, wwwroot, lang, country, timezone, maxbytes, passwordpolicy, minpasswordlength, passwordminlength, passwordmaxlength, enrol_plugins_enabled, auth_plugins_enabled, smtphosts.',
+                            'description' => 'List of config keys. Allowed: sitename, siteurl,'
+                                . ' wwwroot, lang, country, timezone, maxbytes, passwordpolicy,'
+                                . ' minpasswordlength, passwordminlength, passwordmaxlength,'
+                                . ' enrol_plugins_enabled, auth_plugins_enabled, smtphosts.',
                         ],
                     ],
                     'required' => ['keys'],

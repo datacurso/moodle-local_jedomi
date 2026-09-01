@@ -486,7 +486,13 @@ class webhook_handler {
      * @param array|null $photo     Optional photo data.
      * @param bool   $internal_ping True if called from self-ping (continue checkpoint).
      */
-    private static function proxy_to_gateway(int $userid, string $chat_id, string $text, ?array $photo, bool $internal_ping = false): void {
+    private static function proxy_to_gateway(
+        int $userid,
+        string $chat_id,
+        string $text,
+        ?array $photo,
+        bool $internal_ping = false
+    ): void {
         global $CFG, $DB;
 
         $state_key = 'tool_loop_' . $chat_id;
@@ -861,7 +867,8 @@ class webhook_handler {
                 return;
             }
             if ($http_code !== 200) {
-                \local_jedomi_log('[GATEWAY] HTTP ' . $http_code . ' on iter ' . $iteration . ', body: ' . substr($sse_buffer, 0, 200));
+                \local_jedomi_log('[GATEWAY] HTTP ' . $http_code . ' on iter ' . $iteration
+                    . ', body: ' . substr($sse_buffer, 0, 200));
                 self::release_lock($state_key, $chat_id, get_string('error_telegram_e005', 'local_jedomi'));
                 return;
             }
@@ -1595,7 +1602,13 @@ class webhook_handler {
      * Execute a tool by name with given arguments.
      * Respects role-based access — only safe read operations.
      */
-    private static function execute_tool(string $name, array $args, int $userid = 0, string $role = '', array $course_ids_owned = []): string {
+    private static function execute_tool(
+        string $name,
+        array $args,
+        int $userid = 0,
+        string $role = '',
+        array $course_ids_owned = []
+    ): string {
         global $DB, $CFG;
 
         switch ($name) {
@@ -1759,7 +1772,10 @@ class webhook_handler {
                     $fields = [];
                     foreach ((array)$row as $key => $val) {
                         // Format timestamp columns as human-readable dates.
-                        if (in_array($key, $datekeys, true) && (is_int($val) || (is_string($val) && ctype_digit($val))) && (int)$val > 0) {
+                        $istimestamp = in_array($key, $datekeys, true)
+                            && (is_int($val) || (is_string($val) && ctype_digit($val)))
+                            && (int)$val > 0;
+                        if ($istimestamp) {
                             $val = userdate($val, $dateformat, $user);
                         } else {
                             $val = is_string($val) ? shorten_text($val, 60) : $val;
