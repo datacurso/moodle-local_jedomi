@@ -680,7 +680,8 @@ echo '</ul>';
         'webhook_url'     => \local_jedomi\telegram\manager::get_webhook_url(),
         'rate_limit'      => \local_jedomi\telegram\manager::get_rate_limit(),
         'cooldown'        => \local_jedomi\telegram\manager::get_cooldown(),
-        'max_turns'       => (int)(get_config('local_jedomi', 'telegram_max_turns') ?: 10),
+        'max_turns'       => get_config('local_jedomi', 'telegram_max_turns') === false
+            ? 10 : (int)get_config('local_jedomi', 'telegram_max_turns'),
         'gateway_timeout' => (int)(get_config('local_jedomi', 'telegram_gateway_timeout') ?: 120),
     ];
     $telegram_hidden_role_ids = array_filter(
