@@ -17,6 +17,8 @@ namespace local_jedomi\telegram;
 
 defined('MOODLE_INTERNAL') || die();
 
+require_once(__DIR__ . '/../../lib.php');
+
 class manager {
 
     /** Fixed pepper — adds defense-in-depth against DB-only breaches. */
@@ -109,7 +111,7 @@ class manager {
         try {
             return self::decrypt($encrypted);
         } catch (\Exception $e) {
-            error_log('[local_jedomi] Failed to decrypt Telegram bot token');
+            \local_jedomi_log('[local_jedomi] Failed to decrypt Telegram bot token');
             return null;
         }
     }

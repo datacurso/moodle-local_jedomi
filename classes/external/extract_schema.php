@@ -17,6 +17,8 @@ namespace local_jedomi\external;
 
 defined('MOODLE_INTERNAL') || die();
 
+require_once(__DIR__ . '/../../lib.php');
+
 use context_system;
 use core_external\external_api;
 use core_external\external_function_parameters;
@@ -162,7 +164,7 @@ class extract_schema extends external_api {
             'tables'         => $schema,
         ];
 
-        error_log(sprintf(
+        \local_jedomi_log(sprintf(
             '[local_jedomi] extract_schema: total_tables=%d include_row_counts=%s execution_ms=%d',
             $total_tables,
             $include_row_counts ? 'true' : 'false',

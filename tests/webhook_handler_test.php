@@ -433,9 +433,28 @@ final class webhook_handler_test extends \advanced_testcase {
      * Test that webhook_handler uses local_jedomi_log instead of error_log.
      */
     public function test_no_error_log_calls(): void {
-        // Use reflection to check the file doesn't contain error_log calls
-        // (except in comments). Verified by code review and php -l.
-        $this->assertTrue(true, 'All error_log calls replaced with local_jedomi_log');
+        $root = realpath(__DIR__ . '/..');
+        $iterator = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($root, \FilesystemIterator::SKIP_DOTS)
+        );
+
+        $offenders = [];
+        foreach ($iterator as $file) {
+            if ($file->getExtension() !== 'php') {
+                continue;
+            }
+            // The plugin's own tests may mention the function name in strings.
+            if (str_starts_with($file->getPathname(), $root . '/tests')) {
+                continue;
+            }
+            $source = file_get_contents($file->getPathname());
+            if (preg_match('/\berror_log\s*\(/', $source)) {
+                $offenders[] = substr($file->getPathname(), strlen($root) + 1);
+            }
+        }
+
+        $this->assertSame([], $offenders,
+            'error_log() is forbidden; use local_jedomi_log() or debugging() instead');
     }
 
     // ========================

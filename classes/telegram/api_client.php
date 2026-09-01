@@ -13,6 +13,8 @@ namespace local_jedomi\telegram;
 
 defined('MOODLE_INTERNAL') || die();
 
+require_once(__DIR__ . '/../../lib.php');
+
 class api_client {
 
     private string $token;
@@ -332,14 +334,14 @@ class api_client {
 
         if ($http_code !== 200 || $response === false) {
             $snippet = $response !== false ? mb_substr($response, 0, 500) : 'no_response';
-            error_log('[TELEGRAM API ERR] HTTP ' . $http_code . ' method=' . $method . ' body=' . $snippet . ' curl_err=' . ($curl_err ?: 'none'));
+            \local_jedomi_log('[TELEGRAM API ERR] HTTP ' . $http_code . ' method=' . $method . ' body=' . $snippet . ' curl_err=' . ($curl_err ?: 'none'));
             \local_jedomi_log('E002: Telegram API HTTP error: method=' . $method . ' http=' . $http_code . ' body=' . $snippet . ' curl=' . ($curl_err ?: 'none'));
             return null;
         }
 
         $decoded = json_decode($response, true);
         if (json_last_error() !== JSON_ERROR_NONE) {
-            error_log('[TELEGRAM API ERR] JSON decode: ' . json_last_error_msg() . ' method=' . $method);
+            \local_jedomi_log('[TELEGRAM API ERR] JSON decode: ' . json_last_error_msg() . ' method=' . $method);
             \local_jedomi_log('E003: Telegram JSON error: ' . json_last_error_msg());
             return null;
         }
@@ -347,7 +349,7 @@ class api_client {
         if (!($decoded['ok'] ?? false)) {
             $desc = $decoded['description'] ?? 'unknown';
             \local_jedomi_log('Telegram API error: ' . $desc);
-            error_log('[TELEGRAM API ERR] method=' . $method . ' desc=' . $desc);
+            \local_jedomi_log('[TELEGRAM API ERR] method=' . $method . ' desc=' . $desc);
         }
 
         return $decoded;
@@ -438,14 +440,14 @@ class api_client {
 
         if ($http_code !== 200 || $response === false) {
             $snippet = $response !== false ? mb_substr($response, 0, 500) : 'no_response';
-            error_log('[TELEGRAM API ERR] HTTP ' . $http_code . ' method=' . $method . ' body=' . $snippet . ' curl_err=' . ($curl_err ?: 'none'));
+            \local_jedomi_log('[TELEGRAM API ERR] HTTP ' . $http_code . ' method=' . $method . ' body=' . $snippet . ' curl_err=' . ($curl_err ?: 'none'));
             \local_jedomi_log('E002: Telegram API HTTP error: method=' . $method . ' http=' . $http_code . ' body=' . $snippet . ' curl=' . ($curl_err ?: 'none'));
             return null;
         }
 
         $decoded = json_decode($response, true);
         if (json_last_error() !== JSON_ERROR_NONE) {
-            error_log('[TELEGRAM API ERR] JSON decode: ' . json_last_error_msg() . ' method=' . $method);
+            \local_jedomi_log('[TELEGRAM API ERR] JSON decode: ' . json_last_error_msg() . ' method=' . $method);
             \local_jedomi_log('E003: Telegram JSON error: ' . json_last_error_msg());
             return null;
         }
@@ -453,7 +455,7 @@ class api_client {
         if (!($decoded['ok'] ?? false)) {
             $desc = $decoded['description'] ?? 'unknown';
             \local_jedomi_log('Telegram API error: ' . $desc);
-            error_log('[TELEGRAM API ERR] method=' . $method . ' desc=' . $desc);
+            \local_jedomi_log('[TELEGRAM API ERR] method=' . $method . ' desc=' . $desc);
         }
 
         return $decoded;

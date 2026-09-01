@@ -18,6 +18,8 @@ namespace local_jedomi\external;
 
 defined('MOODLE_INTERNAL') || die();
 
+require_once(__DIR__ . '/../../lib.php');
+
 use context_system;
 use core_external\external_api;
 use core_external\external_function_parameters;
@@ -121,7 +123,7 @@ class execute_sql extends external_api {
         if ($first_token !== 'SELECT') {
             // CRITICAL security event — log the hash, never the SQL text.
             $sql_hash = hash('sha256', $sql);
-            error_log(sprintf(
+            \local_jedomi_log(sprintf(
                 '[local_jedomi] CRITICAL security event: non-SELECT rejected ip=%s sql_hash=%s',
                 getremoteaddr(),
                 $sql_hash
@@ -132,7 +134,7 @@ class execute_sql extends external_api {
         // --- File exfiltration check (QG-02 equivalent, defense-in-depth) ---
         if (preg_match('/\bINTO\s+(OUTFILE|DUMPFILE)\b/i', $sql)) {
             $sql_hash = hash('sha256', $sql);
-            error_log(sprintf(
+            \local_jedomi_log(sprintf(
                 '[local_jedomi] CRITICAL security event: INTO OUTFILE/DUMPFILE rejected ip=%s sql_hash=%s',
                 getremoteaddr(),
                 $sql_hash
@@ -182,7 +184,7 @@ class execute_sql extends external_api {
                        || stripos($e->getMessage(), 'Query execution was interrupted') !== false;
 
             $sql_hash = hash('sha256', $sql);
-            error_log(sprintf(
+            \local_jedomi_log(sprintf(
                 '[local_jedomi] DB error: %s sql_hash=%s execution_ms=%d',
                 $is_timeout ? 'query_timeout' : 'db_error',
                 $sql_hash,
@@ -205,7 +207,7 @@ class execute_sql extends external_api {
             if ($e instanceof \moodle_exception) {
                 $extra = sprintf(' errorcode="%s" a="%s"', $e->errorcode, json_encode($e->a ?? null, JSON_UNESCAPED_UNICODE));
             }
-            error_log(sprintf(
+            \local_jedomi_log(sprintf(
                 '[local_jedomi] DB error (non-dml): class=%s sql_hash=%s exec_ms=%d msg="%s" debuginfo="%s"%s',
                 get_class($e),
                 $sql_hash,
@@ -225,7 +227,7 @@ class execute_sql extends external_api {
 
         // --- Audit log (no raw data, PII column names redacted) ---
         $sql_hash = hash('sha256', $sql);
-        error_log(sprintf(
+        \local_jedomi_log(sprintf(
             '[local_jedomi] execute_sql: sql_hash=%s row_count=%d truncated=%s execution_ms=%d',
             $sql_hash,
             count($rows),

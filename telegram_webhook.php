@@ -12,19 +12,6 @@
 require_once(__DIR__ . '/../../config.php');
 require_once(__DIR__ . '/lib.php');
 
-// Polyfill: if lib.php hasn't been updated, provide a fallback.
-// Both this AND lib.php's definition are wrapped in function_exists(),
-// so whichever loads first defines it — no redeclare possible.
-if (!function_exists('local_jedomi_log')) {
-    function local_jedomi_log(string $message, mixed $data = null): void {
-        $entry = '[local_jedomi] ' . $message;
-        if ($data !== null) {
-            $entry .= ' | ' . json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-        }
-        error_log($entry);
-    }
-}
-
 use local_jedomi\telegram\manager;
 use local_jedomi\telegram\webhook_handler;
 
@@ -114,11 +101,7 @@ register_shutdown_function(function() use ($update): void {
     $error = error_get_last();
     if ($error !== null && in_array($error['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR])) {
         $msg = 'FATAL: ' . $error['message'] . ' in ' . $error['file'] . ':' . $error['line'];
-        if (function_exists('local_jedomi_log')) {
-            local_jedomi_log($msg);
-        } else {
-            error_log('[local_jedomi] ' . $msg);
-        }
+        local_jedomi_log($msg);
     }
 });
 
@@ -128,9 +111,5 @@ try {
 } catch (\Throwable $e) {
     $msg = 'UNCAUGHT: ' . get_class($e) . ': ' . $e->getMessage()
         . ' in ' . $e->getFile() . ':' . $e->getLine();
-    if (function_exists('local_jedomi_log')) {
-        local_jedomi_log($msg);
-    } else {
-        error_log('[local_jedomi] ' . $msg);
-    }
+    local_jedomi_log($msg);
 }
