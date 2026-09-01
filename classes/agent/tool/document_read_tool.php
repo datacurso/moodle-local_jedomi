@@ -1,4 +1,19 @@
 <?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
 /**
  * Document Read tool — read PDF files from course activities and convert to images.
  *
@@ -11,12 +26,25 @@ namespace local_jedomi\agent\tool;
 
 defined('MOODLE_INTERNAL') || die();
 
+/**
+ * Agent tool that extracts the first PDF from a course module and sends
+ * it to the external document service to be converted into page images.
+ */
 class document_read_tool implements agent_tool {
-
+    /**
+     * Get the tool name used in AI tool calls.
+     *
+     * @return string The tool identifier 'document_read'.
+     */
     public function get_name(): string {
         return 'document_read';
     }
 
+    /**
+     * Build the OpenAI-compatible function definition for this tool.
+     *
+     * @return array Tool definition with a required cmid and optional dpi and image format.
+     */
     public function get_definition(): array {
         return [
             'type' => 'function',
@@ -45,6 +73,15 @@ class document_read_tool implements agent_tool {
         ];
     }
 
+    /**
+     * Locate a PDF in the module context, upload it to the document service, and return the rendered pages.
+     *
+     * Requires a teacher-or-above role and course view capability. Fails with a JSON
+     * error when no PDF exists, the service is unreachable, or conversion fails.
+     *
+     * @param \stdClass $params Decoded tool arguments; requires 'cmid', accepts 'dpi' (default 150) and 'fmt' (JPEG|PNG).
+     * @return string JSON-encoded page images with metadata, or an error message.
+     */
     public function execute(\stdClass $params): string {
         global $CFG, $DB;
 
@@ -133,7 +170,6 @@ class document_read_tool implements agent_tool {
                 'dpi'         => $data['dpi'],
                 'pages'       => $data['pages'],
             ]);
-
         } catch (\Throwable $e) {
             return json_encode(['error' => 'document read failed: ' . $e->getMessage()]);
         }

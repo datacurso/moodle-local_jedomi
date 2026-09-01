@@ -1,4 +1,19 @@
 <?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
 /**
  * jedomi_purge_caches — CompanionWS external function.
  *
@@ -27,22 +42,34 @@ use core_external\external_single_structure;
 use core_external\external_value;
 use local_jedomi\companion_hmac;
 
+/**
+ * External function that purges all Moodle caches after HMAC authentication.
+ */
 class purge_caches extends external_api {
-
     use companion_hmac;
 
     // -------------------------------------------------------------------------
     // Parameter / return definitions
     // -------------------------------------------------------------------------
 
+    /**
+     * Describe the parameters accepted by the execute function.
+     *
+     * @return external_function_parameters HMAC auth fields only.
+     */
     public static function execute_parameters(): external_function_parameters {
         return new external_function_parameters([
             'hmac_signature' => new external_value(PARAM_ALPHANUMEXT, 'HMAC-SHA256 hex signature'),
-            'hmac_timestamp' => new external_value(PARAM_INT,         'Unix timestamp from X-Jedomi-Timestamp'),
+            'hmac_timestamp' => new external_value(PARAM_INT, 'Unix timestamp from X-Jedomi-Timestamp'),
             'payload_hash'   => new external_value(PARAM_ALPHANUMEXT, 'SHA256 hex of the request body'),
         ]);
     }
 
+    /**
+     * Describe the structure returned by the execute function.
+     *
+     * @return external_single_structure Status, list of cleared cache types and timing.
+     */
     public static function execute_returns(): external_single_structure {
         return new external_single_structure([
             'status'         => new external_value(PARAM_TEXT, '"success" or "error"'),
@@ -58,9 +85,17 @@ class purge_caches extends external_api {
     // Execution
     // -------------------------------------------------------------------------
 
+    /**
+     * Authenticate the request and purge all Moodle caches via purge_all_caches().
+     *
+     * @param  string $hmac_signature HMAC-SHA256 hex signature from the gateway.
+     * @param  int    $hmac_timestamp Unix timestamp from the request header.
+     * @param  string $payload_hash   SHA256 hex of the request body.
+     * @return array Status, cleared cache type names and execution time in milliseconds.
+     */
     public static function execute(
         string $hmac_signature,
-        int    $hmac_timestamp,
+        int $hmac_timestamp,
         string $payload_hash
     ): array {
         // --- Capability check (admin-level required per spec CWS-CACHE-01) ---

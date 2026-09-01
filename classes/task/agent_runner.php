@@ -1,4 +1,19 @@
 <?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
 /**
  * Scheduled task: execute due AI agents.
  *
@@ -25,11 +40,18 @@ defined('MOODLE_INTERNAL') || die();
 
 require_once(__DIR__ . '/../../lib.php');
 
+/**
+ * Scheduled task that executes due AI agents through the gateway with tool calling and result caching.
+ */
 class agent_runner extends \core\task\scheduled_task {
-
     /** Max tool call iterations per agent run. */
     const MAX_TOOL_ITERATIONS = 50;
 
+    /**
+     * Return the localised name of this scheduled task.
+     *
+     * @return string Task name from the language pack.
+     */
     public function get_name(): string {
         return get_string('agent_runner_task', 'local_jedomi');
     }
@@ -98,8 +120,8 @@ class agent_runner extends \core\task\scheduled_task {
         // ── Pattern 2: <|tool_call|> or <|python_tag|> special tokens ──────
         // Used by Llama 3.x models and similar architectures.
         // Two sub-patterns:
-        //   a) <|tool_call|>{"name":"x","arguments":{...}}<|/tool_call|>
-        //   b) <|tool_call|>tool_name\n{json}<|/tool_call|>
+        // a) <|tool_call|>{"name":"x","arguments":{...}}<|/tool_call|>
+        // b) <|tool_call|>tool_name\n{json}<|/tool_call|>
         $pattern2 = '/<\|(?:tool_call|python_tag)\|>(.+?)<\|\\/\1\|>/si';
 
         // Try pattern 1 first.
@@ -267,8 +289,10 @@ class agent_runner extends \core\task\scheduled_task {
                 }
 
                 // ── 2) ¿El creador aún tiene acceso al contexto del agente? ──
-                if (!empty($agent->context_type) && $agent->context_type !== 'site'
-                    && !empty($agent->context_id)) {
+                if (
+                    !empty($agent->context_type) && $agent->context_type !== 'site'
+                    && !empty($agent->context_id)
+                ) {
                     $hasaccess = false;
                     try {
                         $context = \context::instance_by_id($agent->context_id);
@@ -322,7 +346,8 @@ class agent_runner extends \core\task\scheduled_task {
 
                 // ── Check cache ──────────────────────────────────────────────
                 $cached = \local_jedomi\agent\agent_manager::get_cached_result(
-                    $agent->id, $context_hash
+                    $agent->id,
+                    $context_hash
                 );
 
                 if ($cached !== null) {
@@ -330,7 +355,8 @@ class agent_runner extends \core\task\scheduled_task {
 
                     // ── Try semantic plan replay first ────────────────────────────
                     $cachedPlan = \local_jedomi\agent\agent_manager::get_cached_plan(
-                        $agent->id, $context_hash
+                        $agent->id,
+                        $context_hash
                     );
 
                     if ($cachedPlan && !empty($cachedPlan['plan'])) {
@@ -339,7 +365,8 @@ class agent_runner extends \core\task\scheduled_task {
 
                         // Initialize tool instances with correct user context before replay.
                         \local_jedomi\agent\tool_executor::get_definitions(
-                            $agent->id, (int) ($agent->userid ?? 0)
+                            $agent->id,
+                            (int) ($agent->userid ?? 0)
                         );
 
                         // Re-execute all tools from plan.
@@ -347,7 +374,8 @@ class agent_runner extends \core\task\scheduled_task {
                         $replayFailed = false;
                         foreach ($cachedPlan['plan'] as $i => $step) {
                             $toolResult = \local_jedomi\agent\tool_executor::execute(
-                                $step['tool'], $step['arguments']
+                                $step['tool'],
+                                $step['arguments']
                             );
                             $decoded = json_decode($toolResult, true);
                             if (!empty($decoded['error'])) {
@@ -389,8 +417,12 @@ class agent_runner extends \core\task\scheduled_task {
                             $api_key = get_config('local_jedomi', 'api_key') ?: 'jedomi-local-key';
                             $model = get_config('local_jedomi', 'model') ?: 'jedomi-e4b';
                             $maxTokens = (int) get_config('local_jedomi', 'max_tokens');
-                            if ($maxTokens < 256) { $maxTokens = 16384; }
-                            if (empty($gateway_url)) { $gateway_url = 'http://localhost:8765'; }
+                            if ($maxTokens < 256) {
+                                $maxTokens = 16384;
+                            }
+                            if (empty($gateway_url)) {
+                                $gateway_url = 'http://localhost:8765';
+                            }
 
                             $replayStart = microtime(true);
                             $ch = curl_init($gateway_url . '/v1/chat/completions');
@@ -629,13 +661,12 @@ class agent_runner extends \core\task\scheduled_task {
                                 'content' => $toolResult,
                             ];
                         }
-
                     }
 
                     // ── Safety net: if the for loop exhausted without a clean answer ──
                     // This can happen if:
-                    //   - The model returns empty content (some models do when they get tool results)
-                    //   - The model keeps returning TOOL_CALL text even without tools
+                    // - The model returns empty content (some models do when they get tool results)
+                    // - The model keeps returning TOOL_CALL text even without tools
                     // Loop detection errors are fed back to the model as tool results so it
                     // can self-correct (same behavior as the web proxy handler).
                     if (empty($finalContent)) {
@@ -665,7 +696,8 @@ class agent_runner extends \core\task\scheduled_task {
 
                     // ── Strip any TOOL_CALL or <|tool_call|> blocks that may have leaked ──
                     $hadToolCallBlocks = preg_match(
-                        '/(?:TOOL_CALL|call):\s*\w+/si', $finalContent ?? ''
+                        '/(?:TOOL_CALL|call):\s*\w+/si',
+                        $finalContent ?? ''
                     );
                     $stripped = trim(preg_replace([
                         '/(?:TOOL_CALL|call):\s*\w+\s*\n.*?\nEND_TOOL_CALL[^\n]*/si',
@@ -712,13 +744,18 @@ class agent_runner extends \core\task\scheduled_task {
                     }
                     if (!empty($plan) && $allReadonly) {
                         \local_jedomi\agent\agent_manager::set_cached_plan(
-                            $agent->id, $context_hash, $plan, $finalContent
+                            $agent->id,
+                            $context_hash,
+                            $plan,
+                            $finalContent
                         );
                         mtrace("[AGENT] {$agentLabel} — cached plan (" . count($plan) . " tools, " . strlen($finalContent) . "B answer)");
                         \local_jedomi_log("[AGENT] {$agentLabel} — cached plan (" . count($plan) . " tools, " . strlen($finalContent) . "B answer)");
                     } else {
                         \local_jedomi\agent\agent_manager::set_cached_result(
-                            $agent->id, $context_hash, $finalContent
+                            $agent->id,
+                            $context_hash,
+                            $finalContent
                         );
                         $why = empty($plan) ? 'no tools' : 'write tool detected';
                         mtrace("[AGENT] {$agentLabel} — cached text ({$why}, " . strlen($finalContent) . "B)");
@@ -764,7 +801,6 @@ class agent_runner extends \core\task\scheduled_task {
                 }
 
                 $ok++;
-
             } catch (\Exception $e) {
                 $aid = $agent->id ?? '?';
                 $alabel = ($agent->name ?? "Agent #{$aid}");

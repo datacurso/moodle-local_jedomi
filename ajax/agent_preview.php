@@ -1,4 +1,19 @@
 <?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
 /**
  * AJAX endpoint — POST agent preview: test a prompt against the gateway + tools.
  *
@@ -39,12 +54,20 @@ $gateway_url = rtrim(get_config('local_jedomi', 'gateway_url'), '/');
 $api_key    = get_config('local_jedomi', 'api_key');
 $model      = get_config('local_jedomi', 'model');
 
-if (empty($gateway_url)) { $gateway_url = 'http://localhost:8765'; }
-if (empty($api_key))     { $api_key     = 'jedomi-local-key'; }
-if (empty($model))       { $model       = 'jedomi-e4b'; }
+if (empty($gateway_url)) {
+    $gateway_url = 'http://localhost:8765';
+}
+if (empty($api_key)) {
+    $api_key     = 'jedomi-local-key';
+}
+if (empty($model)) {
+    $model       = 'jedomi-e4b';
+}
 
 $max_tokens = (int) get_config('local_jedomi', 'max_tokens');
-if ($max_tokens < 256) { $max_tokens = 16384; }
+if ($max_tokens < 256) {
+    $max_tokens = 16384;
+}
 
 // ── Build messages (same rich context as web chat) ─────────────────────
 require_once(__DIR__ . '/../lib.php');
@@ -332,7 +355,8 @@ if (empty($finalAnswer)) {
 // Strip any TOOL_CALL blocks that leaked into final answer.
 $finalAnswer = trim(preg_replace(
     '/(?:TOOL_CALL|call):\s*\w+\s*\n.*?\nEND_TOOL_CALL[^\n]*/si',
-    '', $finalAnswer ?? ''
+    '',
+    $finalAnswer ?? ''
 ));
 
 if (empty($finalAnswer)) {
@@ -420,7 +444,9 @@ function parse_text_tool_calls(string &$content): array {
         $content = trim(preg_replace($pattern1, '', $content));
         foreach ($matches as $m) {
             $parsed = tool_call_from_match($m[1], $m[2]);
-            if ($parsed) { $calls[] = $parsed; }
+            if ($parsed) {
+                $calls[] = $parsed;
+            }
         }
         return $calls;
     }
@@ -434,13 +460,17 @@ function parse_text_tool_calls(string &$content): array {
             if (json_last_error() === JSON_ERROR_NONE && isset($decoded['name'])) {
                 $toolName = $decoded['name'];
                 $args = $decoded['arguments'] ?? '{}';
-                if (is_array($args)) { $args = json_encode($args, JSON_UNESCAPED_UNICODE); }
+                if (is_array($args)) {
+                    $args = json_encode($args, JSON_UNESCAPED_UNICODE);
+                }
                 $parsed = tool_call_from_match($toolName, $args);
             } else {
                 $parts = explode("\n", $inner, 2);
                 $parsed = tool_call_from_match(trim($parts[0]), $parts[1] ?? '{}');
             }
-            if ($parsed) { $calls[] = $parsed; }
+            if ($parsed) {
+                $calls[] = $parsed;
+            }
         }
         return $calls;
     }

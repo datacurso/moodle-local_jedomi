@@ -32,8 +32,10 @@ defined('MOODLE_INTERNAL') || die();
 
 require_once(__DIR__ . '/../../lib.php');
 
+/**
+ * AI chat proxy handler: runs the tool-calling loop, dispatches tool executions and streams SSE.
+ */
 class handler {
-
     /**
      * Run the tool-calling loop using native OpenAI function calling.
      *
@@ -55,14 +57,18 @@ class handler {
 
         for ($i = 0; $i < 50; $i++) {
             echo ": thinking\n\n";
-            if (ob_get_level()) { ob_flush(); }
+            if (ob_get_level()) {
+                ob_flush();
+            }
             flush();
 
             $response = self::call_ai_api_buffer($model, $messages, $spt, $tools);
 
             if ($response['type'] === 'error') {
                 echo "data: {\"error\":\"ai_api_error\"}\n\n";
-                if (ob_get_level()) { ob_flush(); }
+                if (ob_get_level()) {
+                    ob_flush();
+                }
                 flush();
                 return;
             }
@@ -98,7 +104,9 @@ class handler {
                 echo "data: " . json_encode([
                     '_jedomi_tool_executing' => ['tool' => $name, 'args' => $args],
                 ], JSON_UNESCAPED_UNICODE) . "\n\n";
-                if (ob_get_level()) { ob_flush(); }
+                if (ob_get_level()) {
+                    ob_flush();
+                }
                 flush();
 
                 if ($toolrepeatcounts[$callkey] > 5) {
@@ -127,7 +135,9 @@ class handler {
                         'summary' => self::summarize_tool_result($name, $result),
                     ],
                 ], JSON_UNESCAPED_UNICODE) . "\n\n";
-                if (ob_get_level()) { ob_flush(); }
+                if (ob_get_level()) {
+                    ob_flush();
+                }
                 flush();
 
                 // Inject tool result as role=tool message (OpenAI standard format).
@@ -455,7 +465,10 @@ class handler {
             $result = \local_jedomi\external\execute_sql::execute(
                 $sql,
                 $params,
-                '', 0, '', true
+                '',
+                0,
+                '',
+                true
             );
             return json_encode($result);
         } catch (\Exception $e) {
@@ -490,7 +503,7 @@ class handler {
     private static function normalize_moodle_table_placeholders(string $sql): string {
         return (string)preg_replace_callback(
             '/\b(FROM|JOIN)\s+([a-z][a-z0-9_]*)\b/i',
-            static function(array $matches): string {
+            static function (array $matches): string {
                 $keyword = $matches[1];
                 $table = $matches[2];
                 return $keyword . ' {' . $table . '}';
@@ -572,9 +585,9 @@ class handler {
             }
             $result = \local_jedomi\external\get_site_config::execute(
                 $cfgKeys,
-                '',     // hmac_signature
-                0,      // hmac_timestamp
-                '',     // payload_hash
+                '', // hmac_signature
+                0, // hmac_timestamp
+                '', // payload_hash
                 true    // skip_hmac
             );
             return json_encode($result);
@@ -678,9 +691,9 @@ class handler {
             $result = \local_jedomi\external\ws_execute::execute(
                 $wsname,
                 $params,
-                '',     // hmac_signature
-                0,      // hmac_timestamp
-                '',     // payload_hash
+                '', // hmac_signature
+                0, // hmac_timestamp
+                '', // payload_hash
                 true    // skip_hmac
             );
             return json_encode($result);
@@ -722,6 +735,13 @@ class handler {
         return json_encode(['results' => $results, 'count' => count($results)]);
     }
 
+    /**
+     * Describe one admin CLI operation from the registry.
+     *
+     * @param  array  $args Tool arguments; expects a "name" key with the operation name.
+     * @param  string $role User role; only admin and manager are allowed.
+     * @return string JSON-encoded registry entry, or a permission_denied error.
+     */
     private static function admin_describe_tool(array $args, string $role): string {
         if (!in_array($role, ['admin', 'manager'], true)) {
             return json_encode(['error' => 'permission_denied']);
@@ -732,6 +752,13 @@ class handler {
         return json_encode($entry);
     }
 
+    /**
+     * Execute one admin CLI operation from the registry.
+     *
+     * @param  array  $args Tool arguments; expects "name" and optional "params" keys.
+     * @param  string $role User role; only admin and manager are allowed.
+     * @return string JSON-encoded execution result, or a permission_denied error.
+     */
     private static function admin_execute_tool(array $args, string $role): string {
         if (!in_array($role, ['admin', 'manager'], true)) {
             return json_encode(['error' => 'permission_denied']);
@@ -803,7 +830,7 @@ class handler {
         return json_encode([
             'success' => true,
             'total' => $result['total'],
-            'agents' => array_map(function($a) {
+            'agents' => array_map(function ($a) {
                 return [
                     'id' => (int) $a->id,
                     'prompt' => $a->prompt,
@@ -934,7 +961,6 @@ class handler {
                 'dpi'         => $data['dpi'],
                 'pages'       => $data['pages'],
             ]);
-
         } catch (\Throwable $e) {
             return json_encode(['error' => 'document read failed: ' . $e->getMessage()]);
         }
@@ -955,7 +981,9 @@ class handler {
             JSON_UNESCAPED_UNICODE
         );
         echo "data: {$payload}\n\n";
-        if (ob_get_level()) { ob_flush(); }
+        if (ob_get_level()) {
+            ob_flush();
+        }
         flush();
     }
 
@@ -967,7 +995,9 @@ class handler {
     private static function stream_sse_content(string $content): void {
         if (empty($content)) {
             echo "data: [DONE]\n\n";
-            if (ob_get_level()) { ob_flush(); }
+            if (ob_get_level()) {
+                ob_flush();
+            }
             flush();
             return;
         }
@@ -977,12 +1007,16 @@ class handler {
             echo "data: " . json_encode([
                 'choices' => [['delta' => ['content' => $chunk]]],
             ], JSON_UNESCAPED_UNICODE) . "\n\n";
-            if (ob_get_level()) { ob_flush(); }
+            if (ob_get_level()) {
+                ob_flush();
+            }
             flush();
             usleep(2000);
         }
         echo "data: [DONE]\n\n";
-        if (ob_get_level()) { ob_flush(); }
+        if (ob_get_level()) {
+            ob_flush();
+        }
         flush();
     }
 

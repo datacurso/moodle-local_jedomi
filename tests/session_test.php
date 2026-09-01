@@ -18,7 +18,6 @@
  * Unit tests for telegram session MAX_TURNS config propagation.
  *
  * @package    local_jedomi
- * @category   phpunit
  * @copyright  2026 Jedomi Project
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
@@ -33,7 +32,6 @@ defined('MOODLE_INTERNAL') || die();
  * @covers \local_jedomi\telegram\session
  */
 final class session_test extends \advanced_testcase {
-
     /**
      * Setup test environment — clean DB state between tests.
      */
@@ -133,8 +131,11 @@ final class session_test extends \advanced_testcase {
         // Total: system + 1 history + current = 3.
         $this->assertCount(3, $messages, 'Should have system + 1 history + 1 current = 3');
         $this->assertCount(2, $usermsgs);
-        $this->assertEquals('third', $messages[1]['content'],
-            'Only the last message should be kept with max_turns=1');
+        $this->assertEquals(
+            'third',
+            $messages[1]['content'],
+            'Only the last message should be kept with max_turns=1'
+        );
     }
 
     /**

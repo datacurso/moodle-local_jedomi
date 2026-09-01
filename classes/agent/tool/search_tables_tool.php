@@ -1,4 +1,19 @@
 <?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
 /**
  * search_tables tool — searches Moodle database tables by keyword.
  *
@@ -18,12 +33,25 @@ defined('MOODLE_INTERNAL') || die();
 
 use local_jedomi\schema\table_indexer;
 
+/**
+ * Agent tool that searches indexed Moodle database tables by keyword
+ * and returns matching table names with their comments.
+ */
 class search_tables_tool implements agent_tool {
-
+    /**
+     * Get the tool name used in AI tool calls.
+     *
+     * @return string The tool identifier 'search_tables'.
+     */
     public function get_name(): string {
         return 'search_tables';
     }
 
+    /**
+     * Build the OpenAI-compatible function definition for this tool.
+     *
+     * @return array Tool definition with a required query string and optional result limit.
+     */
     public function get_definition(): array {
         return [
             'type' => 'function',
@@ -48,6 +76,12 @@ class search_tables_tool implements agent_tool {
         ];
     }
 
+    /**
+     * Run a keyword search against the table index and time the lookup.
+     *
+     * @param \stdClass $params Decoded tool arguments; expects 'query' and optional 'limit' (default 8, max 20).
+     * @return string JSON-encoded matching tables with counts and duration, or an error message.
+     */
     public function execute(\stdClass $params): string {
         $query = trim($params->query ?? '');
         if (empty($query)) {
@@ -86,7 +120,6 @@ class search_tables_tool implements agent_tool {
                 'tables' => $tables,
                 'duration_ms' => round((microtime(true) - $start) * 1000, 2),
             ], JSON_UNESCAPED_UNICODE);
-
         } catch (\Exception $e) {
             return json_encode([
                 'error' => 'search_tables failed: ' . $e->getMessage(),

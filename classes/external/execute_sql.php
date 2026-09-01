@@ -1,4 +1,19 @@
 <?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
 /**
  * jedomi_execute_sql — CompanionWS external function.
  *
@@ -28,8 +43,10 @@ use core_external\external_single_structure;
 use core_external\external_value;
 use local_jedomi\companion_hmac;
 
+/**
+ * External function that runs an HMAC-authenticated, SELECT-only SQL query with row and time limits.
+ */
 class execute_sql extends external_api {
-
     use companion_hmac;
 
     /** Maximum rows the function will ever return. */
@@ -45,9 +62,14 @@ class execute_sql extends external_api {
     // Parameter / return definitions
     // -------------------------------------------------------------------------
 
+    /**
+     * Describe the parameters accepted by the execute function.
+     *
+     * @return external_function_parameters Definition of the SQL, bound params and HMAC auth fields.
+     */
     public static function execute_parameters(): external_function_parameters {
         return new external_function_parameters([
-            'sql'             => new external_value(PARAM_RAW,  'SELECT query to execute'),
+            'sql'             => new external_value(PARAM_RAW, 'SELECT query to execute'),
             'params'          => new external_multiple_structure(
                 new external_value(PARAM_RAW, 'Bound parameter'),
                 'Optional bound parameters',
@@ -55,11 +77,16 @@ class execute_sql extends external_api {
                 []
             ),
             'hmac_signature'  => new external_value(PARAM_ALPHANUMEXT, 'HMAC-SHA256 hex signature'),
-            'hmac_timestamp'  => new external_value(PARAM_INT,         'Unix timestamp from X-Jedomi-Timestamp'),
+            'hmac_timestamp'  => new external_value(PARAM_INT, 'Unix timestamp from X-Jedomi-Timestamp'),
             'payload_hash'    => new external_value(PARAM_ALPHANUMEXT, 'SHA256 hex of the request body'),
         ]);
     }
 
+    /**
+     * Describe the structure returned by the execute function.
+     *
+     * @return external_single_structure JSON-encoded rows, row count, truncation flag and timing.
+     */
     public static function execute_returns(): external_single_structure {
         return new external_single_structure([
             'rows'         => new external_multiple_structure(
@@ -68,9 +95,9 @@ class execute_sql extends external_api {
                 ]),
                 'Result rows'
             ),
-            'row_count'    => new external_value(PARAM_INT,  'Number of rows returned'),
+            'row_count'    => new external_value(PARAM_INT, 'Number of rows returned'),
             'truncated'    => new external_value(PARAM_BOOL, 'True if more rows exist beyond the limit'),
-            'execution_ms' => new external_value(PARAM_INT,  'Query wall-clock time in milliseconds'),
+            'execution_ms' => new external_value(PARAM_INT, 'Query wall-clock time in milliseconds'),
         ]);
     }
 
@@ -79,21 +106,23 @@ class execute_sql extends external_api {
     // -------------------------------------------------------------------------
 
     /**
-     * @param  string $sql
-     * @param  array  $params
-     * @param  string $hmac_signature
-     * @param  int    $hmac_timestamp
-     * @param  string $payload_hash
-     * @param  bool   $skip_hmac     Skip HMAC verification (used by chatproxy — auth via SPT).
-     * @return array
+     * Validate, authenticate and run a SELECT-only query, returning capped JSON-encoded rows.
+     *
+     * @param  string $sql            SELECT query to execute.
+     * @param  array  $params         Bound parameters for the query.
+     * @param  string $hmac_signature HMAC-SHA256 hex signature from the gateway.
+     * @param  int    $hmac_timestamp Unix timestamp from the request header.
+     * @param  string $payload_hash   SHA256 hex of the request body.
+     * @param  bool   $skip_hmac      Skip HMAC verification (used by chatproxy — auth via SPT).
+     * @return array Rows as JSON strings plus row_count, truncated flag and execution_ms.
      */
     public static function execute(
         string $sql,
-        array  $params,
+        array $params,
         string $hmac_signature,
-        int    $hmac_timestamp,
+        int $hmac_timestamp,
         string $payload_hash,
-        bool   $skip_hmac = false
+        bool $skip_hmac = false
     ): array {
         global $DB;
 
@@ -176,7 +205,6 @@ class execute_sql extends external_api {
                 $rows[] = ['json_row' => json_encode((array) $record, JSON_UNESCAPED_UNICODE)];
             }
             $recordset->close();
-
         } catch (\dml_exception $e) {
             $execution_ms = (int) ((microtime(true) - $start) * 1000);
             // Distinguish timeout from other DB errors.
@@ -197,7 +225,6 @@ class execute_sql extends external_api {
                 $dbg .= ' | ' . $e->debuginfo;
             }
             throw new \moodle_exception($code, 'local_jedomi', '', null, $dbg);
-
         } catch (\Exception $e) {
             // Catch non-DB exceptions too (moodle_exception, coding_exception, etc.)
             $execution_ms = (int) ((microtime(true) - $start) * 1000);

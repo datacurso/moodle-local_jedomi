@@ -1,4 +1,19 @@
 <?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
 /**
  * Query profiler — logs and retrieves SQL query execution metrics.
  *
@@ -15,8 +30,11 @@ namespace local_jedomi\agent;
 
 defined('MOODLE_INTERNAL') || die();
 
+/**
+ * Records SQL tool executions and exposes paginated logs, aggregate
+ * statistics, and purge maintenance for the profiler dashboard.
+ */
 class query_profiler {
-
     /**
      * Log a SQL query execution.
      *
@@ -84,12 +102,15 @@ class query_profiler {
         $dir = strtoupper($filters['dir'] ?? 'DESC') === 'ASC' ? 'ASC' : 'DESC';
 
         $total = $DB->count_records_sql(
-            "SELECT COUNT(1) FROM {local_jedomi_query_log} {$wheresql}", $params
+            "SELECT COUNT(1) FROM {local_jedomi_query_log} {$wheresql}",
+            $params
         );
 
         $entries = $DB->get_records_sql(
             "SELECT * FROM {local_jedomi_query_log} {$wheresql} ORDER BY {$sort} {$dir}",
-            $params, $offset, $perpage
+            $params,
+            $offset,
+            $perpage
         );
 
         return [

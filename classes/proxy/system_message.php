@@ -28,8 +28,10 @@ namespace local_jedomi\proxy;
 
 defined('MOODLE_INTERNAL') || die();
 
+/**
+ * Builds the role- and context-aware system prompt for the AI chat proxy.
+ */
 class system_message {
-
     /**
      * Build the system message for the AI model.
      *

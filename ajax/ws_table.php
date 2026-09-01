@@ -1,4 +1,19 @@
 <?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
 /**
  * AJAX endpoint — returns WS allowlist table rows + pagination as JSON.
  *
@@ -128,8 +143,12 @@ try {
     $count_write = 0;
     foreach ($all_rows as $ws) {
         $t = local_jedomi_classify_ws_access($ws->name);
-        if ($t === 'Lectura')  { $count_read++;  }
-        if ($t === 'Escritura') { $count_write++; }
+        if ($t === 'Lectura') {
+            $count_read++;
+        }
+        if ($t === 'Escritura') {
+            $count_write++;
+        }
     }
 
     // ── Response ─────────────────────────────────────────────────────────────
@@ -143,7 +162,6 @@ try {
         'count_read'  => $count_read,
         'count_write' => $count_write,
     ]);
-
 } catch (\Exception $e) {
     echo json_encode([
         'error'   => true,

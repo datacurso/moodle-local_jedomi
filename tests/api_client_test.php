@@ -18,7 +18,6 @@
  * Unit tests for api_client chunking logic.
  *
  * @package    local_jedomi
- * @category   phpunit
  * @copyright  2026 Jedomi Project
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
@@ -33,7 +32,6 @@ defined('MOODLE_INTERNAL') || die();
  * @covers \local_jedomi\telegram\api_client
  */
 final class api_client_test extends \advanced_testcase {
-
     /**
      * Setup test environment.
      */
@@ -167,8 +165,11 @@ final class api_client_test extends \advanced_testcase {
         // Without the spaces that were split boundaries, the core content should match.
         $originalchars = str_replace([' '], '', $original);
         $reassembledchars = str_replace([' '], '', $reassembled);
-        $this->assertEquals($originalchars, $reassembledchars,
-            'All characters should be preserved across chunks (minus whitespace from splits)');
+        $this->assertEquals(
+            $originalchars,
+            $reassembledchars,
+            'All characters should be preserved across chunks (minus whitespace from splits)'
+        );
         $this->assertEquals(mb_strlen($originalchars), mb_strlen($reassembledchars));
     }
 

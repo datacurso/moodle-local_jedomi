@@ -1,4 +1,19 @@
 <?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
 /**
  * jedomi_read_file — CompanionWS external function.
  *
@@ -33,8 +48,10 @@ use core_external\external_single_structure;
 use core_external\external_value;
 use local_jedomi\companion_hmac;
 
+/**
+ * External function that reads a slice of a Moodle source file with path allowlist and blocklist checks.
+ */
 class read_file extends external_api {
-
     use companion_hmac;
 
     /** Maximum lines to return per call. */
@@ -85,35 +102,56 @@ class read_file extends external_api {
 
     // -------------------------------------------------------------------------
 
+    /**
+     * Describe the parameters accepted by the execute function.
+     *
+     * @return external_function_parameters File path, line range and HMAC auth fields.
+     */
     public static function execute_parameters(): external_function_parameters {
         return new external_function_parameters([
             'path'           => new external_value(PARAM_PATH, 'Relative path from Moodle dirroot'),
-            'line_start'     => new external_value(PARAM_INT,  'First line to return (1-based)', VALUE_DEFAULT, 1),
-            'line_count'     => new external_value(PARAM_INT,  'Number of lines to return (max 200)', VALUE_DEFAULT, 100),
+            'line_start'     => new external_value(PARAM_INT, 'First line to return (1-based)', VALUE_DEFAULT, 1),
+            'line_count'     => new external_value(PARAM_INT, 'Number of lines to return (max 200)', VALUE_DEFAULT, 100),
             'hmac_signature' => new external_value(PARAM_ALPHANUMEXT, 'HMAC-SHA256 hex signature'),
-            'hmac_timestamp' => new external_value(PARAM_INT,         'Unix timestamp'),
+            'hmac_timestamp' => new external_value(PARAM_INT, 'Unix timestamp'),
             'payload_hash'   => new external_value(PARAM_ALPHANUMEXT, 'SHA256 hex of request body'),
         ]);
     }
 
+    /**
+     * Describe the structure returned by the execute function.
+     *
+     * @return external_single_structure Normalised path, numbered content, line range and existence flag.
+     */
     public static function execute_returns(): external_single_structure {
         return new external_single_structure([
             'path'        => new external_value(PARAM_TEXT, 'Normalized path that was read'),
-            'content'     => new external_value(PARAM_RAW,  'File content (requested lines)'),
-            'total_lines' => new external_value(PARAM_INT,  'Total lines in file'),
-            'line_start'  => new external_value(PARAM_INT,  'First line returned'),
-            'line_end'    => new external_value(PARAM_INT,  'Last line returned'),
+            'content'     => new external_value(PARAM_RAW, 'File content (requested lines)'),
+            'total_lines' => new external_value(PARAM_INT, 'Total lines in file'),
+            'line_start'  => new external_value(PARAM_INT, 'First line returned'),
+            'line_end'    => new external_value(PARAM_INT, 'Last line returned'),
             'extension'   => new external_value(PARAM_TEXT, 'File extension'),
             'exists'      => new external_value(PARAM_BOOL, 'Whether the file exists'),
         ]);
     }
 
+    /**
+     * Authenticate the request and return up to 200 numbered lines from an allowed source file.
+     *
+     * @param  string $path           Relative path from Moodle dirroot.
+     * @param  int    $line_start     First line to return (1-based).
+     * @param  int    $line_count     Number of lines to return (capped at 200).
+     * @param  string $hmac_signature HMAC-SHA256 hex signature from the gateway.
+     * @param  int    $hmac_timestamp Unix timestamp from the request header.
+     * @param  string $payload_hash   SHA256 hex of the request body.
+     * @return array Normalised path, numbered content, total lines, returned range and existence flag.
+     */
     public static function execute(
         string $path,
-        int    $line_start,
-        int    $line_count,
+        int $line_start,
+        int $line_count,
         string $hmac_signature,
-        int    $hmac_timestamp,
+        int $hmac_timestamp,
         string $payload_hash
     ): array {
         global $CFG;
@@ -124,8 +162,14 @@ class read_file extends external_api {
 
         $validated = self::validate_parameters(
             self::execute_parameters(),
-            compact('path', 'line_start', 'line_count',
-                    'hmac_signature', 'hmac_timestamp', 'payload_hash')
+            compact(
+                'path',
+                'line_start',
+                'line_count',
+                'hmac_signature',
+                'hmac_timestamp',
+                'payload_hash'
+            )
         );
         $path           = $validated['path'];
         $line_start     = max(1, $validated['line_start']);
@@ -145,7 +189,8 @@ class read_file extends external_api {
             if ($clean_path === $blocked || str_ends_with($clean_path, '/' . $blocked)) {
                 \local_jedomi_log(sprintf(
                     '[local_jedomi] read_file BLOCKED sensitive path: %s ip=%s',
-                    $clean_path, getremoteaddr()
+                    $clean_path,
+                    getremoteaddr()
                 ));
                 throw new \moodle_exception('read_file_blocked', 'local_jedomi', '', $clean_path);
             }
@@ -206,7 +251,10 @@ class read_file extends external_api {
 
         \local_jedomi_log(sprintf(
             '[local_jedomi] read_file: path=%s lines=%d-%d ip=%s',
-            $clean_path, $line_start, $line_end, getremoteaddr()
+            $clean_path,
+            $line_start,
+            $line_end,
+            getremoteaddr()
         ));
 
         return [

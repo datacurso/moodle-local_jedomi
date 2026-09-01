@@ -1,4 +1,19 @@
 <?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
 /**
  * jedomi_validate_password — CompanionWS external function.
  *
@@ -27,24 +42,36 @@ use core_external\external_single_structure;
 use core_external\external_value;
 use local_jedomi\companion_hmac;
 
+/**
+ * External function that checks a candidate password against the Moodle password policy.
+ */
 class validate_password extends external_api {
-
     use companion_hmac;
 
     // -------------------------------------------------------------------------
     // Parameter / return definitions
     // -------------------------------------------------------------------------
 
+    /**
+     * Describe the parameters accepted by the execute function.
+     *
+     * @return external_function_parameters Candidate password, optional username and HMAC auth fields.
+     */
     public static function execute_parameters(): external_function_parameters {
         return new external_function_parameters([
-            'password'       => new external_value(PARAM_RAW,  'Candidate password to validate (not logged)'),
+            'password'       => new external_value(PARAM_RAW, 'Candidate password to validate (not logged)'),
             'username'       => new external_value(PARAM_TEXT, 'Optional username for similarity check', VALUE_DEFAULT, ''),
             'hmac_signature' => new external_value(PARAM_ALPHANUMEXT, 'HMAC-SHA256 hex signature'),
-            'hmac_timestamp' => new external_value(PARAM_INT,         'Unix timestamp from X-Jedomi-Timestamp'),
+            'hmac_timestamp' => new external_value(PARAM_INT, 'Unix timestamp from X-Jedomi-Timestamp'),
             'payload_hash'   => new external_value(PARAM_ALPHANUMEXT, 'SHA256 hex of the request body'),
         ]);
     }
 
+    /**
+     * Describe the structure returned by the execute function.
+     *
+     * @return external_single_structure Validity flag and list of violated policy rules.
+     */
     public static function execute_returns(): external_single_structure {
         return new external_single_structure([
             'valid'      => new external_value(PARAM_BOOL, 'Whether the password meets the policy'),
@@ -59,11 +86,21 @@ class validate_password extends external_api {
     // Execution
     // -------------------------------------------------------------------------
 
+    /**
+     * Authenticate the request and validate the password via check_password_policy().
+     *
+     * @param  string $password       Candidate password to validate; never logged.
+     * @param  string $username       Optional username for the similarity check.
+     * @param  string $hmac_signature HMAC-SHA256 hex signature from the gateway.
+     * @param  int    $hmac_timestamp Unix timestamp from the request header.
+     * @param  string $payload_hash   SHA256 hex of the request body.
+     * @return array Validity flag and machine-readable violation codes.
+     */
     public static function execute(
         string $password,
         string $username,
         string $hmac_signature,
-        int    $hmac_timestamp,
+        int $hmac_timestamp,
         string $payload_hash
     ): array {
         global $CFG;

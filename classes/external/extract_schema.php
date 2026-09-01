@@ -1,4 +1,19 @@
 <?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
 /**
  * jedomi_extract_schema — CompanionWS external function.
  *
@@ -27,19 +42,29 @@ use core_external\external_single_structure;
 use core_external\external_value;
 use local_jedomi\companion_hmac;
 
+/**
+ * External function that extracts the full Moodle database schema as JSON.
+ */
 class extract_schema extends external_api {
-
     use companion_hmac;
 
     // -------------------------------------------------------------------------
     // Parameter / return definitions
     // -------------------------------------------------------------------------
 
+    /**
+     * Describe the parameters accepted by the execute function.
+     *
+     * @return external_function_parameters Row-count flag, domain filters and HMAC auth fields.
+     */
     public static function execute_parameters(): external_function_parameters {
         return new external_function_parameters([
-            'include_row_counts' => new external_value(PARAM_BOOL,
+            'include_row_counts' => new external_value(
+                PARAM_BOOL,
                 'Include approximate row counts from SHOW TABLE STATUS (default false)',
-                VALUE_DEFAULT, false),
+                VALUE_DEFAULT,
+                false
+            ),
             'domains' => new external_multiple_structure(
                 new external_value(PARAM_TEXT, 'Domain name filter'),
                 'If provided, return only tables whose names contain one of these strings',
@@ -47,20 +72,25 @@ class extract_schema extends external_api {
                 []
             ),
             'hmac_signature'  => new external_value(PARAM_ALPHANUMEXT, 'HMAC-SHA256 hex signature'),
-            'hmac_timestamp'  => new external_value(PARAM_INT,         'Unix timestamp from X-Jedomi-Timestamp'),
+            'hmac_timestamp'  => new external_value(PARAM_INT, 'Unix timestamp from X-Jedomi-Timestamp'),
             'payload_hash'    => new external_value(PARAM_ALPHANUMEXT, 'SHA256 hex of the request body'),
         ]);
     }
 
+    /**
+     * Describe the structure returned by the execute function.
+     *
+     * @return external_single_structure Schema JSON, table count, timestamps and timing.
+     */
     public static function execute_returns(): external_single_structure {
         // The full schema is too dynamic to describe column-by-column in Moodle's
         // external API type system.  We return it as a single JSON string.
         return new external_single_structure([
-            'schema_json'   => new external_value(PARAM_RAW,  'Full schema serialised as JSON'),
-            'total_tables'  => new external_value(PARAM_INT,  'Number of tables in the response'),
+            'schema_json'   => new external_value(PARAM_RAW, 'Full schema serialised as JSON'),
+            'total_tables'  => new external_value(PARAM_INT, 'Number of tables in the response'),
             'generated_at'  => new external_value(PARAM_TEXT, 'ISO 8601 generation timestamp'),
-            'moodle_version'=> new external_value(PARAM_TEXT, 'Moodle version string'),
-            'execution_ms'  => new external_value(PARAM_INT,  'Extraction time in milliseconds'),
+            'moodle_version' => new external_value(PARAM_TEXT, 'Moodle version string'),
+            'execution_ms'  => new external_value(PARAM_INT, 'Extraction time in milliseconds'),
         ]);
     }
 
@@ -68,11 +98,21 @@ class extract_schema extends external_api {
     // Execution
     // -------------------------------------------------------------------------
 
+    /**
+     * Authenticate the request and build the database schema from INFORMATION_SCHEMA.
+     *
+     * @param  bool   $include_row_counts Include approximate row counts from SHOW TABLE STATUS.
+     * @param  array  $domains            Substring filters applied to table names; empty for all tables.
+     * @param  string $hmac_signature     HMAC-SHA256 hex signature from the gateway.
+     * @param  int    $hmac_timestamp     Unix timestamp from the request header.
+     * @param  string $payload_hash       SHA256 hex of the request body.
+     * @return array Schema JSON string, total table count, generation timestamp, version and timing.
+     */
     public static function execute(
-        bool   $include_row_counts,
-        array  $domains,
+        bool $include_row_counts,
+        array $domains,
         string $hmac_signature,
-        int    $hmac_timestamp,
+        int $hmac_timestamp,
         string $payload_hash
     ): array {
         global $DB, $CFG;
@@ -184,6 +224,15 @@ class extract_schema extends external_api {
     // Helpers
     // -------------------------------------------------------------------------
 
+    /**
+     * Describe one table: its columns (type, nullability, keys) and foreign keys.
+     *
+     * @param  \moodle_database $DB         Database connection used for the INFORMATION_SCHEMA queries.
+     * @param  string           $dbname     Database (schema) name to inspect.
+     * @param  string           $table_name Table to describe.
+     * @param  string           $comment    Table comment from INFORMATION_SCHEMA.TABLES.
+     * @return array Table comment, column definitions and foreign key list.
+     */
     private static function describe_table(\moodle_database $DB, string $dbname, string $table_name, string $comment): array {
         // Columns.
         $cols_rs = $DB->get_recordset_sql(
@@ -202,8 +251,8 @@ class extract_schema extends external_api {
                 'nullable' => ($col->is_nullable === 'YES'),
                 'default'  => $col->column_default,
                 'comment'  => $col->column_comment ?: null,
-                'key'      => $col->column_key ?: null,   // PRI, UNI, MUL
-                'extra'    => $col->extra ?: null,         // auto_increment, etc.
+                'key'      => $col->column_key ?: null, // PRI, UNI, MUL
+                'extra'    => $col->extra ?: null, // auto_increment, etc.
             ];
         }
         $cols_rs->close();
@@ -236,7 +285,7 @@ class extract_schema extends external_api {
         return [
             'comment'     => $comment,
             'columns'     => $columns,
-            'foreign_keys'=> $foreign_keys,
+            'foreign_keys' => $foreign_keys,
         ];
     }
 }

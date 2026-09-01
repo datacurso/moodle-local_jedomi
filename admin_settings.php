@@ -23,6 +23,13 @@
  * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
+// phpcs:disable moodle.Commenting.MissingDocblock.File -- False positive: the sniff re-runs on every
+// inline PHP open tag of this mixed PHP/HTML page; the file docblock above is present and complete.
+// phpcs:disable moodle.Commenting.FileExpectedTags.CopyrightTagMissing -- Same false positive; the
+// @copyright tag is in the file docblock above.
+// phpcs:disable moodle.Commenting.FileExpectedTags.LicenseTagMissing -- Same false positive; the
+// @license tag is in the file docblock above.
+
 require_once(__DIR__ . '/../../config.php');
 require_once($CFG->libdir . '/adminlib.php');
 

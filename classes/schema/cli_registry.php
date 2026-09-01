@@ -1,4 +1,19 @@
 <?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
 /**
  * CLI Operations Registry — index of admin actions not exposed via web services.
  *
@@ -15,8 +30,11 @@ namespace local_jedomi\schema;
 
 defined('MOODLE_INTERNAL') || die();
 
+/**
+ * Registry of admin CLI operations the AI can search, describe,
+ * and execute, mirroring the ws_indexer pattern for web services.
+ */
 class cli_registry {
-
     /**
      * Return all registered CLI operations.
      *
@@ -247,7 +265,7 @@ class cli_registry {
             return [
                 'success'   => true,
                 'courseid'  => $course->id,
-                'coursename'=> $course->fullname,
+                'coursename' => $course->fullname,
                 'backup'    => $filedetails,
             ];
         } catch (\Throwable $e) {
@@ -358,7 +376,7 @@ class cli_registry {
                 'modname'      => $newcm->modname ?? $resourcetype,
                 'instance'     => (int) ($newcm->instance ?? 0),
                 'sectionnum'   => $sectionnum,
-                'resource_type'=> $resourcetype,
+                'resource_type' => $resourcetype,
             ];
         } catch (\Throwable $e) {
             return ['error' => 'create_mod failed: ' . $e->getMessage()];
