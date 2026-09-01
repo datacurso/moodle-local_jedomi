@@ -1,4 +1,19 @@
 <?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
 /**
  * User profile page for Telegram account linking.
  *
@@ -8,6 +23,9 @@
  * @copyright  2026 Jedomi Project
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
+
+// phpcs:disable moodle.Commenting.MissingDocblock.File -- False positive: the sniff re-runs on every
+// inline PHP open tag of this mixed PHP/HTML page; the file docblock above is present and complete.
 
 require_once(__DIR__ . '/../../config.php');
 // Explicitly include plugin lib — guarantee functions are available regardless
@@ -55,8 +73,12 @@ if ($bot_available && $role_ok && $action === 'generate' && confirm_sesskey()) {
 if ($bot_available && $role_ok && $action === 'unlink' && confirm_sesskey()) {
     global $DB;
     $DB->delete_records('local_jedomi_telegram_links', ['userid' => $userid]);
-    redirect($PAGE->url, get_string('telegram_msg_unlinked', 'local_jedomi'), null,
-             \core\output\notification::NOTIFY_SUCCESS);
+    redirect(
+        $PAGE->url,
+        get_string('telegram_msg_unlinked', 'local_jedomi'),
+        null,
+        \core\output\notification::NOTIFY_SUCCESS
+    );
 }
 
 // Load current link status
@@ -93,29 +115,29 @@ echo $OUTPUT->header();
         </div>
     </div>
 
-    <?php if (!$bot_available): ?>
+    <?php if (!$bot_available) : ?>
     <!-- ── Bot not configured — show nothing to regular users ─────────────── -->
-    <?php if (is_siteadmin()): ?>
+        <?php if (is_siteadmin()) : ?>
     <div class="alert alert-info d-flex align-items-center gap-2" style="border-radius:.5rem">
         <i class="fa fa-info-circle fa-lg" style="flex-shrink:0"></i>
         <div>
             <strong>Telegram not configured (admin only message)</strong><br>
-            <small>Go to <a href="<?php echo (new moodle_url('/local/jedomi/admin_settings.php', ['tab'=>'integrations']))->out(false); ?>">Jedomi Settings → Integrations</a>
+            <small>Go to <a href="<?php echo (new moodle_url('/local/jedomi/admin_settings.php', ['tab' => 'integrations']))->out(false); ?>">Jedomi Settings → Integrations</a>
             to set up the Telegram bot. Once configured, users will see the Telegram linking option here.</small>
         </div>
     </div>
-    <?php else: ?>
-        <?php redirect(new moodle_url('/user/profile.php', ['id' => $userid])); ?>
-    <?php endif; ?>
+        <?php else : ?>
+            <?php redirect(new moodle_url('/user/profile.php', ['id' => $userid])); ?>
+        <?php endif; ?>
 
-    <?php elseif (!$role_ok): ?>
+    <?php elseif (!$role_ok) : ?>
     <!-- ── Role blocked ───────────────────────────────────────────────────── -->
     <div class="alert alert-danger d-flex align-items-center gap-2" style="border-radius:.5rem">
         <i class="fa fa-ban fa-lg" style="flex-shrink:0"></i>
         <div><?php echo get_string('telegram_msg_role_blocked', 'local_jedomi'); ?></div>
     </div>
 
-    <?php elseif ($link): ?>
+    <?php elseif ($link) : ?>
     <!-- ── LINKED ─────────────────────────────────────────────────────────── -->
     <div class="card mb-4" style="border-color:#22c55e">
         <div class="card-header d-flex align-items-center gap-2"
@@ -161,7 +183,7 @@ echo $OUTPUT->header();
         </div>
     </div>
 
-    <?php else: ?>
+    <?php else : ?>
     <!-- ── NOT LINKED ────────────────────────────────────────────────────── -->
     <div class="card mb-4">
         <div class="card-header d-flex align-items-center gap-2"
@@ -171,7 +193,7 @@ echo $OUTPUT->header();
         </div>
         <div class="card-body">
 
-            <?php if ($generated_code): ?>
+            <?php if ($generated_code) : ?>
             <!-- Code displayed -->
             <p class="text-muted mb-3" style="font-size:.875rem">
                 <?php echo get_string('telegram_link_instructions', 'local_jedomi'); ?>
@@ -299,7 +321,7 @@ echo $OUTPUT->header();
             })();
             </script>
 
-            <?php else: ?>
+            <?php else : ?>
             <!-- Generate button -->
             <p style="font-size:.875rem;color:#374151;margin-bottom:1.25rem">
                 <?php echo get_string('telegram_link_instructions', 'local_jedomi'); ?>

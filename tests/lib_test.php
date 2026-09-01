@@ -18,7 +18,6 @@
  * Unit tests for lib.php functions in local_jedomi.
  *
  * @package    local_jedomi
- * @category   phpunit
  * @copyright  2026 Jedomi Project
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
@@ -34,8 +33,7 @@ require_once($CFG->dirroot . '/local/jedomi/lib.php');
  * @covers \local_jedomi_get_user_role_for_user()
  * @covers \local_jedomi_generate_spt_for_user()
  */
-final class local_jedomi_lib_testcase extends advanced_testcase {
-
+final class lib_test extends advanced_testcase {
     /**
      * Setup test environment.
      */

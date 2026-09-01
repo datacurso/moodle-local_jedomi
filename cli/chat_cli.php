@@ -1,4 +1,19 @@
 <?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
 /**
  * Jedomi CLI Chat — Full pipeline debug tool.
  *
@@ -7,6 +22,9 @@
  *
  * Uso: php cli/chat_cli.php
  * Comandos: help, debug on/off, exit
+ * @package    local_jedomi
+ * @copyright  2026 Jedomi Project
+ * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 define('CLI_SCRIPT', true);
 define('AJAX_SCRIPT', false);
@@ -74,9 +92,16 @@ if ($debug) {
 }
 
 // ── Función: LLamar a la API (sin streaming) ──────────────────────────────
+/**
+ * Sends the conversation to the AI gateway chat completions endpoint and returns the assistant message.
+ *
+ * @param array $messages full conversation history in OpenAI chat format
+ * @param array $tools OpenAI-format tool definitions to offer the model (empty for none)
+ * @return array|null the first choice's message array, or null on HTTP or decoding failure
+ */
 function call_ai(array $messages, array $tools = []): ?array {
     global $API_URL, $API_KEY, $MODEL;
-    
+
     $payload = [
         'model'       => $MODEL,
         'messages'    => $messages,
@@ -87,7 +112,7 @@ function call_ai(array $messages, array $tools = []): ?array {
         $payload['tools']       = $tools;
         $payload['tool_choice'] = 'auto';
     }
-    
+
     $ch = curl_init($API_URL . '/v1/chat/completions');
     curl_setopt_array($ch, [
         CURLOPT_POST           => true,
@@ -100,28 +125,37 @@ function call_ai(array $messages, array $tools = []): ?array {
         CURLOPT_TIMEOUT        => 180,
         CURLOPT_CONNECTTIMEOUT => 10,
     ]);
-    
+
     $buf = curl_exec($ch);
     $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $error = curl_error($ch);
     curl_close($ch);
-    
+
     if ($http !== 200 || empty($buf)) {
         echo "  ⚠️  API ERROR: HTTP {$http}" . ($error ? " - {$error}" : '') . "\n";
-        if (!empty($buf)) echo "  Body: " . substr($buf, 0, 500) . "\n";
+        if (!empty($buf)) {
+            echo "  Body: " . substr($buf, 0, 500) . "\n";
+        }
         return null;
     }
-    
+
     $data = json_decode($buf, true);
     if (!$data || !isset($data['choices'][0])) {
         echo "  ⚠️  API respuesta inválida\n";
         return null;
     }
-    
+
     return $data['choices'][0]['message'];
 }
 
 // ── Función: ejecutar tool (EXACTAMENTE como handler.php) ─────────────────
+/**
+ * Executes a tool call through the proxy handler using the admin role.
+ *
+ * @param string $name tool name requested by the model
+ * @param array $args decoded tool call arguments
+ * @return string JSON-encoded tool result
+ */
 function execute_tool(string $name, array $args): string {
     return \local_jedomi\proxy\handler::run_tool($name, $args, 'admin');
 }
@@ -130,12 +164,24 @@ function execute_tool(string $name, array $args): string {
 while (true) {
     echo "\n\e[1;33m>>> \e[0m";
     $input = readline();
-    if ($input === false || $input === 'exit') break;
+    if ($input === false || $input === 'exit') {
+        break;
+    }
     $input = trim($input);
-    if (empty($input)) continue;
-    
-    if ($input === 'debug on') { $debug = true; echo "  Debug ON\n"; continue; }
-    if ($input === 'debug off') { $debug = false; echo "  Debug OFF\n"; continue; }
+    if (empty($input)) {
+        continue;
+    }
+
+    if ($input === 'debug on') {
+        $debug = true;
+        echo "  Debug ON\n";
+        continue;
+    }
+    if ($input === 'debug off') {
+        $debug = false;
+        echo "  Debug OFF\n";
+        continue;
+    }
     if ($input === 'help') {
         echo "\n";
         echo "  ─── COMANDOS ─────────────────────────────────────\n";
@@ -156,44 +202,46 @@ while (true) {
         echo "  ──────────────────────────────────────────────────\n";
         continue;
     }
-    
+
     $messages[] = ['role' => 'user', 'content' => $input];
-    
+
     $turn = 0;
     while ($turn < 25) {
         $turn++;
         echo "\n  \e[2m⏳ Turno {$turn}/25 — AI pensando...\e[0m\n";
-        
+
         $response = call_ai($messages, $openaiTools);
-        if ($response === null) break;
-        
+        if ($response === null) {
+            break;
+        }
+
         $messages[] = $response;
-        
+
         // ── Text response ──────────────────────────────────────────────
         if (!empty($response['content'])) {
             echo "\n  \e[1;32m🤖:\e[0m {$response['content']}\n";
         }
-        
+
         // ── Tool calls ─────────────────────────────────────────────────
         if (!empty($response['tool_calls'])) {
             foreach ($response['tool_calls'] as $tc) {
                 $tcId   = $tc['id'];
                 $tcName = $tc['function']['name'];
                 $tcArgs = json_decode($tc['function']['arguments'], true) ?? [];
-                
+
                 if ($debug) {
                     echo "  \e[36m🔧 Tool call: {$tcName}(" .
                          json_encode($tcArgs, JSON_UNESCAPED_UNICODE) . ")\e[0m\n";
                 }
-                
+
                 // Ejecutar
                 echo "  \e[35m⚡ Ejecutando {$tcName}...\e[0m\n";
                 $result = execute_tool($tcName, $tcArgs);
-                
+
                 // Parsear resultado para mostrar resumen
                 $resultParsed = json_decode($result, true);
                 $isError = isset($resultParsed['error']);
-                
+
                 // Mostrar resultado resumido
                 if ($isError) {
                     echo "  \e[31m❌ Error: " . mb_substr($resultParsed['error'], 0, 200) . "\e[0m\n";
@@ -210,20 +258,20 @@ while (true) {
                         } else {
                             $summary = mb_substr($resultParsed['result'], 0, 80);
                         }
-                    } elseif (isset($resultParsed['success'])) {
+                    } else if (isset($resultParsed['success'])) {
                         $summary = 'success: ' . (isset($resultParsed['data']) ? 'data received' : 'true');
-                    } elseif (isset($resultParsed['rows'])) {
+                    } else if (isset($resultParsed['rows'])) {
                         $summary = count($resultParsed['rows']) . ' filas';
                     } else {
                         $summary = 'OK (' . mb_substr($result, 0, 80) . ')';
                     }
                     echo "  \e[32m✅ {$summary}\e[0m\n";
                 }
-                
+
                 if ($debug && $result) {
                     echo "  \e[2m  Result raw: " . mb_substr($result, 0, 300) . "\e[0m\n";
                 }
-                
+
                 // Agregar resultado a messages
                 $messages[] = [
                     'role' => 'tool',
@@ -236,7 +284,7 @@ while (true) {
             break;
         }
     }
-    
+
     if ($turn >= 25) {
         echo "  \e[31m✗ Máximo de 25 turnos alcanzado\e[0m\n";
     }

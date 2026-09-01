@@ -1,4 +1,19 @@
 <?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
 /**
  * local_jedomi — AI Sidebar for Moodle
  * Theme-proof injection strategy:
@@ -49,8 +64,8 @@ function local_jedomi_get_sidebar_config(): array {
 
     return [
         'gateway_url'   => get_config('local_jedomi', 'gateway_url') ?: 'http://localhost:8765',
-        'api_key'       => get_config('local_jedomi', 'api_key')     ?: 'jedomi-local-key',
-        'model'         => get_config('local_jedomi', 'model')        ?: 'jedomi-e4b',
+        'api_key'       => get_config('local_jedomi', 'api_key') ?: 'jedomi-local-key',
+        'model'         => get_config('local_jedomi', 'model') ?: 'jedomi-e4b',
         'chatproxy_url' => $CFG->wwwroot . '/local/jedomi/chatproxy.php',
         'user_name'     => fullname($USER),
         'user_role'     => local_jedomi_get_user_role(),
@@ -59,171 +74,171 @@ function local_jedomi_get_sidebar_config(): array {
         'sesskey'       => sesskey(),
         'strings'       => [
             // UI chrome
-            'title'             => get_string('sidebar_title',        'local_jedomi'),
-            'open_sidebar'      => get_string('open_sidebar',         'local_jedomi'),
-            'close'             => get_string('close',                 'local_jedomi'),
-            'new_conversation'  => get_string('new_conversation',      'local_jedomi'),
-            'export_conversation'=> get_string('export_conversation',  'local_jedomi'),
-            'toggle_thinking'   => get_string('toggle_thinking',       'local_jedomi'),
-            'half_width'        => get_string('half_width',            'local_jedomi'),
-            'full_width'        => get_string('full_width',            'local_jedomi'),
+            'title'             => get_string('sidebar_title', 'local_jedomi'),
+            'open_sidebar'      => get_string('open_sidebar', 'local_jedomi'),
+            'close'             => get_string('close', 'local_jedomi'),
+            'new_conversation'  => get_string('new_conversation', 'local_jedomi'),
+            'export_conversation' => get_string('export_conversation', 'local_jedomi'),
+            'toggle_thinking'   => get_string('toggle_thinking', 'local_jedomi'),
+            'half_width'        => get_string('half_width', 'local_jedomi'),
+            'full_width'        => get_string('full_width', 'local_jedomi'),
             // Input
-            'attach'            => get_string('attach',               'local_jedomi'),
-            'attach_file'       => get_string('attach_file',          'local_jedomi'),
-            'attach_image'      => get_string('attach_image',         'local_jedomi'),
-            'file'              => get_string('file',                 'local_jedomi'),
-            'image'             => get_string('image',                'local_jedomi'),
-            'message_input'     => get_string('message_input',        'local_jedomi'),
-            'placeholder'       => get_string('chat_placeholder',     'local_jedomi'),
-            'send'              => get_string('send',                  'local_jedomi'),
-            'voice_input'       => get_string('voice_input',          'local_jedomi'),
+            'attach'            => get_string('attach', 'local_jedomi'),
+            'attach_file'       => get_string('attach_file', 'local_jedomi'),
+            'attach_image'      => get_string('attach_image', 'local_jedomi'),
+            'file'              => get_string('file', 'local_jedomi'),
+            'image'             => get_string('image', 'local_jedomi'),
+            'message_input'     => get_string('message_input', 'local_jedomi'),
+            'placeholder'       => get_string('chat_placeholder', 'local_jedomi'),
+            'send'              => get_string('send', 'local_jedomi'),
+            'voice_input'       => get_string('voice_input', 'local_jedomi'),
             // Greeting
-            'greeting'          => get_string('greeting',             'local_jedomi'),
-            'hello'             => get_string('hello',                'local_jedomi'),
-            'thinking'          => get_string('thinking',             'local_jedomi'),
+            'greeting'          => get_string('greeting', 'local_jedomi'),
+            'hello'             => get_string('hello', 'local_jedomi'),
+            'thinking'          => get_string('thinking', 'local_jedomi'),
             'new_conversation_msg' => get_string('new_conversation_msg', 'local_jedomi'),
             // Files
-            'analyze_image'        => get_string('analyze_image',         'local_jedomi'),
-            'attached_file_info'   => get_string('attached_file_info',    'local_jedomi'),
-            'attached_image'       => get_string('attached_image',        'local_jedomi'),
-            'csv_download'         => get_string('csv_download',          'local_jedomi'),
-            'file_csv'             => get_string('file_csv',              'local_jedomi'),
-            'file_loaded'          => get_string('file_loaded',           'local_jedomi'),
-            'file_loaded_hint'     => get_string('file_loaded_hint',      'local_jedomi'),
-            'file_pdf'             => get_string('file_pdf',              'local_jedomi'),
-            'file_process_error'   => get_string('file_process_error',    'local_jedomi'),
-            'file_text'            => get_string('file_text',             'local_jedomi'),
-            'processing_file'      => get_string('processing_file',       'local_jedomi'),
+            'analyze_image'        => get_string('analyze_image', 'local_jedomi'),
+            'attached_file_info'   => get_string('attached_file_info', 'local_jedomi'),
+            'attached_image'       => get_string('attached_image', 'local_jedomi'),
+            'csv_download'         => get_string('csv_download', 'local_jedomi'),
+            'file_csv'             => get_string('file_csv', 'local_jedomi'),
+            'file_loaded'          => get_string('file_loaded', 'local_jedomi'),
+            'file_loaded_hint'     => get_string('file_loaded_hint', 'local_jedomi'),
+            'file_pdf'             => get_string('file_pdf', 'local_jedomi'),
+            'file_process_error'   => get_string('file_process_error', 'local_jedomi'),
+            'file_text'            => get_string('file_text', 'local_jedomi'),
+            'processing_file'      => get_string('processing_file', 'local_jedomi'),
             // Footer / disclaimer
-            'ai_disclaimer'     => get_string('ai_disclaimer',        'local_jedomi'),
-            'drop_files_here'   => get_string('drop_files_here',      'local_jedomi'),
+            'ai_disclaimer'     => get_string('ai_disclaimer', 'local_jedomi'),
+            'drop_files_here'   => get_string('drop_files_here', 'local_jedomi'),
             // Tools
-            'tool_sql_read'          => get_string('tool_sql_read',          'local_jedomi'),
-            'tool_api_call'          => get_string('tool_api_call',          'local_jedomi'),
-            'tool_schema_lookup'     => get_string('tool_schema_lookup',     'local_jedomi'),
+            'tool_sql_read'          => get_string('tool_sql_read', 'local_jedomi'),
+            'tool_api_call'          => get_string('tool_api_call', 'local_jedomi'),
+            'tool_schema_lookup'     => get_string('tool_schema_lookup', 'local_jedomi'),
             'tool_webservice_lookup' => get_string('tool_webservice_lookup', 'local_jedomi'),
             // Message actions
-            'action_copy'          => get_string('action_copy',          'local_jedomi'),
-            'action_helpful'       => get_string('action_helpful',       'local_jedomi'),
-            'action_improve'       => get_string('action_improve',       'local_jedomi'),
+            'action_copy'          => get_string('action_copy', 'local_jedomi'),
+            'action_helpful'       => get_string('action_helpful', 'local_jedomi'),
+            'action_improve'       => get_string('action_improve', 'local_jedomi'),
             'action_improve_title' => get_string('action_improve_title', 'local_jedomi'),
-            'action_edit'          => get_string('action_edit',          'local_jedomi'),
-            'action_edit_title'    => get_string('action_edit_title',    'local_jedomi'),
+            'action_edit'          => get_string('action_edit', 'local_jedomi'),
+            'action_edit_title'    => get_string('action_edit_title', 'local_jedomi'),
             // Bulk message
-            'confirm_send_bulk'        => get_string('confirm_send_bulk',        'local_jedomi'),
-            'yes_send'                 => get_string('yes_send',                 'local_jedomi'),
-            'cancel'                   => get_string('cancel',                   'local_jedomi'),
-            'sending'                  => get_string('sending',                  'local_jedomi'),
-            'cancelled'                => get_string('cancelled',                'local_jedomi'),
-            'messages_sent'            => get_string('messages_sent',            'local_jedomi'),
-            'messages_sent_fail'       => get_string('messages_sent_fail',       'local_jedomi'),
+            'confirm_send_bulk'        => get_string('confirm_send_bulk', 'local_jedomi'),
+            'yes_send'                 => get_string('yes_send', 'local_jedomi'),
+            'cancel'                   => get_string('cancel', 'local_jedomi'),
+            'sending'                  => get_string('sending', 'local_jedomi'),
+            'cancelled'                => get_string('cancelled', 'local_jedomi'),
+            'messages_sent'            => get_string('messages_sent', 'local_jedomi'),
+            'messages_sent_fail'       => get_string('messages_sent_fail', 'local_jedomi'),
             'messages_recipients_note' => get_string('messages_recipients_note', 'local_jedomi'),
-            'no_messages_sent'         => get_string('no_messages_sent',         'local_jedomi'),
-            'unknown_error'            => get_string('unknown_error',            'local_jedomi'),
-            'connection_error'         => get_string('connection_error',         'local_jedomi'),
+            'no_messages_sent'         => get_string('no_messages_sent', 'local_jedomi'),
+            'unknown_error'            => get_string('unknown_error', 'local_jedomi'),
+            'connection_error'         => get_string('connection_error', 'local_jedomi'),
             // Context labels
-            'ctx_activity'  => get_string('ctx_activity',  'local_jedomi'),
-            'ctx_admin'     => get_string('ctx_admin',     'local_jedomi'),
-            'ctx_calendar'  => get_string('ctx_calendar',  'local_jedomi'),
-            'ctx_course'    => get_string('ctx_course',    'local_jedomi'),
+            'ctx_activity'  => get_string('ctx_activity', 'local_jedomi'),
+            'ctx_admin'     => get_string('ctx_admin', 'local_jedomi'),
+            'ctx_calendar'  => get_string('ctx_calendar', 'local_jedomi'),
+            'ctx_course'    => get_string('ctx_course', 'local_jedomi'),
             'ctx_dashboard' => get_string('ctx_dashboard', 'local_jedomi'),
-            'ctx_files'     => get_string('ctx_files',     'local_jedomi'),
-            'ctx_grades'    => get_string('ctx_grades',    'local_jedomi'),
-            'ctx_messages'  => get_string('ctx_messages',  'local_jedomi'),
-            'ctx_profile'   => get_string('ctx_profile',   'local_jedomi'),
+            'ctx_files'     => get_string('ctx_files', 'local_jedomi'),
+            'ctx_grades'    => get_string('ctx_grades', 'local_jedomi'),
+            'ctx_messages'  => get_string('ctx_messages', 'local_jedomi'),
+            'ctx_profile'   => get_string('ctx_profile', 'local_jedomi'),
             // Errors
             'gateway_error_title'   => get_string('gateway_error_title', 'local_jedomi'),
-            'gateway_error_hint'    => get_string('gateway_error_hint',  'local_jedomi'),
-            'listening'             => get_string('listening',           'local_jedomi'),
-            'mic_error'             => get_string('mic_error',           'local_jedomi'),
-            'silence_detected'      => get_string('silence_detected',    'local_jedomi'),
-            'transcribing'          => get_string('transcribing',        'local_jedomi'),
-            'waiting_voice'         => get_string('waiting_voice',       'local_jedomi'),
+            'gateway_error_hint'    => get_string('gateway_error_hint', 'local_jedomi'),
+            'listening'             => get_string('listening', 'local_jedomi'),
+            'mic_error'             => get_string('mic_error', 'local_jedomi'),
+            'silence_detected'      => get_string('silence_detected', 'local_jedomi'),
+            'transcribing'          => get_string('transcribing', 'local_jedomi'),
+            'waiting_voice'         => get_string('waiting_voice', 'local_jedomi'),
             // Confirmation system
             'confirm_type_to_proceed' => get_string('confirm_type_to_proceed', 'local_jedomi'),
-            'confirm_btn_yes'         => get_string('confirm_btn_yes',         'local_jedomi'),
-            'confirm_btn_no'          => get_string('confirm_btn_no',          'local_jedomi'),
-            'confirm_executing'       => get_string('confirm_executing',       'local_jedomi'),
-            'confirm_done'            => get_string('confirm_done',            'local_jedomi'),
-            'confirm_cancelled'       => get_string('confirm_cancelled',       'local_jedomi'),
+            'confirm_btn_yes'         => get_string('confirm_btn_yes', 'local_jedomi'),
+            'confirm_btn_no'          => get_string('confirm_btn_no', 'local_jedomi'),
+            'confirm_executing'       => get_string('confirm_executing', 'local_jedomi'),
+            'confirm_done'            => get_string('confirm_done', 'local_jedomi'),
+            'confirm_cancelled'       => get_string('confirm_cancelled', 'local_jedomi'),
             // Quick actions: Admin
-            'qa_admin_active_users_label'    => get_string('qa_admin_active_users_label',    'local_jedomi'),
-            'qa_admin_active_users_msg'      => get_string('qa_admin_active_users_msg',      'local_jedomi'),
-            'qa_admin_alerts_label'          => get_string('qa_admin_alerts_label',          'local_jedomi'),
-            'qa_admin_alerts_msg'            => get_string('qa_admin_alerts_msg',            'local_jedomi'),
-            'qa_admin_at_risk_label'         => get_string('qa_admin_at_risk_label',         'local_jedomi'),
-            'qa_admin_at_risk_msg'           => get_string('qa_admin_at_risk_msg',           'local_jedomi'),
-            'qa_admin_empty_cohorts_label'   => get_string('qa_admin_empty_cohorts_label',   'local_jedomi'),
-            'qa_admin_empty_cohorts_msg'     => get_string('qa_admin_empty_cohorts_msg',     'local_jedomi'),
+            'qa_admin_active_users_label'    => get_string('qa_admin_active_users_label', 'local_jedomi'),
+            'qa_admin_active_users_msg'      => get_string('qa_admin_active_users_msg', 'local_jedomi'),
+            'qa_admin_alerts_label'          => get_string('qa_admin_alerts_label', 'local_jedomi'),
+            'qa_admin_alerts_msg'            => get_string('qa_admin_alerts_msg', 'local_jedomi'),
+            'qa_admin_at_risk_label'         => get_string('qa_admin_at_risk_label', 'local_jedomi'),
+            'qa_admin_at_risk_msg'           => get_string('qa_admin_at_risk_msg', 'local_jedomi'),
+            'qa_admin_empty_cohorts_label'   => get_string('qa_admin_empty_cohorts_label', 'local_jedomi'),
+            'qa_admin_empty_cohorts_msg'     => get_string('qa_admin_empty_cohorts_msg', 'local_jedomi'),
             'qa_admin_external_emails_label' => get_string('qa_admin_external_emails_label', 'local_jedomi'),
-            'qa_admin_external_emails_msg'   => get_string('qa_admin_external_emails_msg',   'local_jedomi'),
-            'qa_admin_gdpr_pending_label'    => get_string('qa_admin_gdpr_pending_label',    'local_jedomi'),
-            'qa_admin_gdpr_pending_msg'      => get_string('qa_admin_gdpr_pending_msg',      'local_jedomi'),
-            'qa_admin_inactive_label'        => get_string('qa_admin_inactive_label',        'local_jedomi'),
-            'qa_admin_inactive_msg'          => get_string('qa_admin_inactive_msg',          'local_jedomi'),
-            'qa_admin_missing_work_label'    => get_string('qa_admin_missing_work_label',    'local_jedomi'),
-            'qa_admin_missing_work_msg'      => get_string('qa_admin_missing_work_msg',      'local_jedomi'),
-            'qa_admin_overview_label'        => get_string('qa_admin_overview_label',        'local_jedomi'),
-            'qa_admin_overview_msg'          => get_string('qa_admin_overview_msg',          'local_jedomi'),
-            'qa_admin_performance_label'     => get_string('qa_admin_performance_label',     'local_jedomi'),
-            'qa_admin_performance_msg'       => get_string('qa_admin_performance_msg',       'local_jedomi'),
-            'qa_admin_security_label'        => get_string('qa_admin_security_label',        'local_jedomi'),
-            'qa_admin_security_msg'          => get_string('qa_admin_security_msg',          'local_jedomi'),
-            'qa_admin_storage_label'         => get_string('qa_admin_storage_label',         'local_jedomi'),
-            'qa_admin_storage_msg'           => get_string('qa_admin_storage_msg',           'local_jedomi'),
-            'qa_admin_top_courses_label'     => get_string('qa_admin_top_courses_label',     'local_jedomi'),
-            'qa_admin_top_courses_msg'       => get_string('qa_admin_top_courses_msg',       'local_jedomi'),
-            'qa_admin_top_student_label'     => get_string('qa_admin_top_student_label',     'local_jedomi'),
-            'qa_admin_top_student_msg'       => get_string('qa_admin_top_student_msg',       'local_jedomi'),
+            'qa_admin_external_emails_msg'   => get_string('qa_admin_external_emails_msg', 'local_jedomi'),
+            'qa_admin_gdpr_pending_label'    => get_string('qa_admin_gdpr_pending_label', 'local_jedomi'),
+            'qa_admin_gdpr_pending_msg'      => get_string('qa_admin_gdpr_pending_msg', 'local_jedomi'),
+            'qa_admin_inactive_label'        => get_string('qa_admin_inactive_label', 'local_jedomi'),
+            'qa_admin_inactive_msg'          => get_string('qa_admin_inactive_msg', 'local_jedomi'),
+            'qa_admin_missing_work_label'    => get_string('qa_admin_missing_work_label', 'local_jedomi'),
+            'qa_admin_missing_work_msg'      => get_string('qa_admin_missing_work_msg', 'local_jedomi'),
+            'qa_admin_overview_label'        => get_string('qa_admin_overview_label', 'local_jedomi'),
+            'qa_admin_overview_msg'          => get_string('qa_admin_overview_msg', 'local_jedomi'),
+            'qa_admin_performance_label'     => get_string('qa_admin_performance_label', 'local_jedomi'),
+            'qa_admin_performance_msg'       => get_string('qa_admin_performance_msg', 'local_jedomi'),
+            'qa_admin_security_label'        => get_string('qa_admin_security_label', 'local_jedomi'),
+            'qa_admin_security_msg'          => get_string('qa_admin_security_msg', 'local_jedomi'),
+            'qa_admin_storage_label'         => get_string('qa_admin_storage_label', 'local_jedomi'),
+            'qa_admin_storage_msg'           => get_string('qa_admin_storage_msg', 'local_jedomi'),
+            'qa_admin_top_courses_label'     => get_string('qa_admin_top_courses_label', 'local_jedomi'),
+            'qa_admin_top_courses_msg'       => get_string('qa_admin_top_courses_msg', 'local_jedomi'),
+            'qa_admin_top_student_label'     => get_string('qa_admin_top_student_label', 'local_jedomi'),
+            'qa_admin_top_student_msg'       => get_string('qa_admin_top_student_msg', 'local_jedomi'),
             // Quick actions: Manager
-            'qa_manager_at_risk_label'       => get_string('qa_manager_at_risk_label',       'local_jedomi'),
-            'qa_manager_at_risk_msg'         => get_string('qa_manager_at_risk_msg',         'local_jedomi'),
-            'qa_manager_enrolled_label'      => get_string('qa_manager_enrolled_label',      'local_jedomi'),
-            'qa_manager_enrolled_msg'        => get_string('qa_manager_enrolled_msg',        'local_jedomi'),
-            'qa_manager_global_risk_label'   => get_string('qa_manager_global_risk_label',   'local_jedomi'),
-            'qa_manager_global_risk_msg'     => get_string('qa_manager_global_risk_msg',     'local_jedomi'),
-            'qa_manager_inactive_label'      => get_string('qa_manager_inactive_label',      'local_jedomi'),
-            'qa_manager_inactive_msg'        => get_string('qa_manager_inactive_msg',        'local_jedomi'),
+            'qa_manager_at_risk_label'       => get_string('qa_manager_at_risk_label', 'local_jedomi'),
+            'qa_manager_at_risk_msg'         => get_string('qa_manager_at_risk_msg', 'local_jedomi'),
+            'qa_manager_enrolled_label'      => get_string('qa_manager_enrolled_label', 'local_jedomi'),
+            'qa_manager_enrolled_msg'        => get_string('qa_manager_enrolled_msg', 'local_jedomi'),
+            'qa_manager_global_risk_label'   => get_string('qa_manager_global_risk_label', 'local_jedomi'),
+            'qa_manager_global_risk_msg'     => get_string('qa_manager_global_risk_msg', 'local_jedomi'),
+            'qa_manager_inactive_label'      => get_string('qa_manager_inactive_label', 'local_jedomi'),
+            'qa_manager_inactive_msg'        => get_string('qa_manager_inactive_msg', 'local_jedomi'),
             'qa_manager_inactive_users_label' => get_string('qa_manager_inactive_users_label', 'local_jedomi'),
-            'qa_manager_inactive_users_msg'  => get_string('qa_manager_inactive_users_msg',  'local_jedomi'),
-            'qa_manager_no_teacher_label'    => get_string('qa_manager_no_teacher_label',    'local_jedomi'),
-            'qa_manager_no_teacher_msg'      => get_string('qa_manager_no_teacher_msg',      'local_jedomi'),
-            'qa_manager_overview_label'      => get_string('qa_manager_overview_label',      'local_jedomi'),
-            'qa_manager_overview_msg'        => get_string('qa_manager_overview_msg',        'local_jedomi'),
-            'qa_manager_top_courses_label'   => get_string('qa_manager_top_courses_label',   'local_jedomi'),
-            'qa_manager_top_courses_msg'     => get_string('qa_manager_top_courses_msg',     'local_jedomi'),
+            'qa_manager_inactive_users_msg'  => get_string('qa_manager_inactive_users_msg', 'local_jedomi'),
+            'qa_manager_no_teacher_label'    => get_string('qa_manager_no_teacher_label', 'local_jedomi'),
+            'qa_manager_no_teacher_msg'      => get_string('qa_manager_no_teacher_msg', 'local_jedomi'),
+            'qa_manager_overview_label'      => get_string('qa_manager_overview_label', 'local_jedomi'),
+            'qa_manager_overview_msg'        => get_string('qa_manager_overview_msg', 'local_jedomi'),
+            'qa_manager_top_courses_label'   => get_string('qa_manager_top_courses_label', 'local_jedomi'),
+            'qa_manager_top_courses_msg'     => get_string('qa_manager_top_courses_msg', 'local_jedomi'),
             // Quick actions: Teacher
-            'qa_teacher_at_risk_label'       => get_string('qa_teacher_at_risk_label',       'local_jedomi'),
-            'qa_teacher_at_risk_msg'         => get_string('qa_teacher_at_risk_msg',         'local_jedomi'),
-            'qa_teacher_my_alerts_label'     => get_string('qa_teacher_my_alerts_label',     'local_jedomi'),
-            'qa_teacher_my_alerts_msg'       => get_string('qa_teacher_my_alerts_msg',       'local_jedomi'),
-            'qa_teacher_my_courses_label'    => get_string('qa_teacher_my_courses_label',    'local_jedomi'),
-            'qa_teacher_my_courses_msg'      => get_string('qa_teacher_my_courses_msg',      'local_jedomi'),
-            'qa_teacher_missing_work_label'  => get_string('qa_teacher_missing_work_label',  'local_jedomi'),
-            'qa_teacher_missing_work_msg'    => get_string('qa_teacher_missing_work_msg',    'local_jedomi'),
-            'qa_teacher_never_logged_label'  => get_string('qa_teacher_never_logged_label',  'local_jedomi'),
-            'qa_teacher_never_logged_msg'    => get_string('qa_teacher_never_logged_msg',    'local_jedomi'),
-            'qa_teacher_notify_group_label'  => get_string('qa_teacher_notify_group_label',  'local_jedomi'),
-            'qa_teacher_notify_group_msg'    => get_string('qa_teacher_notify_group_msg',    'local_jedomi'),
-            'qa_teacher_performance_label'   => get_string('qa_teacher_performance_label',   'local_jedomi'),
-            'qa_teacher_performance_msg'     => get_string('qa_teacher_performance_msg',     'local_jedomi'),
-            'qa_teacher_top_students_label'  => get_string('qa_teacher_top_students_label',  'local_jedomi'),
-            'qa_teacher_top_students_msg'    => get_string('qa_teacher_top_students_msg',    'local_jedomi'),
+            'qa_teacher_at_risk_label'       => get_string('qa_teacher_at_risk_label', 'local_jedomi'),
+            'qa_teacher_at_risk_msg'         => get_string('qa_teacher_at_risk_msg', 'local_jedomi'),
+            'qa_teacher_my_alerts_label'     => get_string('qa_teacher_my_alerts_label', 'local_jedomi'),
+            'qa_teacher_my_alerts_msg'       => get_string('qa_teacher_my_alerts_msg', 'local_jedomi'),
+            'qa_teacher_my_courses_label'    => get_string('qa_teacher_my_courses_label', 'local_jedomi'),
+            'qa_teacher_my_courses_msg'      => get_string('qa_teacher_my_courses_msg', 'local_jedomi'),
+            'qa_teacher_missing_work_label'  => get_string('qa_teacher_missing_work_label', 'local_jedomi'),
+            'qa_teacher_missing_work_msg'    => get_string('qa_teacher_missing_work_msg', 'local_jedomi'),
+            'qa_teacher_never_logged_label'  => get_string('qa_teacher_never_logged_label', 'local_jedomi'),
+            'qa_teacher_never_logged_msg'    => get_string('qa_teacher_never_logged_msg', 'local_jedomi'),
+            'qa_teacher_notify_group_label'  => get_string('qa_teacher_notify_group_label', 'local_jedomi'),
+            'qa_teacher_notify_group_msg'    => get_string('qa_teacher_notify_group_msg', 'local_jedomi'),
+            'qa_teacher_performance_label'   => get_string('qa_teacher_performance_label', 'local_jedomi'),
+            'qa_teacher_performance_msg'     => get_string('qa_teacher_performance_msg', 'local_jedomi'),
+            'qa_teacher_top_students_label'  => get_string('qa_teacher_top_students_label', 'local_jedomi'),
+            'qa_teacher_top_students_msg'    => get_string('qa_teacher_top_students_msg', 'local_jedomi'),
             // Quick actions: Student
-            'qa_student_help_label'          => get_string('qa_student_help_label',          'local_jedomi'),
-            'qa_student_help_msg'            => get_string('qa_student_help_msg',            'local_jedomi'),
-            'qa_student_my_courses_label'    => get_string('qa_student_my_courses_label',    'local_jedomi'),
-            'qa_student_my_courses_msg'      => get_string('qa_student_my_courses_msg',      'local_jedomi'),
-            'qa_student_my_grade_label'      => get_string('qa_student_my_grade_label',      'local_jedomi'),
-            'qa_student_my_grade_msg'        => get_string('qa_student_my_grade_msg',        'local_jedomi'),
-            'qa_student_my_grades_label'     => get_string('qa_student_my_grades_label',     'local_jedomi'),
-            'qa_student_my_grades_msg'       => get_string('qa_student_my_grades_msg',       'local_jedomi'),
-            'qa_student_my_progress_label'   => get_string('qa_student_my_progress_label',   'local_jedomi'),
-            'qa_student_my_progress_msg'     => get_string('qa_student_my_progress_msg',     'local_jedomi'),
-            'qa_student_my_tasks_label'      => get_string('qa_student_my_tasks_label',      'local_jedomi'),
-            'qa_student_my_tasks_msg'        => get_string('qa_student_my_tasks_msg',        'local_jedomi'),
-            'qa_student_this_week_label'     => get_string('qa_student_this_week_label',     'local_jedomi'),
-            'qa_student_this_week_msg'       => get_string('qa_student_this_week_msg',       'local_jedomi'),
+            'qa_student_help_label'          => get_string('qa_student_help_label', 'local_jedomi'),
+            'qa_student_help_msg'            => get_string('qa_student_help_msg', 'local_jedomi'),
+            'qa_student_my_courses_label'    => get_string('qa_student_my_courses_label', 'local_jedomi'),
+            'qa_student_my_courses_msg'      => get_string('qa_student_my_courses_msg', 'local_jedomi'),
+            'qa_student_my_grade_label'      => get_string('qa_student_my_grade_label', 'local_jedomi'),
+            'qa_student_my_grade_msg'        => get_string('qa_student_my_grade_msg', 'local_jedomi'),
+            'qa_student_my_grades_label'     => get_string('qa_student_my_grades_label', 'local_jedomi'),
+            'qa_student_my_grades_msg'       => get_string('qa_student_my_grades_msg', 'local_jedomi'),
+            'qa_student_my_progress_label'   => get_string('qa_student_my_progress_label', 'local_jedomi'),
+            'qa_student_my_progress_msg'     => get_string('qa_student_my_progress_msg', 'local_jedomi'),
+            'qa_student_my_tasks_label'      => get_string('qa_student_my_tasks_label', 'local_jedomi'),
+            'qa_student_my_tasks_msg'        => get_string('qa_student_my_tasks_msg', 'local_jedomi'),
+            'qa_student_this_week_label'     => get_string('qa_student_this_week_label', 'local_jedomi'),
+            'qa_student_this_week_msg'       => get_string('qa_student_this_week_msg', 'local_jedomi'),
         ],
     ];
 }
@@ -581,7 +596,6 @@ function local_jedomi_get_tool_definitions(string $role): array {
                 ],
             ],
         ];
-
     }
 
     // Agent tools — create, list, and delete scheduled AI agents.
@@ -754,6 +768,16 @@ function local_jedomi_get_tool_definitions(string $role): array {
     return $tools;
 }
 
+/**
+ * Generate a signed SPT (Secure Payload Token) for the current user and course.
+ *
+ * Builds a payload with the user's identity, effective capabilities, role-scoped
+ * course lists, and tool definitions, then signs it with an HMAC so the Python
+ * gateway can verify it.
+ *
+ * @param  string $role The Jedomi role shortname (admin|manager|teacher|student).
+ * @return array        The signed SPT payload including the 'signature' key.
+ */
 function local_jedomi_generate_spt(string $role): array {
     global $USER, $COURSE, $CFG, $DB;
 
@@ -764,12 +788,12 @@ function local_jedomi_generate_spt(string $role): array {
 
     // Capabilities reales de Moodle — heredadas del sistema de roles
     $capabilities = [
-        'can_view_all_grades'    => has_capability('moodle/grade:viewall',       $coursectx),
-        'can_manage_users'       => has_capability('moodle/user:update',         $sysctx),
-        'can_send_messages'      => has_capability('moodle/site:sendmessage',    $sysctx),
-        'can_manage_courses'     => has_capability('moodle/course:update',       $coursectx),
+        'can_view_all_grades'    => has_capability('moodle/grade:viewall', $coursectx),
+        'can_manage_users'       => has_capability('moodle/user:update', $sysctx),
+        'can_send_messages'      => has_capability('moodle/site:sendmessage', $sysctx),
+        'can_manage_courses'     => has_capability('moodle/course:update', $coursectx),
         'can_view_reports'       => has_capability('moodle/course:viewhiddenactivities', $coursectx),
-        'can_enrol_users'        => has_capability('enrol/manual:enrol',         $coursectx),
+        'can_enrol_users'        => has_capability('enrol/manual:enrol', $coursectx),
         'can_access_all_groups'  => has_capability('moodle/site:accessallgroups', $coursectx),
     ];
 
@@ -785,10 +809,10 @@ function local_jedomi_generate_spt(string $role): array {
                 $course_ids_owned[] = (int)$c->id;
             }
         }
-    } elseif ($role === 'admin') {
+    } else if ($role === 'admin') {
         // Admin no necesita lista de cursos — tiene acceso total
         $course_ids_owned = [];
-    } elseif ($role === 'student') {
+    } else if ($role === 'student') {
         // Para student: lista de cursos inscritos (usada por el gateway para filtrar)
         $courses = enrol_get_users_courses($USER->id, true);
         foreach ($courses as $c) {
@@ -803,12 +827,12 @@ function local_jedomi_generate_spt(string $role): array {
         'username'            => $USER->username,
         'role'                => $role,
         'course_id'           => (int) ($COURSE->id ?? 0),
-        'course_ids_owned'    => $course_ids_owned,    // teacher/manager: sus cursos
+        'course_ids_owned'    => $course_ids_owned, // teacher/manager: sus cursos
         'course_ids_enrolled' => $course_ids_enrolled, // student: cursos inscritos
         'capabilities'        => $capabilities,
-        'tools'               => $tools,               // Tool defs en OpenAI format — gateway las usa para configurar el modelo
+        'tools'               => $tools, // Tool defs en OpenAI format — gateway las usa para configurar el modelo
         'moodle_url'          => $CFG->wwwroot,
-        'expires'             => time() + 1800,  // 30 minutos (conversaciones con múltiples tool calls)
+        'expires'             => time() + 1800, // 30 minutos (conversaciones con múltiples tool calls)
     ];
 
     // Firma HMAC con el static secret — el mismo que usa el Gateway Python para verificar.
@@ -868,7 +892,7 @@ function local_jedomi_generate_spt_for_user(int $userid, string $role): array {
                 $course_ids_owned[] = (int)$c->id;
             }
         }
-    } elseif ($role === 'student') {
+    } else if ($role === 'student') {
         $courses = enrol_get_users_courses($userid, true, ['id']);
         foreach ($courses as $c) {
             $course_ids_enrolled[] = (int)$c->id;
@@ -902,29 +926,44 @@ function local_jedomi_generate_spt_for_user(int $userid, string $role): array {
     return $payload;
 }
 
+/**
+ * Determine the Jedomi role of the current user from Moodle capabilities.
+ *
+ * Site admins map to 'admin', system-level user managers to 'manager',
+ * users who can manage activities in the current course to 'teacher',
+ * and everyone else to 'student'.
+ *
+ * @return string 'admin', 'manager', 'teacher', or 'student'.
+ */
 function local_jedomi_get_user_role(): string {
     global $USER, $COURSE;
 
     // 1. Siteadmin → acceso total (arquetipo: admin)
-    if (is_siteadmin()) return 'admin';
+    if (is_siteadmin()) {
+        return 'admin';
+    }
 
     $sysctx = context_system::instance();
 
     // 2. Manager: tiene moodle/user:update a nivel de sistema pero NO es siteadmin.
-    //    Esto cubre el arquetipo 'manager' de Moodle y cualquier rol personalizado
-    //    con privilegios equivalentes (gestión de usuarios/cursos sin ser admin).
-    if (has_capability('moodle/user:update', $sysctx)) return 'manager';
+    // Esto cubre el arquetipo 'manager' de Moodle y cualquier rol personalizado
+    // con privilegios equivalentes (gestión de usuarios/cursos sin ser admin).
+    if (has_capability('moodle/user:update', $sysctx)) {
+        return 'manager';
+    }
 
     // 3. Teacher: puede gestionar actividades en el curso actual.
-    //    Cubre arquetipos 'editingteacher' y cualquier rol personalizado con esa capacidad.
+    // Cubre arquetipos 'editingteacher' y cualquier rol personalizado con esa capacidad.
     if (!empty($COURSE->id) && $COURSE->id > 1) {
         $ctx = context_course::instance($COURSE->id);
-        if (has_capability('moodle/course:manageactivities', $ctx)) return 'teacher';
+        if (has_capability('moodle/course:manageactivities', $ctx)) {
+            return 'teacher';
+        }
         return 'student';
     }
 
     // 4. Fuera de un curso específico: student con tools propias (grades, calendar, cursos inscritos).
-    //    Un docente que navega fuera de un curso obtiene acceso student — seguro y aceptable.
+    // Un docente que navega fuera de un curso obtiene acceso student — seguro y aceptable.
     return 'student';
 }
 
@@ -1025,20 +1064,20 @@ function local_jedomi_is_telegram_role_allowed(): bool {
     return false; // All roles are hidden.
 }
 
-/**
- * Get the allowlist of web services for a given role.
- *
- * @param  string $role The role shortname (admin|manager|teacher|student).
- * @return array        List of allowed WS names.
- */
 if (!function_exists('local_jedomi_get_role_allowlist')) {
-function local_jedomi_get_role_allowlist(string $role): array {
-    $json = get_config('local_jedomi', 'ws_allowlist_' . $role);
-    if (empty($json)) {
-        return [];
-    }
-    $decoded = json_decode($json, true);
-    return is_array($decoded) ? $decoded : [];
+    /**
+     * Get the allowlist of web services for a given role.
+     *
+     * @param  string $role The role shortname (admin|manager|teacher|student).
+     * @return array        List of allowed WS names.
+     */
+    function local_jedomi_get_role_allowlist(string $role): array {
+        $json = get_config('local_jedomi', 'ws_allowlist_' . $role);
+        if (empty($json)) {
+            return [];
+        }
+        $decoded = json_decode($json, true);
+        return is_array($decoded) ? $decoded : [];
     }
 }
 
@@ -1196,16 +1235,16 @@ function local_jedomi_classify_ws_access(string $wsname): string {
     return '';
 }
 
-/**
- * Write an entry to the Jedomi debug log.
- *
- * Logs are stored in {$CFG->dataroot}/local/jedomi/jedomi.log
- * in a human-readable format with timestamp and structured context.
- *
- * @param string $message Short description of what happened.
- * @param mixed  $data    Optional context data (array, string, or anything json-serializable).
- */
 if (!function_exists('local_jedomi_log')) {
+    /**
+     * Write an entry to the Jedomi debug log.
+     *
+     * Logs are stored in {$CFG->dataroot}/local/jedomi/jedomi.log
+     * in a human-readable format with timestamp and structured context.
+     *
+     * @param string $message Short description of what happened.
+     * @param mixed  $data    Optional context data (array, string, or anything json-serializable).
+     */
     function local_jedomi_log(string $message, mixed $data = null): void {
         global $CFG;
 
@@ -1254,7 +1293,7 @@ if (!function_exists('local_jedomi_log')) {
  * @return string       Content with tables converted to pipe-delimited <pre> blocks.
  */
 function local_jedomi_sanitize_html_tables(string $html): string {
-    return preg_replace_callback('/<table[^>]*>(.*?)<\/table>/is', function($tableMatch) {
+    return preg_replace_callback('/<table[^>]*>(.*?)<\/table>/is', function ($tableMatch) {
         $tableHtml = $tableMatch[1];
 
         // ── Extract headers ────────────────────────────────────────────
@@ -1360,7 +1399,9 @@ function local_jedomi_send_agent_notification(int|string $chatid, string $agent,
     // Plain-text summary (no HTML) — truncate so header + wrapper fits ≤ 1024.
     $summary = mb_substr(strip_tags($content), 0, 1500);
     $maxSummaryLen = 1024 - mb_strlen($header) - 7; // 7 = <i></i>
-    if ($maxSummaryLen < 0) $maxSummaryLen = 0;
+    if ($maxSummaryLen < 0) {
+        $maxSummaryLen = 0;
+    }
     $summary = mb_substr($summary, 0, $maxSummaryLen);
 
     // ── Decision: message vs file ──────────────────────────────────────

@@ -1,4 +1,19 @@
 <?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
 /**
  * Telegram Bot API client — thin wrapper around Telegram HTTP API.
  *
@@ -15,12 +30,22 @@ defined('MOODLE_INTERNAL') || die();
 
 require_once(__DIR__ . '/../../lib.php');
 
+/**
+ * Thin HTTP client for the Telegram Bot API: sending and editing messages, callbacks and file downloads.
+ */
 class api_client {
-
+    /** @var string Telegram bot token used to authenticate API calls. */
     private string $token;
+    /** @var string Base URL for the bot's Telegram API endpoints. */
     private string $base_url;
+    /** @var int HTTP status code returned by the most recent API call. */
     private int $last_http_code = 0;
 
+    /**
+     * Initialise the client with a bot token and build the API base URL.
+     *
+     * @param string|null $token Bot token; falls back to the configured token when null.
+     */
     public function __construct(?string $token = null) {
         $this->token = $token ?? manager::get_bot_token() ?? '';
         $this->base_url = 'https://api.telegram.org/bot' . $this->token;
@@ -263,8 +288,8 @@ class api_client {
         if ($result && ($result['ok'] ?? false)) {
             $bot = $result['result'] ?? [];
             return [
-                'id'         => $bot['id']         ?? 0,
-                'username'   => $bot['username']   ?? '',
+                'id'         => $bot['id'] ?? 0,
+                'username'   => $bot['username'] ?? '',
                 'first_name' => $bot['first_name'] ?? '',
             ];
         }
@@ -427,7 +452,7 @@ class api_client {
         $ch = curl_init($url);
         curl_setopt_array($ch, [
             CURLOPT_POST           => true,
-            CURLOPT_POSTFIELDS     => $params,  // Array → libcurl uses multipart/form-data.
+            CURLOPT_POSTFIELDS     => $params, // Array → libcurl uses multipart/form-data.
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_TIMEOUT        => 60,
         ]);

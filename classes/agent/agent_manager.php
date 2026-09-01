@@ -1,4 +1,19 @@
 <?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
 /**
  * Agent manager — CRUD, cache, stats, and purge for scheduled AI agents.
  *
@@ -18,7 +33,6 @@ defined('MOODLE_INTERNAL') || die();
  * Static facade for managing scheduled AI agent definitions.
  */
 class agent_manager {
-
     // ── CRUD: Read ───────────────────────────────────────────────────────────
 
     /**
@@ -347,11 +361,13 @@ class agent_manager {
                     'wday'    => (int) $utcdate->format('w'),
                     'mon'     => (int) $utcdate->format('n'),
                 ];
-                if (in_array($date['minutes'], $fields[0]) &&
+                if (
+                    in_array($date['minutes'], $fields[0]) &&
                     in_array($date['hours'], $fields[1]) &&
                     in_array($date['mday'], $fields[2]) &&
                     in_array($date['mon'], $fields[3]) &&
-                    in_array($date['wday'], $fields[4])) {
+                    in_array($date['wday'], $fields[4])
+                ) {
                     return $ts;
                 }
                 $ts += 60;
@@ -647,10 +663,13 @@ class agent_manager {
 
         // ── Executions per day (last 30 days, DB-agnostic). ──────────────────
         $thirtydaysago = time() - (30 * 86400);
-        $runs = $DB->get_records_select('local_jedomi_agents',
+        $runs = $DB->get_records_select(
+            'local_jedomi_agents',
             'lastrun IS NOT NULL AND lastrun >= :since',
             ['since' => $thirtydaysago],
-            '', 'id, lastrun');
+            '',
+            'id, lastrun'
+        );
 
         $perday = [];
         foreach ($runs as $run) {

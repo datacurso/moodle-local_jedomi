@@ -18,7 +18,6 @@
  * Unit tests for classes/telegram/webhook_handler.php in local_jedomi.
  *
  * @package    local_jedomi
- * @category   phpunit
  * @copyright  2026 Jedomi Project
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
@@ -46,7 +45,6 @@ defined('MOODLE_INTERNAL') || die();
  * @covers \local_jedomi\telegram\webhook_handler
  */
 final class webhook_handler_test extends \advanced_testcase {
-
     /**
      * Setup test environment.
      */
@@ -407,8 +405,11 @@ final class webhook_handler_test extends \advanced_testcase {
         $result = $this->call_private_static('execute_tool', [
             $tool, $args, (int)$user->id, 'student', [],
         ]);
-        $this->assertStringContainsString($marker, $result,
-            "Tool '{$tool}' should deny role 'student'");
+        $this->assertStringContainsString(
+            $marker,
+            $result,
+            "Tool '{$tool}' should deny role 'student'"
+        );
     }
 
     // ========================
@@ -453,8 +454,11 @@ final class webhook_handler_test extends \advanced_testcase {
             }
         }
 
-        $this->assertSame([], $offenders,
-            'error_log() is forbidden; use local_jedomi_log() or debugging() instead');
+        $this->assertSame(
+            [],
+            $offenders,
+            'error_log() is forbidden; use local_jedomi_log() or debugging() instead'
+        );
     }
 
     // ========================
@@ -476,20 +480,32 @@ final class webhook_handler_test extends \advanced_testcase {
 
         // Verify the /help lang strings exist with expected content.
         $helpheading = get_string('telegram_help_heading', 'local_jedomi');
-        $this->assertStringContainsString('Jedomi', $helpheading,
-            'Help heading should reference Jedomi');
+        $this->assertStringContainsString(
+            'Jedomi',
+            $helpheading,
+            'Help heading should reference Jedomi'
+        );
 
         $helpstart = get_string('telegram_help_start', 'local_jedomi');
-        $this->assertStringContainsString('/start', $helpstart,
-            'Help start string should reference /start command');
+        $this->assertStringContainsString(
+            '/start',
+            $helpstart,
+            'Help start string should reference /start command'
+        );
 
         $helphelp = get_string('telegram_help_help', 'local_jedomi');
-        $this->assertStringContainsString('/help', $helphelp,
-            'Help help string should reference /help command');
+        $this->assertStringContainsString(
+            '/help',
+            $helphelp,
+            'Help help string should reference /help command'
+        );
 
         $helpunlink = get_string('telegram_help_unlink', 'local_jedomi');
-        $this->assertStringContainsString('/desvincular', $helpunlink,
-            'Help unlink string should reference /desvincular command');
+        $this->assertStringContainsString(
+            '/desvincular',
+            $helpunlink,
+            'Help unlink string should reference /desvincular command'
+        );
 
         // Verify the help footer string exists and is non-empty.
         $helpfooter = get_string('telegram_help_footer', 'local_jedomi');
@@ -504,8 +520,10 @@ final class webhook_handler_test extends \advanced_testcase {
      * the rate-limit check at line 63.
      */
     public function test_help_command_before_rate_limit(): void {
-        $this->assertTrue(true,
-            'See code: /help check at line 51-60 runs before check_and_record_rate at line 63');
+        $this->assertTrue(
+            true,
+            'See code: /help check at line 51-60 runs before check_and_record_rate at line 63'
+        );
     }
 
     // ========================
@@ -531,8 +549,11 @@ final class webhook_handler_test extends \advanced_testcase {
      */
     public function test_ayuda_in_source(): void {
         $source = file_get_contents(__DIR__ . '/../classes/telegram/webhook_handler.php');
-        $this->assertStringContainsString("'/ayuda'", $source,
-            'webhook_handler should reference /ayuda as a command alias');
+        $this->assertStringContainsString(
+            "'/ayuda'",
+            $source,
+            'webhook_handler should reference /ayuda as a command alias'
+        );
     }
 
     /**
@@ -549,16 +570,31 @@ final class webhook_handler_test extends \advanced_testcase {
         ]);
 
         $this->assertIsString($prompt);
-        $this->assertMatchesRegularExpression('/telegram\s+html/i', $prompt,
-            'System prompt should tell the model to use Telegram HTML');
-        $this->assertStringContainsString('<b>', $prompt,
-            'System prompt should mention the supported <b> tag');
-        $this->assertStringContainsString('<i>', $prompt,
-            'System prompt should mention the supported <i> tag');
-        $this->assertStringContainsString('<code>', $prompt,
-            'System prompt should mention the supported <code> tag');
-        $this->assertMatchesRegularExpression('/no\s+(uses\s+)?markdown/i', $prompt,
-            'System prompt should forbid markdown');
+        $this->assertMatchesRegularExpression(
+            '/telegram\s+html/i',
+            $prompt,
+            'System prompt should tell the model to use Telegram HTML'
+        );
+        $this->assertStringContainsString(
+            '<b>',
+            $prompt,
+            'System prompt should mention the supported <b> tag'
+        );
+        $this->assertStringContainsString(
+            '<i>',
+            $prompt,
+            'System prompt should mention the supported <i> tag'
+        );
+        $this->assertStringContainsString(
+            '<code>',
+            $prompt,
+            'System prompt should mention the supported <code> tag'
+        );
+        $this->assertMatchesRegularExpression(
+            '/no\s+(uses\s+)?markdown/i',
+            $prompt,
+            'System prompt should forbid markdown'
+        );
     }
 
     /**

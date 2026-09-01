@@ -1,12 +1,36 @@
 <?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
+/**
+ * Spanish language strings for local_jedomi.
+ *
+ * @package    local_jedomi
+ * @copyright  2026 Jedomi Project
+ * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ */
+
 // ── Plugin identity ───────────────────────────────────────────────────────────
+
 $string['pluginname']      = 'Jedomi AI Sidebar';
 
 // ── Sidebar UI ────────────────────────────────────────────────────────────────
 $string['sidebar_title']   = 'Jedomi AI';
 $string['open_sidebar']    = 'Abrir Jedomi AI';
 $string['close']           = 'Cerrar (Esc)';
-$string['new_conversation']= 'Nueva conversación';
+$string['new_conversation'] = 'Nueva conversación';
 $string['export_conversation'] = 'Exportar conversación';
 $string['toggle_thinking'] = 'Mostrar/ocultar animación de pensamiento';
 $string['half_width']      = 'Media pantalla';
@@ -62,7 +86,7 @@ $string['tool_unknown']           = 'Ejecutando herramienta...';
 $string['action_copy']         = 'Copiar';
 $string['action_helpful']      = 'Útil';
 $string['action_improve']      = 'Mejorar';
-$string['action_improve_title']= 'Mejorable';
+$string['action_improve_title'] = 'Mejorable';
 $string['action_edit']         = 'Editar';
 $string['action_edit_title']   = 'Editar mensaje';
 
@@ -74,7 +98,7 @@ $string['sending']                 = 'Enviando...';
 $string['cancelled']               = 'Cancelado.';
 $string['messages_sent']           = '{sent} mensaje(s) enviados como mensajes internos de Moodle.';
 $string['messages_sent_fail']      = '({failed} fallaron)';
-$string['messages_recipients_note']= 'Los destinatarios los ven en su bandeja de mensajes de Moodle.';
+$string['messages_recipients_note'] = 'Los destinatarios los ven en su bandeja de mensajes de Moodle.';
 $string['no_messages_sent']        = 'No se enviaron mensajes.';
 $string['unknown_error']           = 'Error desconocido';
 $string['connection_error']        = 'Error de conexión:';
@@ -208,7 +232,7 @@ $string['improvement_heading']        = 'Mejora continua';
 $string['improvement_heading_help']   = 'Recolección opcional de datos para mejorar Jedomi con el tiempo.';
 $string['enabled_help']               = 'Muestra u oculta el sidebar de Jedomi en todo el sitio.';
 $string['privacy_access_heading']     = 'Control de acceso';
-$string['privacy_access_heading_help']= 'Quién puede ver y usar el sidebar de Jedomi.';
+$string['privacy_access_heading_help'] = 'Quién puede ver y usar el sidebar de Jedomi.';
 $string['role_visibility_label']      = 'Mostrar sidebar por rol';
 $string['role_visibility_help']       = 'Desactivá el toggle para ocultar el sidebar a los usuarios con ese rol. Los administradores del sitio siempre lo ven.';
 $string['privacy_anon_heading']       = 'Anonimización de datos';
@@ -219,7 +243,7 @@ $string['anon_strict_desc']           = 'Reemplaza nombres, correos, IDs y texto
 $string['anon_feedback_only_desc']    = 'Solo guarda calificaciones y botones de feedback. Sin texto de conversación.';
 $string['settings']        = 'Configuración de Jedomi';
 $string['gateway_url']     = 'URL del Gateway';
-$string['gateway_url_help']= 'URL del Gateway de Jedomi. Ejemplo: http://localhost:8765';
+$string['gateway_url_help'] = 'URL del Gateway de Jedomi. Ejemplo: http://localhost:8765';
 $string['api_key']         = 'API Key';
 $string['model']                     = 'Modelo';
 $string['max_tokens']                = 'Tokens máximos';
@@ -228,7 +252,7 @@ $string['enabled']         = 'Activar sidebar de Jedomi';
 $string['spt_secret']      = 'Secreto del token de permisos';
 $string['spt_secret_help'] = 'Secreto compartido entre Moodle y el Gateway para firmar los tokens de permisos. Debe coincidir con SPT_SECRET en el .env.';
 $string['collect_training_data']     = 'Recopilar conversaciones anonimizadas para entrenamiento';
-$string['collect_training_data_help']= 'Cuando está activo, las conversaciones se guardan de forma anónima para mejorar versiones futuras. No se retienen datos personales.';
+$string['collect_training_data_help'] = 'Cuando está activo, las conversaciones se guardan de forma anónima para mejorar versiones futuras. No se retienen datos personales.';
 $string['anonymization_level']       = 'Nivel de anonimización';
 $string['anonymization_level_help']  = 'Qué tan agresivamente anonimizar las conversaciones guardadas.';
 $string['anon_basic']                = 'Básico (nombres y emails)';
@@ -236,7 +260,7 @@ $string['anon_strict']               = 'Estricto (nombres, emails, IDs, texto li
 $string['anon_feedback_only']        = 'Solo feedback (no se guarda el texto de conversaciones)';
 $string['training_data_title']       = 'Datos de entrenamiento Jedomi';
 $string['course_availability_heading']     = 'Disponibilidad por curso';
-$string['course_availability_heading_help']= 'Controlá en qué cursos aparece el sidebar de Jedomi.';
+$string['course_availability_heading_help'] = 'Controlá en qué cursos aparece el sidebar de Jedomi.';
 $string['course_mode']               = 'Modo de disponibilidad';
 $string['course_mode_help']          = 'Seleccioná cómo controlar la disponibilidad por curso.';
 $string['course_mode_all']           = 'Todos los cursos (por defecto)';

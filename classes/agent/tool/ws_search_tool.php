@@ -1,4 +1,19 @@
 <?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
 /**
  * ws_search tool — searches Moodle web service functions by keyword.
  *
@@ -18,12 +33,25 @@ defined('MOODLE_INTERNAL') || die();
 
 use local_jedomi\schema\ws_indexer;
 
+/**
+ * Agent tool that searches Moodle web service functions by keyword via
+ * the WS indexer and returns compact per-function summaries.
+ */
 class ws_search_tool implements agent_tool {
-
+    /**
+     * Get the tool name used in AI tool calls.
+     *
+     * @return string The tool identifier 'ws_search'.
+     */
     public function get_name(): string {
         return 'ws_search';
     }
 
+    /**
+     * Build the OpenAI-compatible function definition for this tool.
+     *
+     * @return array Tool definition with a required query string and optional result limit.
+     */
     public function get_definition(): array {
         return [
             'type' => 'function',
@@ -48,6 +76,12 @@ class ws_search_tool implements agent_tool {
         ];
     }
 
+    /**
+     * Run a keyword search against the WS index and time the lookup.
+     *
+     * @param \stdClass $params Decoded tool arguments; expects 'query' and optional 'limit' (default 8, max 20).
+     * @return string JSON-encoded matching functions with counts and duration, or an error message.
+     */
     public function execute(\stdClass $params): string {
         $query = trim($params->query ?? '');
         if (empty($query)) {
@@ -90,7 +124,6 @@ class ws_search_tool implements agent_tool {
                 'functions' => $functions,
                 'duration_ms' => round((microtime(true) - $start) * 1000, 2),
             ], JSON_UNESCAPED_UNICODE);
-
         } catch (\Exception $e) {
             return json_encode([
                 'error' => 'ws_search failed: ' . $e->getMessage(),

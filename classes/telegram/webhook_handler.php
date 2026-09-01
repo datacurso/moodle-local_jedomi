@@ -1,4 +1,19 @@
 <?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
 /**
  * Telegram webhook handler — main orchestrator.
  *
@@ -18,8 +33,10 @@ require_once(__DIR__ . '/../../lib.php');
 use local_jedomi\schema\table_indexer;
 use local_jedomi\schema\ws_indexer;
 
+/**
+ * Main Telegram webhook orchestrator: routes messages, photos, commands and callback queries.
+ */
 class webhook_handler {
-
     /** Lock TTL in seconds — stale locks older than this are auto-released. */
     private const LOCK_TTL = 120;
 
@@ -122,8 +139,11 @@ class webhook_handler {
             }
             // Otherwise ask them to link first
             $client = new api_client();
-            $client->send_message($chat_id, get_string('telegram_msg_link_first', 'local_jedomi'),
-                self::get_unlinked_keyboard());
+            $client->send_message(
+                $chat_id,
+                get_string('telegram_msg_link_first', 'local_jedomi'),
+                self::get_unlinked_keyboard()
+            );
             return;
         }
 
@@ -252,8 +272,11 @@ class webhook_handler {
         switch ($command) {
             case 'new':
                 session::clear($chat_id);
-                $client->edit_message_text($chat_id, $message_id,
-                    get_string('telegram_msg_new_conversation', 'local_jedomi'));
+                $client->edit_message_text(
+                    $chat_id,
+                    $message_id,
+                    get_string('telegram_msg_new_conversation', 'local_jedomi')
+                );
                 break;
             case 'help':
                 $help = get_string('telegram_help_heading', 'local_jedomi') . "\n\n"
@@ -273,13 +296,19 @@ class webhook_handler {
                     $DB->delete_records('local_jedomi_telegram_rate_limit', ['chatid' => $chat_id]);
                     $DB->delete_records('local_jedomi_telegram_pending_actions', ['chatid' => $chat_id]);
                 }
-                $client->edit_message_text($chat_id, $message_id,
-                    get_string('telegram_msg_unlinked', 'local_jedomi'));
+                $client->edit_message_text(
+                    $chat_id,
+                    $message_id,
+                    get_string('telegram_msg_unlinked', 'local_jedomi')
+                );
                 break;
             case 'howtolin':
-                $client->edit_message_text($chat_id, $message_id,
+                $client->edit_message_text(
+                    $chat_id,
+                    $message_id,
                     get_string('telegram_msg_provide_code', 'local_jedomi') . "\n\n" .
-                    get_string('telegram_link_instructions', 'local_jedomi'));
+                    get_string('telegram_link_instructions', 'local_jedomi')
+                );
                 break;
             default:
                 // Unknown command — silently ignore.
@@ -316,6 +345,11 @@ class webhook_handler {
         ];
     }
 
+    /**
+     * Handle an inline-keyboard callback query: acknowledge it and dispatch cmd:/confirm: actions.
+     *
+     * @param array $callback The callback_query object from the Telegram update.
+     */
     private static function handle_callback_query(array $callback): void {
         $callback_id = $callback['id'] ?? '';
         $data = $callback['data'] ?? '';
@@ -465,8 +499,10 @@ class webhook_handler {
                 $lock_age = time() - ($existing['locked_at'] ?? time());
                 if ($lock_age < self::LOCK_TTL) {
                     // Lock is still valid (< 2 min) — block.
-                    (new api_client())->send_message($chat_id,
-                        '⏳ Sigo procesando tu solicitud anterior, dame un momento...');
+                    (new api_client())->send_message(
+                        $chat_id,
+                        '⏳ Sigo procesando tu solicitud anterior, dame un momento...'
+                    );
                     return;
                 }
                 // Lock expired (> LOCK_TTL seconds) — auto-release and continue.
@@ -522,11 +558,21 @@ class webhook_handler {
             $api_key = get_config('local_jedomi', 'api_key');
             $model = get_config('local_jedomi', 'model');
             $timeout = (int) get_config('local_jedomi', 'telegram_gateway_timeout');
-            if (empty($gateway_url)) { $gateway_url = 'http://localhost:8765'; }
-            if (empty($api_key)) { $api_key = 'jedomi-local-key'; }
-            if (empty($model)) { $model = 'jedomi-e4b'; }
-            if ($timeout < 5) { $timeout = 120; }
-            if ($timeout > 300) { $timeout = 300; }
+            if (empty($gateway_url)) {
+                $gateway_url = 'http://localhost:8765';
+            }
+            if (empty($api_key)) {
+                $api_key = 'jedomi-local-key';
+            }
+            if (empty($model)) {
+                $model = 'jedomi-e4b';
+            }
+            if ($timeout < 5) {
+                $timeout = 120;
+            }
+            if ($timeout > 300) {
+                $timeout = 300;
+            }
 
             // ── Restore checkpoint if a previous attempt was killed ──
             try {
@@ -538,8 +584,10 @@ class webhook_handler {
             if (!empty($checkpoint) && !empty($checkpoint['messages'])) {
                 $last_user_msg = '';
                 for ($i = count($checkpoint['messages']) - 1; $i >= 0; $i--) {
-                    if (($checkpoint['messages'][$i]['role'] ?? '') === 'user'
-                        && is_string($checkpoint['messages'][$i]['content'] ?? null)) {
+                    if (
+                        ($checkpoint['messages'][$i]['role'] ?? '') === 'user'
+                        && is_string($checkpoint['messages'][$i]['content'] ?? null)
+                    ) {
                         $last_user_msg = $checkpoint['messages'][$i]['content'];
                         break;
                     }
@@ -547,8 +595,13 @@ class webhook_handler {
                 if ($last_user_msg === $text) {
                     $messages = $checkpoint['messages'];
                     $cp_json = json_encode($checkpoint, JSON_UNESCAPED_UNICODE);
-                    \local_jedomi_log(sprintf('[GATELOOP] checkpoint restored chat=%s iter=%d state_bytes=%d msg_count=%d',
-                        $chat_id, $checkpoint['iteration'] ?? 0, strlen($cp_json), count($checkpoint['messages'])));
+                    \local_jedomi_log(sprintf(
+                        '[GATELOOP] checkpoint restored chat=%s iter=%d state_bytes=%d msg_count=%d',
+                        $chat_id,
+                        $checkpoint['iteration'] ?? 0,
+                        strlen($cp_json),
+                        count($checkpoint['messages'])
+                    ));
                 } else {
                     session::set_context($state_key, []);
                 }
@@ -566,7 +619,7 @@ class webhook_handler {
                 'tools'          => $tools,
             ];
 
-        // ── Self-ping flow: restore messages & context from state ──
+            // ── Self-ping flow: restore messages & context from state ──
         } else {
             $state = session::get_context($state_key);
             if (empty($state) || empty($state['messages'])) {
@@ -575,8 +628,13 @@ class webhook_handler {
             }
             $messages = $state['messages'];
             $state_json_check = json_encode($state, JSON_UNESCAPED_UNICODE);
-            \local_jedomi_log(sprintf('[GATELOOP] self-ping restored chat=%s iter=%d state_bytes=%d msg_count=%d',
-                $chat_id, $state['iteration'] ?? 0, strlen($state_json_check), count($messages)));
+            \local_jedomi_log(sprintf(
+                '[GATELOOP] self-ping restored chat=%s iter=%d state_bytes=%d msg_count=%d',
+                $chat_id,
+                $state['iteration'] ?? 0,
+                strlen($state_json_check),
+                count($messages)
+            ));
 
             // ── Restore SPT + tools from checkpoint (cached, avoids DB re-queries) ──
             $spt = $state['spt'] ?? null;
@@ -597,11 +655,21 @@ class webhook_handler {
             $api_key = get_config('local_jedomi', 'api_key');
             $model = get_config('local_jedomi', 'model');
             $timeout = (int) get_config('local_jedomi', 'telegram_gateway_timeout');
-            if (empty($gateway_url)) { $gateway_url = 'http://localhost:8765'; }
-            if (empty($api_key)) { $api_key = 'jedomi-local-key'; }
-            if (empty($model)) { $model = 'jedomi-e4b'; }
-            if ($timeout < 5) { $timeout = 120; }
-            if ($timeout > 300) { $timeout = 300; }
+            if (empty($gateway_url)) {
+                $gateway_url = 'http://localhost:8765';
+            }
+            if (empty($api_key)) {
+                $api_key = 'jedomi-local-key';
+            }
+            if (empty($model)) {
+                $model = 'jedomi-e4b';
+            }
+            if ($timeout < 5) {
+                $timeout = 120;
+            }
+            if ($timeout > 300) {
+                $timeout = 300;
+            }
 
             // Ensure lock is active.
             $state['is_locked'] = true;
@@ -630,8 +698,12 @@ class webhook_handler {
         // producing NO error log — just a silent hang.
         $old_limit = @ini_get('max_execution_time');
         @set_time_limit($hard_guard + 20); // 75s total, safe for most hosts
-        \local_jedomi_log(sprintf('[GATELOOP] time_limit: old=%s new=%d hard_guard=%d',
-            $old_limit ?: 'unlimited', $hard_guard + 20, $hard_guard));
+        \local_jedomi_log(sprintf(
+            '[GATELOOP] time_limit: old=%s new=%d hard_guard=%d',
+            $old_limit ?: 'unlimited',
+            $hard_guard + 20,
+            $hard_guard
+        ));
 
         $toolrepeatcounts = [];
         $progress_sent_first = false;
@@ -641,8 +713,13 @@ class webhook_handler {
             $elapsed = time() - $LOOP_START;
 
             if ($iteration > 0) {
-                \local_jedomi_log(sprintf('[GATELOOP] iter_top chat=%s iter=%d elapsed=%ds msg_count=%d',
-                    $chat_id, $iteration, $elapsed, count($messages)));
+                \local_jedomi_log(sprintf(
+                    '[GATELOOP] iter_top chat=%s iter=%d elapsed=%ds msg_count=%d',
+                    $chat_id,
+                    $iteration,
+                    $elapsed,
+                    count($messages)
+                ));
             }
 
             // ── Hard guard (~55s): save state + self_ping → next worker ──
@@ -650,8 +727,12 @@ class webhook_handler {
             // NOT $iteration (current). The for loop increments AFTER the
             // body, so saving $iteration means the next worker re-does it.
             if ($elapsed >= $hard_guard) {
-                \local_jedomi_log(sprintf('[GATELOOP] hard_guard chat=%s iter=%d elapsed=%d self-pinging',
-                    $chat_id, $iteration, $elapsed));
+                \local_jedomi_log(sprintf(
+                    '[GATELOOP] hard_guard chat=%s iter=%d elapsed=%d self-pinging',
+                    $chat_id,
+                    $iteration,
+                    $elapsed
+                ));
                 $state['iteration'] = $iteration + 1;
                 $state['messages'] = $messages;
                 $state['is_locked'] = true;
@@ -665,8 +746,12 @@ class webhook_handler {
             // before FPM request_terminate_timeout silently kills this worker.
             // Only on internal iterations (>0).
             if ($elapsed >= 40 && $iteration > 0) {
-                \local_jedomi_log(sprintf('[GATELOOP] medium_guard chat=%s iter=%d elapsed=%d self-pinging',
-                    $chat_id, $iteration, $elapsed));
+                \local_jedomi_log(sprintf(
+                    '[GATELOOP] medium_guard chat=%s iter=%d elapsed=%d self-pinging',
+                    $chat_id,
+                    $iteration,
+                    $elapsed
+                ));
                 $state['iteration'] = $iteration + 1;
                 $state['messages'] = $messages;
                 $state['is_locked'] = true;
@@ -679,8 +764,10 @@ class webhook_handler {
             // ── Soft guard (~30s): send a keepalive so the user knows we're alive ──
             if ($elapsed >= 30 && !$sent_timeout_warning) {
                 $sent_timeout_warning = true;
-                (new api_client())->send_message($chat_id,
-                    "🔄 Sigamos, estoy procesando tu solicitud…");
+                (new api_client())->send_message(
+                    $chat_id,
+                    "🔄 Sigamos, estoy procesando tu solicitud…"
+                );
             }
 
             // ── Re-send typing indicator each iteration (Telegram auto-expires after ~6s) ──
@@ -729,9 +816,15 @@ class webhook_handler {
                 },
             ]);
 
-            \local_jedomi_log(sprintf('[GATELOOP] calling_gateway chat=%s iter=%d elapsed=%ds curl_timeout=%ds payload_bytes=%d msg_count=%d',
-                $chat_id, $iteration, time() - $LOOP_START, $curl_timeout,
-                strlen(json_encode($payload, JSON_UNESCAPED_UNICODE)), count($messages)));
+            \local_jedomi_log(sprintf(
+                '[GATELOOP] calling_gateway chat=%s iter=%d elapsed=%ds curl_timeout=%ds payload_bytes=%d msg_count=%d',
+                $chat_id,
+                $iteration,
+                time() - $LOOP_START,
+                $curl_timeout,
+                strlen(json_encode($payload, JSON_UNESCAPED_UNICODE)),
+                count($messages)
+            ));
 
             curl_exec($ch);
             $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -740,8 +833,14 @@ class webhook_handler {
             curl_close($ch);
 
             // ── Log Gateway response for debugging ──
-            \local_jedomi_log(sprintf('[GATEWAY] iter=%d http=%d curl_errno=%d curl_err=%s sse_bytes=%d',
-                $iteration, $http_code, $curl_errno, $curl_error ?: 'none', strlen($sse_buffer)));
+            \local_jedomi_log(sprintf(
+                '[GATEWAY] iter=%d http=%d curl_errno=%d curl_err=%s sse_bytes=%d',
+                $iteration,
+                $http_code,
+                $curl_errno,
+                $curl_error ?: 'none',
+                strlen($sse_buffer)
+            ));
 
             // ── Gateway errors ──
             if ($curl_errno !== 0) {
@@ -785,7 +884,7 @@ class webhook_handler {
                 $has_tools = false;
 
                 // ── Fallback: text-based TOOL_CALL parsing (for models that
-                //    don't support native function calling). ────────────────
+                // don't support native function calling). ────────────────
                 $tcPattern1 = '/(?:TOOL_CALL|call):\s*(\w+)\s*\n(.+?)\nEND_TOOL_CALL[^\n]*/si';
                 $tcPattern2 = '/<\|(?:tool_call|python_tag)\|>(.+?)<\|\\/\1\|>/si';
 
@@ -857,7 +956,9 @@ class webhook_handler {
                         if (json_last_error() === JSON_ERROR_NONE && isset($decoded['name'])) {
                             $toolName = $decoded['name'];
                             $args = $decoded['arguments'] ?? '{}';
-                            if (is_array($args)) { $args = json_encode($args, JSON_UNESCAPED_UNICODE); }
+                            if (is_array($args)) {
+                                $args = json_encode($args, JSON_UNESCAPED_UNICODE);
+                            }
                         } else {
                             $parts = explode("\n", $inner, 2);
                             $toolName = trim($parts[0]);
@@ -878,8 +979,8 @@ class webhook_handler {
                 }
 
                 // ── Ultra-broad fallback: if content still looks like it has tool calls
-                //    but no regex matched, try grabbing everything between 'call:\w+' and
-                //    'END_TOOL_CALL' as raw JSON. This catches unusual line breaks/whitespace.
+                // but no regex matched, try grabbing everything between 'call:\w+' and
+                // 'END_TOOL_CALL' as raw JSON. This catches unusual line breaks/whitespace.
                 if (empty($toolCalls) && preg_match('/\b(?:TOOL_CALL|call):\s*\w+/i', $content)) {
                     $tcUltra = '/(?:TOOL_CALL|call):\s*(\w+)\s*\n?(.+?)\s*END_TOOL_CALL\s*/si';
                     if (preg_match_all($tcUltra, $content, $tcMatches3, PREG_SET_ORDER)) {
@@ -962,9 +1063,9 @@ class webhook_handler {
                     'create_grouping'    => 'Crear agrupamientos',
                     'create_groupings_groups' => 'Agrupar grupos',
                     'list_agents'     => 'Listar agentes',
-                    'list_agent'      => 'Listar agentes',  // Alias hallucinated singular.
+                    'list_agent'      => 'Listar agentes', // Alias hallucinated singular.
                     'create_agent'    => 'Crear agente',
-                    'create_agents'   => 'Crear agente',    // Alias hallucinated plural.
+                    'create_agents'   => 'Crear agente', // Alias hallucinated plural.
                     'delete_agent'    => 'Eliminar agente',
                     'delete_agents'   => 'Eliminar agente', // Alias hallucinated plural.
                 ];
@@ -972,7 +1073,7 @@ class webhook_handler {
                     $name = $tc['function']['name'] ?? '';
                     if (isset($tool_lang_keys[$name])) {
                         $label = get_string($tool_lang_keys[$name], 'local_jedomi');
-                    } elseif (isset($tool_inline_labels[$name])) {
+                    } else if (isset($tool_inline_labels[$name])) {
                         $label = $tool_inline_labels[$name];
                     } else {
                         $label = $name;
@@ -986,16 +1087,18 @@ class webhook_handler {
                     $iteration <= 20 => '📊',
                     default          => '⚙️',
                 };
-                (new api_client())->send_message($chat_id,
-                    $progress_icon . ' ' . implode(', ', $tool_display) . '…');
+                (new api_client())->send_message(
+                    $chat_id,
+                    $progress_icon . ' ' . implode(', ', $tool_display) . '…'
+                );
             }
 
             if (!$has_tools) {
                 // ── Text response: send to Telegram ──
 
                 // 0. Convert HTML tables to pipe-delimited <pre> blocks.
-                //    Telegram does NOT support <table>/<tr>/<td> — strip_tags
-                //    would leave all data concatenated (unreadable).
+                // Telegram does NOT support <table>/<tr>/<td> — strip_tags
+                // would leave all data concatenated (unreadable).
                 $content = \local_jedomi_sanitize_html_tables($content);
 
                 // 1. Replace \[...\] and \(...\) with dollar signs for Moodle-style inline math.
@@ -1010,8 +1113,8 @@ class webhook_handler {
                 $content = preg_replace('/\[([^\]]+)\]\(([^)]+)\)/', '<a href="$2">$1</a>', $content);
 
                 // 3. Convert markdown formatting to Telegram HTML (defense-in-depth,
-                //    the model often uses **bold** or *italic* despite instructions).
-                //    Order matters: bold before italic, inline code before formatting.
+                // the model often uses **bold** or *italic* despite instructions).
+                // Order matters: bold before italic, inline code before formatting.
                 // 3a. ``` code blocks → <pre>
                 $content = preg_replace('/```(\w*)\s*\n?(.*?)```/s', '<pre>$2</pre>', $content) ?? $content;
                 // 3b. ``inline code`` (double) → <pre>
@@ -1020,8 +1123,8 @@ class webhook_handler {
                 $content = preg_replace('/`([^`]+)`/', '<code>$1</code>', $content) ?? $content;
 
                 // 3c-bis. Protect * inside <code>/<pre> from being consumed by bold/italic steps.
-                //         Replace * with &#42; (HTML entity) so "30 * * * *" inside <code> stays intact.
-                $content = preg_replace_callback('/<(code|pre)\b[^>]*>.*?<\/\1>/is', function($m) {
+                // Replace * with &#42; (HTML entity) so "30 * * * *" inside <code> stays intact.
+                $content = preg_replace_callback('/<(code|pre)\b[^>]*>.*?<\/\1>/is', function ($m) {
                     return str_replace('*', '&#42;', $m[0]);
                 }, $content) ?? $content;
 
@@ -1035,7 +1138,7 @@ class webhook_handler {
                 $content = preg_replace('/\*([^*]+)\*/', '<i>$1</i>', $content) ?? $content;
 
                 // 4. Normalize Telegram variants: <strong>→<b>, <em>→<i>, <ins>→<u>,
-                //    <strike>/<del>→<s>, <span class="tg-spoiler">→<tg-spoiler>.
+                // <strike>/<del>→<s>, <span class="tg-spoiler">→<tg-spoiler>.
                 $replacements = [
                     '/<strong\b[^>]*>/i' => '<b>',
                     '/<\/strong>/i'      => '</b>',
@@ -1051,13 +1154,15 @@ class webhook_handler {
                 $display = preg_replace(array_keys($replacements), array_values($replacements), $content);
 
                 // 5. Strip DISALLOWED tags via strip_tags.
-                $display = strip_tags($display,
-                    '<b><i><u><s><tg-spoiler><span><blockquote><a><code><pre><tg-emoji>');
+                $display = strip_tags(
+                    $display,
+                    '<b><i><u><s><tg-spoiler><span><blockquote><a><code><pre><tg-emoji>'
+                );
 
                 // 6. Strip attributes per Telegram rules using preg_replace_callback
-                //    (handles attributes in ANY order, unlike plain regex).
+                // (handles attributes in ANY order, unlike plain regex).
                 // 6a. <span class="tg-spoiler"> → <tg-spoiler>.
-                $display = preg_replace_callback('/<span\b[^>]*>/i', function($m) {
+                $display = preg_replace_callback('/<span\b[^>]*>/i', function ($m) {
                     if (preg_match('/class="tg-spoiler"/i', $m[0])) {
                         return '<tg-spoiler>';
                     }
@@ -1067,14 +1172,14 @@ class webhook_handler {
                 // 6b. Strip attributes from <b>, <i>, <u>, <s>, <tg-spoiler>, <blockquote>, <pre>.
                 $display = preg_replace('/<(b|i|u|s|tg-spoiler|blockquote|pre)\b[^>]*>/i', '<$1>', $display);
                 // 6c. <code> → keep class="language-*" if present, else strip all.
-                $display = preg_replace_callback('/<code\b[^>]*>/i', function($m) {
+                $display = preg_replace_callback('/<code\b[^>]*>/i', function ($m) {
                     if (preg_match('/class="language-([^"]*)"/i', $m[0], $cm)) {
                         return '<code class="language-' . $cm[1] . '">';
                     }
                     return '<code>';
                 }, $display);
                 // 6d. <a> → keep href only (double or single quotes).
-                $display = preg_replace_callback('/<a\b[^>]*>/i', function($m) {
+                $display = preg_replace_callback('/<a\b[^>]*>/i', function ($m) {
                     if (preg_match('/href="([^"]*)"/i', $m[0], $hm)) {
                         return '<a href="' . $hm[1] . '">';
                     }
@@ -1084,7 +1189,7 @@ class webhook_handler {
                     return '';
                 }, $display);
                 // 6e. <tg-emoji> → keep emoji-id only.
-                $display = preg_replace_callback('/<tg-emoji\b[^>]*>/i', function($m) {
+                $display = preg_replace_callback('/<tg-emoji\b[^>]*>/i', function ($m) {
                     if (preg_match('/emoji-id="([^"]*)"/i', $m[0], $em)) {
                         return '<tg-emoji emoji-id="' . $em[1] . '">';
                     }
@@ -1151,8 +1256,12 @@ class webhook_handler {
             $is_actively_locked = !empty($fresh_state['is_locked'])
                 && (time() - ($fresh_state['locked_at'] ?? 0) < self::LOCK_TTL);
             if ($is_actively_locked && ($fresh_state['iteration'] ?? 0) > $iteration) {
-                \local_jedomi_log(sprintf('[GATELOOP] stale_iteration chat=%s iter=%d fresh_iter=%d — reloading',
-                    $chat_id, $iteration, $fresh_state['iteration']));
+                \local_jedomi_log(sprintf(
+                    '[GATELOOP] stale_iteration chat=%s iter=%d fresh_iter=%d — reloading',
+                    $chat_id,
+                    $iteration,
+                    $fresh_state['iteration']
+                ));
                 $iteration = (int)$fresh_state['iteration'] - 1; // For loop increments; restore 1 less.
                 $messages = $fresh_state['messages'] ?? $messages;
                 continue;
@@ -1176,13 +1285,25 @@ class webhook_handler {
                 $toolrepeatcounts[$callkey] = ($toolrepeatcounts[$callkey] ?? 0) + 1;
                 $repeat_count = $toolrepeatcounts[$callkey];
                 if ($repeat_count > 8) {
-                    \local_jedomi_log(sprintf('[GATELOOP] loop_detected chat=%s iter=%d tool=%s key=%s count=%d',
-                        $chat_id, $iteration, $name, $callkey, $repeat_count));
+                    \local_jedomi_log(sprintf(
+                        '[GATELOOP] loop_detected chat=%s iter=%d tool=%s key=%s count=%d',
+                        $chat_id,
+                        $iteration,
+                        $name,
+                        $callkey,
+                        $repeat_count
+                    ));
                     $looping = true;
                     break;
-                } elseif ($repeat_count >= 4) {
-                    \local_jedomi_log(sprintf('[GATELOOP] loop_warning chat=%s iter=%d tool=%s key=%s count=%d',
-                        $chat_id, $iteration, $name, $callkey, $repeat_count));
+                } else if ($repeat_count >= 4) {
+                    \local_jedomi_log(sprintf(
+                        '[GATELOOP] loop_warning chat=%s iter=%d tool=%s key=%s count=%d',
+                        $chat_id,
+                        $iteration,
+                        $name,
+                        $callkey,
+                        $repeat_count
+                    ));
                 }
 
                 try {
@@ -1206,8 +1327,13 @@ class webhook_handler {
             $state['is_locked'] = true;
 
             $state_json = json_encode($state, JSON_UNESCAPED_UNICODE);
-            \local_jedomi_log(sprintf('[GATELOOP] state_save chat=%s iter=%d state_bytes=%d msg_count=%d',
-                $chat_id, $iteration, strlen($state_json), count($messages)));
+            \local_jedomi_log(sprintf(
+                '[GATELOOP] state_save chat=%s iter=%d state_bytes=%d msg_count=%d',
+                $chat_id,
+                $iteration,
+                strlen($state_json),
+                count($messages)
+            ));
 
             try {
                 session::set_context($state_key, $state);
@@ -1217,9 +1343,11 @@ class webhook_handler {
                     . ' err=' . $e->getMessage());
                 // Fallback: release lock and inform user, don't crash silently.
                 session::set_context($state_key, []);
-                (new api_client())->send_message($chat_id,
+                (new api_client())->send_message(
+                    $chat_id,
                     '⚠️ Lo siento, tuve un problema al guardar el progreso. '
-                    . 'Por favor intentá de nuevo con /new.');
+                    . 'Por favor intentá de nuevo con /new.'
+                );
                 return;
             }
 
@@ -1541,7 +1669,10 @@ class webhook_handler {
                         $is_adm = false;
                         $admins = get_admins();
                         foreach ($admins as $admin) {
-                            if ((int) $admin->id === $userid) { $is_adm = true; break; }
+                            if ((int) $admin->id === $userid) {
+                                $is_adm = true;
+                                break;
+                            }
                         }
                         $admin_cache[$userid] = $is_adm;
                     }
@@ -1561,7 +1692,7 @@ class webhook_handler {
                 // Normalize Moodle table placeholders (FROM course → FROM {course}).
                 $sql = preg_replace_callback(
                     '/\b(FROM|JOIN)\s+([a-z][a-z0-9_]*)\b/i',
-                    static function(array $matches): string {
+                    static function (array $matches): string {
                         return $matches[1] . ' {' . $matches[2] . '}';
                     },
                     $sql
@@ -1581,7 +1712,7 @@ class webhook_handler {
                 }
 
                 // 2. Use recordset (streaming) + PHP row cap instead of LIMIT.
-                //    This avoids double-LIMIT conflicts with model-generated SQL.
+                // This avoids double-LIMIT conflicts with model-generated SQL.
                 try {
                     $recordset = $DB->get_recordset_sql($sql, $params);
                 } catch (\Exception $e) {
@@ -1757,8 +1888,11 @@ class webhook_handler {
                     return json_encode(['error' => 'WS class not found: ' . $wsname]);
                 }
 
-                $func_record = $DB->get_record('external_functions',
-                    ['name' => $wsname], 'classname, classpath, component, methodname');
+                $func_record = $DB->get_record(
+                    'external_functions',
+                    ['name' => $wsname],
+                    'classname, classpath, component, methodname'
+                );
                 if (!$func_record) {
                     return json_encode(['error' => 'WS not found: ' . $wsname]);
                 }
@@ -1794,7 +1928,7 @@ class webhook_handler {
                     $expected_params[] = $pname;
                     if (array_key_exists($pname, $decoded)) {
                         $callargs[] = $decoded[$pname];
-                    } elseif ($param->isDefaultValueAvailable()) {
+                    } else if ($param->isDefaultValueAvailable()) {
                         $callargs[] = $param->getDefaultValue();
                     } else {
                         $got = implode(', ', array_keys($decoded));
@@ -1804,7 +1938,7 @@ class webhook_handler {
                             'expected_params' => $expected_params,
                             'provided_params' => array_keys($decoded),
                             'hint' => "WS expects parameter '{$pname}'. Provided: [{$got}]. "
-                                . "Use ws_describe('{$wsname}') to see the exact structure."
+                                . "Use ws_describe('{$wsname}') to see the exact structure.",
                         ]);
                     }
                 }
@@ -1821,7 +1955,6 @@ class webhook_handler {
                         $json = mb_substr($json, 0, 2048) . "\n... (truncated)";
                     }
                     return $json;
-
                 } catch (\moodle_exception $e) {
                     $transaction->rollback($e);
                     return json_encode(['error' => 'Error en ' . $wsname . ': ' . $e->getMessage()]);
@@ -2052,12 +2185,27 @@ class webhook_handler {
         (new api_client())->send_message($chat_id, $message);
     }
 
+    /**
+     * Fetch the confirmed Telegram link record for a chat id.
+     *
+     * @param  string $chat_id Telegram chat id.
+     * @return \stdClass|null The confirmed link record, or null when none exists.
+     */
     private static function get_link_by_chat_id(string $chat_id): ?\stdClass {
         global $DB;
         $record = $DB->get_record('local_jedomi_telegram_links', ['chatid' => $chat_id, 'confirmed' => 1]);
         return $record ?: null; // get_record returns false when not found, cast to null.
     }
 
+    /**
+     * Decide whether the user may use the Telegram bot based on the hidden-roles setting.
+     *
+     * Admins are always allowed; otherwise the user is blocked only when every role
+     * they hold (system and course contexts) is in the configured hidden list.
+     *
+     * @param  int $userid Moodle user id to check.
+     * @return bool True if the user is allowed to interact with the bot.
+     */
     private static function is_user_role_allowed(int $userid): bool {
         // Site admins always have access (matching web version).
         $admins = get_admins();
@@ -2111,6 +2259,14 @@ class webhook_handler {
         return false;
     }
 
+    /**
+     * Record one message against the per-chat rate limit window and report if the chat is blocked.
+     *
+     * Uses a delegated transaction; on any error the chat is treated as blocked for safety.
+     *
+     * @param  string $chat_id Telegram chat id.
+     * @return bool True if the chat is currently rate-limited (message must be rejected).
+     */
     private static function check_and_record_rate(string $chat_id): bool {
         global $DB;
         $now = time();
@@ -2131,7 +2287,7 @@ class webhook_handler {
                     'chatid'      => $chat_id,
                     'windowstart' => $now,
                     'msgcount'    => 1,
-                    'blockeduntil'=> 0,
+                    'blockeduntil' => 0,
                 ]);
                 $transaction->allow_commit();
                 return false;
@@ -2166,13 +2322,21 @@ class webhook_handler {
             $DB->update_record('local_jedomi_telegram_rate_limit', $record);
             $transaction->allow_commit();
             return false;
-
         } catch (\Exception $e) {
             $transaction->rollback($e);
             return true; // Block on error to be safe
         }
     }
 
+    /**
+     * Resize an image to fit within a maximum dimension and return it base64-encoded.
+     *
+     * Falls back to encoding the raw file when GD is unavailable or the type is unsupported.
+     *
+     * @param  string $path    Path to the local image file.
+     * @param  int    $max_dim Maximum width/height in pixels for the resized image.
+     * @return string|null Base64-encoded image data, or null on failure.
+     */
     private static function resize_and_base64(string $path, int $max_dim): ?string {
         if (!function_exists('getimagesize')) {
             // Fallback: return raw file if no GD
@@ -2277,8 +2441,12 @@ class webhook_handler {
      * @param  string $role   The Jedomi role shortname (admin|manager|teacher|student).
      * @return array          The signed SPT payload, or empty array if user not found/deleted.
      */
-    private static function generate_spt_for_user(int $userid, string $role,
-        array $course_ids_owned = [], array $course_ids_enrolled = []): array {
+    private static function generate_spt_for_user(
+        int $userid,
+        string $role,
+        array $course_ids_owned = [],
+        array $course_ids_enrolled = []
+    ): array {
         global $CFG, $DB;
 
         $sysctx = \context_system::instance();
@@ -2309,7 +2477,7 @@ class webhook_handler {
                         $course_ids_owned[] = (int)$c->id;
                     }
                 }
-            } elseif ($role === 'student') {
+            } else if ($role === 'student') {
                 $courses = enrol_get_users_courses($userid, true, ['id']);
                 foreach ($courses as $c) {
                     $course_ids_enrolled[] = (int)$c->id;
@@ -2412,10 +2580,10 @@ class webhook_handler {
                 if (in_array('manager', $shortnames, true)) {
                     $courses_by_role['manager'][] = $c->fullname;
                     $course_ids_owned[] = (int)$c->id;
-                } elseif (in_array('editingteacher', $shortnames, true)) {
+                } else if (in_array('editingteacher', $shortnames, true)) {
                     $courses_by_role['teacher'][] = $c->fullname;
                     $course_ids_owned[] = (int)$c->id;
-                } elseif (in_array('student', $shortnames, true)) {
+                } else if (in_array('student', $shortnames, true)) {
                     $courses_by_role['student'][] = $c->fullname;
                     $course_ids_enrolled[] = (int)$c->id;
                 }
@@ -2425,10 +2593,12 @@ class webhook_handler {
                     $courses_by_role['manager'][] = $c->fullname;
                     $course_ids_owned[] = (int)$c->id;
                     $primary_role = 'manager';
-                } elseif (has_capability('moodle/course:manageactivities', $ctx, $userid)) {
+                } else if (has_capability('moodle/course:manageactivities', $ctx, $userid)) {
                     $courses_by_role['teacher'][] = $c->fullname;
                     $course_ids_owned[] = (int)$c->id;
-                    if ($primary_role !== 'manager') { $primary_role = 'teacher'; }
+                    if ($primary_role !== 'manager') {
+                        $primary_role = 'teacher';
+                    }
                 } else {
                     $courses_by_role['student'][] = $c->fullname;
                     $course_ids_enrolled[] = (int)$c->id;

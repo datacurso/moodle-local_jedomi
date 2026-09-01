@@ -1,4 +1,19 @@
 <?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
 /**
  * WebService tool — calls Moodle external functions via the internal API.
  *
@@ -18,19 +33,38 @@ namespace local_jedomi\agent\tool;
 
 defined('MOODLE_INTERNAL') || die();
 
+/**
+ * Agent tool that invokes Moodle external (web service) functions
+ * directly by resolving their class and method, with role allowlist
+ * gating and capability checks as the agent creator.
+ */
 class ws_tool implements agent_tool {
-
     /** @var int Agent creator's userid (for permission checks). */
     private int $userid;
 
+    /**
+     * Constructor.
+     *
+     * @param int $userid Agent creator's user ID, used for allowlist and capability checks.
+     */
     public function __construct(int $userid = 0) {
         $this->userid = $userid;
     }
 
+    /**
+     * Get the tool name used in AI tool calls.
+     *
+     * @return string The tool identifier 'call_webservice'.
+     */
     public function get_name(): string {
         return 'call_webservice';
     }
 
+    /**
+     * Build the OpenAI-compatible function definition for this tool.
+     *
+     * @return array Tool definition with a required WS function name and optional params object.
+     */
     public function get_definition(): array {
         return [
             'type' => 'function',
@@ -55,6 +89,17 @@ class ws_tool implements agent_tool {
         ];
     }
 
+    /**
+     * Resolve and invoke the named external function as the agent creator.
+     *
+     * Checks the role allowlist first (admins without an explicit allowlist have
+     * full access), maps caller parameters onto the method signature by name via
+     * reflection, and temporarily switches $USER so capability checks apply to
+     * the agent creator.
+     *
+     * @param \stdClass $params Decoded tool arguments; expects 'function' (or legacy 'wsname') and optional 'params' object.
+     * @return string JSON-encoded function result, or an error message.
+     */
     public function execute(\stdClass $params): string {
         global $DB;
 
@@ -110,7 +155,7 @@ class ws_tool implements agent_tool {
                 $name = $param->getName();
                 if (array_key_exists($name, $callerParams)) {
                     $callargs[] = $callerParams[$name];
-                } elseif ($param->isDefaultValueAvailable()) {
+                } else if ($param->isDefaultValueAvailable()) {
                     $callargs[] = $param->getDefaultValue();
                 } else {
                     return json_encode(['error' => "Missing required parameter: {$name}"]);
@@ -134,7 +179,6 @@ class ws_tool implements agent_tool {
                 'success' => true,
                 'data' => $result,
             ], JSON_UNESCAPED_UNICODE);
-
         } catch (\Exception $e) {
             return json_encode([
                 'error' => $e->getMessage(),

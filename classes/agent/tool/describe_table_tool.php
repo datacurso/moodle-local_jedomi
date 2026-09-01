@@ -1,4 +1,19 @@
 <?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
 /**
  * describe_table tool — shows columns of a Moodle database table.
  *
@@ -14,12 +29,25 @@ namespace local_jedomi\agent\tool;
 
 defined('MOODLE_INTERNAL') || die();
 
+/**
+ * Agent tool that lists the columns of a Moodle database table
+ * (name, type, meta type) using the DML get_columns() API.
+ */
 class describe_table_tool implements agent_tool {
-
+    /**
+     * Get the tool name used in AI tool calls.
+     *
+     * @return string The tool identifier 'describe_table'.
+     */
     public function get_name(): string {
         return 'describe_table';
     }
 
+    /**
+     * Build the OpenAI-compatible function definition for this tool.
+     *
+     * @return array Tool definition with the table name as the only required parameter.
+     */
     public function get_definition(): array {
         return [
             'type' => 'function',
@@ -40,6 +68,12 @@ class describe_table_tool implements agent_tool {
         ];
     }
 
+    /**
+     * Fetch column metadata for the requested table and time the lookup.
+     *
+     * @param \stdClass $params Decoded tool arguments; expects a 'tablename' property.
+     * @return string JSON-encoded column list with counts and duration, or an error if the table is missing.
+     */
     public function execute(\stdClass $params): string {
         global $DB;
 

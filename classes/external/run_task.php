@@ -1,4 +1,19 @@
 <?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
 /**
  * jedomi_run_task — CompanionWS external function.
  *
@@ -27,31 +42,43 @@ use core_external\external_single_structure;
 use core_external\external_value;
 use local_jedomi\companion_hmac;
 
+/**
+ * External function that triggers a scheduled or adhoc task, asynchronously by default or synchronously on demand.
+ */
 class run_task extends external_api {
-
     use companion_hmac;
 
     // -------------------------------------------------------------------------
     // Parameter / return definitions
     // -------------------------------------------------------------------------
 
+    /**
+     * Describe the parameters accepted by the execute function.
+     *
+     * @return external_function_parameters Task class name, sync flag and HMAC auth fields.
+     */
     public static function execute_parameters(): external_function_parameters {
         return new external_function_parameters([
             'task_class'      => new external_value(PARAM_TEXT, 'Fully-qualified PHP class name of the scheduled task'),
             'sync'            => new external_value(PARAM_BOOL, 'If true, run synchronously (max 30s)', VALUE_DEFAULT, false),
             'hmac_signature'  => new external_value(PARAM_ALPHANUMEXT, 'HMAC-SHA256 hex signature'),
-            'hmac_timestamp'  => new external_value(PARAM_INT,         'Unix timestamp from X-Jedomi-Timestamp'),
+            'hmac_timestamp'  => new external_value(PARAM_INT, 'Unix timestamp from X-Jedomi-Timestamp'),
             'payload_hash'    => new external_value(PARAM_ALPHANUMEXT, 'SHA256 hex of the request body'),
         ]);
     }
 
+    /**
+     * Describe the structure returned by the execute function.
+     *
+     * @return external_single_structure Task class, status, run id, captured output and timing.
+     */
     public static function execute_returns(): external_single_structure {
         return new external_single_structure([
             'task_class'   => new external_value(PARAM_TEXT, 'The task class that was triggered'),
             'status'       => new external_value(PARAM_TEXT, '"queued" or "success" or "error"'),
             'run_id'       => new external_value(PARAM_TEXT, 'UUID for async tracking (empty string in sync mode)', VALUE_OPTIONAL),
-            'output'       => new external_value(PARAM_RAW,  'Captured output (sync mode only)',                    VALUE_OPTIONAL),
-            'execution_ms' => new external_value(PARAM_INT,  'Execution time in milliseconds'),
+            'output'       => new external_value(PARAM_RAW, 'Captured output (sync mode only)', VALUE_OPTIONAL),
+            'execution_ms' => new external_value(PARAM_INT, 'Execution time in milliseconds'),
         ]);
     }
 
@@ -59,11 +86,21 @@ class run_task extends external_api {
     // Execution
     // -------------------------------------------------------------------------
 
+    /**
+     * Authenticate the request, validate the task class and run it async (queued) or sync.
+     *
+     * @param  string $task_class     Fully-qualified PHP class name of the task.
+     * @param  bool   $sync           If true, run synchronously with a 30-second limit.
+     * @param  string $hmac_signature HMAC-SHA256 hex signature from the gateway.
+     * @param  int    $hmac_timestamp Unix timestamp from the request header.
+     * @param  string $payload_hash   SHA256 hex of the request body.
+     * @return array Task class, status, run id, optional output and execution time.
+     */
     public static function execute(
         string $task_class,
-        bool   $sync,
+        bool $sync,
         string $hmac_signature,
-        int    $hmac_timestamp,
+        int $hmac_timestamp,
         string $payload_hash
     ): array {
         global $DB;
@@ -124,6 +161,14 @@ class run_task extends external_api {
     // Helpers
     // -------------------------------------------------------------------------
 
+    /**
+     * Queue the task as an adhoc wrapper and return immediately with a tracking run id.
+     *
+     * @param  string $task_class       Task class name as received from the caller.
+     * @param  string $normalized_class Class name normalised with a leading backslash.
+     * @param  float  $start            Request start time from microtime(true), for timing.
+     * @return array Task class, "queued" status, generated run id and execution time.
+     */
     private static function run_async(string $task_class, string $normalized_class, float $start): array {
         // Queue as an adhoc task wrapping the scheduled task logic.
         // We use a simple adhoc task that re-fires the scheduled task.
@@ -149,6 +194,14 @@ class run_task extends external_api {
         ];
     }
 
+    /**
+     * Run the task in-process with a 30-second time limit, capturing its output.
+     *
+     * @param  string $task_class       Task class name as received from the caller.
+     * @param  string $normalized_class Class name normalised with a leading backslash.
+     * @param  float  $start            Request start time from microtime(true), for timing.
+     * @return array Task class, success/error status, captured output and execution time.
+     */
     private static function run_sync(string $task_class, string $normalized_class, float $start): array {
         // Resolve instance — scheduled or adhoc.
         $task = task_manager::get_scheduled_task($normalized_class);

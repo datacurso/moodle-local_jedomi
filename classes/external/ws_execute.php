@@ -1,4 +1,19 @@
 <?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
 /**
  * jedomi_ws_execute — CompanionWS external function.
  *
@@ -22,10 +37,17 @@ use core_external\external_single_structure;
 use core_external\external_value;
 use local_jedomi\companion_hmac;
 
+/**
+ * External function that proxies a call to another Moodle web service function through a role allowlist.
+ */
 class ws_execute extends external_api {
-
     use companion_hmac;
 
+    /**
+     * Describe the parameters accepted by the execute function.
+     *
+     * @return external_function_parameters Target WS name, JSON params and HMAC auth fields.
+     */
     public static function execute_parameters(): external_function_parameters {
         return new external_function_parameters([
             'wsname'         => new external_value(PARAM_ALPHANUMEXT, 'Web service function name'),
@@ -36,6 +58,11 @@ class ws_execute extends external_api {
         ]);
     }
 
+    /**
+     * Describe the structure returned by the execute function.
+     *
+     * @return external_single_structure JSON-encoded result from the target web service.
+     */
     public static function execute_returns(): external_single_structure {
         return new external_single_structure([
             'result' => new external_value(PARAM_RAW, 'JSON-encoded result from the target WS'),
@@ -63,9 +90,9 @@ class ws_execute extends external_api {
         string $wsname,
         string $params,
         string $hmac_signature,
-        int    $hmac_timestamp,
+        int $hmac_timestamp,
         string $payload_hash,
-        bool   $skip_hmac = false
+        bool $skip_hmac = false
     ): array {
         global $DB;
 
@@ -126,7 +153,7 @@ class ws_execute extends external_api {
                 $name = $param->getName();
                 if (array_key_exists($name, $decoded)) {
                     $callargs[] = $decoded[$name];
-                } elseif ($param->isDefaultValueAvailable()) {
+                } else if ($param->isDefaultValueAvailable()) {
                     $callargs[] = $param->getDefaultValue();
                 } else {
                     throw new \moodle_exception('missingparam', 'error', '', $name);

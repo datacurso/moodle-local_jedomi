@@ -1,4 +1,19 @@
 <?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
 /**
  * Telegram webhook public endpoint.
  *
@@ -47,9 +62,13 @@ if ($internal_ping && !empty($ping_chat_id)) {
     header('Connection: close');
     header('Content-Length: 15');
     echo json_encode(['ok' => true]);
-    if (ob_get_level()) { ob_flush(); }
+    if (ob_get_level()) {
+        ob_flush();
+    }
     flush();
-    if (function_exists('fastcgi_finish_request')) { fastcgi_finish_request(); }
+    if (function_exists('fastcgi_finish_request')) {
+        fastcgi_finish_request();
+    }
 
     ignore_user_abort(true);
     set_time_limit(0);
@@ -90,14 +109,16 @@ header('Content-Type: application/json');
 header('Connection: close');
 header('Content-Length: 15');
 echo json_encode(['ok' => true]);
-if (ob_get_level()) { ob_flush(); }
+if (ob_get_level()) {
+    ob_flush();
+}
 flush();
 if (function_exists('fastcgi_finish_request')) {
     fastcgi_finish_request();
 }
 
 // ── Shutdown handler catches fatal errors ──
-register_shutdown_function(function() use ($update): void {
+register_shutdown_function(function () use ($update): void {
     $error = error_get_last();
     if ($error !== null && in_array($error['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR])) {
         $msg = 'FATAL: ' . $error['message'] . ' in ' . $error['file'] . ':' . $error['line'];

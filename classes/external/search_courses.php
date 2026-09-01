@@ -38,7 +38,6 @@ use external_multiple_structure;
  * Searches courses by shortname or fullname (admin-only, max 20 results).
  */
 class search_courses extends external_api {
-
     /**
      * Declare input parameters.
      */
@@ -73,7 +72,7 @@ class search_courses extends external_api {
         }
 
         $like1 = $DB->sql_like('c.shortname', ':q1', false);
-        $like2 = $DB->sql_like('c.fullname',  ':q2', false);
+        $like2 = $DB->sql_like('c.fullname', ':q2', false);
 
         $sql = "SELECT c.id, c.shortname, c.fullname, cc.name AS categoryname
                   FROM {course} c
@@ -109,7 +108,7 @@ class search_courses extends external_api {
         return new external_single_structure([
             'courses' => new external_multiple_structure(
                 new external_single_structure([
-                    'id'           => new external_value(PARAM_INT,  'Course ID'),
+                    'id'           => new external_value(PARAM_INT, 'Course ID'),
                     'shortname'    => new external_value(PARAM_TEXT, 'Short name'),
                     'fullname'     => new external_value(PARAM_TEXT, 'Full name'),
                     'categoryname' => new external_value(PARAM_TEXT, 'Category name'),
