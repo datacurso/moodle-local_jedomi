@@ -73,7 +73,8 @@ class sql_tool implements agent_tool {
             'type' => 'function',
             'function' => [
                 'name' => 'execute_sql',
-                'description' => 'Execute a read-only SQL query on the Moodle database. Returns results as JSON array. Only SELECT, SHOW, DESCRIBE, EXPLAIN are allowed.',
+                'description' => 'Execute a read-only SQL query on the Moodle database. Returns'
+                    . ' results as JSON array. Only SELECT, SHOW, DESCRIBE, EXPLAIN are allowed.',
                 'parameters' => [
                     'type' => 'object',
                     'properties' => [

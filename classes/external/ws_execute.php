@@ -136,7 +136,8 @@ class ws_execute extends external_api {
         }
         $methodname = $func_record->methodname;
         if (!method_exists($classname, $methodname)) {
-            throw new \moodle_exception('ws_execute_error', 'local_jedomi', '', "Method {$classname}::{$methodname}() does not exist");
+            throw new \moodle_exception('ws_execute_error', 'local_jedomi', '',
+                "Method {$classname}::{$methodname}() does not exist");
         }
 
         // ── Decode params ────────────────────────────────────────────────────

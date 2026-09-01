@@ -134,7 +134,8 @@ if ($cached && !empty($cached->result_json)) {
                 $cachedAnswer = $cachedResult['answer'] ?? $cached->result_json;
 
                 $reformMessages = [
-                    ['role' => 'system', 'content' => 'You previously answered a question. Below are updated tool results. Reformulate your answer using the new data. Keep the same style and structure.'],
+                    ['role' => 'system', 'content' => 'You previously answered a question. Below are updated tool results.'
+                        . ' Reformulate your answer using the new data. Keep the same style and structure.'],
                     ['role' => 'user', 'content' => "Previous answer:\n{$cachedAnswer}\n\n{$freshCtx}"],
                 ];
 

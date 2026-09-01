@@ -102,7 +102,8 @@ class observers {
         }
 
         // Check failing cron tasks
-        $failing = $DB->get_records_sql("SELECT classname, faildelay, disabled FROM {task_scheduled} WHERE faildelay > 0 OR disabled = 1 LIMIT 10");
+        $failing = $DB->get_records_sql("SELECT classname, faildelay, disabled"
+            . " FROM {task_scheduled} WHERE faildelay > 0 OR disabled = 1 LIMIT 10");
         if (empty($failing)) {
             return; // All good
         }

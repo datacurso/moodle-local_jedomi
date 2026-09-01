@@ -92,7 +92,8 @@ class create_agent_tool implements agent_tool {
     /**
      * Validate the prompt and 5-field cron expression, then create the agent via agent_manager.
      *
-     * @param \stdClass $params Decoded tool arguments; requires 'prompt' and 'schedule_cron', accepts name, userid, context_type, context_id, enabled.
+     * @param \stdClass $params Decoded tool arguments; requires 'prompt' and 'schedule_cron',
+     *                          accepts name, userid, context_type, context_id, enabled.
      * @return string JSON-encoded creation result with the new agent id, or an error message.
      */
     public function execute(\stdClass $params): string {

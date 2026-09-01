@@ -78,7 +78,8 @@ class cli_registry {
             ],
             [
                 'name'        => 'create_mod',
-                'description' => 'Create a course module (activity/resource) inside a course using natural-language-generated parameters.',
+                'description' => 'Create a course module (activity/resource) inside a course'
+                    . ' using natural-language-generated parameters.',
                 'params'      => [
                     'courseid' => [
                         'type'        => 'int',
@@ -88,12 +89,21 @@ class cli_registry {
                     'resource_type' => [
                         'type'        => 'string',
                         'required'    => true,
-                        'description' => 'Module plugin name (e.g. page, assign, quiz, forum, resource, label, folder, glossary, choice).',
+                        'description' => 'Module plugin name (e.g. page, assign, quiz, forum,'
+                            . ' resource, label, folder, glossary, choice).',
                     ],
                     'parameters' => [
                         'type'        => 'object',
                         'required'    => true,
-                        'description' => 'JSON object of module creation parameters. Required fields for every module type: name (string, the activity title) and intro (HTML string, the description). Content fields depend on the resource_type: for "page" use content (HTML), for "assign" use activity (HTML) and duedate (timestamp), for "quiz" use question and answer structures. Standard fields supported: name, intro, introformat (0=MOODLE, 1=HTML, 2=PLAIN), visible (0/1), timemodified, section. Module-specific fields are passed through as-is.',
+                        'description' => 'JSON object of module creation parameters.'
+                            . ' Required fields for every module type: name (string, the activity'
+                            . ' title) and intro (HTML string, the description). Content fields'
+                            . ' depend on the resource_type: for "page" use content (HTML), for'
+                            . ' "assign" use activity (HTML) and duedate (timestamp), for "quiz"'
+                            . ' use question and answer structures. Standard fields supported:'
+                            . ' name, intro, introformat (0=MOODLE, 1=HTML, 2=PLAIN), visible'
+                            . ' (0/1), timemodified, section. Module-specific fields are passed'
+                            . ' through as-is.',
                     ],
                     'section' => [
                         'type'        => 'int',

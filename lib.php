@@ -1225,7 +1225,11 @@ function local_jedomi_classify_ws_access(string $wsname): string {
     }
 
     // Write keywords (escritura).
-    if (preg_match('/^(create|update|delete|add|remove|set|edit|save|insert|upload|import|purge|reset|restore|reorder|toggle|approve|reject|block|unblock|lock|unlock|archive|trash|publish|unpublish|submit|enrol|unenrol|assign|unassign|mark|flag|clear|move|copy|duplicate|switch|change|revoke|grant)$/i', $action)) {
+    $writepattern = '/^(create|update|delete|add|remove|set|edit|save|insert|upload|import'
+        . '|purge|reset|restore|reorder|toggle|approve|reject|block|unblock|lock|unlock'
+        . '|archive|trash|publish|unpublish|submit|enrol|unenrol|assign|unassign|mark|flag'
+        . '|clear|move|copy|duplicate|switch|change|revoke|grant)$/i';
+    if (preg_match($writepattern, $action)) {
         return 'Escritura';
     }
     if (preg_match('/_(create|update|delete|add|remove|save|insert|upload|import|purge|enrol|assign|grant|revoke)_/i', $wsname)) {

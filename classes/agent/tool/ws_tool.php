@@ -70,7 +70,9 @@ class ws_tool implements agent_tool {
             'type' => 'function',
             'function' => [
                 'name' => 'call_webservice',
-                'description' => 'Call a Moodle web service function. The function will only work if the agent creator has the required permissions in Moodle. Returns the function result or an error message.',
+                'description' => 'Call a Moodle web service function. The function will only work'
+                    . ' if the agent creator has the required permissions in Moodle.'
+                    . ' Returns the function result or an error message.',
                 'parameters' => [
                     'type' => 'object',
                     'properties' => [
