@@ -1,1 +1,7 @@
-.atl
+.atl/
+.sdd/
+openspec/
+/tmp_*
+*.tmp
+/diag.php
+/test_*.php
