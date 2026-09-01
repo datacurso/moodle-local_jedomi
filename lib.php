@@ -1209,14 +1209,13 @@ if (!function_exists('local_jedomi_log')) {
     function local_jedomi_log(string $message, mixed $data = null): void {
         global $CFG;
 
-        static $logdir = null;
-        static $logfile = null;
-
-        if ($logdir === null) {
-            $logdir = $CFG->dataroot . '/local/jedomi';
-            check_dir_exists($logdir, true, true);
-            $logfile = $logdir . '/jedomi.log';
+        // Re-check on every call: the directory can vanish mid-process
+        // (dataroot cleanup, PHPUnit reset) and logging must self-heal.
+        $logdir = $CFG->dataroot . '/local/jedomi';
+        if (!check_dir_exists($logdir, true, true)) {
+            return; // Logging must never break the caller.
         }
+        $logfile = $logdir . '/jedomi.log';
 
         $timestamp = date('Y-m-d H:i:s.v');
         $entry = "[{$timestamp}] {$message}";
@@ -1227,7 +1226,16 @@ if (!function_exists('local_jedomi_log')) {
         }
 
         $entry .= "\n";
-        file_put_contents($logfile, $entry, FILE_APPEND | LOCK_EX);
+        // A broken log write must never interrupt the calling flow, hence the
+        // error suppression. check_dir_exists() relies on the stat cache, so a
+        // directory removed mid-process can pass the check above and still fail
+        // here: retry once after clearing the cache and recreating it.
+        if (@file_put_contents($logfile, $entry, FILE_APPEND | LOCK_EX) === false) {
+            clearstatcache(true, $logdir);
+            if (check_dir_exists($logdir, true, true)) {
+                @file_put_contents($logfile, $entry, FILE_APPEND | LOCK_EX);
+            }
+        }
     }
 }
 
