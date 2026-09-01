@@ -53,7 +53,9 @@ class session {
         global $DB;
 
         // Get max turns from config, with fallback to 10 and clamp 1-100.
-        $max_turns = (int) (get_config('local_jedomi', 'telegram_max_turns') ?: 10);
+        // A configured '0' must reach the clamp below, so only fall back when unset.
+        $configured = get_config('local_jedomi', 'telegram_max_turns');
+        $max_turns = ($configured === false || $configured === '') ? 10 : (int) $configured;
         if ($max_turns < 1) {
             $max_turns = 1;
         }
