@@ -30,6 +30,19 @@ defined('MOODLE_INTERNAL') || die();
 /**
  * Test cases for webhook_handler methods.
  *
+ * Current permission model of the webhook tools (see execute_tool and
+ * execute_pending_action in classes/telegram/webhook_handler.php):
+ *
+ * - "Linked" means a confirmed row in local_jedomi_telegram_links for the
+ *   chat id; the role is derived from the linked userid (site admins in
+ *   get_admins() => 'admin', then manager/teacher/student by capability).
+ * - Open (no role gate): describe_table, search_tables, ws_search, ws_describe.
+ * - teacher/manager/admin: execute_sql (plus per-course ownership checks).
+ * - manager/admin: admin_search, admin_describe, admin_execute,
+ *   create_agent, list_agents, delete_agent.
+ * - admin only: get_site_config; pending actions cache_purge, run_task and
+ *   get_config (the latter also restricted to an allowlist of config keys).
+ *
  * @covers \local_jedomi\telegram\webhook_handler
  */
 final class webhook_handler_test extends \advanced_testcase {
@@ -229,16 +242,38 @@ final class webhook_handler_test extends \advanced_testcase {
     }
 
     /**
-     * Test execute_tool execute_sql works with SELECT.
+     * Test execute_tool execute_sql works with SELECT for a linked admin.
      */
     public function test_execute_tool_execute_sql_success(): void {
-        global $DB;
+        $admin = get_admin();
+        $this->create_telegram_link((int)$admin->id, '12345');
 
+        // Production resolves userid/role from the chat link and passes them in.
         $result = $this->call_private_static('execute_tool', [
             'execute_sql',
             ['sql' => 'SELECT id, username FROM {user} WHERE deleted = 0 LIMIT 5'],
+            (int)$admin->id,
+            'admin',
+            [],
         ]);
         $this->assertStringContainsString('Results', $result);
+    }
+
+    /**
+     * Test execute_tool execute_sql denies users without a privileged role.
+     */
+    public function test_execute_tool_execute_sql_denied_without_privilege(): void {
+        $user = $this->getDataGenerator()->create_user();
+
+        $result = $this->call_private_static('execute_tool', [
+            'execute_sql',
+            ['sql' => 'SELECT id FROM {user} LIMIT 1'],
+            (int)$user->id,
+            'student',
+            [],
+        ]);
+        $this->assertStringContainsString('Permission denied', $result);
+        $this->assertStringNotContainsString('Results', $result);
     }
 
     // ========================
@@ -257,29 +292,123 @@ final class webhook_handler_test extends \advanced_testcase {
     }
 
     /**
-     * Test execute_pending_action with get_config.
+     * Test execute_pending_action with get_config for a linked admin.
+     *
+     * The key must belong to the get_config allowlist ($safekeys).
      */
     public function test_execute_pending_action_get_config(): void {
-        // Set a config value first.
-        set_config('test_key', 'test_value', 'local_jedomi');
+        $this->create_telegram_link((int)get_admin()->id, '12345');
+        set_config('telegram_max_turns', 25, 'local_jedomi');
 
         $result = $this->call_private_static('execute_pending_action', [
-            ['name' => 'get_config', 'params' => ['key' => 'test_key']],
+            ['name' => 'get_config', 'params' => ['key' => 'telegram_max_turns']],
             '12345',
         ]);
-        $this->assertStringContainsString('test_value', $result);
-        $this->assertStringContainsString('test_key', $result);
+        $this->assertStringContainsString('telegram_max_turns', $result);
+        $this->assertStringContainsString('25', $result);
     }
 
     /**
-     * Test execute_pending_action get_config with missing key.
+     * Test execute_pending_action get_config with an allowlisted but unset key.
      */
     public function test_execute_pending_action_get_config_not_found(): void {
+        $this->create_telegram_link((int)get_admin()->id, '12345');
+        unset_config('telegram_gateway_timeout', 'local_jedomi');
+
         $result = $this->call_private_static('execute_pending_action', [
-            ['name' => 'get_config', 'params' => ['key' => 'nonexistent_key_xyz']],
+            ['name' => 'get_config', 'params' => ['key' => 'telegram_gateway_timeout']],
             '12345',
         ]);
         $this->assertStringContainsString('not found', $result);
+    }
+
+    /**
+     * Test execute_pending_action get_config denies a chat without a link.
+     */
+    public function test_execute_pending_action_get_config_denied_unlinked_chat(): void {
+        $result = $this->call_private_static('execute_pending_action', [
+            ['name' => 'get_config', 'params' => ['key' => 'telegram_max_turns']],
+            'chat-without-link',
+        ]);
+        $this->assertStringContainsString('Permission denied. Admin only.', $result);
+    }
+
+    /**
+     * Test execute_pending_action get_config denies a linked non-admin user.
+     */
+    public function test_execute_pending_action_get_config_denied_non_admin(): void {
+        $user = $this->getDataGenerator()->create_user();
+        $this->create_telegram_link((int)$user->id, '55555');
+        set_config('telegram_max_turns', 25, 'local_jedomi');
+
+        $result = $this->call_private_static('execute_pending_action', [
+            ['name' => 'get_config', 'params' => ['key' => 'telegram_max_turns']],
+            '55555',
+        ]);
+        $this->assertStringContainsString('Permission denied. Admin only.', $result);
+    }
+
+    /**
+     * Data provider: admin-only pending actions.
+     *
+     * @return array
+     */
+    public function admin_only_pending_actions_provider(): array {
+        return [
+            'cache_purge' => ['cache_purge'],
+            'run_task'    => ['run_task'],
+            'get_config'  => ['get_config'],
+        ];
+    }
+
+    /**
+     * Test every admin-only pending action denies an unlinked chat.
+     *
+     * @dataProvider admin_only_pending_actions_provider
+     */
+    public function test_admin_only_pending_actions_deny_unlinked(string $action): void {
+        $result = $this->call_private_static('execute_pending_action', [
+            ['name' => $action, 'params' => []],
+            'chat-without-link',
+        ]);
+        $this->assertStringContainsString('Permission denied. Admin only.', $result);
+    }
+
+    /**
+     * Data provider: role-gated execute_tool tools and their denial marker.
+     *
+     * @return array
+     */
+    public function gated_tools_provider(): array {
+        // Marker is the denial text each tool returns for role 'student'.
+        return [
+            'execute_sql (teacher+)'      => ['execute_sql', ['sql' => 'SELECT 1 AS x'], 'Permission denied'],
+            'get_site_config (admin)'     => ['get_site_config', [], 'permission_denied'],
+            'admin_search (manager+)'     => ['admin_search', ['query' => 'user'], 'permission_denied'],
+            'admin_describe (manager+)'   => ['admin_describe', ['setting' => 'x'], 'permission_denied'],
+            'admin_execute (manager+)'    => ['admin_execute', ['setting' => 'x'], 'permission_denied'],
+            'create_agent (manager+)'     => ['create_agent', [], 'permission_denied'],
+            'list_agents (manager+)'      => ['list_agents', [], 'permission_denied'],
+            'delete_agent (manager+)'     => ['delete_agent', [], 'permission_denied'],
+        ];
+    }
+
+    /**
+     * Test every role-gated tool denies an unprivileged (student) role.
+     *
+     * Open tools (describe_table, search_tables, ws_search, ws_describe) are
+     * covered by the roleless success tests above.
+     *
+     * @dataProvider gated_tools_provider
+     */
+    public function test_gated_tools_deny_unprivileged_role(string $tool, array $args, string $marker): void {
+        $user = $this->getDataGenerator()->create_user();
+
+        $result = $this->call_private_static('execute_tool', [
+            $tool, $args, (int)$user->id, 'student', [],
+        ]);
+        $this->assertStringContainsString($marker, $result,
+            "Tool '{$tool}' should deny role 'student'");
     }
 
     // ========================
@@ -429,6 +558,27 @@ final class webhook_handler_test extends \advanced_testcase {
     // ========================
     // Helpers
     // ========================
+
+    /**
+     * Insert a confirmed Telegram link for the given user and chat id.
+     *
+     * A confirmed row in local_jedomi_telegram_links is what makes a chat
+     * "linked": webhook_handler derives userid and role from it.
+     *
+     * @param int $userid
+     * @param string $chatid
+     */
+    private function create_telegram_link(int $userid, string $chatid): void {
+        global $DB;
+        $DB->insert_record('local_jedomi_telegram_links', (object)[
+            'userid'            => $userid,
+            'chatid'            => $chatid,
+            'username'          => 'testlink',
+            'confirmed'         => 1,
+            'timecreated'       => time(),
+            'lastproactivesent' => 0,
+        ]);
+    }
 
     /**
      * Call a private static method on webhook_handler via reflection.
