@@ -30,6 +30,8 @@ namespace local_jedomi\proxy;
 
 defined('MOODLE_INTERNAL') || die();
 
+require_once(__DIR__ . '/../../lib.php');
+
 class handler {
 
     /**
@@ -269,7 +271,7 @@ class handler {
         if ($httpCode !== 200 || empty($buffer)) {
             $buf_preview = substr($buffer, 0, 500);
             \local_jedomi_log('AI_API_ERROR', ['http_code' => $httpCode, 'curl_error' => $curlError, 'preview' => $buf_preview]);
-            error_log("[local_jedomi] AI API error: http=$httpCode curl='$curlError' preview="
+            \local_jedomi_log("[local_jedomi] AI API error: http=$httpCode curl='$curlError' preview="
                 . json_encode($buf_preview, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_IGNORE));
             return ['type' => 'error', 'error' => 'ai_api_error'];
         }
@@ -356,7 +358,7 @@ class handler {
         $text = !empty($text_buf) ? $text_buf : $reason_buf;
         if (empty($text) && !empty($buffer)) {
             \local_jedomi_log('AI_API_RESPONSE_EMPTY', ['buffer_preview' => substr($buffer, 0, 500)]);
-            error_log("[local_jedomi] SSE parse warning: no content or tool_calls extracted. First 2KB: "
+            \local_jedomi_log("[local_jedomi] SSE parse warning: no content or tool_calls extracted. First 2KB: "
                 . json_encode(substr($buffer, 0, 2048), JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_IGNORE));
         }
 
@@ -472,7 +474,7 @@ class handler {
                 $realError .= get_string('hint_sql_braces', 'local_jedomi');
             }
             \local_jedomi_log('EXECUTE_SQL_ERROR', ['sql' => $sql, 'params' => $params, 'error' => $realError]);
-            error_log("[local_jedomi] execute_sql_tool error: class=" . get_class($e) . " msg=" . json_encode($realError, JSON_UNESCAPED_UNICODE));
+            \local_jedomi_log("[local_jedomi] execute_sql_tool error: class=" . get_class($e) . " msg=" . json_encode($realError, JSON_UNESCAPED_UNICODE));
             return json_encode(['error' => $realError]);
         }
     }

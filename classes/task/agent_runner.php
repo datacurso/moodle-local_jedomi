@@ -23,6 +23,8 @@ namespace local_jedomi\task;
 
 defined('MOODLE_INTERNAL') || die();
 
+require_once(__DIR__ . '/../../lib.php');
+
 class agent_runner extends \core\task\scheduled_task {
 
     /** Max tool call iterations per agent run. */
@@ -213,17 +215,17 @@ class agent_runner extends \core\task\scheduled_task {
         $start = time();
 
         mtrace('[AGENT] Starting agent_runner');
-        error_log('[AGENT] Starting agent_runner');
+        \local_jedomi_log('[AGENT] Starting agent_runner');
 
         $due = \local_jedomi\agent\agent_manager::get_due_agents();
         $count = count($due);
 
         mtrace("[AGENT] Starting agent_runner — {$count} due agents");
-        error_log("[AGENT] Starting agent_runner — {$count} due agents");
+        \local_jedomi_log("[AGENT] Starting agent_runner — {$count} due agents");
 
         if (empty($due)) {
             mtrace('[AGENT] No due agents — nothing to do');
-            error_log('[AGENT] No due agents — nothing to do');
+            \local_jedomi_log('[AGENT] No due agents — nothing to do');
             return;
         }
 
@@ -236,7 +238,7 @@ class agent_runner extends \core\task\scheduled_task {
                 $agentLabel = $agent->name ?? "Agent #{$agent->id}";
                 $excerpt = mb_substr($agent->prompt, 0, 80);
                 mtrace("[AGENT] {$agentLabel} \"{$excerpt}\"");
-                error_log("[AGENT] {$agentLabel} \"{$excerpt}\"");
+                \local_jedomi_log("[AGENT] {$agentLabel} (prompt " . strlen($agent->prompt) . "B)");
 
                 // ═══════════════════════════════════════════════════════════════
                 // PRE-EXECUTION GATE — verifica que el creador del agente
@@ -248,7 +250,7 @@ class agent_runner extends \core\task\scheduled_task {
                 $creator = \core_user::get_user($agent->userid);
                 if (!$creator || !empty($creator->deleted)) {
                     mtrace("[AGENT] {$agentLabel} — creator user {$agent->userid} not found — DISABLING");
-                    error_log("[AGENT] {$agentLabel} — creator user {$agent->userid} not found — DISABLING");
+                    \local_jedomi_log("[AGENT] {$agentLabel} — creator user {$agent->userid} not found — DISABLING");
                     $DB->set_field('local_jedomi_agents', 'enabled', 0, ['id' => $agent->id]);
                     $this->notify_disabled($agent, 'Usuario creador no encontrado.');
                     $fail++;
@@ -257,7 +259,7 @@ class agent_runner extends \core\task\scheduled_task {
                 if (!empty($creator->suspended) || !empty($creator->deleted)) {
                     $reason = !empty($creator->suspended) ? 'suspendido' : 'eliminado';
                     mtrace("[AGENT] {$agentLabel} — creator user {$agent->userid} {$reason} — DISABLING");
-                    error_log("[AGENT] {$agentLabel} — creator user {$agent->userid} {$reason} — DISABLING");
+                    \local_jedomi_log("[AGENT] {$agentLabel} — creator user {$agent->userid} {$reason} — DISABLING");
                     $DB->set_field('local_jedomi_agents', 'enabled', 0, ['id' => $agent->id]);
                     $this->notify_disabled($agent, "Usuario creador {$reason}.");
                     $fail++;
@@ -283,7 +285,7 @@ class agent_runner extends \core\task\scheduled_task {
                     }
                     if (!$hasaccess) {
                         mtrace("[AGENT] {$agentLabel} — creator {$agent->userid} lost access to context {$agent->context_type}/{$agent->context_id} — DISABLING");
-                        error_log("[AGENT] {$agentLabel} — creator {$agent->userid} lost access to context {$agent->context_type}/{$agent->context_id} — DISABLING");
+                        \local_jedomi_log("[AGENT] {$agentLabel} — creator {$agent->userid} lost access to context {$agent->context_type}/{$agent->context_id} — DISABLING");
                         $DB->set_field('local_jedomi_agents', 'enabled', 0, ['id' => $agent->id]);
                         $this->notify_disabled($agent, 'Ya no tienes acceso al contexto del agente.');
                         $fail++;
@@ -333,7 +335,7 @@ class agent_runner extends \core\task\scheduled_task {
 
                     if ($cachedPlan && !empty($cachedPlan['plan'])) {
                         mtrace("[AGENT] {$agentLabel} — cache HIT plan ({$context_hash}) — replaying " . count($cachedPlan['plan']) . " tools");
-                        error_log("[AGENT] {$agentLabel} — cache HIT plan ({$context_hash}) — replaying tools");
+                        \local_jedomi_log("[AGENT] {$agentLabel} — cache HIT plan ({$context_hash}) — replaying tools");
 
                         // Initialize tool instances with correct user context before replay.
                         \local_jedomi\agent\tool_executor::get_definitions(
@@ -350,7 +352,7 @@ class agent_runner extends \core\task\scheduled_task {
                             $decoded = json_decode($toolResult, true);
                             if (!empty($decoded['error'])) {
                                 mtrace("[AGENT] {$agentLabel} — replay tool {$step['tool']} FAILED: {$decoded['error']}");
-                                error_log("[AGENT] {$agentLabel} — replay tool {$step['tool']} FAILED: {$decoded['error']}");
+                                \local_jedomi_log("[AGENT] {$agentLabel} — replay tool {$step['tool']} FAILED: {$decoded['error']}");
                                 $replayFailed = true;
                                 break;
                             }
@@ -416,14 +418,14 @@ class agent_runner extends \core\task\scheduled_task {
 
                             if ($replayErrno !== 0) {
                                 mtrace("[AGENT] {$agentLabel} — replay answer curl error ({$replayError})");
-                                error_log("[AGENT] {$agentLabel} — replay answer curl error ({$replayError})");
+                                \local_jedomi_log("[AGENT] {$agentLabel} — replay answer curl error ({$replayError})");
                             } else if ($replayHttp === 200) {
                                 $replayResult = json_decode($replayResponse, true);
                                 $replayContent = $replayResult['choices'][0]['message']['content'] ?? '';
                                 if (!empty(trim($replayContent))) {
                                     $finalContent = $replayContent;
                                     mtrace("[AGENT] {$agentLabel} — replay answer generated ({$replayDuration}s, " . strlen($finalContent) . "B)");
-                                    error_log("[AGENT] {$agentLabel} — replay answer generated ({$replayDuration}s, " . strlen($finalContent) . "B)");
+                                    \local_jedomi_log("[AGENT] {$agentLabel} — replay answer generated ({$replayDuration}s, " . strlen($finalContent) . "B)");
                                 }
                             }
                         }
@@ -432,7 +434,7 @@ class agent_runner extends \core\task\scheduled_task {
                     // ── Fallback: use cached answer text ────────────────────────
                     if (empty($finalContent)) {
                         mtrace("[AGENT] {$agentLabel} — cache HIT text ({$context_hash}) — using cached text");
-                        error_log("[AGENT] {$agentLabel} — cache HIT text ({$context_hash}) — using cached text");
+                        \local_jedomi_log("[AGENT] {$agentLabel} — cache HIT text ({$context_hash}) — using cached text");
                         $finalContent = $cached;
                     }
                     $totalDuration = 0.0;
@@ -446,7 +448,7 @@ class agent_runner extends \core\task\scheduled_task {
                     }
                 } else {
                     mtrace("[AGENT] {$agentLabel} — cache MISS ({$context_hash})");
-                    error_log("[AGENT] {$agentLabel} — cache MISS ({$context_hash})");
+                    \local_jedomi_log("[AGENT] {$agentLabel} — cache MISS ({$context_hash})");
 
                     // ── Tool definitions (reuse web version's lang string descriptions) ──
                     $tools = \local_jedomi_get_tool_definitions($role);
@@ -501,7 +503,7 @@ class agent_runner extends \core\task\scheduled_task {
                         // ── Gateway call ─────────────────────────────────────
                         $gateway_start = microtime(true);
                         mtrace("[AGENT] {$agentLabel} — round {$round} gateway call");
-                        error_log("[AGENT] {$agentLabel} — round {$round} gateway call");
+                        \local_jedomi_log("[AGENT] {$agentLabel} — round {$round} gateway call");
 
                         $ch = curl_init($gateway_url . '/v1/chat/completions');
                         curl_setopt_array($ch, [
@@ -527,10 +529,10 @@ class agent_runner extends \core\task\scheduled_task {
                             $err_msg = $curl_error ?: "HTTP {$http_code}";
                             $duration_fmt = number_format($roundDuration, 2);
                             mtrace("[AGENT] {$agentLabel} — round {$round} FAILED ({$err_msg}, {$duration_fmt}s)");
-                            error_log("[AGENT] {$agentLabel} — round {$round} FAILED ({$err_msg}, {$duration_fmt}s)");
+                            \local_jedomi_log("[AGENT] {$agentLabel} — round {$round} FAILED ({$err_msg}, {$duration_fmt}s)");
                             if ($curl_errno === CURLE_OPERATION_TIMEDOUT) {
                                 mtrace("[AGENT] {$agentLabel} — round {$round} TIMEOUT");
-                                error_log("[AGENT] {$agentLabel} — round {$round} TIMEOUT");
+                                \local_jedomi_log("[AGENT] {$agentLabel} — round {$round} TIMEOUT");
                             }
                             if ($round === 1) {
                                 throw new \RuntimeException("Gateway failed: {$err_msg}");
@@ -542,7 +544,7 @@ class agent_runner extends \core\task\scheduled_task {
                         if (json_last_error() !== JSON_ERROR_NONE) {
                             $duration_fmt = number_format($roundDuration, 2);
                             mtrace("[AGENT] {$agentLabel} — round {$round} invalid JSON");
-                            error_log("[AGENT] {$agentLabel} — round {$round} invalid JSON");
+                            \local_jedomi_log("[AGENT] {$agentLabel} — round {$round} invalid JSON");
                             if ($round === 1) {
                                 throw new \RuntimeException('Invalid JSON response from gateway');
                             }
@@ -565,14 +567,14 @@ class agent_runner extends \core\task\scheduled_task {
                             $duration_fmt = number_format($roundDuration, 2);
                             $bytes = strlen($response);
                             mtrace("[AGENT] {$agentLabel} — round {$round} final response ({$duration_fmt}s, {$bytes}B)");
-                            error_log("[AGENT] {$agentLabel} — round {$round} final response ({$duration_fmt}s, {$bytes}B)");
+                            \local_jedomi_log("[AGENT] {$agentLabel} — round {$round} final response ({$duration_fmt}s, {$bytes}B)");
                             break;
                         }
 
                         $toolCount = count($allToolCalls);
                         $via = !empty($nativeToolCalls) ? 'native' : 'text';
                         mtrace("[AGENT] {$agentLabel} — round {$round} {$toolCount} tool call(s) via {$via}");
-                        error_log("[AGENT] {$agentLabel} — round {$round} {$toolCount} tool call(s) via {$via}");
+                        \local_jedomi_log("[AGENT] {$agentLabel} — round {$round} {$toolCount} tool call(s) via {$via}");
 
                         $assistantMsg = [
                             'role' => 'assistant',
@@ -598,7 +600,7 @@ class agent_runner extends \core\task\scheduled_task {
 
                             if ($toolcallCounts[$callkey] > 5) {
                                 mtrace("[AGENT] {$agentLabel} — LOOP DETECTED: {$funcName} repeated {$toolcallCounts[$callkey]}x");
-                                error_log("[AGENT] {$agentLabel} — LOOP DETECTED: {$funcName} repeated {$toolcallCounts[$callkey]}x");
+                                \local_jedomi_log("[AGENT] {$agentLabel} — LOOP DETECTED: {$funcName} repeated {$toolcallCounts[$callkey]}x");
                                 $toolResult = json_encode([
                                     'error' => 'loop_detected',
                                     'tool' => $funcName,
@@ -606,7 +608,7 @@ class agent_runner extends \core\task\scheduled_task {
                                 ]);
                             } else {
                                 mtrace("[AGENT] {$agentLabel} — executing tool: {$funcName}()");
-                                error_log("[AGENT] {$agentLabel} — executing tool: {$funcName}()");
+                                \local_jedomi_log("[AGENT] {$agentLabel} — executing tool: {$funcName}()");
 
                                 $plan[] = [
                                     'tool' => $funcName,
@@ -657,7 +659,7 @@ class agent_runner extends \core\task\scheduled_task {
                         }
                         if (!empty($finalContent)) {
                             mtrace("[AGENT] {$agentLabel} — fallback final ({$totalRounds}r, " . strlen($finalContent) . "B)");
-                            error_log("[AGENT] {$agentLabel} — fallback final ({$totalRounds}r, " . strlen($finalContent) . "B)");
+                            \local_jedomi_log("[AGENT] {$agentLabel} — fallback final ({$totalRounds}r, " . strlen($finalContent) . "B)");
                         }
                     }
 
@@ -692,7 +694,7 @@ class agent_runner extends \core\task\scheduled_task {
                     if (empty($finalContent)) {
                         $totalDurationFmt = number_format($totalDuration, 2);
                         mtrace("[AGENT] {$agentLabel} — empty final ({$totalDurationFmt}s, {$totalRounds}r)");
-                        error_log("[AGENT] {$agentLabel} — empty final ({$totalDurationFmt}s, {$totalRounds}r)");
+                        \local_jedomi_log("[AGENT] {$agentLabel} — empty final ({$totalDurationFmt}s, {$totalRounds}r)");
                         \local_jedomi\agent\agent_manager::mark_run($agent->id, false);
                         $fail++;
                         continue;
@@ -713,14 +715,14 @@ class agent_runner extends \core\task\scheduled_task {
                             $agent->id, $context_hash, $plan, $finalContent
                         );
                         mtrace("[AGENT] {$agentLabel} — cached plan (" . count($plan) . " tools, " . strlen($finalContent) . "B answer)");
-                        error_log("[AGENT] {$agentLabel} — cached plan (" . count($plan) . " tools, " . strlen($finalContent) . "B answer)");
+                        \local_jedomi_log("[AGENT] {$agentLabel} — cached plan (" . count($plan) . " tools, " . strlen($finalContent) . "B answer)");
                     } else {
                         \local_jedomi\agent\agent_manager::set_cached_result(
                             $agent->id, $context_hash, $finalContent
                         );
                         $why = empty($plan) ? 'no tools' : 'write tool detected';
                         mtrace("[AGENT] {$agentLabel} — cached text ({$why}, " . strlen($finalContent) . "B)");
-                        error_log("[AGENT] {$agentLabel} — cached text ({$why}, " . strlen($finalContent) . "B)");
+                        \local_jedomi_log("[AGENT] {$agentLabel} — cached text ({$why}, " . strlen($finalContent) . "B)");
                     }
                 }
 
@@ -729,7 +731,7 @@ class agent_runner extends \core\task\scheduled_task {
                 $reloaded = \local_jedomi\agent\agent_manager::get_agent($agent->id);
                 $nextrun_str = $reloaded ? userdate($reloaded->nextrun) : 'unknown';
                 mtrace("[AGENT] {$agentLabel} — next {$nextrun_str}");
-                error_log("[AGENT] {$agentLabel} — next {$nextrun_str}");
+                \local_jedomi_log("[AGENT] {$agentLabel} — next {$nextrun_str}");
 
                 // ── Telegram notification ────────────────────────────────────
                 try {
@@ -747,18 +749,18 @@ class agent_runner extends \core\task\scheduled_task {
 
                         if ($sent) {
                             mtrace("[AGENT] {$agentLabel} — Telegram sent");
-                            error_log("[AGENT] {$agentLabel} — Telegram sent");
+                            \local_jedomi_log("[AGENT] {$agentLabel} — Telegram sent");
                         } else {
                             mtrace("[AGENT] {$agentLabel} — Telegram send FAILED");
-                            error_log("[AGENT] {$agentLabel} — Telegram send FAILED");
+                            \local_jedomi_log("[AGENT] {$agentLabel} — Telegram send FAILED");
                         }
                     } else {
                         mtrace("[AGENT] {$agentLabel} — no Telegram for user {$agent->userid}");
-                        error_log("[AGENT] {$agentLabel} — no Telegram for user {$agent->userid}");
+                        \local_jedomi_log("[AGENT] {$agentLabel} — no Telegram for user {$agent->userid}");
                     }
                 } catch (\Exception $e) {
                     mtrace("[AGENT] {$agentLabel} — Telegram error: " . $e->getMessage());
-                    error_log("[AGENT] {$agentLabel} — Telegram error: " . $e->getMessage());
+                    \local_jedomi_log("[AGENT] {$agentLabel} — Telegram error: " . $e->getMessage());
                 }
 
                 $ok++;
@@ -767,7 +769,7 @@ class agent_runner extends \core\task\scheduled_task {
                 $aid = $agent->id ?? '?';
                 $alabel = ($agent->name ?? "Agent #{$aid}");
                 mtrace("[AGENT] {$alabel} — ERROR: " . $e->getMessage());
-                error_log("[AGENT] {$alabel} — ERROR: " . $e->getMessage());
+                \local_jedomi_log("[AGENT] {$alabel} — ERROR: " . $e->getMessage());
                 try {
                     \local_jedomi\agent\agent_manager::mark_run($aid, false);
                 } catch (\Exception $ignored) {
@@ -778,7 +780,7 @@ class agent_runner extends \core\task\scheduled_task {
 
         $elapsed = time() - $start;
         mtrace("[AGENT] agent_runner done — {$ok} ok, {$fail} fail, {$elapsed}s");
-        error_log("[AGENT] agent_runner done — {$ok} ok, {$fail} fail, {$elapsed}s");
+        \local_jedomi_log("[AGENT] agent_runner done — {$ok} ok, {$fail} fail, {$elapsed}s");
     }
 
     /**
@@ -792,7 +794,7 @@ class agent_runner extends \core\task\scheduled_task {
 
         $label = $agent->name ?? "Agent #{$agent->id}";
         mtrace("[AGENT] {$label} — DISABLED: {$reason}");
-        error_log("[AGENT] {$label} — DISABLED: {$reason}");
+        \local_jedomi_log("[AGENT] {$label} — DISABLED: {$reason}");
 
         try {
             \local_jedomi\agent\agent_manager::mark_run($agent->id, false);
@@ -814,7 +816,7 @@ class agent_runner extends \core\task\scheduled_task {
             }
         } catch (\Exception $e) {
             mtrace("[AGENT] {$label} — Telegram notify disabled error: " . $e->getMessage());
-            error_log("[AGENT] {$label} — Telegram notify disabled error: " . $e->getMessage());
+            \local_jedomi_log("[AGENT] {$label} — Telegram notify disabled error: " . $e->getMessage());
         }
     }
 }

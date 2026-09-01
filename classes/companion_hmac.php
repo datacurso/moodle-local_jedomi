@@ -20,6 +20,8 @@ namespace local_jedomi;
 
 defined('MOODLE_INTERNAL') || die();
 
+require_once(__DIR__ . '/../lib.php');
+
 trait companion_hmac {
 
     /**
@@ -109,7 +111,7 @@ trait companion_hmac {
      */
     private static function log_hmac_failure(string $function_name, string $reason): void {
         $ip = getremoteaddr();
-        error_log(sprintf(
+        \local_jedomi_log(sprintf(
             '[local_jedomi] HMAC failure: function=%s reason=%s ip=%s',
             $function_name,
             $reason,

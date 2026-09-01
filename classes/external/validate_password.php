@@ -17,6 +17,8 @@ namespace local_jedomi\external;
 
 defined('MOODLE_INTERNAL') || die();
 
+require_once(__DIR__ . '/../../lib.php');
+
 use context_system;
 use core_external\external_api;
 use core_external\external_function_parameters;
@@ -104,7 +106,7 @@ class validate_password extends external_api {
         }
 
         // NEVER log the password or errmsg (contains policy details that could aid brute-force).
-        error_log(sprintf(
+        \local_jedomi_log(sprintf(
             '[local_jedomi] validate_password: valid=%s violations=%d',
             $valid ? 'true' : 'false',
             count($violations)

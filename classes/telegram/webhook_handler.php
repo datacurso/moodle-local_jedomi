@@ -13,6 +13,8 @@ namespace local_jedomi\telegram;
 
 defined('MOODLE_INTERNAL') || die();
 
+require_once(__DIR__ . '/../../lib.php');
+
 use local_jedomi\schema\table_indexer;
 use local_jedomi\schema\ws_indexer;
 
@@ -57,7 +59,7 @@ class webhook_handler {
             return;
         }
 
-        error_log('[TELEGRAM ENTRY] chat=' . $chat_id . ' text=' . mb_substr($text, 0, 120));
+        \local_jedomi_log('[TELEGRAM ENTRY] chat=' . $chat_id . ' textlen=' . mb_strlen($text));
 
         // ── Deduplicate via MySQL advisory lock ──
         // Telegram retries if 200 OK is slow. Without dedup, multiple PHP-FPM
@@ -149,7 +151,7 @@ class webhook_handler {
 
         // Handle /new command to start fresh conversation
         if (strcasecmp($text, '/new') === 0 || strcasecmp($text, '/nuevo') === 0 || strcasecmp($text, '/clear') === 0) {
-            error_log('[TELEGRAM ENTRY] /new detected, calling proxy_to_gateway user=' . $link->userid);
+            \local_jedomi_log('[TELEGRAM ENTRY] /new detected, calling proxy_to_gateway user=' . $link->userid);
             session::clear($chat_id);
             session::clear_context($chat_id);
             // Clear any stale tool_loop state with new session generation.
@@ -395,7 +397,7 @@ class webhook_handler {
         curl_close($ch);
 
         if ($err) {
-            error_log('[TELEGRAM SELF-PING] cURL error: ' . $err . ' for chat=' . $chat_id);
+            \local_jedomi_log('[TELEGRAM SELF-PING] cURL error: ' . $err . ' for chat=' . $chat_id);
         }
     }
 
@@ -415,7 +417,7 @@ class webhook_handler {
         $expected_gen = (int)($state['session_gen'] ?? 0);
         $incoming_gen = (int)($_GET['session_gen'] ?? 0);
         if ($expected_gen > 0 && $incoming_gen > 0 && $incoming_gen !== $expected_gen) {
-            error_log('[GATELOOP] session_gen mismatch chat=' . $chat_id . ' expected=' . $expected_gen
+            \local_jedomi_log('[GATELOOP] session_gen mismatch chat=' . $chat_id . ' expected=' . $expected_gen
                 . ' got=' . $incoming_gen . ' — aborting stale self-ping');
             return;
         }
@@ -468,7 +470,7 @@ class webhook_handler {
                     return;
                 }
                 // Lock expired (> LOCK_TTL seconds) — auto-release and continue.
-                error_log('[GATELOOP] stale_lock chat=' . $chat_id . ' age=' . $lock_age . 's — auto-releasing');
+                \local_jedomi_log('[GATELOOP] stale_lock chat=' . $chat_id . ' age=' . $lock_age . 's — auto-releasing');
                 session::set_context($state_key, []);
                 // Fall through to process the new message.
             }
@@ -530,7 +532,7 @@ class webhook_handler {
             try {
                 $checkpoint = session::get_context($state_key);
             } catch (\Exception $e) {
-                error_log('[GATELOOP] checkpoint read FAILED for chat ' . $chat_id . ': ' . $e->getMessage());
+                \local_jedomi_log('[GATELOOP] checkpoint read FAILED for chat ' . $chat_id . ': ' . $e->getMessage());
                 $checkpoint = null;
             }
             if (!empty($checkpoint) && !empty($checkpoint['messages'])) {
@@ -545,7 +547,7 @@ class webhook_handler {
                 if ($last_user_msg === $text) {
                     $messages = $checkpoint['messages'];
                     $cp_json = json_encode($checkpoint, JSON_UNESCAPED_UNICODE);
-                    error_log(sprintf('[GATELOOP] checkpoint restored chat=%s iter=%d state_bytes=%d msg_count=%d',
+                    \local_jedomi_log(sprintf('[GATELOOP] checkpoint restored chat=%s iter=%d state_bytes=%d msg_count=%d',
                         $chat_id, $checkpoint['iteration'] ?? 0, strlen($cp_json), count($checkpoint['messages'])));
                 } else {
                     session::set_context($state_key, []);
@@ -568,12 +570,12 @@ class webhook_handler {
         } else {
             $state = session::get_context($state_key);
             if (empty($state) || empty($state['messages'])) {
-                error_log('[GATELOOP] self-ping empty state for chat ' . $chat_id . ', nothing to continue');
+                \local_jedomi_log('[GATELOOP] self-ping empty state for chat ' . $chat_id . ', nothing to continue');
                 return; // Nothing to continue.
             }
             $messages = $state['messages'];
             $state_json_check = json_encode($state, JSON_UNESCAPED_UNICODE);
-            error_log(sprintf('[GATELOOP] self-ping restored chat=%s iter=%d state_bytes=%d msg_count=%d',
+            \local_jedomi_log(sprintf('[GATELOOP] self-ping restored chat=%s iter=%d state_bytes=%d msg_count=%d',
                 $chat_id, $state['iteration'] ?? 0, strlen($state_json_check), count($messages)));
 
             // ── Restore SPT + tools from checkpoint (cached, avoids DB re-queries) ──
@@ -628,7 +630,7 @@ class webhook_handler {
         // producing NO error log — just a silent hang.
         $old_limit = @ini_get('max_execution_time');
         @set_time_limit($hard_guard + 20); // 75s total, safe for most hosts
-        error_log(sprintf('[GATELOOP] time_limit: old=%s new=%d hard_guard=%d',
+        \local_jedomi_log(sprintf('[GATELOOP] time_limit: old=%s new=%d hard_guard=%d',
             $old_limit ?: 'unlimited', $hard_guard + 20, $hard_guard));
 
         $toolrepeatcounts = [];
@@ -639,7 +641,7 @@ class webhook_handler {
             $elapsed = time() - $LOOP_START;
 
             if ($iteration > 0) {
-                error_log(sprintf('[GATELOOP] iter_top chat=%s iter=%d elapsed=%ds msg_count=%d',
+                \local_jedomi_log(sprintf('[GATELOOP] iter_top chat=%s iter=%d elapsed=%ds msg_count=%d',
                     $chat_id, $iteration, $elapsed, count($messages)));
             }
 
@@ -648,7 +650,7 @@ class webhook_handler {
             // NOT $iteration (current). The for loop increments AFTER the
             // body, so saving $iteration means the next worker re-does it.
             if ($elapsed >= $hard_guard) {
-                error_log(sprintf('[GATELOOP] hard_guard chat=%s iter=%d elapsed=%d self-pinging',
+                \local_jedomi_log(sprintf('[GATELOOP] hard_guard chat=%s iter=%d elapsed=%d self-pinging',
                     $chat_id, $iteration, $elapsed));
                 $state['iteration'] = $iteration + 1;
                 $state['messages'] = $messages;
@@ -663,7 +665,7 @@ class webhook_handler {
             // before FPM request_terminate_timeout silently kills this worker.
             // Only on internal iterations (>0).
             if ($elapsed >= 40 && $iteration > 0) {
-                error_log(sprintf('[GATELOOP] medium_guard chat=%s iter=%d elapsed=%d self-pinging',
+                \local_jedomi_log(sprintf('[GATELOOP] medium_guard chat=%s iter=%d elapsed=%d self-pinging',
                     $chat_id, $iteration, $elapsed));
                 $state['iteration'] = $iteration + 1;
                 $state['messages'] = $messages;
@@ -727,7 +729,7 @@ class webhook_handler {
                 },
             ]);
 
-            error_log(sprintf('[GATELOOP] calling_gateway chat=%s iter=%d elapsed=%ds curl_timeout=%ds payload_bytes=%d msg_count=%d',
+            \local_jedomi_log(sprintf('[GATELOOP] calling_gateway chat=%s iter=%d elapsed=%ds curl_timeout=%ds payload_bytes=%d msg_count=%d',
                 $chat_id, $iteration, time() - $LOOP_START, $curl_timeout,
                 strlen(json_encode($payload, JSON_UNESCAPED_UNICODE)), count($messages)));
 
@@ -738,13 +740,13 @@ class webhook_handler {
             curl_close($ch);
 
             // ── Log Gateway response for debugging ──
-            error_log(sprintf('[GATEWAY] iter=%d http=%d curl_errno=%d curl_err=%s sse_bytes=%d',
+            \local_jedomi_log(sprintf('[GATEWAY] iter=%d http=%d curl_errno=%d curl_err=%s sse_bytes=%d',
                 $iteration, $http_code, $curl_errno, $curl_error ?: 'none', strlen($sse_buffer)));
 
             // ── Gateway errors ──
             if ($curl_errno !== 0) {
                 if ($curl_errno === CURLE_OPERATION_TIMEDOUT) {
-                    error_log('[GATEWAY] Timeout on iter ' . $iteration . ', self-pinging');
+                    \local_jedomi_log('[GATEWAY] Timeout on iter ' . $iteration . ', self-pinging');
                     // Gateway timed out but there may be more time left for
                     // FPM. Self-ping to continue with remaining iterations.
                     $state['iteration'] = $iteration + 1;
@@ -754,13 +756,13 @@ class webhook_handler {
                     session::set_context($state_key, $state);
                     self::self_ping($chat_id);
                 } else {
-                    error_log('[GATEWAY] cURL error on iter ' . $iteration . ': ' . $curl_error);
+                    \local_jedomi_log('[GATEWAY] cURL error on iter ' . $iteration . ': ' . $curl_error);
                     self::release_lock($state_key, $chat_id, get_string('error_telegram_e004', 'local_jedomi'));
                 }
                 return;
             }
             if ($http_code !== 200) {
-                error_log('[GATEWAY] HTTP ' . $http_code . ' on iter ' . $iteration . ', body: ' . substr($sse_buffer, 0, 200));
+                \local_jedomi_log('[GATEWAY] HTTP ' . $http_code . ' on iter ' . $iteration . ', body: ' . substr($sse_buffer, 0, 200));
                 self::release_lock($state_key, $chat_id, get_string('error_telegram_e005', 'local_jedomi'));
                 return;
             }
@@ -768,7 +770,7 @@ class webhook_handler {
             // ── Parse SSE buffer (same parser as web version) ──
             $result = self::parse_sse_buffer($sse_buffer);
             if ($result === null) {
-                error_log('[GATEWAY] SSE parse failed on iter ' . $iteration . ', buffer: ' . substr($sse_buffer, 0, 200));
+                \local_jedomi_log('[GATEWAY] SSE parse failed on iter ' . $iteration . ', buffer: ' . substr($sse_buffer, 0, 200));
                 self::release_lock($state_key, $chat_id, get_string('error_telegram_e006', 'local_jedomi'));
                 return;
             }
@@ -1101,7 +1103,7 @@ class webhook_handler {
                 }
 
                 // ── Release lock before sending final response ──
-                error_log('[GATELOOP] text response for chat ' . $chat_id . ' at iter ' . $iteration
+                \local_jedomi_log('[GATELOOP] text response for chat ' . $chat_id . ' at iter ' . $iteration
                     . ', elapsed=' . (time() - $LOOP_START) . 's, len=' . strlen($display));
                 session::set_context($state_key, []);
 
@@ -1149,7 +1151,7 @@ class webhook_handler {
             $is_actively_locked = !empty($fresh_state['is_locked'])
                 && (time() - ($fresh_state['locked_at'] ?? 0) < self::LOCK_TTL);
             if ($is_actively_locked && ($fresh_state['iteration'] ?? 0) > $iteration) {
-                error_log(sprintf('[GATELOOP] stale_iteration chat=%s iter=%d fresh_iter=%d — reloading',
+                \local_jedomi_log(sprintf('[GATELOOP] stale_iteration chat=%s iter=%d fresh_iter=%d — reloading',
                     $chat_id, $iteration, $fresh_state['iteration']));
                 $iteration = (int)$fresh_state['iteration'] - 1; // For loop increments; restore 1 less.
                 $messages = $fresh_state['messages'] ?? $messages;
@@ -1174,12 +1176,12 @@ class webhook_handler {
                 $toolrepeatcounts[$callkey] = ($toolrepeatcounts[$callkey] ?? 0) + 1;
                 $repeat_count = $toolrepeatcounts[$callkey];
                 if ($repeat_count > 8) {
-                    error_log(sprintf('[GATELOOP] loop_detected chat=%s iter=%d tool=%s key=%s count=%d',
+                    \local_jedomi_log(sprintf('[GATELOOP] loop_detected chat=%s iter=%d tool=%s key=%s count=%d',
                         $chat_id, $iteration, $name, $callkey, $repeat_count));
                     $looping = true;
                     break;
                 } elseif ($repeat_count >= 4) {
-                    error_log(sprintf('[GATELOOP] loop_warning chat=%s iter=%d tool=%s key=%s count=%d',
+                    \local_jedomi_log(sprintf('[GATELOOP] loop_warning chat=%s iter=%d tool=%s key=%s count=%d',
                         $chat_id, $iteration, $name, $callkey, $repeat_count));
                 }
 
@@ -1204,13 +1206,13 @@ class webhook_handler {
             $state['is_locked'] = true;
 
             $state_json = json_encode($state, JSON_UNESCAPED_UNICODE);
-            error_log(sprintf('[GATELOOP] state_save chat=%s iter=%d state_bytes=%d msg_count=%d',
+            \local_jedomi_log(sprintf('[GATELOOP] state_save chat=%s iter=%d state_bytes=%d msg_count=%d',
                 $chat_id, $iteration, strlen($state_json), count($messages)));
 
             try {
                 session::set_context($state_key, $state);
             } catch (\Exception $e) {
-                error_log('[GATELOOP] STATE SAVE FAILED for chat ' . $chat_id
+                \local_jedomi_log('[GATELOOP] STATE SAVE FAILED for chat ' . $chat_id
                     . ' iter=' . $iteration . ' bytes=' . strlen($state_json)
                     . ' err=' . $e->getMessage());
                 // Fallback: release lock and inform user, don't crash silently.
@@ -1222,7 +1224,7 @@ class webhook_handler {
             }
 
             if ($looping) {
-                error_log('[GATELOOP] loop_exit for chat ' . $chat_id . ' at iter ' . $iteration
+                \local_jedomi_log('[GATELOOP] loop_exit for chat ' . $chat_id . ' at iter ' . $iteration
                     . ', elapsed=' . (time() - $LOOP_START) . 's');
                 session::set_context($state_key, []);
                 (new api_client())->send_message($chat_id, get_string('telegram_msg_max_iterations', 'local_jedomi'));
@@ -1231,7 +1233,7 @@ class webhook_handler {
         }
 
         // ── Max iterations reached ──
-        error_log('[GATELOOP] max iterations reached for chat ' . $chat_id);
+        \local_jedomi_log('[GATELOOP] max iterations reached for chat ' . $chat_id);
         session::set_context($state_key, []);
         (new api_client())->send_message($chat_id, get_string('telegram_msg_max_iterations', 'local_jedomi'));
     }

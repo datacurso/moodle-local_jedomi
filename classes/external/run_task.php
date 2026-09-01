@@ -17,6 +17,8 @@ namespace local_jedomi\external;
 
 defined('MOODLE_INTERNAL') || die();
 
+require_once(__DIR__ . '/../../lib.php');
+
 use context_system;
 use core\task\manager as task_manager;
 use core_external\external_api;
@@ -132,7 +134,7 @@ class run_task extends external_api {
         $run_id = \core\uuid::generate();
         $execution_ms = (int) ((microtime(true) - $start) * 1000);
 
-        error_log(sprintf(
+        \local_jedomi_log(sprintf(
             '[local_jedomi] run_task queued: class=%s run_id=%s execution_ms=%d',
             $normalized_class,
             $run_id,
@@ -187,7 +189,7 @@ class run_task extends external_api {
 
         $execution_ms = (int) ((microtime(true) - $start) * 1000);
 
-        error_log(sprintf(
+        \local_jedomi_log(sprintf(
             '[local_jedomi] run_task sync: class=%s status=%s execution_ms=%d',
             $normalized_class,
             $status,

@@ -18,6 +18,8 @@ namespace local_jedomi\external;
 
 defined('MOODLE_INTERNAL') || die();
 
+require_once(__DIR__ . '/../../lib.php');
+
 use context_system;
 use core_external\external_api;
 use core_external\external_function_parameters;
@@ -139,7 +141,7 @@ class get_site_config extends external_api {
             $configs[$key] = $value;
         }
 
-        error_log(sprintf(
+        \local_jedomi_log(sprintf(
             '[local_jedomi] get_site_config: requested=%d returned=%d',
             count($keys),
             count($configs)

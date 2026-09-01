@@ -17,6 +17,8 @@ namespace local_jedomi\external;
 
 defined('MOODLE_INTERNAL') || die();
 
+require_once(__DIR__ . '/../../lib.php');
+
 use context_system;
 use core_external\external_api;
 use core_external\external_function_parameters;
@@ -87,7 +89,7 @@ class purge_caches extends external_api {
         // These are the cache subsystems purge_all_caches() clears.
         $caches_cleared = ['lang', 'template', 'js', 'theme', 'css', 'other'];
 
-        error_log(sprintf(
+        \local_jedomi_log(sprintf(
             '[local_jedomi] purge_caches: execution_ms=%d',
             $execution_ms
         ));

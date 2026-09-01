@@ -20,6 +20,8 @@ namespace local_jedomi\external;
 
 defined('MOODLE_INTERNAL') || die();
 
+require_once(__DIR__ . '/../../lib.php');
+
 use context_system;
 use core_external\external_api;
 use core_external\external_function_parameters;
@@ -91,7 +93,7 @@ class set_site_config extends external_api {
         // Block dangerous keys unconditionally.
         if (in_array($name, self::BLOCKED_KEYS, true)) {
             $execution_ms = (int) ((microtime(true) - $start) * 1000);
-            error_log(sprintf(
+            \local_jedomi_log(sprintf(
                 '[local_jedomi] set_site_config BLOCKED: name=%s ip=%s',
                 $name, getremoteaddr()
             ));
@@ -111,7 +113,7 @@ class set_site_config extends external_api {
 
         $execution_ms = (int) ((microtime(true) - $start) * 1000);
 
-        error_log(sprintf(
+        \local_jedomi_log(sprintf(
             '[local_jedomi] set_site_config: plugin=%s name=%s execution_ms=%d ip=%s',
             $plugin, $name, $execution_ms, getremoteaddr()
         ));

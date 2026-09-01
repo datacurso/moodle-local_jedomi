@@ -24,6 +24,8 @@ namespace local_jedomi\external;
 
 defined('MOODLE_INTERNAL') || die();
 
+require_once(__DIR__ . '/../../lib.php');
+
 use context_system;
 use core_external\external_api;
 use core_external\external_function_parameters;
@@ -141,7 +143,7 @@ class read_file extends external_api {
         // Block sensitive files unconditionally
         foreach (self::BLOCKED_PATHS as $blocked) {
             if ($clean_path === $blocked || str_ends_with($clean_path, '/' . $blocked)) {
-                error_log(sprintf(
+                \local_jedomi_log(sprintf(
                     '[local_jedomi] read_file BLOCKED sensitive path: %s ip=%s',
                     $clean_path, getremoteaddr()
                 ));
@@ -202,7 +204,7 @@ class read_file extends external_api {
             $numbered[] = sprintf('%4d: %s', $line_start + $i, $line);
         }
 
-        error_log(sprintf(
+        \local_jedomi_log(sprintf(
             '[local_jedomi] read_file: path=%s lines=%d-%d ip=%s',
             $clean_path, $line_start, $line_end, getremoteaddr()
         ));
