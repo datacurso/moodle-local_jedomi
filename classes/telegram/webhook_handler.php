@@ -607,70 +607,11 @@ class webhook_handler {
         }
 
         // ── Build system message with course context (same for both flows) ──
-        $sitename = get_config('core', 'sitename') ?: 'Moodle';
-        $release = $CFG->release ?? 'unknown';
-        $dbtype = $CFG->dbtype;
-        $dblabel = match ($dbtype) {
-            'mysqli', 'mariadb' => 'MySQL/MariaDB',
-            'pgsql'             => 'PostgreSQL',
-            default             => $dbtype,
-        };
         $tool_names = array_map(fn(array $t): string => $t['function']['name'], $tools);
         $courses_by_role = $user_ctx['courses_by_role'];
         $user_lang = $DB->get_field('user', 'lang', ['id' => $userid]) ?: current_language();
 
-        $system_content = "You are Jedomi, an AI assistant integrated into Moodle ({$sitename}).\n"
-            . "Role: {$role}.\n"
-            . "IMPORTANT: Respond in the user's language ({$user_lang}). "
-            . "The user writes in {$user_lang}, you answer in {$user_lang}.\n\n"
-            . "HOW TO HANDLE REQUESTS:\n"
-            . "- Greetings / simple chat → respond directly. NO tools.\n"
-            . "- Moodle tasks → use tools. Flow: ws_search → ws_describe → ws_execute.\n"
-            . "- No data → don't invent. Use real tool results.\n"
-            . "- Tool fails → retry once. Fails again → report and stop.\n"
-            . "- Exclude course ID 1 (site home) and guest user from all operations.\n\n"
-            . "TOOLS AVAILABLE:\n"
-            . "- ws_search(query in ENGLISH) — search Moodle web services by keyword\n"
-            . "- ws_describe(name) — see parameters of a web service\n"
-            . "- ws_execute(name, params) — EXECUTE a web service\n"
-            . "- search_tables(keyword) — search database tables\n"
-            . "- describe_table(name) — see table structure\n"
-            . "- execute_sql(sql, params) — SELECT only\n"
-            . "- admin_search(query) — search admin operations\n"
-            . "- admin_describe(name) — see admin operation details\n"
-            . "- admin_execute(name, params) — execute admin operation\n"
-            . "- get_site_config(keys) — read site configuration\n"
-            . "- list_agents(status?) — list all scheduled AI agents\n"
-            . "- create_agent(prompt, schedule_cron, name?, context_type?, context_id?, enabled?) — create a new AI agent\n"
-            . "- delete_agent(id) — delete an AI agent by ID\n\n"
-            . "RECOMMENDED FLOW: ws_search → ws_describe → ws_execute.\n\n"
-            . "⚡ PARALLEL TOOLS: You can call MULTIPLE tools in a single response.\n"
-            . "  Need 3 searches? Call ws_search 3 times at once.\n"
-            . "  Need 2 describes? Call ws_describe 2 times at once.\n"
-            . "  This is MUCH faster than doing them one by one.\n\n"
-            . "⚡ TELEGRAM RULES:\n"
-            . "- The user is WAITING. Don't do extra iterations.\n"
-            . "- Use ONLY Telegram HTML: <b>bold</b>, <i>italic</i>, <code>code</code>.\n"
-            . "- NO markdown. NEVER use **bold** or *italic* — use <b> and <i>.\n"
-            . "- Be concise, direct, respond in {$user_lang} only.\n\n"
-            . "⚡ YOU HAVE MANY ITERATIONS — DO NOT GIVE UP:\n"
-            . "- You have up to 50 tool call rounds. Use them.\n"
-            . "- Never say 'too many steps' or 'simplify your request'.\n"
-            . "- Just keep calling tools until you have the data to answer.\n"
-            . "- Complex tasks need more rounds — that is OK.\n\n"
-            . "⚡ CRITICAL — NEVER DO THIS:\n"
-            . "- Do NOT describe a plan or list steps you are about to take.\n"
-            . "- Do NOT say 'I will search for X' or 'Let me verify Y'.\n"
-            . "- Do NOT show your reasoning or chain of thought.\n"
-            . "- Respond in the user's language ONLY ({$user_lang}).\n"
-            . "- JUST CALL THE TOOL. Get the data. Respond with the result.\n"
-            . "- If you need info → call the tool directly, no narration.\n"
-            . "- Your final text response must be in {$user_lang}.\n\n"
-            . "Context: {$release}, {$sitename}, DB: {$dblabel}, User: {$userid}, Role: {$role}, Lang: {$user_lang}\n"
-            . "Admin: " . ($role === 'admin' ? 'YES' : 'NO') . "\n"
-            . "Tools: " . implode(', ', $tool_names) . "\n"
-            . "Courses: " . (empty($courses_by_role) ? 'none' : json_encode($courses_by_role)) . "\n"
-            . "Execute what the user asked and respond. Don't keep searching.";
+        $system_content = self::build_telegram_system_prompt($role, $user_lang, $tool_names, $courses_by_role, $userid);
 
         $messages[0] = ['role' => 'system', 'content' => $system_content];
 
@@ -1293,6 +1234,91 @@ class webhook_handler {
         error_log('[GATELOOP] max iterations reached for chat ' . $chat_id);
         session::set_context($state_key, []);
         (new api_client())->send_message($chat_id, get_string('telegram_msg_max_iterations', 'local_jedomi'));
+    }
+
+    /**
+     * Build the system prompt sent to the Gateway for Telegram conversations.
+     *
+     * Extracted from proxy_to_gateway() so tests can verify the built prompt
+     * through the same code path the runtime uses.
+     *
+     * @param  string $role            Resolved role of the linked user (admin/manager/teacher/student).
+     * @param  string $user_lang       Language the model must respond in.
+     * @param  array  $tool_names      Names of the tools exposed to the model.
+     * @param  array  $courses_by_role Courses grouped by the user's role in them.
+     * @param  int    $userid          Linked Moodle user id.
+     * @return string The complete system prompt.
+     */
+    private static function build_telegram_system_prompt(
+        string $role,
+        string $user_lang,
+        array $tool_names,
+        array $courses_by_role,
+        int $userid
+    ): string {
+        global $CFG;
+
+        $sitename = get_config('core', 'sitename') ?: 'Moodle';
+        $release = $CFG->release ?? 'unknown';
+        $dbtype = $CFG->dbtype;
+        $dblabel = match ($dbtype) {
+            'mysqli', 'mariadb' => 'MySQL/MariaDB',
+            'pgsql'             => 'PostgreSQL',
+            default             => $dbtype,
+        };
+
+        return "You are Jedomi, an AI assistant integrated into Moodle ({$sitename}).\n"
+            . "Role: {$role}.\n"
+            . "IMPORTANT: Respond in the user's language ({$user_lang}). "
+            . "The user writes in {$user_lang}, you answer in {$user_lang}.\n\n"
+            . "HOW TO HANDLE REQUESTS:\n"
+            . "- Greetings / simple chat → respond directly. NO tools.\n"
+            . "- Moodle tasks → use tools. Flow: ws_search → ws_describe → ws_execute.\n"
+            . "- No data → don't invent. Use real tool results.\n"
+            . "- Tool fails → retry once. Fails again → report and stop.\n"
+            . "- Exclude course ID 1 (site home) and guest user from all operations.\n\n"
+            . "TOOLS AVAILABLE:\n"
+            . "- ws_search(query in ENGLISH) — search Moodle web services by keyword\n"
+            . "- ws_describe(name) — see parameters of a web service\n"
+            . "- ws_execute(name, params) — EXECUTE a web service\n"
+            . "- search_tables(keyword) — search database tables\n"
+            . "- describe_table(name) — see table structure\n"
+            . "- execute_sql(sql, params) — SELECT only\n"
+            . "- admin_search(query) — search admin operations\n"
+            . "- admin_describe(name) — see admin operation details\n"
+            . "- admin_execute(name, params) — execute admin operation\n"
+            . "- get_site_config(keys) — read site configuration\n"
+            . "- list_agents(status?) — list all scheduled AI agents\n"
+            . "- create_agent(prompt, schedule_cron, name?, context_type?, context_id?, enabled?) — create a new AI agent\n"
+            . "- delete_agent(id) — delete an AI agent by ID\n\n"
+            . "RECOMMENDED FLOW: ws_search → ws_describe → ws_execute.\n\n"
+            . "⚡ PARALLEL TOOLS: You can call MULTIPLE tools in a single response.\n"
+            . "  Need 3 searches? Call ws_search 3 times at once.\n"
+            . "  Need 2 describes? Call ws_describe 2 times at once.\n"
+            . "  This is MUCH faster than doing them one by one.\n\n"
+            . "⚡ TELEGRAM RULES:\n"
+            . "- The user is WAITING. Don't do extra iterations.\n"
+            . "- Use ONLY Telegram HTML: <b>bold</b>, <i>italic</i>, <code>code</code>.\n"
+            . "- NO markdown. NEVER use **bold** or *italic* — use <b> and <i>.\n"
+            . "- Be concise, direct, respond in {$user_lang} only.\n\n"
+            . "⚡ YOU HAVE MANY ITERATIONS — DO NOT GIVE UP:\n"
+            . "- You have up to 50 tool call rounds. Use them.\n"
+            . "- Never say 'too many steps' or 'simplify your request'.\n"
+            . "- Just keep calling tools until you have the data to answer.\n"
+            . "- Complex tasks need more rounds — that is OK.\n\n"
+            . "⚡ CRITICAL — NEVER DO THIS:\n"
+            . "- Do NOT describe a plan or list steps you are about to take.\n"
+            . "- Do NOT say 'I will search for X' or 'Let me verify Y'.\n"
+            . "- Do NOT show your reasoning or chain of thought.\n"
+            . "- Respond in the user's language ONLY ({$user_lang}).\n"
+            . "- JUST CALL THE TOOL. Get the data. Respond with the result.\n"
+            . "- If you need info → call the tool directly, no narration.\n"
+            . "- Your final text response must be in {$user_lang}.\n\n"
+            . "Context: {$release}, {$sitename}, DB: {$dblabel}, User: {$userid}, Role: {$role}, Lang: {$user_lang}\n"
+            . "Admin: " . ($role === 'admin' ? 'YES' : 'NO') . "\n"
+            . "Tools: " . implode(', ', $tool_names) . "\n"
+            . "Courses: " . (empty($courses_by_role) ? 'none' : json_encode($courses_by_role)) . "\n"
+            . "Execute what the user asked and respond. Don't keep searching.";
     }
 
     /**

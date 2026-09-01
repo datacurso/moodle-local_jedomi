@@ -517,14 +517,29 @@ final class webhook_handler_test extends \advanced_testcase {
     }
 
     /**
-     * Test that the system prompt contains the Telegram format instruction.
+     * Test that the built system prompt instructs the model to use Telegram HTML.
+     *
+     * Invokes the same builder the runtime uses (build_telegram_system_prompt,
+     * called from proxy_to_gateway) and asserts the format instruction in a
+     * wording-tolerant way: mention of Telegram HTML, the supported tags, and
+     * a prohibition on markdown.
      */
     public function test_system_prompt_has_telegram_format(): void {
-        $source = file_get_contents(__DIR__ . '/../classes/telegram/webhook_handler.php');
-        $this->assertStringContainsString('Usá HTML de Telegram',
-            $source, 'System prompt should tell model to use Telegram HTML');
-        $this->assertStringContainsString('NO uses markdown',
-            $source, 'System prompt should forbid markdown');
+        $prompt = $this->call_private_static('build_telegram_system_prompt', [
+            'admin', 'es', ['ws_search', 'execute_sql'], [], (int)get_admin()->id,
+        ]);
+
+        $this->assertIsString($prompt);
+        $this->assertMatchesRegularExpression('/telegram\s+html/i', $prompt,
+            'System prompt should tell the model to use Telegram HTML');
+        $this->assertStringContainsString('<b>', $prompt,
+            'System prompt should mention the supported <b> tag');
+        $this->assertStringContainsString('<i>', $prompt,
+            'System prompt should mention the supported <i> tag');
+        $this->assertStringContainsString('<code>', $prompt,
+            'System prompt should mention the supported <code> tag');
+        $this->assertMatchesRegularExpression('/no\s+(uses\s+)?markdown/i', $prompt,
+            'System prompt should forbid markdown');
     }
 
     /**
