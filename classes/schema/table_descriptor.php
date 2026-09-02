@@ -82,7 +82,7 @@ class table_descriptor {
 
         // --- Foreign keys & indices via INFORMATION_SCHEMA (MySQL/MariaDB only) ---
         // Fallback gracefully on PostgreSQL — FK/index info is non-critical.
-        $foreign_keys = [];
+        $foreignkeys = [];
         $indices      = [];
 
         if (in_array($CFG->dbtype, ['mysqli', 'mariadb', 'auroramysql'])) {
@@ -92,7 +92,7 @@ class table_descriptor {
 
             try {
                 // Foreign keys.
-                $fks_rs = $DB->get_recordset_sql(
+                $fksrs = $DB->get_recordset_sql(
                     "SELECT kcu.COLUMN_NAME, kcu.REFERENCED_TABLE_NAME, kcu.REFERENCED_COLUMN_NAME
                        FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
                        JOIN INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
@@ -105,17 +105,17 @@ class table_descriptor {
                         AND kcu.REFERENCED_TABLE_NAME IS NOT NULL",
                     [$dbname, $prefixed]
                 );
-                foreach ($fks_rs as $fk) {
-                    $foreign_keys[] = [
+                foreach ($fksrs as $fk) {
+                    $foreignkeys[] = [
                         'column'            => $fk->column_name,
                         'references_table'  => $fk->referenced_table_name,
                         'references_column' => $fk->referenced_column_name,
                     ];
                 }
-                $fks_rs->close();
+                $fksrs->close();
 
                 // Indices.
-                $idx_rs = $DB->get_recordset_sql(
+                $idxrs = $DB->get_recordset_sql(
                     "SELECT INDEX_NAME, COLUMN_NAME, NON_UNIQUE, SEQ_IN_INDEX
                        FROM INFORMATION_SCHEMA.STATISTICS
                       WHERE TABLE_SCHEMA = ?
@@ -123,7 +123,7 @@ class table_descriptor {
                       ORDER BY INDEX_NAME, SEQ_IN_INDEX",
                     [$dbname, $prefixed]
                 );
-                foreach ($idx_rs as $idx) {
+                foreach ($idxrs as $idx) {
                     $name = $idx->index_name;
                     if (!isset($indices[$name])) {
                         $indices[$name] = [
@@ -133,7 +133,7 @@ class table_descriptor {
                     }
                     $indices[$name]['columns'][] = $idx->column_name;
                 }
-                $idx_rs->close();
+                $idxrs->close();
             } catch (\Exception $e) {
                 // INFORMATION_SCHEMA not available — FK/index info is optional.
             }
@@ -142,7 +142,7 @@ class table_descriptor {
         $result = [
             'tablename'    => $tablename,
             'columns'      => $columns,
-            'foreign_keys' => $foreign_keys,
+            'foreign_keys' => $foreignkeys,
             'indices'      => $indices,
         ];
 

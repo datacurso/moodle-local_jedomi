@@ -653,12 +653,12 @@ final class webhook_handler_test extends \advanced_testcase {
     /**
      * Call a private static method on webhook_handler via reflection.
      *
-     * @param string $methodName
+     * @param string $methodname
      * @param array $args
      * @return mixed
      */
-    private function call_private_static(string $methodName, array $args = []) {
-        $ref = new \ReflectionMethod(\local_jedomi\telegram\webhook_handler::class, $methodName);
+    private function call_private_static(string $methodname, array $args = []) {
+        $ref = new \ReflectionMethod(\local_jedomi\telegram\webhook_handler::class, $methodname);
         $ref->setAccessible(true);
         return $ref->invoke(null, ...$args);
     }

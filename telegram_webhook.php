@@ -39,10 +39,10 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 // ── Validate webhook secret ──────────────────────────────────────────────────
-$secret_param = optional_param('secret', '', PARAM_ALPHANUMEXT);
-$expected_secret = manager::get_webhook_secret();
+$secretparam = optional_param('secret', '', PARAM_ALPHANUMEXT);
+$expectedsecret = manager::get_webhook_secret();
 
-if (!hash_equals($expected_secret, $secret_param)) {
+if (!hash_equals($expectedsecret, $secretparam)) {
     http_response_code(403);
     header('Content-Type: application/json');
     echo json_encode(['ok' => false, 'error' => 'Invalid webhook secret (E007)']);
@@ -51,11 +51,11 @@ if (!hash_equals($expected_secret, $secret_param)) {
 }
 
 // ── Internal self-ping (continue checkpointed work) ──
-$internal_ping = optional_param('internal_ping', 0, PARAM_INT);
-$ping_chat_id = optional_param('chat_id', '', PARAM_RAW);
+$internalping = optional_param('internal_ping', 0, PARAM_INT);
+$pingchatid = optional_param('chat_id', '', PARAM_RAW);
 
-if ($internal_ping && !empty($ping_chat_id)) {
-    local_jedomi_log('SELF-PING: continuing for chat ' . $ping_chat_id);
+if ($internalping && !empty($pingchatid)) {
+    local_jedomi_log('SELF-PING: continuing for chat ' . $pingchatid);
     // Send 200 OK immediately so the caller cURL returns fast.
     http_response_code(200);
     header('Content-Type: application/json');
@@ -73,7 +73,7 @@ if ($internal_ping && !empty($ping_chat_id)) {
     ignore_user_abort(true);
     set_time_limit(0);
 
-    webhook_handler::handle_internal_ping($ping_chat_id);
+    webhook_handler::handle_internal_ping($pingchatid);
     exit;
 }
 

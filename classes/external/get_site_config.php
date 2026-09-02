@@ -117,18 +117,18 @@ class get_site_config extends external_api {
      * Authenticate the request and return allowlisted config values, silently skipping others.
      *
      * @param  array  $keys           Config key names to retrieve.
-     * @param  string $hmac_signature HMAC-SHA256 hex signature from the gateway.
-     * @param  int    $hmac_timestamp Unix timestamp from the request header.
-     * @param  string $payload_hash   SHA256 hex of the request body.
-     * @param  bool   $skip_hmac      Skip HMAC verification (used by chatproxy — auth via SPT).
+     * @param  string $hmacsignature HMAC-SHA256 hex signature from the gateway.
+     * @param  int    $hmactimestamp Unix timestamp from the request header.
+     * @param  string $payloadhash   SHA256 hex of the request body.
+     * @param  bool   $skiphmac      Skip HMAC verification (used by chatproxy — auth via SPT).
      * @return array Single configs_json entry with the allowed values as a JSON object.
      */
     public static function execute(
         array $keys,
-        string $hmac_signature,
-        int $hmac_timestamp,
-        string $payload_hash,
-        bool $skip_hmac = false
+        string $hmacsignature,
+        int $hmactimestamp,
+        string $payloadhash,
+        bool $skiphmac = false
     ): array {
         // --- Capability check ---
         $context = context_system::instance();
@@ -138,16 +138,21 @@ class get_site_config extends external_api {
         // --- Parameter validation ---
         $validated = self::validate_parameters(
             self::execute_parameters(),
-            compact('keys', 'hmac_signature', 'hmac_timestamp', 'payload_hash')
+            [
+                'keys'           => $keys,
+                'hmac_signature' => $hmacsignature,
+                'hmac_timestamp' => $hmactimestamp,
+                'payload_hash'   => $payloadhash,
+            ]
         );
         $keys           = $validated['keys'];
-        $hmac_signature = $validated['hmac_signature'];
-        $hmac_timestamp = $validated['hmac_timestamp'];
-        $payload_hash   = $validated['payload_hash'];
+        $hmacsignature = $validated['hmac_signature'];
+        $hmactimestamp = $validated['hmac_timestamp'];
+        $payloadhash   = $validated['payload_hash'];
 
         // --- HMAC authentication ---
-        if (!$skip_hmac) {
-            self::verify_hmac('jedomi_get_site_config', $hmac_timestamp, $payload_hash, $hmac_signature);
+        if (!$skiphmac) {
+            self::verify_hmac('jedomi_get_site_config', $hmactimestamp, $payloadhash, $hmacsignature);
         }
 
         // --- Build response (server-side allowlist enforcement) ---

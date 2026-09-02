@@ -88,15 +88,15 @@ class purge_caches extends external_api {
     /**
      * Authenticate the request and purge all Moodle caches via purge_all_caches().
      *
-     * @param  string $hmac_signature HMAC-SHA256 hex signature from the gateway.
-     * @param  int    $hmac_timestamp Unix timestamp from the request header.
-     * @param  string $payload_hash   SHA256 hex of the request body.
+     * @param  string $hmacsignature HMAC-SHA256 hex signature from the gateway.
+     * @param  int    $hmactimestamp Unix timestamp from the request header.
+     * @param  string $payloadhash   SHA256 hex of the request body.
      * @return array Status, cleared cache type names and execution time in milliseconds.
      */
     public static function execute(
-        string $hmac_signature,
-        int $hmac_timestamp,
-        string $payload_hash
+        string $hmacsignature,
+        int $hmactimestamp,
+        string $payloadhash
     ): array {
         // --- Capability check (admin-level required per spec CWS-CACHE-01) ---
         $context = context_system::instance();
@@ -106,7 +106,11 @@ class purge_caches extends external_api {
         // --- Parameter validation ---
         $validated = self::validate_parameters(
             self::execute_parameters(),
-            compact('hmac_signature', 'hmac_timestamp', 'payload_hash')
+            [
+                'hmac_signature' => $hmacsignature,
+                'hmac_timestamp' => $hmactimestamp,
+                'payload_hash'   => $payloadhash,
+            ]
         );
 
         // --- HMAC authentication ---
@@ -124,20 +128,20 @@ class purge_caches extends external_api {
         @set_time_limit(60);
         purge_all_caches();
 
-        $execution_ms = (int) ((microtime(true) - $start) * 1000);
+        $executionms = (int) ((microtime(true) - $start) * 1000);
 
         // These are the cache subsystems purge_all_caches() clears.
-        $caches_cleared = ['lang', 'template', 'js', 'theme', 'css', 'other'];
+        $cachescleared = ['lang', 'template', 'js', 'theme', 'css', 'other'];
 
         \local_jedomi_log(sprintf(
             '[local_jedomi] purge_caches: execution_ms=%d',
-            $execution_ms
+            $executionms
         ));
 
         return [
             'status'         => 'success',
-            'caches_cleared' => $caches_cleared,
-            'execution_ms'   => $execution_ms,
+            'caches_cleared' => $cachescleared,
+            'execution_ms'   => $executionms,
         ];
     }
 }

@@ -91,17 +91,17 @@ class validate_password extends external_api {
      *
      * @param  string $password       Candidate password to validate; never logged.
      * @param  string $username       Optional username for the similarity check.
-     * @param  string $hmac_signature HMAC-SHA256 hex signature from the gateway.
-     * @param  int    $hmac_timestamp Unix timestamp from the request header.
-     * @param  string $payload_hash   SHA256 hex of the request body.
+     * @param  string $hmacsignature HMAC-SHA256 hex signature from the gateway.
+     * @param  int    $hmactimestamp Unix timestamp from the request header.
+     * @param  string $payloadhash   SHA256 hex of the request body.
      * @return array Validity flag and machine-readable violation codes.
      */
     public static function execute(
         string $password,
         string $username,
-        string $hmac_signature,
-        int $hmac_timestamp,
-        string $payload_hash
+        string $hmacsignature,
+        int $hmactimestamp,
+        string $payloadhash
     ): array {
         global $CFG;
 
@@ -115,19 +115,25 @@ class validate_password extends external_api {
         // PARAM_RAW stripping that could alter the password being tested.
         $validated = self::validate_parameters(
             self::execute_parameters(),
-            compact('password', 'username', 'hmac_signature', 'hmac_timestamp', 'payload_hash')
+            [
+                'password'       => $password,
+                'username'       => $username,
+                'hmac_signature' => $hmacsignature,
+                'hmac_timestamp' => $hmactimestamp,
+                'payload_hash'   => $payloadhash,
+            ]
         );
         $password       = $validated['password'];   // keep raw
         $username       = $validated['username'];
-        $hmac_signature = $validated['hmac_signature'];
-        $hmac_timestamp = $validated['hmac_timestamp'];
-        $payload_hash   = $validated['payload_hash'];
+        $hmacsignature = $validated['hmac_signature'];
+        $hmactimestamp = $validated['hmac_timestamp'];
+        $payloadhash   = $validated['payload_hash'];
 
         // --- HMAC authentication ---
         // IMPORTANT: payload_hash must match what the gateway sent.
         // The gateway hashes the body BEFORE the password is in plaintext on the wire
         // (TLS handles transport); here we just verify the signature.
-        self::verify_hmac('jedomi_validate_password', $hmac_timestamp, $payload_hash, $hmac_signature);
+        self::verify_hmac('jedomi_validate_password', $hmactimestamp, $payloadhash, $hmacsignature);
 
         // --- Validate via Moodle's native policy check ---
         // check_password_policy() fills $errmsg with a human-readable concatenated string.

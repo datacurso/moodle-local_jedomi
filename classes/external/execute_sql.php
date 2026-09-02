@@ -110,19 +110,19 @@ class execute_sql extends external_api {
      *
      * @param  string $sql            SELECT query to execute.
      * @param  array  $params         Bound parameters for the query.
-     * @param  string $hmac_signature HMAC-SHA256 hex signature from the gateway.
-     * @param  int    $hmac_timestamp Unix timestamp from the request header.
-     * @param  string $payload_hash   SHA256 hex of the request body.
-     * @param  bool   $skip_hmac      Skip HMAC verification (used by chatproxy — auth via SPT).
+     * @param  string $hmacsignature HMAC-SHA256 hex signature from the gateway.
+     * @param  int    $hmactimestamp Unix timestamp from the request header.
+     * @param  string $payloadhash   SHA256 hex of the request body.
+     * @param  bool   $skiphmac      Skip HMAC verification (used by chatproxy — auth via SPT).
      * @return array Rows as JSON strings plus row_count, truncated flag and execution_ms.
      */
     public static function execute(
         string $sql,
         array $params,
-        string $hmac_signature,
-        int $hmac_timestamp,
-        string $payload_hash,
-        bool $skip_hmac = false
+        string $hmacsignature,
+        int $hmactimestamp,
+        string $payloadhash,
+        bool $skiphmac = false
     ): array {
         global $DB;
 
@@ -134,39 +134,45 @@ class execute_sql extends external_api {
         // --- Parameter validation ---
         $validated = self::validate_parameters(
             self::execute_parameters(),
-            compact('sql', 'params', 'hmac_signature', 'hmac_timestamp', 'payload_hash')
+            [
+                'sql'            => $sql,
+                'params'         => $params,
+                'hmac_signature' => $hmacsignature,
+                'hmac_timestamp' => $hmactimestamp,
+                'payload_hash'   => $payloadhash,
+            ]
         );
         $sql             = $validated['sql'];
         $params          = $validated['params'];
-        $hmac_signature  = $validated['hmac_signature'];
-        $hmac_timestamp  = $validated['hmac_timestamp'];
-        $payload_hash    = $validated['payload_hash'];
+        $hmacsignature  = $validated['hmac_signature'];
+        $hmactimestamp  = $validated['hmac_timestamp'];
+        $payloadhash    = $validated['payload_hash'];
 
         // --- HMAC authentication (must happen before any business logic) ---
-        if (!$skip_hmac) {
-            self::verify_hmac('jedomi_execute_sql', $hmac_timestamp, $payload_hash, $hmac_signature);
+        if (!$skiphmac) {
+            self::verify_hmac('jedomi_execute_sql', $hmactimestamp, $payloadhash, $hmacsignature);
         }
 
         // --- SELECT-only enforcement (defense-in-depth, QG-01 equivalent) ---
-        $first_token = strtoupper(strtok(trim($sql), " \t\n\r"));
-        if ($first_token !== 'SELECT') {
+        $firsttoken = strtoupper(strtok(trim($sql), " \t\n\r"));
+        if ($firsttoken !== 'SELECT') {
             // CRITICAL security event — log the hash, never the SQL text.
-            $sql_hash = hash('sha256', $sql);
+            $sqlhash = hash('sha256', $sql);
             \local_jedomi_log(sprintf(
                 '[local_jedomi] CRITICAL security event: non-SELECT rejected ip=%s sql_hash=%s',
                 getremoteaddr(),
-                $sql_hash
+                $sqlhash
             ));
             throw new \moodle_exception('non_select_rejected', 'local_jedomi');
         }
 
         // --- File exfiltration check (QG-02 equivalent, defense-in-depth) ---
         if (preg_match('/\bINTO\s+(OUTFILE|DUMPFILE)\b/i', $sql)) {
-            $sql_hash = hash('sha256', $sql);
+            $sqlhash = hash('sha256', $sql);
             \local_jedomi_log(sprintf(
                 '[local_jedomi] CRITICAL security event: INTO OUTFILE/DUMPFILE rejected ip=%s sql_hash=%s',
                 getremoteaddr(),
-                $sql_hash
+                $sqlhash
             ));
             throw new \moodle_exception('non_select_rejected', 'local_jedomi');
         }
@@ -206,20 +212,20 @@ class execute_sql extends external_api {
             }
             $recordset->close();
         } catch (\dml_exception $e) {
-            $execution_ms = (int) ((microtime(true) - $start) * 1000);
+            $executionms = (int) ((microtime(true) - $start) * 1000);
             // Distinguish timeout from other DB errors.
-            $is_timeout = stripos($e->getMessage(), 'max_statement_time') !== false
+            $istimeout = stripos($e->getMessage(), 'max_statement_time') !== false
                        || stripos($e->getMessage(), 'Query execution was interrupted') !== false;
 
-            $sql_hash = hash('sha256', $sql);
+            $sqlhash = hash('sha256', $sql);
             \local_jedomi_log(sprintf(
                 '[local_jedomi] DB error: %s sql_hash=%s execution_ms=%d',
-                $is_timeout ? 'query_timeout' : 'db_error',
-                $sql_hash,
-                $execution_ms
+                $istimeout ? 'query_timeout' : 'db_error',
+                $sqlhash,
+                $executionms
             ));
 
-            $code = $is_timeout ? 'query_timeout' : 'execute_sql_error';
+            $code = $istimeout ? 'query_timeout' : 'execute_sql_error';
             $dbg = $e->getMessage();
             if (method_exists($e, 'debuginfo') && !empty($e->debuginfo)) {
                 $dbg .= ' | ' . $e->debuginfo;
@@ -227,9 +233,9 @@ class execute_sql extends external_api {
             throw new \moodle_exception($code, 'local_jedomi', '', null, $dbg);
         } catch (\Exception $e) {
             // Catch non-DB exceptions too (moodle_exception, coding_exception, etc.)
-            $execution_ms = (int) ((microtime(true) - $start) * 1000);
-            $sql_hash = hash('sha256', $sql);
-            $dbInfo = method_exists($e, 'debuginfo') ? ($e->debuginfo ?? 'null') : 'no_method';
+            $executionms = (int) ((microtime(true) - $start) * 1000);
+            $sqlhash = hash('sha256', $sql);
+            $dbinfo = method_exists($e, 'debuginfo') ? ($e->debuginfo ?? 'null') : 'no_method';
             $extra = '';
             if ($e instanceof \moodle_exception) {
                 $extra = sprintf(' errorcode="%s" a="%s"', $e->errorcode, json_encode($e->a ?? null, JSON_UNESCAPED_UNICODE));
@@ -237,10 +243,10 @@ class execute_sql extends external_api {
             \local_jedomi_log(sprintf(
                 '[local_jedomi] DB error (non-dml): class=%s sql_hash=%s exec_ms=%d msg="%s" debuginfo="%s"%s',
                 get_class($e),
-                $sql_hash,
-                $execution_ms,
+                $sqlhash,
+                $executionms,
                 $e->getMessage(),
-                $dbInfo,
+                $dbinfo,
                 $extra
             ));
             $dbg = $e->getMessage();
@@ -250,23 +256,23 @@ class execute_sql extends external_api {
             throw new \moodle_exception('execute_sql_error', 'local_jedomi', '', null, $dbg);
         }
 
-        $execution_ms = (int) ((microtime(true) - $start) * 1000);
+        $executionms = (int) ((microtime(true) - $start) * 1000);
 
         // --- Audit log (no raw data, PII column names redacted) ---
-        $sql_hash = hash('sha256', $sql);
+        $sqlhash = hash('sha256', $sql);
         \local_jedomi_log(sprintf(
             '[local_jedomi] execute_sql: sql_hash=%s row_count=%d truncated=%s execution_ms=%d',
-            $sql_hash,
+            $sqlhash,
             count($rows),
             $truncated ? 'true' : 'false',
-            $execution_ms
+            $executionms
         ));
 
         return [
             'rows'         => $rows,
             'row_count'    => count($rows),
             'truncated'    => $truncated,
-            'execution_ms' => $execution_ms,
+            'execution_ms' => $executionms,
         ];
     }
 }

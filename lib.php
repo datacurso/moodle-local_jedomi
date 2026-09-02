@@ -342,14 +342,14 @@ function local_jedomi_get_page_context(): array {
         }
     }
 
-    $locationMap = [
+    $locationmap = [
         '/admin/'   => 'admin',
         '/my/'      => 'dashboard',
         '/grade/'   => 'grades',
         '/message/' => 'messages',
         '/user/'    => 'profile',
     ];
-    foreach ($locationMap as $path => $loc) {
+    foreach ($locationmap as $path => $loc) {
         if (strpos($url, $path) !== false) {
             $context['location'] = $loc;
             break;
@@ -396,34 +396,34 @@ function local_jedomi_is_role_allowed(): bool {
         return true;
     }
 
-    $hidden_ids = array_filter(array_map('intval', explode(',', $hidden)));
-    if (empty($hidden_ids)) {
+    $hiddenids = array_filter(array_map('intval', explode(',', $hidden)));
+    if (empty($hiddenids)) {
         return true;
     }
 
     // Collect the user's roles in the current page context + system context.
-    $contexts_to_check = [context_system::instance()];
+    $contextstocheck = [context_system::instance()];
     if (!empty($PAGE->context)) {
-        $contexts_to_check[] = $PAGE->context;
+        $contextstocheck[] = $PAGE->context;
     }
 
-    $user_role_ids = [];
-    foreach ($contexts_to_check as $ctx) {
+    $userroleids = [];
+    foreach ($contextstocheck as $ctx) {
         $roles = get_user_roles($ctx, $USER->id, false);
         foreach ($roles as $r) {
-            $user_role_ids[] = (int) $r->roleid;
+            $userroleids[] = (int) $r->roleid;
         }
     }
-    $user_role_ids = array_unique($user_role_ids);
+    $userroleids = array_unique($userroleids);
 
-    if (empty($user_role_ids)) {
+    if (empty($userroleids)) {
         return true; // No roles assigned — show sidebar.
     }
 
     // If EVERY role the user has is in the hidden list → block.
     // If AT LEAST ONE role is not hidden → allow.
-    foreach ($user_role_ids as $rid) {
-        if (!in_array($rid, $hidden_ids, true)) {
+    foreach ($userroleids as $rid) {
+        if (!in_array($rid, $hiddenids, true)) {
             return true; // Has at least one non-hidden role → allowed.
         }
     }
@@ -798,25 +798,25 @@ function local_jedomi_generate_spt(string $role): array {
     ];
 
     // Cursos según rol (para scope de RBAC en el gateway)
-    $course_ids_owned   = [];   // cursos donde el usuario tiene poder (teacher / admin / manager)
-    $course_ids_enrolled = [];  // cursos donde el usuario está inscrito (student)
+    $courseidsowned   = [];   // cursos donde el usuario tiene poder (teacher / admin / manager)
+    $courseidsenrolled = [];  // cursos donde el usuario está inscrito (student)
 
     if ($role === 'teacher' || $role === 'manager') {
         $courses = enrol_get_users_courses($USER->id, true);
         foreach ($courses as $c) {
             $ctx = context_course::instance($c->id);
             if (has_capability('moodle/course:manageactivities', $ctx)) {
-                $course_ids_owned[] = (int)$c->id;
+                $courseidsowned[] = (int)$c->id;
             }
         }
     } else if ($role === 'admin') {
         // Admin no necesita lista de cursos — tiene acceso total
-        $course_ids_owned = [];
+        $courseidsowned = [];
     } else if ($role === 'student') {
         // Para student: lista de cursos inscritos (usada por el gateway para filtrar)
         $courses = enrol_get_users_courses($USER->id, true);
         foreach ($courses as $c) {
-            $course_ids_enrolled[] = (int)$c->id;
+            $courseidsenrolled[] = (int)$c->id;
         }
     }
 
@@ -827,8 +827,8 @@ function local_jedomi_generate_spt(string $role): array {
         'username'            => $USER->username,
         'role'                => $role,
         'course_id'           => (int) ($COURSE->id ?? 0),
-        'course_ids_owned'    => $course_ids_owned, // teacher/manager: sus cursos
-        'course_ids_enrolled' => $course_ids_enrolled, // student: cursos inscritos
+        'course_ids_owned'    => $courseidsowned, // teacher/manager: sus cursos
+        'course_ids_enrolled' => $courseidsenrolled, // student: cursos inscritos
         'capabilities'        => $capabilities,
         'tools'               => $tools, // Tool defs en OpenAI format — gateway las usa para configurar el modelo
         'moodle_url'          => $CFG->wwwroot,
@@ -838,12 +838,12 @@ function local_jedomi_generate_spt(string $role): array {
     // Firma HMAC con el static secret — el mismo que usa el Gateway Python para verificar.
     // El sesskey() se incluye en el payload (no como key) para binding de sesión:
     // si la sesión cambia, el payload cambia y el SPT queda inválido de todas formas.
-    $static_secret = get_config('local_jedomi', 'spt_secret') ?: 'jedomi-spt-secret';
+    $staticsecret = get_config('local_jedomi', 'spt_secret') ?: 'jedomi-spt-secret';
     $payload['sesskey_hash'] = substr(hash('sha256', sesskey()), 0, 16); // binding sin exponer sesskey
 
     ksort($payload);  // ordenar claves antes de serializar (consistencia con Python sort_keys)
-    $to_sign   = json_encode($payload);
-    $signature = hash_hmac('sha256', $to_sign, $static_secret);
+    $tosign   = json_encode($payload);
+    $signature = hash_hmac('sha256', $tosign, $staticsecret);
 
     $payload['signature'] = $signature;
     return $payload;
@@ -881,21 +881,21 @@ function local_jedomi_generate_spt_for_user(int $userid, string $role): array {
     ];
 
     // Course lists based on role (same logic as generate_spt but for specific user).
-    $course_ids_owned = [];
-    $course_ids_enrolled = [];
+    $courseidsowned = [];
+    $courseidsenrolled = [];
 
     if ($role === 'teacher' || $role === 'manager') {
         $courses = enrol_get_users_courses($userid, true, ['id']);
         foreach ($courses as $c) {
             $ctx = context_course::instance($c->id);
             if (has_capability('moodle/course:manageactivities', $ctx, $userid)) {
-                $course_ids_owned[] = (int)$c->id;
+                $courseidsowned[] = (int)$c->id;
             }
         }
     } else if ($role === 'student') {
         $courses = enrol_get_users_courses($userid, true, ['id']);
         foreach ($courses as $c) {
-            $course_ids_enrolled[] = (int)$c->id;
+            $courseidsenrolled[] = (int)$c->id;
         }
     }
     // Admin: no course list (full access).
@@ -907,8 +907,8 @@ function local_jedomi_generate_spt_for_user(int $userid, string $role): array {
         'username'            => $user->username,
         'role'                => $role,
         'course_id'           => 0,
-        'course_ids_owned'    => $course_ids_owned,
-        'course_ids_enrolled' => $course_ids_enrolled,
+        'course_ids_owned'    => $courseidsowned,
+        'course_ids_enrolled' => $courseidsenrolled,
         'capabilities'        => $capabilities,
         'tools'               => $tools,
         'moodle_url'          => $CFG->wwwroot,
@@ -916,11 +916,11 @@ function local_jedomi_generate_spt_for_user(int $userid, string $role): array {
     ];
 
     // Same HMAC signing as the existing generate_spt function.
-    $static_secret = get_config('local_jedomi', 'spt_secret') ?: 'jedomi-spt-secret';
+    $staticsecret = get_config('local_jedomi', 'spt_secret') ?: 'jedomi-spt-secret';
 
     ksort($payload);
-    $to_sign = json_encode($payload);
-    $signature = hash_hmac('sha256', $to_sign, $static_secret);
+    $tosign = json_encode($payload);
+    $signature = hash_hmac('sha256', $tosign, $staticsecret);
 
     $payload['signature'] = $signature;
     return $payload;
@@ -1029,34 +1029,34 @@ function local_jedomi_is_telegram_role_allowed(): bool {
         return true; // No restrictions configured yet.
     }
 
-    $hidden_ids = array_filter(array_map('intval', explode(',', $hidden)));
-    if (empty($hidden_ids)) {
+    $hiddenids = array_filter(array_map('intval', explode(',', $hidden)));
+    if (empty($hiddenids)) {
         return true;
     }
 
     // Collect the user's roles in the current page context + system context.
-    $contexts_to_check = [context_system::instance()];
+    $contextstocheck = [context_system::instance()];
     if (!empty($PAGE->context)) {
-        $contexts_to_check[] = $PAGE->context;
+        $contextstocheck[] = $PAGE->context;
     }
 
-    $user_role_ids = [];
-    foreach ($contexts_to_check as $ctx) {
+    $userroleids = [];
+    foreach ($contextstocheck as $ctx) {
         $roles = get_user_roles($ctx, $USER->id, false);
         foreach ($roles as $r) {
-            $user_role_ids[] = (int) $r->roleid;
+            $userroleids[] = (int) $r->roleid;
         }
     }
-    $user_role_ids = array_unique($user_role_ids);
+    $userroleids = array_unique($userroleids);
 
-    if (empty($user_role_ids)) {
+    if (empty($userroleids)) {
         return true; // No roles assigned — allow by default.
     }
 
     // If EVERY role the user has is in the hidden list → block.
     // If AT LEAST ONE role is not hidden → allow.
-    foreach ($user_role_ids as $rid) {
-        if (!in_array($rid, $hidden_ids, true)) {
+    foreach ($userroleids as $rid) {
+        if (!in_array($rid, $hiddenids, true)) {
             return true; // Has at least one non-hidden role.
         }
     }
@@ -1297,25 +1297,25 @@ if (!function_exists('local_jedomi_log')) {
  * @return string       Content with tables converted to pipe-delimited <pre> blocks.
  */
 function local_jedomi_sanitize_html_tables(string $html): string {
-    return preg_replace_callback('/<table[^>]*>(.*?)<\/table>/is', function ($tableMatch) {
-        $tableHtml = $tableMatch[1];
+    return preg_replace_callback('/<table[^>]*>(.*?)<\/table>/is', function ($tablematch) {
+        $tablehtml = $tablematch[1];
 
         // ── Extract headers ────────────────────────────────────────────
         $headers = [];
-        if (preg_match('/<tr[^>]*>(.*?)<\/tr>/is', $tableHtml, $headerRow)) {
-            preg_match_all('/<th[^>]*>(.*?)<\/th>/is', $headerRow[1], $headerCells);
-            foreach ($headerCells[1] as $cell) {
+        if (preg_match('/<tr[^>]*>(.*?)<\/tr>/is', $tablehtml, $headerrow)) {
+            preg_match_all('/<th[^>]*>(.*?)<\/th>/is', $headerrow[1], $headercells);
+            foreach ($headercells[1] as $cell) {
                 $headers[] = trim(strip_tags($cell));
             }
         }
 
         // ── Extract rows ───────────────────────────────────────────────
         $rows = [];
-        preg_match_all('/<tr[^>]*>(.*?)<\/tr>/is', $tableHtml, $rowMatches);
-        foreach ($rowMatches[1] as $rowHtml) {
-            preg_match_all('/<td[^>]*>(.*?)<\/td>/is', $rowHtml, $cellMatches);
+        preg_match_all('/<tr[^>]*>(.*?)<\/tr>/is', $tablehtml, $rowmatches);
+        foreach ($rowmatches[1] as $rowhtml) {
+            preg_match_all('/<td[^>]*>(.*?)<\/td>/is', $rowhtml, $cellmatches);
             $row = [];
-            foreach ($cellMatches[1] as $cell) {
+            foreach ($cellmatches[1] as $cell) {
                 $row[] = trim(strip_tags($cell));
             }
             if (!empty($row)) {
@@ -1329,23 +1329,23 @@ function local_jedomi_sanitize_html_tables(string $html): string {
         }
 
         // ── Build pipe-delimited output ────────────────────────────────
-        $allRows = [];
+        $allrows = [];
         if (!empty($headers)) {
-            $allRows[] = $headers;
+            $allrows[] = $headers;
         }
         foreach ($rows as $row) {
-            $allRows[] = $row;
+            $allrows[] = $row;
         }
 
-        if (empty($allRows)) {
+        if (empty($allrows)) {
             return ''; // Empty table → remove it.
         }
 
         // Calculate column widths.
-        $colCount = max(array_map('count', $allRows));
-        $widths = array_fill(0, $colCount, 0);
-        foreach ($allRows as $row) {
-            for ($i = 0; $i < $colCount; $i++) {
+        $colcount = max(array_map('count', $allrows));
+        $widths = array_fill(0, $colcount, 0);
+        foreach ($allrows as $row) {
+            for ($i = 0; $i < $colcount; $i++) {
                 $cell = $row[$i] ?? '';
                 $widths[$i] = max($widths[$i], mb_strlen($cell));
             }
@@ -1353,9 +1353,9 @@ function local_jedomi_sanitize_html_tables(string $html): string {
 
         // Format with padding.
         $lines = [];
-        foreach ($allRows as $ri => $row) {
+        foreach ($allrows as $ri => $row) {
             $parts = [];
-            for ($i = 0; $i < $colCount; $i++) {
+            for ($i = 0; $i < $colcount; $i++) {
                 $cell = $row[$i] ?? '';
                 $parts[] = str_pad($cell, $widths[$i]);
             }
@@ -1363,11 +1363,11 @@ function local_jedomi_sanitize_html_tables(string $html): string {
 
             // Separator after header row.
             if ($ri === 0 && !empty($headers)) {
-                $sepParts = [];
-                for ($i = 0; $i < $colCount; $i++) {
-                    $sepParts[] = str_repeat('-', $widths[$i]);
+                $sepparts = [];
+                for ($i = 0; $i < $colcount; $i++) {
+                    $sepparts[] = str_repeat('-', $widths[$i]);
                 }
-                $lines[] = '|-' . implode('-|-', $sepParts) . '-|';
+                $lines[] = '|-' . implode('-|-', $sepparts) . '-|';
             }
         }
 
@@ -1396,17 +1396,17 @@ function local_jedomi_send_agent_notification(int|string $chatid, string $agent,
 
     // ── Build caption (fits within Telegram's 1024-char limit) ─────────
     // Header with agent name + status + date.
-    $agentLabel = strip_tags($agent);
-    $dateStr = userdate(time());
-    $header = "🤖 {$agentLabel}\n✅ Executed successfully\n📅 {$dateStr}\n\n";
+    $agentlabel = strip_tags($agent);
+    $datestr = userdate(time());
+    $header = "🤖 {$agentlabel}\n✅ Executed successfully\n📅 {$datestr}\n\n";
 
     // Plain-text summary (no HTML) — truncate so header + wrapper fits ≤ 1024.
     $summary = mb_substr(strip_tags($content), 0, 1500);
-    $maxSummaryLen = 1024 - mb_strlen($header) - 7; // 7 = <i></i>
-    if ($maxSummaryLen < 0) {
-        $maxSummaryLen = 0;
+    $maxsummarylen = 1024 - mb_strlen($header) - 7; // 7 = <i></i>
+    if ($maxsummarylen < 0) {
+        $maxsummarylen = 0;
     }
-    $summary = mb_substr($summary, 0, $maxSummaryLen);
+    $summary = mb_substr($summary, 0, $maxsummarylen);
 
     // ── Decision: message vs file ──────────────────────────────────────
     $client = new \local_jedomi\telegram\api_client();
@@ -1435,13 +1435,13 @@ function local_jedomi_send_agent_notification(int|string $chatid, string $agent,
     // Keep it short — truncate at first sentence boundary (~200 chars max).
     if (mb_strlen($oneliner) > 200) {
         $truncated = mb_substr($oneliner, 0, 197);
-        $lastSentence = max(
+        $lastsentence = max(
             mb_strrpos($truncated, '.'),
             mb_strrpos($truncated, '!'),
             mb_strrpos($truncated, '?')
         );
-        if ($lastSentence > 20) {
-            $oneliner = mb_substr($truncated, 0, $lastSentence + 1);
+        if ($lastsentence > 20) {
+            $oneliner = mb_substr($truncated, 0, $lastsentence + 1);
         } else {
             $oneliner = $truncated . '...';
         }
@@ -1459,13 +1459,13 @@ function local_jedomi_send_agent_notification(int|string $chatid, string $agent,
     // If the response has a fenced code block (```csv, ```sql, ```, etc.) or a
     // <pre> block, extract just the content inside it for the file.
     // Otherwise use the full stripped content.
-    $fileContent = strip_tags($content);
+    $filecontent = strip_tags($content);
     if (preg_match('/```(?:\w+)?\s*\n(.+?)\n```/s', $content, $m)) {
-        $fileContent = trim($m[1]);
+        $filecontent = trim($m[1]);
     } else if (preg_match('/<pre>(.+?)<\/pre>/s', $content, $m)) {
-        $fileContent = trim($m[1]);
+        $filecontent = trim($m[1]);
     }
-    $bytes = file_put_contents($filepath, $fileContent);
+    $bytes = file_put_contents($filepath, $filecontent);
 
     $sent = $client->send_document($chatid, $filepath, $caption);
 

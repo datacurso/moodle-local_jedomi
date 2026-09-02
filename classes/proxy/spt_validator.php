@@ -42,8 +42,8 @@ class spt_validator {
      */
     public static function validate(array $spt): string {
         // Check sesskey binding.
-        $expectedHash = substr(hash('sha256', sesskey()), 0, 16);
-        if (!hash_equals($expectedHash, $spt['sesskey_hash'] ?? '')) {
+        $expectedhash = substr(hash('sha256', sesskey()), 0, 16);
+        if (!hash_equals($expectedhash, $spt['sesskey_hash'] ?? '')) {
             throw new \moodle_exception('invalid_session', 'local_jedomi');
         }
 

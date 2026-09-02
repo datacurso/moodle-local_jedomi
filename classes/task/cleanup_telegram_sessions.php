@@ -51,8 +51,8 @@ class cleanup_telegram_sessions extends \core\task\scheduled_task {
         mtrace("Deleted {$count} expired Telegram session(s).");
 
         // Also clean up stale pending actions older than 5 minutes
-        $action_cutoff = time() - (5 * 60);
-        $action_count = $DB->delete_records_select('local_jedomi_telegram_pending_actions', 'timecreated < ?', [$action_cutoff]);
-        mtrace("Deleted {$action_count} expired pending action(s).");
+        $actioncutoff = time() - (5 * 60);
+        $actioncount = $DB->delete_records_select('local_jedomi_telegram_pending_actions', 'timecreated < ?', [$actioncutoff]);
+        mtrace("Deleted {$actioncount} expired pending action(s).");
     }
 }

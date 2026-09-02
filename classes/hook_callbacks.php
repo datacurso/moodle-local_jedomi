@@ -64,12 +64,12 @@ class hook_callbacks {
             return;
         }
 
-        $configUrl = (new \moodle_url('/local/jedomi/ajax/sidebar_config.php', [
+        $configurl = (new \moodle_url('/local/jedomi/ajax/sidebar_config.php', [
             'sesskey' => sesskey(),
         ]))->out(false);
 
         $PAGE->requires->js_call_amd('local_jedomi/sidebar', 'init', [[
-            'configUrl' => $configUrl,
+            'configUrl' => $configurl,
         ]]);
     }
 }
