@@ -49,7 +49,7 @@ if (trim($prompt) === '') {
     exit;
 }
 
-// ── Gateway config ───────────────────────────────────────────────────────
+// ... ── Gateway config ───────────────────────────────────────────────────────
 $gatewayurl = rtrim(get_config('local_jedomi', 'gateway_url'), '/');
 $apikey    = get_config('local_jedomi', 'api_key');
 $model      = get_config('local_jedomi', 'model');
@@ -69,7 +69,7 @@ if ($maxtokens < 256) {
     $maxtokens = 16384;
 }
 
-// ── Build messages (same rich context as web chat) ─────────────────────
+// ... ── Build messages (same rich context as web chat) ─────────────────────
 require_once(__DIR__ . '/../lib.php');
 $role = \local_jedomi_get_user_role_for_user((int) $USER->id);
 $tools = \local_jedomi_get_tool_definitions($role);
@@ -91,14 +91,14 @@ $messages = [
     ['role' => 'user', 'content' => $prompt],
 ];
 
-// ── Check agent cache ─────────────────────────────────────────────────────
+// ... ── Check agent cache ─────────────────────────────────────────────────────
 $cachehash = md5(trim($prompt));
 $cached = $DB->get_record('local_jedomi_agent_cache', [
     'agentid' => 0,
     'context_hash' => $cachehash,
 ]);
 if ($cached && !empty($cached->result_json)) {
-    // ── Try semantic cache plan replay ──────────────────────────────────────
+    // ... ── Try semantic cache plan replay ──────────────────────────────────────
     if (!empty($cached->plan_json)) {
         $plan = json_decode($cached->plan_json, true);
         if (is_array($plan) && !empty($plan)) {
@@ -180,7 +180,7 @@ if ($cached && !empty($cached->result_json)) {
         }
     }
 
-    // ── Fallback: plain text cache ──────────────────────────────────────────
+    // ... ── Fallback: plain text cache ──────────────────────────────────────────
     $cachedplain = json_decode($cached->result_json, true);
     if ($cachedplain && is_array($cachedplain)) {
         echo json_encode([
@@ -197,7 +197,7 @@ if ($cached && !empty($cached->result_json)) {
     }
 }
 
-// ── Multi-turn loop (same as agent_runner) ────────────────────────────────
+// ... ── Multi-turn loop (same as agent_runner) ────────────────────────────────
 $finalanswer = '';
 $maxrounds = 15;
 $profilerentries = [];
@@ -216,7 +216,7 @@ for ($round = 1; $round <= $maxrounds; $round++) {
         $payload['tools'] = $tools;
     }
 
-    // ── Gateway call ─────────────────────────────────────────────────────
+    // ... ── Gateway call ─────────────────────────────────────────────────────
     $ch = curl_init($gatewayurl . '/v1/chat/completions');
     curl_setopt_array($ch, [
         CURLOPT_POST           => true,
@@ -250,7 +250,7 @@ for ($round = 1; $round <= $maxrounds; $round++) {
     $nativetoolcalls = $message['tool_calls'] ?? [];
     $content = $message['content'] ?? '';
 
-    // ── Parse text-based TOOL_CALL ──────────────────────────────────────
+    // ... ── Parse text-based TOOL_CALL ──────────────────────────────────────
     $texttoolcalls = [];
     if (!empty($tools)) {
         $texttoolcalls = parse_text_tool_calls($content);
@@ -272,7 +272,7 @@ for ($round = 1; $round <= $maxrounds; $round++) {
         $funcargs = $tc['function']['arguments'] ?? '{}';
         $tcid = $tc['id'] ?? 'tc_' . uniqid();
 
-        // ── Loop detection ──────────────────────────────────────────────
+        // ... ── Loop detection ──────────────────────────────────────────────
         $decodedargs = is_string($funcargs) ? json_decode($funcargs, true) : $funcargs;
         $stableargs = is_array($decodedargs)
             ? hash('sha256', json_encode($decodedargs, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_IGNORE))
@@ -330,7 +330,7 @@ for ($round = 1; $round <= $maxrounds; $round++) {
     }
 }
 
-// ── Safety net + cleanup ─────────────────────────────────────────────────
+// ... ── Safety net + cleanup ─────────────────────────────────────────────────
 if (empty($finalanswer)) {
     if ($loopbroken) {
         $finalanswer = 'The agent encountered an issue while fetching data. Please try again later.';
@@ -365,7 +365,7 @@ if (empty($finalanswer)) {
     exit;
 }
 
-// ── Save to cache ─────────────────────────────────────────────────────────
+// ... ── Save to cache ─────────────────────────────────────────────────────────
 // Strip tool payload from messages before caching (not needed for display).
 $cachablemessages = $messages;
 array_walk($cachablemessages, function (&$msg) {
@@ -419,7 +419,7 @@ echo json_encode([
     'total_time_ms' => round(array_sum(array_column($profilerentries, 'duration_ms')), 2),
 ], JSON_UNESCAPED_UNICODE);
 
-// ── Helper: parse TOOL_CALL blocks from text ──────────────────────────────
+// ... ── Helper: parse TOOL_CALL blocks from text ──────────────────────────────
 /**
  * Parse text-based TOOL_CALL blocks from AI response content.
  * Supports TOOL_CALL:/call: format AND <|tool_call|> special token format.
@@ -434,10 +434,10 @@ function parse_text_tool_calls(string &$content): array {
         return $calls;
     }
 
-    // ── Pattern 1: TOOL_CALL: tool_name\n{json}\nEND_TOOL_CALL ──────────
+    // ... ── Pattern 1: TOOL_CALL: tool_name\n{json}\nEND_TOOL_CALL ──────────
     $pattern1 = '/(?:TOOL_CALL|call):\s*(\w+)\s*\n(.+?)\nEND_TOOL_CALL[^\n]*/si';
 
-    // ── Pattern 2: <|tool_call|> or <|python_tag|> special tokens ──────
+    // ... ── Pattern 2: <|tool_call|> or <|python_tag|> special tokens ──────
     $pattern2 = '/<\|(?:tool_call|python_tag)\|>(.+?)<\|\\/\1\|>/si';
 
     // Try pattern 1 first.
@@ -452,7 +452,7 @@ function parse_text_tool_calls(string &$content): array {
         return $calls;
     }
 
-    // Try pattern 2 (<|tool_call|>).
+    // Try the second pattern, the tool_call marker.
     if (preg_match_all($pattern2, $content, $matches, PREG_SET_ORDER)) {
         $content = trim(preg_replace($pattern2, '', $content));
         foreach ($matches as $m) {

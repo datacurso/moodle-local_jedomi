@@ -29,8 +29,6 @@
 
 namespace local_jedomi\agent\tool;
 
-defined('MOODLE_INTERNAL') || die();
-
 use local_jedomi\schema\ws_indexer;
 
 /**

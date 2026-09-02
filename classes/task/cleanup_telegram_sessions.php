@@ -26,8 +26,6 @@
 
 namespace local_jedomi\task;
 
-defined('MOODLE_INTERNAL') || die();
-
 /**
  * Scheduled task that deletes expired Telegram sessions and stale pending actions.
  */
@@ -50,7 +48,7 @@ class cleanup_telegram_sessions extends \core\task\scheduled_task {
         $count = $DB->delete_records_select('local_jedomi_telegram_sessions', 'lastactivity < ?', [$cutoff]);
         mtrace("Deleted {$count} expired Telegram session(s).");
 
-        // Also clean up stale pending actions older than 5 minutes
+        // Also clean up stale pending actions older than 5 minutes.
         $actioncutoff = time() - (5 * 60);
         $actioncount = $DB->delete_records_select('local_jedomi_telegram_pending_actions', 'timecreated < ?', [$actioncutoff]);
         mtrace("Deleted {$actioncount} expired pending action(s).");

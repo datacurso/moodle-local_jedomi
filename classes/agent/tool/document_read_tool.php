@@ -24,8 +24,6 @@
 
 namespace local_jedomi\agent\tool;
 
-defined('MOODLE_INTERNAL') || die();
-
 /**
  * Agent tool that extracts the first PDF from a course module and sends
  * it to the external document service to be converted into page images.

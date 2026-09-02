@@ -24,8 +24,6 @@
 
 namespace local_jedomi\agent\tool;
 
-defined('MOODLE_INTERNAL') || die();
-
 /**
  * Agent tool that deletes an existing scheduled AI agent by its ID,
  * restricted to admin and manager roles.

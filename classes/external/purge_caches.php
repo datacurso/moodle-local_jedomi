@@ -50,7 +50,7 @@ class purge_caches extends external_api {
 
     // -------------------------------------------------------------------------
     // Parameter / return definitions
-    // -------------------------------------------------------------------------
+    // -------------------------------------------------------------------------.
 
     /**
      * Describe the parameters accepted by the execute function.
@@ -83,7 +83,7 @@ class purge_caches extends external_api {
 
     // -------------------------------------------------------------------------
     // Execution
-    // -------------------------------------------------------------------------
+    // -------------------------------------------------------------------------.
 
     /**
      * Authenticate the request and purge all Moodle caches via purge_all_caches().
@@ -98,12 +98,12 @@ class purge_caches extends external_api {
         int $hmactimestamp,
         string $payloadhash
     ): array {
-        // --- Capability check (admin-level required per spec CWS-CACHE-01) ---
+        // ... --- Capability check (admin-level required per spec CWS-CACHE-01) ---
         $context = context_system::instance();
         self::validate_context($context);
         require_capability('moodle/site:config', $context);
 
-        // --- Parameter validation ---
+        // ... --- Parameter validation ---
         $validated = self::validate_parameters(
             self::execute_parameters(),
             [
@@ -113,7 +113,7 @@ class purge_caches extends external_api {
             ]
         );
 
-        // --- HMAC authentication ---
+        // ... --- HMAC authentication ---
         self::verify_hmac(
             'jedomi_purge_caches',
             $validated['hmac_timestamp'],

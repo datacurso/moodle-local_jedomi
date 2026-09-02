@@ -30,8 +30,6 @@
 
 namespace local_jedomi\agent\tool;
 
-defined('MOODLE_INTERNAL') || die();
-
 /**
  * Agent tool that runs read-only SQL against the Moodle database with
  * role gating, table blocklisting, row limits, and profiler logging.
@@ -102,7 +100,7 @@ class sql_tool implements agent_tool {
     public function execute(\stdClass $params): string {
         global $DB;
 
-        // ── Permission gate: admin/manager/teacher (matches Telegram behaviour).
+        // ... ── Permission gate: admin/manager/teacher (matches Telegram behaviour).
         // Uses the shared role detection from lib.php. Fail-closed: userid=0 → 'student' → denied.
         $role = \local_jedomi_get_user_role_for_user($this->userid);
         if (!in_array($role, ['admin', 'manager', 'teacher'], true)) {
@@ -115,7 +113,7 @@ class sql_tool implements agent_tool {
             return json_encode(['error' => 'Empty query']);
         }
 
-        // ── Validate read-only ────────────────────────────────────────────────
+        // ... ── Validate read-only ────────────────────────────────────────────────
         $firstword = strtoupper(strtok($query, " \t\n\r\0\x0B"));
         $allowed = ['SELECT', 'SHOW', 'DESCRIBE', 'EXPLAIN', 'WITH'];
         if (!in_array($firstword, $allowed, true)) {
@@ -124,7 +122,7 @@ class sql_tool implements agent_tool {
             ]);
         }
 
-        // ── Blocklisted tables ────────────────────────────────────────────────
+        // ... ── Blocklisted tables ────────────────────────────────────────────────
         $blocklisted = ['config', 'sessions', 'oauth', 'tokens', 'private_key'];
         $queryupper = strtoupper($query);
         foreach ($blocklisted as $tbl) {
@@ -136,13 +134,14 @@ class sql_tool implements agent_tool {
             }
         }
 
-        // ── Execute with timeout + profiling ──────────────────────────────────
+        // ... ── Execute with timeout + profiling ──────────────────────────────────
         $start = microtime(true);
 
         try {
             // Use a direct ADOdb connection with a query-level timeout hint.
             try {
                 $DB->execute("SET SESSION MAX_EXECUTION_TIME = 30000");
+                // phpcs:ignore Generic.CodeAnalysis.EmptyStatement.DetectedCatch -- comment-only catch.
             } catch (\Exception $e) {
                 // MySQL/MariaDB version may not support this variable — ignore.
             }
@@ -152,7 +151,7 @@ class sql_tool implements agent_tool {
             $elapsedms = (microtime(true) - $start) * 1000;
             $rowcount = count($records);
 
-            // ── Log to profiler ──────────────────────────────────────────────
+            // ... ── Log to profiler ──────────────────────────────────────────────
             \local_jedomi\agent\query_profiler::log_query(
                 $this->agentid,
                 $query,
@@ -160,7 +159,7 @@ class sql_tool implements agent_tool {
                 $rowcount
             );
 
-            // ── Format result for AI ─────────────────────────────────────────
+            // ... ── Format result for AI ─────────────────────────────────────────
             $rows = array_map(function (\stdClass $r): array {
                 return (array) $r;
             }, array_values($records));

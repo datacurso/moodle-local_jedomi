@@ -50,7 +50,7 @@ class validate_password extends external_api {
 
     // -------------------------------------------------------------------------
     // Parameter / return definitions
-    // -------------------------------------------------------------------------
+    // -------------------------------------------------------------------------.
 
     /**
      * Describe the parameters accepted by the execute function.
@@ -84,7 +84,7 @@ class validate_password extends external_api {
 
     // -------------------------------------------------------------------------
     // Execution
-    // -------------------------------------------------------------------------
+    // -------------------------------------------------------------------------.
 
     /**
      * Authenticate the request and validate the password via check_password_policy().
@@ -105,12 +105,12 @@ class validate_password extends external_api {
     ): array {
         global $CFG;
 
-        // --- Capability check ---
+        // ... --- Capability check ---
         $context = context_system::instance();
         self::validate_context($context);
         require_capability('local/jedomi:companion_api', $context);
 
-        // --- Parameter validation (must NOT clean/trim the password itself) ---
+        // ... --- Parameter validation (must NOT clean/trim the password itself) ---
         // We intentionally skip validate_call_parameters for $password to avoid
         // PARAM_RAW stripping that could alter the password being tested.
         $validated = self::validate_parameters(
@@ -123,19 +123,19 @@ class validate_password extends external_api {
                 'payload_hash'   => $payloadhash,
             ]
         );
-        $password       = $validated['password'];   // keep raw
+        $password       = $validated['password'];   // Keep raw.
         $username       = $validated['username'];
         $hmacsignature = $validated['hmac_signature'];
         $hmactimestamp = $validated['hmac_timestamp'];
         $payloadhash   = $validated['payload_hash'];
 
-        // --- HMAC authentication ---
+        // ... --- HMAC authentication ---
         // IMPORTANT: payload_hash must match what the gateway sent.
         // The gateway hashes the body BEFORE the password is in plaintext on the wire
         // (TLS handles transport); here we just verify the signature.
         self::verify_hmac('jedomi_validate_password', $hmactimestamp, $payloadhash, $hmacsignature);
 
-        // --- Validate via Moodle's native policy check ---
+        // ... --- Validate via Moodle's native policy check ---
         // check_password_policy() fills $errmsg with a human-readable concatenated string.
         // We parse it to extract individual violation codes.
         $errmsg = '';
@@ -163,7 +163,7 @@ class validate_password extends external_api {
 
     // -------------------------------------------------------------------------
     // Helpers
-    // -------------------------------------------------------------------------
+    // -------------------------------------------------------------------------.
 
     /**
      * Build machine-readable violation codes.

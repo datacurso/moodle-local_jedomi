@@ -24,8 +24,6 @@
 
 namespace local_jedomi\event;
 
-defined('MOODLE_INTERNAL') || die();
-
 use local_jedomi\telegram\api_client;
 use local_jedomi\telegram\manager;
 
@@ -45,7 +43,7 @@ class observers {
             return;
         }
 
-        // submission_graded: userid = teacher who graded, relateduserid = student
+        // Submission_graded: userid = teacher who graded, relateduserid = student.
         $studentid = $event->relateduserid;
         if (!$studentid) {
             return;
@@ -60,7 +58,7 @@ class observers {
             return;
         }
 
-        // Retrieve names via standard DB API (get_assign/get_course are not event methods)
+        // Retrieve names via standard DB API (get_assign/get_course are not event methods).
         $cmid    = $event->contextinstanceid;
         $cm       = get_coursemodule_from_id('assign', $cmid, 0, false, IGNORE_MISSING);
         $assignname = $cm ? $cm->name : 'Assignment';
@@ -89,7 +87,7 @@ class observers {
         $userid = $event->userid;
         $user = $DB->get_record('user', ['id' => $userid]);
         if (!$user || !is_siteadmin($userid)) {
-            return; // Only notify admins
+            return; // Only notify admins.
         }
 
         $link = $DB->get_record('local_jedomi_telegram_links', ['userid' => $userid, 'confirmed' => 1]);
@@ -101,11 +99,11 @@ class observers {
             return;
         }
 
-        // Check failing cron tasks
+        // Check failing cron tasks.
         $failing = $DB->get_records_sql("SELECT classname, faildelay, disabled"
             . " FROM {task_scheduled} WHERE faildelay > 0 OR disabled = 1 LIMIT 10");
         if (empty($failing)) {
-            return; // All good
+            return; // All good.
         }
 
         $lines = ["⚠️ <b>Cron Health Alert</b>"];
@@ -122,7 +120,7 @@ class observers {
         self::update_cooldown($link);
     }
 
-    // ── Cooldown helpers ─────────────────────────────────────────────────────
+    // ... ── Cooldown helpers ─────────────────────────────────────────────────────
 
     /**
      * Check whether enough time has passed since the last proactive message to this link.

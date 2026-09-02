@@ -24,8 +24,6 @@
 
 namespace local_jedomi\agent\tool;
 
-defined('MOODLE_INTERNAL') || die();
-
 /**
  * Agent tool that creates a new scheduled AI agent record with a prompt
  * and cron schedule, restricted to admin and manager roles.

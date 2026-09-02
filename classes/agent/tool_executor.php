@@ -25,8 +25,6 @@
 
 namespace local_jedomi\agent;
 
-defined('MOODLE_INTERNAL') || die();
-
 /**
  * Static facade for tool dispatch.
  *

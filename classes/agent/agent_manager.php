@@ -27,13 +27,11 @@
 
 namespace local_jedomi\agent;
 
-defined('MOODLE_INTERNAL') || die();
-
 /**
  * Static facade for managing scheduled AI agent definitions.
  */
 class agent_manager {
-    // ── CRUD: Read ───────────────────────────────────────────────────────────
+    // ... ── CRUD: Read ───────────────────────────────────────────────────────────
 
     /**
      * Get a single agent by ID.
@@ -121,7 +119,7 @@ class agent_manager {
         ];
     }
 
-    // ── CRUD: Create ─────────────────────────────────────────────────────────
+    // ... ── CRUD: Create ─────────────────────────────────────────────────────────
 
     /**
      * Create a new agent record.
@@ -185,7 +183,7 @@ class agent_manager {
         return trim($name) ?: 'Agent';
     }
 
-    // ── CRUD: Update ─────────────────────────────────────────────────────────
+    // ... ── CRUD: Update ─────────────────────────────────────────────────────────
 
     /**
      * Update an existing agent record.
@@ -214,7 +212,7 @@ class agent_manager {
         $DB->update_record('local_jedomi_agents', $record);
     }
 
-    // ── CRUD: Delete ─────────────────────────────────────────────────────────
+    // ... ── CRUD: Delete ─────────────────────────────────────────────────────────
 
     /**
      * Delete an agent record and its associated cache entries.
@@ -227,7 +225,7 @@ class agent_manager {
         $DB->delete_records('local_jedomi_agents', ['id' => $id]);
     }
 
-    // ── CRUD: Queue for immediate run ────────────────────────────────────────
+    // ... ── CRUD: Queue for immediate run ────────────────────────────────────────
 
     /**
      * Queue an agent for immediate execution by setting nextrun to now.
@@ -253,7 +251,7 @@ class agent_manager {
         return true;
     }
 
-    // ── CRUD: Due agents ─────────────────────────────────────────────────────
+    // ... ── CRUD: Due agents ─────────────────────────────────────────────────────
 
     /**
      * Get enabled agents whose nextrun has elapsed, ordered by nextrun ASC.
@@ -270,7 +268,7 @@ class agent_manager {
         return array_values($records);
     }
 
-    // ── CRUD: Mark run ───────────────────────────────────────────────────────
+    // ... ── CRUD: Mark run ───────────────────────────────────────────────────────
 
     /**
      * Record an execution result for an agent.
@@ -306,7 +304,7 @@ class agent_manager {
         $DB->update_record('local_jedomi_agents', $update);
     }
 
-    // ── Cron parser ──────────────────────────────────────────────────────────
+    // ... ── Cron parser ──────────────────────────────────────────────────────────
 
     /**
      * Calculate the next run timestamp from a cron expression.
@@ -427,7 +425,7 @@ class agent_manager {
         return [(int) $expr];
     }
 
-    // ── Cache: Read ──────────────────────────────────────────────────────────
+    // ... ── Cache: Read ──────────────────────────────────────────────────────────
 
     /**
      * Get the cached result for a specific agent context.
@@ -447,7 +445,7 @@ class agent_manager {
         return $record ? $record->result_json : null;
     }
 
-    // ── Cache: Write ─────────────────────────────────────────────────────────
+    // ... ── Cache: Write ─────────────────────────────────────────────────────────
 
     /**
      * Store or update a cached result for a specific agent context.
@@ -493,7 +491,7 @@ class agent_manager {
         $DB->delete_records('local_jedomi_agent_cache', ['agentid' => $agentid]);
     }
 
-    // ── Cache: Preview ─────────────────────────────────────────────────────────
+    // ... ── Cache: Preview ─────────────────────────────────────────────────────────
 
     /**
      * Delete a single preview cache entry by context_hash.
@@ -512,7 +510,7 @@ class agent_manager {
         return $deleted > 0;
     }
 
-    // ── Cache: Semantic Plan ──────────────────────────────────────────────────
+    // ... ── Cache: Semantic Plan ──────────────────────────────────────────────────
 
     /**
      * Store an execution plan alongside the answer for semantic cache replay.
@@ -604,7 +602,7 @@ class agent_manager {
             return true;
         }
 
-        // ws_execute / call_webservice: check the actual WS being called.
+        // Ws_execute / call_webservice: check the actual WS being called.
         // This is handled at plan-recording time by inspecting arguments,
         // not by tool name alone — classify at call site.
         if ($toolname === 'ws_execute' || $toolname === 'call_webservice') {
@@ -615,7 +613,7 @@ class agent_manager {
         return false;
     }
 
-    // ── Stats ─────────────────────────────────────────────────────────────────
+    // ... ── Stats ─────────────────────────────────────────────────────────────────
 
     /**
      * Get aggregate statistics for agents matching the given filters.
@@ -634,7 +632,7 @@ class agent_manager {
     public static function get_stats(array $filters): \stdClass {
         global $DB;
 
-        // ── By role: decode role_filter JSON and count per shortname. ────────
+        // ... ── By role: decode role_filter JSON and count per shortname. ────────
         $allagents = $DB->get_records('local_jedomi_agents', null, '', 'id, role_filter');
         $byrole = [];
         foreach ($allagents as $a) {
@@ -653,7 +651,7 @@ class agent_manager {
         }
         arsort($byrole);
 
-        // ── By status: aggregate enabled vs disabled. ────────────────────────
+        // ... ── By status: aggregate enabled vs disabled. ────────────────────────
         $enabled = $DB->count_records('local_jedomi_agents', ['enabled' => 1]);
         $disabled = $DB->count_records('local_jedomi_agents', ['enabled' => 0]);
         $bystatus = (object) [
@@ -661,7 +659,7 @@ class agent_manager {
             'disabled' => (int) $disabled,
         ];
 
-        // ── Executions per day (last 30 days, DB-agnostic). ──────────────────
+        // ... ── Executions per day (last 30 days, DB-agnostic). ──────────────────
         $thirtydaysago = time() - (30 * 86400);
         $runs = $DB->get_records_select(
             'local_jedomi_agents',
@@ -687,7 +685,7 @@ class agent_manager {
             ];
         }
 
-        // ── Paginated rows (same as get_agents). ────────────────────────────
+        // ... ── Paginated rows (same as get_agents). ────────────────────────────
         $result = self::get_agents($filters);
         $page = max(1, (int) ($filters['page'] ?? 1));
 
@@ -703,7 +701,7 @@ class agent_manager {
         ];
     }
 
-    // ── Purge ─────────────────────────────────────────────────────────────────
+    // ... ── Purge ─────────────────────────────────────────────────────────────────
 
     /**
      * Delete agents matching a context type and optional context id.

@@ -27,8 +27,6 @@
 
 namespace local_jedomi\telegram;
 
-defined('MOODLE_INTERNAL') || die();
-
 /**
  * Persists conversational context per Telegram chat id as a JSON message history.
  */
@@ -85,7 +83,7 @@ class session {
             $messages = self::get($chatid);
             $messages[] = ['role' => $role, 'content' => $content];
 
-            // Trim to last max_turns
+            // Trim to last max_turns.
             if (count($messages) > $maxturns) {
                 $messages = array_slice($messages, -$maxturns);
             }
@@ -143,7 +141,7 @@ class session {
 
         $record = $DB->get_record('local_jedomi_telegram_sessions', ['chatid' => $chatid]);
         if ($record) {
-            // ── Optimistic concurrency guard ──────────────────────────────
+            // ... ── Optimistic concurrency guard ──────────────────────────────
             // Only overwrite if our iteration is strictly newer. If another
             // worker (self-ping) already saved a state with a higher or equal
             // iteration, our write is stale — skip it silently.

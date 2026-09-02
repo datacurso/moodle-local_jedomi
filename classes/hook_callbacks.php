@@ -29,8 +29,6 @@ namespace local_jedomi;
 
 use core\hook\output\before_footer_html_generation;
 
-defined('MOODLE_INTERNAL') || die();
-
 /**
  * Hook callbacks for the Jedomi Moodle plugin.
  */

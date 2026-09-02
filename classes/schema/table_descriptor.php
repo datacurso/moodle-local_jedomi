@@ -27,8 +27,6 @@
 
 namespace local_jedomi\schema;
 
-defined('MOODLE_INTERNAL') || die();
-
 /**
  * Describes database tables (columns, foreign keys, indices) using
  * cross-DB introspection, with results cached in schema_cache.
@@ -56,7 +54,7 @@ class table_descriptor {
             return $cached;
         }
 
-        // --- Columns via Moodle's cross-DB API (works on MySQL, MariaDB, PostgreSQL) ---
+        // ... --- Columns via Moodle's cross-DB API (works on MySQL, MariaDB, PostgreSQL) ---
         // Strip Moodle braces ({course} → course) — get_columns() adds prefix internally.
         $lookup = $tablename;
         if (preg_match('/^\{(\w+)\}$/', $lookup, $m)) {
@@ -80,7 +78,7 @@ class table_descriptor {
             ];
         }
 
-        // --- Foreign keys & indices via INFORMATION_SCHEMA (MySQL/MariaDB only) ---
+        // ... --- Foreign keys & indices via INFORMATION_SCHEMA (MySQL/MariaDB only) ---
         // Fallback gracefully on PostgreSQL — FK/index info is non-critical.
         $foreignkeys = [];
         $indices      = [];
@@ -134,6 +132,7 @@ class table_descriptor {
                     $indices[$name]['columns'][] = $idx->column_name;
                 }
                 $idxrs->close();
+                // phpcs:ignore Generic.CodeAnalysis.EmptyStatement.DetectedCatch -- comment-only catch.
             } catch (\Exception $e) {
                 // INFORMATION_SCHEMA not available — FK/index info is optional.
             }

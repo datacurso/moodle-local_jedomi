@@ -27,8 +27,6 @@
 
 namespace local_jedomi\proxy;
 
-defined('MOODLE_INTERNAL') || die();
-
 /**
  * Validates Signed Permission Tokens: signature, TTL and sesskey binding.
  */

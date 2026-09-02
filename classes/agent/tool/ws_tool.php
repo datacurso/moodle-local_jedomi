@@ -31,8 +31,6 @@
 
 namespace local_jedomi\agent\tool;
 
-defined('MOODLE_INTERNAL') || die();
-
 /**
  * Agent tool that invokes Moodle external (web service) functions
  * directly by resolving their class and method, with role allowlist
@@ -111,7 +109,7 @@ class ws_tool implements agent_tool {
             return json_encode(['error' => 'Empty function name']);
         }
 
-        // ── Check role allowlist (matches Telegram webhook_handler behaviour) ──
+        // ... ── Check role allowlist (matches Telegram webhook_handler behaviour) ──
         $role = \local_jedomi_get_user_role_for_user($this->userid);
         $allowlist = \local_jedomi_get_role_allowlist($role);
         // Admin sin allowlist configurada → acceso total.
@@ -122,11 +120,11 @@ class ws_tool implements agent_tool {
             }
         }
 
-        // ── Prepare params ───────────────────────────────────────────────────
+        // ... ── Prepare params ───────────────────────────────────────────────────
         $callerparams = $params->params ?? new \stdClass();
         $callerparams = (array) $callerparams;
 
-        // ── Resolve target class + method (same approach as web chat handler) ──
+        // ... ── Resolve target class + method (same approach as web chat handler) ──
         // Do NOT use call_external_function — it requires a registered web service
         // with a token. The agent runner is a cron task, not a WS client.
         // Directly resolve and call the external function's class::method().
@@ -150,7 +148,7 @@ class ws_tool implements agent_tool {
                 return json_encode(['error' => "Method '{$classname}::{$methodname}()' not found"]);
             }
 
-            // ── Map params by name via reflection ────────────────────────────
+            // ... ── Map params by name via reflection ────────────────────────────
             $ref = new \ReflectionMethod($classname, $methodname);
             $callargs = [];
             foreach ($ref->getParameters() as $param) {
@@ -164,7 +162,7 @@ class ws_tool implements agent_tool {
                 }
             }
 
-            // ── Temporarily override $USER for capability checks ─────────────
+            // ... ── Temporarily override $USER for capability checks ─────────────
             global $USER;
             $origuser = $USER;
             if ($this->userid > 0) {

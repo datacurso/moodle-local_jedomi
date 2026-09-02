@@ -22,9 +22,9 @@
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-namespace local_jedomi\agent;
+namespace local_jedomi;
 
-defined('MOODLE_INTERNAL') || die();
+use local_jedomi\agent\agent_manager;
 
 /**
  * Test cases for agent_manager.
@@ -67,7 +67,7 @@ final class agent_manager_test extends \advanced_testcase {
         return $record;
     }
 
-    // ========================
+    // ... ========================
     // CRUD — get_agent
     // ========================
 
@@ -90,7 +90,7 @@ final class agent_manager_test extends \advanced_testcase {
         $this->assertNull($agent);
     }
 
-    // ========================
+    // ... ========================
     // CRUD — create_agent
     // ========================
 
@@ -133,7 +133,7 @@ final class agent_manager_test extends \advanced_testcase {
         $this->assertEquals(0, $agent->nextrun);
     }
 
-    // ========================
+    // ... ========================
     // CRUD — update_agent
     // ========================
 
@@ -155,12 +155,12 @@ final class agent_manager_test extends \advanced_testcase {
         $updated = agent_manager::get_agent($created->id);
         $this->assertEquals('Updated prompt', $updated->prompt);
         $this->assertEquals(0, (int) $updated->enabled);
-        // create_agent sets timemodified = time(). update_agent sets a new timemodified,
+        // Create_agent sets timemodified = time(). update_agent sets a new timemodified,
         // so it should be >= original (after waitForSecond it will be strictly greater).
         $this->assertGreaterThanOrEqual($original->timemodified, $updated->timemodified);
     }
 
-    // ========================
+    // ... ========================
     // CRUD — delete_agent
     // ========================
 
@@ -193,7 +193,7 @@ final class agent_manager_test extends \advanced_testcase {
         $this->assertEmpty($cached);
     }
 
-    // ========================
+    // ... ========================
     // CRUD — get_agents
     // ========================
 
@@ -271,7 +271,7 @@ final class agent_manager_test extends \advanced_testcase {
         ]);
 
         $result = agent_manager::get_agents(['role_filter' => 'teacher']);
-        $this->assertCount(2, $result['items']); // "Teacher report" + "All roles"
+        $this->assertCount(2, $result['items']); // Matches Teacher report and All roles.
     }
 
     /**
@@ -291,7 +291,7 @@ final class agent_manager_test extends \advanced_testcase {
         $this->assertEquals(5, $page3['total']);
     }
 
-    // ========================
+    // ... ========================
     // Cache — Semantic Plan
     // ========================
 
@@ -358,7 +358,7 @@ final class agent_manager_test extends \advanced_testcase {
         $this->assertEquals('Second answer', $retrieved['answer']);
     }
 
-    // ========================
+    // ... ========================
     // is_tool_readonly
     // ========================
 
@@ -401,7 +401,7 @@ final class agent_manager_test extends \advanced_testcase {
         $this->assertFalse(agent_manager::is_tool_readonly('enrol_user'));
     }
 
-    // ========================
+    // ... ========================
     // CRUD — get_due_agents
     // ========================
 
@@ -453,7 +453,7 @@ final class agent_manager_test extends \advanced_testcase {
         $this->assertEquals('Later', $due[1]->prompt);
     }
 
-    // ========================
+    // ... ========================
     // CRUD — mark_run
     // ========================
 
@@ -472,7 +472,7 @@ final class agent_manager_test extends \advanced_testcase {
 
         $this->assertNotNull($agent->lastrun);
         $this->assertGreaterThanOrEqual($now, (int) $agent->lastrun);
-        // nextrun should be > now (since cron expression fires every 5 min)
+        // Nextrun should be > now (since cron expression fires every 5 min).
         $this->assertGreaterThan($now, (int) $agent->nextrun);
         $this->assertEquals(0, (int) $agent->failcount);
     }
@@ -496,7 +496,7 @@ final class agent_manager_test extends \advanced_testcase {
         $this->assertEquals(1, (int) $agent->failcount);
     }
 
-    // ========================
+    // ... ========================
     // CRUD — calculate_next_run
     // ========================
 
@@ -505,7 +505,7 @@ final class agent_manager_test extends \advanced_testcase {
      */
     public function test_calculate_next_run_every_five_minutes(): void {
         $from = 1000000000;
-        // cron: every 5 minutes — next run should be the next minute divisible by 5.
+        // Cron: every 5 minutes — next run should be the next minute divisible by 5.
         $next = agent_manager::calculate_next_run('*/5 * * * *', $from);
         $this->assertEquals(1000000200, $next);
     }
@@ -526,7 +526,7 @@ final class agent_manager_test extends \advanced_testcase {
     public function test_calculate_next_run_daily(): void {
         $from = 1000000000;
         $next = agent_manager::calculate_next_run('0 0 * * *', $from);
-        // Next midnight from 2001-09-09 01:46:40 = 1000080000
+        // Next midnight from 2001-09-09 01:46:40 = 1000080000.
         $this->assertEquals(1000080000, $next);
     }
 
@@ -536,11 +536,11 @@ final class agent_manager_test extends \advanced_testcase {
     public function test_calculate_next_run_fallback(): void {
         $from = 1000000000;
         $next = agent_manager::calculate_next_run('invalid cron', $from);
-        // Fallback: $from + 300
+        // Fallback: $from + 300.
         $this->assertEquals($from + 300, $next);
     }
 
-    // ========================
+    // ... ========================
     // Cache — get_cached_result / set_cached_result
     // ========================
 
@@ -579,7 +579,7 @@ final class agent_manager_test extends \advanced_testcase {
         $this->assertEquals('{"second": true}', $retrieved);
     }
 
-    // ========================
+    // ... ========================
     // Cache — clear_agent_cache
     // ========================
 
@@ -618,7 +618,7 @@ final class agent_manager_test extends \advanced_testcase {
         $this->assertEquals(1, $remaining);
     }
 
-    // ========================
+    // ... ========================
     // Stats — get_stats
     // ========================
 
@@ -673,7 +673,7 @@ final class agent_manager_test extends \advanced_testcase {
         $this->assertEquals(2, $stats->charts->by_role['teacher']);
     }
 
-    // ========================
+    // ... ========================
     // Purge — purge_by_context
     // ========================
 
@@ -703,7 +703,7 @@ final class agent_manager_test extends \advanced_testcase {
         $this->assertEquals(1, $all['total']);
     }
 
-    // ========================
+    // ... ========================
     // Purge — purge_by_role
     // ========================
 
@@ -725,7 +725,7 @@ final class agent_manager_test extends \advanced_testcase {
         $this->assertEquals(2, $deleted);
     }
 
-    // ========================
+    // ... ========================
     // Purge — purge_all
     // ========================
 

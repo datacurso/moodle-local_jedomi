@@ -27,8 +27,6 @@
 
 namespace local_jedomi\agent\tool;
 
-defined('MOODLE_INTERNAL') || die();
-
 /**
  * Agent tool that lists the columns of a Moodle database table
  * (name, type, meta type) using the DML get_columns() API.

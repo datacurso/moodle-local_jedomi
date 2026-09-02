@@ -78,7 +78,7 @@ class get_site_config extends external_api {
 
     // -------------------------------------------------------------------------
     // Parameter / return definitions
-    // -------------------------------------------------------------------------
+    // -------------------------------------------------------------------------.
 
     /**
      * Describe the parameters accepted by the execute function.
@@ -111,7 +111,7 @@ class get_site_config extends external_api {
 
     // -------------------------------------------------------------------------
     // Execution
-    // -------------------------------------------------------------------------
+    // -------------------------------------------------------------------------.
 
     /**
      * Authenticate the request and return allowlisted config values, silently skipping others.
@@ -130,12 +130,12 @@ class get_site_config extends external_api {
         string $payloadhash,
         bool $skiphmac = false
     ): array {
-        // --- Capability check ---
+        // ... --- Capability check ---
         $context = context_system::instance();
         self::validate_context($context);
         require_capability('moodle/site:config', $context);
 
-        // --- Parameter validation ---
+        // ... --- Parameter validation ---
         $validated = self::validate_parameters(
             self::execute_parameters(),
             [
@@ -150,14 +150,14 @@ class get_site_config extends external_api {
         $hmactimestamp = $validated['hmac_timestamp'];
         $payloadhash   = $validated['payload_hash'];
 
-        // --- HMAC authentication ---
+        // ... --- HMAC authentication ---
         if (!$skiphmac) {
             self::verify_hmac('jedomi_get_site_config', $hmactimestamp, $payloadhash, $hmacsignature);
         }
 
-        // --- Build response (server-side allowlist enforcement) ---
+        // ... --- Build response (server-side allowlist enforcement) ---
         $configs = [];
-        $allowset = array_flip(self::ALLOWLIST); // O(1) lookup
+        $allowset = array_flip(self::ALLOWLIST); // O(1) lookup.
 
         foreach ($keys as $key) {
             // Silently skip keys not in the allowlist — no error, no indication.
@@ -196,7 +196,7 @@ class get_site_config extends external_api {
 
     // -------------------------------------------------------------------------
     // Helpers
-    // -------------------------------------------------------------------------
+    // -------------------------------------------------------------------------.
 
     /**
      * Mask a sensitive config value.
@@ -210,10 +210,10 @@ class get_site_config extends external_api {
      */
     private static function mask_sensitive(string $key, string $value): string {
         if ($key === 'smtphosts') {
-            // smtphosts can be a semicolon-separated list.
+            // Smtphosts can be a semicolon-separated list.
             $hosts = preg_split('/[;,\s]+/', $value, -1, PREG_SPLIT_NO_EMPTY);
             $masked = array_map(function (string $host): string {
-                // Remove credentials: user:pass@host:port → host
+                // Remove credentials: user:pass@host:port → host.
                 if (preg_match('/@(.+)$/', $host, $m)) {
                     $host = $m[1];
                 }

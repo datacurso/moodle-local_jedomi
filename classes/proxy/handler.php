@@ -80,7 +80,7 @@ class handler {
                 return;
             }
 
-            // type === 'tool_calls': execute each one and collect results.
+            // Type === 'tool_calls': execute each one and collect results.
             $toolcalls = $response['tool_calls'];
             \local_jedomi_log('AI_TOOL_CALLS', [
                 'iteration' => $i,
@@ -595,10 +595,10 @@ class handler {
             }
             $result = \local_jedomi\external\get_site_config::execute(
                 $cfgkeys,
-                '', // hmac_signature
-                0, // hmac_timestamp
-                '', // payload_hash
-                true    // skip_hmac
+                '', // Hmac_signature.
+                0, // Hmac_timestamp.
+                '', // Payload_hash.
+                true    // Skip_hmac.
             );
             return json_encode($result);
         } catch (\Exception $e) {
@@ -701,10 +701,10 @@ class handler {
             $result = \local_jedomi\external\ws_execute::execute(
                 $wsname,
                 $params,
-                '', // hmac_signature
-                0, // hmac_timestamp
-                '', // payload_hash
-                true    // skip_hmac
+                '', // Hmac_signature.
+                0, // Hmac_timestamp.
+                '', // Payload_hash.
+                true    // Skip_hmac.
             );
             return json_encode($result);
         } catch (\moodle_exception $e) {

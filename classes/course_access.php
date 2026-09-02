@@ -27,8 +27,6 @@
 
 namespace local_jedomi;
 
-defined('MOODLE_INTERNAL') || die();
-
 /**
  * Static helper — zero DB queries on the hot path (all from config cache).
  */

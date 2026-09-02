@@ -50,7 +50,7 @@ class run_task extends external_api {
 
     // -------------------------------------------------------------------------
     // Parameter / return definitions
-    // -------------------------------------------------------------------------
+    // -------------------------------------------------------------------------.
 
     /**
      * Describe the parameters accepted by the execute function.
@@ -84,7 +84,7 @@ class run_task extends external_api {
 
     // -------------------------------------------------------------------------
     // Execution
-    // -------------------------------------------------------------------------
+    // -------------------------------------------------------------------------.
 
     /**
      * Authenticate the request, validate the task class and run it async (queued) or sync.
@@ -105,12 +105,12 @@ class run_task extends external_api {
     ): array {
         global $DB;
 
-        // --- Capability check ---
+        // ... --- Capability check ---
         $context = context_system::instance();
         self::validate_context($context);
         require_capability('moodle/site:config', $context);
 
-        // --- Parameter validation ---
+        // ... --- Parameter validation ---
         $validated = self::validate_parameters(
             self::execute_parameters(),
             [
@@ -127,12 +127,12 @@ class run_task extends external_api {
         $hmactimestamp = $validated['hmac_timestamp'];
         $payloadhash   = $validated['payload_hash'];
 
-        // --- HMAC authentication ---
+        // ... --- HMAC authentication ---
         self::verify_hmac('jedomi_run_task', $hmactimestamp, $payloadhash, $hmacsignature);
 
         $start = microtime(true);
 
-        // --- Validate the task class exists in mdl_task_scheduled ---
+        // ... --- Validate the task class exists in mdl_task_scheduled ---
         // Normalise: ensure leading backslash for comparison.
         $normalizedclass = '\\' . ltrim($taskclass, '\\');
 
@@ -168,7 +168,7 @@ class run_task extends external_api {
 
     // -------------------------------------------------------------------------
     // Helpers
-    // -------------------------------------------------------------------------
+    // -------------------------------------------------------------------------.
 
     /**
      * Queue the task as an adhoc wrapper and return immediately with a tracking run id.
