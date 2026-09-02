@@ -71,6 +71,7 @@
             <FIELDS>
                 <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
                 <FIELD NAME="userid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+                <FIELD NAME="name" TYPE="char" LENGTH="255" NOTNULL="false" SEQUENCE="false"/>
                 <FIELD NAME="prompt" TYPE="text" NOTNULL="true" SEQUENCE="false"/>
                 <FIELD NAME="schedule_cron" TYPE="char" LENGTH="64" NOTNULL="true" SEQUENCE="false"/>
                 <FIELD NAME="context_type" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="site" SEQUENCE="false"/>
@@ -105,6 +106,23 @@
             </KEYS>
             <INDEXES>
                 <INDEX NAME="agentid_context_hash_idx" UNIQUE="true" FIELDS="agentid, context_hash"/>
+            </INDEXES>
+        </TABLE>
+        <TABLE NAME="local_jedomi_query_log" COMMENT="Log of SQL queries executed by agents for the profiler">
+            <FIELDS>
+                <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+                <FIELD NAME="agentid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+                <FIELD NAME="query" TYPE="text" NOTNULL="true" SEQUENCE="false"/>
+                <FIELD NAME="duration_ms" TYPE="number" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" DECIMALS="2"/>
+                <FIELD NAME="rowcount" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+                <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+            </FIELDS>
+            <KEYS>
+                <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+            </KEYS>
+            <INDEXES>
+                <INDEX NAME="duration_idx" UNIQUE="false" FIELDS="duration_ms"/>
+                <INDEX NAME="timecreated_idx" UNIQUE="false" FIELDS="timecreated"/>
             </INDEXES>
         </TABLE>
     </TABLES>
