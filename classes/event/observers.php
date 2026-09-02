@@ -46,12 +46,12 @@ class observers {
         }
 
         // submission_graded: userid = teacher who graded, relateduserid = student
-        $student_id = $event->relateduserid;
-        if (!$student_id) {
+        $studentid = $event->relateduserid;
+        if (!$studentid) {
             return;
         }
 
-        $link = $DB->get_record('local_jedomi_telegram_links', ['userid' => $student_id, 'confirmed' => 1]);
+        $link = $DB->get_record('local_jedomi_telegram_links', ['userid' => $studentid, 'confirmed' => 1]);
         if (!$link) {
             return;
         }
@@ -61,12 +61,12 @@ class observers {
         }
 
         // Retrieve names via standard DB API (get_assign/get_course are not event methods)
-        $cm_id    = $event->contextinstanceid;
-        $cm       = get_coursemodule_from_id('assign', $cm_id, 0, false, IGNORE_MISSING);
-        $assign_name = $cm ? $cm->name : 'Assignment';
-        $course_name = $cm ? $DB->get_field('course', 'fullname', ['id' => $cm->course]) : 'Course';
+        $cmid    = $event->contextinstanceid;
+        $cm       = get_coursemodule_from_id('assign', $cmid, 0, false, IGNORE_MISSING);
+        $assignname = $cm ? $cm->name : 'Assignment';
+        $coursename = $cm ? $DB->get_field('course', 'fullname', ['id' => $cm->course]) : 'Course';
 
-        $text = "📝 Your assignment '<b>" . s($assign_name) . "</b>' in <b>" . s($course_name ?? 'Course') . "</b> has been graded.";
+        $text = "📝 Your assignment '<b>" . s($assignname) . "</b>' in <b>" . s($coursename ?? 'Course') . "</b> has been graded.";
 
         $client = new api_client();
         $client->send_message((string)$link->chatid, $text);
@@ -131,8 +131,8 @@ class observers {
      * @return bool True if the 5-minute cooldown has elapsed and a message may be sent.
      */
     private static function check_cooldown(\stdClass $link): bool {
-        $cooldown_seconds = 5 * 60; // 5 minutes
-        return ($link->lastproactivesent + $cooldown_seconds) <= time();
+        $cooldownseconds = 5 * 60; // 5 minutes
+        return ($link->lastproactivesent + $cooldownseconds) <= time();
     }
 
     /**

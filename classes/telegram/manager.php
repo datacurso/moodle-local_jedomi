@@ -87,11 +87,11 @@ class manager {
     /**
      * Decrypt a ciphertext bundle produced by self::encrypt().
      *
-     * @param string $ciphertext_bundle Base64-encoded
+     * @param string $ciphertextbundle Base64-encoded
      * @return string Plaintext
      */
-    public static function decrypt(string $ciphertext_bundle): string {
-        $raw = base64_decode($ciphertext_bundle, true);
+    public static function decrypt(string $ciphertextbundle): string {
+        $raw = base64_decode($ciphertextbundle, true);
         if ($raw === false || strlen($raw) < 29) { // 12 nonce + 1 min ciphertext + 16 tag
             throw new \moodle_exception('decryption_failed', 'local_jedomi');
         }
@@ -189,7 +189,7 @@ class manager {
         }
 
         $client = new api_client($token);
-        $webhook_url = self::get_webhook_url();
+        $webhookurl = self::get_webhook_url();
 
         // Delete old webhook first (clears stale pending updates).
         $deleted = $client->delete_webhook();
@@ -199,7 +199,7 @@ class manager {
         }
 
         // Set the new webhook URL.
-        $ok = $client->set_webhook($webhook_url);
+        $ok = $client->set_webhook($webhookurl);
         if ($ok) {
             self::clear_last_webhook_error();
         } else {

@@ -81,24 +81,24 @@ try {
             }
             $data->schedule_cron = $schedule;
 
-            $context_type = required_param('context_type', PARAM_ALPHA);
-            $valid_contexts = ['site', 'course', 'category', 'user'];
-            if (!in_array($context_type, $valid_contexts, true)) {
+            $contexttype = required_param('context_type', PARAM_ALPHA);
+            $validcontexts = ['site', 'course', 'category', 'user'];
+            if (!in_array($contexttype, $validcontexts, true)) {
                 echo json_encode([
                     'ok'    => false,
                     'error' => get_string('agent_error_create', 'local_jedomi', 'Invalid context type'),
                 ]);
                 exit;
             }
-            $data->context_type = $context_type;
+            $data->context_type = $contexttype;
             $data->context_id = optional_param('context_id', null, PARAM_INT);
 
             // Role filter: array of role IDs.
-            $role_ids = optional_param_array('role_filter', [], PARAM_INT);
-            if (!empty($role_ids)) {
+            $roleids = optional_param_array('role_filter', [], PARAM_INT);
+            if (!empty($roleids)) {
                 // Resolve role IDs to shortnames.
                 $shortnames = [];
-                foreach ($role_ids as $rid) {
+                foreach ($roleids as $rid) {
                     $sn = $DB->get_field('role', 'shortname', ['id' => $rid]);
                     if ($sn) {
                         $shortnames[] = $sn;
@@ -144,19 +144,19 @@ try {
                 }
             }
 
-            $context_type = optional_param('context_type', '', PARAM_ALPHA);
-            if ($context_type !== '') {
-                $data->context_type = $context_type;
+            $contexttype = optional_param('context_type', '', PARAM_ALPHA);
+            if ($contexttype !== '') {
+                $data->context_type = $contexttype;
             }
-            $ctx_id = optional_param('context_id', null, PARAM_INT);
-            if ($ctx_id !== null) {
-                $data->context_id = $ctx_id;
+            $ctxid = optional_param('context_id', null, PARAM_INT);
+            if ($ctxid !== null) {
+                $data->context_id = $ctxid;
             }
 
-            $role_ids = optional_param_array('role_filter', [], PARAM_INT);
-            if (!empty($role_ids)) {
+            $roleids = optional_param_array('role_filter', [], PARAM_INT);
+            if (!empty($roleids)) {
                 $shortnames = [];
-                foreach ($role_ids as $rid) {
+                foreach ($roleids as $rid) {
                     $sn = $DB->get_field('role', 'shortname', ['id' => $rid]);
                     if ($sn) {
                         $shortnames[] = $sn;

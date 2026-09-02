@@ -40,17 +40,17 @@ class query_profiler {
      *
      * @param int    $agentid
      * @param string $query
-     * @param float  $durationMs
-     * @param int    $rowCount
+     * @param float  $durationms
+     * @param int    $rowcount
      */
-    public static function log_query(int $agentid, string $query, float $durationMs, int $rowCount): void {
+    public static function log_query(int $agentid, string $query, float $durationms, int $rowcount): void {
         global $DB;
 
         $record = (object) [
             'agentid' => $agentid,
             'query' => $query,
-            'duration_ms' => round($durationMs, 2),
-            'rowcount' => $rowCount,
+            'duration_ms' => round($durationms, 2),
+            'rowcount' => $rowcount,
             'timecreated' => time(),
         ];
 
@@ -122,16 +122,16 @@ class query_profiler {
     /**
      * Get aggregate stats for the profiler dashboard.
      *
-     * @param  int $minDurationMs Minimum duration to consider "slow" (default: 1000ms).
+     * @param  int $mindurationms Minimum duration to consider "slow" (default: 1000ms).
      * @return \stdClass
      */
-    public static function get_aggregate(int $minDurationMs = 1000): \stdClass {
+    public static function get_aggregate(int $mindurationms = 1000): \stdClass {
         global $DB;
 
         $total = $DB->count_records('local_jedomi_query_log');
-        $slow = $DB->count_records_select('local_jedomi_query_log', 'duration_ms >= :min', ['min' => $minDurationMs]);
-        $avgDuration = $DB->get_field_sql("SELECT AVG(duration_ms) FROM {local_jedomi_query_log}") ?: 0;
-        $maxDuration = $DB->get_field_sql("SELECT MAX(duration_ms) FROM {local_jedomi_query_log}") ?: 0;
+        $slow = $DB->count_records_select('local_jedomi_query_log', 'duration_ms >= :min', ['min' => $mindurationms]);
+        $avgduration = $DB->get_field_sql("SELECT AVG(duration_ms) FROM {local_jedomi_query_log}") ?: 0;
+        $maxduration = $DB->get_field_sql("SELECT MAX(duration_ms) FROM {local_jedomi_query_log}") ?: 0;
 
         // Top 10 slowest queries (aggregated by query text).
         $slowest = $DB->get_records_sql(
@@ -147,8 +147,8 @@ class query_profiler {
         return (object) [
             'total_queries' => (int) $total,
             'slow_queries' => (int) $slow,
-            'avg_duration_ms' => round((float) $avgDuration, 2),
-            'max_duration_ms' => round((float) $maxDuration, 2),
+            'avg_duration_ms' => round((float) $avgduration, 2),
+            'max_duration_ms' => round((float) $maxduration, 2),
             'slowest' => array_values($slowest ?: []),
         ];
     }

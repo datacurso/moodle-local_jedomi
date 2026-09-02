@@ -87,9 +87,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && confirm_sesskey()) {
             set_config('anonymization_level', required_param('anonymization_level', PARAM_ALPHA),  'local_jedomi');
 
             // Save hidden roles: collect all role IDs that were toggled OFF.
-            $all_r   = $DB->get_records('role', null, 'sortorder ASC', 'id');
+            $allr   = $DB->get_records('role', null, 'sortorder ASC', 'id');
             $hidden  = [];
-            foreach ($all_r as $r) {
+            foreach ($allr as $r) {
                 $visible = optional_param('role_visible_' . $r->id, 0, PARAM_INT);
                 if (!$visible) {
                     $hidden[] = (int) $r->id;
@@ -102,8 +102,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && confirm_sesskey()) {
             break;
 
         case 'integrations':
-            // Load roles here — $all_roles is defined later for the render phase
-            $all_roles_post = $DB->get_records('role', null, 'sortorder ASC', 'id');
+            // Load roles here — $allroles is defined later for the render phase
+            $allrolespost = $DB->get_records('role', null, 'sortorder ASC', 'id');
 
             $enabled = optional_param('telegram_enabled', 0, PARAM_INT);
             set_config('telegram_enabled', $enabled, 'local_jedomi');
@@ -112,19 +112,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && confirm_sesskey()) {
             if ($token !== '') {
                 // Verify token FIRST via getMe before saving anything
                 $client = new \local_jedomi\telegram\api_client($token);
-                $bot_info = $client->get_me();
-                if ($bot_info) {
+                $botinfo = $client->get_me();
+                if ($botinfo) {
                     // Token validated — save everything.
                     \local_jedomi\telegram\manager::set_bot_token($token);
-                    set_config('telegram_bot_username',  $bot_info['username'],   'local_jedomi');
-                    set_config('telegram_bot_firstname', $bot_info['first_name'], 'local_jedomi');
+                    set_config('telegram_bot_username',  $botinfo['username'],   'local_jedomi');
+                    set_config('telegram_bot_firstname', $botinfo['first_name'], 'local_jedomi');
                     set_config('telegram_bot_verified',  1,                       'local_jedomi');
 
                     // Auto-register webhook — delete old first, then set new.
                     $client->delete_webhook();
-                    $webhook_url = \local_jedomi\telegram\manager::get_webhook_url();
-                    $webhook_ok = $client->set_webhook($webhook_url);
-                    if ($webhook_ok) {
+                    $webhookurl = \local_jedomi\telegram\manager::get_webhook_url();
+                    $webhookok = $client->set_webhook($webhookurl);
+                    if ($webhookok) {
                         \local_jedomi\telegram\manager::clear_last_webhook_error();
                     } else {
                         \local_jedomi\telegram\manager::set_last_webhook_error(
@@ -153,22 +153,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && confirm_sesskey()) {
             set_config('telegram_gateway_timeout', optional_param('telegram_gateway_timeout', 120, PARAM_INT), 'local_jedomi');
 
             // Save per-role visibility for Telegram (reuse same hidden_roles logic with prefix)
-            $telegram_hidden = [];
-            foreach ($all_roles_post as $r) {
+            $telegramhidden = [];
+            foreach ($allrolespost as $r) {
                 $visible = optional_param('telegram_role_visible_' . $r->id, 0, PARAM_INT);
                 if (!$visible) {
-                    $telegram_hidden[] = (int) $r->id;
+                    $telegramhidden[] = (int) $r->id;
                 }
             }
-            set_config('telegram_hidden_roles', implode(',', $telegram_hidden), 'local_jedomi');
+            set_config('telegram_hidden_roles', implode(',', $telegramhidden), 'local_jedomi');
 
             redirect(new moodle_url($pageurl, ['tab' => 'integrations']),
                 get_string('changessaved'), null, \core\output\notification::NOTIFY_SUCCESS);
             break;
 
         case 'apis':
-            $ap_roles = ['admin', 'manager', 'teacher', 'student'];
-            foreach ($ap_roles as $ar) {
+            $aproles = ['admin', 'manager', 'teacher', 'student'];
+            foreach ($aproles as $ar) {
                 if (optional_param('ws_' . $ar . '_submitted', 0, PARAM_INT)) {
                     $checked = optional_param_array('ws_' . $ar, [], PARAM_ALPHANUMEXT);
                     set_config('ws_allowlist_' . $ar, json_encode(array_values($checked)), 'local_jedomi');
@@ -204,11 +204,11 @@ $cfg = [
 ];
 
 // Load all roles for the role-visibility toggles.
-$all_roles = $DB->get_records('role', null, 'sortorder ASC', 'id,shortname,name,description');
-foreach ($all_roles as $role) {
+$allroles = $DB->get_records('role', null, 'sortorder ASC', 'id,shortname,name,description');
+foreach ($allroles as $role) {
     $role->localname = role_get_name($role, context_system::instance());
 }
-$hidden_role_ids = array_filter(array_map('intval', explode(',', $cfg['hidden_roles'])));
+$hiddenroleids = array_filter(array_map('intval', explode(',', $cfg['hidden_roles'])));
 
 // Pre-load course chips.
 $courseids      = array_filter(array_map('intval', explode(',', $cfg['course_list'])));
@@ -603,8 +603,8 @@ echo '</ul>';
             </p>
             <p class="form-text mb-3"><?php echo get_string('role_visibility_help', 'local_jedomi'); ?></p>
 
-            <?php foreach ($all_roles as $role):
-                $is_visible = !in_array((int)$role->id, $hidden_role_ids, true);
+            <?php foreach ($allroles as $role):
+                $isvisible = !in_array((int)$role->id, $hiddenroleids, true);
                 $label      = !empty($role->localname) ? $role->localname : $role->name;
                 if (empty($label)) $label = $role->shortname;
             ?>
@@ -619,7 +619,7 @@ echo '</ul>';
                     <input class="form-check-input" type="checkbox"
                            name="role_visible_<?php echo $role->id; ?>"
                            value="1"
-                           <?php echo $is_visible ? 'checked' : ''; ?>
+                           <?php echo $isvisible ? 'checked' : ''; ?>
                            style="width:2.5rem;height:1.25rem;cursor:pointer">
                 </div>
             </div>
@@ -687,7 +687,7 @@ echo '</ul>';
 <?php // ─────────────────────────── TAB: INTEGRATIONS ────────────────────────── ?>
 <?php if ($tab === 'integrations'): ?>
 <?php
-    $telegram_cfg = [
+    $telegramcfg = [
         'enabled'         => (int)(get_config('local_jedomi', 'telegram_enabled') ?? 0),
         'bot_token_set'   => !empty(get_config('local_jedomi', 'telegram_bot_token')),
         'bot_username'    => get_config('local_jedomi', 'telegram_bot_username')  ?: '',
@@ -701,10 +701,10 @@ echo '</ul>';
             ? 10 : (int)get_config('local_jedomi', 'telegram_max_turns'),
         'gateway_timeout' => (int)(get_config('local_jedomi', 'telegram_gateway_timeout') ?: 120),
     ];
-    $telegram_hidden_role_ids = array_filter(
+    $telegramhiddenroleids = array_filter(
         array_map('intval', explode(',', get_config('local_jedomi', 'telegram_hidden_roles') ?: ''))
     );
-    $is_configured = $telegram_cfg['enabled'] && $telegram_cfg['bot_token_set'] && $telegram_cfg['bot_verified'];
+    $isconfigured = $telegramcfg['enabled'] && $telegramcfg['bot_token_set'] && $telegramcfg['bot_verified'];
 ?>
 
 <!-- ═══ INTEGRATIONS TAB — accordion, extensible ═══════════════════════════ -->
@@ -762,7 +762,7 @@ echo '</ul>';
 <?php // ────────────────────────────────────────────────────────────────────────
       // TELEGRAM INTEGRATION ITEM
       // ─────────────────────────────────────────────────────────────────────── ?>
-<div class="jd-int-item<?php echo $telegram_cfg['enabled'] ? ' enabled' : ''; ?>"
+<div class="jd-int-item<?php echo $telegramcfg['enabled'] ? ' enabled' : ''; ?>"
      id="jd-int-telegram">
 
     <!-- Header row: always visible -->
@@ -772,8 +772,8 @@ echo '</ul>';
             <div>
                 <span class="jd-int-name">
                     <?php echo get_string('telegram_heading', 'local_jedomi'); ?>
-                    <?php if ($telegram_cfg['bot_verified'] && $telegram_cfg['bot_username']): ?>
-                        <span class="jd-int-badge ml-2">@<?php echo s($telegram_cfg['bot_username']); ?></span>
+                    <?php if ($telegramcfg['bot_verified'] && $telegramcfg['bot_username']): ?>
+                        <span class="jd-int-badge ml-2">@<?php echo s($telegramcfg['bot_username']); ?></span>
                     <?php endif; ?>
                 </span>
                 <span class="jd-int-desc"><?php echo get_string('telegram_heading_help', 'local_jedomi'); ?></span>
@@ -785,12 +785,12 @@ echo '</ul>';
                  title="<?php echo get_string('telegram_enabled', 'local_jedomi'); ?>">
                 <input class="form-check-input" type="checkbox" id="jd-tg-master"
                        name="telegram_enabled" value="1"
-                       <?php echo $telegram_cfg['enabled'] ? 'checked' : ''; ?>
+                       <?php echo $telegramcfg['enabled'] ? 'checked' : ''; ?>
                        style="width:2.75rem;height:1.375rem;cursor:pointer"
                        onchange="jdIntToggle('telegram', this.checked)">
             </div>
             <!-- Expand/collapse arrow (only clickable when enabled) -->
-            <i class="fa fa-chevron-down jd-int-arrow<?php echo $telegram_cfg['enabled'] ? ' open' : ''; ?>"
+            <i class="fa fa-chevron-down jd-int-arrow<?php echo $telegramcfg['enabled'] ? ' open' : ''; ?>"
                id="jd-arrow-telegram"
                onclick="if(document.getElementById('jd-tg-master').checked) jdIntExpand('telegram')"
                style="cursor:pointer"></i>
@@ -799,7 +799,7 @@ echo '</ul>';
 
     <!-- Body: shown only when toggle is ON -->
     <div class="jd-int-body" id="jd-body-telegram"
-         style="display:<?php echo $telegram_cfg['enabled'] ? 'block' : 'none'; ?>">
+         style="display:<?php echo $telegramcfg['enabled'] ? 'block' : 'none'; ?>">
 
         <?php // ── Sub-section 1: Bot Connection (expanded by default) ──────── ?>
         <div class="jd-sub" id="jd-sub-bot">
@@ -820,7 +820,7 @@ echo '</ul>';
                     <div style="position:relative;max-width:480px">
                         <input type="password" id="jd-tg-token" name="telegram_bot_token"
                                class="form-control"
-                               placeholder="<?php echo $telegram_cfg['bot_token_set']
+                               placeholder="<?php echo $telegramcfg['bot_token_set']
                                    ? '●●●●●● (saved — leave blank to keep)' : 'Paste token from @BotFather'; ?>"
                                style="padding-right:2.5rem">
                         <button type="button"
@@ -832,18 +832,18 @@ echo '</ul>';
                     </div>
                     <p class="form-text"><?php echo get_string('telegram_bot_token_help', 'local_jedomi'); ?></p>
 
-                    <?php if ($telegram_cfg['bot_token_set']): ?>
+                    <?php if ($telegramcfg['bot_token_set']): ?>
                     <div class="d-flex align-items-center gap-2 mt-1"
                          style="font-size:.8125rem;padding:.4rem .7rem;border-radius:.375rem;
-                         background:<?php echo $telegram_cfg['bot_verified'] ? '#f0fdf4' : '#fff7ed'; ?>;
-                         border:1px solid <?php echo $telegram_cfg['bot_verified'] ? '#bbf7d0' : '#fed7aa'; ?>">
-                        <i class="fa <?php echo $telegram_cfg['bot_verified'] ? 'fa-check-circle' : 'fa-times-circle'; ?>"
-                           style="color:<?php echo $telegram_cfg['bot_verified'] ? '#16a34a' : '#ea580c'; ?>"></i>
-                        <?php if ($telegram_cfg['bot_verified']): ?>
+                         background:<?php echo $telegramcfg['bot_verified'] ? '#f0fdf4' : '#fff7ed'; ?>;
+                         border:1px solid <?php echo $telegramcfg['bot_verified'] ? '#bbf7d0' : '#fed7aa'; ?>">
+                        <i class="fa <?php echo $telegramcfg['bot_verified'] ? 'fa-check-circle' : 'fa-times-circle'; ?>"
+                           style="color:<?php echo $telegramcfg['bot_verified'] ? '#16a34a' : '#ea580c'; ?>"></i>
+                        <?php if ($telegramcfg['bot_verified']): ?>
                             <span style="color:#166534">
                                 <?php echo get_string('telegram_status_connected', 'local_jedomi'); ?> —
-                                <strong>@<?php echo s($telegram_cfg['bot_username']); ?></strong>
-                                (<?php echo s($telegram_cfg['bot_firstname']); ?>)
+                                <strong>@<?php echo s($telegramcfg['bot_username']); ?></strong>
+                                (<?php echo s($telegramcfg['bot_firstname']); ?>)
                             </span>
                         <?php else: ?>
                             <span style="color:#9a3412">
@@ -867,7 +867,7 @@ echo '</ul>';
                     </label>
                     <div class="input-group" style="max-width:520px">
                         <input type="text" id="jd-webhook-url" class="form-control" readonly
-                               value="<?php echo s($telegram_cfg['webhook_url']); ?>">
+                               value="<?php echo s($telegramcfg['webhook_url']); ?>">
                         <button type="button" class="btn btn-outline-secondary"
                                 onclick="<?php echo $copywebhookjs; ?>"
                                 title="<?php echo get_string('copytoclipboard', 'local_jedomi'); ?>">
@@ -889,7 +889,7 @@ echo '</ul>';
                 </div>
 
                 <?php // ── Webhook status block ────────────────────────────── ?>
-                <?php if ($telegram_cfg['bot_token_set']): ?>
+                <?php if ($telegramcfg['bot_token_set']): ?>
                 <div class="mt-3" style="padding:.75rem 1rem;border-radius:.5rem;border:1px solid #e5e7eb;background:#fafafa">
                     <div class="d-flex align-items-center justify-content-between mb-2">
                         <strong style="font-size:.875rem;color:#374151">
@@ -907,23 +907,23 @@ echo '</ul>';
                     <!-- Cached status (loaded from config) -->
                     <div id="jd-webhook-status">
                         <?php
-                        $last_error = \local_jedomi\telegram\manager::get_last_webhook_error();
-                        $error_time = \local_jedomi\telegram\manager::get_last_webhook_error_time();
+                        $lasterror = \local_jedomi\telegram\manager::get_last_webhook_error();
+                        $errortime = \local_jedomi\telegram\manager::get_last_webhook_error_time();
                         ?>
-                        <?php if (!empty($last_error)): ?>
+                        <?php if (!empty($lasterror)): ?>
                         <div class="d-flex align-items-start gap-2" style="font-size:.8125rem;color:#9a3412">
                             <i class="fa fa-exclamation-triangle" style="color:#ea580c;flex-shrink:0;margin-top:2px"></i>
                             <div>
                                 <strong style="display:block"><?php echo get_string('webhook_error', 'local_jedomi'); ?></strong>
-                                <span><?php echo s($last_error); ?></span>
-                                <?php if ($error_time): ?>
+                                <span><?php echo s($lasterror); ?></span>
+                                <?php if ($errortime): ?>
                                 <span class="text-muted" style="display:block;font-size:.75rem;margin-top:2px">
-                                    <?php echo userdate($error_time, get_string('strftimedatetime', 'langconfig')); ?>
+                                    <?php echo userdate($errortime, get_string('strftimedatetime', 'langconfig')); ?>
                                 </span>
                                 <?php endif; ?>
                             </div>
                         </div>
-                        <?php elseif ($error_time > 0): ?>
+                        <?php elseif ($errortime > 0): ?>
                         <div style="font-size:.8125rem;color:#166534">
                             <i class="fa fa-check-circle" style="color:#16a34a"></i>
                             <?php echo get_string('webhook_ok', 'local_jedomi'); ?>
@@ -973,7 +973,7 @@ echo '</ul>';
                             <?php echo get_string('telegram_rate_limit', 'local_jedomi'); ?>
                         </label>
                         <input type="number" name="telegram_rate_limit" class="form-control" min="0" max="1000"
-                               value="<?php echo $telegram_cfg['rate_limit']; ?>" style="width:90px">
+                               value="<?php echo $telegramcfg['rate_limit']; ?>" style="width:90px">
                         <p class="form-text"><?php echo get_string('telegram_rate_limit_help', 'local_jedomi'); ?></p>
                     </div>
                     <div>
@@ -981,7 +981,7 @@ echo '</ul>';
                             <?php echo get_string('telegram_cooldown', 'local_jedomi'); ?>
                         </label>
                         <input type="number" name="telegram_cooldown" class="form-control" min="0" max="1440"
-                               value="<?php echo $telegram_cfg['cooldown']; ?>" style="width:90px">
+                               value="<?php echo $telegramcfg['cooldown']; ?>" style="width:90px">
                         <p class="form-text"><?php echo get_string('telegram_cooldown_help', 'local_jedomi'); ?></p>
                     </div>
                     <div>
@@ -989,7 +989,7 @@ echo '</ul>';
                             <?php echo get_string('telegram_max_turns', 'local_jedomi'); ?>
                         </label>
                         <input type="number" name="telegram_max_turns" class="form-control" min="1" max="100"
-                               value="<?php echo $telegram_cfg['max_turns']; ?>" style="width:90px">
+                               value="<?php echo $telegramcfg['max_turns']; ?>" style="width:90px">
                         <p class="form-text"><?php echo get_string('telegram_max_turns_help', 'local_jedomi'); ?></p>
                     </div>
                     <div>
@@ -997,7 +997,7 @@ echo '</ul>';
                             <?php echo get_string('telegram_gateway_timeout', 'local_jedomi'); ?>
                         </label>
                         <input type="number" name="telegram_gateway_timeout" class="form-control" min="5" max="300"
-                               value="<?php echo $telegram_cfg['gateway_timeout']; ?>" style="width:90px">
+                               value="<?php echo $telegramcfg['gateway_timeout']; ?>" style="width:90px">
                         <p class="form-text"><?php echo get_string('telegram_gateway_timeout_help', 'local_jedomi'); ?></p>
                     </div>
                 </div>
@@ -1013,8 +1013,8 @@ echo '</ul>';
             </div>
             <div class="jd-sub-body" id="jd-sbody-sub-access" style="display:none">
                 <p class="form-text mb-3"><?php echo get_string('telegram_role_visibility_help', 'local_jedomi'); ?></p>
-                <?php foreach ($all_roles as $role):
-                    $is_tg_visible = !in_array((int)$role->id, $telegram_hidden_role_ids, true);
+                <?php foreach ($allroles as $role):
+                    $istgvisible = !in_array((int)$role->id, $telegramhiddenroleids, true);
                     $label = !empty($role->localname) ? $role->localname : ($role->name ?: $role->shortname);
                 ?>
                 <div class="toggle-row">
@@ -1026,7 +1026,7 @@ echo '</ul>';
                     <div class="form-check form-switch mb-0">
                         <input class="form-check-input" type="checkbox"
                                name="telegram_role_visible_<?php echo $role->id; ?>" value="1"
-                               <?php echo $is_tg_visible ? 'checked' : ''; ?>
+                               <?php echo $istgvisible ? 'checked' : ''; ?>
                                style="width:2.5rem;height:1.25rem;cursor:pointer">
                     </div>
                 </div>
@@ -1069,7 +1069,7 @@ echo '</ul>';
                         <p style="font-size:.8rem;color:#374151;margin:.125rem 0 0;line-height:1.5">
                             <?php echo get_string($dk, 'local_jedomi'); ?>
                         </p>
-                        <?php if ($is_configured): ?>
+                        <?php if ($isconfigured): ?>
                         <div class="d-flex align-items-center gap-2 mt-2"
                              style="font-size:.8125rem;padding:.5rem .75rem;border-radius:.375rem;
                                     background:#f0fdf4;border:1px solid #bbf7d0;color:#166534">
@@ -1077,7 +1077,7 @@ echo '</ul>';
                             <span><strong>Webhook configurado automáticamente</strong> — al guardar el token,
                                 el sistema registró el webhook automáticamente.</span>
                         </div>
-                        <?php elseif ($telegram_cfg['bot_token_set']): ?>
+                        <?php elseif ($telegramcfg['bot_token_set']): ?>
                         <div class="d-flex align-items-center gap-2 mt-2"
                              style="font-size:.8125rem;padding:.5rem .75rem;border-radius:.375rem;
                                     background:#fff7ed;border:1px solid #fed7aa;color:#9a3412">
@@ -1147,9 +1147,9 @@ echo '</ul>';
 </div><!-- /.jd-int-list -->
 </form>
 
-<?php if ($telegram_cfg['bot_token_set'] && $telegram_cfg['webhook_error']):
-    $last_webhook_error = \local_jedomi\telegram\manager::get_last_webhook_error();
-    $last_webhook_time  = \local_jedomi\telegram\manager::get_last_webhook_error_time();
+<?php if ($telegramcfg['bot_token_set'] && $telegramcfg['webhook_error']):
+    $lastwebhookerror = \local_jedomi\telegram\manager::get_last_webhook_error();
+    $lastwebhooktime  = \local_jedomi\telegram\manager::get_last_webhook_error_time();
 ?>
 <div class="alert alert-warning d-flex align-items-start gap-2 mt-3" style="border-radius:.5rem">
     <i class="fa fa-exclamation-triangle fa-lg" style="flex-shrink:0;color:#d97706;margin-top:2px"></i>
@@ -1157,15 +1157,15 @@ echo '</ul>';
         <strong>⚠️ <?php echo get_string('webhook_error_alert_title', 'local_jedomi'); ?></strong><br>
         <small>
             <?php echo get_string('webhook_error_alert_desc', 'local_jedomi'); ?>
-            <?php if (!empty($last_webhook_error)): ?>
+            <?php if (!empty($lastwebhookerror)): ?>
             <br><br>
             <strong><?php echo get_string('webhook_error_detail', 'local_jedomi'); ?></strong>
             <code style="display:block;margin-top:4px;padding:6px 8px;background:#fff3cd;border-radius:4px;font-size:.8125rem">
-                <?php echo s($last_webhook_error); ?>
+                <?php echo s($lastwebhookerror); ?>
             </code>
-                <?php if ($last_webhook_time): ?>
+                <?php if ($lastwebhooktime): ?>
                 <span class="text-muted" style="display:block;font-size:.75rem;margin-top:2px">
-                    <?php echo userdate($last_webhook_time, get_string('strftimedatetime', 'langconfig')); ?>
+                    <?php echo userdate($lastwebhooktime, get_string('strftimedatetime', 'langconfig')); ?>
                 </span>
                 <?php endif; ?>
             <?php endif; ?>
@@ -1179,53 +1179,53 @@ echo '</ul>';
 
 <?php // ─────────────────────────────────── TAB: APIS ──────────────────────── ?>
 <?php if ($tab === 'apis'):
-    $ap_role = optional_param('role', 'admin', PARAM_ALPHA);
-    $valid_roles = ['admin', 'manager', 'teacher', 'student'];
-    if (!in_array($ap_role, $valid_roles, true)) {
-        $ap_role = 'admin';
+    $aprole = optional_param('role', 'admin', PARAM_ALPHA);
+    $validroles = ['admin', 'manager', 'teacher', 'student'];
+    if (!in_array($aprole, $validroles, true)) {
+        $aprole = 'admin';
     }
 
     // Load allowlist for the active role.
-    $ap_raw_config  = get_config('local_jedomi', 'ws_allowlist_' . $ap_role);
-    $ap_first_visit = ($ap_role === 'admin' && $ap_raw_config === false);
-    $ap_allowlist   = local_jedomi_get_role_allowlist($ap_role);
+    $aprawconfig  = get_config('local_jedomi', 'ws_allowlist_' . $aprole);
+    $apfirstvisit = ($aprole === 'admin' && $aprawconfig === false);
+    $apallowlist   = local_jedomi_get_role_allowlist($aprole);
 
     // Filters from URL.
-    $ap_page      = max(1, optional_param('ap_page', 1, PARAM_INT));
-    $ap_search    = optional_param('ap_search', '', PARAM_TEXT);
-    $ap_component = optional_param('ap_component', '', PARAM_ALPHAEXT);
-    $ap_type      = optional_param('ap_type', 'all', PARAM_ALPHA);
-    $ap_perpage   = max(10, min(200, optional_param('ap_perpage', 25, PARAM_INT)));
-    $valid_types  = ['all', 'Lectura', 'Escritura'];
+    $appage      = max(1, optional_param('ap_page', 1, PARAM_INT));
+    $apsearch    = optional_param('ap_search', '', PARAM_TEXT);
+    $apcomponent = optional_param('ap_component', '', PARAM_ALPHAEXT);
+    $aptype      = optional_param('ap_type', 'all', PARAM_ALPHA);
+    $apperpage   = max(10, min(200, optional_param('ap_perpage', 25, PARAM_INT)));
+    $validtypes  = ['all', 'Lectura', 'Escritura'];
 
     // Build SQL WHERE for search + component (type is post-filtered in PHP).
-    $ap_where  = [];
-    $ap_params = [];
-    if (!empty($ap_search)) {
-        $ap_where[] = $DB->sql_like('ef.name', ':ap_search', false, false);
-        $ap_params['ap_search'] = '%' . $DB->sql_like_escape($ap_search) . '%';
+    $apwhere  = [];
+    $apparams = [];
+    if (!empty($apsearch)) {
+        $apwhere[] = $DB->sql_like('ef.name', ':ap_search', false, false);
+        $apparams['ap_search'] = '%' . $DB->sql_like_escape($apsearch) . '%';
     }
-    if (!empty($ap_component)) {
-        $ap_where[] = 'ef.component = :ap_component';
-        $ap_params['ap_component'] = $ap_component;
+    if (!empty($apcomponent)) {
+        $apwhere[] = 'ef.component = :ap_component';
+        $apparams['ap_component'] = $apcomponent;
     }
-    $ap_where_sql = !empty($ap_where) ? 'WHERE ' . implode(' AND ', $ap_where) : '';
+    $apwheresql = !empty($apwhere) ? 'WHERE ' . implode(' AND ', $apwhere) : '';
 
     // Load ALL matching WS (type classification is PHP-only, can't be done in SQL).
-    $ap_sql = "SELECT ef.name, '' AS description, ef.component
+    $apsql = "SELECT ef.name, '' AS description, ef.component
                  FROM {external_functions} ef
-                 $ap_where_sql
+                 $apwheresql
              ORDER BY ef.component, ef.name";
-    $ap_all_rows = $DB->get_records_sql($ap_sql, $ap_params);
+    $apallrows = $DB->get_records_sql($apsql, $apparams);
 
     // Classify each WS and filter by type.
-    $ap_filtered = [];
-    foreach ($ap_all_rows as $ws) {
+    $apfiltered = [];
+    foreach ($apallrows as $ws) {
         $type = local_jedomi_classify_ws_access($ws->name);
-        if ($ap_type !== 'all' && $type !== $ap_type) {
+        if ($aptype !== 'all' && $type !== $aptype) {
             continue;
         }
-        $ap_filtered[] = (object) [
+        $apfiltered[] = (object) [
             'name'        => $ws->name,
             'description' => $ws->description ?? '',
             'component'   => $ws->component,
@@ -1234,29 +1234,29 @@ echo '</ul>';
     }
 
     // Paginate the filtered result.
-    $ap_total  = count($ap_filtered);
-    $ap_pages  = max(1, (int) ceil($ap_total / $ap_perpage));
-    $ap_page   = min($ap_page, $ap_pages);
-    $ap_offset = ($ap_page - 1) * $ap_perpage;
-    $ap_all_ws = array_slice($ap_filtered, $ap_offset, $ap_perpage);
+    $aptotal  = count($apfiltered);
+    $appages  = max(1, (int) ceil($aptotal / $apperpage));
+    $appage   = min($appage, $appages);
+    $apoffset = ($appage - 1) * $apperpage;
+    $apallws = array_slice($apfiltered, $apoffset, $apperpage);
 
     // Distinct components for filter dropdown.
-    $ap_components = $DB->get_fieldset_sql("SELECT DISTINCT component FROM {external_functions} ORDER BY component");
+    $apcomponents = $DB->get_fieldset_sql("SELECT DISTINCT component FROM {external_functions} ORDER BY component");
 
     // Pre-calculate counts for type filter pills.
-    $ap_count_read  = 0;
-    $ap_count_write = 0;
-    foreach ($ap_all_rows as $ws) {
+    $apcountread  = 0;
+    $apcountwrite = 0;
+    foreach ($apallrows as $ws) {
         $t = local_jedomi_classify_ws_access($ws->name);
-        if ($t === 'Lectura')  { $ap_count_read++;  }
-        if ($t === 'Escritura') { $ap_count_write++; }
+        if ($t === 'Lectura')  { $apcountread++;  }
+        if ($t === 'Escritura') { $apcountwrite++; }
     }
 ?>
-<form method="post" action="<?php echo (new moodle_url($pageurl, ['tab' => 'apis', 'role' => $ap_role]))->out(false); ?>">
+<form method="post" action="<?php echo (new moodle_url($pageurl, ['tab' => 'apis', 'role' => $aprole]))->out(false); ?>">
     <input type="hidden" name="sesskey"     value="<?php echo sesskey(); ?>">
     <input type="hidden" name="jedomi_save" value="apis">
-    <input type="hidden" name="api_role"    value="<?php echo $ap_role; ?>">
-    <input type="hidden" name="ws_<?php echo $ap_role; ?>_submitted" value="1">
+    <input type="hidden" name="api_role"    value="<?php echo $aprole; ?>">
+    <input type="hidden" name="ws_<?php echo $aprole; ?>_submitted" value="1">
 
     <div class="card">
         <div class="card-header">
@@ -1273,15 +1273,15 @@ echo '</ul>';
                 <span class="text-muted" style="font-size:.8125rem;font-weight:600;margin-right:.5rem">
                     <?php echo get_string('filter_type', 'local_jedomi'); ?>
                 </span>
-                <?php foreach ($valid_roles as $vr):
-                    $is_active = ($ap_role === $vr);
-                    $pill_url  = new moodle_url($pageurl, [
+                <?php foreach ($validroles as $vr):
+                    $isactive = ($aprole === $vr);
+                    $pillurl  = new moodle_url($pageurl, [
                         'tab' => 'apis', 'role' => $vr, 'ap_page' => 1,
-                        'ap_search' => $ap_search, 'ap_component' => $ap_component, 'ap_type' => $ap_type,
+                        'ap_search' => $apsearch, 'ap_component' => $apcomponent, 'ap_type' => $aptype,
                     ]);
                 ?>
-                <a href="<?php echo $pill_url->out(false); ?>"
-                   class="btn btn-sm <?php echo $is_active ? 'btn-primary' : 'btn-outline-secondary'; ?>"
+                <a href="<?php echo $pillurl->out(false); ?>"
+                   class="btn btn-sm <?php echo $isactive ? 'btn-primary' : 'btn-outline-secondary'; ?>"
                    style="border-radius:2rem;padding:.25rem 1rem">
                     <?php echo get_string('api_role_' . $vr, 'local_jedomi'); ?>
                 </a>
@@ -1293,19 +1293,19 @@ echo '</ul>';
                 <span class="text-muted" style="font-size:.8125rem;font-weight:600;margin-right:.5rem">
                     <?php echo get_string('ws_type', 'local_jedomi'); ?>:
                 </span>
-                <?php foreach ($valid_types as $vt):
-                    $is_active = ($ap_type === $vt);
+                <?php foreach ($validtypes as $vt):
+                    $isactive = ($aptype === $vt);
                     $label = $vt === 'all' ? get_string('ws_type_all', 'local_jedomi')
                            : ($vt === 'Lectura' ? get_string('ws_type_read', 'local_jedomi')
                                                 : get_string('ws_type_write', 'local_jedomi'));
-                    $count = $vt === 'Lectura' ? $ap_count_read : ($vt === 'Escritura' ? $ap_count_write : count($ap_all_rows));
-                    $count_id = 'ap-count-' . $vt;
+                    $count = $vt === 'Lectura' ? $apcountread : ($vt === 'Escritura' ? $apcountwrite : count($apallrows));
+                    $countid = 'ap-count-' . $vt;
                 ?>
-                <a href="#" class="btn btn-sm ap-type-pill <?php echo $is_active ? 'btn-primary' : 'btn-outline-secondary'; ?>"
+                <a href="#" class="btn btn-sm ap-type-pill <?php echo $isactive ? 'btn-primary' : 'btn-outline-secondary'; ?>"
                    data-type="<?php echo $vt; ?>"
                    style="border-radius:2rem;padding:.25rem 1rem">
                     <?php echo $label; ?>
-                    <span class="badge badge-light ml-1" id="<?php echo $count_id; ?>"><?php echo $count; ?></span>
+                    <span class="badge badge-light ml-1" id="<?php echo $countid; ?>"><?php echo $count; ?></span>
                 </a>
                 <?php endforeach; ?>
             </div>
@@ -1319,7 +1319,7 @@ echo '</ul>';
                               color:#9ca3af;pointer-events:none"></i>
                     <input type="text" name="ap_search" class="form-control form-control-sm ap-search-input"
                            placeholder="<?php echo get_string('search_ws_placeholder', 'local_jedomi'); ?>"
-                           value="<?php echo s($ap_search); ?>"
+                           value="<?php echo s($apsearch); ?>"
                            style="padding-left:1.75rem"
                            autocomplete="off">
                 </div>
@@ -1327,8 +1327,8 @@ echo '</ul>';
                 <!-- Component dropdown -->
                 <select name="ap_component" class="form-control form-control-sm ap-filter-trigger" style="max-width:200px">
                     <option value=""><?php echo get_string('component_all', 'local_jedomi'); ?></option>
-                    <?php foreach ($ap_components as $comp): ?>
-                    <option value="<?php echo s($comp); ?>" <?php echo $ap_component === $comp ? 'selected' : ''; ?>>
+                    <?php foreach ($apcomponents as $comp): ?>
+                    <option value="<?php echo s($comp); ?>" <?php echo $apcomponent === $comp ? 'selected' : ''; ?>>
                         <?php echo s($comp); ?>
                     </option>
                     <?php endforeach; ?>
@@ -1337,7 +1337,7 @@ echo '</ul>';
                 <!-- Per-page selector -->
                 <select name="ap_perpage" class="form-control form-control-sm ap-filter-trigger" style="max-width:100px">
                     <?php foreach ([25, 50, 100, 200] as $pp): ?>
-                    <option value="<?php echo $pp; ?>" <?php echo $ap_perpage == $pp ? 'selected' : ''; ?>>
+                    <option value="<?php echo $pp; ?>" <?php echo $apperpage == $pp ? 'selected' : ''; ?>>
                         <?php echo $pp; ?>
                     </option>
                     <?php endforeach; ?>
@@ -1362,30 +1362,30 @@ echo '</ul>';
                     </tr>
                 </thead>
                 <tbody id="ap-table-body">
-                    <?php if (empty($ap_all_ws)): ?>
+                    <?php if (empty($apallws)): ?>
                     <tr><td colspan="5" class="text-center text-muted py-4">
                         <?php echo get_string('ws_none_found', 'local_jedomi'); ?>
                     </td></tr>
                     <?php else: ?>
-                    <?php foreach ($ap_all_ws as $ap_ws):
-                        $is_write   = $ap_ws->type === 'Escritura';
-                        $is_checked = in_array($ap_ws->name, $ap_allowlist) || ($ap_first_visit && !$is_write);
-                        $row_style  = $is_write ? 'background:#fef2f2;border-left:3px solid #dc2626' : '';
+                    <?php foreach ($apallws as $apws):
+                        $iswrite   = $apws->type === 'Escritura';
+                        $ischecked = in_array($apws->name, $apallowlist) || ($apfirstvisit && !$iswrite);
+                        $rowstyle  = $iswrite ? 'background:#fef2f2;border-left:3px solid #dc2626' : '';
                     ?>
-                    <tr style="<?php echo $row_style; ?>">
+                    <tr style="<?php echo $rowstyle; ?>">
                         <td>
                             <input type="checkbox" class="ap-ws-check"
-                                   name="ws_<?php echo $ap_role; ?>[]"
-                                   value="<?php echo s($ap_ws->name); ?>"
-                                   <?php echo $is_checked ? 'checked' : ''; ?>>
+                                   name="ws_<?php echo $aprole; ?>[]"
+                                   value="<?php echo s($apws->name); ?>"
+                                   <?php echo $ischecked ? 'checked' : ''; ?>>
                         </td>
-                        <td><code style="font-size:.8125rem"><?php echo s($ap_ws->name); ?></code></td>
+                        <td><code style="font-size:.8125rem"><?php echo s($apws->name); ?></code></td>
                         <td style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
-                            <?php echo s(shorten_text($ap_ws->description, 80)); ?>
+                            <?php echo s(shorten_text($apws->description, 80)); ?>
                         </td>
-                        <td><span class="badge badge-secondary"><?php echo s($ap_ws->component); ?></span></td>
+                        <td><span class="badge badge-secondary"><?php echo s($apws->component); ?></span></td>
                         <td>
-                            <?php if ($is_write): ?>
+                            <?php if ($iswrite): ?>
                             <span class="badge badge-danger"><?php echo get_string('ws_type_write', 'local_jedomi'); ?></span>
                             <?php else: ?>
                             <span class="badge badge-success"><?php echo get_string('ws_type_read', 'local_jedomi'); ?></span>
@@ -1403,12 +1403,12 @@ echo '</ul>';
                  style="overflow-x:auto">
                 <span class="text-muted" style="font-size:.8125rem">
                     <?php echo get_string('ws_pagination', 'local_jedomi',
-                        ['page' => $ap_page, 'pages' => $ap_pages, 'total' => $ap_total]); ?>
+                        ['page' => $appage, 'pages' => $appages, 'total' => $aptotal]); ?>
                 </span>
                 <nav>
                     <ul class="pagination pagination-sm mb-0">
-                        <?php for ($p = 1; $p <= $ap_pages; $p++): ?>
-                        <li class="page-item <?php echo $p === $ap_page ? 'active' : ''; ?>">
+                        <?php for ($p = 1; $p <= $appages; $p++): ?>
+                        <li class="page-item <?php echo $p === $appage ? 'active' : ''; ?>">
                             <a class="page-link ap-page-link" href="#" data-page="<?php echo $p; ?>"><?php echo $p; ?></a>
                         </li>
                         <?php endfor; ?>
@@ -1741,7 +1741,7 @@ function jdSubToggle(subId) {
 <script>
 (function(){
     var baseUrl  = '<?php echo (new moodle_url('/local/jedomi/ajax/ws_table.php'))->out(false); ?>';
-    var role     = '<?php echo $ap_role; ?>';
+    var role     = '<?php echo $aprole; ?>';
     var sesskey  = (document.querySelector('input[name="sesskey"]') || {}).value || '';
 
     function getState() {
@@ -1923,7 +1923,7 @@ function jdSubToggle(subId) {
                 <label class="form-label-main"><?php echo get_string('agent_filter_role', 'local_jedomi'); ?></label>
                 <select id="agent-filter-role" class="form-control form-control-sm">
                     <option value=""><?php echo get_string('agent_status_all', 'local_jedomi'); ?></option>
-                    <?php foreach ($all_roles as $role): ?>
+                    <?php foreach ($allroles as $role): ?>
                     <option value="<?php echo $role->id; ?>"><?php echo s($role->localname ?? $role->name); ?></option>
                     <?php endforeach; ?>
                 </select>
@@ -2075,7 +2075,7 @@ function jdSubToggle(subId) {
             <div class="form-group mt-3">
                 <label class="form-label-main"><?php echo get_string('agent_filter_role', 'local_jedomi'); ?></label>
                 <div class="agent-role-scroll">
-                    <?php foreach ($all_roles as $role): ?>
+                    <?php foreach ($allroles as $role): ?>
                     <div class="form-check">
                         <input class="form-check-input" type="checkbox"
                                name="role_filter[]" value="<?php echo $role->id; ?>"
@@ -2967,29 +2967,29 @@ function jdSubToggle(subId) {
         <p class="text-muted small"><?php echo get_string('query_profiler_desc', 'local_jedomi'); ?></p>
 
         <!-- Aggregate stats -->
-        <?php $qp_agg = \local_jedomi\agent\query_profiler::get_aggregate(); ?>
+        <?php $qpagg = \local_jedomi\agent\query_profiler::get_aggregate(); ?>
         <div class="row text-center mb-3">
             <div class="col-md-3">
                 <div class="badge badge-info" style="font-size:1rem;padding:.5rem 1rem">
-                    <?php echo $qp_agg->total_queries; ?>
+                    <?php echo $qpagg->total_queries; ?>
                 </div>
                 <div class="small text-muted mt-1"><?php echo get_string('query_profiler_total', 'local_jedomi'); ?></div>
             </div>
             <div class="col-md-3">
                 <div class="badge badge-warning" style="font-size:1rem;padding:.5rem 1rem">
-                    <?php echo $qp_agg->slow_queries; ?>
+                    <?php echo $qpagg->slow_queries; ?>
                 </div>
                 <div class="small text-muted mt-1"><?php echo get_string('query_profiler_slow', 'local_jedomi'); ?></div>
             </div>
             <div class="col-md-3">
                 <div class="badge badge-secondary" style="font-size:1rem;padding:.5rem 1rem">
-                    <?php echo $qp_agg->avg_duration_ms; ?> ms
+                    <?php echo $qpagg->avg_duration_ms; ?> ms
                 </div>
                 <div class="small text-muted mt-1"><?php echo get_string('query_profiler_avg', 'local_jedomi'); ?></div>
             </div>
             <div class="col-md-3">
                 <div class="badge badge-danger" style="font-size:1rem;padding:.5rem 1rem">
-                    <?php echo $qp_agg->max_duration_ms; ?> ms
+                    <?php echo $qpagg->max_duration_ms; ?> ms
                 </div>
                 <div class="small text-muted mt-1"><?php echo get_string('query_profiler_max', 'local_jedomi'); ?></div>
             </div>
@@ -3025,7 +3025,7 @@ function jdSubToggle(subId) {
         </form>
 
         <!-- Slowest queries (top 10) -->
-        <?php if (!empty($qp_agg->slowest)): ?>
+        <?php if (!empty($qpagg->slowest)): ?>
         <h6 class="mt-3"><?php echo get_string('query_profiler_slowest', 'local_jedomi'); ?></h6>
         <div style="overflow-x:auto">
             <table class="table table-sm table-hover" style="font-size:.8rem">
@@ -3038,7 +3038,7 @@ function jdSubToggle(subId) {
                     </tr>
                 </thead>
                 <tbody>
-                    <?php foreach ($qp_agg->slowest as $sl): ?>
+                    <?php foreach ($qpagg->slowest as $sl): ?>
                     <tr>
                         <td><code style="font-size:.75rem;word-break:break-all"><?php
                             echo s(mb_substr($sl->query, 0, 120)); ?></code></td>
@@ -3055,10 +3055,10 @@ function jdSubToggle(subId) {
         <?php endif; ?>
 
         <!-- Recent queries -->
-        <?php $qp_recent = \local_jedomi\agent\query_profiler::get_log(
+        <?php $qprecent = \local_jedomi\agent\query_profiler::get_log(
             ['sort' => 'timecreated', 'dir' => 'DESC', 'perpage' => 20]); ?>
         <h6 class="mt-4"><?php echo get_string('query_profiler_recent', 'local_jedomi'); ?></h6>
-        <?php if (!empty($qp_recent['entries'])): ?>
+        <?php if (!empty($qprecent['entries'])): ?>
         <div style="overflow-x:auto">
             <table class="table table-sm table-hover" style="font-size:.8rem">
                 <thead>
@@ -3072,14 +3072,14 @@ function jdSubToggle(subId) {
                     </tr>
                 </thead>
                 <tbody>
-                    <?php foreach ($qp_recent['entries'] as $qe):
+                    <?php foreach ($qprecent['entries'] as $qe):
                         $qagent = $DB->get_record('local_jedomi_agents', ['id' => $qe->agentid]);
                         $quser = $qagent ? $DB->get_record('user', ['id' => $qagent->userid]) : null;
-                        $agentLink = new \moodle_url('/local/jedomi/admin_settings.php',
+                        $agentlink = new \moodle_url('/local/jedomi/admin_settings.php',
                             ['tab' => 'agents', 'edit_agent' => $qe->agentid]);
                     ?>
                     <tr>
-                        <td><a href="<?php echo $agentLink->out(false); ?>" class="badge badge-info"
+                        <td><a href="<?php echo $agentlink->out(false); ?>" class="badge badge-info"
                                style="font-size:.75rem">Agent #<?php echo $qe->agentid; ?></a></td>
                         <td><?php echo $quser ? s(fullname($quser)) : '?'; ?></td>
                         <td><code style="font-size:.7rem;word-break:break-all"><?php

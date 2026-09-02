@@ -81,25 +81,25 @@ class handler {
             }
 
             // type === 'tool_calls': execute each one and collect results.
-            $tool_calls = $response['tool_calls'];
+            $toolcalls = $response['tool_calls'];
             \local_jedomi_log('AI_TOOL_CALLS', [
                 'iteration' => $i,
-                'tool_calls_count' => count($tool_calls),
-                'tool_names' => array_map(fn($tc) => $tc['function']['name'] ?? '?', $tool_calls),
+                'tool_calls_count' => count($toolcalls),
+                'tool_names' => array_map(fn($tc) => $tc['function']['name'] ?? '?', $toolcalls),
             ]);
 
             // Add the assistant message with tool_calls to conversation history.
             $messages[] = [
                 'role'       => 'assistant',
                 'content'    => null,
-                'tool_calls' => $tool_calls,
+                'tool_calls' => $toolcalls,
             ];
 
-            foreach ($tool_calls as $tc) {
+            foreach ($toolcalls as $tc) {
                 $name = $tc['function']['name'];
-                $tc_id = $tc['id'];
-                $args_raw = $tc['function']['arguments'];
-                $args = is_array($args_raw) ? $args_raw : (json_decode($args_raw, true) ?? []);
+                $tcid = $tc['id'];
+                $argsraw = $tc['function']['arguments'];
+                $args = is_array($argsraw) ? $argsraw : (json_decode($argsraw, true) ?? []);
 
                 $callkey = $name . '|' . self::stable_tool_args_signature($args);
                 $toolrepeatcounts[$callkey] = ($toolrepeatcounts[$callkey] ?? 0) + 1;
@@ -150,12 +150,12 @@ class handler {
                     $decoded = json_decode($result, true);
                     if ($decoded && !empty($decoded['pages'])) {
                         $fmt = strtolower($decoded['pages'][0]['format'] ?? 'jpeg');
-                        $content_parts = [
+                        $contentparts = [
                             ['type' => 'text', 'text' =>
                                 "Document \"{$decoded['filename']}\" ({$decoded['total_pages']} pages) converted to images:"],
                         ];
                         foreach ($decoded['pages'] as $page) {
-                            $content_parts[] = [
+                            $contentparts[] = [
                                 'type' => 'image_url',
                                 'image_url' => [
                                     'url' => "data:image/{$fmt};base64,{$page['image']}",
@@ -164,20 +164,20 @@ class handler {
                         }
                         $messages[] = [
                             'role'    => 'user',
-                            'content' => $content_parts,
+                            'content' => $contentparts,
                         ];
                     } else {
                         // Fallback: plain text error.
                         $messages[] = [
                             'role'         => 'tool',
-                            'tool_call_id' => $tc_id,
+                            'tool_call_id' => $tcid,
                             'content'      => $result,
                         ];
                     }
                 } else {
                     $messages[] = [
                         'role'         => 'tool',
-                        'tool_call_id' => $tc_id,
+                        'tool_call_id' => $tcid,
                         'content'      => $result,
                     ];
                 }
@@ -236,8 +236,8 @@ class handler {
      *                          ['type'=>'error', 'error'=>'...']
      */
     private static function call_ai_api_buffer(string $model, array $messages, array $spt, array $tools = []): array {
-        $apiUrl = rtrim(get_config('local_jedomi', 'gateway_url') ?: 'http://192.168.1.28:8080', '/');
-        $apiKey = get_config('local_jedomi', 'api_key') ?: 'jedomi-local-key';
+        $apiurl = rtrim(get_config('local_jedomi', 'gateway_url') ?: 'http://192.168.1.28:8080', '/');
+        $apikey = get_config('local_jedomi', 'api_key') ?: 'jedomi-local-key';
 
         $payload = [
             'model'      => $model,
@@ -265,13 +265,13 @@ class handler {
         ]);
 
         $buffer = '';
-        $ch = curl_init($apiUrl . '/v1/chat/completions');
+        $ch = curl_init($apiurl . '/v1/chat/completions');
         curl_setopt_array($ch, [
             CURLOPT_POST           => true,
             CURLOPT_POSTFIELDS     => json_encode($payload, JSON_UNESCAPED_UNICODE),
             CURLOPT_HTTPHEADER     => [
                 'Content-Type: application/json',
-                'Authorization: Bearer ' . $apiKey,
+                'Authorization: Bearer ' . $apikey,
             ],
             CURLOPT_RETURNTRANSFER => false,
             CURLOPT_TIMEOUT        => 180,
@@ -283,22 +283,22 @@ class handler {
         ]);
 
         curl_exec($ch);
-        $httpCode  = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $curlError = curl_error($ch);
+        $httpcode  = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlerror = curl_error($ch);
         curl_close($ch);
 
-        if ($httpCode !== 200 || empty($buffer)) {
-            $buf_preview = substr($buffer, 0, 500);
-            \local_jedomi_log('AI_API_ERROR', ['http_code' => $httpCode, 'curl_error' => $curlError, 'preview' => $buf_preview]);
-            \local_jedomi_log("[local_jedomi] AI API error: http=$httpCode curl='$curlError' preview="
-                . json_encode($buf_preview, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_IGNORE));
+        if ($httpcode !== 200 || empty($buffer)) {
+            $bufpreview = substr($buffer, 0, 500);
+            \local_jedomi_log('AI_API_ERROR', ['http_code' => $httpcode, 'curl_error' => $curlerror, 'preview' => $bufpreview]);
+            \local_jedomi_log("[local_jedomi] AI API error: http=$httpcode curl='$curlerror' preview="
+                . json_encode($bufpreview, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_IGNORE));
             return ['type' => 'error', 'error' => 'ai_api_error'];
         }
 
-        $text_buf = '';
-        $reason_buf = '';
-        $tool_calls_acc = [];
-        $finish_reason = '';
+        $textbuf = '';
+        $reasonbuf = '';
+        $toolcallsacc = [];
+        $finishreason = '';
 
         $lines = explode("\n", $buffer);
         foreach ($lines as $line) {
@@ -316,40 +316,40 @@ class handler {
             }
 
             $delta = $json['choices'][0]['delta'] ?? [];
-            $finish_reason = $json['choices'][0]['finish_reason'] ?? $finish_reason;
+            $finishreason = $json['choices'][0]['finish_reason'] ?? $finishreason;
 
             // Accumulate text content.
             if (isset($delta['content']) && $delta['content'] !== null) {
-                $text_buf .= $delta['content'];
+                $textbuf .= $delta['content'];
             }
             // Gemma reasoning_content (thinking tokens — fallback only).
             if (isset($delta['reasoning_content']) && $delta['reasoning_content'] !== null) {
-                $reason_buf .= $delta['reasoning_content'];
+                $reasonbuf .= $delta['reasoning_content'];
             }
             // Accumulate tool_calls streamed across multiple delta chunks.
             if (!empty($delta['tool_calls'])) {
                 foreach ($delta['tool_calls'] as $tc) {
                     $idx = $tc['index'] ?? 0;
-                    if (!isset($tool_calls_acc[$idx])) {
-                        $tool_calls_acc[$idx] = [
+                    if (!isset($toolcallsacc[$idx])) {
+                        $toolcallsacc[$idx] = [
                             'id'       => $tc['id'] ?? '',
                             'type'     => $tc['type'] ?? 'function',
                             'function' => ['name' => '', 'arguments' => ''],
                         ];
                     }
                     if (!empty($tc['id'])) {
-                        $tool_calls_acc[$idx]['id'] = $tc['id'];
+                        $toolcallsacc[$idx]['id'] = $tc['id'];
                     }
                     if (!empty($tc['function']['name'])) {
-                        $tool_calls_acc[$idx]['function']['name'] = $tc['function']['name'];
+                        $toolcallsacc[$idx]['function']['name'] = $tc['function']['name'];
                     }
                     if (isset($tc['function']['arguments'])) {
                         $arg = $tc['function']['arguments'];
                         // Some Ollama versions send arguments as a pre-decoded object.
                         if (is_array($arg)) {
-                            $tool_calls_acc[$idx]['function']['arguments'] = json_encode($arg, JSON_UNESCAPED_UNICODE);
+                            $toolcallsacc[$idx]['function']['arguments'] = json_encode($arg, JSON_UNESCAPED_UNICODE);
                         } else {
-                            $tool_calls_acc[$idx]['function']['arguments'] .= $arg;
+                            $toolcallsacc[$idx]['function']['arguments'] .= $arg;
                         }
                     }
                 }
@@ -357,24 +357,24 @@ class handler {
         }
 
         // Tool calls detected — ensure every entry has a non-empty id.
-        if (!empty($tool_calls_acc) || $finish_reason === 'tool_calls') {
-            ksort($tool_calls_acc);
-            $tool_calls = array_values($tool_calls_acc);
-            foreach ($tool_calls as &$tc) {
+        if (!empty($toolcallsacc) || $finishreason === 'tool_calls') {
+            ksort($toolcallsacc);
+            $toolcalls = array_values($toolcallsacc);
+            foreach ($toolcalls as &$tc) {
                 if (empty($tc['id'])) {
                     $tc['id'] = 'call_' . substr(md5($tc['function']['name'] . microtime()), 0, 12);
                 }
             }
             unset($tc);
 
-            $toolnames = array_map(static fn($tc) => $tc['function']['name'], $tool_calls);
-            \local_jedomi_log('AI_API_RESPONSE_TOOL_CALLS', ['function_count' => count($tool_calls), 'functions' => $toolnames]);
+            $toolnames = array_map(static fn($tc) => $tc['function']['name'], $toolcalls);
+            \local_jedomi_log('AI_API_RESPONSE_TOOL_CALLS', ['function_count' => count($toolcalls), 'functions' => $toolnames]);
 
-            return ['type' => 'tool_calls', 'tool_calls' => $tool_calls];
+            return ['type' => 'tool_calls', 'tool_calls' => $toolcalls];
         }
 
         // Text response: prefer content, fall back to reasoning (Gemma thinking tokens).
-        $text = !empty($text_buf) ? $text_buf : $reason_buf;
+        $text = !empty($textbuf) ? $textbuf : $reasonbuf;
         if (empty($text) && !empty($buffer)) {
             \local_jedomi_log('AI_API_RESPONSE_EMPTY', ['buffer_preview' => substr($buffer, 0, 500)]);
             \local_jedomi_log("[local_jedomi] SSE parse warning: no content or tool_calls extracted. First 2KB: "
@@ -481,24 +481,24 @@ class handler {
             );
             return json_encode($result);
         } catch (\Exception $e) {
-            $realError = $e->getMessage();
+            $realerror = $e->getMessage();
             if ($e instanceof \dml_exception && !empty($e->debuginfo)) {
-                $realError .= ' | DBG: ' . $e->debuginfo;
+                $realerror .= ' | DBG: ' . $e->debuginfo;
             }
             $prev = $e->getPrevious();
             if ($prev) {
-                $realError .= ' | PREV: ' . $prev->getMessage();
+                $realerror .= ' | PREV: ' . $prev->getMessage();
                 if ($prev instanceof \dml_exception && !empty($prev->debuginfo)) {
-                    $realError .= ' | PREV_DBG: ' . $prev->debuginfo;
+                    $realerror .= ' | PREV_DBG: ' . $prev->debuginfo;
                 }
             }
             if (strpos($sql, '{') === false) {
-                $realError .= get_string('hint_sql_braces', 'local_jedomi');
+                $realerror .= get_string('hint_sql_braces', 'local_jedomi');
             }
-            \local_jedomi_log('EXECUTE_SQL_ERROR', ['sql' => $sql, 'params' => $params, 'error' => $realError]);
+            \local_jedomi_log('EXECUTE_SQL_ERROR', ['sql' => $sql, 'params' => $params, 'error' => $realerror]);
             \local_jedomi_log("[local_jedomi] execute_sql_tool error: class=" . get_class($e)
-                . " msg=" . json_encode($realError, JSON_UNESCAPED_UNICODE));
-            return json_encode(['error' => $realError]);
+                . " msg=" . json_encode($realerror, JSON_UNESCAPED_UNICODE));
+            return json_encode(['error' => $realerror]);
         }
     }
 
@@ -589,12 +589,12 @@ class handler {
             return json_encode(['error' => 'permission_denied']);
         }
         try {
-            $cfgKeys = $args['keys'] ?? [];
-            if (empty($cfgKeys) && isset($args['key'])) {
-                $cfgKeys = is_array($args['key']) ? $args['key'] : [$args['key']];
+            $cfgkeys = $args['keys'] ?? [];
+            if (empty($cfgkeys) && isset($args['key'])) {
+                $cfgkeys = is_array($args['key']) ? $args['key'] : [$args['key']];
             }
             $result = \local_jedomi\external\get_site_config::execute(
-                $cfgKeys,
+                $cfgkeys,
                 '', // hmac_signature
                 0, // hmac_timestamp
                 '', // payload_hash

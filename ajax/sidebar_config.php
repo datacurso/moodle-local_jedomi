@@ -37,12 +37,12 @@ try {
     $PAGE->set_url('/local/jedomi/ajax/sidebar_config.php');
 
     // Accept sesskey OR a pre-generated SPT (signed permission token).
-    $spt_raw = optional_param('spt', '', PARAM_RAW);
-    if (empty($spt_raw)) {
+    $sptraw = optional_param('spt', '', PARAM_RAW);
+    if (empty($sptraw)) {
         require_sesskey();
         $spt = local_jedomi_generate_spt(local_jedomi_get_user_role());
     } else {
-        $spt = json_decode($spt_raw, true);
+        $spt = json_decode($sptraw, true);
         if (!is_array($spt)) {
             $spt = local_jedomi_generate_spt(local_jedomi_get_user_role());
         }

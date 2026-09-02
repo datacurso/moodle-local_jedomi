@@ -80,19 +80,19 @@ class ws_execute extends external_api {
      *
      * @param  string $wsname         WS function name.
      * @param  string $params         JSON-encoded params.
-     * @param  string $hmac_signature HMAC hex signature.
-     * @param  int    $hmac_timestamp Unix timestamp.
-     * @param  string $payload_hash   SHA256 hex of the request body.
-     * @param  bool   $skip_hmac      Skip HMAC (used by chatproxy — auth via SPT).
-     * @return array                  ['result' => json_encode($target_result)]
+     * @param  string $hmacsignature HMAC hex signature.
+     * @param  int    $hmactimestamp Unix timestamp.
+     * @param  string $payloadhash   SHA256 hex of the request body.
+     * @param  bool   $skiphmac      Skip HMAC (used by chatproxy — auth via SPT).
+     * @return array                  ['result' => json_encode($targetresult)]
      */
     public static function execute(
         string $wsname,
         string $params,
-        string $hmac_signature,
-        int $hmac_timestamp,
-        string $payload_hash,
-        bool $skip_hmac = false
+        string $hmacsignature,
+        int $hmactimestamp,
+        string $payloadhash,
+        bool $skiphmac = false
     ): array {
         global $DB;
 
@@ -104,12 +104,18 @@ class ws_execute extends external_api {
         // ── Parameter validation ─────────────────────────────────────────────
         self::validate_parameters(
             self::execute_parameters(),
-            compact('wsname', 'params', 'hmac_signature', 'hmac_timestamp', 'payload_hash')
+            [
+                'wsname'         => $wsname,
+                'params'         => $params,
+                'hmac_signature' => $hmacsignature,
+                'hmac_timestamp' => $hmactimestamp,
+                'payload_hash'   => $payloadhash,
+            ]
         );
 
         // ── Gate 2: HMAC authentication ──────────────────────────────────────
-        if (!$skip_hmac) {
-            self::verify_hmac('jedomi_ws_execute', $hmac_timestamp, $payload_hash, $hmac_signature);
+        if (!$skiphmac) {
+            self::verify_hmac('jedomi_ws_execute', $hmactimestamp, $payloadhash, $hmacsignature);
         }
 
         // ── Gate 3: allowlist validation ─────────────────────────────────────
@@ -125,8 +131,8 @@ class ws_execute extends external_api {
         }
 
         // ── Resolve target class + method ──────────────────────────────────────
-        $func_record = $DB->get_record('external_functions', ['name' => $wsname], 'classname, classpath, component, methodname');
-        if (!$func_record) {
+        $funcrecord = $DB->get_record('external_functions', ['name' => $wsname], 'classname, classpath, component, methodname');
+        if (!$funcrecord) {
             throw new \moodle_exception('ws_not_found', 'local_jedomi');
         }
         $classname = \local_jedomi_resolve_ws_classname($wsname);
@@ -134,7 +140,7 @@ class ws_execute extends external_api {
         if (!$classname || !class_exists($classname)) {
             throw new \moodle_exception('ws_not_found', 'local_jedomi');
         }
-        $methodname = $func_record->methodname;
+        $methodname = $funcrecord->methodname;
         if (!method_exists($classname, $methodname)) {
             throw new \moodle_exception('ws_execute_error', 'local_jedomi', '',
                 "Method {$classname}::{$methodname}() does not exist");

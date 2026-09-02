@@ -123,20 +123,20 @@ class ws_tool implements agent_tool {
         }
 
         // ── Prepare params ───────────────────────────────────────────────────
-        $callerParams = $params->params ?? new \stdClass();
-        $callerParams = (array) $callerParams;
+        $callerparams = $params->params ?? new \stdClass();
+        $callerparams = (array) $callerparams;
 
         // ── Resolve target class + method (same approach as web chat handler) ──
         // Do NOT use call_external_function — it requires a registered web service
         // with a token. The agent runner is a cron task, not a WS client.
         // Directly resolve and call the external function's class::method().
         try {
-            $funcRecord = $DB->get_record(
+            $funcrecord = $DB->get_record(
                 'external_functions',
                 ['name' => $function],
                 'classname, classpath, component, methodname'
             );
-            if (!$funcRecord) {
+            if (!$funcrecord) {
                 return json_encode(['error' => "Web service function '{$function}' not found"]);
             }
 
@@ -145,7 +145,7 @@ class ws_tool implements agent_tool {
                 return json_encode(['error' => "Class '{$classname}' not found"]);
             }
 
-            $methodname = $funcRecord->methodname;
+            $methodname = $funcrecord->methodname;
             if (!method_exists($classname, $methodname)) {
                 return json_encode(['error' => "Method '{$classname}::{$methodname}()' not found"]);
             }
@@ -155,8 +155,8 @@ class ws_tool implements agent_tool {
             $callargs = [];
             foreach ($ref->getParameters() as $param) {
                 $name = $param->getName();
-                if (array_key_exists($name, $callerParams)) {
-                    $callargs[] = $callerParams[$name];
+                if (array_key_exists($name, $callerparams)) {
+                    $callargs[] = $callerparams[$name];
                 } else if ($param->isDefaultValueAvailable()) {
                     $callargs[] = $param->getDefaultValue();
                 } else {
@@ -166,7 +166,7 @@ class ws_tool implements agent_tool {
 
             // ── Temporarily override $USER for capability checks ─────────────
             global $USER;
-            $origUser = $USER;
+            $origuser = $USER;
             if ($this->userid > 0) {
                 $USER = \core_user::get_user($this->userid, '*', MUST_EXIST);
             }
@@ -174,7 +174,7 @@ class ws_tool implements agent_tool {
             try {
                 $result = $ref->invokeArgs(null, $callargs);
             } finally {
-                $USER = $origUser;
+                $USER = $origuser;
             }
 
             return json_encode([

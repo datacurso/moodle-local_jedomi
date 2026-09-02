@@ -96,18 +96,18 @@ class set_site_config extends external_api {
      * @param  string $name           Config key name to write.
      * @param  string $value          Config value to set.
      * @param  string $plugin         Plugin component name; empty string means core.
-     * @param  string $hmac_signature HMAC-SHA256 hex signature from the gateway.
-     * @param  int    $hmac_timestamp Unix timestamp from the request header.
-     * @param  string $payload_hash   SHA256 hex of the request body.
+     * @param  string $hmacsignature HMAC-SHA256 hex signature from the gateway.
+     * @param  int    $hmactimestamp Unix timestamp from the request header.
+     * @param  string $payloadhash   SHA256 hex of the request body.
      * @return array Status, key name, result message and execution time in milliseconds.
      */
     public static function execute(
         string $name,
         string $value,
         string $plugin,
-        string $hmac_signature,
-        int $hmac_timestamp,
-        string $payload_hash
+        string $hmacsignature,
+        int $hmactimestamp,
+        string $payloadhash
     ): array {
         $context = context_system::instance();
         self::validate_context($context);
@@ -115,22 +115,29 @@ class set_site_config extends external_api {
 
         $validated = self::validate_parameters(
             self::execute_parameters(),
-            compact('name', 'value', 'plugin', 'hmac_signature', 'hmac_timestamp', 'payload_hash')
+            [
+                'name'           => $name,
+                'value'          => $value,
+                'plugin'         => $plugin,
+                'hmac_signature' => $hmacsignature,
+                'hmac_timestamp' => $hmactimestamp,
+                'payload_hash'   => $payloadhash,
+            ]
         );
         $name           = $validated['name'];
         $value          = $validated['value'];
         $plugin         = $validated['plugin'] ?: 'core';
-        $hmac_signature = $validated['hmac_signature'];
-        $hmac_timestamp = $validated['hmac_timestamp'];
-        $payload_hash   = $validated['payload_hash'];
+        $hmacsignature = $validated['hmac_signature'];
+        $hmactimestamp = $validated['hmac_timestamp'];
+        $payloadhash   = $validated['payload_hash'];
 
-        self::verify_hmac('jedomi_set_site_config', $hmac_timestamp, $payload_hash, $hmac_signature);
+        self::verify_hmac('jedomi_set_site_config', $hmactimestamp, $payloadhash, $hmacsignature);
 
         $start = microtime(true);
 
         // Block dangerous keys unconditionally.
         if (in_array($name, self::BLOCKED_KEYS, true)) {
-            $execution_ms = (int) ((microtime(true) - $start) * 1000);
+            $executionms = (int) ((microtime(true) - $start) * 1000);
             \local_jedomi_log(sprintf(
                 '[local_jedomi] set_site_config BLOCKED: name=%s ip=%s',
                 $name,
@@ -140,7 +147,7 @@ class set_site_config extends external_api {
                 'status'       => 'error',
                 'name'         => $name,
                 'message'      => get_string('config_key_blocked_msg', 'local_jedomi'),
-                'execution_ms' => $execution_ms,
+                'execution_ms' => $executionms,
             ];
         }
 
@@ -150,13 +157,13 @@ class set_site_config extends external_api {
         // Purge caches so the change takes effect immediately.
         purge_all_caches();
 
-        $execution_ms = (int) ((microtime(true) - $start) * 1000);
+        $executionms = (int) ((microtime(true) - $start) * 1000);
 
         \local_jedomi_log(sprintf(
             '[local_jedomi] set_site_config: plugin=%s name=%s execution_ms=%d ip=%s',
             $plugin,
             $name,
-            $execution_ms,
+            $executionms,
             getremoteaddr()
         ));
 
@@ -164,7 +171,7 @@ class set_site_config extends external_api {
             'status'       => 'success',
             'name'         => $name,
             'message'      => get_string('config_updated_msg', 'local_jedomi', $name),
-            'execution_ms' => $execution_ms,
+            'execution_ms' => $executionms,
         ];
     }
 }

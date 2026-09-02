@@ -113,7 +113,7 @@ class table_indexer {
             ];
 
             $fields = [];
-            $fieldComments = [];
+            $fieldcomments = [];
 
             foreach ($table->FIELDS->FIELD ?? [] as $field) {
                 $fieldname = (string)$field['NAME'];
@@ -124,12 +124,12 @@ class table_indexer {
 
                 $fcomment = (string)($field['COMMENT'] ?? '');
                 if ($fcomment !== '') {
-                    $fieldComments[$fieldname] = $fcomment;
+                    $fieldcomments[$fieldname] = $fcomment;
                 }
             }
 
             $tabledata['fields'] = $fields;
-            $tabledata['field_comments'] = $fieldComments;
+            $tabledata['field_comments'] = $fieldcomments;
             $tables[$tablename] = $tabledata;
         }
 
@@ -180,7 +180,7 @@ class table_indexer {
             $namelower = strtolower($tablename);
             $commentlower = strtolower($info['comment'] ?? '');
             $fieldstext = strtolower(implode(' ', $info['fields'] ?? []));
-            $fieldcommentsText = strtolower(implode(' ', $info['field_comments'] ?? []));
+            $fieldcommentstext = strtolower(implode(' ', $info['field_comments'] ?? []));
 
             foreach ($tokens as $token) {
                 // Table name match — highest weight.
@@ -202,7 +202,7 @@ class table_indexer {
                     $score += 2;
                 }
                 // Field comment match.
-                if (strpos($fieldcommentsText, $token) !== false) {
+                if (strpos($fieldcommentstext, $token) !== false) {
                     $score += 1;
                 }
             }

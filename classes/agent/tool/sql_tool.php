@@ -126,10 +126,10 @@ class sql_tool implements agent_tool {
 
         // ── Blocklisted tables ────────────────────────────────────────────────
         $blocklisted = ['config', 'sessions', 'oauth', 'tokens', 'private_key'];
-        $queryUpper = strtoupper($query);
+        $queryupper = strtoupper($query);
         foreach ($blocklisted as $tbl) {
             $needle = strtoupper("{{$tbl}}");
-            if (strpos($queryUpper, $needle) !== false) {
+            if (strpos($queryupper, $needle) !== false) {
                 return json_encode([
                     'error' => "Query references blocked table '{$tbl}'.",
                 ]);
@@ -149,15 +149,15 @@ class sql_tool implements agent_tool {
 
             $records = $DB->get_records_sql($query, [], 0, 1000);
 
-            $elapsedMs = (microtime(true) - $start) * 1000;
-            $rowCount = count($records);
+            $elapsedms = (microtime(true) - $start) * 1000;
+            $rowcount = count($records);
 
             // ── Log to profiler ──────────────────────────────────────────────
             \local_jedomi\agent\query_profiler::log_query(
                 $this->agentid,
                 $query,
-                $elapsedMs,
-                $rowCount
+                $elapsedms,
+                $rowcount
             );
 
             // ── Format result for AI ─────────────────────────────────────────
@@ -168,22 +168,22 @@ class sql_tool implements agent_tool {
             return json_encode([
                 'success' => true,
                 'rows' => $rows,
-                'row_count' => $rowCount,
-                'duration_ms' => round($elapsedMs, 2),
+                'row_count' => $rowcount,
+                'duration_ms' => round($elapsedms, 2),
             ], JSON_UNESCAPED_UNICODE);
         } catch (\Exception $e) {
-            $elapsedMs = (microtime(true) - $start) * 1000;
+            $elapsedms = (microtime(true) - $start) * 1000;
 
             \local_jedomi\agent\query_profiler::log_query(
                 $this->agentid,
                 $query,
-                $elapsedMs,
+                $elapsedms,
                 0
             );
 
             return json_encode([
                 'error' => $e->getMessage(),
-                'duration_ms' => round($elapsedMs, 2),
+                'duration_ms' => round($elapsedms, 2),
             ]);
         }
     }

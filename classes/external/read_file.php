@@ -139,20 +139,20 @@ class read_file extends external_api {
      * Authenticate the request and return up to 200 numbered lines from an allowed source file.
      *
      * @param  string $path           Relative path from Moodle dirroot.
-     * @param  int    $line_start     First line to return (1-based).
-     * @param  int    $line_count     Number of lines to return (capped at 200).
-     * @param  string $hmac_signature HMAC-SHA256 hex signature from the gateway.
-     * @param  int    $hmac_timestamp Unix timestamp from the request header.
-     * @param  string $payload_hash   SHA256 hex of the request body.
+     * @param  int    $linestart     First line to return (1-based).
+     * @param  int    $linecount     Number of lines to return (capped at 200).
+     * @param  string $hmacsignature HMAC-SHA256 hex signature from the gateway.
+     * @param  int    $hmactimestamp Unix timestamp from the request header.
+     * @param  string $payloadhash   SHA256 hex of the request body.
      * @return array Normalised path, numbered content, total lines, returned range and existence flag.
      */
     public static function execute(
         string $path,
-        int $line_start,
-        int $line_count,
-        string $hmac_signature,
-        int $hmac_timestamp,
-        string $payload_hash
+        int $linestart,
+        int $linecount,
+        string $hmacsignature,
+        int $hmactimestamp,
+        string $payloadhash
     ): array {
         global $CFG;
 
@@ -162,108 +162,108 @@ class read_file extends external_api {
 
         $validated = self::validate_parameters(
             self::execute_parameters(),
-            compact(
-                'path',
-                'line_start',
-                'line_count',
-                'hmac_signature',
-                'hmac_timestamp',
-                'payload_hash'
-            )
+            [
+                'path'           => $path,
+                'line_start'     => $linestart,
+                'line_count'     => $linecount,
+                'hmac_signature' => $hmacsignature,
+                'hmac_timestamp' => $hmactimestamp,
+                'payload_hash'   => $payloadhash,
+            ]
         );
         $path           = $validated['path'];
-        $line_start     = max(1, $validated['line_start']);
-        $line_count     = min(self::MAX_LINES, max(1, $validated['line_count']));
-        $hmac_signature = $validated['hmac_signature'];
-        $hmac_timestamp = $validated['hmac_timestamp'];
-        $payload_hash   = $validated['payload_hash'];
+        $linestart     = max(1, $validated['line_start']);
+        $linecount     = min(self::MAX_LINES, max(1, $validated['line_count']));
+        $hmacsignature = $validated['hmac_signature'];
+        $hmactimestamp = $validated['hmac_timestamp'];
+        $payloadhash   = $validated['payload_hash'];
 
-        self::verify_hmac('jedomi_read_file', $hmac_timestamp, $payload_hash, $hmac_signature);
+        self::verify_hmac('jedomi_read_file', $hmactimestamp, $payloadhash, $hmacsignature);
 
         // Normalise path: strip leading slash, resolve .. traversal
-        $clean_path = ltrim(str_replace(['../', '..\\', '../'], '', $path), '/\\');
-        $clean_path = str_replace('\\', '/', $clean_path);
+        $cleanpath = ltrim(str_replace(['../', '..\\', '../'], '', $path), '/\\');
+        $cleanpath = str_replace('\\', '/', $cleanpath);
 
         // Block sensitive files unconditionally
         foreach (self::BLOCKED_PATHS as $blocked) {
-            if ($clean_path === $blocked || str_ends_with($clean_path, '/' . $blocked)) {
+            if ($cleanpath === $blocked || str_ends_with($cleanpath, '/' . $blocked)) {
                 \local_jedomi_log(sprintf(
                     '[local_jedomi] read_file BLOCKED sensitive path: %s ip=%s',
-                    $clean_path,
+                    $cleanpath,
                     getremoteaddr()
                 ));
-                throw new \moodle_exception('read_file_blocked', 'local_jedomi', '', $clean_path);
+                throw new \moodle_exception('read_file_blocked', 'local_jedomi', '', $cleanpath);
             }
         }
 
         // Enforce whitelist
         $allowed = false;
         foreach (self::ALLOWED_PREFIXES as $prefix) {
-            if (str_starts_with($clean_path, $prefix)) {
+            if (str_starts_with($cleanpath, $prefix)) {
                 $allowed = true;
                 break;
             }
         }
         if (!$allowed) {
-            throw new \moodle_exception('read_file_not_allowed', 'local_jedomi', '', $clean_path);
+            throw new \moodle_exception('read_file_not_allowed', 'local_jedomi', '', $cleanpath);
         }
 
         // Build absolute path and verify it's inside dirroot
-        $abs_path = realpath($CFG->dirroot . '/' . $clean_path);
+        $abspath = realpath($CFG->dirroot . '/' . $cleanpath);
         $dirroot  = realpath($CFG->dirroot);
 
-        if (!$abs_path || !str_starts_with($abs_path, $dirroot)) {
+        if (!$abspath || !str_starts_with($abspath, $dirroot)) {
             return [
-                'path'        => $clean_path,
+                'path'        => $cleanpath,
                 'content'     => '',
                 'total_lines' => 0,
                 'line_start'  => 0,
                 'line_end'    => 0,
-                'extension'   => pathinfo($clean_path, PATHINFO_EXTENSION),
+                'extension'   => pathinfo($cleanpath, PATHINFO_EXTENSION),
                 'exists'      => false,
             ];
         }
 
-        if (!is_file($abs_path) || !is_readable($abs_path)) {
+        if (!is_file($abspath) || !is_readable($abspath)) {
             return [
-                'path'        => $clean_path,
+                'path'        => $cleanpath,
                 'content'     => '',
                 'total_lines' => 0,
                 'line_start'  => 0,
                 'line_end'    => 0,
-                'extension'   => pathinfo($clean_path, PATHINFO_EXTENSION),
+                'extension'   => pathinfo($cleanpath, PATHINFO_EXTENSION),
                 'exists'      => false,
             ];
         }
 
         // Read file
-        $all_lines   = file($abs_path, FILE_IGNORE_NEW_LINES);
-        $total_lines = count($all_lines);
-        $line_start  = min($line_start, $total_lines);
-        $line_end    = min($line_start + $line_count - 1, $total_lines);
-        $slice       = array_slice($all_lines, $line_start - 1, $line_count);
+        $alllines   = file($abspath, FILE_IGNORE_NEW_LINES);
+        $totallines = count($alllines);
+        $linestart  = min($linestart, $totallines);
+        $lineend    = min($linestart + $linecount - 1, $totallines);
+        $slice       = array_slice($alllines, $linestart - 1, $linecount);
 
         // Add line numbers to content
         $numbered = [];
         foreach ($slice as $i => $line) {
-            $numbered[] = sprintf('%4d: %s', $line_start + $i, $line);
+            $numbered[] = sprintf('%4d: %s', $linestart + $i, $line);
         }
 
         \local_jedomi_log(sprintf(
             '[local_jedomi] read_file: path=%s lines=%d-%d ip=%s',
-            $clean_path,
-            $line_start,
-            $line_end,
+            $cleanpath,
+            $linestart,
+            $lineend,
             getremoteaddr()
         ));
 
         return [
-            'path'        => $clean_path,
+            'path'        => $cleanpath,
             'content'     => implode("\n", $numbered),
-            'total_lines' => $total_lines,
-            'line_start'  => $line_start,
-            'line_end'    => $line_end,
-            'extension'   => pathinfo($clean_path, PATHINFO_EXTENSION),
+            'total_lines' => $totallines,
+            'line_start'  => $linestart,
+            'line_end'    => $lineend,
+            'extension'   => pathinfo($cleanpath, PATHINFO_EXTENSION),
             'exists'      => true,
         ];
     }

@@ -174,8 +174,8 @@ class agent_manager {
         // Take first 3-5 words (max 35 chars).
         $words = preg_split('/\s+/', $name);
         $name = '';
-        $maxWords = min(5, count($words));
-        for ($i = 0; $i < $maxWords; $i++) {
+        $maxwords = min(5, count($words));
+        for ($i = 0; $i < $maxwords; $i++) {
             $candidate = trim($name . ' ' . $words[$i]);
             if (mb_strlen($candidate) > 35) {
                 break;
@@ -316,13 +316,13 @@ class agent_manager {
      *
      * Falls back to $from + 300 seconds if the expression cannot be parsed.
      *
-     * @param  string   $cron_expr Five-field cron expression (e.g. every-5-minutes).
+     * @param  string   $cronexpr Five-field cron expression (e.g. every-5-minutes).
      * @param  int|null $from      Base timestamp (defaults to time()).
      * @return int                 Next run timestamp.
      */
-    public static function calculate_next_run(string $cron_expr, ?int $from = null): int {
+    public static function calculate_next_run(string $cronexpr, ?int $from = null): int {
         $from = $from ?? time();
-        $parts = preg_split('/\s+/', trim($cron_expr));
+        $parts = preg_split('/\s+/', trim($cronexpr));
 
         if (count($parts) !== 5) {
             return $from + 300;
@@ -433,15 +433,15 @@ class agent_manager {
      * Get the cached result for a specific agent context.
      *
      * @param  int    $agentid
-     * @param  string $context_hash SHA256 of the context inputs.
+     * @param  string $contexthash SHA256 of the context inputs.
      * @return string|null The result_json value, or null if not cached.
      */
-    public static function get_cached_result(int $agentid, string $context_hash): ?string {
+    public static function get_cached_result(int $agentid, string $contexthash): ?string {
         global $DB;
 
         $record = $DB->get_record('local_jedomi_agent_cache', [
             'agentid' => $agentid,
-            'context_hash' => $context_hash,
+            'context_hash' => $contexthash,
         ], 'result_json');
 
         return $record ? $record->result_json : null;
@@ -456,15 +456,15 @@ class agent_manager {
      * result_json and timecreated are updated.
      *
      * @param int    $agentid
-     * @param string $context_hash SHA256 of the context inputs.
+     * @param string $contexthash SHA256 of the context inputs.
      * @param string $result       The JSON result string to cache.
      */
-    public static function set_cached_result(int $agentid, string $context_hash, string $result): void {
+    public static function set_cached_result(int $agentid, string $contexthash, string $result): void {
         global $DB;
 
         $existing = $DB->get_record('local_jedomi_agent_cache', [
             'agentid' => $agentid,
-            'context_hash' => $context_hash,
+            'context_hash' => $contexthash,
         ], 'id');
 
         if ($existing) {
@@ -476,7 +476,7 @@ class agent_manager {
         } else {
             $DB->insert_record('local_jedomi_agent_cache', (object) [
                 'agentid' => $agentid,
-                'context_hash' => $context_hash,
+                'context_hash' => $contexthash,
                 'result_json' => $result,
                 'timecreated' => time(),
             ]);
@@ -500,14 +500,14 @@ class agent_manager {
      *
      * Preview entries have agentid = 0 (they are not attached to any agent).
      *
-     * @param string $context_hash The md5 hash of the preview prompt.
+     * @param string $contexthash The md5 hash of the preview prompt.
      * @return bool True if a row was deleted.
      */
-    public static function clear_preview_cache(string $context_hash): bool {
+    public static function clear_preview_cache(string $contexthash): bool {
         global $DB;
         $deleted = $DB->delete_records('local_jedomi_agent_cache', [
             'agentid' => 0,
-            'context_hash' => $context_hash,
+            'context_hash' => $contexthash,
         ]);
         return $deleted > 0;
     }
@@ -521,16 +521,16 @@ class agent_manager {
      * plan_json, result_json, and timecreated are updated.
      *
      * @param int    $agentid
-     * @param string $context_hash
+     * @param string $contexthash
      * @param array  $plan   Ordered tool calls: [['tool' => 'x', 'arguments' => '{}'], ...].
      * @param string $answer Final answer text for reformulation context.
      */
-    public static function set_cached_plan(int $agentid, string $context_hash, array $plan, string $answer): void {
+    public static function set_cached_plan(int $agentid, string $contexthash, array $plan, string $answer): void {
         global $DB;
 
         $existing = $DB->get_record('local_jedomi_agent_cache', [
             'agentid' => $agentid,
-            'context_hash' => $context_hash,
+            'context_hash' => $contexthash,
         ], 'id');
 
         $record = (object) [
@@ -544,7 +544,7 @@ class agent_manager {
             $DB->update_record('local_jedomi_agent_cache', $record);
         } else {
             $record->agentid = $agentid;
-            $record->context_hash = $context_hash;
+            $record->context_hash = $contexthash;
             $DB->insert_record('local_jedomi_agent_cache', $record);
         }
     }
@@ -553,15 +553,15 @@ class agent_manager {
      * Get the cached plan and answer for a specific agent context.
      *
      * @param  int    $agentid
-     * @param  string $context_hash
+     * @param  string $contexthash
      * @return array|null ['plan' => [...], 'answer' => '...'] or null if no plan.
      */
-    public static function get_cached_plan(int $agentid, string $context_hash): ?array {
+    public static function get_cached_plan(int $agentid, string $contexthash): ?array {
         global $DB;
 
         $record = $DB->get_record('local_jedomi_agent_cache', [
             'agentid' => $agentid,
-            'context_hash' => $context_hash,
+            'context_hash' => $contexthash,
         ], 'plan_json, result_json');
 
         if (!$record || empty($record->plan_json)) {

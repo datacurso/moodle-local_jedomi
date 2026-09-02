@@ -45,17 +45,17 @@ class system_message {
 
         $sitename  = get_config('core', 'sitename') ?: 'Moodle';
         $release   = $CFG->release ?? 'unknown';
-        $courseId  = $spt['course_id'] ?? 0;
-        $courseName = $context['course_name'] ?? '';
+        $courseid  = $spt['course_id'] ?? 0;
+        $coursename = $context['course_name'] ?? '';
         $location   = $context['location'] ?? 'unknown';
-        $pageUrl    = $context['page_url'] ?? '';
-        $pageTitle  = $context['page_title'] ?? '';
+        $pageurl    = $context['page_url'] ?? '';
+        $pagetitle  = $context['page_title'] ?? '';
         $output     = $context['output'] ?? 'web';  // 'web' or 'telegram'
 
-        $locLabels = [
+        $loclabels = [
             'course'    => get_string('ctx_loc_course', 'local_jedomi')
-                . ($courseName ? " \"{$courseName}\"" : '')
-                . get_string('ctx_loc_course_id', 'local_jedomi', $courseId),
+                . ($coursename ? " \"{$coursename}\"" : '')
+                . get_string('ctx_loc_course_id', 'local_jedomi', $courseid),
             'activity'  => get_string('ctx_loc_activity', 'local_jedomi')
                 . ' "' . ($context['activity_type'] ?? 'unknown')
                 . get_string('ctx_loc_activity_suffix', 'local_jedomi'),
@@ -157,8 +157,8 @@ class system_message {
         $content .= "- Site: {$sitename} ({$CFG->wwwroot})\n";
         $content .= "- Database: {$dblabel}\n";
         $content .= "- Location: {$location}\n";
-        $content .= "- Page: {$pageTitle} ({$pageUrl})\n";
-        $content .= isset($locLabels[$location]) ? "- {$locLabels[$location]}\n" : '';
+        $content .= "- Page: {$pagetitle} ({$pageurl})\n";
+        $content .= isset($loclabels[$location]) ? "- {$loclabels[$location]}\n" : '';
 
         // Add activity cmid when available.
         $cmid = $context['activity_id'] ?? 0;

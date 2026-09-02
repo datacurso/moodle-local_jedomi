@@ -101,19 +101,19 @@ class extract_schema extends external_api {
     /**
      * Authenticate the request and build the database schema from INFORMATION_SCHEMA.
      *
-     * @param  bool   $include_row_counts Include approximate row counts from SHOW TABLE STATUS.
+     * @param  bool   $includerowcounts Include approximate row counts from SHOW TABLE STATUS.
      * @param  array  $domains            Substring filters applied to table names; empty for all tables.
-     * @param  string $hmac_signature     HMAC-SHA256 hex signature from the gateway.
-     * @param  int    $hmac_timestamp     Unix timestamp from the request header.
-     * @param  string $payload_hash       SHA256 hex of the request body.
+     * @param  string $hmacsignature     HMAC-SHA256 hex signature from the gateway.
+     * @param  int    $hmactimestamp     Unix timestamp from the request header.
+     * @param  string $payloadhash       SHA256 hex of the request body.
      * @return array Schema JSON string, total table count, generation timestamp, version and timing.
      */
     public static function execute(
-        bool $include_row_counts,
+        bool $includerowcounts,
         array $domains,
-        string $hmac_signature,
-        int $hmac_timestamp,
-        string $payload_hash
+        string $hmacsignature,
+        int $hmactimestamp,
+        string $payloadhash
     ): array {
         global $DB, $CFG;
 
@@ -125,16 +125,22 @@ class extract_schema extends external_api {
         // --- Parameter validation ---
         $validated = self::validate_parameters(
             self::execute_parameters(),
-            compact('include_row_counts', 'domains', 'hmac_signature', 'hmac_timestamp', 'payload_hash')
+            [
+                'include_row_counts' => $includerowcounts,
+                'domains'            => $domains,
+                'hmac_signature'     => $hmacsignature,
+                'hmac_timestamp'     => $hmactimestamp,
+                'payload_hash'       => $payloadhash,
+            ]
         );
-        $include_row_counts = $validated['include_row_counts'];
+        $includerowcounts = $validated['include_row_counts'];
         $domains            = $validated['domains'];
-        $hmac_signature     = $validated['hmac_signature'];
-        $hmac_timestamp     = $validated['hmac_timestamp'];
-        $payload_hash       = $validated['payload_hash'];
+        $hmacsignature     = $validated['hmac_signature'];
+        $hmactimestamp     = $validated['hmac_timestamp'];
+        $payloadhash       = $validated['payload_hash'];
 
         // --- HMAC authentication ---
-        self::verify_hmac('jedomi_extract_schema', $hmac_timestamp, $payload_hash, $hmac_signature);
+        self::verify_hmac('jedomi_extract_schema', $hmactimestamp, $payloadhash, $hmacsignature);
 
         // 120-second timeout per spec (515+ tables can be slow).
         @set_time_limit(120);
@@ -144,7 +150,7 @@ class extract_schema extends external_api {
         // --- Fetch table list from INFORMATION_SCHEMA ---
         $dbname = $CFG->dbname;
 
-        $tables_rs = $DB->get_recordset_sql(
+        $tablesrs = $DB->get_recordset_sql(
             "SELECT TABLE_NAME, TABLE_COMMENT
                FROM INFORMATION_SCHEMA.TABLES
               WHERE TABLE_SCHEMA = ?
@@ -154,25 +160,25 @@ class extract_schema extends external_api {
         );
 
         // --- Optional: row counts from SHOW TABLE STATUS ---
-        $row_counts = [];
-        if ($include_row_counts) {
-            $status_rs = $DB->get_recordset_sql("SHOW TABLE STATUS FROM `{$dbname}`");
-            foreach ($status_rs as $row) {
-                $row_counts[$row->name] = (int) $row->rows;
+        $rowcounts = [];
+        if ($includerowcounts) {
+            $statusrs = $DB->get_recordset_sql("SHOW TABLE STATUS FROM `{$dbname}`");
+            foreach ($statusrs as $row) {
+                $rowcounts[$row->name] = (int) $row->rows;
             }
-            $status_rs->close();
+            $statusrs->close();
         }
 
         // --- Build schema ---
         $schema = [];
-        foreach ($tables_rs as $table_row) {
-            $table_name = $table_row->table_name;
+        foreach ($tablesrs as $tablerow) {
+            $tablename = $tablerow->table_name;
 
             // Domain filter (substring match on table name).
             if (!empty($domains)) {
                 $match = false;
                 foreach ($domains as $domain) {
-                    if (stripos($table_name, $domain) !== false) {
+                    if (stripos($tablename, $domain) !== false) {
                         $match = true;
                         break;
                     }
@@ -182,41 +188,41 @@ class extract_schema extends external_api {
                 }
             }
 
-            $schema[$table_name] = self::describe_table($DB, $dbname, $table_name, $table_row->table_comment ?? '');
+            $schema[$tablename] = self::describe_table($DB, $dbname, $tablename, $tablerow->table_comment ?? '');
 
-            if ($include_row_counts && isset($row_counts[$table_name])) {
-                $schema[$table_name]['row_count'] = $row_counts[$table_name];
+            if ($includerowcounts && isset($rowcounts[$tablename])) {
+                $schema[$tablename]['row_count'] = $rowcounts[$tablename];
             }
         }
-        $tables_rs->close();
+        $tablesrs->close();
 
-        $execution_ms  = (int) ((microtime(true) - $start) * 1000);
-        $total_tables  = count($schema);
-        $generated_at  = date('c'); // ISO 8601
+        $executionms  = (int) ((microtime(true) - $start) * 1000);
+        $totaltables  = count($schema);
+        $generatedat  = date('c'); // ISO 8601
 
         // Moodle version — $CFG->release is populated by Moodle's bootstrap.
-        $moodle_version = $CFG->release ?? 'unknown';
+        $moodleversion = $CFG->release ?? 'unknown';
 
         $response = [
-            'generated_at'   => $generated_at,
-            'moodle_version' => $moodle_version,
-            'total_tables'   => $total_tables,
+            'generated_at'   => $generatedat,
+            'moodle_version' => $moodleversion,
+            'total_tables'   => $totaltables,
             'tables'         => $schema,
         ];
 
         \local_jedomi_log(sprintf(
             '[local_jedomi] extract_schema: total_tables=%d include_row_counts=%s execution_ms=%d',
-            $total_tables,
-            $include_row_counts ? 'true' : 'false',
-            $execution_ms
+            $totaltables,
+            $includerowcounts ? 'true' : 'false',
+            $executionms
         ));
 
         return [
             'schema_json'    => json_encode($response, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-            'total_tables'   => $total_tables,
-            'generated_at'   => $generated_at,
-            'moodle_version' => $moodle_version,
-            'execution_ms'   => $execution_ms,
+            'total_tables'   => $totaltables,
+            'generated_at'   => $generatedat,
+            'moodle_version' => $moodleversion,
+            'execution_ms'   => $executionms,
         ];
     }
 
@@ -229,23 +235,23 @@ class extract_schema extends external_api {
      *
      * @param  \moodle_database $DB         Database connection used for the INFORMATION_SCHEMA queries.
      * @param  string           $dbname     Database (schema) name to inspect.
-     * @param  string           $table_name Table to describe.
+     * @param  string           $tablename Table to describe.
      * @param  string           $comment    Table comment from INFORMATION_SCHEMA.TABLES.
      * @return array Table comment, column definitions and foreign key list.
      */
-    private static function describe_table(\moodle_database $DB, string $dbname, string $table_name, string $comment): array {
+    private static function describe_table(\moodle_database $DB, string $dbname, string $tablename, string $comment): array {
         // Columns.
-        $cols_rs = $DB->get_recordset_sql(
+        $colsrs = $DB->get_recordset_sql(
             "SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_DEFAULT, COLUMN_COMMENT, COLUMN_KEY, EXTRA
                FROM INFORMATION_SCHEMA.COLUMNS
               WHERE TABLE_SCHEMA = ?
                 AND TABLE_NAME   = ?
               ORDER BY ORDINAL_POSITION",
-            [$dbname, $table_name]
+            [$dbname, $tablename]
         );
 
         $columns = [];
-        foreach ($cols_rs as $col) {
+        foreach ($colsrs as $col) {
             $columns[$col->column_name] = [
                 'type'     => $col->column_type,
                 'nullable' => ($col->is_nullable === 'YES'),
@@ -255,10 +261,10 @@ class extract_schema extends external_api {
                 'extra'    => $col->extra ?: null, // auto_increment, etc.
             ];
         }
-        $cols_rs->close();
+        $colsrs->close();
 
         // Foreign keys.
-        $fks_rs = $DB->get_recordset_sql(
+        $fksrs = $DB->get_recordset_sql(
             "SELECT kcu.COLUMN_NAME, kcu.REFERENCED_TABLE_NAME, kcu.REFERENCED_COLUMN_NAME
                FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
                JOIN INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
@@ -269,23 +275,23 @@ class extract_schema extends external_api {
                 AND kcu.TABLE_NAME             = ?
                 AND tc.CONSTRAINT_TYPE         = 'FOREIGN KEY'
                 AND kcu.REFERENCED_TABLE_NAME IS NOT NULL",
-            [$dbname, $table_name]
+            [$dbname, $tablename]
         );
 
-        $foreign_keys = [];
-        foreach ($fks_rs as $fk) {
-            $foreign_keys[] = [
+        $foreignkeys = [];
+        foreach ($fksrs as $fk) {
+            $foreignkeys[] = [
                 'column'            => $fk->column_name,
                 'references_table'  => $fk->referenced_table_name,
                 'references_column' => $fk->referenced_column_name,
             ];
         }
-        $fks_rs->close();
+        $fksrs->close();
 
         return [
             'comment'     => $comment,
             'columns'     => $columns,
-            'foreign_keys' => $foreign_keys,
+            'foreign_keys' => $foreignkeys,
         ];
     }
 }

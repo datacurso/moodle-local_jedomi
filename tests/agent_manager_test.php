@@ -366,7 +366,7 @@ final class agent_manager_test extends \advanced_testcase {
      * Test is_tool_readonly returns true for known read-only tools.
      */
     public function test_is_tool_readonly_known_readonly(): void {
-        $readonlyTools = [
+        $readonlytools = [
             'execute_sql',
             'search_tables',
             'describe_table',
@@ -376,7 +376,7 @@ final class agent_manager_test extends \advanced_testcase {
             'admin_search',
             'admin_describe',
         ];
-        foreach ($readonlyTools as $tool) {
+        foreach ($readonlytools as $tool) {
             $this->assertTrue(
                 agent_manager::is_tool_readonly($tool),
                 "Expected {$tool} to be read-only"
@@ -487,12 +487,12 @@ final class agent_manager_test extends \advanced_testcase {
             'nextrun'   => $now - 60,
             'failcount' => 0,
         ]);
-        $original_lastrun = $created->lastrun;
+        $originallastrun = $created->lastrun;
 
         agent_manager::mark_run($created->id, false);
         $agent = agent_manager::get_agent($created->id);
 
-        $this->assertEquals($original_lastrun, (int) $agent->lastrun);
+        $this->assertEquals($originallastrun, (int) $agent->lastrun);
         $this->assertEquals(1, (int) $agent->failcount);
     }
 
@@ -749,8 +749,8 @@ final class agent_manager_test extends \advanced_testcase {
         $remaining = $DB->count_records('local_jedomi_agents');
         $this->assertEquals(0, $remaining);
 
-        $remaining_cache = $DB->count_records('local_jedomi_agent_cache');
-        $this->assertEquals(0, $remaining_cache);
+        $remainingcache = $DB->count_records('local_jedomi_agent_cache');
+        $this->assertEquals(0, $remainingcache);
     }
 
     /**
