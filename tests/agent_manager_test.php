@@ -629,13 +629,13 @@ final class agent_manager_test extends \advanced_testcase {
         $this->create_agent_record(['prompt' => 'Agent 1']);
 
         $stats = agent_manager::get_stats([]);
-        $this->assertObjectHasAttribute('charts', $stats);
-        $this->assertObjectHasAttribute('rows', $stats);
-        $this->assertObjectHasAttribute('total', $stats);
-        $this->assertObjectHasAttribute('page', $stats);
-        $this->assertObjectHasAttribute('by_role', $stats->charts);
-        $this->assertObjectHasAttribute('by_status', $stats->charts);
-        $this->assertObjectHasAttribute('executions_30d', $stats->charts);
+        $this->assertObjectHasProperty('charts', $stats);
+        $this->assertObjectHasProperty('rows', $stats);
+        $this->assertObjectHasProperty('total', $stats);
+        $this->assertObjectHasProperty('page', $stats);
+        $this->assertObjectHasProperty('by_role', $stats->charts);
+        $this->assertObjectHasProperty('by_status', $stats->charts);
+        $this->assertObjectHasProperty('executions_30d', $stats->charts);
     }
 
     /**
