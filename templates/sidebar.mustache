@@ -1,6 +1,45 @@
 {{!
-    Jedomi AI Sidebar — injected on every Moodle page
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
     @template local_jedomi/sidebar
+
+    Jedomi AI sidebar injected on every Moodle page: trigger button plus a
+    drawer with the message area, thinking indicator and input controls.
+
+    Context variables required for this template:
+    * gateway_url - AI gateway endpoint URL.
+    * api_key - API key passed to the gateway.
+    * model - Model identifier used for chat.
+    * context - JSON-encoded page context string.
+    * user_name - Display name for the greeting message.
+    * strings - Object with localised UI strings (title, placeholder).
+
+    Example context (json):
+    {
+        "gateway_url": "https://gateway.example.com/api/chat",
+        "api_key": "abc123def456",
+        "model": "jedomi-e4b",
+        "context": "{\"location\":\"course\",\"course_id\":2}",
+        "user_name": "Ana",
+        "strings": {
+            "title": "Jedomi AI",
+            "placeholder": "Ask Jedomi..."
+        }
+    }
 }}
 
 <!-- Jedomi Trigger Button -->
@@ -78,7 +117,9 @@
         <input type="file" id="jedomi-image-input" accept="image/*" class="jedomi-hidden" aria-hidden="true">
         <!-- Image preview -->
         <div id="jedomi-image-preview" class="jedomi-image-preview jedomi-hidden">
-            <img id="jedomi-preview-img" src="" alt="Imagen adjunta">
+            <img id="jedomi-preview-img"
+                src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="
+                alt="Imagen adjunta">
             <button id="jedomi-remove-image" class="jedomi-btn-icon">✕</button>
         </div>
     </div>
