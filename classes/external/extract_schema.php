@@ -50,7 +50,7 @@ class extract_schema extends external_api {
 
     // -------------------------------------------------------------------------
     // Parameter / return definitions
-    // -------------------------------------------------------------------------
+    // -------------------------------------------------------------------------.
 
     /**
      * Describe the parameters accepted by the execute function.
@@ -96,7 +96,7 @@ class extract_schema extends external_api {
 
     // -------------------------------------------------------------------------
     // Execution
-    // -------------------------------------------------------------------------
+    // -------------------------------------------------------------------------.
 
     /**
      * Authenticate the request and build the database schema from INFORMATION_SCHEMA.
@@ -117,12 +117,12 @@ class extract_schema extends external_api {
     ): array {
         global $DB, $CFG;
 
-        // --- Capability check ---
+        // ... --- Capability check ---
         $context = context_system::instance();
         self::validate_context($context);
         require_capability('local/jedomi:companion_api', $context);
 
-        // --- Parameter validation ---
+        // ... --- Parameter validation ---
         $validated = self::validate_parameters(
             self::execute_parameters(),
             [
@@ -139,7 +139,7 @@ class extract_schema extends external_api {
         $hmactimestamp     = $validated['hmac_timestamp'];
         $payloadhash       = $validated['payload_hash'];
 
-        // --- HMAC authentication ---
+        // ... --- HMAC authentication ---
         self::verify_hmac('jedomi_extract_schema', $hmactimestamp, $payloadhash, $hmacsignature);
 
         // 120-second timeout per spec (515+ tables can be slow).
@@ -147,7 +147,7 @@ class extract_schema extends external_api {
 
         $start = microtime(true);
 
-        // --- Fetch table list from INFORMATION_SCHEMA ---
+        // ... --- Fetch table list from INFORMATION_SCHEMA ---
         $dbname = $CFG->dbname;
 
         $tablesrs = $DB->get_recordset_sql(
@@ -159,7 +159,7 @@ class extract_schema extends external_api {
             [$dbname]
         );
 
-        // --- Optional: row counts from SHOW TABLE STATUS ---
+        // ... --- Optional: row counts from SHOW TABLE STATUS ---
         $rowcounts = [];
         if ($includerowcounts) {
             $statusrs = $DB->get_recordset_sql("SHOW TABLE STATUS FROM `{$dbname}`");
@@ -169,7 +169,7 @@ class extract_schema extends external_api {
             $statusrs->close();
         }
 
-        // --- Build schema ---
+        // ... --- Build schema ---
         $schema = [];
         foreach ($tablesrs as $tablerow) {
             $tablename = $tablerow->table_name;
@@ -198,7 +198,7 @@ class extract_schema extends external_api {
 
         $executionms  = (int) ((microtime(true) - $start) * 1000);
         $totaltables  = count($schema);
-        $generatedat  = date('c'); // ISO 8601
+        $generatedat  = date('c'); // ISO 8601.
 
         // Moodle version — $CFG->release is populated by Moodle's bootstrap.
         $moodleversion = $CFG->release ?? 'unknown';
@@ -228,7 +228,7 @@ class extract_schema extends external_api {
 
     // -------------------------------------------------------------------------
     // Helpers
-    // -------------------------------------------------------------------------
+    // -------------------------------------------------------------------------.
 
     /**
      * Describe one table: its columns (type, nullability, keys) and foreign keys.
@@ -257,8 +257,8 @@ class extract_schema extends external_api {
                 'nullable' => ($col->is_nullable === 'YES'),
                 'default'  => $col->column_default,
                 'comment'  => $col->column_comment ?: null,
-                'key'      => $col->column_key ?: null, // PRI, UNI, MUL
-                'extra'    => $col->extra ?: null, // auto_increment, etc.
+                'key'      => $col->column_key ?: null, // PRI, UNI, MUL.
+                'extra'    => $col->extra ?: null, // Auto_increment, etc.
             ];
         }
         $colsrs->close();

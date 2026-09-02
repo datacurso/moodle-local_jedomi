@@ -287,7 +287,7 @@ class manager {
      */
     public static function generate_link_code(int $userid): string {
         $code = self::generate_random_code();
-        // telegram_link_codes is MODE_APPLICATION so it works cross-request
+        // Telegram_link_codes is MODE_APPLICATION so it works cross-request
         // (the Moodle webhook has no user session, MODE_SESSION would fail).
         $cache = \cache::make('local_jedomi', 'telegram_link_codes');
         $cache->set('userid_' . $userid, $code);
@@ -336,7 +336,7 @@ class manager {
      * Generate a random 6-char code.
      */
     private static function generate_random_code(): string {
-        $chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // no 0, O, 1, I
+        $chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // No 0, O, 1, I.
         $code = '';
         $max = strlen($chars) - 1;
         for ($i = 0; $i < 6; $i++) {

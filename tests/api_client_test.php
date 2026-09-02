@@ -22,9 +22,7 @@
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-namespace local_jedomi\tests;
-
-defined('MOODLE_INTERNAL') || die();
+namespace local_jedomi;
 
 /**
  * Test cases for api_client chunk_text and related methods.
@@ -40,7 +38,7 @@ final class api_client_test extends \advanced_testcase {
         $this->resetAfterTest();
     }
 
-    // ========================
+    // ... ========================
     // Data providers
     // ========================
 
@@ -49,7 +47,7 @@ final class api_client_test extends \advanced_testcase {
      *
      * @return array
      */
-    public function chunk_text_provider(): array {
+    public static function chunk_text_provider(): array {
         return [
             'short text' => [
                 'Hello world',
@@ -89,7 +87,7 @@ final class api_client_test extends \advanced_testcase {
         ];
     }
 
-    // ========================
+    // ... ========================
     // chunk_text tests
     // ========================
 
@@ -173,7 +171,7 @@ final class api_client_test extends \advanced_testcase {
         $this->assertEquals(mb_strlen($originalchars), mb_strlen($reassembledchars));
     }
 
-    // ========================
+    // ... ========================
     // send_message delegation
     // ========================
 
@@ -192,7 +190,7 @@ final class api_client_test extends \advanced_testcase {
         $this->assertFalse($result, 'send_message with empty token should return false');
     }
 
-    // ========================
+    // ... ========================
     // Helpers
     // ========================
 

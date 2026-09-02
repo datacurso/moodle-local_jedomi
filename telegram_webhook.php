@@ -24,13 +24,14 @@
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
+// phpcs:ignore moodle.Files.RequireLogin.Missing -- webhook auth uses the Telegram secret token.
 require_once(__DIR__ . '/../../config.php');
 require_once(__DIR__ . '/lib.php');
 
 use local_jedomi\telegram\manager;
 use local_jedomi\telegram\webhook_handler;
 
-// ── Validate HTTP method — Telegram only sends POST ────────────────────────────
+// ... ── Validate HTTP method — Telegram only sends POST ────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
     header('Content-Type: application/json');
@@ -38,7 +39,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
-// ── Validate webhook secret ──────────────────────────────────────────────────
+// ... ── Validate webhook secret ──────────────────────────────────────────────────
 $secretparam = optional_param('secret', '', PARAM_ALPHANUMEXT);
 $expectedsecret = manager::get_webhook_secret();
 
@@ -50,7 +51,7 @@ if (!hash_equals($expectedsecret, $secretparam)) {
     exit;
 }
 
-// ── Internal self-ping (continue checkpointed work) ──
+// ... ── Internal self-ping (continue checkpointed work) ──
 $internalping = optional_param('internal_ping', 0, PARAM_INT);
 $pingchatid = optional_param('chat_id', '', PARAM_RAW);
 
@@ -77,7 +78,7 @@ if ($internalping && !empty($pingchatid)) {
     exit;
 }
 
-// ── Decode Telegram payload ──────────────────────────────────────────────────
+// ... ── Decode Telegram payload ──────────────────────────────────────────────────
 $input = file_get_contents('php://input');
 $update = json_decode($input, true);
 
@@ -95,11 +96,11 @@ local_jedomi_log('Telegram webhook: update arrived', [
     'length' => strlen($input),
 ]);
 
-// ── Let PHP keep running after we respond ──
+// ... ── Let PHP keep running after we respond ──
 ignore_user_abort(true);
 set_time_limit(0);
 
-// ── Send 200 OK FIRST so Telegram doesn't retry ──
+// ... ── Send 200 OK FIRST so Telegram doesn't retry ──
 // The tool loop can take 30-120s for complex tasks. If we process first and
 // then send 200 OK, Telegram will retry before we finish, piling up requests.
 // By sending 200 OK immediately, Telegram considers it delivered and won't
@@ -117,7 +118,7 @@ if (function_exists('fastcgi_finish_request')) {
     fastcgi_finish_request();
 }
 
-// ── Shutdown handler catches fatal errors ──
+// ... ── Shutdown handler catches fatal errors ──
 register_shutdown_function(function () use ($update): void {
     $error = error_get_last();
     if ($error !== null && in_array($error['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR])) {
@@ -126,7 +127,7 @@ register_shutdown_function(function () use ($update): void {
     }
 });
 
-// ── Process message ──
+// ... ── Process message ──
 try {
     webhook_handler::handle($update);
 } catch (\Throwable $e) {

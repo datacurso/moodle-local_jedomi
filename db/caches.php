@@ -31,9 +31,9 @@ $definitions = [
     'conversation' => [
         'mode'             => cache_store::MODE_SESSION,
         'simplekeys'       => true,
-        'simpledata'       => false, // datos complejos (array de mensajes)
-        'staticacceleration' => true, // mantener en RAM durante el request
-        'staticaccelerationsize' => 1, // solo 1 conversación activa
+        'simpledata'       => false, // Datos complejos (array de mensajes).
+        'staticacceleration' => true, // Mantener en RAM durante el request.
+        'staticaccelerationsize' => 1, // Solo 1 conversación activa.
         'ttl'              => 0, // 0 = expira con la sesión (no TTL fijo)
     ],
     // Application-wide cache for Telegram link codes.
@@ -42,7 +42,7 @@ $definitions = [
     'telegram_link_codes' => [
         'mode'       => cache_store::MODE_APPLICATION,
         'simplekeys' => true,
-        'simpledata' => true, // values are simple strings (code or userid)
+        'simpledata' => true, // Values are simple strings (code or userid).
         'ttl'        => 600, // 10 minutes — same as CODE_TTL in manager.php
     ],
 

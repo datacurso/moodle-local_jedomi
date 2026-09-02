@@ -29,8 +29,6 @@
 
 namespace local_jedomi\schema;
 
-defined('MOODLE_INTERNAL') || die();
-
 /**
  * Builds and searches a keyword index of database tables parsed from
  * core and plugin install.xml files.

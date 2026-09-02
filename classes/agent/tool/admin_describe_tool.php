@@ -24,8 +24,6 @@
 
 namespace local_jedomi\agent\tool;
 
-defined('MOODLE_INTERNAL') || die();
-
 /**
  * Agent tool that returns the full documentation of a single admin CLI
  * operation from the CLI registry.

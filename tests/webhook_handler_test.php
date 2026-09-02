@@ -22,9 +22,7 @@
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-namespace local_jedomi\tests;
-
-defined('MOODLE_INTERNAL') || die();
+namespace local_jedomi;
 
 /**
  * Test cases for webhook_handler methods.
@@ -53,7 +51,7 @@ final class webhook_handler_test extends \advanced_testcase {
         $this->resetAfterTest();
     }
 
-    // ========================
+    // ... ========================
     // Task 2.2: looks_like_link_code — pure function tests
     // ========================
 
@@ -62,9 +60,9 @@ final class webhook_handler_test extends \advanced_testcase {
      *
      * @return array
      */
-    public function looks_like_link_code_provider(): array {
+    public static function looks_like_link_code_provider(): array {
         return [
-            // [input, expected]
+            // Each case maps an input string to the expected boolean.
             'valid 6-char code'              => ['ABC123', true],
             'valid 4-char code'              => ['XY78', true],
             'valid 8-char code'              => ['ABCD1234', true],
@@ -92,7 +90,7 @@ final class webhook_handler_test extends \advanced_testcase {
         $this->assertSame($expected, $result, "looks_like_link_code('$input') should return " . ($expected ? 'true' : 'false'));
     }
 
-    // ========================
+    // ... ========================
     // Task 2.1: proxy_to_gateway uses new role/SPT functions
     // ========================
 
@@ -109,7 +107,7 @@ final class webhook_handler_test extends \advanced_testcase {
         $admin = get_admin();
         $this->assertNotFalse($admin);
 
-        // Create a telegram link for the admin
+        // Create a telegram link for the admin.
         $chatid = '987654321';
         $DB->insert_record('local_jedomi_telegram_links', (object)[
             'userid'      => (int)$admin->id,
@@ -129,7 +127,7 @@ final class webhook_handler_test extends \advanced_testcase {
         $this->assertEquals('admin', $spt['role']);
     }
 
-    // ========================
+    // ... ========================
     // Task 2.3: handle_start_command with no code
     // ========================
 
@@ -158,7 +156,7 @@ final class webhook_handler_test extends \advanced_testcase {
         $this->assertTrue(true, 'See code: handle_start_command validates code format');
     }
 
-    // ========================
+    // ... ========================
     // Task 2.5: execute_tool method
     // ========================
 
@@ -274,7 +272,7 @@ final class webhook_handler_test extends \advanced_testcase {
         $this->assertStringNotContainsString('Results', $result);
     }
 
-    // ========================
+    // ... ========================
     // Task 2.6: execute_pending_action
     // ========================
 
@@ -351,7 +349,7 @@ final class webhook_handler_test extends \advanced_testcase {
      *
      * @return array
      */
-    public function admin_only_pending_actions_provider(): array {
+    public static function admin_only_pending_actions_provider(): array {
         return [
             'cache_purge' => ['cache_purge'],
             'run_task'    => ['run_task'],
@@ -377,7 +375,7 @@ final class webhook_handler_test extends \advanced_testcase {
      *
      * @return array
      */
-    public function gated_tools_provider(): array {
+    public static function gated_tools_provider(): array {
         // Marker is the denial text each tool returns for role 'student'.
         return [
             'execute_sql (teacher+)'      => ['execute_sql', ['sql' => 'SELECT 1 AS x'], 'Permission denied'],
@@ -412,7 +410,7 @@ final class webhook_handler_test extends \advanced_testcase {
         );
     }
 
-    // ========================
+    // ... ========================
     // Task 2.4: handle_tool_calls
     // ========================
 
@@ -426,7 +424,7 @@ final class webhook_handler_test extends \advanced_testcase {
         $this->assertTrue(true, 'handle_tool_calls delegates to execute_tool and sends results');
     }
 
-    // ========================
+    // ... ========================
     // Task 2.7: error_log → local_jedomi_log
     // ========================
 
@@ -461,7 +459,7 @@ final class webhook_handler_test extends \advanced_testcase {
         );
     }
 
-    // ========================
+    // ... ========================
     // Task 5.2: /help command
     // ========================
 
@@ -526,7 +524,7 @@ final class webhook_handler_test extends \advanced_testcase {
         );
     }
 
-    // ========================
+    // ... ========================
     // Telegram UX mejora: /new in help, /ayuda alias
     // ========================
 
@@ -625,7 +623,7 @@ final class webhook_handler_test extends \advanced_testcase {
         $this->assertCount(2, $buttons, 'Unlinked keyboard should have 2 buttons');
     }
 
-    // ========================
+    // ... ========================
     // Helpers
     // ========================
 

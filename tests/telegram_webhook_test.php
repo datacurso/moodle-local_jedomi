@@ -22,9 +22,7 @@
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-namespace local_jedomi\tests;
-
-defined('MOODLE_INTERNAL') || die();
+namespace local_jedomi;
 
 /**
  * Test cases for telegram_webhook.php — POST guard, E007, logging.
@@ -32,7 +30,7 @@ defined('MOODLE_INTERNAL') || die();
  * Since telegram_webhook.php is a standalone script (not a class),
  * tests verify the script structure and utility functions it depends on.
  *
- * @coversNothing — standalone script, tested via source analysis and functions
+ * @coversNothing
  */
 final class telegram_webhook_test extends \advanced_testcase {
     /**
@@ -43,7 +41,7 @@ final class telegram_webhook_test extends \advanced_testcase {
         $this->resetAfterTest();
     }
 
-    // ========================
+    // ... ========================
     // E007 error code
     // ========================
 
@@ -76,7 +74,7 @@ final class telegram_webhook_test extends \advanced_testcase {
         $this->assertTrue(true, 'local_jedomi_log handles E007 format without error');
     }
 
-    // ========================
+    // ... ========================
     // POST guard validation
     // ========================
 
@@ -119,7 +117,7 @@ final class telegram_webhook_test extends \advanced_testcase {
         );
     }
 
-    // ========================
+    // ... ========================
     // E007 in secret mismatch
     // ========================
 
@@ -152,7 +150,7 @@ final class telegram_webhook_test extends \advanced_testcase {
         );
     }
 
-    // ========================
+    // ... ========================
     // Input validation
     // ========================
 

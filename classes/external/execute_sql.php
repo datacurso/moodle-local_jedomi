@@ -60,7 +60,7 @@ class execute_sql extends external_api {
 
     // -------------------------------------------------------------------------
     // Parameter / return definitions
-    // -------------------------------------------------------------------------
+    // -------------------------------------------------------------------------.
 
     /**
      * Describe the parameters accepted by the execute function.
@@ -103,7 +103,7 @@ class execute_sql extends external_api {
 
     // -------------------------------------------------------------------------
     // Execution
-    // -------------------------------------------------------------------------
+    // -------------------------------------------------------------------------.
 
     /**
      * Validate, authenticate and run a SELECT-only query, returning capped JSON-encoded rows.
@@ -126,12 +126,12 @@ class execute_sql extends external_api {
     ): array {
         global $DB;
 
-        // --- Capability check ---
+        // ... --- Capability check ---
         $context = context_system::instance();
         self::validate_context($context);
         require_capability('local/jedomi:companion_api', $context);
 
-        // --- Parameter validation ---
+        // ... --- Parameter validation ---
         $validated = self::validate_parameters(
             self::execute_parameters(),
             [
@@ -148,12 +148,12 @@ class execute_sql extends external_api {
         $hmactimestamp  = $validated['hmac_timestamp'];
         $payloadhash    = $validated['payload_hash'];
 
-        // --- HMAC authentication (must happen before any business logic) ---
+        // ... --- HMAC authentication (must happen before any business logic) ---
         if (!$skiphmac) {
             self::verify_hmac('jedomi_execute_sql', $hmactimestamp, $payloadhash, $hmacsignature);
         }
 
-        // --- SELECT-only enforcement (defense-in-depth, QG-01 equivalent) ---
+        // ... --- SELECT-only enforcement (defense-in-depth, QG-01 equivalent) ---
         $firsttoken = strtoupper(strtok(trim($sql), " \t\n\r"));
         if ($firsttoken !== 'SELECT') {
             // CRITICAL security event — log the hash, never the SQL text.
@@ -166,7 +166,7 @@ class execute_sql extends external_api {
             throw new \moodle_exception('non_select_rejected', 'local_jedomi');
         }
 
-        // --- File exfiltration check (QG-02 equivalent, defense-in-depth) ---
+        // ... --- File exfiltration check (QG-02 equivalent, defense-in-depth) ---
         if (preg_match('/\bINTO\s+(OUTFILE|DUMPFILE)\b/i', $sql)) {
             $sqlhash = hash('sha256', $sql);
             \local_jedomi_log(sprintf(
@@ -177,7 +177,7 @@ class execute_sql extends external_api {
             throw new \moodle_exception('non_select_rejected', 'local_jedomi');
         }
 
-        // --- Execute with timeout ---
+        // ... --- Execute with timeout ---
         $start = microtime(true);
 
         try {
@@ -186,6 +186,7 @@ class execute_sql extends external_api {
             // ignored on MySQL (which uses MAX_EXECUTION_TIME hint instead).
             try {
                 $DB->execute('SET STATEMENT max_statement_time = ' . (self::TIMEOUT_MS / 1000) . ' FOR SELECT 1');
+                // phpcs:ignore Generic.CodeAnalysis.EmptyStatement.DetectedCatch -- comment-only catch.
             } catch (\Exception $e) {
                 // Non-MariaDB — ignore, query will run without server-side timeout.
             }
@@ -258,7 +259,7 @@ class execute_sql extends external_api {
 
         $executionms = (int) ((microtime(true) - $start) * 1000);
 
-        // --- Audit log (no raw data, PII column names redacted) ---
+        // ... --- Audit log (no raw data, PII column names redacted) ---
         $sqlhash = hash('sha256', $sql);
         \local_jedomi_log(sprintf(
             '[local_jedomi] execute_sql: sql_hash=%s row_count=%d truncated=%s execution_ms=%d',

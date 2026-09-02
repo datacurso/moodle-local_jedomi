@@ -24,8 +24,6 @@
 
 namespace local_jedomi\agent\tool;
 
-defined('MOODLE_INTERNAL') || die();
-
 /**
  * Agent tool that searches the CLI registry for admin operations
  * matching a keyword query, restricted to admin and manager roles.

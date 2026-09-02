@@ -27,8 +27,6 @@
 
 namespace local_jedomi\task;
 
-defined('MOODLE_INTERNAL') || die();
-
 use core\task\adhoc_task;
 use core\task\manager as task_manager;
 

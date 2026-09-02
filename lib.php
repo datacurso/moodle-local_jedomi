@@ -29,8 +29,6 @@
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-defined('MOODLE_INTERNAL') || die();
-
 /**
  * Hook principal — antes del </body>.
  * Pasa la config al AMD module. El HTML lo inyecta el JS para mayor robustez.
@@ -48,7 +46,7 @@ defined('MOODLE_INTERNAL') || die();
  * @return string Always empty — sidebar is injected via AMD module.
  */
 function local_jedomi_before_footer(): string {
-    // Logic moved to \local_jedomi\hook_callbacks::before_footer
+    // Logic moved to \local_jedomi\hook_callbacks::before_footer.
     return '';
 }
 
@@ -73,7 +71,7 @@ function local_jedomi_get_sidebar_config(): array {
         'context'       => $context,
         'sesskey'       => sesskey(),
         'strings'       => [
-            // UI chrome
+            // UI chrome.
             'title'             => get_string('sidebar_title', 'local_jedomi'),
             'open_sidebar'      => get_string('open_sidebar', 'local_jedomi'),
             'close'             => get_string('close', 'local_jedomi'),
@@ -82,7 +80,7 @@ function local_jedomi_get_sidebar_config(): array {
             'toggle_thinking'   => get_string('toggle_thinking', 'local_jedomi'),
             'half_width'        => get_string('half_width', 'local_jedomi'),
             'full_width'        => get_string('full_width', 'local_jedomi'),
-            // Input
+            // Input.
             'attach'            => get_string('attach', 'local_jedomi'),
             'attach_file'       => get_string('attach_file', 'local_jedomi'),
             'attach_image'      => get_string('attach_image', 'local_jedomi'),
@@ -92,12 +90,12 @@ function local_jedomi_get_sidebar_config(): array {
             'placeholder'       => get_string('chat_placeholder', 'local_jedomi'),
             'send'              => get_string('send', 'local_jedomi'),
             'voice_input'       => get_string('voice_input', 'local_jedomi'),
-            // Greeting
+            // Greeting.
             'greeting'          => get_string('greeting', 'local_jedomi'),
             'hello'             => get_string('hello', 'local_jedomi'),
             'thinking'          => get_string('thinking', 'local_jedomi'),
             'new_conversation_msg' => get_string('new_conversation_msg', 'local_jedomi'),
-            // Files
+            // Files.
             'analyze_image'        => get_string('analyze_image', 'local_jedomi'),
             'attached_file_info'   => get_string('attached_file_info', 'local_jedomi'),
             'attached_image'       => get_string('attached_image', 'local_jedomi'),
@@ -109,22 +107,22 @@ function local_jedomi_get_sidebar_config(): array {
             'file_process_error'   => get_string('file_process_error', 'local_jedomi'),
             'file_text'            => get_string('file_text', 'local_jedomi'),
             'processing_file'      => get_string('processing_file', 'local_jedomi'),
-            // Footer / disclaimer
+            // Footer / disclaimer.
             'ai_disclaimer'     => get_string('ai_disclaimer', 'local_jedomi'),
             'drop_files_here'   => get_string('drop_files_here', 'local_jedomi'),
-            // Tools
+            // Tools.
             'tool_sql_read'          => get_string('tool_sql_read', 'local_jedomi'),
             'tool_api_call'          => get_string('tool_api_call', 'local_jedomi'),
             'tool_schema_lookup'     => get_string('tool_schema_lookup', 'local_jedomi'),
             'tool_webservice_lookup' => get_string('tool_webservice_lookup', 'local_jedomi'),
-            // Message actions
+            // Message actions.
             'action_copy'          => get_string('action_copy', 'local_jedomi'),
             'action_helpful'       => get_string('action_helpful', 'local_jedomi'),
             'action_improve'       => get_string('action_improve', 'local_jedomi'),
             'action_improve_title' => get_string('action_improve_title', 'local_jedomi'),
             'action_edit'          => get_string('action_edit', 'local_jedomi'),
             'action_edit_title'    => get_string('action_edit_title', 'local_jedomi'),
-            // Bulk message
+            // Bulk message.
             'confirm_send_bulk'        => get_string('confirm_send_bulk', 'local_jedomi'),
             'yes_send'                 => get_string('yes_send', 'local_jedomi'),
             'cancel'                   => get_string('cancel', 'local_jedomi'),
@@ -136,7 +134,7 @@ function local_jedomi_get_sidebar_config(): array {
             'no_messages_sent'         => get_string('no_messages_sent', 'local_jedomi'),
             'unknown_error'            => get_string('unknown_error', 'local_jedomi'),
             'connection_error'         => get_string('connection_error', 'local_jedomi'),
-            // Context labels
+            // Context labels.
             'ctx_activity'  => get_string('ctx_activity', 'local_jedomi'),
             'ctx_admin'     => get_string('ctx_admin', 'local_jedomi'),
             'ctx_calendar'  => get_string('ctx_calendar', 'local_jedomi'),
@@ -146,7 +144,7 @@ function local_jedomi_get_sidebar_config(): array {
             'ctx_grades'    => get_string('ctx_grades', 'local_jedomi'),
             'ctx_messages'  => get_string('ctx_messages', 'local_jedomi'),
             'ctx_profile'   => get_string('ctx_profile', 'local_jedomi'),
-            // Errors
+            // Errors.
             'gateway_error_title'   => get_string('gateway_error_title', 'local_jedomi'),
             'gateway_error_hint'    => get_string('gateway_error_hint', 'local_jedomi'),
             'listening'             => get_string('listening', 'local_jedomi'),
@@ -154,14 +152,14 @@ function local_jedomi_get_sidebar_config(): array {
             'silence_detected'      => get_string('silence_detected', 'local_jedomi'),
             'transcribing'          => get_string('transcribing', 'local_jedomi'),
             'waiting_voice'         => get_string('waiting_voice', 'local_jedomi'),
-            // Confirmation system
+            // Confirmation system.
             'confirm_type_to_proceed' => get_string('confirm_type_to_proceed', 'local_jedomi'),
             'confirm_btn_yes'         => get_string('confirm_btn_yes', 'local_jedomi'),
             'confirm_btn_no'          => get_string('confirm_btn_no', 'local_jedomi'),
             'confirm_executing'       => get_string('confirm_executing', 'local_jedomi'),
             'confirm_done'            => get_string('confirm_done', 'local_jedomi'),
             'confirm_cancelled'       => get_string('confirm_cancelled', 'local_jedomi'),
-            // Quick actions: Admin
+            // Quick actions: Admin.
             'qa_admin_active_users_label'    => get_string('qa_admin_active_users_label', 'local_jedomi'),
             'qa_admin_active_users_msg'      => get_string('qa_admin_active_users_msg', 'local_jedomi'),
             'qa_admin_alerts_label'          => get_string('qa_admin_alerts_label', 'local_jedomi'),
@@ -190,7 +188,7 @@ function local_jedomi_get_sidebar_config(): array {
             'qa_admin_top_courses_msg'       => get_string('qa_admin_top_courses_msg', 'local_jedomi'),
             'qa_admin_top_student_label'     => get_string('qa_admin_top_student_label', 'local_jedomi'),
             'qa_admin_top_student_msg'       => get_string('qa_admin_top_student_msg', 'local_jedomi'),
-            // Quick actions: Manager
+            // Quick actions: Manager.
             'qa_manager_at_risk_label'       => get_string('qa_manager_at_risk_label', 'local_jedomi'),
             'qa_manager_at_risk_msg'         => get_string('qa_manager_at_risk_msg', 'local_jedomi'),
             'qa_manager_enrolled_label'      => get_string('qa_manager_enrolled_label', 'local_jedomi'),
@@ -207,7 +205,7 @@ function local_jedomi_get_sidebar_config(): array {
             'qa_manager_overview_msg'        => get_string('qa_manager_overview_msg', 'local_jedomi'),
             'qa_manager_top_courses_label'   => get_string('qa_manager_top_courses_label', 'local_jedomi'),
             'qa_manager_top_courses_msg'     => get_string('qa_manager_top_courses_msg', 'local_jedomi'),
-            // Quick actions: Teacher
+            // Quick actions: Teacher.
             'qa_teacher_at_risk_label'       => get_string('qa_teacher_at_risk_label', 'local_jedomi'),
             'qa_teacher_at_risk_msg'         => get_string('qa_teacher_at_risk_msg', 'local_jedomi'),
             'qa_teacher_my_alerts_label'     => get_string('qa_teacher_my_alerts_label', 'local_jedomi'),
@@ -224,7 +222,7 @@ function local_jedomi_get_sidebar_config(): array {
             'qa_teacher_performance_msg'     => get_string('qa_teacher_performance_msg', 'local_jedomi'),
             'qa_teacher_top_students_label'  => get_string('qa_teacher_top_students_label', 'local_jedomi'),
             'qa_teacher_top_students_msg'    => get_string('qa_teacher_top_students_msg', 'local_jedomi'),
-            // Quick actions: Student
+            // Quick actions: Student.
             'qa_student_help_label'          => get_string('qa_student_help_label', 'local_jedomi'),
             'qa_student_help_msg'            => get_string('qa_student_help_msg', 'local_jedomi'),
             'qa_student_my_courses_label'    => get_string('qa_student_my_courses_label', 'local_jedomi'),
@@ -441,7 +439,7 @@ function local_jedomi_is_role_allowed(): bool {
 function local_jedomi_get_tool_definitions(string $role): array {
     $tools = [];
 
-    // describe_table — todos los roles.
+    // Describe_table — todos los roles.
     $tools[] = [
         'type' => 'function',
         'function' => [
@@ -460,7 +458,7 @@ function local_jedomi_get_tool_definitions(string $role): array {
         ],
     ];
 
-    // search_tables — todos los roles.
+    // Search_tables — todos los roles.
     $tools[] = [
         'type' => 'function',
         'function' => [
@@ -483,7 +481,7 @@ function local_jedomi_get_tool_definitions(string $role): array {
         ],
     ];
 
-    // execute_sql — admin, manager, teacher.
+    // Execute_sql — admin, manager, teacher.
     if (in_array($role, ['admin', 'manager', 'teacher'], true)) {
         $tools[] = [
             'type' => 'function',
@@ -509,7 +507,7 @@ function local_jedomi_get_tool_definitions(string $role): array {
         ];
     }
 
-    // get_site_config — admin only.
+    // Get_site_config — admin only.
     if ($role === 'admin') {
         $tools[] = [
             'type' => 'function',
@@ -531,7 +529,7 @@ function local_jedomi_get_tool_definitions(string $role): array {
         ];
     }
 
-    // ws_search — todos los roles. Semantic keyword search returning full function docs.
+    // Ws_search — todos los roles. Semantic keyword search returning full function docs.
     $tools[] = [
         'type' => 'function',
         'function' => [
@@ -554,7 +552,7 @@ function local_jedomi_get_tool_definitions(string $role): array {
         ],
     ];
 
-    // ws_describe — todos los roles. Full docs for a single known WS function.
+    // Ws_describe — todos los roles. Full docs for a single known WS function.
     $tools[] = [
         'type' => 'function',
         'function' => [
@@ -573,7 +571,7 @@ function local_jedomi_get_tool_definitions(string $role): array {
         ],
     ];
 
-    // ws_execute — admin, manager, teacher.
+    // Ws_execute — admin, manager, teacher.
     if (in_array($role, ['admin', 'manager', 'teacher'], true)) {
         $tools[] = [
             'type' => 'function',
@@ -786,7 +784,7 @@ function local_jedomi_generate_spt(string $role): array {
                     ? context_course::instance($COURSE->id)
                     : $sysctx;
 
-    // Capabilities reales de Moodle — heredadas del sistema de roles
+    // Capabilities reales de Moodle — heredadas del sistema de roles.
     $capabilities = [
         'can_view_all_grades'    => has_capability('moodle/grade:viewall', $coursectx),
         'can_manage_users'       => has_capability('moodle/user:update', $sysctx),
@@ -797,9 +795,9 @@ function local_jedomi_generate_spt(string $role): array {
         'can_access_all_groups'  => has_capability('moodle/site:accessallgroups', $coursectx),
     ];
 
-    // Cursos según rol (para scope de RBAC en el gateway)
-    $courseidsowned   = [];   // cursos donde el usuario tiene poder (teacher / admin / manager)
-    $courseidsenrolled = [];  // cursos donde el usuario está inscrito (student)
+    // Cursos según rol (para scope de RBAC en el gateway).
+    $courseidsowned   = [];   // Cursos donde el usuario tiene poder (teacher / admin / manager).
+    $courseidsenrolled = [];  // Cursos donde el usuario está inscrito (student).
 
     if ($role === 'teacher' || $role === 'manager') {
         $courses = enrol_get_users_courses($USER->id, true);
@@ -810,10 +808,10 @@ function local_jedomi_generate_spt(string $role): array {
             }
         }
     } else if ($role === 'admin') {
-        // Admin no necesita lista de cursos — tiene acceso total
+        // Admin no necesita lista de cursos — tiene acceso total.
         $courseidsowned = [];
     } else if ($role === 'student') {
-        // Para student: lista de cursos inscritos (usada por el gateway para filtrar)
+        // Para student: lista de cursos inscritos (usada por el gateway para filtrar).
         $courses = enrol_get_users_courses($USER->id, true);
         foreach ($courses as $c) {
             $courseidsenrolled[] = (int)$c->id;
@@ -827,10 +825,10 @@ function local_jedomi_generate_spt(string $role): array {
         'username'            => $USER->username,
         'role'                => $role,
         'course_id'           => (int) ($COURSE->id ?? 0),
-        'course_ids_owned'    => $courseidsowned, // teacher/manager: sus cursos
-        'course_ids_enrolled' => $courseidsenrolled, // student: cursos inscritos
+        'course_ids_owned'    => $courseidsowned, // Teacher/manager: sus cursos.
+        'course_ids_enrolled' => $courseidsenrolled, // Student: cursos inscritos.
         'capabilities'        => $capabilities,
-        'tools'               => $tools, // Tool defs en OpenAI format — gateway las usa para configurar el modelo
+        'tools'               => $tools, // Tool defs en OpenAI format — gateway las usa para configurar el modelo.
         'moodle_url'          => $CFG->wwwroot,
         'expires'             => time() + 1800, // 30 minutos (conversaciones con múltiples tool calls)
     ];
@@ -839,9 +837,9 @@ function local_jedomi_generate_spt(string $role): array {
     // El sesskey() se incluye en el payload (no como key) para binding de sesión:
     // si la sesión cambia, el payload cambia y el SPT queda inválido de todas formas.
     $staticsecret = get_config('local_jedomi', 'spt_secret') ?: 'jedomi-spt-secret';
-    $payload['sesskey_hash'] = substr(hash('sha256', sesskey()), 0, 16); // binding sin exponer sesskey
+    $payload['sesskey_hash'] = substr(hash('sha256', sesskey()), 0, 16); // Binding sin exponer sesskey.
 
-    ksort($payload);  // ordenar claves antes de serializar (consistencia con Python sort_keys)
+    ksort($payload);  // Ordenar claves antes de serializar (consistencia con Python sort_keys).
     $tosign   = json_encode($payload);
     $signature = hash_hmac('sha256', $tosign, $staticsecret);
 
@@ -1300,7 +1298,7 @@ function local_jedomi_sanitize_html_tables(string $html): string {
     return preg_replace_callback('/<table[^>]*>(.*?)<\/table>/is', function ($tablematch) {
         $tablehtml = $tablematch[1];
 
-        // ── Extract headers ────────────────────────────────────────────
+        // ... ── Extract headers ────────────────────────────────────────────
         $headers = [];
         if (preg_match('/<tr[^>]*>(.*?)<\/tr>/is', $tablehtml, $headerrow)) {
             preg_match_all('/<th[^>]*>(.*?)<\/th>/is', $headerrow[1], $headercells);
@@ -1309,7 +1307,7 @@ function local_jedomi_sanitize_html_tables(string $html): string {
             }
         }
 
-        // ── Extract rows ───────────────────────────────────────────────
+        // ... ── Extract rows ───────────────────────────────────────────────
         $rows = [];
         preg_match_all('/<tr[^>]*>(.*?)<\/tr>/is', $tablehtml, $rowmatches);
         foreach ($rowmatches[1] as $rowhtml) {
@@ -1328,7 +1326,7 @@ function local_jedomi_sanitize_html_tables(string $html): string {
             $headers = array_shift($rows);
         }
 
-        // ── Build pipe-delimited output ────────────────────────────────
+        // ... ── Build pipe-delimited output ────────────────────────────────
         $allrows = [];
         if (!empty($headers)) {
             $allrows[] = $headers;
@@ -1394,7 +1392,7 @@ function local_jedomi_send_agent_notification(int|string $chatid, string $agent,
     // Sanitize HTML tables before any strip_tags call.
     $content = \local_jedomi_sanitize_html_tables($content);
 
-    // ── Build caption (fits within Telegram's 1024-char limit) ─────────
+    // ... ── Build caption (fits within Telegram's 1024-char limit) ─────────
     // Header with agent name + status + date.
     $agentlabel = strip_tags($agent);
     $datestr = userdate(time());
@@ -1408,7 +1406,7 @@ function local_jedomi_send_agent_notification(int|string $chatid, string $agent,
     }
     $summary = mb_substr($summary, 0, $maxsummarylen);
 
-    // ── Decision: message vs file ──────────────────────────────────────
+    // ... ── Decision: message vs file ──────────────────────────────────────
     $client = new \local_jedomi\telegram\api_client();
 
     if (mb_strlen($content) < 3800) {
@@ -1418,7 +1416,7 @@ function local_jedomi_send_agent_notification(int|string $chatid, string $agent,
         return $client->send_message($chatid, $msg);
     }
 
-    // ── Large result → send as .txt file ──────────────────────────────
+    // ... ── Large result → send as .txt file ──────────────────────────────
     // Extract a brief one-line description from the AI response (first meaningful line,
     // not a code fence or empty line). This goes in the caption so the user knows what
     // the result is about without seeing the actual data.
@@ -1427,6 +1425,7 @@ function local_jedomi_send_agent_notification(int|string $chatid, string $agent,
     $oneliner = '';
     foreach ($lines as $line) {
         $line = trim($line);
+        // phpcs:ignore moodle.Strings.ForbiddenStrings.Found -- literal Markdown fences.
         if (!empty($line) && !str_starts_with($line, '```')) {
             $oneliner = $line;
             break;
@@ -1460,6 +1459,7 @@ function local_jedomi_send_agent_notification(int|string $chatid, string $agent,
     // <pre> block, extract just the content inside it for the file.
     // Otherwise use the full stripped content.
     $filecontent = strip_tags($content);
+    // phpcs:ignore moodle.Strings.ForbiddenStrings.Found -- literal Markdown fences.
     if (preg_match('/```(?:\w+)?\s*\n(.+?)\n```/s', $content, $m)) {
         $filecontent = trim($m[1]);
     } else if (preg_match('/<pre>(.+?)<\/pre>/s', $content, $m)) {

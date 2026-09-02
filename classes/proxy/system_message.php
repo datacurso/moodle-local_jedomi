@@ -26,8 +26,6 @@
 
 namespace local_jedomi\proxy;
 
-defined('MOODLE_INTERNAL') || die();
-
 /**
  * Builds the role- and context-aware system prompt for the AI chat proxy.
  */
@@ -50,7 +48,7 @@ class system_message {
         $location   = $context['location'] ?? 'unknown';
         $pageurl    = $context['page_url'] ?? '';
         $pagetitle  = $context['page_title'] ?? '';
-        $output     = $context['output'] ?? 'web';  // 'web' or 'telegram'
+        $output     = $context['output'] ?? 'web';  // Either web or telegram.
 
         $loclabels = [
             'course'    => get_string('ctx_loc_course', 'local_jedomi')

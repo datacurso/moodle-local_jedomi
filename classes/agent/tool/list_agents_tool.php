@@ -24,8 +24,6 @@
 
 namespace local_jedomi\agent\tool;
 
-defined('MOODLE_INTERNAL') || die();
-
 /**
  * Agent tool that lists the configured scheduled AI agents with their
  * schedule and status details, restricted to admin and manager roles.

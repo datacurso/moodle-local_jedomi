@@ -22,9 +22,7 @@
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-namespace local_jedomi\tests;
-
-defined('MOODLE_INTERNAL') || die();
+namespace local_jedomi;
 
 /**
  * Test cases for session MAX_TURNS config propagation and message trimming.
@@ -40,7 +38,7 @@ final class session_test extends \advanced_testcase {
         $this->resetAfterTest();
     }
 
-    // ========================
+    // ... ========================
     // MAX_TURNS config propagation
     // ========================
 
@@ -127,7 +125,7 @@ final class session_test extends \advanced_testcase {
         $messages = \local_jedomi\telegram\session::build_messages_for_gateway('test_clamp_low', 'current');
         $usermsgs = array_filter($messages, fn($m) => $m['role'] === 'user');
 
-        // max_turns clamped to 1, so history has 1 message + current = 2 user messages.
+        // Max_turns clamped to 1, so history has 1 message + current = 2 user messages.
         // Total: system + 1 history + current = 3.
         $this->assertCount(3, $messages, 'Should have system + 1 history + 1 current = 3');
         $this->assertCount(2, $usermsgs);
@@ -152,12 +150,12 @@ final class session_test extends \advanced_testcase {
         $messages = \local_jedomi\telegram\session::build_messages_for_gateway('test_clamp_high', 'current');
         $usermsgs = array_filter($messages, fn($m) => $m['role'] === 'user');
 
-        // max_turns=100: 100 history msgs + current = 101 user msgs + system = 102 total.
+        // Max_turns=100: 100 history msgs + current = 101 user msgs + system = 102 total.
         $this->assertCount(102, $messages);
         $this->assertCount(101, $usermsgs);
     }
 
-    // ========================
+    // ... ========================
     // Session get/clear
     // ========================
 
@@ -196,7 +194,7 @@ final class session_test extends \advanced_testcase {
 
         $messages = \local_jedomi\telegram\session::build_messages_for_gateway('test_assistant', 'followup');
 
-        // system + user msg + assistant msg + current = 4.
+        // System + user msg + assistant msg + current = 4.
         $this->assertCount(4, $messages);
         $this->assertEquals('assistant', $messages[2]['role']);
         $this->assertEquals('answer', $messages[2]['content']);

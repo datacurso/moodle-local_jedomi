@@ -28,7 +28,7 @@ $tasks = [
     [
         'classname' => \local_jedomi\task\cleanup_telegram_sessions::class,
         'blocking'  => 0,
-        'minute'    => '*/30', // every 30 minutes
+        'minute'    => '*/30', // Every 30 minutes.
         'hour'      => '*',
         'day'       => '*',
         'month'     => '*',
@@ -37,7 +37,7 @@ $tasks = [
     [
         'classname' => \local_jedomi\task\agent_runner::class,
         'blocking'  => 0,
-        'minute'    => '*', // every minute
+        'minute'    => '*', // Every minute.
         'hour'      => '*',
         'day'       => '*',
         'month'     => '*',

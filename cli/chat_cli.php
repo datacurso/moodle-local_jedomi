@@ -29,7 +29,8 @@
 define('CLI_SCRIPT', true);
 define('AJAX_SCRIPT', false);
 
-// ── Seguridad: solo CLI ───────────────────────────────────────────────────
+// ... ── Seguridad: solo CLI ───────────────────────────────────────────────────
+// phpcs:ignore moodle.Files.MoodleInternal.MoodleInternalGlobalState -- CLI guard runs before config.php.
 if (isset($_SERVER['REMOTE_ADDR']) || PHP_SAPI !== 'cli') {
     http_response_code(403);
     die('Acceso denegado. Este script solo puede ejecutarse desde l&iacute;nea de comandos.');
@@ -41,23 +42,23 @@ require_once(__DIR__ . '/../classes/proxy/system_message.php');
 
 global $DB, $CFG, $USER;
 
-// ── Loguear como admin ────────────────────────────────────────────────────
+// ... ── Loguear como admin ────────────────────────────────────────────────────
 $admin = get_admin();
 if ($admin) {
     $USER = $admin;
     \core\session\manager::set_user($admin);
 }
 
-// ── Config API ────────────────────────────────────────────────────────────
+// ... ── Config API ────────────────────────────────────────────────────────────
 $apiurl = rtrim(get_config('local_jedomi', 'gateway_url') ?: 'http://192.168.1.28:8080', '/');
 $apikey = get_config('local_jedomi', 'api_key');
 $model   = get_config('local_jedomi', 'model') ?: 'peg-gemma4';
 
-// ── State ─────────────────────────────────────────────────────────────────
+// ... ── State ─────────────────────────────────────────────────────────────────
 $debug = true;
 $messages = [];
 
-// ── Header ────────────────────────────────────────────────────────────────
+// ... ── Header ────────────────────────────────────────────────────────────────
 echo "\n" . str_repeat("=", 60) . "\n";
 echo "  JEDOMI CLI CHAT — FULL PIPELINE DEBUG\n";
 echo "  User: " . ($USER->id ?? 'none') . " | Model: {$model}\n";
@@ -65,7 +66,7 @@ echo "  Gateway: {$apiurl}/v1/chat/completions\n";
 echo str_repeat("=", 60) . "\n";
 echo "  Comandos: help, debug on/off, exit\n\n";
 
-// ── Build system message + tools (EXACTAMENTE como chatproxy) ─────────────
+// ... ── Build system message + tools (EXACTAMENTE como chatproxy) ─────────────
 $role = 'admin';
 $spt  = ['user_id' => $USER->id, 'course_id' => 0, 'role' => $role];
 $context = ['location' => 'cli', 'course_name' => '', 'page_url' => '', 'page_title' => ''];
@@ -74,7 +75,7 @@ $systemmsg = \local_jedomi\proxy\system_message::build($role, $spt, $context);
 $messages[] = $systemmsg;
 
 $tools = \local_jedomi_get_tool_definitions($role);
-// Convertir formato tool definition → OpenAI tools array
+// Convertir formato tool definition → OpenAI tools array.
 $openaitools = [];
 foreach ($tools as $t) {
     $openaitools[] = [
@@ -91,7 +92,7 @@ if ($debug) {
     echo "\n";
 }
 
-// ── Función: LLamar a la API (sin streaming) ──────────────────────────────
+// ... ── Función: LLamar a la API (sin streaming) ──────────────────────────────
 /**
  * Sends the conversation to the AI gateway chat completions endpoint and returns the assistant message.
  *
@@ -148,7 +149,7 @@ function call_ai(array $messages, array $tools = []): ?array {
     return $data['choices'][0]['message'];
 }
 
-// ── Función: ejecutar tool (EXACTAMENTE como handler.php) ─────────────────
+// ... ── Función: ejecutar tool (EXACTAMENTE como handler.php) ─────────────────
 /**
  * Executes a tool call through the proxy handler using the admin role.
  *
@@ -160,7 +161,7 @@ function execute_tool(string $name, array $args): string {
     return \local_jedomi\proxy\handler::run_tool($name, $args, 'admin');
 }
 
-// ── Main Loop ─────────────────────────────────────────────────────────────
+// ... ── Main Loop ─────────────────────────────────────────────────────────────
 while (true) {
     echo "\n\e[1;33m>>> \e[0m";
     $input = readline();
@@ -217,12 +218,12 @@ while (true) {
 
         $messages[] = $response;
 
-        // ── Text response ──────────────────────────────────────────────
+        // ... ── Text response ──────────────────────────────────────────────
         if (!empty($response['content'])) {
             echo "\n  \e[1;32m🤖:\e[0m {$response['content']}\n";
         }
 
-        // ── Tool calls ─────────────────────────────────────────────────
+        // ... ── Tool calls ─────────────────────────────────────────────────
         if (!empty($response['tool_calls'])) {
             foreach ($response['tool_calls'] as $tc) {
                 $tcid   = $tc['id'];
@@ -234,19 +235,19 @@ while (true) {
                          json_encode($tcargs, JSON_UNESCAPED_UNICODE) . ")\e[0m\n";
                 }
 
-                // Ejecutar
+                // Ejecutar.
                 echo "  \e[35m⚡ Ejecutando {$tcname}...\e[0m\n";
                 $result = execute_tool($tcname, $tcargs);
 
-                // Parsear resultado para mostrar resumen
+                // Parsear resultado para mostrar resumen.
                 $resultparsed = json_decode($result, true);
                 $iserror = isset($resultparsed['error']);
 
-                // Mostrar resultado resumido
+                // Mostrar resultado resumido.
                 if ($iserror) {
                     echo "  \e[31m❌ Error: " . mb_substr($resultparsed['error'], 0, 200) . "\e[0m\n";
                 } else {
-                    // Intentar mostrar resumen útil
+                    // Intentar mostrar resumen útil.
                     $summary = '';
                     if (isset($resultparsed['result'])) {
                         $inner = json_decode($resultparsed['result'], true);
@@ -272,7 +273,7 @@ while (true) {
                     echo "  \e[2m  Result raw: " . mb_substr($result, 0, 300) . "\e[0m\n";
                 }
 
-                // Agregar resultado a messages
+                // Agregar resultado a messages.
                 $messages[] = [
                     'role' => 'tool',
                     'tool_call_id' => $tcid,
@@ -280,7 +281,7 @@ while (true) {
                 ];
             }
         } else {
-            // Sin tool calls → respuesta final
+            // Sin tool calls → respuesta final.
             break;
         }
     }

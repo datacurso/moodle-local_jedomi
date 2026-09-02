@@ -180,11 +180,11 @@ class read_file extends external_api {
 
         self::verify_hmac('jedomi_read_file', $hmactimestamp, $payloadhash, $hmacsignature);
 
-        // Normalise path: strip leading slash, resolve .. traversal
+        // Normalise path: strip leading slash, resolve .. traversal.
         $cleanpath = ltrim(str_replace(['../', '..\\', '../'], '', $path), '/\\');
         $cleanpath = str_replace('\\', '/', $cleanpath);
 
-        // Block sensitive files unconditionally
+        // Block sensitive files unconditionally.
         foreach (self::BLOCKED_PATHS as $blocked) {
             if ($cleanpath === $blocked || str_ends_with($cleanpath, '/' . $blocked)) {
                 \local_jedomi_log(sprintf(
@@ -196,7 +196,7 @@ class read_file extends external_api {
             }
         }
 
-        // Enforce whitelist
+        // Enforce whitelist.
         $allowed = false;
         foreach (self::ALLOWED_PREFIXES as $prefix) {
             if (str_starts_with($cleanpath, $prefix)) {
@@ -208,7 +208,7 @@ class read_file extends external_api {
             throw new \moodle_exception('read_file_not_allowed', 'local_jedomi', '', $cleanpath);
         }
 
-        // Build absolute path and verify it's inside dirroot
+        // Build absolute path and verify it's inside dirroot.
         $abspath = realpath($CFG->dirroot . '/' . $cleanpath);
         $dirroot  = realpath($CFG->dirroot);
 
@@ -236,14 +236,14 @@ class read_file extends external_api {
             ];
         }
 
-        // Read file
+        // Read file.
         $alllines   = file($abspath, FILE_IGNORE_NEW_LINES);
         $totallines = count($alllines);
         $linestart  = min($linestart, $totallines);
         $lineend    = min($linestart + $linecount - 1, $totallines);
         $slice       = array_slice($alllines, $linestart - 1, $linecount);
 
-        // Add line numbers to content
+        // Add line numbers to content.
         $numbered = [];
         foreach ($slice as $i => $line) {
             $numbered[] = sprintf('%4d: %s', $linestart + $i, $line);

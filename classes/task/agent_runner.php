@@ -113,11 +113,11 @@ class agent_runner extends \core\task\scheduled_task {
             return $calls;
         }
 
-        // ── Pattern 1: TOOL_CALL: tool_name\n{json}\nEND_TOOL_CALL ──────────
+        // ... ── Pattern 1: TOOL_CALL: tool_name\n{json}\nEND_TOOL_CALL ──────────
         // Used by our custom system prompt instructions.
         $pattern1 = '/(?:TOOL_CALL|call):\s*(\w+)\s*\n(.+?)\nEND_TOOL_CALL[^\n]*/si';
 
-        // ── Pattern 2: <|tool_call|> or <|python_tag|> special tokens ──────
+        // ... ── Pattern 2: <|tool_call|> or <|python_tag|> special tokens ──────
         // Used by Llama 3.x models and similar architectures.
         // Two sub-patterns:
         // a) <|tool_call|>{"name":"x","arguments":{...}}<|/tool_call|>
@@ -137,7 +137,7 @@ class agent_runner extends \core\task\scheduled_task {
             return $calls;
         }
 
-        // Try pattern 2 (<|tool_call|>).
+        // Try the second pattern, the tool_call marker.
         if (preg_match_all($pattern2, $content, $matches, PREG_SET_ORDER)) {
             $content = trim(preg_replace($pattern2, '', $content));
 
@@ -256,19 +256,19 @@ class agent_runner extends \core\task\scheduled_task {
 
         foreach ($due as $agent) {
             try {
-                // ── Log agent info ────────────────────────────────────────────
+                // ... ── Log agent info ────────────────────────────────────────────
                 $agentlabel = $agent->name ?? "Agent #{$agent->id}";
                 $excerpt = mb_substr($agent->prompt, 0, 80);
                 mtrace("[AGENT] {$agentlabel} \"{$excerpt}\"");
                 \local_jedomi_log("[AGENT] {$agentlabel} (prompt " . strlen($agent->prompt) . "B)");
 
-                // ═══════════════════════════════════════════════════════════════
+                // ... ═══════════════════════════════════════════════════════════════
                 // PRE-EXECUTION GATE — verifica que el creador del agente
                 // siga siendo un usuario válido y tenga acceso al contexto.
                 // Si no → deshabilita el agente, notifica y saltea.
                 // ═══════════════════════════════════════════════════════════════
 
-                // ── 1) ¿El creador existe y no está suspendido/eliminado? ──
+                // ... ── 1) ¿El creador existe y no está suspendido/eliminado? ──
                 $creator = \core_user::get_user($agent->userid);
                 if (!$creator || !empty($creator->deleted)) {
                     mtrace("[AGENT] {$agentlabel} — creator user {$agent->userid} not found — DISABLING");
@@ -288,7 +288,7 @@ class agent_runner extends \core\task\scheduled_task {
                     continue;
                 }
 
-                // ── 2) ¿El creador aún tiene acceso al contexto del agente? ──
+                // ... ── 2) ¿El creador aún tiene acceso al contexto del agente? ──
                 if (
                     !empty($agent->context_type) && $agent->context_type !== 'site'
                     && !empty($agent->context_id)
@@ -318,11 +318,11 @@ class agent_runner extends \core\task\scheduled_task {
                         continue;
                     }
                 }
-                // ═══════════════════════════════════════════════════════════════
+                // ... ═══════════════════════════════════════════════════════════════
                 // END PRE-EXECUTION GATE
                 // ═══════════════════════════════════════════════════════════════
 
-                // ── Build context hash ────────────────────────────────────────
+                // ... ── Build context hash ────────────────────────────────────────
                 $contextdata = [
                     'prompt' => $agent->prompt,
                     'context_type' => $agent->context_type,
@@ -331,7 +331,7 @@ class agent_runner extends \core\task\scheduled_task {
                 ];
                 $contexthash = hash('sha256', serialize($contextdata));
 
-                // ── Pre-cache init (needed by both cache hit and miss paths) ──
+                // ... ── Pre-cache init (needed by both cache hit and miss paths) ──
                 $role = \local_jedomi_get_user_role_for_user(
                     (int) ($agent->userid ?? 0)
                 );
@@ -346,7 +346,7 @@ class agent_runner extends \core\task\scheduled_task {
                 ];
                 $system = \local_jedomi\proxy\system_message::build($role, $spt, $context);
 
-                // ── Check cache ──────────────────────────────────────────────
+                // ... ── Check cache ──────────────────────────────────────────────
                 $cached = \local_jedomi\agent\agent_manager::get_cached_result(
                     $agent->id,
                     $contexthash
@@ -355,7 +355,7 @@ class agent_runner extends \core\task\scheduled_task {
                 if ($cached !== null) {
                     $finalcontent = '';
 
-                    // ── Try semantic plan replay first ────────────────────────────
+                    // ... ── Try semantic plan replay first ────────────────────────────
                     $cachedplan = \local_jedomi\agent\agent_manager::get_cached_plan(
                         $agent->id,
                         $contexthash
@@ -400,7 +400,7 @@ class agent_runner extends \core\task\scheduled_task {
                         }
 
                         if (!$replayfailed) {
-                            // ── Generate answer from fresh data ────────────────────
+                            // ... ── Generate answer from fresh data ────────────────────
                             // Replay succeeded — we have fresh tool results. Build a
                             // single-round payload with the ORIGINAL context + fresh
                             // data, so the AI answers based on current data without
@@ -470,7 +470,7 @@ class agent_runner extends \core\task\scheduled_task {
                         }
                     }
 
-                    // ── Fallback: use cached answer text ────────────────────────
+                    // ... ── Fallback: use cached answer text ────────────────────────
                     if (empty($finalcontent)) {
                         mtrace("[AGENT] {$agentlabel} — cache HIT text ({$contexthash}) — using cached text");
                         \local_jedomi_log("[AGENT] {$agentlabel} — cache HIT text ({$contexthash}) — using cached text");
@@ -489,16 +489,16 @@ class agent_runner extends \core\task\scheduled_task {
                     mtrace("[AGENT] {$agentlabel} — cache MISS ({$contexthash})");
                     \local_jedomi_log("[AGENT] {$agentlabel} — cache MISS ({$contexthash})");
 
-                    // ── Tool definitions (reuse web version's lang string descriptions) ──
+                    // ... ── Tool definitions (reuse web version's lang string descriptions) ──
                     $tools = \local_jedomi_get_tool_definitions($role);
 
-                    // ── Build messages (same rich context as web chat) ──────
+                    // ... ── Build messages (same rich context as web chat) ──────
                     $messages = [
                         $system,
                         ['role' => 'user', 'content' => $agent->prompt],
                     ];
 
-                    // ── Gateway config ───────────────────────────────────────
+                    // ... ── Gateway config ───────────────────────────────────────
                     $gatewayurl = rtrim(get_config('local_jedomi', 'gateway_url'), '/');
                     $apikey = get_config('local_jedomi', 'api_key');
                     $model = get_config('local_jedomi', 'model');
@@ -518,7 +518,7 @@ class agent_runner extends \core\task\scheduled_task {
                         $maxtokens = 16384; // Default: 16k tokens.
                     }
 
-                    // ── Multi-turn gateway loop ──────────────────────────────
+                    // ... ── Multi-turn gateway loop ──────────────────────────────
                     $finalcontent = '';
                     $totalduration = 0.0;
                     $totalrounds = 0;
@@ -539,7 +539,7 @@ class agent_runner extends \core\task\scheduled_task {
                             $payload['tool_choice'] = 'auto';
                         }
 
-                        // ── Gateway call ─────────────────────────────────────
+                        // ... ── Gateway call ─────────────────────────────────────
                         $gatewaystart = microtime(true);
                         mtrace("[AGENT] {$agentlabel} — round {$round} gateway call");
                         \local_jedomi_log("[AGENT] {$agentlabel} — round {$round} gateway call");
@@ -594,7 +594,7 @@ class agent_runner extends \core\task\scheduled_task {
                         $nativetoolcalls = $message['tool_calls'] ?? [];
                         $content = $message['content'] ?? '';
 
-                        // ── Parse text-based tool calls (only if tools are available) ──
+                        // ... ── Parse text-based tool calls (only if tools are available) ──
                         $texttoolcalls = [];
                         if (!empty($tools)) {
                             $texttoolcalls = $this->parse_text_tool_calls($content);
@@ -633,7 +633,7 @@ class agent_runner extends \core\task\scheduled_task {
                             $funcargs = $tc['function']['arguments'] ?? '{}';
                             $tcid = $tc['id'] ?? 'tc_' . uniqid();
 
-                            // ── Loop detection: hash by tool name + stable args ──
+                            // ... ── Loop detection: hash by tool name + stable args ──
                             $decodedargs = is_string($funcargs) ? json_decode($funcargs, true) : $funcargs;
                             $stableargs = is_array($decodedargs) ? self::stable_args_signature($decodedargs) : md5($funcargs);
                             $callkey = $funcname . '|' . $stableargs;
@@ -676,7 +676,7 @@ class agent_runner extends \core\task\scheduled_task {
                         }
                     }
 
-                    // ── Safety net: if the for loop exhausted without a clean answer ──
+                    // ... ── Safety net: if the for loop exhausted without a clean answer ──
                     // This can happen if:
                     // - The model returns empty content (some models do when they get tool results)
                     // - The model keeps returning TOOL_CALL text even without tools
@@ -709,7 +709,7 @@ class agent_runner extends \core\task\scheduled_task {
                         }
                     }
 
-                    // ── Strip any TOOL_CALL or <|tool_call|> blocks that may have leaked ──
+                    // ... ── Strip any TOOL_CALL or <|tool_call|> blocks that may have leaked ──
                     $hadtoolcallblocks = preg_match(
                         '/(?:TOOL_CALL|call):\s*\w+/si',
                         $finalcontent ?? ''
@@ -747,7 +747,7 @@ class agent_runner extends \core\task\scheduled_task {
                         continue;
                     }
 
-                    // ── Save cache ──────────────────────────────────────────
+                    // ... ── Save cache ──────────────────────────────────────────
                     $allreadonly = true;
                     if (!empty($plan)) {
                         foreach ($plan as $p) {
@@ -780,14 +780,14 @@ class agent_runner extends \core\task\scheduled_task {
                     }
                 }
 
-                // ── Mark run ────────────────────────────────────────────────
+                // ... ── Mark run ────────────────────────────────────────────────
                 \local_jedomi\agent\agent_manager::mark_run($agent->id, true);
                 $reloaded = \local_jedomi\agent\agent_manager::get_agent($agent->id);
                 $nextrunstr = $reloaded ? userdate($reloaded->nextrun) : 'unknown';
                 mtrace("[AGENT] {$agentlabel} — next {$nextrunstr}");
                 \local_jedomi_log("[AGENT] {$agentlabel} — next {$nextrunstr}");
 
-                // ── Telegram notification ────────────────────────────────────
+                // ... ── Telegram notification ────────────────────────────────────
                 try {
                     $telegramlink = $DB->get_record(
                         'local_jedomi_telegram_links',
@@ -825,7 +825,9 @@ class agent_runner extends \core\task\scheduled_task {
                 \local_jedomi_log("[AGENT] {$alabel} — ERROR: " . $e->getMessage());
                 try {
                     \local_jedomi\agent\agent_manager::mark_run($aid, false);
+                    // phpcs:ignore Generic.CodeAnalysis.EmptyStatement.DetectedCatch -- best-effort.
                 } catch (\Exception $ignored) {
+                    // Best-effort: agent already failed, do not mask the original error.
                 }
                 $fail++;
             }
@@ -851,7 +853,9 @@ class agent_runner extends \core\task\scheduled_task {
 
         try {
             \local_jedomi\agent\agent_manager::mark_run($agent->id, false);
+            // phpcs:ignore Generic.CodeAnalysis.EmptyStatement.DetectedCatch -- best-effort.
         } catch (\Exception $ignored) {
+            // Best-effort: the agent is being disabled anyway.
         }
 
         try {

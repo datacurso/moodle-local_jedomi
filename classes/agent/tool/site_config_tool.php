@@ -28,8 +28,6 @@
 
 namespace local_jedomi\agent\tool;
 
-defined('MOODLE_INTERNAL') || die();
-
 /**
  * Agent tool that reads allowlisted, non-sensitive Moodle site
  * configuration values for site administrators.
@@ -103,7 +101,7 @@ class site_config_tool implements agent_tool {
      * @return string JSON-encoded key/value map of readable settings, or a permission_denied error.
      */
     public function execute(\stdClass $params): string {
-        // ── Admin-only gate (matches Telegram webhook_handler behaviour) ──
+        // ... ── Admin-only gate (matches Telegram webhook_handler behaviour) ──
         // Fail-closed: userid=0 also denies (no user context).
         if (!is_siteadmin($this->userid)) {
             return json_encode(['error' => 'permission_denied']);

@@ -35,7 +35,7 @@ try {
     $context = context_system::instance();
     require_capability('moodle/site:config', $context);
 
-    // ── Read params ──────────────────────────────────────────────────────────
+    // ... ── Read params ──────────────────────────────────────────────────────────
     $role      = optional_param('role', 'admin', PARAM_ALPHA);
     $validroles = ['admin', 'manager', 'teacher', 'student'];
     if (!in_array($role, $validroles, true)) {
@@ -49,7 +49,7 @@ try {
     $type      = in_array($type, ['all', 'Lectura', 'Escritura'], true) ? $type : 'all';
     $perpage   = max(10, min(200, optional_param('perpage', 25, PARAM_INT)));
 
-    // ── Build SQL WHERE (search + component only; type is PHP-post-filtered) ─
+    // ... ── Build SQL WHERE (search + component only; type is PHP-post-filtered) ─
     $where  = [];
     $params = [];
     if (!empty($search)) {
@@ -62,7 +62,7 @@ try {
     }
     $wheresql = !empty($where) ? 'WHERE ' . implode(' AND ', $where) : '';
 
-    // ── Load all matching WS ─────────────────────────────────────────────────
+    // ... ── Load all matching WS ─────────────────────────────────────────────────
     $allrows = $DB->get_records_sql(
         "SELECT ef.name, '' AS description, ef.component
            FROM {external_functions} ef
@@ -71,7 +71,7 @@ try {
         $params
     );
 
-    // ── Classify + filter by type ────────────────────────────────────────────
+    // ... ── Classify + filter by type ────────────────────────────────────────────
     $filtered = [];
     foreach ($allrows as $ws) {
         $t = local_jedomi_classify_ws_access($ws->name);
@@ -92,12 +92,12 @@ try {
     $offset = ($page - 1) * $perpage;
     $pagews = array_slice($filtered, $offset, $perpage);
 
-    // ── Load allowlist for checked state ─────────────────────────────────────
+    // ... ── Load allowlist for checked state ─────────────────────────────────────
     $allowlist   = local_jedomi_get_role_allowlist($role);
     $rawconfig  = get_config('local_jedomi', 'ws_allowlist_' . $role);
     $firstvisit = ($role === 'admin' && $rawconfig === false);
 
-    // ── Render table rows HTML ───────────────────────────────────────────────
+    // ... ── Render table rows HTML ───────────────────────────────────────────────
     $rowshtml = '';
     if (empty($pagews)) {
         $rowshtml .= '<tr><td colspan="5" class="text-center text-muted py-4">'
@@ -126,7 +126,7 @@ try {
         }
     }
 
-    // ── Render pagination HTML ───────────────────────────────────────────────
+    // ... ── Render pagination HTML ───────────────────────────────────────────────
     $paginationhtml = '';
     if ($pages > 1) {
         $paginationhtml .= '<nav><ul class="pagination pagination-sm mb-0">';
@@ -138,7 +138,7 @@ try {
         $paginationhtml .= '</ul></nav>';
     }
 
-    // ── Pre-calculate type counts ────────────────────────────────────────────
+    // ... ── Pre-calculate type counts ────────────────────────────────────────────
     $countread  = 0;
     $countwrite = 0;
     foreach ($allrows as $ws) {
@@ -151,7 +151,7 @@ try {
         }
     }
 
-    // ── Response ─────────────────────────────────────────────────────────────
+    // ... ── Response ─────────────────────────────────────────────────────────────
     echo json_encode([
         'rows'        => $rowshtml,
         'pagination'  => $paginationhtml,

@@ -25,7 +25,7 @@
  */
 
 // phpcs:disable moodle.Commenting.MissingDocblock.File -- False positive: the sniff re-runs on every
-// inline PHP open tag of this mixed PHP/HTML page; the file docblock above is present and complete.
+// Inline PHP open tag of this mixed PHP/HTML page; the file docblock above is present and complete.
 
 require_once(__DIR__ . '/../../config.php');
 // Explicitly include plugin lib — guarantee functions are available regardless
@@ -51,7 +51,7 @@ $PAGE->set_pagelayout('standard');
 $PAGE->set_title(get_string('telegram_link_title', 'local_jedomi'));
 $PAGE->set_heading(fullname($user));
 
-// Check if Telegram is enabled and bot is configured
+// Check if Telegram is enabled and bot is configured.
 $enabled      = \local_jedomi\telegram\manager::is_enabled();
 $botverified = (bool) get_config('local_jedomi', 'telegram_bot_verified');
 $botusername = get_config('local_jedomi', 'telegram_bot_username') ?: '';
@@ -60,7 +60,7 @@ $botavailable = $enabled && $botverified && $botusername !== '';
 
 $roleok = local_jedomi_is_telegram_role_allowed();
 
-// Handle actions — only when bot is fully available and role is OK
+// Handle actions — only when bot is fully available and role is OK.
 $action         = optional_param('action', '', PARAM_ALPHA);
 $generatedcode = null;
 $codeexpiry    = 0;
@@ -81,7 +81,7 @@ if ($botavailable && $roleok && $action === 'unlink' && confirm_sesskey()) {
     );
 }
 
-// Load current link status
+// Load current link status.
 global $DB;
 $link = $DB->get_record('local_jedomi_telegram_links', ['userid' => $userid, 'confirmed' => 1]);
 
@@ -140,6 +140,7 @@ echo $OUTPUT->header();
             <?php redirect(new moodle_url('/user/profile.php', ['id' => $userid])); ?>
         <?php endif; ?>
 
+    <?php // phpcs:ignore Squiz.ControlStructures.ElseIfDeclaration.NotAllowed -- alt syntax needs elseif. ?>
     <?php elseif (!$roleok) : ?>
     <!-- ── Role blocked ───────────────────────────────────────────────────── -->
     <div class="alert alert-danger d-flex align-items-center gap-2" style="border-radius:.5rem">
@@ -147,6 +148,7 @@ echo $OUTPUT->header();
         <div><?php echo get_string('telegram_msg_role_blocked', 'local_jedomi'); ?></div>
     </div>
 
+    <?php // phpcs:ignore Squiz.ControlStructures.ElseIfDeclaration.NotAllowed -- alt syntax needs elseif. ?>
     <?php elseif ($link) : ?>
     <!-- ── LINKED ─────────────────────────────────────────────────────────── -->
     <div class="card mb-4" style="border-color:#22c55e">

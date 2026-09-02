@@ -85,12 +85,12 @@ class api_client {
             if (!in_array($tag, $allowed, true)) {
                 continue;
             }
-            if ($m[0][1] === '/') { // Closing tag </tag>
+            if ($m[0][1] === '/') { // Closing tag </tag>.
                 $idx = array_search($tag, $open, true);
                 if ($idx !== false) {
                     array_splice($open, $idx, 1);
                 }
-            } else if (substr($m[0], -2) !== '/>') { // Opening tag (not self-closing)
+            } else if (substr($m[0], -2) !== '/>') { // Opening tag (not self-closing).
                 $open[] = $tag;
             }
         }
@@ -130,12 +130,12 @@ class api_client {
         while (mb_strlen($remaining) > $max) {
             $chunk = mb_substr($remaining, 0, $max);
 
-            // Try to split at \n\n
+            // Try to split at \n\n.
             $lastdoublenl = mb_strrpos($chunk, "\n\n");
             if ($lastdoublenl !== false && $lastdoublenl > $max * 0.5) {
                 $splitat = $lastdoublenl + 2;
             } else {
-                // Fallback: last space
+                // Fallback: last space.
                 $lastspace = mb_strrpos($chunk, ' ');
                 $splitat = ($lastspace !== false && $lastspace > 0) ? $lastspace + 1 : $max;
             }
@@ -251,14 +251,14 @@ class api_client {
      * @return string|null  Local temp file path, or null on failure
      */
     public function download_file(string $fileid): ?string {
-        // Step 1: Get file path
+        // Step 1: Get file path.
         $fileinfo = $this->post('getFile', ['file_id' => $fileid]);
         if (empty($fileinfo['result']['file_path'])) {
             return null;
         }
         $filepath = $fileinfo['result']['file_path'];
 
-        // Step 2: Download from Telegram CDN
+        // Step 2: Download from Telegram CDN.
         $downloadurl = 'https://api.telegram.org/file/bot' . $this->token . '/' . $filepath;
         $tmppath = make_temp_directory('local_jedomi') . '/' . basename($filepath);
 

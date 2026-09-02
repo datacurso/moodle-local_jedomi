@@ -28,8 +28,6 @@
 
 namespace local_jedomi\agent;
 
-defined('MOODLE_INTERNAL') || die();
-
 /**
  * Records SQL tool executions and exposes paginated logs, aggregate
  * statistics, and purge maintenance for the profiler dashboard.
@@ -91,12 +89,12 @@ class query_profiler {
             $wheresql = 'WHERE ' . implode(' AND ', $wheres);
         }
 
-        // Pagination
+        // Pagination.
         $page = max(1, (int) ($filters['page'] ?? 1));
         $perpage = max(1, min(200, (int) ($filters['perpage'] ?? 50)));
         $offset = ($page - 1) * $perpage;
 
-        // Sort
+        // Sort.
         $sort = in_array($filters['sort'] ?? '', ['duration_ms', 'timecreated', 'rowcount', 'query'])
             ? $filters['sort'] : 'duration_ms';
         $dir = strtoupper($filters['dir'] ?? 'DESC') === 'ASC' ? 'ASC' : 'DESC';

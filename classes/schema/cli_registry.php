@@ -28,8 +28,6 @@
 
 namespace local_jedomi\schema;
 
-defined('MOODLE_INTERNAL') || die();
-
 /**
  * Registry of admin CLI operations the AI can search, describe,
  * and execute, mirroring the ws_indexer pattern for web services.
