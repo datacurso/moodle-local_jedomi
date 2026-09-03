@@ -1,2 +1,2 @@
 @Library('moodle-ci') _
-moodlePluginCI(moodleBranch: 'main')
+moodlePluginCI(moodleBranch: 'main')# CI test comment 2026-09-03T18:19:22Z
