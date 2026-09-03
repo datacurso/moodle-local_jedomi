@@ -1,4 +1,19 @@
 <?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
 /**
  * jedomi_get_site_config — CompanionWS external function.
  *
@@ -18,6 +33,8 @@ namespace local_jedomi\external;
 
 defined('MOODLE_INTERNAL') || die();
 
+require_once(__DIR__ . '/../../lib.php');
+
 use context_system;
 use core_external\external_api;
 use core_external\external_function_parameters;
@@ -26,8 +43,10 @@ use core_external\external_single_structure;
 use core_external\external_value;
 use local_jedomi\companion_hmac;
 
+/**
+ * External function that returns allowlisted site configuration values, masking sensitive ones.
+ */
 class get_site_config extends external_api {
-
     use companion_hmac;
 
     /**
@@ -59,8 +78,13 @@ class get_site_config extends external_api {
 
     // -------------------------------------------------------------------------
     // Parameter / return definitions
-    // -------------------------------------------------------------------------
+    // -------------------------------------------------------------------------.
 
+    /**
+     * Describe the parameters accepted by the execute function.
+     *
+     * @return external_function_parameters Requested config keys and HMAC auth fields.
+     */
     public static function execute_parameters(): external_function_parameters {
         return new external_function_parameters([
             'keys' => new external_multiple_structure(
@@ -68,11 +92,16 @@ class get_site_config extends external_api {
                 'List of config keys to retrieve (must be subset of the allowlist)'
             ),
             'hmac_signature' => new external_value(PARAM_ALPHANUMEXT, 'HMAC-SHA256 hex signature'),
-            'hmac_timestamp' => new external_value(PARAM_INT,         'Unix timestamp from X-Jedomi-Timestamp'),
+            'hmac_timestamp' => new external_value(PARAM_INT, 'Unix timestamp from X-Jedomi-Timestamp'),
             'payload_hash'   => new external_value(PARAM_ALPHANUMEXT, 'SHA256 hex of the request body'),
         ]);
     }
 
+    /**
+     * Describe the structure returned by the execute function.
+     *
+     * @return external_single_structure Allowed config values serialised as a JSON object string.
+     */
     public static function execute_returns(): external_single_structure {
         // Config values are heterogeneous; return as a JSON string.
         return new external_single_structure([
@@ -82,38 +111,53 @@ class get_site_config extends external_api {
 
     // -------------------------------------------------------------------------
     // Execution
-    // -------------------------------------------------------------------------
+    // -------------------------------------------------------------------------.
 
+    /**
+     * Authenticate the request and return allowlisted config values, silently skipping others.
+     *
+     * @param  array  $keys           Config key names to retrieve.
+     * @param  string $hmacsignature HMAC-SHA256 hex signature from the gateway.
+     * @param  int    $hmactimestamp Unix timestamp from the request header.
+     * @param  string $payloadhash   SHA256 hex of the request body.
+     * @param  bool   $skiphmac      Skip HMAC verification (used by chatproxy — auth via SPT).
+     * @return array Single configs_json entry with the allowed values as a JSON object.
+     */
     public static function execute(
-        array  $keys,
-        string $hmac_signature,
-        int    $hmac_timestamp,
-        string $payload_hash,
-        bool   $skip_hmac = false
+        array $keys,
+        string $hmacsignature,
+        int $hmactimestamp,
+        string $payloadhash,
+        bool $skiphmac = false
     ): array {
-        // --- Capability check ---
+        // ... --- Capability check ---
         $context = context_system::instance();
         self::validate_context($context);
         require_capability('moodle/site:config', $context);
 
-        // --- Parameter validation ---
+        // ... --- Parameter validation ---
         $validated = self::validate_parameters(
             self::execute_parameters(),
-            compact('keys', 'hmac_signature', 'hmac_timestamp', 'payload_hash')
+            [
+                'keys'           => $keys,
+                'hmac_signature' => $hmacsignature,
+                'hmac_timestamp' => $hmactimestamp,
+                'payload_hash'   => $payloadhash,
+            ]
         );
         $keys           = $validated['keys'];
-        $hmac_signature = $validated['hmac_signature'];
-        $hmac_timestamp = $validated['hmac_timestamp'];
-        $payload_hash   = $validated['payload_hash'];
+        $hmacsignature = $validated['hmac_signature'];
+        $hmactimestamp = $validated['hmac_timestamp'];
+        $payloadhash   = $validated['payload_hash'];
 
-        // --- HMAC authentication ---
-        if (!$skip_hmac) {
-            self::verify_hmac('jedomi_get_site_config', $hmac_timestamp, $payload_hash, $hmac_signature);
+        // ... --- HMAC authentication ---
+        if (!$skiphmac) {
+            self::verify_hmac('jedomi_get_site_config', $hmactimestamp, $payloadhash, $hmacsignature);
         }
 
-        // --- Build response (server-side allowlist enforcement) ---
+        // ... --- Build response (server-side allowlist enforcement) ---
         $configs = [];
-        $allowset = array_flip(self::ALLOWLIST); // O(1) lookup
+        $allowset = array_flip(self::ALLOWLIST); // O(1) lookup.
 
         foreach ($keys as $key) {
             // Silently skip keys not in the allowlist — no error, no indication.
@@ -139,7 +183,7 @@ class get_site_config extends external_api {
             $configs[$key] = $value;
         }
 
-        error_log(sprintf(
+        \local_jedomi_log(sprintf(
             '[local_jedomi] get_site_config: requested=%d returned=%d',
             count($keys),
             count($configs)
@@ -152,7 +196,7 @@ class get_site_config extends external_api {
 
     // -------------------------------------------------------------------------
     // Helpers
-    // -------------------------------------------------------------------------
+    // -------------------------------------------------------------------------.
 
     /**
      * Mask a sensitive config value.
@@ -166,10 +210,10 @@ class get_site_config extends external_api {
      */
     private static function mask_sensitive(string $key, string $value): string {
         if ($key === 'smtphosts') {
-            // smtphosts can be a semicolon-separated list.
+            // Smtphosts can be a semicolon-separated list.
             $hosts = preg_split('/[;,\s]+/', $value, -1, PREG_SPLIT_NO_EMPTY);
             $masked = array_map(function (string $host): string {
-                // Remove credentials: user:pass@host:port → host
+                // Remove credentials: user:pass@host:port → host.
                 if (preg_match('/@(.+)$/', $host, $m)) {
                     $host = $m[1];
                 }

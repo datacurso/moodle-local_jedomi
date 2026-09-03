@@ -27,13 +27,10 @@
 
 namespace local_jedomi;
 
-defined('MOODLE_INTERNAL') || die();
-
 /**
  * Static helper — zero DB queries on the hot path (all from config cache).
  */
 class course_access {
-
     /**
      * Returns true when the sidebar should be shown on the given course.
      *

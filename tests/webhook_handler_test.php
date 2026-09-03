@@ -18,22 +18,31 @@
  * Unit tests for classes/telegram/webhook_handler.php in local_jedomi.
  *
  * @package    local_jedomi
- * @category   phpunit
  * @copyright  2026 Jedomi Project
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-namespace local_jedomi\tests;
-
-defined('MOODLE_INTERNAL') || die();
+namespace local_jedomi;
 
 /**
  * Test cases for webhook_handler methods.
  *
+ * Current permission model of the webhook tools (see execute_tool and
+ * execute_pending_action in classes/telegram/webhook_handler.php):
+ *
+ * - "Linked" means a confirmed row in local_jedomi_telegram_links for the
+ *   chat id; the role is derived from the linked userid (site admins in
+ *   get_admins() => 'admin', then manager/teacher/student by capability).
+ * - Open (no role gate): describe_table, search_tables, ws_search, ws_describe.
+ * - teacher/manager/admin: execute_sql (plus per-course ownership checks).
+ * - manager/admin: admin_search, admin_describe, admin_execute,
+ *   create_agent, list_agents, delete_agent.
+ * - admin only: get_site_config; pending actions cache_purge, run_task and
+ *   get_config (the latter also restricted to an allowlist of config keys).
+ *
  * @covers \local_jedomi\telegram\webhook_handler
  */
 final class webhook_handler_test extends \advanced_testcase {
-
     /**
      * Setup test environment.
      */
@@ -42,7 +51,7 @@ final class webhook_handler_test extends \advanced_testcase {
         $this->resetAfterTest();
     }
 
-    // ========================
+    // ... ========================
     // Task 2.2: looks_like_link_code — pure function tests
     // ========================
 
@@ -51,9 +60,9 @@ final class webhook_handler_test extends \advanced_testcase {
      *
      * @return array
      */
-    public function looks_like_link_code_provider(): array {
+    public static function looks_like_link_code_provider(): array {
         return [
-            // [input, expected]
+            // Each case maps an input string to the expected boolean.
             'valid 6-char code'              => ['ABC123', true],
             'valid 4-char code'              => ['XY78', true],
             'valid 8-char code'              => ['ABCD1234', true],
@@ -81,7 +90,7 @@ final class webhook_handler_test extends \advanced_testcase {
         $this->assertSame($expected, $result, "looks_like_link_code('$input') should return " . ($expected ? 'true' : 'false'));
     }
 
-    // ========================
+    // ... ========================
     // Task 2.1: proxy_to_gateway uses new role/SPT functions
     // ========================
 
@@ -98,7 +107,7 @@ final class webhook_handler_test extends \advanced_testcase {
         $admin = get_admin();
         $this->assertNotFalse($admin);
 
-        // Create a telegram link for the admin
+        // Create a telegram link for the admin.
         $chatid = '987654321';
         $DB->insert_record('local_jedomi_telegram_links', (object)[
             'userid'      => (int)$admin->id,
@@ -118,7 +127,7 @@ final class webhook_handler_test extends \advanced_testcase {
         $this->assertEquals('admin', $spt['role']);
     }
 
-    // ========================
+    // ... ========================
     // Task 2.3: handle_start_command with no code
     // ========================
 
@@ -147,7 +156,7 @@ final class webhook_handler_test extends \advanced_testcase {
         $this->assertTrue(true, 'See code: handle_start_command validates code format');
     }
 
-    // ========================
+    // ... ========================
     // Task 2.5: execute_tool method
     // ========================
 
@@ -229,19 +238,41 @@ final class webhook_handler_test extends \advanced_testcase {
     }
 
     /**
-     * Test execute_tool execute_sql works with SELECT.
+     * Test execute_tool execute_sql works with SELECT for a linked admin.
      */
     public function test_execute_tool_execute_sql_success(): void {
-        global $DB;
+        $admin = get_admin();
+        $this->create_telegram_link((int)$admin->id, '12345');
 
+        // Production resolves userid/role from the chat link and passes them in.
         $result = $this->call_private_static('execute_tool', [
             'execute_sql',
             ['sql' => 'SELECT id, username FROM {user} WHERE deleted = 0 LIMIT 5'],
+            (int)$admin->id,
+            'admin',
+            [],
         ]);
         $this->assertStringContainsString('Results', $result);
     }
 
-    // ========================
+    /**
+     * Test execute_tool execute_sql denies users without a privileged role.
+     */
+    public function test_execute_tool_execute_sql_denied_without_privilege(): void {
+        $user = $this->getDataGenerator()->create_user();
+
+        $result = $this->call_private_static('execute_tool', [
+            'execute_sql',
+            ['sql' => 'SELECT id FROM {user} LIMIT 1'],
+            (int)$user->id,
+            'student',
+            [],
+        ]);
+        $this->assertStringContainsString('Permission denied', $result);
+        $this->assertStringNotContainsString('Results', $result);
+    }
+
+    // ... ========================
     // Task 2.6: execute_pending_action
     // ========================
 
@@ -257,32 +288,129 @@ final class webhook_handler_test extends \advanced_testcase {
     }
 
     /**
-     * Test execute_pending_action with get_config.
+     * Test execute_pending_action with get_config for a linked admin.
+     *
+     * The key must belong to the get_config allowlist ($safekeys).
      */
     public function test_execute_pending_action_get_config(): void {
-        // Set a config value first.
-        set_config('test_key', 'test_value', 'local_jedomi');
+        $this->create_telegram_link((int)get_admin()->id, '12345');
+        set_config('telegram_max_turns', 25, 'local_jedomi');
 
         $result = $this->call_private_static('execute_pending_action', [
-            ['name' => 'get_config', 'params' => ['key' => 'test_key']],
+            ['name' => 'get_config', 'params' => ['key' => 'telegram_max_turns']],
             '12345',
         ]);
-        $this->assertStringContainsString('test_value', $result);
-        $this->assertStringContainsString('test_key', $result);
+        $this->assertStringContainsString('telegram_max_turns', $result);
+        $this->assertStringContainsString('25', $result);
     }
 
     /**
-     * Test execute_pending_action get_config with missing key.
+     * Test execute_pending_action get_config with an allowlisted but unset key.
      */
     public function test_execute_pending_action_get_config_not_found(): void {
+        $this->create_telegram_link((int)get_admin()->id, '12345');
+        unset_config('telegram_gateway_timeout', 'local_jedomi');
+
         $result = $this->call_private_static('execute_pending_action', [
-            ['name' => 'get_config', 'params' => ['key' => 'nonexistent_key_xyz']],
+            ['name' => 'get_config', 'params' => ['key' => 'telegram_gateway_timeout']],
             '12345',
         ]);
         $this->assertStringContainsString('not found', $result);
     }
 
-    // ========================
+    /**
+     * Test execute_pending_action get_config denies a chat without a link.
+     */
+    public function test_execute_pending_action_get_config_denied_unlinked_chat(): void {
+        $result = $this->call_private_static('execute_pending_action', [
+            ['name' => 'get_config', 'params' => ['key' => 'telegram_max_turns']],
+            'chat-without-link',
+        ]);
+        $this->assertStringContainsString('Permission denied. Admin only.', $result);
+    }
+
+    /**
+     * Test execute_pending_action get_config denies a linked non-admin user.
+     */
+    public function test_execute_pending_action_get_config_denied_non_admin(): void {
+        $user = $this->getDataGenerator()->create_user();
+        $this->create_telegram_link((int)$user->id, '55555');
+        set_config('telegram_max_turns', 25, 'local_jedomi');
+
+        $result = $this->call_private_static('execute_pending_action', [
+            ['name' => 'get_config', 'params' => ['key' => 'telegram_max_turns']],
+            '55555',
+        ]);
+        $this->assertStringContainsString('Permission denied. Admin only.', $result);
+    }
+
+    /**
+     * Data provider: admin-only pending actions.
+     *
+     * @return array
+     */
+    public static function admin_only_pending_actions_provider(): array {
+        return [
+            'cache_purge' => ['cache_purge'],
+            'run_task'    => ['run_task'],
+            'get_config'  => ['get_config'],
+        ];
+    }
+
+    /**
+     * Test every admin-only pending action denies an unlinked chat.
+     *
+     * @dataProvider admin_only_pending_actions_provider
+     */
+    public function test_admin_only_pending_actions_deny_unlinked(string $action): void {
+        $result = $this->call_private_static('execute_pending_action', [
+            ['name' => $action, 'params' => []],
+            'chat-without-link',
+        ]);
+        $this->assertStringContainsString('Permission denied. Admin only.', $result);
+    }
+
+    /**
+     * Data provider: role-gated execute_tool tools and their denial marker.
+     *
+     * @return array
+     */
+    public static function gated_tools_provider(): array {
+        // Marker is the denial text each tool returns for role 'student'.
+        return [
+            'execute_sql (teacher+)'      => ['execute_sql', ['sql' => 'SELECT 1 AS x'], 'Permission denied'],
+            'get_site_config (admin)'     => ['get_site_config', [], 'permission_denied'],
+            'admin_search (manager+)'     => ['admin_search', ['query' => 'user'], 'permission_denied'],
+            'admin_describe (manager+)'   => ['admin_describe', ['setting' => 'x'], 'permission_denied'],
+            'admin_execute (manager+)'    => ['admin_execute', ['setting' => 'x'], 'permission_denied'],
+            'create_agent (manager+)'     => ['create_agent', [], 'permission_denied'],
+            'list_agents (manager+)'      => ['list_agents', [], 'permission_denied'],
+            'delete_agent (manager+)'     => ['delete_agent', [], 'permission_denied'],
+        ];
+    }
+
+    /**
+     * Test every role-gated tool denies an unprivileged (student) role.
+     *
+     * Open tools (describe_table, search_tables, ws_search, ws_describe) are
+     * covered by the roleless success tests above.
+     *
+     * @dataProvider gated_tools_provider
+     */
+    public function test_gated_tools_deny_unprivileged_role(string $tool, array $args, string $marker): void {
+        $user = $this->getDataGenerator()->create_user();
+
+        $result = $this->call_private_static('execute_tool', [
+            $tool, $args, (int)$user->id, 'student', [],
+        ]);
+        $this->assertStringContainsString(
+            $marker,
+            $result,
+            "Tool '{$tool}' should deny role 'student'"
+        );
+    }
+
+    // ... ========================
     // Task 2.4: handle_tool_calls
     // ========================
 
@@ -296,7 +424,7 @@ final class webhook_handler_test extends \advanced_testcase {
         $this->assertTrue(true, 'handle_tool_calls delegates to execute_tool and sends results');
     }
 
-    // ========================
+    // ... ========================
     // Task 2.7: error_log → local_jedomi_log
     // ========================
 
@@ -304,12 +432,34 @@ final class webhook_handler_test extends \advanced_testcase {
      * Test that webhook_handler uses local_jedomi_log instead of error_log.
      */
     public function test_no_error_log_calls(): void {
-        // Use reflection to check the file doesn't contain error_log calls
-        // (except in comments). Verified by code review and php -l.
-        $this->assertTrue(true, 'All error_log calls replaced with local_jedomi_log');
+        $root = realpath(__DIR__ . '/..');
+        $iterator = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($root, \FilesystemIterator::SKIP_DOTS)
+        );
+
+        $offenders = [];
+        foreach ($iterator as $file) {
+            if ($file->getExtension() !== 'php') {
+                continue;
+            }
+            // The plugin's own tests may mention the function name in strings.
+            if (str_starts_with($file->getPathname(), $root . '/tests')) {
+                continue;
+            }
+            $source = file_get_contents($file->getPathname());
+            if (preg_match('/\berror_log\s*\(/', $source)) {
+                $offenders[] = substr($file->getPathname(), strlen($root) + 1);
+            }
+        }
+
+        $this->assertSame(
+            [],
+            $offenders,
+            'error_log() is forbidden; use local_jedomi_log() or debugging() instead'
+        );
     }
 
-    // ========================
+    // ... ========================
     // Task 5.2: /help command
     // ========================
 
@@ -328,20 +478,32 @@ final class webhook_handler_test extends \advanced_testcase {
 
         // Verify the /help lang strings exist with expected content.
         $helpheading = get_string('telegram_help_heading', 'local_jedomi');
-        $this->assertStringContainsString('Jedomi', $helpheading,
-            'Help heading should reference Jedomi');
+        $this->assertStringContainsString(
+            'Jedomi',
+            $helpheading,
+            'Help heading should reference Jedomi'
+        );
 
         $helpstart = get_string('telegram_help_start', 'local_jedomi');
-        $this->assertStringContainsString('/start', $helpstart,
-            'Help start string should reference /start command');
+        $this->assertStringContainsString(
+            '/start',
+            $helpstart,
+            'Help start string should reference /start command'
+        );
 
         $helphelp = get_string('telegram_help_help', 'local_jedomi');
-        $this->assertStringContainsString('/help', $helphelp,
-            'Help help string should reference /help command');
+        $this->assertStringContainsString(
+            '/help',
+            $helphelp,
+            'Help help string should reference /help command'
+        );
 
         $helpunlink = get_string('telegram_help_unlink', 'local_jedomi');
-        $this->assertStringContainsString('/desvincular', $helpunlink,
-            'Help unlink string should reference /desvincular command');
+        $this->assertStringContainsString(
+            '/desvincular',
+            $helpunlink,
+            'Help unlink string should reference /desvincular command'
+        );
 
         // Verify the help footer string exists and is non-empty.
         $helpfooter = get_string('telegram_help_footer', 'local_jedomi');
@@ -356,11 +518,13 @@ final class webhook_handler_test extends \advanced_testcase {
      * the rate-limit check at line 63.
      */
     public function test_help_command_before_rate_limit(): void {
-        $this->assertTrue(true,
-            'See code: /help check at line 51-60 runs before check_and_record_rate at line 63');
+        $this->assertTrue(
+            true,
+            'See code: /help check at line 51-60 runs before check_and_record_rate at line 63'
+        );
     }
 
-    // ========================
+    // ... ========================
     // Telegram UX mejora: /new in help, /ayuda alias
     // ========================
 
@@ -383,19 +547,52 @@ final class webhook_handler_test extends \advanced_testcase {
      */
     public function test_ayuda_in_source(): void {
         $source = file_get_contents(__DIR__ . '/../classes/telegram/webhook_handler.php');
-        $this->assertStringContainsString("'/ayuda'", $source,
-            'webhook_handler should reference /ayuda as a command alias');
+        $this->assertStringContainsString(
+            "'/ayuda'",
+            $source,
+            'webhook_handler should reference /ayuda as a command alias'
+        );
     }
 
     /**
-     * Test that the system prompt contains the Telegram format instruction.
+     * Test that the built system prompt instructs the model to use Telegram HTML.
+     *
+     * Invokes the same builder the runtime uses (build_telegram_system_prompt,
+     * called from proxy_to_gateway) and asserts the format instruction in a
+     * wording-tolerant way: mention of Telegram HTML, the supported tags, and
+     * a prohibition on markdown.
      */
     public function test_system_prompt_has_telegram_format(): void {
-        $source = file_get_contents(__DIR__ . '/../classes/telegram/webhook_handler.php');
-        $this->assertStringContainsString('Usá HTML de Telegram',
-            $source, 'System prompt should tell model to use Telegram HTML');
-        $this->assertStringContainsString('NO uses markdown',
-            $source, 'System prompt should forbid markdown');
+        $prompt = $this->call_private_static('build_telegram_system_prompt', [
+            'admin', 'es', ['ws_search', 'execute_sql'], [], (int)get_admin()->id,
+        ]);
+
+        $this->assertIsString($prompt);
+        $this->assertMatchesRegularExpression(
+            '/telegram\s+html/i',
+            $prompt,
+            'System prompt should tell the model to use Telegram HTML'
+        );
+        $this->assertStringContainsString(
+            '<b>',
+            $prompt,
+            'System prompt should mention the supported <b> tag'
+        );
+        $this->assertStringContainsString(
+            '<i>',
+            $prompt,
+            'System prompt should mention the supported <i> tag'
+        );
+        $this->assertStringContainsString(
+            '<code>',
+            $prompt,
+            'System prompt should mention the supported <code> tag'
+        );
+        $this->assertMatchesRegularExpression(
+            '/no\s+(uses\s+)?markdown/i',
+            $prompt,
+            'System prompt should forbid markdown'
+        );
     }
 
     /**
@@ -426,19 +623,40 @@ final class webhook_handler_test extends \advanced_testcase {
         $this->assertCount(2, $buttons, 'Unlinked keyboard should have 2 buttons');
     }
 
-    // ========================
+    // ... ========================
     // Helpers
     // ========================
 
     /**
+     * Insert a confirmed Telegram link for the given user and chat id.
+     *
+     * A confirmed row in local_jedomi_telegram_links is what makes a chat
+     * "linked": webhook_handler derives userid and role from it.
+     *
+     * @param int $userid
+     * @param string $chatid
+     */
+    private function create_telegram_link(int $userid, string $chatid): void {
+        global $DB;
+        $DB->insert_record('local_jedomi_telegram_links', (object)[
+            'userid'            => $userid,
+            'chatid'            => $chatid,
+            'username'          => 'testlink',
+            'confirmed'         => 1,
+            'timecreated'       => time(),
+            'lastproactivesent' => 0,
+        ]);
+    }
+
+    /**
      * Call a private static method on webhook_handler via reflection.
      *
-     * @param string $methodName
+     * @param string $methodname
      * @param array $args
      * @return mixed
      */
-    private function call_private_static(string $methodName, array $args = []) {
-        $ref = new \ReflectionMethod(\local_jedomi\telegram\webhook_handler::class, $methodName);
+    private function call_private_static(string $methodname, array $args = []) {
+        $ref = new \ReflectionMethod(\local_jedomi\telegram\webhook_handler::class, $methodname);
         $ref->setAccessible(true);
         return $ref->invoke(null, ...$args);
     }

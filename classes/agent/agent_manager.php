@@ -1,4 +1,19 @@
 <?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
 /**
  * Agent manager — CRUD, cache, stats, and purge for scheduled AI agents.
  *
@@ -12,14 +27,11 @@
 
 namespace local_jedomi\agent;
 
-defined('MOODLE_INTERNAL') || die();
-
 /**
  * Static facade for managing scheduled AI agent definitions.
  */
 class agent_manager {
-
-    // ── CRUD: Read ───────────────────────────────────────────────────────────
+    // ... ── CRUD: Read ───────────────────────────────────────────────────────────
 
     /**
      * Get a single agent by ID.
@@ -107,7 +119,7 @@ class agent_manager {
         ];
     }
 
-    // ── CRUD: Create ─────────────────────────────────────────────────────────
+    // ... ── CRUD: Create ─────────────────────────────────────────────────────────
 
     /**
      * Create a new agent record.
@@ -160,8 +172,8 @@ class agent_manager {
         // Take first 3-5 words (max 35 chars).
         $words = preg_split('/\s+/', $name);
         $name = '';
-        $maxWords = min(5, count($words));
-        for ($i = 0; $i < $maxWords; $i++) {
+        $maxwords = min(5, count($words));
+        for ($i = 0; $i < $maxwords; $i++) {
             $candidate = trim($name . ' ' . $words[$i]);
             if (mb_strlen($candidate) > 35) {
                 break;
@@ -171,7 +183,7 @@ class agent_manager {
         return trim($name) ?: 'Agent';
     }
 
-    // ── CRUD: Update ─────────────────────────────────────────────────────────
+    // ... ── CRUD: Update ─────────────────────────────────────────────────────────
 
     /**
      * Update an existing agent record.
@@ -200,7 +212,7 @@ class agent_manager {
         $DB->update_record('local_jedomi_agents', $record);
     }
 
-    // ── CRUD: Delete ─────────────────────────────────────────────────────────
+    // ... ── CRUD: Delete ─────────────────────────────────────────────────────────
 
     /**
      * Delete an agent record and its associated cache entries.
@@ -213,7 +225,7 @@ class agent_manager {
         $DB->delete_records('local_jedomi_agents', ['id' => $id]);
     }
 
-    // ── CRUD: Queue for immediate run ────────────────────────────────────────
+    // ... ── CRUD: Queue for immediate run ────────────────────────────────────────
 
     /**
      * Queue an agent for immediate execution by setting nextrun to now.
@@ -239,7 +251,7 @@ class agent_manager {
         return true;
     }
 
-    // ── CRUD: Due agents ─────────────────────────────────────────────────────
+    // ... ── CRUD: Due agents ─────────────────────────────────────────────────────
 
     /**
      * Get enabled agents whose nextrun has elapsed, ordered by nextrun ASC.
@@ -256,7 +268,7 @@ class agent_manager {
         return array_values($records);
     }
 
-    // ── CRUD: Mark run ───────────────────────────────────────────────────────
+    // ... ── CRUD: Mark run ───────────────────────────────────────────────────────
 
     /**
      * Record an execution result for an agent.
@@ -292,7 +304,7 @@ class agent_manager {
         $DB->update_record('local_jedomi_agents', $update);
     }
 
-    // ── Cron parser ──────────────────────────────────────────────────────────
+    // ... ── Cron parser ──────────────────────────────────────────────────────────
 
     /**
      * Calculate the next run timestamp from a cron expression.
@@ -302,13 +314,13 @@ class agent_manager {
      *
      * Falls back to $from + 300 seconds if the expression cannot be parsed.
      *
-     * @param  string   $cron_expr Five-field cron expression (e.g. every-5-minutes).
+     * @param  string   $cronexpr Five-field cron expression (e.g. every-5-minutes).
      * @param  int|null $from      Base timestamp (defaults to time()).
      * @return int                 Next run timestamp.
      */
-    public static function calculate_next_run(string $cron_expr, ?int $from = null): int {
+    public static function calculate_next_run(string $cronexpr, ?int $from = null): int {
         $from = $from ?? time();
-        $parts = preg_split('/\s+/', trim($cron_expr));
+        $parts = preg_split('/\s+/', trim($cronexpr));
 
         if (count($parts) !== 5) {
             return $from + 300;
@@ -347,11 +359,13 @@ class agent_manager {
                     'wday'    => (int) $utcdate->format('w'),
                     'mon'     => (int) $utcdate->format('n'),
                 ];
-                if (in_array($date['minutes'], $fields[0]) &&
+                if (
+                    in_array($date['minutes'], $fields[0]) &&
                     in_array($date['hours'], $fields[1]) &&
                     in_array($date['mday'], $fields[2]) &&
                     in_array($date['mon'], $fields[3]) &&
-                    in_array($date['wday'], $fields[4])) {
+                    in_array($date['wday'], $fields[4])
+                ) {
                     return $ts;
                 }
                 $ts += 60;
@@ -411,27 +425,27 @@ class agent_manager {
         return [(int) $expr];
     }
 
-    // ── Cache: Read ──────────────────────────────────────────────────────────
+    // ... ── Cache: Read ──────────────────────────────────────────────────────────
 
     /**
      * Get the cached result for a specific agent context.
      *
      * @param  int    $agentid
-     * @param  string $context_hash SHA256 of the context inputs.
+     * @param  string $contexthash SHA256 of the context inputs.
      * @return string|null The result_json value, or null if not cached.
      */
-    public static function get_cached_result(int $agentid, string $context_hash): ?string {
+    public static function get_cached_result(int $agentid, string $contexthash): ?string {
         global $DB;
 
         $record = $DB->get_record('local_jedomi_agent_cache', [
             'agentid' => $agentid,
-            'context_hash' => $context_hash,
+            'context_hash' => $contexthash,
         ], 'result_json');
 
         return $record ? $record->result_json : null;
     }
 
-    // ── Cache: Write ─────────────────────────────────────────────────────────
+    // ... ── Cache: Write ─────────────────────────────────────────────────────────
 
     /**
      * Store or update a cached result for a specific agent context.
@@ -440,15 +454,15 @@ class agent_manager {
      * result_json and timecreated are updated.
      *
      * @param int    $agentid
-     * @param string $context_hash SHA256 of the context inputs.
+     * @param string $contexthash SHA256 of the context inputs.
      * @param string $result       The JSON result string to cache.
      */
-    public static function set_cached_result(int $agentid, string $context_hash, string $result): void {
+    public static function set_cached_result(int $agentid, string $contexthash, string $result): void {
         global $DB;
 
         $existing = $DB->get_record('local_jedomi_agent_cache', [
             'agentid' => $agentid,
-            'context_hash' => $context_hash,
+            'context_hash' => $contexthash,
         ], 'id');
 
         if ($existing) {
@@ -460,7 +474,7 @@ class agent_manager {
         } else {
             $DB->insert_record('local_jedomi_agent_cache', (object) [
                 'agentid' => $agentid,
-                'context_hash' => $context_hash,
+                'context_hash' => $contexthash,
                 'result_json' => $result,
                 'timecreated' => time(),
             ]);
@@ -477,26 +491,26 @@ class agent_manager {
         $DB->delete_records('local_jedomi_agent_cache', ['agentid' => $agentid]);
     }
 
-    // ── Cache: Preview ─────────────────────────────────────────────────────────
+    // ... ── Cache: Preview ─────────────────────────────────────────────────────────
 
     /**
      * Delete a single preview cache entry by context_hash.
      *
      * Preview entries have agentid = 0 (they are not attached to any agent).
      *
-     * @param string $context_hash The md5 hash of the preview prompt.
+     * @param string $contexthash The md5 hash of the preview prompt.
      * @return bool True if a row was deleted.
      */
-    public static function clear_preview_cache(string $context_hash): bool {
+    public static function clear_preview_cache(string $contexthash): bool {
         global $DB;
         $deleted = $DB->delete_records('local_jedomi_agent_cache', [
             'agentid' => 0,
-            'context_hash' => $context_hash,
+            'context_hash' => $contexthash,
         ]);
         return $deleted > 0;
     }
 
-    // ── Cache: Semantic Plan ──────────────────────────────────────────────────
+    // ... ── Cache: Semantic Plan ──────────────────────────────────────────────────
 
     /**
      * Store an execution plan alongside the answer for semantic cache replay.
@@ -505,16 +519,16 @@ class agent_manager {
      * plan_json, result_json, and timecreated are updated.
      *
      * @param int    $agentid
-     * @param string $context_hash
+     * @param string $contexthash
      * @param array  $plan   Ordered tool calls: [['tool' => 'x', 'arguments' => '{}'], ...].
      * @param string $answer Final answer text for reformulation context.
      */
-    public static function set_cached_plan(int $agentid, string $context_hash, array $plan, string $answer): void {
+    public static function set_cached_plan(int $agentid, string $contexthash, array $plan, string $answer): void {
         global $DB;
 
         $existing = $DB->get_record('local_jedomi_agent_cache', [
             'agentid' => $agentid,
-            'context_hash' => $context_hash,
+            'context_hash' => $contexthash,
         ], 'id');
 
         $record = (object) [
@@ -528,7 +542,7 @@ class agent_manager {
             $DB->update_record('local_jedomi_agent_cache', $record);
         } else {
             $record->agentid = $agentid;
-            $record->context_hash = $context_hash;
+            $record->context_hash = $contexthash;
             $DB->insert_record('local_jedomi_agent_cache', $record);
         }
     }
@@ -537,15 +551,15 @@ class agent_manager {
      * Get the cached plan and answer for a specific agent context.
      *
      * @param  int    $agentid
-     * @param  string $context_hash
+     * @param  string $contexthash
      * @return array|null ['plan' => [...], 'answer' => '...'] or null if no plan.
      */
-    public static function get_cached_plan(int $agentid, string $context_hash): ?array {
+    public static function get_cached_plan(int $agentid, string $contexthash): ?array {
         global $DB;
 
         $record = $DB->get_record('local_jedomi_agent_cache', [
             'agentid' => $agentid,
-            'context_hash' => $context_hash,
+            'context_hash' => $contexthash,
         ], 'plan_json, result_json');
 
         if (!$record || empty($record->plan_json)) {
@@ -588,7 +602,7 @@ class agent_manager {
             return true;
         }
 
-        // ws_execute / call_webservice: check the actual WS being called.
+        // Ws_execute / call_webservice: check the actual WS being called.
         // This is handled at plan-recording time by inspecting arguments,
         // not by tool name alone — classify at call site.
         if ($toolname === 'ws_execute' || $toolname === 'call_webservice') {
@@ -599,7 +613,7 @@ class agent_manager {
         return false;
     }
 
-    // ── Stats ─────────────────────────────────────────────────────────────────
+    // ... ── Stats ─────────────────────────────────────────────────────────────────
 
     /**
      * Get aggregate statistics for agents matching the given filters.
@@ -618,7 +632,7 @@ class agent_manager {
     public static function get_stats(array $filters): \stdClass {
         global $DB;
 
-        // ── By role: decode role_filter JSON and count per shortname. ────────
+        // ... ── By role: decode role_filter JSON and count per shortname. ────────
         $allagents = $DB->get_records('local_jedomi_agents', null, '', 'id, role_filter');
         $byrole = [];
         foreach ($allagents as $a) {
@@ -637,7 +651,7 @@ class agent_manager {
         }
         arsort($byrole);
 
-        // ── By status: aggregate enabled vs disabled. ────────────────────────
+        // ... ── By status: aggregate enabled vs disabled. ────────────────────────
         $enabled = $DB->count_records('local_jedomi_agents', ['enabled' => 1]);
         $disabled = $DB->count_records('local_jedomi_agents', ['enabled' => 0]);
         $bystatus = (object) [
@@ -645,12 +659,15 @@ class agent_manager {
             'disabled' => (int) $disabled,
         ];
 
-        // ── Executions per day (last 30 days, DB-agnostic). ──────────────────
+        // ... ── Executions per day (last 30 days, DB-agnostic). ──────────────────
         $thirtydaysago = time() - (30 * 86400);
-        $runs = $DB->get_records_select('local_jedomi_agents',
+        $runs = $DB->get_records_select(
+            'local_jedomi_agents',
             'lastrun IS NOT NULL AND lastrun >= :since',
             ['since' => $thirtydaysago],
-            '', 'id, lastrun');
+            '',
+            'id, lastrun'
+        );
 
         $perday = [];
         foreach ($runs as $run) {
@@ -668,7 +685,7 @@ class agent_manager {
             ];
         }
 
-        // ── Paginated rows (same as get_agents). ────────────────────────────
+        // ... ── Paginated rows (same as get_agents). ────────────────────────────
         $result = self::get_agents($filters);
         $page = max(1, (int) ($filters['page'] ?? 1));
 
@@ -684,7 +701,7 @@ class agent_manager {
         ];
     }
 
-    // ── Purge ─────────────────────────────────────────────────────────────────
+    // ... ── Purge ─────────────────────────────────────────────────────────────────
 
     /**
      * Delete agents matching a context type and optional context id.

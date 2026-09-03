@@ -1,4 +1,19 @@
 <?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
 /**
  * Create Agent tool — creates a scheduled AI agent.
  *
@@ -9,14 +24,25 @@
 
 namespace local_jedomi\agent\tool;
 
-defined('MOODLE_INTERNAL') || die();
-
+/**
+ * Agent tool that creates a new scheduled AI agent record with a prompt
+ * and cron schedule, restricted to admin and manager roles.
+ */
 class create_agent_tool implements agent_tool {
-
+    /**
+     * Get the tool name used in AI tool calls.
+     *
+     * @return string The tool identifier 'create_agent'.
+     */
     public function get_name(): string {
         return 'create_agent';
     }
 
+    /**
+     * Build the OpenAI-compatible function definition for this tool.
+     *
+     * @return array Tool definition requiring prompt and schedule_cron, with optional name, owner, context, and enabled flag.
+     */
     public function get_definition(): array {
         return [
             'type' => 'function',
@@ -61,6 +87,13 @@ class create_agent_tool implements agent_tool {
         ];
     }
 
+    /**
+     * Validate the prompt and 5-field cron expression, then create the agent via agent_manager.
+     *
+     * @param \stdClass $params Decoded tool arguments; requires 'prompt' and 'schedule_cron',
+     *                          accepts name, userid, context_type, context_id, enabled.
+     * @return string JSON-encoded creation result with the new agent id, or an error message.
+     */
     public function execute(\stdClass $params): string {
         $role = \local_jedomi_get_user_role();
         if (!in_array($role, ['admin', 'manager'], true)) {

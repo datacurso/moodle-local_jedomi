@@ -1,4 +1,19 @@
 <?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
 /**
  * Scheduled task: execute due AI agents.
  *
@@ -23,11 +38,20 @@ namespace local_jedomi\task;
 
 defined('MOODLE_INTERNAL') || die();
 
-class agent_runner extends \core\task\scheduled_task {
+require_once(__DIR__ . '/../../lib.php');
 
+/**
+ * Scheduled task that executes due AI agents through the gateway with tool calling and result caching.
+ */
+class agent_runner extends \core\task\scheduled_task {
     /** Max tool call iterations per agent run. */
     const MAX_TOOL_ITERATIONS = 50;
 
+    /**
+     * Return the localised name of this scheduled task.
+     *
+     * @return string Task name from the language pack.
+     */
     public function get_name(): string {
         return get_string('agent_runner_task', 'local_jedomi');
     }
@@ -89,15 +113,15 @@ class agent_runner extends \core\task\scheduled_task {
             return $calls;
         }
 
-        // ── Pattern 1: TOOL_CALL: tool_name\n{json}\nEND_TOOL_CALL ──────────
+        // ... ── Pattern 1: TOOL_CALL: tool_name\n{json}\nEND_TOOL_CALL ──────────
         // Used by our custom system prompt instructions.
         $pattern1 = '/(?:TOOL_CALL|call):\s*(\w+)\s*\n(.+?)\nEND_TOOL_CALL[^\n]*/si';
 
-        // ── Pattern 2: <|tool_call|> or <|python_tag|> special tokens ──────
+        // ... ── Pattern 2: <|tool_call|> or <|python_tag|> special tokens ──────
         // Used by Llama 3.x models and similar architectures.
         // Two sub-patterns:
-        //   a) <|tool_call|>{"name":"x","arguments":{...}}<|/tool_call|>
-        //   b) <|tool_call|>tool_name\n{json}<|/tool_call|>
+        // a) <|tool_call|>{"name":"x","arguments":{...}}<|/tool_call|>
+        // b) <|tool_call|>tool_name\n{json}<|/tool_call|>
         $pattern2 = '/<\|(?:tool_call|python_tag)\|>(.+?)<\|\\/\1\|>/si';
 
         // Try pattern 1 first.
@@ -113,7 +137,7 @@ class agent_runner extends \core\task\scheduled_task {
             return $calls;
         }
 
-        // Try pattern 2 (<|tool_call|>).
+        // Try the second pattern, the tool_call marker.
         if (preg_match_all($pattern2, $content, $matches, PREG_SET_ORDER)) {
             $content = trim(preg_replace($pattern2, '', $content));
 
@@ -122,18 +146,18 @@ class agent_runner extends \core\task\scheduled_task {
                 // Try parsing inner as JSON with name/arguments.
                 $decoded = json_decode($inner, true);
                 if (json_last_error() === JSON_ERROR_NONE && isset($decoded['name'])) {
-                    $toolName = $decoded['name'];
+                    $toolname = $decoded['name'];
                     $args = $decoded['arguments'] ?? '{}';
                     if (is_array($args)) {
                         $args = json_encode($args, JSON_UNESCAPED_UNICODE);
                     }
-                    $parsed = $this->tool_call_from_match($toolName, $args);
+                    $parsed = $this->tool_call_from_match($toolname, $args);
                 } else {
                     // Try "tool_name\n{json}" format.
                     $parts = explode("\n", $inner, 2);
-                    $toolName = trim($parts[0]);
-                    $argsJson = $parts[1] ?? '{}';
-                    $parsed = $this->tool_call_from_match($toolName, $argsJson);
+                    $toolname = trim($parts[0]);
+                    $argsjson = $parts[1] ?? '{}';
+                    $parsed = $this->tool_call_from_match($toolname, $argsjson);
                 }
                 if ($parsed) {
                     $calls[] = $parsed;
@@ -148,13 +172,13 @@ class agent_runner extends \core\task\scheduled_task {
     /**
      * Build a tool call entry from a name + JSON string, validating JSON.
      */
-    private function tool_call_from_match(string $name, string $argsJson): ?array {
+    private function tool_call_from_match(string $name, string $argsjson): ?array {
         // Validate JSON.
-        json_decode($argsJson);
+        json_decode($argsjson);
         if (json_last_error() !== JSON_ERROR_NONE) {
-            if (preg_match('/\{.*\}/s', $argsJson, $jsonMatch)) {
-                $argsJson = $jsonMatch[0];
-                json_decode($argsJson);
+            if (preg_match('/\{.*\}/s', $argsjson, $jsonmatch)) {
+                $argsjson = $jsonmatch[0];
+                json_decode($argsjson);
             }
         }
         if (json_last_error() !== JSON_ERROR_NONE) {
@@ -165,7 +189,7 @@ class agent_runner extends \core\task\scheduled_task {
             'type' => 'function',
             'function' => [
                 'name' => trim($name),
-                'arguments' => $argsJson,
+                'arguments' => $argsjson,
             ],
         ];
     }
@@ -213,17 +237,17 @@ class agent_runner extends \core\task\scheduled_task {
         $start = time();
 
         mtrace('[AGENT] Starting agent_runner');
-        error_log('[AGENT] Starting agent_runner');
+        \local_jedomi_log('[AGENT] Starting agent_runner');
 
         $due = \local_jedomi\agent\agent_manager::get_due_agents();
         $count = count($due);
 
         mtrace("[AGENT] Starting agent_runner — {$count} due agents");
-        error_log("[AGENT] Starting agent_runner — {$count} due agents");
+        \local_jedomi_log("[AGENT] Starting agent_runner — {$count} due agents");
 
         if (empty($due)) {
             mtrace('[AGENT] No due agents — nothing to do');
-            error_log('[AGENT] No due agents — nothing to do');
+            \local_jedomi_log('[AGENT] No due agents — nothing to do');
             return;
         }
 
@@ -232,23 +256,23 @@ class agent_runner extends \core\task\scheduled_task {
 
         foreach ($due as $agent) {
             try {
-                // ── Log agent info ────────────────────────────────────────────
-                $agentLabel = $agent->name ?? "Agent #{$agent->id}";
+                // ... ── Log agent info ────────────────────────────────────────────
+                $agentlabel = $agent->name ?? "Agent #{$agent->id}";
                 $excerpt = mb_substr($agent->prompt, 0, 80);
-                mtrace("[AGENT] {$agentLabel} \"{$excerpt}\"");
-                error_log("[AGENT] {$agentLabel} \"{$excerpt}\"");
+                mtrace("[AGENT] {$agentlabel} \"{$excerpt}\"");
+                \local_jedomi_log("[AGENT] {$agentlabel} (prompt " . strlen($agent->prompt) . "B)");
 
-                // ═══════════════════════════════════════════════════════════════
+                // ... ═══════════════════════════════════════════════════════════════
                 // PRE-EXECUTION GATE — verifica que el creador del agente
                 // siga siendo un usuario válido y tenga acceso al contexto.
                 // Si no → deshabilita el agente, notifica y saltea.
                 // ═══════════════════════════════════════════════════════════════
 
-                // ── 1) ¿El creador existe y no está suspendido/eliminado? ──
+                // ... ── 1) ¿El creador existe y no está suspendido/eliminado? ──
                 $creator = \core_user::get_user($agent->userid);
                 if (!$creator || !empty($creator->deleted)) {
-                    mtrace("[AGENT] {$agentLabel} — creator user {$agent->userid} not found — DISABLING");
-                    error_log("[AGENT] {$agentLabel} — creator user {$agent->userid} not found — DISABLING");
+                    mtrace("[AGENT] {$agentlabel} — creator user {$agent->userid} not found — DISABLING");
+                    \local_jedomi_log("[AGENT] {$agentlabel} — creator user {$agent->userid} not found — DISABLING");
                     $DB->set_field('local_jedomi_agents', 'enabled', 0, ['id' => $agent->id]);
                     $this->notify_disabled($agent, 'Usuario creador no encontrado.');
                     $fail++;
@@ -256,17 +280,19 @@ class agent_runner extends \core\task\scheduled_task {
                 }
                 if (!empty($creator->suspended) || !empty($creator->deleted)) {
                     $reason = !empty($creator->suspended) ? 'suspendido' : 'eliminado';
-                    mtrace("[AGENT] {$agentLabel} — creator user {$agent->userid} {$reason} — DISABLING");
-                    error_log("[AGENT] {$agentLabel} — creator user {$agent->userid} {$reason} — DISABLING");
+                    mtrace("[AGENT] {$agentlabel} — creator user {$agent->userid} {$reason} — DISABLING");
+                    \local_jedomi_log("[AGENT] {$agentlabel} — creator user {$agent->userid} {$reason} — DISABLING");
                     $DB->set_field('local_jedomi_agents', 'enabled', 0, ['id' => $agent->id]);
                     $this->notify_disabled($agent, "Usuario creador {$reason}.");
                     $fail++;
                     continue;
                 }
 
-                // ── 2) ¿El creador aún tiene acceso al contexto del agente? ──
-                if (!empty($agent->context_type) && $agent->context_type !== 'site'
-                    && !empty($agent->context_id)) {
+                // ... ── 2) ¿El creador aún tiene acceso al contexto del agente? ──
+                if (
+                    !empty($agent->context_type) && $agent->context_type !== 'site'
+                    && !empty($agent->context_id)
+                ) {
                     $hasaccess = false;
                     try {
                         $context = \context::instance_by_id($agent->context_id);
@@ -282,28 +308,30 @@ class agent_runner extends \core\task\scheduled_task {
                         $hasaccess = false;
                     }
                     if (!$hasaccess) {
-                        mtrace("[AGENT] {$agentLabel} — creator {$agent->userid} lost access to context {$agent->context_type}/{$agent->context_id} — DISABLING");
-                        error_log("[AGENT] {$agentLabel} — creator {$agent->userid} lost access to context {$agent->context_type}/{$agent->context_id} — DISABLING");
+                        $logline = "[AGENT] {$agentlabel} — creator {$agent->userid} lost access"
+                            . " to context {$agent->context_type}/{$agent->context_id} — DISABLING";
+                        mtrace($logline);
+                        \local_jedomi_log($logline);
                         $DB->set_field('local_jedomi_agents', 'enabled', 0, ['id' => $agent->id]);
                         $this->notify_disabled($agent, 'Ya no tienes acceso al contexto del agente.');
                         $fail++;
                         continue;
                     }
                 }
-                // ═══════════════════════════════════════════════════════════════
+                // ... ═══════════════════════════════════════════════════════════════
                 // END PRE-EXECUTION GATE
                 // ═══════════════════════════════════════════════════════════════
 
-                // ── Build context hash ────────────────────────────────────────
-                $context_data = [
+                // ... ── Build context hash ────────────────────────────────────────
+                $contextdata = [
                     'prompt' => $agent->prompt,
                     'context_type' => $agent->context_type,
                     'context_id' => $agent->context_id,
                     'role_filter' => $agent->role_filter,
                 ];
-                $context_hash = hash('sha256', serialize($context_data));
+                $contexthash = hash('sha256', serialize($contextdata));
 
-                // ── Pre-cache init (needed by both cache hit and miss paths) ──
+                // ... ── Pre-cache init (needed by both cache hit and miss paths) ──
                 $role = \local_jedomi_get_user_role_for_user(
                     (int) ($agent->userid ?? 0)
                 );
@@ -318,192 +346,205 @@ class agent_runner extends \core\task\scheduled_task {
                 ];
                 $system = \local_jedomi\proxy\system_message::build($role, $spt, $context);
 
-                // ── Check cache ──────────────────────────────────────────────
+                // ... ── Check cache ──────────────────────────────────────────────
                 $cached = \local_jedomi\agent\agent_manager::get_cached_result(
-                    $agent->id, $context_hash
+                    $agent->id,
+                    $contexthash
                 );
 
                 if ($cached !== null) {
-                    $finalContent = '';
+                    $finalcontent = '';
 
-                    // ── Try semantic plan replay first ────────────────────────────
-                    $cachedPlan = \local_jedomi\agent\agent_manager::get_cached_plan(
-                        $agent->id, $context_hash
+                    // ... ── Try semantic plan replay first ────────────────────────────
+                    $cachedplan = \local_jedomi\agent\agent_manager::get_cached_plan(
+                        $agent->id,
+                        $contexthash
                     );
 
-                    if ($cachedPlan && !empty($cachedPlan['plan'])) {
-                        mtrace("[AGENT] {$agentLabel} — cache HIT plan ({$context_hash}) — replaying " . count($cachedPlan['plan']) . " tools");
-                        error_log("[AGENT] {$agentLabel} — cache HIT plan ({$context_hash}) — replaying tools");
+                    if ($cachedplan && !empty($cachedplan['plan'])) {
+                        mtrace("[AGENT] {$agentlabel} — cache HIT plan ({$contexthash}) — replaying "
+                            . count($cachedplan['plan']) . " tools");
+                        \local_jedomi_log("[AGENT] {$agentlabel} — cache HIT plan ({$contexthash}) — replaying tools");
 
                         // Initialize tool instances with correct user context before replay.
                         \local_jedomi\agent\tool_executor::get_definitions(
-                            $agent->id, (int) ($agent->userid ?? 0)
+                            $agent->id,
+                            (int) ($agent->userid ?? 0)
                         );
 
                         // Re-execute all tools from plan.
-                        $freshResults = [];
-                        $replayFailed = false;
-                        foreach ($cachedPlan['plan'] as $i => $step) {
-                            $toolResult = \local_jedomi\agent\tool_executor::execute(
-                                $step['tool'], $step['arguments']
+                        $freshresults = [];
+                        $replayfailed = false;
+                        foreach ($cachedplan['plan'] as $i => $step) {
+                            $toolresult = \local_jedomi\agent\tool_executor::execute(
+                                $step['tool'],
+                                $step['arguments']
                             );
-                            $decoded = json_decode($toolResult, true);
+                            $decoded = json_decode($toolresult, true);
                             if (!empty($decoded['error'])) {
-                                mtrace("[AGENT] {$agentLabel} — replay tool {$step['tool']} FAILED: {$decoded['error']}");
-                                error_log("[AGENT] {$agentLabel} — replay tool {$step['tool']} FAILED: {$decoded['error']}");
-                                $replayFailed = true;
+                                $logline = "[AGENT] {$agentlabel} — replay tool {$step['tool']}"
+                                    . " FAILED: {$decoded['error']}";
+                                mtrace($logline);
+                                \local_jedomi_log($logline);
+                                $replayfailed = true;
                                 break;
                             }
-                            if (strlen($toolResult) > 64000) {
-                                $toolResult = mb_substr($toolResult, 0, 64000)
+                            if (strlen($toolresult) > 64000) {
+                                $toolresult = mb_substr($toolresult, 0, 64000)
                                     . "\n\n[Result truncated at 64000 characters]";
                             }
-                            $freshResults[] = [
+                            $freshresults[] = [
                                 'tool' => $step['tool'],
-                                'result' => $toolResult,
+                                'result' => $toolresult,
                             ];
                         }
 
-                        if (!$replayFailed) {
-                            // ── Generate answer from fresh data ────────────────────
+                        if (!$replayfailed) {
+                            // ... ── Generate answer from fresh data ────────────────────
                             // Replay succeeded — we have fresh tool results. Build a
                             // single-round payload with the ORIGINAL context + fresh
                             // data, so the AI answers based on current data without
                             // needing to discover the approach again.
-                            $dataCtx = "Current data from the system:\n";
-                            foreach ($freshResults as $fr) {
-                                $dataCtx .= "\n--- {$fr['tool']} ---\n{$fr['result']}\n";
+                            $datactx = "Current data from the system:\n";
+                            foreach ($freshresults as $fr) {
+                                $datactx .= "\n--- {$fr['tool']} ---\n{$fr['result']}\n";
                             }
 
-                            $replayMessages = [
+                            $replaymessages = [
                                 $system,
                                 [
                                     'role' => 'user',
-                                    'content' => $agent->prompt . "\n\n" . $dataCtx,
+                                    'content' => $agent->prompt . "\n\n" . $datactx,
                                 ],
                             ];
 
-                            $gateway_url = rtrim(get_config('local_jedomi', 'gateway_url'), '/');
-                            $api_key = get_config('local_jedomi', 'api_key') ?: 'jedomi-local-key';
+                            $gatewayurl = rtrim(get_config('local_jedomi', 'gateway_url'), '/');
+                            $apikey = get_config('local_jedomi', 'api_key') ?: 'jedomi-local-key';
                             $model = get_config('local_jedomi', 'model') ?: 'jedomi-e4b';
-                            $maxTokens = (int) get_config('local_jedomi', 'max_tokens');
-                            if ($maxTokens < 256) { $maxTokens = 16384; }
-                            if (empty($gateway_url)) { $gateway_url = 'http://localhost:8765'; }
+                            $maxtokens = (int) get_config('local_jedomi', 'max_tokens');
+                            if ($maxtokens < 256) {
+                                $maxtokens = 16384;
+                            }
+                            if (empty($gatewayurl)) {
+                                $gatewayurl = 'http://localhost:8765';
+                            }
 
-                            $replayStart = microtime(true);
-                            $ch = curl_init($gateway_url . '/v1/chat/completions');
+                            $replaystart = microtime(true);
+                            $ch = curl_init($gatewayurl . '/v1/chat/completions');
                             curl_setopt_array($ch, [
                                 CURLOPT_POST           => true,
                                 CURLOPT_POSTFIELDS     => json_encode([
                                     'model' => $model,
-                                    'messages' => $replayMessages,
+                                    'messages' => $replaymessages,
                                     'stream' => false,
-                                    'max_tokens' => $maxTokens,
+                                    'max_tokens' => $maxtokens,
                                 ], JSON_UNESCAPED_UNICODE),
                                 CURLOPT_RETURNTRANSFER => true,
                                 CURLOPT_TIMEOUT        => 120,
                                 CURLOPT_HTTPHEADER     => [
                                     'Content-Type: application/json',
-                                    'Authorization: Bearer ' . $api_key,
+                                    'Authorization: Bearer ' . $apikey,
                                 ],
                             ]);
-                            $replayResponse = curl_exec($ch);
-                            $replayHttp = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-                            $replayErrno = curl_errno($ch);
-                            $replayError = curl_error($ch);
-                            $replayDuration = microtime(true) - $replayStart;
+                            $replayresponse = curl_exec($ch);
+                            $replayhttp = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                            $replayerrno = curl_errno($ch);
+                            $replayerror = curl_error($ch);
+                            $replayduration = microtime(true) - $replaystart;
                             curl_close($ch);
 
-                            if ($replayErrno !== 0) {
-                                mtrace("[AGENT] {$agentLabel} — replay answer curl error ({$replayError})");
-                                error_log("[AGENT] {$agentLabel} — replay answer curl error ({$replayError})");
-                            } else if ($replayHttp === 200) {
-                                $replayResult = json_decode($replayResponse, true);
-                                $replayContent = $replayResult['choices'][0]['message']['content'] ?? '';
-                                if (!empty(trim($replayContent))) {
-                                    $finalContent = $replayContent;
-                                    mtrace("[AGENT] {$agentLabel} — replay answer generated ({$replayDuration}s, " . strlen($finalContent) . "B)");
-                                    error_log("[AGENT] {$agentLabel} — replay answer generated ({$replayDuration}s, " . strlen($finalContent) . "B)");
+                            if ($replayerrno !== 0) {
+                                mtrace("[AGENT] {$agentlabel} — replay answer curl error ({$replayerror})");
+                                \local_jedomi_log("[AGENT] {$agentlabel} — replay answer curl error ({$replayerror})");
+                            } else if ($replayhttp === 200) {
+                                $replayresult = json_decode($replayresponse, true);
+                                $replaycontent = $replayresult['choices'][0]['message']['content'] ?? '';
+                                if (!empty(trim($replaycontent))) {
+                                    $finalcontent = $replaycontent;
+                                    $logline = "[AGENT] {$agentlabel} — replay answer generated"
+                                        . " ({$replayduration}s, " . strlen($finalcontent) . "B)";
+                                    mtrace($logline);
+                                    \local_jedomi_log($logline);
                                 }
                             }
                         }
                     }
 
-                    // ── Fallback: use cached answer text ────────────────────────
-                    if (empty($finalContent)) {
-                        mtrace("[AGENT] {$agentLabel} — cache HIT text ({$context_hash}) — using cached text");
-                        error_log("[AGENT] {$agentLabel} — cache HIT text ({$context_hash}) — using cached text");
-                        $finalContent = $cached;
+                    // ... ── Fallback: use cached answer text ────────────────────────
+                    if (empty($finalcontent)) {
+                        mtrace("[AGENT] {$agentlabel} — cache HIT text ({$contexthash}) — using cached text");
+                        \local_jedomi_log("[AGENT] {$agentlabel} — cache HIT text ({$contexthash}) — using cached text");
+                        $finalcontent = $cached;
                     }
-                    $totalDuration = 0.0;
-                    $totalRounds = 0;
+                    $totalduration = 0.0;
+                    $totalrounds = 0;
                     // Guard: strip any leaked tool call blocks from cached content.
                     $stripped = trim(preg_replace([
                         '/(?:TOOL_CALL|call):\s*\w+\s*\n.*?\nEND_TOOL_CALL[^\n]*/si',
-                    ], '', $finalContent ?? ''));
+                    ], '', $finalcontent ?? ''));
                     if (!empty($stripped)) {
-                        $finalContent = $stripped;
+                        $finalcontent = $stripped;
                     }
                 } else {
-                    mtrace("[AGENT] {$agentLabel} — cache MISS ({$context_hash})");
-                    error_log("[AGENT] {$agentLabel} — cache MISS ({$context_hash})");
+                    mtrace("[AGENT] {$agentlabel} — cache MISS ({$contexthash})");
+                    \local_jedomi_log("[AGENT] {$agentlabel} — cache MISS ({$contexthash})");
 
-                    // ── Tool definitions (reuse web version's lang string descriptions) ──
+                    // ... ── Tool definitions (reuse web version's lang string descriptions) ──
                     $tools = \local_jedomi_get_tool_definitions($role);
 
-                    // ── Build messages (same rich context as web chat) ──────
+                    // ... ── Build messages (same rich context as web chat) ──────
                     $messages = [
                         $system,
                         ['role' => 'user', 'content' => $agent->prompt],
                     ];
 
-                    // ── Gateway config ───────────────────────────────────────
-                    $gateway_url = rtrim(get_config('local_jedomi', 'gateway_url'), '/');
-                    $api_key = get_config('local_jedomi', 'api_key');
+                    // ... ── Gateway config ───────────────────────────────────────
+                    $gatewayurl = rtrim(get_config('local_jedomi', 'gateway_url'), '/');
+                    $apikey = get_config('local_jedomi', 'api_key');
                     $model = get_config('local_jedomi', 'model');
 
-                    if (empty($gateway_url)) {
-                        $gateway_url = 'http://localhost:8765';
+                    if (empty($gatewayurl)) {
+                        $gatewayurl = 'http://localhost:8765';
                     }
-                    if (empty($api_key)) {
-                        $api_key = 'jedomi-local-key';
+                    if (empty($apikey)) {
+                        $apikey = 'jedomi-local-key';
                     }
                     if (empty($model)) {
                         $model = 'jedomi-e4b';
                     }
 
-                    $maxTokens = (int) get_config('local_jedomi', 'max_tokens');
-                    if ($maxTokens < 256) {
-                        $maxTokens = 16384; // Default: 16k tokens.
+                    $maxtokens = (int) get_config('local_jedomi', 'max_tokens');
+                    if ($maxtokens < 256) {
+                        $maxtokens = 16384; // Default: 16k tokens.
                     }
 
-                    // ── Multi-turn gateway loop ──────────────────────────────
-                    $finalContent = '';
-                    $totalDuration = 0.0;
-                    $totalRounds = 0;
+                    // ... ── Multi-turn gateway loop ──────────────────────────────
+                    $finalcontent = '';
+                    $totalduration = 0.0;
+                    $totalrounds = 0;
                     $plan = [];
-                    $toolcallCounts = [];
+                    $toolcallcounts = [];
 
                     for ($round = 1; $round <= self::MAX_TOOL_ITERATIONS; $round++) {
-                        $totalRounds = $round;
+                        $totalrounds = $round;
 
                         $payload = [
                             'model' => $model,
                             'messages' => $messages,
                             'stream' => false,
-                            'max_tokens' => $maxTokens,
+                            'max_tokens' => $maxtokens,
                         ];
                         if (!empty($tools)) {
                             $payload['tools'] = $tools;
                             $payload['tool_choice'] = 'auto';
                         }
 
-                        // ── Gateway call ─────────────────────────────────────
-                        $gateway_start = microtime(true);
-                        mtrace("[AGENT] {$agentLabel} — round {$round} gateway call");
-                        error_log("[AGENT] {$agentLabel} — round {$round} gateway call");
+                        // ... ── Gateway call ─────────────────────────────────────
+                        $gatewaystart = microtime(true);
+                        mtrace("[AGENT] {$agentlabel} — round {$round} gateway call");
+                        \local_jedomi_log("[AGENT] {$agentlabel} — round {$round} gateway call");
 
-                        $ch = curl_init($gateway_url . '/v1/chat/completions');
+                        $ch = curl_init($gatewayurl . '/v1/chat/completions');
                         curl_setopt_array($ch, [
                             CURLOPT_POST           => true,
                             CURLOPT_POSTFIELDS     => json_encode($payload, JSON_UNESCAPED_UNICODE),
@@ -511,38 +552,38 @@ class agent_runner extends \core\task\scheduled_task {
                             CURLOPT_TIMEOUT        => 120,
                             CURLOPT_HTTPHEADER     => [
                                 'Content-Type: application/json',
-                                'Authorization: Bearer ' . $api_key,
+                                'Authorization: Bearer ' . $apikey,
                             ],
                         ]);
 
                         $response = curl_exec($ch);
-                        $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-                        $curl_errno = curl_errno($ch);
-                        $curl_error = curl_error($ch);
-                        $roundDuration = microtime(true) - $gateway_start;
-                        $totalDuration += $roundDuration;
+                        $httpcode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                        $curlerrno = curl_errno($ch);
+                        $curlerror = curl_error($ch);
+                        $roundduration = microtime(true) - $gatewaystart;
+                        $totalduration += $roundduration;
                         curl_close($ch);
 
-                        if ($curl_errno !== 0 || $http_code !== 200) {
-                            $err_msg = $curl_error ?: "HTTP {$http_code}";
-                            $duration_fmt = number_format($roundDuration, 2);
-                            mtrace("[AGENT] {$agentLabel} — round {$round} FAILED ({$err_msg}, {$duration_fmt}s)");
-                            error_log("[AGENT] {$agentLabel} — round {$round} FAILED ({$err_msg}, {$duration_fmt}s)");
-                            if ($curl_errno === CURLE_OPERATION_TIMEDOUT) {
-                                mtrace("[AGENT] {$agentLabel} — round {$round} TIMEOUT");
-                                error_log("[AGENT] {$agentLabel} — round {$round} TIMEOUT");
+                        if ($curlerrno !== 0 || $httpcode !== 200) {
+                            $errmsg = $curlerror ?: "HTTP {$httpcode}";
+                            $durationfmt = number_format($roundduration, 2);
+                            mtrace("[AGENT] {$agentlabel} — round {$round} FAILED ({$errmsg}, {$durationfmt}s)");
+                            \local_jedomi_log("[AGENT] {$agentlabel} — round {$round} FAILED ({$errmsg}, {$durationfmt}s)");
+                            if ($curlerrno === CURLE_OPERATION_TIMEDOUT) {
+                                mtrace("[AGENT] {$agentlabel} — round {$round} TIMEOUT");
+                                \local_jedomi_log("[AGENT] {$agentlabel} — round {$round} TIMEOUT");
                             }
                             if ($round === 1) {
-                                throw new \RuntimeException("Gateway failed: {$err_msg}");
+                                throw new \RuntimeException("Gateway failed: {$errmsg}");
                             }
                             break;
                         }
 
                         $result = json_decode($response, true);
                         if (json_last_error() !== JSON_ERROR_NONE) {
-                            $duration_fmt = number_format($roundDuration, 2);
-                            mtrace("[AGENT] {$agentLabel} — round {$round} invalid JSON");
-                            error_log("[AGENT] {$agentLabel} — round {$round} invalid JSON");
+                            $durationfmt = number_format($roundduration, 2);
+                            mtrace("[AGENT] {$agentlabel} — round {$round} invalid JSON");
+                            \local_jedomi_log("[AGENT] {$agentlabel} — round {$round} invalid JSON");
                             if ($round === 1) {
                                 throw new \RuntimeException('Invalid JSON response from gateway');
                             }
@@ -550,96 +591,101 @@ class agent_runner extends \core\task\scheduled_task {
                         }
 
                         $message = $result['choices'][0]['message'] ?? [];
-                        $nativeToolCalls = $message['tool_calls'] ?? [];
+                        $nativetoolcalls = $message['tool_calls'] ?? [];
                         $content = $message['content'] ?? '';
 
-                        // ── Parse text-based tool calls (only if tools are available) ──
-                        $textToolCalls = [];
+                        // ... ── Parse text-based tool calls (only if tools are available) ──
+                        $texttoolcalls = [];
                         if (!empty($tools)) {
-                            $textToolCalls = $this->parse_text_tool_calls($content);
+                            $texttoolcalls = $this->parse_text_tool_calls($content);
                         }
-                        $allToolCalls = array_merge($nativeToolCalls, $textToolCalls);
+                        $alltoolcalls = array_merge($nativetoolcalls, $texttoolcalls);
 
-                        if (empty($allToolCalls)) {
-                            $finalContent = $content;
-                            $duration_fmt = number_format($roundDuration, 2);
+                        if (empty($alltoolcalls)) {
+                            $finalcontent = $content;
+                            $durationfmt = number_format($roundduration, 2);
                             $bytes = strlen($response);
-                            mtrace("[AGENT] {$agentLabel} — round {$round} final response ({$duration_fmt}s, {$bytes}B)");
-                            error_log("[AGENT] {$agentLabel} — round {$round} final response ({$duration_fmt}s, {$bytes}B)");
+                            $logline = "[AGENT] {$agentlabel} — round {$round} final response"
+                                . " ({$durationfmt}s, {$bytes}B)";
+                            mtrace($logline);
+                            \local_jedomi_log($logline);
                             break;
                         }
 
-                        $toolCount = count($allToolCalls);
-                        $via = !empty($nativeToolCalls) ? 'native' : 'text';
-                        mtrace("[AGENT] {$agentLabel} — round {$round} {$toolCount} tool call(s) via {$via}");
-                        error_log("[AGENT] {$agentLabel} — round {$round} {$toolCount} tool call(s) via {$via}");
+                        $toolcount = count($alltoolcalls);
+                        $via = !empty($nativetoolcalls) ? 'native' : 'text';
+                        mtrace("[AGENT] {$agentlabel} — round {$round} {$toolcount} tool call(s) via {$via}");
+                        \local_jedomi_log("[AGENT] {$agentlabel} — round {$round} {$toolcount} tool call(s) via {$via}");
 
-                        $assistantMsg = [
+                        $assistantmsg = [
                             'role' => 'assistant',
                         ];
-                        if (!empty($nativeToolCalls)) {
-                            $assistantMsg['content'] = null;
-                            $assistantMsg['tool_calls'] = $nativeToolCalls;
+                        if (!empty($nativetoolcalls)) {
+                            $assistantmsg['content'] = null;
+                            $assistantmsg['tool_calls'] = $nativetoolcalls;
                         } else {
-                            $assistantMsg['content'] = $content ?: '[Tool call requested]';
+                            $assistantmsg['content'] = $content ?: '[Tool call requested]';
                         }
-                        $messages[] = $assistantMsg;
+                        $messages[] = $assistantmsg;
 
-                        foreach ($allToolCalls as $tc) {
-                            $funcName = $tc['function']['name'] ?? '?';
-                            $funcArgs = $tc['function']['arguments'] ?? '{}';
-                            $tcId = $tc['id'] ?? 'tc_' . uniqid();
+                        foreach ($alltoolcalls as $tc) {
+                            $funcname = $tc['function']['name'] ?? '?';
+                            $funcargs = $tc['function']['arguments'] ?? '{}';
+                            $tcid = $tc['id'] ?? 'tc_' . uniqid();
 
-                            // ── Loop detection: hash by tool name + stable args ──
-                            $decodedArgs = is_string($funcArgs) ? json_decode($funcArgs, true) : $funcArgs;
-                            $stableArgs = is_array($decodedArgs) ? self::stable_args_signature($decodedArgs) : md5($funcArgs);
-                            $callkey = $funcName . '|' . $stableArgs;
-                            $toolcallCounts[$callkey] = ($toolcallCounts[$callkey] ?? 0) + 1;
+                            // ... ── Loop detection: hash by tool name + stable args ──
+                            $decodedargs = is_string($funcargs) ? json_decode($funcargs, true) : $funcargs;
+                            $stableargs = is_array($decodedargs) ? self::stable_args_signature($decodedargs) : md5($funcargs);
+                            $callkey = $funcname . '|' . $stableargs;
+                            $toolcallcounts[$callkey] = ($toolcallcounts[$callkey] ?? 0) + 1;
 
-                            if ($toolcallCounts[$callkey] > 5) {
-                                mtrace("[AGENT] {$agentLabel} — LOOP DETECTED: {$funcName} repeated {$toolcallCounts[$callkey]}x");
-                                error_log("[AGENT] {$agentLabel} — LOOP DETECTED: {$funcName} repeated {$toolcallCounts[$callkey]}x");
-                                $toolResult = json_encode([
+                            if ($toolcallcounts[$callkey] > 5) {
+                                $logline = "[AGENT] {$agentlabel} — LOOP DETECTED: {$funcname}"
+                                    . " repeated {$toolcallcounts[$callkey]}x";
+                                mtrace($logline);
+                                \local_jedomi_log($logline);
+                                $toolresult = json_encode([
                                     'error' => 'loop_detected',
-                                    'tool' => $funcName,
-                                    'detail' => 'Same tool with same arguments called ' . $toolcallCounts[$callkey] . ' times. Try different parameters or a different tool.',
+                                    'tool' => $funcname,
+                                    'detail' => 'Same tool with same arguments called '
+                                        . $toolcallcounts[$callkey]
+                                        . ' times. Try different parameters or a different tool.',
                                 ]);
                             } else {
-                                mtrace("[AGENT] {$agentLabel} — executing tool: {$funcName}()");
-                                error_log("[AGENT] {$agentLabel} — executing tool: {$funcName}()");
+                                mtrace("[AGENT] {$agentlabel} — executing tool: {$funcname}()");
+                                \local_jedomi_log("[AGENT] {$agentlabel} — executing tool: {$funcname}()");
 
                                 $plan[] = [
-                                    'tool' => $funcName,
-                                    'arguments' => $funcArgs,
+                                    'tool' => $funcname,
+                                    'arguments' => $funcargs,
                                 ];
 
-                                $toolResult = \local_jedomi\agent\tool_executor::execute($funcName, $funcArgs);
+                                $toolresult = \local_jedomi\agent\tool_executor::execute($funcname, $funcargs);
 
-                                if (strlen($toolResult) > 64000) {
-                                    $toolResult = mb_substr($toolResult, 0, 64000)
+                                if (strlen($toolresult) > 64000) {
+                                    $toolresult = mb_substr($toolresult, 0, 64000)
                                         . "\n\n[Result truncated at 64000 characters]";
                                 }
                             }
 
                             $messages[] = [
                                 'role' => 'tool',
-                                'tool_call_id' => $tcId,
-                                'content' => $toolResult,
+                                'tool_call_id' => $tcid,
+                                'content' => $toolresult,
                             ];
                         }
-
                     }
 
-                    // ── Safety net: if the for loop exhausted without a clean answer ──
+                    // ... ── Safety net: if the for loop exhausted without a clean answer ──
                     // This can happen if:
-                    //   - The model returns empty content (some models do when they get tool results)
-                    //   - The model keeps returning TOOL_CALL text even without tools
+                    // - The model returns empty content (some models do when they get tool results)
+                    // - The model keeps returning TOOL_CALL text even without tools
                     // Loop detection errors are fed back to the model as tool results so it
                     // can self-correct (same behavior as the web proxy handler).
-                    if (empty($finalContent)) {
+                    if (empty($finalcontent)) {
                         // Try last loop iteration content first.
                         if (!empty($content)) {
-                            $finalContent = $content;
+                            $finalcontent = $content;
                         } else {
                             // Fallback: extract content from the last non-error tool result.
                             foreach (array_reverse($messages) as $msg) {
@@ -648,40 +694,43 @@ class agent_runner extends \core\task\scheduled_task {
                                     if (!empty($decoded['error'])) {
                                         continue;
                                     }
-                                    $finalContent = is_string($msg['content'])
+                                    $finalcontent = is_string($msg['content'])
                                         ? $msg['content']
                                         : json_encode($msg['content'], JSON_UNESCAPED_UNICODE);
                                     break;
                                 }
                             }
                         }
-                        if (!empty($finalContent)) {
-                            mtrace("[AGENT] {$agentLabel} — fallback final ({$totalRounds}r, " . strlen($finalContent) . "B)");
-                            error_log("[AGENT] {$agentLabel} — fallback final ({$totalRounds}r, " . strlen($finalContent) . "B)");
+                        if (!empty($finalcontent)) {
+                            $logline = "[AGENT] {$agentlabel} — fallback final"
+                                . " ({$totalrounds}r, " . strlen($finalcontent) . "B)";
+                            mtrace($logline);
+                            \local_jedomi_log($logline);
                         }
                     }
 
-                    // ── Strip any TOOL_CALL or <|tool_call|> blocks that may have leaked ──
-                    $hadToolCallBlocks = preg_match(
-                        '/(?:TOOL_CALL|call):\s*\w+/si', $finalContent ?? ''
+                    // ... ── Strip any TOOL_CALL or <|tool_call|> blocks that may have leaked ──
+                    $hadtoolcallblocks = preg_match(
+                        '/(?:TOOL_CALL|call):\s*\w+/si',
+                        $finalcontent ?? ''
                     );
                     $stripped = trim(preg_replace([
                         '/(?:TOOL_CALL|call):\s*\w+\s*\n.*?\nEND_TOOL_CALL[^\n]*/si',
                         '/<\|(?:tool_call|python_tag)\|>.*?<\|\\/\1\|>/si',
-                    ], '', $finalContent ?? ''));
+                    ], '', $finalcontent ?? ''));
 
                     if (!empty($stripped)) {
-                        $finalContent = $stripped;
-                    } else if ($hadToolCallBlocks) {
+                        $finalcontent = $stripped;
+                    } else if ($hadtoolcallblocks) {
                         // Content was ONLY tool call blocks — fallback to last tool result (skip errors).
-                        $finalContent = '';
+                        $finalcontent = '';
                         foreach (array_reverse($messages ?? []) as $msg) {
                             if (($msg['role'] ?? '') === 'tool' && !empty($msg['content'])) {
                                 $decoded = json_decode($msg['content'], true);
                                 if (!empty($decoded['error'])) {
                                     continue;
                                 }
-                                $finalContent = is_string($msg['content'])
+                                $finalcontent = is_string($msg['content'])
                                     ? $msg['content']
                                     : json_encode($msg['content'], JSON_UNESCAPED_UNICODE);
                                 break;
@@ -689,88 +738,96 @@ class agent_runner extends \core\task\scheduled_task {
                         }
                     }
 
-                    if (empty($finalContent)) {
-                        $totalDurationFmt = number_format($totalDuration, 2);
-                        mtrace("[AGENT] {$agentLabel} — empty final ({$totalDurationFmt}s, {$totalRounds}r)");
-                        error_log("[AGENT] {$agentLabel} — empty final ({$totalDurationFmt}s, {$totalRounds}r)");
+                    if (empty($finalcontent)) {
+                        $totaldurationfmt = number_format($totalduration, 2);
+                        mtrace("[AGENT] {$agentlabel} — empty final ({$totaldurationfmt}s, {$totalrounds}r)");
+                        \local_jedomi_log("[AGENT] {$agentlabel} — empty final ({$totaldurationfmt}s, {$totalrounds}r)");
                         \local_jedomi\agent\agent_manager::mark_run($agent->id, false);
                         $fail++;
                         continue;
                     }
 
-                    // ── Save cache ──────────────────────────────────────────
-                    $allReadonly = true;
+                    // ... ── Save cache ──────────────────────────────────────────
+                    $allreadonly = true;
                     if (!empty($plan)) {
                         foreach ($plan as $p) {
                             if (!\local_jedomi\agent\agent_manager::is_tool_readonly($p['tool'])) {
-                                $allReadonly = false;
+                                $allreadonly = false;
                                 break;
                             }
                         }
                     }
-                    if (!empty($plan) && $allReadonly) {
+                    if (!empty($plan) && $allreadonly) {
                         \local_jedomi\agent\agent_manager::set_cached_plan(
-                            $agent->id, $context_hash, $plan, $finalContent
+                            $agent->id,
+                            $contexthash,
+                            $plan,
+                            $finalcontent
                         );
-                        mtrace("[AGENT] {$agentLabel} — cached plan (" . count($plan) . " tools, " . strlen($finalContent) . "B answer)");
-                        error_log("[AGENT] {$agentLabel} — cached plan (" . count($plan) . " tools, " . strlen($finalContent) . "B answer)");
+                        $logline = "[AGENT] {$agentlabel} — cached plan (" . count($plan)
+                            . " tools, " . strlen($finalcontent) . "B answer)";
+                        mtrace($logline);
+                        \local_jedomi_log($logline);
                     } else {
                         \local_jedomi\agent\agent_manager::set_cached_result(
-                            $agent->id, $context_hash, $finalContent
+                            $agent->id,
+                            $contexthash,
+                            $finalcontent
                         );
                         $why = empty($plan) ? 'no tools' : 'write tool detected';
-                        mtrace("[AGENT] {$agentLabel} — cached text ({$why}, " . strlen($finalContent) . "B)");
-                        error_log("[AGENT] {$agentLabel} — cached text ({$why}, " . strlen($finalContent) . "B)");
+                        mtrace("[AGENT] {$agentlabel} — cached text ({$why}, " . strlen($finalcontent) . "B)");
+                        \local_jedomi_log("[AGENT] {$agentlabel} — cached text ({$why}, " . strlen($finalcontent) . "B)");
                     }
                 }
 
-                // ── Mark run ────────────────────────────────────────────────
+                // ... ── Mark run ────────────────────────────────────────────────
                 \local_jedomi\agent\agent_manager::mark_run($agent->id, true);
                 $reloaded = \local_jedomi\agent\agent_manager::get_agent($agent->id);
-                $nextrun_str = $reloaded ? userdate($reloaded->nextrun) : 'unknown';
-                mtrace("[AGENT] {$agentLabel} — next {$nextrun_str}");
-                error_log("[AGENT] {$agentLabel} — next {$nextrun_str}");
+                $nextrunstr = $reloaded ? userdate($reloaded->nextrun) : 'unknown';
+                mtrace("[AGENT] {$agentlabel} — next {$nextrunstr}");
+                \local_jedomi_log("[AGENT] {$agentlabel} — next {$nextrunstr}");
 
-                // ── Telegram notification ────────────────────────────────────
+                // ... ── Telegram notification ────────────────────────────────────
                 try {
-                    $telegram_link = $DB->get_record(
+                    $telegramlink = $DB->get_record(
                         'local_jedomi_telegram_links',
                         ['userid' => $agent->userid]
                     );
 
-                    if ($telegram_link && !empty($telegram_link->chatid)) {
+                    if ($telegramlink && !empty($telegramlink->chatid)) {
                         $sent = \local_jedomi_send_agent_notification(
-                            $telegram_link->chatid,
-                            $agentLabel,
-                            $finalContent
+                            $telegramlink->chatid,
+                            $agentlabel,
+                            $finalcontent
                         );
 
                         if ($sent) {
-                            mtrace("[AGENT] {$agentLabel} — Telegram sent");
-                            error_log("[AGENT] {$agentLabel} — Telegram sent");
+                            mtrace("[AGENT] {$agentlabel} — Telegram sent");
+                            \local_jedomi_log("[AGENT] {$agentlabel} — Telegram sent");
                         } else {
-                            mtrace("[AGENT] {$agentLabel} — Telegram send FAILED");
-                            error_log("[AGENT] {$agentLabel} — Telegram send FAILED");
+                            mtrace("[AGENT] {$agentlabel} — Telegram send FAILED");
+                            \local_jedomi_log("[AGENT] {$agentlabel} — Telegram send FAILED");
                         }
                     } else {
-                        mtrace("[AGENT] {$agentLabel} — no Telegram for user {$agent->userid}");
-                        error_log("[AGENT] {$agentLabel} — no Telegram for user {$agent->userid}");
+                        mtrace("[AGENT] {$agentlabel} — no Telegram for user {$agent->userid}");
+                        \local_jedomi_log("[AGENT] {$agentlabel} — no Telegram for user {$agent->userid}");
                     }
                 } catch (\Exception $e) {
-                    mtrace("[AGENT] {$agentLabel} — Telegram error: " . $e->getMessage());
-                    error_log("[AGENT] {$agentLabel} — Telegram error: " . $e->getMessage());
+                    mtrace("[AGENT] {$agentlabel} — Telegram error: " . $e->getMessage());
+                    \local_jedomi_log("[AGENT] {$agentlabel} — Telegram error: " . $e->getMessage());
                 }
 
                 $ok++;
-
             } catch (\Exception $e) {
                 $aid = $agent->id ?? '?';
                 $alabel = ($agent->name ?? "Agent #{$aid}");
                 mtrace("[AGENT] {$alabel} — ERROR: " . $e->getMessage());
-                error_log("[AGENT] {$alabel} — ERROR: " . $e->getMessage());
+                \local_jedomi_log("[AGENT] {$alabel} — ERROR: " . $e->getMessage());
                 try {
                     \local_jedomi\agent\agent_manager::mark_run($aid, false);
+                    // phpcs:ignore Generic.CodeAnalysis.EmptyStatement.DetectedCatch -- best-effort.
                 } catch (\Exception $ignored) {
+                    // Best-effort: agent already failed, do not mask the original error.
                 }
                 $fail++;
             }
@@ -778,7 +835,7 @@ class agent_runner extends \core\task\scheduled_task {
 
         $elapsed = time() - $start;
         mtrace("[AGENT] agent_runner done — {$ok} ok, {$fail} fail, {$elapsed}s");
-        error_log("[AGENT] agent_runner done — {$ok} ok, {$fail} fail, {$elapsed}s");
+        \local_jedomi_log("[AGENT] agent_runner done — {$ok} ok, {$fail} fail, {$elapsed}s");
     }
 
     /**
@@ -792,29 +849,31 @@ class agent_runner extends \core\task\scheduled_task {
 
         $label = $agent->name ?? "Agent #{$agent->id}";
         mtrace("[AGENT] {$label} — DISABLED: {$reason}");
-        error_log("[AGENT] {$label} — DISABLED: {$reason}");
+        \local_jedomi_log("[AGENT] {$label} — DISABLED: {$reason}");
 
         try {
             \local_jedomi\agent\agent_manager::mark_run($agent->id, false);
+            // phpcs:ignore Generic.CodeAnalysis.EmptyStatement.DetectedCatch -- best-effort.
         } catch (\Exception $ignored) {
+            // Best-effort: the agent is being disabled anyway.
         }
 
         try {
-            $telegram_link = $DB->get_record(
+            $telegramlink = $DB->get_record(
                 'local_jedomi_telegram_links',
                 ['userid' => $agent->userid]
             );
-            if ($telegram_link && !empty($telegram_link->chatid)) {
+            if ($telegramlink && !empty($telegramlink->chatid)) {
                 $msg = "🤖 <b>{$label}</b>\n";
                 $msg .= "⛔ Agent disabled\n";
                 $msg .= "📅 " . userdate(time()) . "\n\n";
                 $msg .= "<i>" . htmlspecialchars($reason, ENT_QUOTES, 'UTF-8') . "</i>";
                 $client = new \local_jedomi\telegram\api_client();
-                $client->send_message($telegram_link->chatid, $msg);
+                $client->send_message($telegramlink->chatid, $msg);
             }
         } catch (\Exception $e) {
             mtrace("[AGENT] {$label} — Telegram notify disabled error: " . $e->getMessage());
-            error_log("[AGENT] {$label} — Telegram notify disabled error: " . $e->getMessage());
+            \local_jedomi_log("[AGENT] {$label} — Telegram notify disabled error: " . $e->getMessage());
         }
     }
 }

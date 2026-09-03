@@ -18,14 +18,11 @@
  * Unit tests for telegram_webhook endpoint.
  *
  * @package    local_jedomi
- * @category   phpunit
  * @copyright  2026 Jedomi Project
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-namespace local_jedomi\tests;
-
-defined('MOODLE_INTERNAL') || die();
+namespace local_jedomi;
 
 /**
  * Test cases for telegram_webhook.php — POST guard, E007, logging.
@@ -33,10 +30,9 @@ defined('MOODLE_INTERNAL') || die();
  * Since telegram_webhook.php is a standalone script (not a class),
  * tests verify the script structure and utility functions it depends on.
  *
- * @coversNothing — standalone script, tested via source analysis and functions
+ * @coversNothing
  */
 final class telegram_webhook_test extends \advanced_testcase {
-
     /**
      * Setup test environment.
      */
@@ -45,7 +41,7 @@ final class telegram_webhook_test extends \advanced_testcase {
         $this->resetAfterTest();
     }
 
-    // ========================
+    // ... ========================
     // E007 error code
     // ========================
 
@@ -54,8 +50,11 @@ final class telegram_webhook_test extends \advanced_testcase {
      */
     public function test_e007_lang_string(): void {
         $str = get_string('error_telegram_e007', 'local_jedomi');
-        $this->assertStringContainsString('E007', $str,
-            'E007 lang string should contain the error code identifier');
+        $this->assertStringContainsString(
+            'E007',
+            $str,
+            'E007 lang string should contain the error code identifier'
+        );
         $this->assertNotEmpty($str, 'E007 lang string should not be empty');
     }
 
@@ -64,8 +63,10 @@ final class telegram_webhook_test extends \advanced_testcase {
      */
     public function test_e007_log_format(): void {
         // Verify the logging function exists.
-        $this->assertTrue(function_exists('local_jedomi_log'),
-            'local_jedomi_log function should be defined in lib.php');
+        $this->assertTrue(
+            function_exists('local_jedomi_log'),
+            'local_jedomi_log function should be defined in lib.php'
+        );
 
         // Call it with E007 format — should not throw or error.
         local_jedomi_log('E007: webhook secret mismatch');
@@ -73,7 +74,7 @@ final class telegram_webhook_test extends \advanced_testcase {
         $this->assertTrue(true, 'local_jedomi_log handles E007 format without error');
     }
 
-    // ========================
+    // ... ========================
     // POST guard validation
     // ========================
 
@@ -82,12 +83,21 @@ final class telegram_webhook_test extends \advanced_testcase {
      */
     public function test_post_guard_check(): void {
         $source = file_get_contents(__DIR__ . '/../telegram_webhook.php');
-        $this->assertStringContainsString('REQUEST_METHOD', $source,
-            'telegram_webhook.php should validate HTTP method via $_SERVER[\'REQUEST_METHOD\']');
-        $this->assertStringContainsString('405', $source,
-            'telegram_webhook.php should return HTTP 405 for non-POST requests');
-        $this->assertStringContainsString('Method Not Allowed', $source,
-            'telegram_webhook.php should include "Method Not Allowed" in 405 response');
+        $this->assertStringContainsString(
+            'REQUEST_METHOD',
+            $source,
+            'telegram_webhook.php should validate HTTP method via $_SERVER[\'REQUEST_METHOD\']'
+        );
+        $this->assertStringContainsString(
+            '405',
+            $source,
+            'telegram_webhook.php should return HTTP 405 for non-POST requests'
+        );
+        $this->assertStringContainsString(
+            'Method Not Allowed',
+            $source,
+            'telegram_webhook.php should include "Method Not Allowed" in 405 response'
+        );
     }
 
     /**
@@ -100,11 +110,14 @@ final class telegram_webhook_test extends \advanced_testcase {
         $secretpos = strpos($source, 'optional_param');
         $this->assertNotFalse($methodpos);
         $this->assertNotFalse($secretpos);
-        $this->assertLessThan($secretpos, $methodpos,
-            'REQUEST_METHOD check should appear before secret validation');
+        $this->assertLessThan(
+            $secretpos,
+            $methodpos,
+            'REQUEST_METHOD check should appear before secret validation'
+        );
     }
 
-    // ========================
+    // ... ========================
     // E007 in secret mismatch
     // ========================
 
@@ -113,10 +126,16 @@ final class telegram_webhook_test extends \advanced_testcase {
      */
     public function test_e007_in_secret_check(): void {
         $source = file_get_contents(__DIR__ . '/../telegram_webhook.php');
-        $this->assertStringContainsString('E007', $source,
-            'telegram_webhook.php should include E007 in secret mismatch response');
-        $this->assertStringContainsString('Invalid webhook secret', $source,
-            'telegram_webhook.php should mention "Invalid webhook secret" with E007');
+        $this->assertStringContainsString(
+            'E007',
+            $source,
+            'telegram_webhook.php should include E007 in secret mismatch response'
+        );
+        $this->assertStringContainsString(
+            'Invalid webhook secret',
+            $source,
+            'telegram_webhook.php should mention "Invalid webhook secret" with E007'
+        );
     }
 
     /**
@@ -124,11 +143,14 @@ final class telegram_webhook_test extends \advanced_testcase {
      */
     public function test_e007_log_call_in_source(): void {
         $source = file_get_contents(__DIR__ . '/../telegram_webhook.php');
-        $this->assertStringContainsString("local_jedomi_log('E007:", $source,
-            'telegram_webhook.php should call local_jedomi_log with E007 on mismatch');
+        $this->assertStringContainsString(
+            "local_jedomi_log('E007:",
+            $source,
+            'telegram_webhook.php should call local_jedomi_log with E007 on mismatch'
+        );
     }
 
-    // ========================
+    // ... ========================
     // Input validation
     // ========================
 
@@ -137,12 +159,21 @@ final class telegram_webhook_test extends \advanced_testcase {
      */
     public function test_json_validation(): void {
         $source = file_get_contents(__DIR__ . '/../telegram_webhook.php');
-        $this->assertStringContainsString('php://input', $source,
-            'telegram_webhook.php should read raw POST input');
-        $this->assertStringContainsString('json_decode', $source,
-            'telegram_webhook.php should decode JSON payload');
-        $this->assertStringContainsString('400', $source,
-            'telegram_webhook.php should return HTTP 400 for invalid JSON');
+        $this->assertStringContainsString(
+            'php://input',
+            $source,
+            'telegram_webhook.php should read raw POST input'
+        );
+        $this->assertStringContainsString(
+            'json_decode',
+            $source,
+            'telegram_webhook.php should decode JSON payload'
+        );
+        $this->assertStringContainsString(
+            '400',
+            $source,
+            'telegram_webhook.php should return HTTP 400 for invalid JSON'
+        );
     }
 
     /**
@@ -150,9 +181,15 @@ final class telegram_webhook_test extends \advanced_testcase {
      */
     public function test_always_returns_200(): void {
         $source = file_get_contents(__DIR__ . '/../telegram_webhook.php');
-        $this->assertStringContainsString('200', $source,
-            'telegram_webhook.php should return HTTP 200 after successful processing');
-        $this->assertStringContainsString('json_encode', $source,
-            'telegram_webhook.php should return JSON response');
+        $this->assertStringContainsString(
+            '200',
+            $source,
+            'telegram_webhook.php should return HTTP 200 after successful processing'
+        );
+        $this->assertStringContainsString(
+            'json_encode',
+            $source,
+            'telegram_webhook.php should return JSON response'
+        );
     }
 }

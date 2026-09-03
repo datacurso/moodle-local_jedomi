@@ -1,4 +1,19 @@
 <?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
 /**
  * HMAC-SHA256 authentication trait for CompanionWS functions.
  *
@@ -20,8 +35,12 @@ namespace local_jedomi;
 
 defined('MOODLE_INTERNAL') || die();
 
-trait companion_hmac {
+require_once(__DIR__ . '/../lib.php');
 
+/**
+ * Provides HMAC-SHA256 request authentication helpers for CompanionWS external functions.
+ */
+trait companion_hmac {
     /**
      * Validate the HMAC-SHA256 signature sent by the Jedomi Docker gateway.
      *
@@ -32,24 +51,24 @@ trait companion_hmac {
      * The payload hash is SHA256 of the serialised WS function parameters
      * (everything except the auth fields themselves), hex-encoded.
      *
-     * @param  string $function_name  WS function name, e.g. "jedomi_execute_sql"
+     * @param  string $functionname  WS function name, e.g. "jedomi_execute_sql"
      * @param  int    $timestamp      Unix timestamp from the request header
-     * @param  string $payload_hash   SHA256(raw request body bytes), hex
+     * @param  string $payloadhash   SHA256(raw request body bytes), hex
      * @param  string $signature      HMAC-SHA256 hex digest from the gateway
      * @return void   Throws \moodle_exception on failure — never returns false
      *
      * @throws \moodle_exception  with errorcode 'unauthorized' on any failure
      */
     protected static function verify_hmac(
-        string $function_name,
-        int    $timestamp,
-        string $payload_hash,
+        string $functionname,
+        int $timestamp,
+        string $payloadhash,
         string $signature
     ): void {
         // 1. Reject stale / future timestamps (replay protection).
         if (abs(time() - $timestamp) > 60) {
             // Log the failure but reveal nothing in the exception.
-            self::log_hmac_failure($function_name, 'timestamp_expired');
+            self::log_hmac_failure($functionname, 'timestamp_expired');
             throw new \moodle_exception('unauthorized', 'local_jedomi');
         }
 
@@ -57,12 +76,12 @@ trait companion_hmac {
         $secret = self::get_or_create_hmac_secret();
 
         // 3. Reconstruct the expected signature.
-        $message  = "{$function_name}:{$timestamp}:{$payload_hash}";
+        $message  = "{$functionname}:{$timestamp}:{$payloadhash}";
         $expected = hash_hmac('sha256', $message, $secret);
 
         // 4. Timing-safe comparison — never short-circuit.
         if (!hash_equals($expected, $signature)) {
-            self::log_hmac_failure($function_name, 'invalid_signature');
+            self::log_hmac_failure($functionname, 'invalid_signature');
             throw new \moodle_exception('unauthorized', 'local_jedomi');
         }
     }
@@ -104,14 +123,14 @@ trait companion_hmac {
      * Write a security log entry for a failed HMAC validation.
      * Never includes the secret or the expected hash value.
      *
-     * @param string $function_name  WS function that was called
+     * @param string $functionname  WS function that was called
      * @param string $reason         Machine-readable failure reason
      */
-    private static function log_hmac_failure(string $function_name, string $reason): void {
+    private static function log_hmac_failure(string $functionname, string $reason): void {
         $ip = getremoteaddr();
-        error_log(sprintf(
+        \local_jedomi_log(sprintf(
             '[local_jedomi] HMAC failure: function=%s reason=%s ip=%s',
-            $function_name,
+            $functionname,
             $reason,
             $ip
         ));

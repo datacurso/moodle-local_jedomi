@@ -18,10 +18,11 @@
  * Unit tests for lib.php functions in local_jedomi.
  *
  * @package    local_jedomi
- * @category   phpunit
  * @copyright  2026 Jedomi Project
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
+
+namespace local_jedomi;
 
 defined('MOODLE_INTERNAL') || die();
 
@@ -34,8 +35,7 @@ require_once($CFG->dirroot . '/local/jedomi/lib.php');
  * @covers \local_jedomi_get_user_role_for_user()
  * @covers \local_jedomi_generate_spt_for_user()
  */
-final class local_jedomi_lib_testcase extends advanced_testcase {
-
+final class lib_test extends \advanced_testcase {
     /**
      * Setup test environment.
      */
@@ -44,7 +44,7 @@ final class local_jedomi_lib_testcase extends advanced_testcase {
         $this->resetAfterTest();
     }
 
-    // ========================
+    // ... ========================
     // local_jedomi_get_user_role_for_user
     // ========================
 
@@ -67,7 +67,7 @@ final class local_jedomi_lib_testcase extends advanced_testcase {
 
         $manager = $this->getDataGenerator()->create_user();
         $managerrole = $DB->get_record('role', ['shortname' => 'manager'], '*', MUST_EXIST);
-        role_assign($managerrole->id, $manager->id, context_system::instance());
+        role_assign($managerrole->id, $manager->id, \context_system::instance());
 
         $role = local_jedomi_get_user_role_for_user((int) $manager->id);
         $this->assertEquals('manager', $role);
@@ -122,7 +122,7 @@ final class local_jedomi_lib_testcase extends advanced_testcase {
         $this->assertEquals('teacher', $role);
     }
 
-    // ========================
+    // ... ========================
     // local_jedomi_generate_spt_for_user
     // ========================
 

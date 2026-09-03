@@ -1,4 +1,19 @@
 <?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
 /**
  * User profile page for Telegram account linking.
  *
@@ -8,6 +23,9 @@
  * @copyright  2026 Jedomi Project
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
+
+// phpcs:disable moodle.Commenting.MissingDocblock.File -- False positive: the sniff re-runs on every
+// Inline PHP open tag of this mixed PHP/HTML page; the file docblock above is present and complete.
 
 require_once(__DIR__ . '/../../config.php');
 // Explicitly include plugin lib — guarantee functions are available regardless
@@ -33,35 +51,49 @@ $PAGE->set_pagelayout('standard');
 $PAGE->set_title(get_string('telegram_link_title', 'local_jedomi'));
 $PAGE->set_heading(fullname($user));
 
-// Check if Telegram is enabled and bot is configured
+// Check if Telegram is enabled and bot is configured.
 $enabled      = \local_jedomi\telegram\manager::is_enabled();
-$bot_verified = (bool) get_config('local_jedomi', 'telegram_bot_verified');
-$bot_username = get_config('local_jedomi', 'telegram_bot_username') ?: '';
-$bot_firstname = get_config('local_jedomi', 'telegram_bot_firstname') ?: 'Jedomi';
-$bot_available = $enabled && $bot_verified && $bot_username !== '';
+$botverified = (bool) get_config('local_jedomi', 'telegram_bot_verified');
+$botusername = get_config('local_jedomi', 'telegram_bot_username') ?: '';
+$botfirstname = get_config('local_jedomi', 'telegram_bot_firstname') ?: 'Jedomi';
+$botavailable = $enabled && $botverified && $botusername !== '';
 
-$role_ok = local_jedomi_is_telegram_role_allowed();
+$roleok = local_jedomi_is_telegram_role_allowed();
 
-// Handle actions — only when bot is fully available and role is OK
+// Handle actions — only when bot is fully available and role is OK.
 $action         = optional_param('action', '', PARAM_ALPHA);
-$generated_code = null;
-$code_expiry    = 0;
+$generatedcode = null;
+$codeexpiry    = 0;
 
-if ($bot_available && $role_ok && $action === 'generate' && confirm_sesskey()) {
-    $generated_code = \local_jedomi\telegram\manager::generate_link_code($userid);
-    $code_expiry    = time() + 600;
+if ($botavailable && $roleok && $action === 'generate' && confirm_sesskey()) {
+    $generatedcode = \local_jedomi\telegram\manager::generate_link_code($userid);
+    $codeexpiry    = time() + 600;
 }
 
-if ($bot_available && $role_ok && $action === 'unlink' && confirm_sesskey()) {
+if ($botavailable && $roleok && $action === 'unlink' && confirm_sesskey()) {
     global $DB;
     $DB->delete_records('local_jedomi_telegram_links', ['userid' => $userid]);
-    redirect($PAGE->url, get_string('telegram_msg_unlinked', 'local_jedomi'), null,
-             \core\output\notification::NOTIFY_SUCCESS);
+    redirect(
+        $PAGE->url,
+        get_string('telegram_msg_unlinked', 'local_jedomi'),
+        null,
+        \core\output\notification::NOTIFY_SUCCESS
+    );
 }
 
-// Load current link status
+// Load current link status.
 global $DB;
 $link = $DB->get_record('local_jedomi_telegram_links', ['userid' => $userid, 'confirmed' => 1]);
+
+// Pre-built markup snippets (kept out of the HTML section for line length).
+$settingsurl = (new moodle_url('/local/jedomi/admin_settings.php', ['tab' => 'integrations']))->out(false);
+$copycodejs = "navigator.clipboard.writeText('/start " . s($generatedcode) . "');";
+$copyonclickdark = $copycodejs
+    . "this.innerHTML='<i class=\\'fa fa-check\\'></i>';"
+    . "setTimeout(()=>this.innerHTML='<i class=\\'fa fa-copy\\'></i>',1500)";
+$copyonclickgreen = $copycodejs
+    . "this.innerHTML='<i class=\\'fa fa-check\\' style=\\'color:#16a34a\\'></i>';"
+    . "setTimeout(()=>this.innerHTML='<i class=\\'fa fa-copy\\'></i>',1500)";
 
 echo $OUTPUT->header();
 ?>
@@ -93,29 +125,31 @@ echo $OUTPUT->header();
         </div>
     </div>
 
-    <?php if (!$bot_available): ?>
+    <?php if (!$botavailable) : ?>
     <!-- ── Bot not configured — show nothing to regular users ─────────────── -->
-    <?php if (is_siteadmin()): ?>
+        <?php if (is_siteadmin()) : ?>
     <div class="alert alert-info d-flex align-items-center gap-2" style="border-radius:.5rem">
         <i class="fa fa-info-circle fa-lg" style="flex-shrink:0"></i>
         <div>
             <strong>Telegram not configured (admin only message)</strong><br>
-            <small>Go to <a href="<?php echo (new moodle_url('/local/jedomi/admin_settings.php', ['tab'=>'integrations']))->out(false); ?>">Jedomi Settings → Integrations</a>
+            <small>Go to <a href="<?php echo $settingsurl; ?>">Jedomi Settings → Integrations</a>
             to set up the Telegram bot. Once configured, users will see the Telegram linking option here.</small>
         </div>
     </div>
-    <?php else: ?>
-        <?php redirect(new moodle_url('/user/profile.php', ['id' => $userid])); ?>
-    <?php endif; ?>
+        <?php else : ?>
+            <?php redirect(new moodle_url('/user/profile.php', ['id' => $userid])); ?>
+        <?php endif; ?>
 
-    <?php elseif (!$role_ok): ?>
+    <?php // phpcs:ignore Squiz.ControlStructures.ElseIfDeclaration.NotAllowed -- alt syntax needs elseif. ?>
+    <?php elseif (!$roleok) : ?>
     <!-- ── Role blocked ───────────────────────────────────────────────────── -->
     <div class="alert alert-danger d-flex align-items-center gap-2" style="border-radius:.5rem">
         <i class="fa fa-ban fa-lg" style="flex-shrink:0"></i>
         <div><?php echo get_string('telegram_msg_role_blocked', 'local_jedomi'); ?></div>
     </div>
 
-    <?php elseif ($link): ?>
+    <?php // phpcs:ignore Squiz.ControlStructures.ElseIfDeclaration.NotAllowed -- alt syntax needs elseif. ?>
+    <?php elseif ($link) : ?>
     <!-- ── LINKED ─────────────────────────────────────────────────────────── -->
     <div class="card mb-4" style="border-color:#22c55e">
         <div class="card-header d-flex align-items-center gap-2"
@@ -161,7 +195,7 @@ echo $OUTPUT->header();
         </div>
     </div>
 
-    <?php else: ?>
+    <?php else : ?>
     <!-- ── NOT LINKED ────────────────────────────────────────────────────── -->
     <div class="card mb-4">
         <div class="card-header d-flex align-items-center gap-2"
@@ -171,14 +205,14 @@ echo $OUTPUT->header();
         </div>
         <div class="card-body">
 
-            <?php if ($generated_code): ?>
+            <?php if ($generatedcode) : ?>
             <!-- Code displayed -->
             <p class="text-muted mb-3" style="font-size:.875rem">
                 <?php echo get_string('telegram_link_instructions', 'local_jedomi'); ?>
             </p>
 
             <div class="jd-tg-code-box">
-                <?php echo s($generated_code); ?>
+                <?php echo s($generatedcode); ?>
             </div>
             <p class="text-center text-muted" style="font-size:.8125rem;margin-bottom:1rem">
                 <?php echo get_string('telegram_link_code_expiry', 'local_jedomi'); ?>
@@ -187,7 +221,7 @@ echo $OUTPUT->header();
 
             <!-- Option A: Deep Link — Primary Action -->
             <div style="margin-bottom:1.25rem">
-                <a href="https://t.me/<?php echo s($bot_username); ?>?start=<?php echo s($generated_code); ?>"
+                <a href="https://t.me/<?php echo s($botusername); ?>?start=<?php echo s($generatedcode); ?>"
                    target="_blank" rel="noopener"
                    class="btn btn-success btn-lg d-block w-100"
                    style="padding:.875rem 1rem;font-size:1.05rem;border-radius:.625rem;font-weight:600">
@@ -195,7 +229,7 @@ echo $OUTPUT->header();
                     Abrir en Telegram (Automático)
                 </a>
                 <p class="text-center text-muted mt-2 mb-0" style="font-size:.8125rem">
-                    Te lleva directo a @<?php echo s($bot_username); ?> con tu código listo para vincular
+                    Te lleva directo a @<?php echo s($botusername); ?> con tu código listo para vincular
                 </p>
             </div>
 
@@ -208,14 +242,14 @@ echo $OUTPUT->header();
                         <strong style="font-size:.875rem">Open the bot in Telegram</strong>
                         <p style="font-size:.8125rem;color:#475569;margin:.2rem 0 .375rem">
                             Tap the button below to open the bot directly, or search for
-                            <strong>@<?php echo s($bot_username); ?></strong> in Telegram.
+                            <strong>@<?php echo s($botusername); ?></strong> in Telegram.
                         </p>
-                        <a href="https://t.me/<?php echo s($bot_username); ?>?start=<?php echo s($generated_code); ?>"
+                        <a href="https://t.me/<?php echo s($botusername); ?>?start=<?php echo s($generatedcode); ?>"
                            target="_blank" rel="noopener"
                            class="btn btn-sm"
                            style="background:#0088cc;color:#fff;border:none;border-radius:.375rem;font-size:.8125rem">
                             <i class="fa fa-telegram mr-1"></i>
-                            Open @<?php echo s($bot_username); ?> in Telegram
+                            Open @<?php echo s($botusername); ?> in Telegram
                         </a>
                     </div>
                 </div>
@@ -223,14 +257,15 @@ echo $OUTPUT->header();
                 <div class="jd-tg-step">
                     <div class="jd-tg-badge" style="background:#7c3aed">2</div>
                     <div>
-                        <strong style="font-size:.875rem"><?php echo get_string('telegram_stepU3_title', 'local_jedomi'); ?></strong>
+                        <strong style="font-size:.875rem"><?php
+                            echo get_string('telegram_stepU3_title', 'local_jedomi'); ?></strong>
                         <p style="font-size:.8125rem;color:#475569;margin:.2rem 0 .5rem">
-                            Send this command to <strong>@<?php echo s($bot_username); ?></strong>:
+                            Send this command to <strong>@<?php echo s($botusername); ?></strong>:
                         </p>
                         <div class="jd-tg-cmd">
-                            /start <?php echo s($generated_code); ?>
+                            /start <?php echo s($generatedcode); ?>
                             <button type="button"
-                                    onclick="navigator.clipboard.writeText('/start <?php echo s($generated_code); ?>');this.innerHTML='<i class=\'fa fa-check\'></i>';setTimeout(()=>this.innerHTML='<i class=\'fa fa-copy\'></i>',1500)"
+                                    onclick="<?php echo $copyonclickdark; ?>"
                                     style="background:none;border:none;color:#7dd3fc;cursor:pointer;padding:0">
                                 <i class="fa fa-copy"></i>
                             </button>
@@ -243,7 +278,8 @@ echo $OUTPUT->header();
                     <div>
                         <strong style="font-size:.875rem">Done!</strong>
                         <p style="font-size:.8125rem;color:#475569;margin:.2rem 0 0">
-                            The bot will confirm the link instantly. After that, send any message to start using Jedomi from Telegram.
+                            The bot will confirm the link instantly. After that, send any message
+                            to start using Jedomi from Telegram.
                         </p>
                     </div>
                 </div>
@@ -251,19 +287,20 @@ echo $OUTPUT->header();
 
             <!-- Option B: Manual — Fallback for PC users without Telegram app -->
             <div style="border:1px solid #e5e7eb;border-radius:.5rem;padding:1rem;background:#f9fafb;margin-bottom:1rem">
-                <p style="font-size:.8125rem;font-weight:600;color:#6b7280;margin-bottom:.75rem;display:flex;align-items:center;gap:.375rem">
+                <p style="font-size:.8125rem;font-weight:600;color:#6b7280;margin-bottom:.75rem;
+                          display:flex;align-items:center;gap:.375rem">
                     <i class="fa fa-info-circle" style="color:#9ca3af"></i>
                     ¿No tienes la app de Telegram?
                 </p>
                 <p style="font-size:.8375rem;color:#374151;margin-bottom:.625rem">
                     Si estás en PC sin la app, abre Telegram en tu móvil, busca
-                    <strong>@<?php echo s($bot_username); ?></strong> y envía este mensaje:
+                    <strong>@<?php echo s($botusername); ?></strong> y envía este mensaje:
                 </p>
                 <div style="background:#1e293b;color:#7dd3fc;border-radius:.375rem;padding:.5rem .75rem;
                             font-family:monospace;font-size:.9375rem;display:flex;align-items:center;justify-content:space-between">
-                    <span>/start <?php echo s($generated_code); ?></span>
+                    <span>/start <?php echo s($generatedcode); ?></span>
                     <button type="button"
-                            onclick="navigator.clipboard.writeText('/start <?php echo s($generated_code); ?>');this.innerHTML='<i class=\'fa fa-check\' style=\'color:#16a34a\'></i>';setTimeout(()=>this.innerHTML='<i class=\'fa fa-copy\'></i>',1500)"
+                            onclick="<?php echo $copyonclickgreen; ?>"
                             style="background:none;border:none;color:#7dd3fc;cursor:pointer;padding:.1rem .25rem">
                         <i class="fa fa-copy"></i>
                     </button>
@@ -281,7 +318,7 @@ echo $OUTPUT->header();
 
             <script>
             (function(){
-                var expiry = <?php echo $code_expiry * 1000; ?>;
+                var expiry = <?php echo $codeexpiry * 1000; ?>;
                 var el = document.getElementById('jd-countdown');
                 function tick(){
                     var r = Math.max(0, expiry - Date.now());
@@ -299,7 +336,7 @@ echo $OUTPUT->header();
             })();
             </script>
 
-            <?php else: ?>
+            <?php else : ?>
             <!-- Generate button -->
             <p style="font-size:.875rem;color:#374151;margin-bottom:1.25rem">
                 <?php echo get_string('telegram_link_instructions', 'local_jedomi'); ?>
@@ -318,8 +355,8 @@ echo $OUTPUT->header();
                     <div class="jd-tg-badge" style="background:#7c3aed">2</div>
                     <div style="font-size:.8375rem;color:#475569">
                         <strong style="color:#111827">
-                            Open <a href="https://t.me/<?php echo s($bot_username); ?>" target="_blank" rel="noopener"
-                                    style="color:#0284c7">@<?php echo s($bot_username); ?></a> in Telegram
+                            Open <a href="https://t.me/<?php echo s($botusername); ?>" target="_blank" rel="noopener"
+                                    style="color:#0284c7">@<?php echo s($botusername); ?></a> in Telegram
                         </strong>
                         — send <code>/start YOUR_CODE</code>.
                     </div>
@@ -328,7 +365,7 @@ echo $OUTPUT->header();
                     <div class="jd-tg-badge" style="background:#16a34a">3</div>
                     <div style="font-size:.8375rem;color:#475569">
                         <strong style="color:#111827">That's it!</strong>
-                        — <?php echo s($bot_firstname); ?> confirms instantly. Ask anything about your Moodle.
+                        — <?php echo s($botfirstname); ?> confirms instantly. Ask anything about your Moodle.
                     </div>
                 </div>
             </div>

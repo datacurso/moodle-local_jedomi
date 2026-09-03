@@ -1,4 +1,19 @@
 <?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
 /**
  * Telegram session store — persists conversational context per chat_id.
  *
@@ -12,10 +27,10 @@
 
 namespace local_jedomi\telegram;
 
-defined('MOODLE_INTERNAL') || die();
-
+/**
+ * Persists conversational context per Telegram chat id as a JSON message history.
+ */
 class session {
-
     /** System prompt base — replaced in proxy_to_gateway with full context. */
     public const ANTI_HALLUCINATION_PROMPT = 'Eres Jedomi, un asistente educativo integrado en Moodle LMS. '
         . 'Seguí estas reglas:\n'
@@ -29,12 +44,12 @@ class session {
     /**
      * Load session messages for a chat_id.
      *
-     * @param string $chat_id
+     * @param string $chatid
      * @return array Array of message arrays ['role' => ..., 'content' => ...]
      */
-    public static function get(string $chat_id): array {
+    public static function get(string $chatid): array {
         global $DB;
-        $record = $DB->get_record('local_jedomi_telegram_sessions', ['chatid' => $chat_id]);
+        $record = $DB->get_record('local_jedomi_telegram_sessions', ['chatid' => $chatid]);
         if (!$record || empty($record->messages)) {
             return [];
         }
@@ -45,33 +60,35 @@ class session {
     /**
      * Append a message to the session and trim to configured max_turns.
      *
-     * @param string $chat_id
+     * @param string $chatid
      * @param string $role     'user' | 'assistant' | 'system'
      * @param string $content
      */
-    public static function append(string $chat_id, string $role, string $content): void {
+    public static function append(string $chatid, string $role, string $content): void {
         global $DB;
 
         // Get max turns from config, with fallback to 10 and clamp 1-100.
-        $max_turns = (int) (get_config('local_jedomi', 'telegram_max_turns') ?: 10);
-        if ($max_turns < 1) {
-            $max_turns = 1;
+        // A configured '0' must reach the clamp below, so only fall back when unset.
+        $configured = get_config('local_jedomi', 'telegram_max_turns');
+        $maxturns = ($configured === false || $configured === '') ? 10 : (int) $configured;
+        if ($maxturns < 1) {
+            $maxturns = 1;
         }
-        if ($max_turns > 100) {
-            $max_turns = 100;
+        if ($maxturns > 100) {
+            $maxturns = 100;
         }
 
         $transaction = $DB->start_delegated_transaction();
         try {
-            $messages = self::get($chat_id);
+            $messages = self::get($chatid);
             $messages[] = ['role' => $role, 'content' => $content];
 
-            // Trim to last max_turns
-            if (count($messages) > $max_turns) {
-                $messages = array_slice($messages, -$max_turns);
+            // Trim to last max_turns.
+            if (count($messages) > $maxturns) {
+                $messages = array_slice($messages, -$maxturns);
             }
 
-            $record = $DB->get_record('local_jedomi_telegram_sessions', ['chatid' => $chat_id]);
+            $record = $DB->get_record('local_jedomi_telegram_sessions', ['chatid' => $chatid]);
             $now = time();
             if ($record) {
                 $record->messages = json_encode($messages, JSON_UNESCAPED_UNICODE);
@@ -79,7 +96,7 @@ class session {
                 $DB->update_record('local_jedomi_telegram_sessions', $record);
             } else {
                 $DB->insert_record('local_jedomi_telegram_sessions', (object)[
-                    'chatid'       => $chat_id,
+                    'chatid'       => $chatid,
                     'messages'     => json_encode($messages, JSON_UNESCAPED_UNICODE),
                     'lastactivity' => $now,
                 ]);
@@ -93,12 +110,12 @@ class session {
     /**
      * Load cached user context for a chat_id.
      *
-     * @param string $chat_id
+     * @param string $chatid
      * @return array|null Decoded context or null if not cached
      */
-    public static function get_context(string $chat_id): ?array {
+    public static function get_context(string $chatid): ?array {
         global $DB;
-        $record = $DB->get_record('local_jedomi_telegram_sessions', ['chatid' => $chat_id], 'usercontext');
+        $record = $DB->get_record('local_jedomi_telegram_sessions', ['chatid' => $chatid], 'usercontext');
         if (!$record || empty($record->usercontext)) {
             return null;
         }
@@ -113,18 +130,18 @@ class session {
      * with a higher iteration, our write is silently skipped. This prevents
      * stale self-ping state from overwriting the latest worker's progress.
      *
-     * @param string $chat_id
+     * @param string $chatid
      * @param array $context
      */
-    public static function set_context(string $chat_id, array $context): void {
+    public static function set_context(string $chatid, array $context): void {
         global $DB;
 
-        $newctx_json = json_encode($context, JSON_UNESCAPED_UNICODE);
+        $newctxjson = json_encode($context, JSON_UNESCAPED_UNICODE);
         $newiter = (int)($context['iteration'] ?? 0);
 
-        $record = $DB->get_record('local_jedomi_telegram_sessions', ['chatid' => $chat_id]);
+        $record = $DB->get_record('local_jedomi_telegram_sessions', ['chatid' => $chatid]);
         if ($record) {
-            // ── Optimistic concurrency guard ──────────────────────────────
+            // ... ── Optimistic concurrency guard ──────────────────────────────
             // Only overwrite if our iteration is strictly newer. If another
             // worker (self-ping) already saved a state with a higher or equal
             // iteration, our write is stale — skip it silently.
@@ -138,14 +155,14 @@ class session {
             if ($newiter > 0 && $newiter <= $olditer) {
                 return;
             }
-            $record->usercontext = $newctx_json;
+            $record->usercontext = $newctxjson;
             $record->iteration = $newiter;
             $record->lastactivity = time();
             $DB->update_record('local_jedomi_telegram_sessions', $record);
         } else {
             $DB->insert_record('local_jedomi_telegram_sessions', (object)[
-                'chatid'       => $chat_id,
-                'usercontext'  => $newctx_json,
+                'chatid'       => $chatid,
+                'usercontext'  => $newctxjson,
                 'iteration'    => $newiter,
                 'userid'       => 0,
                 'messages'     => '[]',
@@ -157,11 +174,11 @@ class session {
     /**
      * Remove cached user context for a chat_id.
      *
-     * @param string $chat_id
+     * @param string $chatid
      */
-    public static function clear_context(string $chat_id): void {
+    public static function clear_context(string $chatid): void {
         global $DB;
-        $record = $DB->get_record('local_jedomi_telegram_sessions', ['chatid' => $chat_id], 'id');
+        $record = $DB->get_record('local_jedomi_telegram_sessions', ['chatid' => $chatid], 'id');
         if ($record) {
             $DB->set_field('local_jedomi_telegram_sessions', 'usercontext', null, ['id' => $record->id]);
         }
@@ -170,14 +187,14 @@ class session {
     /**
      * Clear the session for a chat_id.
      *
-     * @param string $chat_id
+     * @param string $chatid
      */
-    public static function clear(string $chat_id): void {
+    public static function clear(string $chatid): void {
         global $DB;
 
         $transaction = $DB->start_delegated_transaction();
         try {
-            $DB->delete_records('local_jedomi_telegram_sessions', ['chatid' => $chat_id]);
+            $DB->delete_records('local_jedomi_telegram_sessions', ['chatid' => $chatid]);
             $transaction->allow_commit();
         } catch (\Exception $e) {
             $transaction->rollback($e);
@@ -188,18 +205,18 @@ class session {
      * Get the full messages array formatted for the Gateway API
      * (system instruction + context + current user message).
      *
-     * @param string $chat_id
-     * @param string $current_message
+     * @param string $chatid
+     * @param string $currentmessage
      * @return array
      */
-    public static function build_messages_for_gateway(string $chat_id, string $current_message): array {
-        $history = self::get($chat_id);
+    public static function build_messages_for_gateway(string $chatid, string $currentmessage): array {
+        $history = self::get($chatid);
         $messages = [['role' => 'system', 'content' => self::ANTI_HALLUCINATION_PROMPT]];
 
         foreach ($history as $h) {
             $messages[] = ['role' => $h['role'], 'content' => $h['content']];
         }
-        $messages[] = ['role' => 'user', 'content' => $current_message];
+        $messages[] = ['role' => 'user', 'content' => $currentmessage];
 
         return $messages;
     }

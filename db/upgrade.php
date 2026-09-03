@@ -1,4 +1,19 @@
 <?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
 /**
  * Upgrade file for local_jedomi — adds Telegram integration tables.
  *
@@ -7,11 +22,11 @@
  * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-defined('MOODLE_INTERNAL') || die();
-
 /**
- * @param int $oldversion
- * @return bool
+ * Executes the plugin upgrade steps, creating the Telegram integration tables and indexes.
+ *
+ * @param int $oldversion the version being upgraded from
+ * @return bool true on success
  */
 function xmldb_local_jedomi_upgrade(int $oldversion): bool {
     global $DB, $CFG;
@@ -19,8 +34,7 @@ function xmldb_local_jedomi_upgrade(int $oldversion): bool {
     $dbman = $DB->get_manager();
 
     if ($oldversion < 2026051401) {
-
-        // ── Table: local_jedomi_telegram_links ──────────────────────────────
+        // ... ── Table: local_jedomi_telegram_links ──────────────────────────────
         $table = new xmldb_table('local_jedomi_telegram_links');
         $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
         $table->add_field('userid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
@@ -36,7 +50,7 @@ function xmldb_local_jedomi_upgrade(int $oldversion): bool {
             $dbman->create_table($table);
         }
 
-        // ── Table: local_jedomi_telegram_sessions ───────────────────────────
+        // ... ── Table: local_jedomi_telegram_sessions ───────────────────────────
         $table = new xmldb_table('local_jedomi_telegram_sessions');
         $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
         $table->add_field('chatid', XMLDB_TYPE_CHAR, '32', null, XMLDB_NOTNULL, null, null);
@@ -49,7 +63,7 @@ function xmldb_local_jedomi_upgrade(int $oldversion): bool {
             $dbman->create_table($table);
         }
 
-        // ── Table: local_jedomi_telegram_pending_actions ────────────────────
+        // ... ── Table: local_jedomi_telegram_pending_actions ────────────────────
         $table = new xmldb_table('local_jedomi_telegram_pending_actions');
         $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
         $table->add_field('callbackid', XMLDB_TYPE_CHAR, '64', null, XMLDB_NOTNULL, null, null);
@@ -64,7 +78,7 @@ function xmldb_local_jedomi_upgrade(int $oldversion): bool {
             $dbman->create_table($table);
         }
 
-        // ── Table: local_jedomi_telegram_rate_limit ─────────────────────────
+        // ... ── Table: local_jedomi_telegram_rate_limit ─────────────────────────
         $table = new xmldb_table('local_jedomi_telegram_rate_limit');
         $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
         $table->add_field('chatid', XMLDB_TYPE_CHAR, '32', null, XMLDB_NOTNULL, null, null);
@@ -89,7 +103,7 @@ function xmldb_local_jedomi_upgrade(int $oldversion): bool {
     }
 
     if ($oldversion < 2026052402) {
-        // Add usercontext TEXT column to sessions table
+        // Add usercontext TEXT column to sessions table.
         $table = new xmldb_table('local_jedomi_telegram_sessions');
         $field = new xmldb_field('usercontext', XMLDB_TYPE_TEXT, null, null, null, null, null, 'messages');
         if (!$dbman->field_exists($table, $field)) {
@@ -129,8 +143,7 @@ function xmldb_local_jedomi_upgrade(int $oldversion): bool {
     }
 
     if ($oldversion < 2026052409) {
-
-        // ── Table: local_jedomi_agents ─────────────────────────────────────────
+        // ... ── Table: local_jedomi_agents ─────────────────────────────────────────
         $table = new xmldb_table('local_jedomi_agents');
         $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
         $table->add_field('userid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
@@ -151,7 +164,7 @@ function xmldb_local_jedomi_upgrade(int $oldversion): bool {
             $dbman->create_table($table);
         }
 
-        // ── Table: local_jedomi_agent_cache ────────────────────────────────────
+        // ... ── Table: local_jedomi_agent_cache ────────────────────────────────────
         $table = new xmldb_table('local_jedomi_agent_cache');
         $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
         $table->add_field('agentid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
@@ -217,8 +230,7 @@ function xmldb_local_jedomi_upgrade(int $oldversion): bool {
     }
 
     if ($oldversion < 2026052414) {
-
-        // ── Table: local_jedomi_query_log ─────────────────────────────────────
+        // ... ── Table: local_jedomi_query_log ─────────────────────────────────────
         $table = new xmldb_table('local_jedomi_query_log');
         $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
         $table->add_field('agentid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
@@ -237,8 +249,7 @@ function xmldb_local_jedomi_upgrade(int $oldversion): bool {
     }
 
     if ($oldversion < 2026052415) {
-
-        // ── Add "name" column to local_jedomi_agents ─────────────────────────
+        // ... ── Add "name" column to local_jedomi_agents ─────────────────────────
         $table = new xmldb_table('local_jedomi_agents');
         $field = new xmldb_field('name', XMLDB_TYPE_CHAR, '255', null, null, null, null, 'userid');
         if (!$dbman->field_exists($table, $field)) {

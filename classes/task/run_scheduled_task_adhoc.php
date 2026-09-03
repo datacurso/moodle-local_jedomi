@@ -1,4 +1,19 @@
 <?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
 /**
  * Adhoc task wrapper: re-fires a scheduled task asynchronously.
  *
@@ -12,13 +27,16 @@
 
 namespace local_jedomi\task;
 
-defined('MOODLE_INTERNAL') || die();
-
 use core\task\adhoc_task;
 use core\task\manager as task_manager;
 
+/**
+ * Adhoc task that re-fires another scheduled or adhoc task named in its custom data.
+ */
 class run_scheduled_task_adhoc extends adhoc_task {
-
+    /**
+     * Resolve the task class from custom data and execute it, logging progress via mtrace.
+     */
     public function execute(): void {
         $data      = $this->get_custom_data();
         $classname = $data->classname ?? '';

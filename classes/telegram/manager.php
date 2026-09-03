@@ -1,4 +1,19 @@
 <?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
 /**
  * Telegram manager — token encryption, config helpers, and rate limiting.
  *
@@ -17,8 +32,12 @@ namespace local_jedomi\telegram;
 
 defined('MOODLE_INTERNAL') || die();
 
-class manager {
+require_once(__DIR__ . '/../../lib.php');
 
+/**
+ * Telegram integration manager: encrypted bot token storage, config helpers and rate limiting.
+ */
+class manager {
     /** Fixed pepper — adds defense-in-depth against DB-only breaches. */
     private const PEPPER = 'jedomi_telegram_pepper_v1';
 
@@ -68,11 +87,11 @@ class manager {
     /**
      * Decrypt a ciphertext bundle produced by self::encrypt().
      *
-     * @param string $ciphertext_bundle Base64-encoded
+     * @param string $ciphertextbundle Base64-encoded
      * @return string Plaintext
      */
-    public static function decrypt(string $ciphertext_bundle): string {
-        $raw = base64_decode($ciphertext_bundle, true);
+    public static function decrypt(string $ciphertextbundle): string {
+        $raw = base64_decode($ciphertextbundle, true);
         if ($raw === false || strlen($raw) < 29) { // 12 nonce + 1 min ciphertext + 16 tag
             throw new \moodle_exception('decryption_failed', 'local_jedomi');
         }
@@ -109,7 +128,7 @@ class manager {
         try {
             return self::decrypt($encrypted);
         } catch (\Exception $e) {
-            error_log('[local_jedomi] Failed to decrypt Telegram bot token');
+            \local_jedomi_log('[local_jedomi] Failed to decrypt Telegram bot token');
             return null;
         }
     }
@@ -170,7 +189,7 @@ class manager {
         }
 
         $client = new api_client($token);
-        $webhook_url = self::get_webhook_url();
+        $webhookurl = self::get_webhook_url();
 
         // Delete old webhook first (clears stale pending updates).
         $deleted = $client->delete_webhook();
@@ -180,7 +199,7 @@ class manager {
         }
 
         // Set the new webhook URL.
-        $ok = $client->set_webhook($webhook_url);
+        $ok = $client->set_webhook($webhookurl);
         if ($ok) {
             self::clear_last_webhook_error();
         } else {
@@ -268,7 +287,7 @@ class manager {
      */
     public static function generate_link_code(int $userid): string {
         $code = self::generate_random_code();
-        // telegram_link_codes is MODE_APPLICATION so it works cross-request
+        // Telegram_link_codes is MODE_APPLICATION so it works cross-request
         // (the Moodle webhook has no user session, MODE_SESSION would fail).
         $cache = \cache::make('local_jedomi', 'telegram_link_codes');
         $cache->set('userid_' . $userid, $code);
@@ -317,7 +336,7 @@ class manager {
      * Generate a random 6-char code.
      */
     private static function generate_random_code(): string {
-        $chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // no 0, O, 1, I
+        $chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // No 0, O, 1, I.
         $code = '';
         $max = strlen($chars) - 1;
         for ($i = 0; $i < 6; $i++) {

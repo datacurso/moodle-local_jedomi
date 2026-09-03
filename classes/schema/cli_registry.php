@@ -1,4 +1,19 @@
 <?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
 /**
  * CLI Operations Registry — index of admin actions not exposed via web services.
  *
@@ -13,10 +28,11 @@
 
 namespace local_jedomi\schema;
 
-defined('MOODLE_INTERNAL') || die();
-
+/**
+ * Registry of admin CLI operations the AI can search, describe,
+ * and execute, mirroring the ws_indexer pattern for web services.
+ */
 class cli_registry {
-
     /**
      * Return all registered CLI operations.
      *
@@ -60,7 +76,8 @@ class cli_registry {
             ],
             [
                 'name'        => 'create_mod',
-                'description' => 'Create a course module (activity/resource) inside a course using natural-language-generated parameters.',
+                'description' => 'Create a course module (activity/resource) inside a course'
+                    . ' using natural-language-generated parameters.',
                 'params'      => [
                     'courseid' => [
                         'type'        => 'int',
@@ -70,12 +87,21 @@ class cli_registry {
                     'resource_type' => [
                         'type'        => 'string',
                         'required'    => true,
-                        'description' => 'Module plugin name (e.g. page, assign, quiz, forum, resource, label, folder, glossary, choice).',
+                        'description' => 'Module plugin name (e.g. page, assign, quiz, forum,'
+                            . ' resource, label, folder, glossary, choice).',
                     ],
                     'parameters' => [
                         'type'        => 'object',
                         'required'    => true,
-                        'description' => 'JSON object of module creation parameters. Required fields for every module type: name (string, the activity title) and intro (HTML string, the description). Content fields depend on the resource_type: for "page" use content (HTML), for "assign" use activity (HTML) and duedate (timestamp), for "quiz" use question and answer structures. Standard fields supported: name, intro, introformat (0=MOODLE, 1=HTML, 2=PLAIN), visible (0/1), timemodified, section. Module-specific fields are passed through as-is.',
+                        'description' => 'JSON object of module creation parameters.'
+                            . ' Required fields for every module type: name (string, the activity'
+                            . ' title) and intro (HTML string, the description). Content fields'
+                            . ' depend on the resource_type: for "page" use content (HTML), for'
+                            . ' "assign" use activity (HTML) and duedate (timestamp), for "quiz"'
+                            . ' use question and answer structures. Standard fields supported:'
+                            . ' name, intro, introformat (0=MOODLE, 1=HTML, 2=PLAIN), visible'
+                            . ' (0/1), timemodified, section. Module-specific fields are passed'
+                            . ' through as-is.',
                     ],
                     'section' => [
                         'type'        => 'int',
@@ -247,7 +273,7 @@ class cli_registry {
             return [
                 'success'   => true,
                 'courseid'  => $course->id,
-                'coursename'=> $course->fullname,
+                'coursename' => $course->fullname,
                 'backup'    => $filedetails,
             ];
         } catch (\Throwable $e) {
@@ -358,7 +384,7 @@ class cli_registry {
                 'modname'      => $newcm->modname ?? $resourcetype,
                 'instance'     => (int) ($newcm->instance ?? 0),
                 'sectionnum'   => $sectionnum,
-                'resource_type'=> $resourcetype,
+                'resource_type' => $resourcetype,
             ];
         } catch (\Throwable $e) {
             return ['error' => 'create_mod failed: ' . $e->getMessage()];

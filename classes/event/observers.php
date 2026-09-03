@@ -1,4 +1,19 @@
 <?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
 /**
  * Event observer implementations for Telegram proactive notifications.
  *
@@ -9,13 +24,13 @@
 
 namespace local_jedomi\event;
 
-defined('MOODLE_INTERNAL') || die();
-
 use local_jedomi\telegram\api_client;
 use local_jedomi\telegram\manager;
 
+/**
+ * Event observers that send proactive Telegram notifications to linked users.
+ */
 class observers {
-
     /**
      * Notify student via Telegram when their assignment is graded.
      *
@@ -28,13 +43,13 @@ class observers {
             return;
         }
 
-        // submission_graded: userid = teacher who graded, relateduserid = student
-        $student_id = $event->relateduserid;
-        if (!$student_id) {
+        // Submission_graded: userid = teacher who graded, relateduserid = student.
+        $studentid = $event->relateduserid;
+        if (!$studentid) {
             return;
         }
 
-        $link = $DB->get_record('local_jedomi_telegram_links', ['userid' => $student_id, 'confirmed' => 1]);
+        $link = $DB->get_record('local_jedomi_telegram_links', ['userid' => $studentid, 'confirmed' => 1]);
         if (!$link) {
             return;
         }
@@ -43,13 +58,13 @@ class observers {
             return;
         }
 
-        // Retrieve names via standard DB API (get_assign/get_course are not event methods)
-        $cm_id    = $event->contextinstanceid;
-        $cm       = get_coursemodule_from_id('assign', $cm_id, 0, false, IGNORE_MISSING);
-        $assign_name = $cm ? $cm->name : 'Assignment';
-        $course_name = $cm ? $DB->get_field('course', 'fullname', ['id' => $cm->course]) : 'Course';
+        // Retrieve names via standard DB API (get_assign/get_course are not event methods).
+        $cmid    = $event->contextinstanceid;
+        $cm       = get_coursemodule_from_id('assign', $cmid, 0, false, IGNORE_MISSING);
+        $assignname = $cm ? $cm->name : 'Assignment';
+        $coursename = $cm ? $DB->get_field('course', 'fullname', ['id' => $cm->course]) : 'Course';
 
-        $text = "📝 Your assignment '<b>" . s($assign_name) . "</b>' in <b>" . s($course_name ?? 'Course') . "</b> has been graded.";
+        $text = "📝 Your assignment '<b>" . s($assignname) . "</b>' in <b>" . s($coursename ?? 'Course') . "</b> has been graded.";
 
         $client = new api_client();
         $client->send_message((string)$link->chatid, $text);
@@ -72,7 +87,7 @@ class observers {
         $userid = $event->userid;
         $user = $DB->get_record('user', ['id' => $userid]);
         if (!$user || !is_siteadmin($userid)) {
-            return; // Only notify admins
+            return; // Only notify admins.
         }
 
         $link = $DB->get_record('local_jedomi_telegram_links', ['userid' => $userid, 'confirmed' => 1]);
@@ -84,10 +99,11 @@ class observers {
             return;
         }
 
-        // Check failing cron tasks
-        $failing = $DB->get_records_sql("SELECT classname, faildelay, disabled FROM {task_scheduled} WHERE faildelay > 0 OR disabled = 1 LIMIT 10");
+        // Check failing cron tasks.
+        $failing = $DB->get_records_sql("SELECT classname, faildelay, disabled"
+            . " FROM {task_scheduled} WHERE faildelay > 0 OR disabled = 1 LIMIT 10");
         if (empty($failing)) {
-            return; // All good
+            return; // All good.
         }
 
         $lines = ["⚠️ <b>Cron Health Alert</b>"];
@@ -104,13 +120,24 @@ class observers {
         self::update_cooldown($link);
     }
 
-    // ── Cooldown helpers ─────────────────────────────────────────────────────
+    // ... ── Cooldown helpers ─────────────────────────────────────────────────────
 
+    /**
+     * Check whether enough time has passed since the last proactive message to this link.
+     *
+     * @param \stdClass $link Telegram link record with a lastproactivesent field.
+     * @return bool True if the 5-minute cooldown has elapsed and a message may be sent.
+     */
     private static function check_cooldown(\stdClass $link): bool {
-        $cooldown_seconds = 5 * 60; // 5 minutes
-        return ($link->lastproactivesent + $cooldown_seconds) <= time();
+        $cooldownseconds = 5 * 60; // 5 minutes
+        return ($link->lastproactivesent + $cooldownseconds) <= time();
     }
 
+    /**
+     * Record the current time as the last proactive send for this link.
+     *
+     * @param \stdClass $link Telegram link record to update.
+     */
     private static function update_cooldown(\stdClass $link): void {
         global $DB;
         $link->lastproactivesent = time();

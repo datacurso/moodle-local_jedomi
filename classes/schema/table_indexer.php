@@ -1,4 +1,19 @@
 <?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
 /**
  * Table index — semantic search over install.xml definitions.
  *
@@ -14,10 +29,11 @@
 
 namespace local_jedomi\schema;
 
-defined('MOODLE_INTERNAL') || die();
-
+/**
+ * Builds and searches a keyword index of database tables parsed from
+ * core and plugin install.xml files.
+ */
 class table_indexer {
-
     /**
      * Build the full table index from all install.xml files.
      *
@@ -95,7 +111,7 @@ class table_indexer {
             ];
 
             $fields = [];
-            $fieldComments = [];
+            $fieldcomments = [];
 
             foreach ($table->FIELDS->FIELD ?? [] as $field) {
                 $fieldname = (string)$field['NAME'];
@@ -106,12 +122,12 @@ class table_indexer {
 
                 $fcomment = (string)($field['COMMENT'] ?? '');
                 if ($fcomment !== '') {
-                    $fieldComments[$fieldname] = $fcomment;
+                    $fieldcomments[$fieldname] = $fcomment;
                 }
             }
 
             $tabledata['fields'] = $fields;
-            $tabledata['field_comments'] = $fieldComments;
+            $tabledata['field_comments'] = $fieldcomments;
             $tables[$tablename] = $tabledata;
         }
 
@@ -162,7 +178,7 @@ class table_indexer {
             $namelower = strtolower($tablename);
             $commentlower = strtolower($info['comment'] ?? '');
             $fieldstext = strtolower(implode(' ', $info['fields'] ?? []));
-            $fieldcommentsText = strtolower(implode(' ', $info['field_comments'] ?? []));
+            $fieldcommentstext = strtolower(implode(' ', $info['field_comments'] ?? []));
 
             foreach ($tokens as $token) {
                 // Table name match — highest weight.
@@ -184,7 +200,7 @@ class table_indexer {
                     $score += 2;
                 }
                 // Field comment match.
-                if (strpos($fieldcommentsText, $token) !== false) {
+                if (strpos($fieldcommentstext, $token) !== false) {
                     $score += 1;
                 }
             }

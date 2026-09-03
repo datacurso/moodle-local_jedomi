@@ -1,4 +1,19 @@
 <?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
 /**
  * Query profiler — logs and retrieves SQL query execution metrics.
  *
@@ -13,26 +28,27 @@
 
 namespace local_jedomi\agent;
 
-defined('MOODLE_INTERNAL') || die();
-
+/**
+ * Records SQL tool executions and exposes paginated logs, aggregate
+ * statistics, and purge maintenance for the profiler dashboard.
+ */
 class query_profiler {
-
     /**
      * Log a SQL query execution.
      *
      * @param int    $agentid
      * @param string $query
-     * @param float  $durationMs
-     * @param int    $rowCount
+     * @param float  $durationms
+     * @param int    $rowcount
      */
-    public static function log_query(int $agentid, string $query, float $durationMs, int $rowCount): void {
+    public static function log_query(int $agentid, string $query, float $durationms, int $rowcount): void {
         global $DB;
 
         $record = (object) [
             'agentid' => $agentid,
             'query' => $query,
-            'duration_ms' => round($durationMs, 2),
-            'rowcount' => $rowCount,
+            'duration_ms' => round($durationms, 2),
+            'rowcount' => $rowcount,
             'timecreated' => time(),
         ];
 
@@ -73,23 +89,26 @@ class query_profiler {
             $wheresql = 'WHERE ' . implode(' AND ', $wheres);
         }
 
-        // Pagination
+        // Pagination.
         $page = max(1, (int) ($filters['page'] ?? 1));
         $perpage = max(1, min(200, (int) ($filters['perpage'] ?? 50)));
         $offset = ($page - 1) * $perpage;
 
-        // Sort
+        // Sort.
         $sort = in_array($filters['sort'] ?? '', ['duration_ms', 'timecreated', 'rowcount', 'query'])
             ? $filters['sort'] : 'duration_ms';
         $dir = strtoupper($filters['dir'] ?? 'DESC') === 'ASC' ? 'ASC' : 'DESC';
 
         $total = $DB->count_records_sql(
-            "SELECT COUNT(1) FROM {local_jedomi_query_log} {$wheresql}", $params
+            "SELECT COUNT(1) FROM {local_jedomi_query_log} {$wheresql}",
+            $params
         );
 
         $entries = $DB->get_records_sql(
             "SELECT * FROM {local_jedomi_query_log} {$wheresql} ORDER BY {$sort} {$dir}",
-            $params, $offset, $perpage
+            $params,
+            $offset,
+            $perpage
         );
 
         return [
@@ -101,16 +120,16 @@ class query_profiler {
     /**
      * Get aggregate stats for the profiler dashboard.
      *
-     * @param  int $minDurationMs Minimum duration to consider "slow" (default: 1000ms).
+     * @param  int $mindurationms Minimum duration to consider "slow" (default: 1000ms).
      * @return \stdClass
      */
-    public static function get_aggregate(int $minDurationMs = 1000): \stdClass {
+    public static function get_aggregate(int $mindurationms = 1000): \stdClass {
         global $DB;
 
         $total = $DB->count_records('local_jedomi_query_log');
-        $slow = $DB->count_records_select('local_jedomi_query_log', 'duration_ms >= :min', ['min' => $minDurationMs]);
-        $avgDuration = $DB->get_field_sql("SELECT AVG(duration_ms) FROM {local_jedomi_query_log}") ?: 0;
-        $maxDuration = $DB->get_field_sql("SELECT MAX(duration_ms) FROM {local_jedomi_query_log}") ?: 0;
+        $slow = $DB->count_records_select('local_jedomi_query_log', 'duration_ms >= :min', ['min' => $mindurationms]);
+        $avgduration = $DB->get_field_sql("SELECT AVG(duration_ms) FROM {local_jedomi_query_log}") ?: 0;
+        $maxduration = $DB->get_field_sql("SELECT MAX(duration_ms) FROM {local_jedomi_query_log}") ?: 0;
 
         // Top 10 slowest queries (aggregated by query text).
         $slowest = $DB->get_records_sql(
@@ -126,8 +145,8 @@ class query_profiler {
         return (object) [
             'total_queries' => (int) $total,
             'slow_queries' => (int) $slow,
-            'avg_duration_ms' => round((float) $avgDuration, 2),
-            'max_duration_ms' => round((float) $maxDuration, 2),
+            'avg_duration_ms' => round((float) $avgduration, 2),
+            'max_duration_ms' => round((float) $maxduration, 2),
             'slowest' => array_values($slowest ?: []),
         ];
     }

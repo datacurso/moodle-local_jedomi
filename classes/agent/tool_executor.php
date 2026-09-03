@@ -1,4 +1,19 @@
 <?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
 /**
  * Tool executor — receives AI tool_calls, dispatches to the right handler,
  * and returns results.
@@ -10,8 +25,6 @@
 
 namespace local_jedomi\agent;
 
-defined('MOODLE_INTERNAL') || die();
-
 /**
  * Static facade for tool dispatch.
  *
@@ -19,7 +32,6 @@ defined('MOODLE_INTERNAL') || die();
  * the executor finds the matching tool, runs it, and collects results.
  */
 class tool_executor {
-
     /** @var tool\agent_tool[] Cached tool instances. */
     private static array $instances = [];
 
@@ -39,6 +51,12 @@ class tool_executor {
         return $defs;
     }
 
+    /** @var array<string, string> Aliases for model-hallucinated plural forms. */
+    private const ALIASES = [
+        'create_agents' => 'create_agent',
+        'delete_agents' => 'delete_agent',
+    ];
+
     /**
      * Execute a single tool call.
      *
@@ -46,12 +64,6 @@ class tool_executor {
      * @param  string $arguments JSON-encoded arguments from the AI.
      * @return string            Result to return as a "tool" role message.
      */
-    /** @var array<string, string> Aliases for model-hallucinated plural forms. */
-    private const ALIASES = [
-        'create_agents' => 'create_agent',
-        'delete_agents' => 'delete_agent',
-    ];
-
     public static function execute(string $name, string $arguments): string {
         require_once(__DIR__ . '/../../lib.php');
 

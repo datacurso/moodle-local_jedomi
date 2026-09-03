@@ -1,4 +1,19 @@
 <?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
 /**
  * AJAX endpoint — POST agent preview: test a prompt against the gateway + tools.
  *
@@ -34,19 +49,27 @@ if (trim($prompt) === '') {
     exit;
 }
 
-// ── Gateway config ───────────────────────────────────────────────────────
-$gateway_url = rtrim(get_config('local_jedomi', 'gateway_url'), '/');
-$api_key    = get_config('local_jedomi', 'api_key');
+// ... ── Gateway config ───────────────────────────────────────────────────────
+$gatewayurl = rtrim(get_config('local_jedomi', 'gateway_url'), '/');
+$apikey    = get_config('local_jedomi', 'api_key');
 $model      = get_config('local_jedomi', 'model');
 
-if (empty($gateway_url)) { $gateway_url = 'http://localhost:8765'; }
-if (empty($api_key))     { $api_key     = 'jedomi-local-key'; }
-if (empty($model))       { $model       = 'jedomi-e4b'; }
+if (empty($gatewayurl)) {
+    $gatewayurl = 'http://localhost:8765';
+}
+if (empty($apikey)) {
+    $apikey     = 'jedomi-local-key';
+}
+if (empty($model)) {
+    $model       = 'jedomi-e4b';
+}
 
-$max_tokens = (int) get_config('local_jedomi', 'max_tokens');
-if ($max_tokens < 256) { $max_tokens = 16384; }
+$maxtokens = (int) get_config('local_jedomi', 'max_tokens');
+if ($maxtokens < 256) {
+    $maxtokens = 16384;
+}
 
-// ── Build messages (same rich context as web chat) ─────────────────────
+// ... ── Build messages (same rich context as web chat) ─────────────────────
 require_once(__DIR__ . '/../lib.php');
 $role = \local_jedomi_get_user_role_for_user((int) $USER->id);
 $tools = \local_jedomi_get_tool_definitions($role);
@@ -68,83 +91,84 @@ $messages = [
     ['role' => 'user', 'content' => $prompt],
 ];
 
-// ── Check agent cache ─────────────────────────────────────────────────────
-$cache_hash = md5(trim($prompt));
+// ... ── Check agent cache ─────────────────────────────────────────────────────
+$cachehash = md5(trim($prompt));
 $cached = $DB->get_record('local_jedomi_agent_cache', [
     'agentid' => 0,
-    'context_hash' => $cache_hash,
+    'context_hash' => $cachehash,
 ]);
 if ($cached && !empty($cached->result_json)) {
-    // ── Try semantic cache plan replay ──────────────────────────────────────
+    // ... ── Try semantic cache plan replay ──────────────────────────────────────
     if (!empty($cached->plan_json)) {
         $plan = json_decode($cached->plan_json, true);
         if (is_array($plan) && !empty($plan)) {
-            $replayProfiler = [];
-            $replayFailed = false;
+            $replayprofiler = [];
+            $replayfailed = false;
             foreach ($plan as $step) {
-                $toolStart = microtime(true);
-                $toolResult = tool_executor::execute($step['tool'], $step['arguments']);
-                $toolDuration = (microtime(true) - $toolStart) * 1000;
-                $resultInfo = json_decode($toolResult, true);
-                if (!empty($resultInfo['error'])) {
-                    $replayFailed = true;
+                $toolstart = microtime(true);
+                $toolresult = tool_executor::execute($step['tool'], $step['arguments']);
+                $toolduration = (microtime(true) - $toolstart) * 1000;
+                $resultinfo = json_decode($toolresult, true);
+                if (!empty($resultinfo['error'])) {
+                    $replayfailed = true;
                     break;
                 }
-                $replayProfiler[] = [
+                $replayprofiler[] = [
                     'tool' => $step['tool'],
                     'arguments' => $step['arguments'],
-                    'result_preview' => mb_substr($toolResult, 0, 5000),
-                    'duration_ms' => round($resultInfo['duration_ms'] ?? $toolDuration, 2),
-                    'row_count' => $resultInfo['row_count'] ?? 0,
-                    'error' => $resultInfo['error'] ?? null,
+                    'result_preview' => mb_substr($toolresult, 0, 5000),
+                    'duration_ms' => round($resultinfo['duration_ms'] ?? $toolduration, 2),
+                    'row_count' => $resultinfo['row_count'] ?? 0,
+                    'error' => $resultinfo['error'] ?? null,
                 ];
             }
 
-            if (!$replayFailed && !empty($replayProfiler)) {
+            if (!$replayfailed && !empty($replayprofiler)) {
                 // Build fresh context for reformulation.
-                $freshCtx = "Updated tool results:\n";
-                foreach ($replayProfiler as $fr) {
-                    $freshCtx .= "\n--- {$fr['tool']} ---\n{$fr['result_preview']}\n";
+                $freshctx = "Updated tool results:\n";
+                foreach ($replayprofiler as $fr) {
+                    $freshctx .= "\n--- {$fr['tool']} ---\n{$fr['result_preview']}\n";
                 }
 
-                $cachedResult = json_decode($cached->result_json, true);
-                $cachedAnswer = $cachedResult['answer'] ?? $cached->result_json;
+                $cachedresult = json_decode($cached->result_json, true);
+                $cachedanswer = $cachedresult['answer'] ?? $cached->result_json;
 
-                $reformMessages = [
-                    ['role' => 'system', 'content' => 'You previously answered a question. Below are updated tool results. Reformulate your answer using the new data. Keep the same style and structure.'],
-                    ['role' => 'user', 'content' => "Previous answer:\n{$cachedAnswer}\n\n{$freshCtx}"],
+                $reformmessages = [
+                    ['role' => 'system', 'content' => 'You previously answered a question. Below are updated tool results.'
+                        . ' Reformulate your answer using the new data. Keep the same style and structure.'],
+                    ['role' => 'user', 'content' => "Previous answer:\n{$cachedanswer}\n\n{$freshctx}"],
                 ];
 
-                $ch = curl_init($gateway_url . '/v1/chat/completions');
+                $ch = curl_init($gatewayurl . '/v1/chat/completions');
                 curl_setopt_array($ch, [
                     CURLOPT_POST           => true,
                     CURLOPT_POSTFIELDS     => json_encode([
                         'model' => $model,
-                        'messages' => $reformMessages,
+                        'messages' => $reformmessages,
                         'stream' => false,
-                        'max_tokens' => $max_tokens,
+                        'max_tokens' => $maxtokens,
                     ], JSON_UNESCAPED_UNICODE),
                     CURLOPT_RETURNTRANSFER => true,
                     CURLOPT_TIMEOUT        => 120,
                     CURLOPT_HTTPHEADER     => [
                         'Content-Type: application/json',
-                        'Authorization: Bearer ' . $api_key,
+                        'Authorization: Bearer ' . $apikey,
                     ],
                 ]);
-                $reformResponse = curl_exec($ch);
-                $reformHttp = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                $reformresponse = curl_exec($ch);
+                $reformhttp = curl_getinfo($ch, CURLINFO_HTTP_CODE);
                 curl_close($ch);
 
-                if ($reformHttp === 200) {
-                    $reformResult = json_decode($reformResponse, true);
-                    $reformAnswer = $reformResult['choices'][0]['message']['content'] ?? '';
-                    if (!empty(trim($reformAnswer))) {
+                if ($reformhttp === 200) {
+                    $reformresult = json_decode($reformresponse, true);
+                    $reformanswer = $reformresult['choices'][0]['message']['content'] ?? '';
+                    if (!empty(trim($reformanswer))) {
                         echo json_encode([
                             'ok' => true,
-                            'answer' => $reformAnswer,
+                            'answer' => $reformanswer,
                             'rounds' => 0,
-                            'profiler' => $replayProfiler,
-                            'total_time_ms' => round(array_sum(array_column($replayProfiler, 'duration_ms')), 2),
+                            'profiler' => $replayprofiler,
+                            'total_time_ms' => round(array_sum(array_column($replayprofiler, 'duration_ms')), 2),
                             'cached' => true,
                             'cached_at' => $cached->timecreated,
                             'reformulated' => true,
@@ -156,15 +180,15 @@ if ($cached && !empty($cached->result_json)) {
         }
     }
 
-    // ── Fallback: plain text cache ──────────────────────────────────────────
-    $cached_result = json_decode($cached->result_json, true);
-    if ($cached_result && is_array($cached_result)) {
+    // ... ── Fallback: plain text cache ──────────────────────────────────────────
+    $cachedplain = json_decode($cached->result_json, true);
+    if ($cachedplain && is_array($cachedplain)) {
         echo json_encode([
             'ok' => true,
-            'answer' => $cached_result['answer'] ?? $cached->result_json,
+            'answer' => $cachedplain['answer'] ?? $cached->result_json,
             'rounds' => 0,
-            'profiler' => $cached_result['profiler'] ?? [],
-            'conversation' => $cached_result['conversation'] ?? [],
+            'profiler' => $cachedplain['profiler'] ?? [],
+            'conversation' => $cachedplain['conversation'] ?? [],
             'total_time_ms' => 0,
             'cached' => true,
             'cached_at' => $cached->timecreated,
@@ -173,27 +197,27 @@ if ($cached && !empty($cached->result_json)) {
     }
 }
 
-// ── Multi-turn loop (same as agent_runner) ────────────────────────────────
-$finalAnswer = '';
-$maxRounds = 15;
-$profilerEntries = [];
+// ... ── Multi-turn loop (same as agent_runner) ────────────────────────────────
+$finalanswer = '';
+$maxrounds = 15;
+$profilerentries = [];
 $plan = [];
-$toolcallCounts = [];
-$loopBroken = false;
+$toolcallcounts = [];
+$loopbroken = false;
 
-for ($round = 1; $round <= $maxRounds; $round++) {
+for ($round = 1; $round <= $maxrounds; $round++) {
     $payload = [
         'model' => $model,
         'messages' => $messages,
         'stream' => false,
-        'max_tokens' => $max_tokens,
+        'max_tokens' => $maxtokens,
     ];
     if (!empty($tools)) {
         $payload['tools'] = $tools;
     }
 
-    // ── Gateway call ─────────────────────────────────────────────────────
-    $ch = curl_init($gateway_url . '/v1/chat/completions');
+    // ... ── Gateway call ─────────────────────────────────────────────────────
+    $ch = curl_init($gatewayurl . '/v1/chat/completions');
     curl_setopt_array($ch, [
         CURLOPT_POST           => true,
         CURLOPT_POSTFIELDS     => json_encode($payload, JSON_UNESCAPED_UNICODE),
@@ -201,17 +225,17 @@ for ($round = 1; $round <= $maxRounds; $round++) {
         CURLOPT_TIMEOUT        => 120,
         CURLOPT_HTTPHEADER     => [
             'Content-Type: application/json',
-            'Authorization: Bearer ' . $api_key,
+            'Authorization: Bearer ' . $apikey,
         ],
     ]);
     $response = curl_exec($ch);
-    $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $curl_errno = curl_errno($ch);
-    $curl_error = curl_error($ch);
+    $httpcode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlerrno = curl_errno($ch);
+    $curlerror = curl_error($ch);
     curl_close($ch);
 
-    if ($curl_errno !== 0 || $http_code !== 200) {
-        $err = $curl_error ?: "HTTP {$http_code}";
+    if ($curlerrno !== 0 || $httpcode !== 200) {
+        $err = $curlerror ?: "HTTP {$httpcode}";
         echo json_encode(['ok' => false, 'error' => "Gateway error: {$err}"]);
         exit;
     }
@@ -223,18 +247,18 @@ for ($round = 1; $round <= $maxRounds; $round++) {
     }
 
     $message = $result['choices'][0]['message'] ?? [];
-    $nativeToolCalls = $message['tool_calls'] ?? [];
+    $nativetoolcalls = $message['tool_calls'] ?? [];
     $content = $message['content'] ?? '';
 
-    // ── Parse text-based TOOL_CALL ──────────────────────────────────────
-    $textToolCalls = [];
+    // ... ── Parse text-based TOOL_CALL ──────────────────────────────────────
+    $texttoolcalls = [];
     if (!empty($tools)) {
-        $textToolCalls = parse_text_tool_calls($content);
+        $texttoolcalls = parse_text_tool_calls($content);
     }
-    $allToolCalls = array_merge($nativeToolCalls, $textToolCalls);
+    $alltoolcalls = array_merge($nativetoolcalls, $texttoolcalls);
 
-    if (empty($allToolCalls)) {
-        $finalAnswer = $content;
+    if (empty($alltoolcalls)) {
+        $finalanswer = $content;
         break;
     }
 
@@ -243,75 +267,75 @@ for ($round = 1; $round <= $maxRounds; $round++) {
         'content' => $content ?: '[Tool call requested]',
     ];
 
-    foreach ($allToolCalls as $tc) {
-        $funcName = $tc['function']['name'] ?? '?';
-        $funcArgs = $tc['function']['arguments'] ?? '{}';
-        $tcId = $tc['id'] ?? 'tc_' . uniqid();
+    foreach ($alltoolcalls as $tc) {
+        $funcname = $tc['function']['name'] ?? '?';
+        $funcargs = $tc['function']['arguments'] ?? '{}';
+        $tcid = $tc['id'] ?? 'tc_' . uniqid();
 
-        // ── Loop detection ──────────────────────────────────────────────
-        $decodedArgs = is_string($funcArgs) ? json_decode($funcArgs, true) : $funcArgs;
-        $stableArgs = is_array($decodedArgs)
-            ? hash('sha256', json_encode($decodedArgs, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_IGNORE))
-            : md5($funcArgs);
-        $callkey = $funcName . '|' . $stableArgs;
-        $toolcallCounts[$callkey] = ($toolcallCounts[$callkey] ?? 0) + 1;
+        // ... ── Loop detection ──────────────────────────────────────────────
+        $decodedargs = is_string($funcargs) ? json_decode($funcargs, true) : $funcargs;
+        $stableargs = is_array($decodedargs)
+            ? hash('sha256', json_encode($decodedargs, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_IGNORE))
+            : md5($funcargs);
+        $callkey = $funcname . '|' . $stableargs;
+        $toolcallcounts[$callkey] = ($toolcallcounts[$callkey] ?? 0) + 1;
 
-        $loopDetected = $toolcallCounts[$callkey] > 5;
-        if ($loopDetected) {
-            $toolResult = json_encode([
+        $loopdetected = $toolcallcounts[$callkey] > 5;
+        if ($loopdetected) {
+            $toolresult = json_encode([
                 'error' => 'loop_detected',
-                'tool' => $funcName,
-                'detail' => 'Same tool with same arguments called ' . $toolcallCounts[$callkey] . ' times.',
+                'tool' => $funcname,
+                'detail' => 'Same tool with same arguments called ' . $toolcallcounts[$callkey] . ' times.',
             ]);
-            $loopBroken = true;
+            $loopbroken = true;
         } else {
             $plan[] = [
-                'tool' => $funcName,
-                'arguments' => $funcArgs,
+                'tool' => $funcname,
+                'arguments' => $funcargs,
             ];
 
-            $toolStart = microtime(true);
-            $toolResult = tool_executor::execute($funcName, $funcArgs);
-            $toolDuration = (microtime(true) - $toolStart) * 1000;
+            $toolstart = microtime(true);
+            $toolresult = tool_executor::execute($funcname, $funcargs);
+            $toolduration = (microtime(true) - $toolstart) * 1000;
 
-            if (strlen($toolResult) > 64000) {
-                $toolResult = mb_substr($toolResult, 0, 64000)
+            if (strlen($toolresult) > 64000) {
+                $toolresult = mb_substr($toolresult, 0, 64000)
                     . "\n\n[Result truncated at 64000 characters]";
             }
         }
 
         // Profile every call (including loop_detected for visibility).
-        $resultInfo = json_decode($toolResult, true);
-        $resultPreview = is_string($toolResult)
-            ? mb_substr($toolResult, 0, 5000)
-            : mb_substr(json_encode($toolResult, JSON_UNESCAPED_UNICODE), 0, 5000);
-        $profilerEntries[] = [
-            'tool' => $funcName,
-            'arguments' => $funcArgs,
-            'result_preview' => $resultPreview,
-            'duration_ms' => round($resultInfo['duration_ms'] ?? ($toolDuration ?? 0), 2),
-            'row_count' => $resultInfo['row_count'] ?? 0,
-            'error' => $resultInfo['error'] ?? null,
+        $resultinfo = json_decode($toolresult, true);
+        $resultpreview = is_string($toolresult)
+            ? mb_substr($toolresult, 0, 5000)
+            : mb_substr(json_encode($toolresult, JSON_UNESCAPED_UNICODE), 0, 5000);
+        $profilerentries[] = [
+            'tool' => $funcname,
+            'arguments' => $funcargs,
+            'result_preview' => $resultpreview,
+            'duration_ms' => round($resultinfo['duration_ms'] ?? ($toolduration ?? 0), 2),
+            'row_count' => $resultinfo['row_count'] ?? 0,
+            'error' => $resultinfo['error'] ?? null,
         ];
 
         $messages[] = [
             'role' => 'tool',
-            'tool_call_id' => $tcId,
-            'content' => $toolResult,
+            'tool_call_id' => $tcid,
+            'content' => $toolresult,
         ];
     }
 
-    if ($loopBroken) {
+    if ($loopbroken) {
         break;
     }
 }
 
-// ── Safety net + cleanup ─────────────────────────────────────────────────
-if (empty($finalAnswer)) {
-    if ($loopBroken) {
-        $finalAnswer = 'The agent encountered an issue while fetching data. Please try again later.';
+// ... ── Safety net + cleanup ─────────────────────────────────────────────────
+if (empty($finalanswer)) {
+    if ($loopbroken) {
+        $finalanswer = 'The agent encountered an issue while fetching data. Please try again later.';
     } else if (!empty($content)) {
-        $finalAnswer = $content;
+        $finalanswer = $content;
     } else {
         // Fallback: last non-error tool result.
         foreach (array_reverse($messages ?? []) as $msg) {
@@ -320,7 +344,7 @@ if (empty($finalAnswer)) {
                 if (!empty($decoded['error'])) {
                     continue;
                 }
-                $finalAnswer = is_string($msg['content'])
+                $finalanswer = is_string($msg['content'])
                     ? $msg['content']
                     : json_encode($msg['content'], JSON_UNESCAPED_UNICODE);
                 break;
@@ -330,71 +354,72 @@ if (empty($finalAnswer)) {
 }
 
 // Strip any TOOL_CALL blocks that leaked into final answer.
-$finalAnswer = trim(preg_replace(
+$finalanswer = trim(preg_replace(
     '/(?:TOOL_CALL|call):\s*\w+\s*\n.*?\nEND_TOOL_CALL[^\n]*/si',
-    '', $finalAnswer ?? ''
+    '',
+    $finalanswer ?? ''
 ));
 
-if (empty($finalAnswer)) {
+if (empty($finalanswer)) {
     echo json_encode(['ok' => false, 'error' => 'No response from AI']);
     exit;
 }
 
-// ── Save to cache ─────────────────────────────────────────────────────────
+// ... ── Save to cache ─────────────────────────────────────────────────────────
 // Strip tool payload from messages before caching (not needed for display).
-$cachableMessages = $messages;
-array_walk($cachableMessages, function (&$msg) {
+$cachablemessages = $messages;
+array_walk($cachablemessages, function (&$msg) {
     unset($msg['tool_calls']);
 });
-$cache_data = json_encode([
-    'answer' => $finalAnswer,
-    'profiler' => $profilerEntries,
-    'conversation' => $cachableMessages,
+$cachedata = json_encode([
+    'answer' => $finalanswer,
+    'profiler' => $profilerentries,
+    'conversation' => $cachablemessages,
 ]);
 
 // Only save semantic plan if all tools are readonly.
-$allReadonly = true;
+$allreadonly = true;
 if (!empty($plan)) {
     foreach ($plan as $p) {
         if (!\local_jedomi\agent\agent_manager::is_tool_readonly($p['tool'])) {
-            $allReadonly = false;
+            $allreadonly = false;
             break;
         }
     }
 }
-$plan_json = (!empty($plan) && $allReadonly) ? json_encode($plan, JSON_UNESCAPED_UNICODE) : null;
+$planjson = (!empty($plan) && $allreadonly) ? json_encode($plan, JSON_UNESCAPED_UNICODE) : null;
 
-$existing_cache = $DB->get_record('local_jedomi_agent_cache', [
+$existingcache = $DB->get_record('local_jedomi_agent_cache', [
     'agentid' => 0,
-    'context_hash' => $cache_hash,
+    'context_hash' => $cachehash,
 ], 'id');
-if ($existing_cache) {
+if ($existingcache) {
     $DB->update_record('local_jedomi_agent_cache', (object) [
-        'id' => $existing_cache->id,
-        'result_json' => $cache_data,
-        'plan_json' => $plan_json,
+        'id' => $existingcache->id,
+        'result_json' => $cachedata,
+        'plan_json' => $planjson,
         'timecreated' => time(),
     ]);
 } else {
     $DB->insert_record('local_jedomi_agent_cache', (object) [
         'agentid' => 0,
-        'context_hash' => $cache_hash,
-        'result_json' => $cache_data,
-        'plan_json' => $plan_json,
+        'context_hash' => $cachehash,
+        'result_json' => $cachedata,
+        'plan_json' => $planjson,
         'timecreated' => time(),
     ]);
 }
 
 echo json_encode([
     'ok' => true,
-    'answer' => $finalAnswer,
+    'answer' => $finalanswer,
     'rounds' => $round ?? 0,
-    'profiler' => $profilerEntries,
-    'conversation' => $cachableMessages,
-    'total_time_ms' => round(array_sum(array_column($profilerEntries, 'duration_ms')), 2),
+    'profiler' => $profilerentries,
+    'conversation' => $cachablemessages,
+    'total_time_ms' => round(array_sum(array_column($profilerentries, 'duration_ms')), 2),
 ], JSON_UNESCAPED_UNICODE);
 
-// ── Helper: parse TOOL_CALL blocks from text ──────────────────────────────
+// ... ── Helper: parse TOOL_CALL blocks from text ──────────────────────────────
 /**
  * Parse text-based TOOL_CALL blocks from AI response content.
  * Supports TOOL_CALL:/call: format AND <|tool_call|> special token format.
@@ -409,10 +434,10 @@ function parse_text_tool_calls(string &$content): array {
         return $calls;
     }
 
-    // ── Pattern 1: TOOL_CALL: tool_name\n{json}\nEND_TOOL_CALL ──────────
+    // ... ── Pattern 1: TOOL_CALL: tool_name\n{json}\nEND_TOOL_CALL ──────────
     $pattern1 = '/(?:TOOL_CALL|call):\s*(\w+)\s*\n(.+?)\nEND_TOOL_CALL[^\n]*/si';
 
-    // ── Pattern 2: <|tool_call|> or <|python_tag|> special tokens ──────
+    // ... ── Pattern 2: <|tool_call|> or <|python_tag|> special tokens ──────
     $pattern2 = '/<\|(?:tool_call|python_tag)\|>(.+?)<\|\\/\1\|>/si';
 
     // Try pattern 1 first.
@@ -420,27 +445,33 @@ function parse_text_tool_calls(string &$content): array {
         $content = trim(preg_replace($pattern1, '', $content));
         foreach ($matches as $m) {
             $parsed = tool_call_from_match($m[1], $m[2]);
-            if ($parsed) { $calls[] = $parsed; }
+            if ($parsed) {
+                $calls[] = $parsed;
+            }
         }
         return $calls;
     }
 
-    // Try pattern 2 (<|tool_call|>).
+    // Try the second pattern, the tool_call marker.
     if (preg_match_all($pattern2, $content, $matches, PREG_SET_ORDER)) {
         $content = trim(preg_replace($pattern2, '', $content));
         foreach ($matches as $m) {
             $inner = trim($m[1]);
             $decoded = json_decode($inner, true);
             if (json_last_error() === JSON_ERROR_NONE && isset($decoded['name'])) {
-                $toolName = $decoded['name'];
+                $toolname = $decoded['name'];
                 $args = $decoded['arguments'] ?? '{}';
-                if (is_array($args)) { $args = json_encode($args, JSON_UNESCAPED_UNICODE); }
-                $parsed = tool_call_from_match($toolName, $args);
+                if (is_array($args)) {
+                    $args = json_encode($args, JSON_UNESCAPED_UNICODE);
+                }
+                $parsed = tool_call_from_match($toolname, $args);
             } else {
                 $parts = explode("\n", $inner, 2);
                 $parsed = tool_call_from_match(trim($parts[0]), $parts[1] ?? '{}');
             }
-            if ($parsed) { $calls[] = $parsed; }
+            if ($parsed) {
+                $calls[] = $parsed;
+            }
         }
         return $calls;
     }
@@ -451,12 +482,12 @@ function parse_text_tool_calls(string &$content): array {
 /**
  * Build a tool call entry from name + JSON string with validation.
  */
-function tool_call_from_match(string $name, string $argsJson): ?array {
-    json_decode($argsJson);
+function tool_call_from_match(string $name, string $argsjson): ?array {
+    json_decode($argsjson);
     if (json_last_error() !== JSON_ERROR_NONE) {
-        if (preg_match('/\{.*\}/s', $argsJson, $jsonMatch)) {
-            $argsJson = $jsonMatch[0];
-            json_decode($argsJson);
+        if (preg_match('/\{.*\}/s', $argsjson, $jsonmatch)) {
+            $argsjson = $jsonmatch[0];
+            json_decode($argsjson);
         }
     }
     if (json_last_error() !== JSON_ERROR_NONE) {
@@ -467,7 +498,7 @@ function tool_call_from_match(string $name, string $argsJson): ?array {
         'type' => 'function',
         'function' => [
             'name' => trim($name),
-            'arguments' => $argsJson,
+            'arguments' => $argsjson,
         ],
     ];
 }

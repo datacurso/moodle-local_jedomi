@@ -12,7 +12,7 @@
 // GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License
-// along with Moodle.  If not, see <http://www.gnu.org/copyleft/gpl.html>.
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
 
 /**
  * Hook callbacks for local_jedomi.
@@ -29,13 +29,10 @@ namespace local_jedomi;
 
 use core\hook\output\before_footer_html_generation;
 
-defined('MOODLE_INTERNAL') || die();
-
 /**
  * Hook callbacks for the Jedomi Moodle plugin.
  */
 class hook_callbacks {
-
     /**
      * Inject the Jedomi sidebar before the footer is rendered.
      *
@@ -65,12 +62,12 @@ class hook_callbacks {
             return;
         }
 
-        $configUrl = (new \moodle_url('/local/jedomi/ajax/sidebar_config.php', [
+        $configurl = (new \moodle_url('/local/jedomi/ajax/sidebar_config.php', [
             'sesskey' => sesskey(),
         ]))->out(false);
 
         $PAGE->requires->js_call_amd('local_jedomi/sidebar', 'init', [[
-            'configUrl' => $configUrl,
+            'configUrl' => $configurl,
         ]]);
     }
 }
