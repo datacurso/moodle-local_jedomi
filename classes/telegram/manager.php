@@ -325,6 +325,9 @@ class manager {
 
     /**
      * Invalidate a linking code after use.
+     *
+     * @param int $userid
+     * @param string $code
      */
     public static function invalidate_link_code(int $userid, string $code): void {
         $cache = \cache::make('local_jedomi', 'telegram_link_codes');

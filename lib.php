@@ -242,8 +242,10 @@ function local_jedomi_get_sidebar_config(): array {
 }
 
 /**
- * Hook adicional: se ejecuta en page_init para cargar CSS lo antes posible.
- * Previene flash de contenido sin estilos en temas lentos.
+ * Extend the global navigation.
+ * Intentionally empty; the callback must exist because some themes invoke it.
+ *
+ * @param \global_navigation $nav
  */
 function local_jedomi_extend_navigation(\global_navigation $nav): void {
     // Hook vacío requerido por algunos themes.

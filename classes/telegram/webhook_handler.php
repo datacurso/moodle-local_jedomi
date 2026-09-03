@@ -64,6 +64,8 @@ class webhook_handler {
 
     /**
      * Handle an incoming message (text or photo).
+     *
+     * @param array $message Decoded message object from the Telegram update
      */
     private static function handle_message(array $message): void {
         global $DB;
@@ -188,6 +190,10 @@ class webhook_handler {
 
     /**
      * Handle /start CODE command for account linking.
+     *
+     * @param string $chatid Telegram chat id
+     * @param string $text Full command text including the linking code
+     * @param string $tgusername Telegram username of the sender
      */
     private static function handle_start_command(string $chatid, string $text, string $tgusername): void {
         $parts = explode(' ', $text, 2);
@@ -249,6 +255,9 @@ class webhook_handler {
 
     /**
      * Handle /desvincular or /unlink command.
+     *
+     * @param string $chatid Telegram chat id
+     * @param \stdClass $link Telegram link record for the user
      */
     private static function handle_unlink_command(string $chatid, \stdClass $link): void {
         global $DB;
@@ -263,10 +272,12 @@ class webhook_handler {
     }
 
     /**
-     * Handle callback_query from inline buttons (confirmations).
-     */
-    /**
      * Execute a command triggered by inline keyboard callback.
+     *
+     * @param string $command Callback command name
+     * @param string $chatid Telegram chat id
+     * @param int $messageid Telegram message id to edit
+     * @param api_client $client Telegram API client instance
      */
     private static function execute_cmd_callback(string $command, string $chatid, int $messageid, api_client $client): void {
         switch ($command) {
@@ -406,6 +417,8 @@ class webhook_handler {
      * Self-ping: fire a cURL to our own webhook so a new PHP-FPM worker
      * continues the checkpointed tool loop. The webhook responds 200 OK
      * immediately (fastcgi_finish_request), so this returns in <1s.
+     *
+     * @param string $chatid Telegram chat id whose tool loop continues
      */
     private static function self_ping(string $chatid): void {
         global $CFG;
@@ -438,6 +451,8 @@ class webhook_handler {
     /**
      * Handle an internal self-ping request. Loads the checkpoint state
      * and continues the tool loop from where the previous worker left off.
+     *
+     * @param string $chatid Telegram chat id whose checkpoint state is loaded
      */
     public static function handle_internal_ping(string $chatid): void {
         global $DB;
@@ -1558,6 +1573,9 @@ class webhook_handler {
 
     /**
      * Extract pending action from response, store in DB, send inline buttons.
+     *
+     * @param string $chatid Telegram chat id
+     * @param string $content AI response text possibly containing a pending action block
      */
     private static function handle_pending_action(string $chatid, string $content): void {
         // Extract JSON between JEDOMI_PENDING_ACTION: and :END_PENDING.
@@ -1604,6 +1622,13 @@ class webhook_handler {
     /**
      * Execute a tool by name with given arguments.
      * Respects role-based access — only safe read operations.
+     *
+     * @param string $name Tool name to execute
+     * @param array $args Tool arguments
+     * @param int $userid Moodle user id executing the tool
+     * @param string $role Jedomi role shortname (admin|manager|teacher|student)
+     * @param array $courseidsowned Course ids the user manages
+     * @return string Tool execution result formatted for Telegram
      */
     private static function execute_tool(
         string $name,
@@ -2095,6 +2120,10 @@ class webhook_handler {
 
     /**
      * Execute a pending action directly (bypass LLM).
+     *
+     * @param array $action Pending action payload (action name and params)
+     * @param string $chatid Telegram chat id
+     * @return string Result message formatted for Telegram
      */
     private static function execute_pending_action(array $action, string $chatid): string {
         global $DB;
@@ -2185,6 +2214,9 @@ class webhook_handler {
     /**
      * Check if text looks like a bare link code (4-8 uppercase alphanumeric chars).
      * This prevents treating random user messages as codes.
+     *
+     * @param string $text Incoming message text
+     * @return bool True if the text matches the link code format
      */
     private static function looks_like_link_code(string $text): bool {
         $text = strtoupper(trim($text));
@@ -2459,6 +2491,8 @@ class webhook_handler {
      *
      * @param  int    $userid The user ID to generate the SPT for.
      * @param  string $role   The Jedomi role shortname (admin|manager|teacher|student).
+     * @param  array  $courseidsowned The course ids the user manages.
+     * @param  array  $courseidsenrolled The course ids the user is enrolled in.
      * @return array          The signed SPT payload, or empty array if user not found/deleted.
      */
     private static function generate_spt_for_user(

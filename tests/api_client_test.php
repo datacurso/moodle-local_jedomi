@@ -95,6 +95,9 @@ final class api_client_test extends \advanced_testcase {
      * Test chunk_text returns expected number of chunks.
      *
      * @dataProvider chunk_text_provider
+     * @param string $text Input text to chunk
+     * @param bool $truncate Whether truncation mode is enabled
+     * @param int $expectedcount Expected number of chunks
      */
     public function test_chunk_text_count(string $text, bool $truncate, int $expectedcount): void {
         $result = $this->call_private_method('chunk_text', [$text, $truncate]);

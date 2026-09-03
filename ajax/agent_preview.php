@@ -424,7 +424,7 @@ echo json_encode([
  * Parse text-based TOOL_CALL blocks from AI response content.
  * Supports TOOL_CALL:/call: format AND <|tool_call|> special token format.
  *
- * @param  string &$content The assistant response text (modified by reference).
+ * @param  string $content The assistant response text (modified by reference).
  * @return array            Parsed tool calls in native format.
  */
 function parse_text_tool_calls(string &$content): array {
@@ -481,6 +481,10 @@ function parse_text_tool_calls(string &$content): array {
 
 /**
  * Build a tool call entry from name + JSON string with validation.
+ *
+ * @param  string $name     The tool name extracted from the match.
+ * @param  string $argsjson The tool arguments as a JSON string.
+ * @return array|null       Tool call entry, or null when the payload is invalid.
  */
 function tool_call_from_match(string $name, string $argsjson): ?array {
     json_decode($argsjson);

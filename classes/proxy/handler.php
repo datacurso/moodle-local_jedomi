@@ -736,6 +736,10 @@ class handler {
 
     /**
      * Search admin CLI operations by keyword.
+     *
+     * @param  array  $args Tool arguments; expects "query" and optional "limit" keys.
+     * @param  string $role User role; only admin and manager are allowed.
+     * @return string JSON-encoded search results, or a permission_denied error.
      */
     private static function admin_search_tool(array $args, string $role): string {
         if (!in_array($role, ['admin', 'manager'], true)) {
@@ -887,6 +891,10 @@ class handler {
 
     /**
      * Read a PDF document from a course module and convert to images.
+     *
+     * @param  array  $args Tool arguments; expects "cmid" and optional "dpi"/"fmt" keys.
+     * @param  string $role User role forwarded by the tool dispatcher.
+     * @return string JSON-encoded document payload, or an error message.
      */
     private static function document_read_tool(array $args, string $role): string {
         global $CFG, $DB;

@@ -62,6 +62,9 @@ class agent_runner extends \core\task\scheduled_task {
      * Lists available tools from lang string descriptions and provides
      * workflow guidance (search_tables → describe_table → execute_sql).
      * Native OpenAI tool_calls are used primarily; text protocol is a fallback.
+     *
+     * @param  array $tools Tool definitions in OpenAI function format.
+     * @return string Instructions block to append to the system prompt.
      */
     private function build_tool_instructions(array $tools): string {
         if (empty($tools)) {
@@ -102,7 +105,7 @@ class agent_runner extends \core\task\scheduled_task {
     /**
      * Parse text-based TOOL_CALL blocks from AI response content.
      *
-     * @param  string $content The assistant response text.
+     * @param  string $content The assistant response text (modified by reference).
      * @return array  Parsed tool calls in native format (same as OpenAI tool_calls).
      */
     private function parse_text_tool_calls(string &$content): array {
@@ -171,6 +174,10 @@ class agent_runner extends \core\task\scheduled_task {
 
     /**
      * Build a tool call entry from a name + JSON string, validating JSON.
+     *
+     * @param  string $name     The tool name extracted from the match.
+     * @param  string $argsjson The tool arguments as a JSON string.
+     * @return array|null       Tool call entry, or null when the payload is invalid.
      */
     private function tool_call_from_match(string $name, string $argsjson): ?array {
         // Validate JSON.

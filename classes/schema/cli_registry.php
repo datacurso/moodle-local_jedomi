@@ -205,6 +205,9 @@ class cli_registry {
 
     /**
      * Execute a course backup.
+     *
+     * @param  array $params Operation parameters (courseid, destination).
+     * @return array         Result with success/error + data.
      */
     private static function execute_backup(array $params): array {
         global $CFG, $DB;
@@ -286,6 +289,9 @@ class cli_registry {
 
     /**
      * Execute a scheduled task.
+     *
+     * @param  array $params Operation parameters (task_class).
+     * @return array         Result with success/error + data.
      */
     private static function execute_scheduled_task(array $params): array {
         global $CFG;
@@ -320,6 +326,9 @@ class cli_registry {
 
     /**
      * Purge all Moodle caches.
+     *
+     * @param  array $params Operation parameters (unused).
+     * @return array         Result with success/error + data.
      */
     private static function execute_purge_caches(array $params): array {
         try {
@@ -332,6 +341,9 @@ class cli_registry {
 
     /**
      * Create a course module using local_coursegen's mod_manager.
+     *
+     * @param  array $params Operation parameters (courseid, resource_type, ...).
+     * @return array         Result with success/error + data.
      */
     private static function execute_create_mod(array $params): array {
         global $CFG, $DB;

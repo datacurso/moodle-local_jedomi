@@ -84,6 +84,8 @@ final class webhook_handler_test extends \advanced_testcase {
      * Test looks_like_link_code returns expected results.
      *
      * @dataProvider looks_like_link_code_provider
+     * @param string $input Text to check
+     * @param bool $expected Expected result
      */
     public function test_looks_like_link_code(string $input, bool $expected): void {
         $result = $this->call_private_static('looks_like_link_code', [$input]);
@@ -361,6 +363,7 @@ final class webhook_handler_test extends \advanced_testcase {
      * Test every admin-only pending action denies an unlinked chat.
      *
      * @dataProvider admin_only_pending_actions_provider
+     * @param string $action Pending action name under test
      */
     public function test_admin_only_pending_actions_deny_unlinked(string $action): void {
         $result = $this->call_private_static('execute_pending_action', [
@@ -396,6 +399,9 @@ final class webhook_handler_test extends \advanced_testcase {
      * covered by the roleless success tests above.
      *
      * @dataProvider gated_tools_provider
+     * @param string $tool Tool name under test
+     * @param array $args Tool arguments
+     * @param string $marker Expected denial marker in the result
      */
     public function test_gated_tools_deny_unprivileged_role(string $tool, array $args, string $marker): void {
         $user = $this->getDataGenerator()->create_user();
