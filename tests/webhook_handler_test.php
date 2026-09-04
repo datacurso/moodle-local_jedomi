@@ -659,6 +659,8 @@ final class webhook_handler_test extends \advanced_testcase {
      * Test normalise_chat_id accepts signed numeric ids and rejects everything else.
      *
      * @dataProvider chat_id_provider
+     * @param string $input Raw chat id from the webhook payload
+     * @param string|null $expected Normalised id, or null when invalid
      */
     public function test_normalise_chat_id(string $input, ?string $expected): void {
         $result = $this->call_private_static('normalise_chat_id', [$input]);
