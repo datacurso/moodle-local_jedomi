@@ -721,6 +721,101 @@ final class webhook_handler_test extends \advanced_testcase {
     }
 
     // ... ========================
+    // Self-ping continuation
+    // ========================
+
+    /**
+     * Seed a checkpointed tool-loop state so handle_internal_ping can continue it.
+     *
+     * Points the gateway at a closed local port so the continuation reaches the
+     * system-prompt build (the historical fatal point) and then fails fast on
+     * cURL, which releases the lock — an observable, network-free outcome.
+     *
+     * @param string $chatid Telegram chat id for the seeded state
+     * @param array $extrastate Extra keys merged into the checkpoint state (e.g. cached spt/tools)
+     * @return string The state key used in the session context table
+     */
+    private function seed_selfping_state(string $chatid, array $extrastate = []): string {
+        $user = $this->getDataGenerator()->create_user();
+        $this->create_telegram_link((int) $user->id, $chatid);
+
+        set_config('gateway_url', 'http://127.0.0.1:1', 'local_jedomi');
+        set_config('telegram_gateway_timeout', 5, 'local_jedomi');
+
+        $statekey = 'tool_loop_' . $chatid;
+        $state = array_merge([
+            'is_locked'      => true,
+            'locked_at'      => time(),
+            'iteration'      => 1,
+            'max_iterations' => 50,
+            'messages'       => [
+                ['role' => 'system', 'content' => 'placeholder'],
+                ['role' => 'user', 'content' => 'hola'],
+            ],
+            'userid'         => (int) $user->id,
+        ], $extrastate);
+        \local_jedomi\telegram\session::set_context($statekey, $state);
+        return $statekey;
+    }
+
+    /**
+     * Run handle_internal_ping restoring the PHP time limit afterwards.
+     *
+     * proxy_to_gateway raises max_execution_time on purpose (FPM survival);
+     * Moodle's PHPUnit environment check requires tests to restore it.
+     *
+     * @param string $chatid Telegram chat id whose checkpoint continues
+     */
+    private function run_internal_ping(string $chatid): void {
+        $originallimit = (int) ini_get('max_execution_time');
+        \local_jedomi\telegram\webhook_handler::handle_internal_ping($chatid);
+        set_time_limit($originallimit);
+    }
+
+    /**
+     * Test the self-ping continuation with a cached SPT in the checkpoint.
+     *
+     * This is the normal case: the state saved by proxy_to_gateway always
+     * carries the SPT, so the legacy fallback block is skipped. The system
+     * prompt must still build ($role and $userctx defined) instead of dying
+     * with a TypeError.
+     */
+    public function test_handle_internal_ping_with_cached_state(): void {
+        $chatid = '990000001';
+        $statekey = $this->seed_selfping_state($chatid, [
+            'spt'   => ['token' => 'fake-spt-token', 'role' => 'student', 'tools' => []],
+            'tools' => [],
+        ]);
+
+        $this->run_internal_ping($chatid);
+
+        $after = \local_jedomi\telegram\session::get_context($statekey);
+        $this->assertEmpty(
+            $after['is_locked'] ?? null,
+            'The continuation should run to the gateway call and release the lock, not die building the prompt'
+        );
+    }
+
+    /**
+     * Test the self-ping continuation with a legacy state without cached SPT.
+     *
+     * Old checkpoints (pre-cache) carry no spt/tools keys: the fallback must
+     * recalculate them from the DB and the continuation must still work.
+     */
+    public function test_handle_internal_ping_legacy_state_without_spt(): void {
+        $chatid = '990000002';
+        $statekey = $this->seed_selfping_state($chatid);
+
+        $this->run_internal_ping($chatid);
+
+        $after = \local_jedomi\telegram\session::get_context($statekey);
+        $this->assertEmpty(
+            $after['is_locked'] ?? null,
+            'The legacy fallback (no cached SPT) should still complete the continuation and release the lock'
+        );
+    }
+
+    // ... ========================
     // Helpers
     // ========================
 
