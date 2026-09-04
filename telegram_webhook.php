@@ -55,6 +55,11 @@ if (!hash_equals($expectedsecret, $secretparam)) {
 $internalping = optional_param('internal_ping', 0, PARAM_INT);
 $pingchatid = optional_param('chat_id', '', PARAM_RAW);
 
+// Telegram chat ids are signed integers; drop anything else before logging or use.
+if ($pingchatid !== '' && !preg_match('/^-?\d{1,20}$/', $pingchatid)) {
+    $pingchatid = '';
+}
+
 if ($internalping && !empty($pingchatid)) {
     local_jedomi_log('SELF-PING: continuing for chat ' . $pingchatid);
     // Send 200 OK immediately so the caller cURL returns fast.
@@ -89,9 +94,11 @@ if (!is_array($update)) {
     exit;
 }
 
-// Log incoming webhook request for debugging.
+// Log incoming webhook request for debugging. The chat id is attacker
+// controllable, so only numeric values are logged verbatim.
+$rawchatid = (string) ($update['message']['chat']['id'] ?? $update['callback_query']['message']['chat']['id'] ?? '');
 local_jedomi_log('Telegram webhook: update arrived', [
-    'chat_id' => $update['message']['chat']['id'] ?? $update['callback_query']['message']['chat']['id'] ?? 'unknown',
+    'chat_id' => preg_match('/^-?\d{1,20}$/', $rawchatid) ? $rawchatid : 'invalid(len=' . strlen($rawchatid) . ')',
     'type' => isset($update['message']) ? 'message' : (isset($update['callback_query']) ? 'callback_query' : 'unknown'),
     'length' => strlen($input),
 ]);
