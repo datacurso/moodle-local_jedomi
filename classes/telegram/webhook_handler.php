@@ -41,6 +41,23 @@ class webhook_handler {
     private const LOCK_TTL = 120;
 
     /**
+     * Validate and normalise a Telegram chat id.
+     *
+     * Telegram chat ids are integers (negative for groups/channels). The value
+     * arrives from an external HTTP payload, so it must be validated before it
+     * reaches any SQL, cache key or log line.
+     *
+     * @param  string $chatid Raw value from the webhook payload.
+     * @return string|null The normalised id, or null when invalid.
+     */
+    private static function normalise_chat_id(string $chatid): ?string {
+        if (!preg_match('/^-?\d{1,20}$/', $chatid)) {
+            return null;
+        }
+        return $chatid;
+    }
+
+    /**
      * Main entry point — dispatch based on Telegram update type.
      *
      * @param array $update Decoded JSON from Telegram webhook
@@ -70,11 +87,14 @@ class webhook_handler {
     private static function handle_message(array $message): void {
         global $DB;
 
-        $chatid = (string) ($message['chat']['id'] ?? '');
+        $chatid = self::normalise_chat_id((string) ($message['chat']['id'] ?? ''));
         $text = trim($message['text'] ?? '');
         $photo = $message['photo'] ?? null;
 
-        if ($chatid === '') {
+        if ($chatid === null) {
+            // Attacker-controllable value: never log it raw, never let it reach the DB.
+            \local_jedomi_log('[TELEGRAM ENTRY] rejected non-numeric chat id (len='
+                . mb_strlen((string) ($message['chat']['id'] ?? '')) . ')');
             return;
         }
 
@@ -88,7 +108,7 @@ class webhook_handler {
         // holds it. Key is unique per chat_id — concurrent messages from
         // different chats are NOT blocked. Lock auto-releases on script end.
         try {
-            $lockresult = (int) $DB->get_field_sql("SELECT GET_LOCK('jedomi_chat_{$chatid}', 0)");
+            $lockresult = (int) $DB->get_field_sql('SELECT GET_LOCK(?, 0)', ['jedomi_chat_' . $chatid]);
             if ($lockresult !== 1) {
                 if (function_exists('\\local_jedomi_log')) {
                     \local_jedomi_log('DEDUP: another process is handling chat ' . $chatid . ', skipping');
@@ -364,10 +384,10 @@ class webhook_handler {
     private static function handle_callback_query(array $callback): void {
         $callbackid = $callback['id'] ?? '';
         $data = $callback['data'] ?? '';
-        $chatid = (string) ($callback['message']['chat']['id'] ?? '');
+        $chatid = self::normalise_chat_id((string) ($callback['message']['chat']['id'] ?? ''));
         $messageid = (int) ($callback['message']['message_id'] ?? 0);
 
-        if ($callbackid === '' || $data === '') {
+        if ($callbackid === '' || $data === '' || $chatid === null) {
             return;
         }
 
@@ -456,6 +476,13 @@ class webhook_handler {
      */
     public static function handle_internal_ping(string $chatid): void {
         global $DB;
+
+        $chatid = self::normalise_chat_id($chatid);
+        if ($chatid === null) {
+            // The chat id arrives as a raw HTTP parameter: reject before any DB access.
+            \local_jedomi_log('[GATELOOP] rejected non-numeric chat id in internal ping');
+            return;
+        }
 
         $state = session::get_context('tool_loop_' . $chatid);
         if (empty($state) || empty($state['messages'])) {

@@ -630,6 +630,95 @@ final class webhook_handler_test extends \advanced_testcase {
     }
 
     // ... ========================
+    // Chat id validation (SQL injection guard)
+    // ========================
+
+    /**
+     * Data provider for normalise_chat_id.
+     *
+     * @return array
+     */
+    public static function chat_id_provider(): array {
+        return [
+            'positive id'          => ['123456789', '123456789'],
+            'negative group id'    => ['-1001234567890', '-1001234567890'],
+            'single digit'         => ['7', '7'],
+            'empty'                => ['', null],
+            'alphabetic'           => ['abc', null],
+            'sql injection quote'  => ["1' OR 1=1", null],
+            'sql injection drop'   => ["1'); DROP TABLE {user};--", null],
+            'decimal'              => ['12.5', null],
+            'double sign'          => ['--1', null],
+            'sign only'            => ['-', null],
+            'too long (25 digits)' => [str_repeat('9', 25), null],
+            'embedded space'       => ['12 34', null],
+        ];
+    }
+
+    /**
+     * Test normalise_chat_id accepts signed numeric ids and rejects everything else.
+     *
+     * @dataProvider chat_id_provider
+     */
+    public function test_normalise_chat_id(string $input, ?string $expected): void {
+        $result = $this->call_private_static('normalise_chat_id', [$input]);
+        $this->assertSame($expected, $result);
+    }
+
+    /**
+     * Test handle_message rejects a chat id with SQL metacharacters without touching the DB.
+     */
+    public function test_handle_message_rejects_non_numeric_chatid(): void {
+        global $DB;
+
+        $before = [
+            'sessions'  => $DB->count_records('local_jedomi_telegram_sessions'),
+            'ratelimit' => $DB->count_records('local_jedomi_telegram_rate_limit'),
+            'pending'   => $DB->count_records('local_jedomi_telegram_pending_actions'),
+        ];
+
+        foreach (["1'); DROP TABLE {user};--", 'abc', "1' OR SLEEP(5)--"] as $malicious) {
+            $this->call_private_static('handle_message', [[
+                'chat' => ['id' => $malicious],
+                'text' => 'hola',
+            ]]);
+        }
+
+        $this->assertSame(
+            $before['sessions'],
+            $DB->count_records('local_jedomi_telegram_sessions'),
+            'A rejected chat id must not create session rows'
+        );
+        $this->assertSame(
+            $before['ratelimit'],
+            $DB->count_records('local_jedomi_telegram_rate_limit'),
+            'A rejected chat id must not create rate limit rows'
+        );
+        $this->assertSame(
+            $before['pending'],
+            $DB->count_records('local_jedomi_telegram_pending_actions'),
+            'A rejected chat id must not create pending action rows'
+        );
+    }
+
+    /**
+     * Test the dedup advisory lock keeps working with a bound parameter (MySQL only).
+     */
+    public function test_dedup_lock_normal_flow(): void {
+        global $DB, $CFG;
+
+        if (!in_array($CFG->dbtype, ['mysqli', 'mariadb'], true)) {
+            $this->markTestSkipped('GET_LOCK is MySQL/MariaDB specific');
+        }
+
+        $acquired = (int) $DB->get_field_sql('SELECT GET_LOCK(?, 0)', ['jedomi_chat_999999']);
+        $this->assertSame(1, $acquired, 'Bound-parameter GET_LOCK should acquire the lock');
+
+        $released = (int) $DB->get_field_sql('SELECT RELEASE_LOCK(?)', ['jedomi_chat_999999']);
+        $this->assertSame(1, $released, 'RELEASE_LOCK should release the lock we hold');
+    }
+
+    // ... ========================
     // Helpers
     // ========================
 
