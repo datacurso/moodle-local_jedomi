@@ -687,14 +687,18 @@ class webhook_handler {
             // ... ── Restore SPT + tools from checkpoint (cached, avoids DB re-queries) ──
             $spt = $state['spt'] ?? null;
             $tools = $state['tools'] ?? [];
+
+            // The system prompt below always needs $role and $userctx,
+            // whether or not the SPT came cached in the checkpoint.
+            $userctx = session::get_context($chatid);
+            if ($userctx === null) {
+                $userctx = self::get_user_full_context($userid);
+                session::set_context($chatid, $userctx);
+            }
+            $role = $userctx['role'];
+
             if (empty($spt)) {
-                // Fallback: legacy state (pre-cache) — recalc from DB.
-                $userctx = session::get_context($chatid);
-                if ($userctx === null) {
-                    $userctx = self::get_user_full_context($userid);
-                    session::set_context($chatid, $userctx);
-                }
-                $role = $userctx['role'];
+                // Fallback: legacy state (pre-cache) — recalc the SPT from DB.
                 $spt = self::generate_spt_for_user($userid, $role, $userctx['course_ids_owned'], $userctx['course_ids_enrolled']);
                 $tools = $spt['tools'] ?? [];
             }
