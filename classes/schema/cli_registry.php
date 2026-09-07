@@ -189,11 +189,26 @@ class cli_registry {
     /**
      * Execute a CLI operation.
      *
+     * Defense in depth: every operation here (purge_caches, scheduled tasks,
+     * backups, create_mod) is a privileged admin action. Callers are expected
+     * to have already role-gated the call, but this check is enforced again
+     * here — independently of any caller-supplied role — so a bug or bypass
+     * upstream cannot reach these operations without real Moodle capability.
+     *
      * @param  string $name   Operation name.
      * @param  array  $params Operation parameters.
+     * @param  int    $userid Moodle user id performing the operation.
      * @return array           Result with success/error + data.
      */
-    public static function execute(string $name, array $params = []): array {
+    public static function execute(string $name, array $params, int $userid): array {
+        if ($userid <= 0) {
+            return ['error' => 'permission_denied'];
+        }
+        $hasconfigcap = has_capability('moodle/site:config', \context_system::instance(), $userid);
+        if (!is_siteadmin($userid) && !$hasconfigcap) {
+            return ['error' => 'permission_denied'];
+        }
+
         return match ($name) {
             'backup'         => self::execute_backup($params),
             'scheduled_task' => self::execute_scheduled_task($params),

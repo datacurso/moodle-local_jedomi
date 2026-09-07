@@ -782,10 +782,12 @@ class handler {
             return json_encode(['error' => 'permission_denied']);
         }
 
+        global $USER;
+
         $name   = trim($args['name'] ?? '');
         $params = $args['params'] ?? [];
 
-        $result = \local_jedomi\schema\cli_registry::execute($name, $params);
+        $result = \local_jedomi\schema\cli_registry::execute($name, $params, (int) ($USER->id ?? 0));
         return json_encode($result);
     }
 

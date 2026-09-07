@@ -74,6 +74,8 @@ class admin_execute_tool implements agent_tool {
      * @return string JSON-encoded execution result, or a permission_denied error.
      */
     public function execute(\stdClass $params): string {
+        global $USER;
+
         $role = \local_jedomi_get_user_role();
         if (!in_array($role, ['admin', 'manager'], true)) {
             return json_encode(['error' => 'permission_denied']);
@@ -82,7 +84,7 @@ class admin_execute_tool implements agent_tool {
         $name   = trim($params->name ?? '');
         $params = $params->params ?? [];
 
-        $result = \local_jedomi\schema\cli_registry::execute($name, $params);
+        $result = \local_jedomi\schema\cli_registry::execute($name, $params, (int) ($USER->id ?? 0));
         return json_encode($result);
     }
 }

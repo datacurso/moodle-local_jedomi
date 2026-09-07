@@ -40,6 +40,9 @@ class webhook_handler {
     /** Lock TTL in seconds — stale locks older than this are auto-released. */
     private const LOCK_TTL = 120;
 
+    /** @var array<int, string> Per-request cache of re-derived roles, keyed by userid. */
+    private static array $derivedrolecache = [];
+
     /**
      * Validate and normalise a Telegram chat id.
      *
@@ -1572,10 +1575,16 @@ class webhook_handler {
      * Execute a tool by name with given arguments.
      * Respects role-based access — only safe read operations.
      *
+     * SECURITY: the caller-supplied $role is NEVER trusted for authorization.
+     * It is immediately overwritten with the role re-derived from $userid
+     * (the only value taken from the authenticated chat link), so a spoofed
+     * role string cannot bypass role-gated tools. $userid <= 0 always
+     * derives to '' (denies every role-gated tool).
+     *
      * @param string $name Tool name to execute
      * @param array $args Tool arguments
      * @param int $userid Moodle user id executing the tool
-     * @param string $role Jedomi role shortname (admin|manager|teacher|student)
+     * @param string $role Ignored for authorization; kept for signature compatibility.
      * @param array $courseidsowned Course ids the user manages
      * @return string Tool execution result formatted for Telegram
      * @internal Exposed as a testable entry point; not a stable plugin API.
@@ -1588,6 +1597,10 @@ class webhook_handler {
         array $courseidsowned = []
     ): string {
         global $DB, $CFG;
+
+        // Re-derive the authoritative role from $userid — never trust the
+        // caller-supplied $role string for authorization decisions.
+        $role = self::derive_authoritative_role($userid);
 
         switch ($name) {
             case 'describe_table':
@@ -1981,7 +1994,7 @@ class webhook_handler {
                 }
                 $name   = trim($args['name'] ?? '');
                 $params = $args['params'] ?? [];
-                $result = \local_jedomi\schema\cli_registry::execute($name, $params);
+                $result = \local_jedomi\schema\cli_registry::execute($name, $params, $userid);
                 return json_encode($result);
 
             case 'create_agents':   // Model sometimes hallucinates plural form.
@@ -2397,6 +2410,24 @@ class webhook_handler {
     }
 
     // ... ── User role & SPT helpers (self-contained, no dependency on lib.php) ──
+
+    /**
+     * Re-derive the authoritative Jedomi role for a userid, bypassing any
+     * caller-supplied role string. Cached per-request (static, keyed by
+     * userid) so the tool loop doesn't re-query permissions on every call.
+     *
+     * @param  int $userid Moodle user id. <= 0 always denies (returns '').
+     * @return string The authoritative role ('admin'|'manager'|'teacher'|'student'|'').
+     */
+    private static function derive_authoritative_role(int $userid): string {
+        if ($userid <= 0) {
+            return '';
+        }
+        if (!array_key_exists($userid, self::$derivedrolecache)) {
+            self::$derivedrolecache[$userid] = self::get_user_role_for_user($userid);
+        }
+        return self::$derivedrolecache[$userid];
+    }
 
     /**
      * Determine a user's Jedomi role WITHOUT depending on $COURSE or $PAGE globals.

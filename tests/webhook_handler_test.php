@@ -420,6 +420,90 @@ final class webhook_handler_test extends \advanced_testcase {
         );
     }
 
+    /**
+     * Test execute_tool ignores a spoofed 'admin' role string: a non-admin
+     * userid must still be denied on every role-gated tool, because the
+     * role is always re-derived from $userid, never trusted from the caller.
+     *
+     * @dataProvider gated_tools_provider
+     * @param string $tool Tool name under test
+     * @param array $args Tool arguments
+     * @param string $marker Expected denial marker in the result
+     */
+    public function test_gated_tools_deny_spoofed_admin_role_for_non_admin_userid(
+        string $tool,
+        array $args,
+        string $marker
+    ): void {
+        $user = $this->getDataGenerator()->create_user();
+
+        $result = \local_jedomi\telegram\webhook_handler::execute_tool(
+            $tool,
+            $args,
+            (int)$user->id,
+            'admin', // Spoofed role — must be ignored; real role re-derived from userid.
+            []
+        );
+        $this->assertStringContainsString(
+            $marker,
+            $result,
+            "Tool '{$tool}' must deny a spoofed 'admin' role for a non-admin userid"
+        );
+    }
+
+    /**
+     * Test execute_tool denies role-gated tools even when $userid <= 0,
+     * regardless of what role string the caller supplies.
+     */
+    public function test_execute_tool_denies_degenerate_userid_with_spoofed_role(): void {
+        $result = \local_jedomi\telegram\webhook_handler::execute_tool(
+            'admin_search',
+            ['query' => 'purge'],
+            0,
+            'admin',
+            []
+        );
+        $this->assertStringContainsString('permission_denied', $result);
+    }
+
+    /**
+     * Test execute_tool still allows a real site admin, even when the
+     * caller supplies a wrong/spoofed role string — the real role is
+     * re-derived from $userid, so the (incorrect) $role argument is ignored
+     * in both directions.
+     */
+    public function test_admin_tool_allows_real_site_admin_regardless_of_role_arg(): void {
+        $admin = get_admin();
+
+        $result = \local_jedomi\telegram\webhook_handler::execute_tool(
+            'admin_search',
+            ['query' => 'purge'],
+            (int)$admin->id,
+            'student', // Wrong role — must be ignored; real admin re-derived from userid.
+            []
+        );
+        $this->assertStringNotContainsString('permission_denied', $result);
+        $this->assertStringContainsString('results', $result);
+    }
+
+    /**
+     * Test the admin_execute tool's defense-in-depth: cli_registry::execute()
+     * itself re-checks the acting user's capability independently of the
+     * role gate in execute_tool, using a real site admin end to end.
+     */
+    public function test_admin_execute_allows_real_site_admin_end_to_end(): void {
+        $admin = get_admin();
+
+        $result = \local_jedomi\telegram\webhook_handler::execute_tool(
+            'admin_execute',
+            ['name' => 'purge_caches'],
+            (int)$admin->id,
+            'student', // Wrong role — must be ignored; real admin re-derived from userid.
+            []
+        );
+        $this->assertStringContainsString('success', $result);
+    }
+
     // ... ========================
     // Task 2.4: handle_tool_calls
     // ========================

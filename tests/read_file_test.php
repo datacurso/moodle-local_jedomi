@@ -41,70 +41,13 @@ final class read_file_test extends \advanced_testcase {
     }
 
     /**
-     * Build a temporary tree with a root, a prefix-colliding sibling and a
-     * symlink escaping to it.
-     *
-     * Layout:
-     *   <tmp>/moodle/lib/ok.php          — legitimate file inside the root
-     *   <tmp>/moodle-backup/secret.txt   — sibling whose name shares the
-     *                                      root's prefix (the old check's gap)
-     *   <tmp>/moodle/evil -> ../moodle-backup — symlink escaping via realpath
-     *
-     * @return string Absolute path of the fake root (<tmp>/moodle)
-     */
-    private function make_fake_root(): string {
-        $base = make_request_directory();
-        $root = $base . '/moodle';
-        mkdir($root . '/lib', 0777, true);
-        file_put_contents($root . '/lib/ok.php', "<?php // ok\n");
-        mkdir($base . '/moodle-backup', 0777, true);
-        file_put_contents($base . '/moodle-backup/secret.txt', "secret\n");
-        symlink($base . '/moodle-backup', $root . '/evil');
-        return $root;
-    }
-
-    /**
-     * Data provider for resolve_inside_root.
-     *
-     * @return array Each case: [relative path, whether it must resolve]
-     */
-    public static function boundary_path_provider(): array {
-        return [
-            'legitimate file'              => ['lib/ok.php', true],
-            'simple traversal'             => ['../moodle-backup/secret.txt', false],
-            'nested traversal'             => ['....//moodle-backup/secret.txt', false],
-            'nested traversal under lib'   => ['lib/....//....//secret.txt', false],
-            'traversal through lib'        => ['lib/../../moodle-backup/secret.txt', false],
-            'colliding sibling via symlink' => ['evil/secret.txt', false],
-            'traversal staying inside'     => ['lib/../lib/ok.php', false],
-        ];
-    }
-
-    /**
-     * Test resolve_inside_root rejects traversal and prefix-colliding siblings.
-     *
-     * The symlink case is the key one: realpath() lands on the sibling
-     * moodle-backup, whose absolute path starts with the root's path — the
-     * old prefix check without a trailing separator accepted it.
-     *
-     * @dataProvider boundary_path_provider
-     * @param string $relpath Relative path to resolve against the fake root
-     * @param bool $mustresolve Whether the path must resolve to a real file
-     */
-    public function test_resolve_inside_root(string $relpath, bool $mustresolve): void {
-        $root = $this->make_fake_root();
-        $result = read_file::resolve_inside_root($relpath, $root);
-
-        if ($mustresolve) {
-            $this->assertIsString($result, "Path {$relpath} should resolve inside the root");
-            $this->assertFileExists($result);
-        } else {
-            $this->assertNull($result, "Path {$relpath} must be rejected");
-        }
-    }
-
-    /**
      * Test a legitimate read inside dirroot still works through the full flow.
+     *
+     * NOTE: the boundary check (resolve_inside_root) is private — it only
+     * enforces traversal/root-containment, while BLOCKED_PATHS/ALLOWED_PREFIXES
+     * are enforced by execute(). All boundary coverage below therefore goes
+     * through execute() (the only public entry point) so no gate can be
+     * bypassed by a direct call.
      */
     public function test_execute_legitimate_read(): void {
         $result = $this->execute_signed('lib/moodlelib.php');
@@ -113,6 +56,24 @@ final class read_file_test extends \advanced_testcase {
         $this->assertNotEmpty($result['content']);
         $this->assertStringContainsString('1:', $result['content'], 'Content should carry line numbers');
         $this->assertGreaterThan(0, $result['total_lines']);
+    }
+
+    /**
+     * Test execute() blocks a sensitive path via the BLOCKED_PATHS list,
+     * even though it never contains a traversal segment and is a real file.
+     */
+    public function test_execute_blocks_sensitive_path(): void {
+        $this->expectException(\moodle_exception::class);
+        $this->execute_signed('config.php');
+    }
+
+    /**
+     * Test execute() blocks a real, non-traversal path that is simply
+     * outside the ALLOWED_PREFIXES whitelist.
+     */
+    public function test_execute_blocks_path_outside_allowlist(): void {
+        $this->expectException(\moodle_exception::class);
+        $this->execute_signed('README.md');
     }
 
     /**

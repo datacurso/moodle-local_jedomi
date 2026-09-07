@@ -281,12 +281,17 @@ class read_file extends external_api {
      * shares the root's prefix (e.g. moodle-backup/ next to moodle/) must
      * never pass.
      *
+     * SECURITY: this is intentionally private. It only enforces the
+     * traversal/root-boundary check — the BLOCKED_PATHS blocklist and
+     * ALLOWED_PREFIXES allowlist are enforced by execute() before this is
+     * ever called. A public direct call would bypass those two gates, so
+     * this must never be reachable except through execute().
+     *
      * @param string $cleanpath Relative path (forward slashes, no leading slash)
      * @param string $rootdir Absolute allowed root directory
      * @return string|null Resolved absolute path, or null when rejected
-     * @internal Exposed as a testable entry point; not a stable plugin API.
      */
-    public static function resolve_inside_root(string $cleanpath, string $rootdir): ?string {
+    private static function resolve_inside_root(string $cleanpath, string $rootdir): ?string {
         if (preg_match('~(^|/)\.\.(/|$)~', $cleanpath)) {
             return null;
         }
