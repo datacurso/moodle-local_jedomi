@@ -184,14 +184,42 @@ echo $OUTPUT->header();
                 </ul>
             </div>
 
-            <form method="post" action="<?php echo $PAGE->url->out(false); ?>">
+            <form method="post" action="<?php echo $PAGE->url->out(false); ?>" id="jedomi-unlink-form">
                 <input type="hidden" name="sesskey" value="<?php echo sesskey(); ?>">
                 <input type="hidden" name="action" value="unlink">
-                <button type="submit" class="btn btn-outline-danger btn-sm"
-                        onclick="return confirm('<?php echo get_string('confirm', 'core'); ?>')">
+                <button type="submit" class="btn btn-outline-danger btn-sm">
                     <i class="fa fa-unlink mr-1"></i> <?php echo get_string('unlink', 'local_jedomi'); ?>
                 </button>
             </form>
+            <script>
+            // Confirm the unlink with a Moodle modal instead of the native
+            // dialog. RequireJS loads in the footer, so defer until page load.
+            window.addEventListener('load', function() {
+                var form = document.getElementById('jedomi-unlink-form');
+                if (!form || typeof window.require !== 'function') {
+                    return;
+                }
+                form.addEventListener('submit', function(e) {
+                    if (form.dataset.confirmed === '1') {
+                        return; // Already confirmed via the modal.
+                    }
+                    e.preventDefault();
+                    require(['core/notification'], function(Notification) {
+                        Notification.deleteCancelPromise(
+                            <?php echo json_encode(get_string('unlink', 'local_jedomi')); ?>,
+                            <?php echo json_encode(get_string('areyousure', 'core')); ?>,
+                            <?php echo json_encode(get_string('unlink', 'local_jedomi')); ?>
+                        ).then(function() {
+                            form.dataset.confirmed = '1';
+                            form.submit();
+                            return;
+                        }).catch(function() {
+                            return; // Cancelled.
+                        });
+                    });
+                });
+            });
+            </script>
         </div>
     </div>
 

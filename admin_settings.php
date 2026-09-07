@@ -519,8 +519,8 @@ echo '</ul>';
                     <input type="radio" name="course_mode" value="<?php echo $mval; ?>"
                            <?php echo $checked ? 'checked' : ''; ?>>
                     <div>
-                        <div class="d-flex align-items-center gap-2">
-                            <i class="fa <?php echo $mdef['icon']; ?>" style="color:<?php echo $mdef['color']; ?>"></i>
+                        <div class="d-flex align-items-center">
+                            <i class="fa <?php echo $mdef['icon']; ?> mr-2" style="color:<?php echo $mdef['color']; ?>"></i>
                             <strong><?php echo get_string($mdef['label'], 'local_jedomi'); ?></strong>
                         </div>
                         <small><?php echo get_string($mdef['desc'], 'local_jedomi'); ?></small>
@@ -686,8 +686,8 @@ echo '</ul>';
                     <input type="radio" name="anonymization_level" value="<?php echo $aval; ?>"
                            <?php echo $checked ? 'checked' : ''; ?>>
                     <div>
-                        <div class="d-flex align-items-center gap-2">
-                            <i class="fa <?php echo $adef['icon']; ?>" style="color:<?php echo $adef['color']; ?>"></i>
+                        <div class="d-flex align-items-center">
+                            <i class="fa <?php echo $adef['icon']; ?> mr-2" style="color:<?php echo $adef['color']; ?>"></i>
                             <strong><?php echo get_string($adef['label'], 'local_jedomi'); ?></strong>
                         </div>
                         <small><?php echo get_string($adef['desc'], 'local_jedomi'); ?></small>
@@ -1998,27 +1998,24 @@ function jdSubToggle(subId) {
     </div>
     <div class="card-body">
         <div id="agent-table-msg" style="display:none" class="alert alert-danger"></div>
-        <div style="overflow-x:auto">
+        <div id="agent-table-wrap" style="overflow-x:auto">
             <table class="table table-sm table-hover" style="font-size:.875rem">
                 <thead>
                     <tr>
                         <th><?php echo get_string('agent_creator', 'local_jedomi'); ?></th>
                         <th><?php echo get_string('agent_name', 'local_jedomi'); ?></th>
-                        <th><?php echo get_string('agent_prompt', 'local_jedomi'); ?></th>
-                        <th><?php echo get_string('agent_context', 'local_jedomi'); ?></th>
                         <th><?php echo get_string('agent_schedule', 'local_jedomi'); ?></th>
                         <th><?php echo get_string('agent_status', 'local_jedomi'); ?></th>
                         <th><?php echo get_string('agent_lastrun', 'local_jedomi'); ?></th>
-                        <th><?php echo get_string('agent_nextrun', 'local_jedomi'); ?></th>
                         <th><?php echo get_string('agent_actions', 'local_jedomi'); ?></th>
                     </tr>
                 </thead>
                 <tbody id="agent-table-body">
-                    <tr><td colspan="9" class="text-center text-muted py-4"><?php echo get_string('loading', 'admin'); ?></td></tr>
+                    <tr><td colspan="6" class="text-center text-muted py-4"><?php echo get_string('loading', 'admin'); ?></td></tr>
                 </tbody>
             </table>
         </div>
-        <div id="agent-pagination" class="d-flex align-items-center justify-content-between flex-wrap gap-2"></div>
+        <div id="agent-pagination" class="d-flex align-items-center justify-content-between flex-wrap"></div>
     </div>
 </div>
 
@@ -2384,10 +2381,30 @@ function jdSubToggle(subId) {
     }
 
     // ── Table: render from agent_stats.php rows ──────────────────────────
+    var agentRows = []; // Last page of rows, source of the details modal.
+
+    // The scroll wrapper (overflow-x:auto) clips the absolutely-positioned
+    // dropdown menus. Lift the clipping only while a menu is open. RequireJS
+    // loads in Moodle's footer, so defer until the page has fully loaded.
+    window.addEventListener('load', function() {
+        if (typeof window.require !== 'function') {
+            return;
+        }
+        require(['jquery'], function($) {
+            var wrap = $('#agent-table-wrap');
+            wrap.on('show.bs.dropdown', function() {
+                wrap.css('overflow', 'visible');
+            });
+            wrap.on('hidden.bs.dropdown', function() {
+                wrap.css('overflow', '');
+            });
+        });
+    });
+
     function loadAgents(filters, page, cb) {
         var tbody = document.getElementById('agent-table-body');
         if (tbody) {
-            tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">Loading\u2026</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">Loading\u2026</td></tr>';
         }
 
         fetch(baseUrl + 'agent_stats.php?page=' + (page||1) + '&perpage=20&sesskey=' + sesskey
@@ -2395,7 +2412,8 @@ function jdSubToggle(subId) {
             .then(function(r){ return r.json(); })
             .then(function(d){
                 if (!d.ok) { showTableError(d.error || 'Error'); if (cb) cb(null); return; }
-                if (tbody) tbody.innerHTML = renderTableRows(d.rows || []);
+                agentRows = d.rows || [];
+                if (tbody) tbody.innerHTML = renderTableRows(agentRows);
                 renderPagination(d.total || 0, d.page || 1);
                 if (cb) cb(d);
             })
@@ -2408,52 +2426,105 @@ function jdSubToggle(subId) {
 
     function renderTableRows(rows) {
         if (!rows || !rows.length) {
-            return '<tr><td colspan="9" class="text-center text-muted py-4">'
+            return '<tr><td colspan="6" class="text-center text-muted py-4">'
                 + <?php echo json_encode(get_string('agent_no_results', 'local_jedomi')); ?> + '</td></tr>';
         }
         var html = '';
         rows.forEach(function(r){
-            var promptExcerpt = (r.prompt || '').substring(0, 60);
-            if (r.prompt && r.prompt.length > 60) promptExcerpt += '\u2026';
+            var enabled = parseInt(r.enabled, 10) === 1;
             var agentName = r.name || <?php echo json_encode(get_string('agent_unnamed', 'local_jedomi')); ?> + ' #' + r.id;
             var statusLabel, statusClass;
-            if (parseInt(r.enabled, 10) === 1) {
+            if (enabled) {
                 statusLabel = <?php echo json_encode(get_string('agent_enabled', 'local_jedomi')); ?>;
-                statusClass = 'badge bg-success';
+                statusClass = 'badge badge-success';
             } else {
                 statusLabel = <?php echo json_encode(get_string('agent_disabled', 'local_jedomi')); ?>;
-                statusClass = 'badge bg-secondary';
+                statusClass = 'badge badge-secondary';
             }
             var lastrunHtml = r.lastrun ? new Date(r.lastrun * 1000).toLocaleString() : '-';
-            var nextrunHtml = r.nextrun ? new Date(r.nextrun * 1000).toLocaleString() : '-';
+            var toggleLabel = enabled
+                ? <?php echo json_encode(get_string('agent_disable', 'local_jedomi')); ?>
+                : <?php echo json_encode(get_string('agent_enable', 'local_jedomi')); ?>;
             html += '<tr>'
                 + '<td>' + escHtml(r.user_fullname || 'User #' + r.userid) + '</td>'
                 + '<td><strong>' + escHtml(agentName) + '</strong></td>'
-                + '<td>' + escHtml(promptExcerpt) + '</td>'
-                + '<td>' + escHtml(r.context_type) + (r.context_id ? ' #' + r.context_id : '') + '</td>'
                 + '<td><code>' + escHtml(r.schedule_cron) + '</code></td>'
                 + '<td><span class="' + statusClass + '">' + statusLabel + '</span></td>'
                 + '<td>' + lastrunHtml + '</td>'
-                + '<td>' + nextrunHtml + '</td>'
                 + '<td>'
-                + '<button class="btn btn-sm btn-outline-primary me-1" data-agent-action="edit" '
-                + 'data-agent-id="' + r.id + '" title="<?php echo get_string('agent_edit', 'local_jedomi'); ?>">'
-                + '<i class="fa fa-pen"></i></button>'
-                + '<button class="btn btn-sm btn-outline-success me-1" data-agent-action="run" '
-                + 'data-agent-id="' + r.id + '" title="<?php echo get_string('agent_run_now', 'local_jedomi'); ?>">'
-                + '<i class="fa fa-play"></i></button>'
-                + '<button class="btn btn-sm me-1" data-agent-action="toggle" data-agent-id="' + r.id + '" '
-                + 'title="<?php echo get_string('agent_enable', 'local_jedomi'); ?>" '
-                + 'style="border:1px solid ' + (parseInt(r.enabled,10)===1?'#22c55e':'#6b7280')
-                + ';color:' + (parseInt(r.enabled,10)===1?'#22c55e':'#6b7280') + ';background:transparent">'
-                + '<i class="fa ' + (parseInt(r.enabled,10)===1?'fa-toggle-on':'fa-toggle-off') + '"></i></button>'
-                + '<button class="btn btn-sm btn-outline-secondary" data-agent-action="delete" '
-                + 'data-agent-id="' + r.id + '" title="<?php echo get_string('agent_delete', 'local_jedomi'); ?>">'
-                + '<i class="fa fa-trash-alt"></i></button>'
+                + '<div class="dropdown">'
+                + '<button class="btn btn-sm btn-outline-secondary" type="button" data-toggle="dropdown" '
+                + 'aria-haspopup="true" aria-expanded="false" '
+                + 'aria-label="<?php echo get_string('agent_actions_menu', 'local_jedomi'); ?>" '
+                + 'title="<?php echo get_string('agent_actions_menu', 'local_jedomi'); ?>">'
+                + '<i class="fa fa-ellipsis-v"></i></button>'
+                + '<div class="dropdown-menu dropdown-menu-right">'
+                + '<a class="dropdown-item" href="#" data-agent-action="details" data-agent-id="' + r.id + '">'
+                + '<i class="fa fa-eye mr-2"></i><?php echo get_string('agent_view_details', 'local_jedomi'); ?></a>'
+                + '<a class="dropdown-item" href="#" data-agent-action="edit" data-agent-id="' + r.id + '">'
+                + '<i class="fa fa-pen mr-2"></i><?php echo get_string('agent_edit', 'local_jedomi'); ?></a>'
+                + '<a class="dropdown-item" href="#" data-agent-action="run" data-agent-id="' + r.id + '">'
+                + '<i class="fa fa-play mr-2"></i><?php echo get_string('agent_run_now', 'local_jedomi'); ?></a>'
+                + '<a class="dropdown-item" href="#" data-agent-action="toggle" data-agent-id="' + r.id + '">'
+                + '<i class="fa ' + (enabled ? 'fa-toggle-off' : 'fa-toggle-on') + ' mr-2"></i>'
+                + escHtml(toggleLabel) + '</a>'
+                + '<div class="dropdown-divider"></div>'
+                + '<a class="dropdown-item text-danger" href="#" data-agent-action="delete" data-agent-id="' + r.id + '">'
+                + '<i class="fa fa-trash-alt mr-2"></i><?php echo get_string('agent_delete', 'local_jedomi'); ?></a>'
+                + '</div>'
+                + '</div>'
                 + '</td>'
                 + '</tr>';
         });
         return html;
+    }
+
+    // Details modal (Moodle core/modal API).
+    function showAgentDetails(id) {
+        var r = null;
+        for (var i = 0; i < agentRows.length; i++) {
+            if (String(agentRows[i].id) === String(id)) { r = agentRows[i]; break; }
+        }
+        if (!r) return;
+        var enabled = parseInt(r.enabled, 10) === 1;
+        var agentName = r.name || <?php echo json_encode(get_string('agent_unnamed', 'local_jedomi')); ?> + ' #' + r.id;
+        var statusLabel = enabled
+            ? <?php echo json_encode(get_string('agent_enabled', 'local_jedomi')); ?>
+            : <?php echo json_encode(get_string('agent_disabled', 'local_jedomi')); ?>;
+        var rowsdef = [
+            [<?php echo json_encode(get_string('agent_name', 'local_jedomi')); ?>, '<strong>' + escHtml(agentName) + '</strong>'],
+            [<?php echo json_encode(get_string('agent_creator', 'local_jedomi')); ?>,
+                escHtml(r.user_fullname || 'User #' + r.userid)],
+            [<?php echo json_encode(get_string('agent_status', 'local_jedomi')); ?>,
+                '<span class="badge ' + (enabled ? 'badge-success' : 'badge-secondary') + '">' + statusLabel + '</span>'],
+            [<?php echo json_encode(get_string('agent_context', 'local_jedomi')); ?>,
+                escHtml(r.context_type || '-') + (r.context_id ? ' #' + r.context_id : '')],
+            [<?php echo json_encode(get_string('agent_schedule', 'local_jedomi')); ?>,
+                '<code>' + escHtml(r.schedule_cron || '-') + '</code>'],
+            [<?php echo json_encode(get_string('agent_lastrun', 'local_jedomi')); ?>,
+                r.lastrun ? new Date(r.lastrun * 1000).toLocaleString() : '-'],
+            [<?php echo json_encode(get_string('agent_nextrun', 'local_jedomi')); ?>,
+                r.nextrun ? new Date(r.nextrun * 1000).toLocaleString() : '-'],
+            [<?php echo json_encode(get_string('agent_prompt', 'local_jedomi')); ?>,
+                '<pre class="mb-0 p-2 bg-light border rounded" style="white-space:pre-wrap;max-height:16rem;overflow:auto">'
+                + escHtml(r.prompt || '-') + '</pre>'],
+        ];
+        var body = '<table class="table table-sm mb-0"><tbody>';
+        rowsdef.forEach(function(pair){
+            body += '<tr><th class="text-nowrap align-top" style="width:11rem">' + pair[0] + '</th>'
+                + '<td>' + pair[1] + '</td></tr>';
+        });
+        body += '</tbody></table>';
+
+        require(['core/modal'], function(Modal) {
+            Modal.create({
+                title: escHtml(agentName),
+                body: body,
+                large: true,
+                show: true,
+                removeOnClose: true
+            });
+        });
     }
 
     function renderPagination(total, page) {
@@ -2474,7 +2545,7 @@ function jdSubToggle(subId) {
     function showTableError(msg) {
         var tbody = document.getElementById('agent-table-body');
         if (tbody) {
-            tbody.innerHTML = '<tr><td colspan="9" class="text-center text-danger py-4">'
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger py-4">'
                 + escHtml(msg) + '</td></tr>';
         }
     }
@@ -2490,6 +2561,20 @@ function jdSubToggle(subId) {
             <?php echo json_encode(get_string('agent_create', 'local_jedomi')); ?>;
     }
 
+    // Moodle delete-confirmation modal (replaces the native confirm dialog).
+    function confirmDeleteModal(title, question, ondelete) {
+        require(['core/notification'], function(Notification) {
+            Notification.deleteCancelPromise(title, question)
+                .then(function() {
+                    ondelete();
+                    return;
+                })
+                .catch(function() {
+                    return; // Cancelled.
+                });
+        });
+    }
+
     // ── Delegated action handler (works for dynamically added buttons) ────
     document.body.addEventListener('click', function(e){
         var btn = e.target.closest && e.target.closest('[data-agent-action]');
@@ -2498,7 +2583,12 @@ function jdSubToggle(subId) {
         var action = btn.dataset.agentAction;
         var id = btn.dataset.agentId;
         if (!id) return;
-        if (action === 'delete' && !confirm(<?php echo json_encode(get_string('agent_delete_confirm', 'local_jedomi')); ?>)) return;
+
+        // ── Details: full agent configuration in a core/modal ───────────────
+        if (action === 'details') {
+            showAgentDetails(id);
+            return;
+        }
 
         // ── Edit: populate form ─────────────────────────────────────────────
         if (action === 'edit') {
@@ -2547,34 +2637,46 @@ function jdSubToggle(subId) {
         }
 
         // ── Delete / run / toggle ───────────────────────────────────────────
-        var body = new URLSearchParams();
-        body.set('sesskey', sesskey);
-        body.set('action', action);
-        body.set('id', id);
+        function performAgentAction() {
+            var body = new URLSearchParams();
+            body.set('sesskey', sesskey);
+            body.set('action', action);
+            body.set('id', id);
 
-        fetch(baseUrl + 'agent_create.php', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: body.toString()
-        })
-        .then(function(r){ return r.json(); })
-        .then(function(d){
-            if (!d.ok) { showTableError(d.error || 'Error'); return; }
-            if (action === 'run') {
-                var msg = document.getElementById('agent-table-msg');
-                if (msg) {
-                    msg.className = 'alert alert-success';
-                    msg.textContent = <?php echo json_encode(get_string('agent_run_queued', 'local_jedomi')); ?>;
-                    msg.style.display = 'block';
-                    setTimeout(function(){ msg.style.display = 'none'; }, 4000);
+            fetch(baseUrl + 'agent_create.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: body.toString()
+            })
+            .then(function(r){ return r.json(); })
+            .then(function(d){
+                if (!d.ok) { showTableError(d.error || 'Error'); return; }
+                if (action === 'run') {
+                    var msg = document.getElementById('agent-table-msg');
+                    if (msg) {
+                        msg.className = 'alert alert-success';
+                        msg.textContent = <?php echo json_encode(get_string('agent_run_queued', 'local_jedomi')); ?>;
+                        msg.style.display = 'block';
+                        setTimeout(function(){ msg.style.display = 'none'; }, 4000);
+                    }
                 }
-            }
-            loadAgents(getFilters(), currentPage);
-            loadStats(getFilters());
-        })
-        .catch(function(err){
-            showTableError(err.message);
-        });
+                loadAgents(getFilters(), currentPage);
+                loadStats(getFilters());
+            })
+            .catch(function(err){
+                showTableError(err.message);
+            });
+        }
+
+        if (action === 'delete') {
+            confirmDeleteModal(
+                <?php echo json_encode(get_string('agent_delete', 'local_jedomi')); ?>,
+                <?php echo json_encode(get_string('agent_delete_confirm', 'local_jedomi')); ?>,
+                performAgentAction
+            );
+            return;
+        }
+        performAgentAction();
     });
 
     // ── Apply filters ─────────────────────────────────────────────────────
@@ -2888,9 +2990,15 @@ function jdSubToggle(subId) {
     if (purgeForm) {
         purgeForm.addEventListener('submit', function(e){
             e.preventDefault();
-            if (!confirm(<?php echo json_encode(get_string('agent_purge_confirm', 'local_jedomi')); ?>)) return;
+            confirmDeleteModal(
+                <?php echo json_encode(get_string('agent_purge', 'local_jedomi')); ?>,
+                <?php echo json_encode(get_string('agent_purge_confirm', 'local_jedomi')); ?>,
+                doPurge
+            );
+        });
 
-            var fd = new FormData(this);
+        function doPurge() {
+            var fd = new FormData(purgeForm);
             fd.set('sesskey', sesskey);
 
             fetch(baseUrl + 'agent_purge.php', {
@@ -2920,7 +3028,7 @@ function jdSubToggle(subId) {
                 var msg = document.getElementById('agent-purge-msg');
                 if (msg) { msg.className = 'alert alert-danger'; msg.textContent = err.message; msg.style.display = 'block'; }
             });
-        });
+        }
     }
 
     // ── Schedule: show/hide custom cron input ────────────────────────────
