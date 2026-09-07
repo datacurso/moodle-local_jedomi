@@ -1239,12 +1239,52 @@ function local_jedomi_classify_ws_access(string $wsname): string {
     return '';
 }
 
+if (!defined('LOCAL_JEDOMI_LOG_MAX_BYTES')) {
+    /** Size cap of the active jedomi.log before it rotates (5 MB). */
+    define('LOCAL_JEDOMI_LOG_MAX_BYTES', 5 * 1024 * 1024);
+    /** Rotated log files kept (jedomi.log.1 … .N); older content is dropped. */
+    define('LOCAL_JEDOMI_LOG_MAX_FILES', 5);
+}
+
+if (!function_exists('local_jedomi_rotate_log')) {
+    /**
+     * Rotate the jedomi log: shift jedomi.log.N-1 → .N and jedomi.log → .1.
+     *
+     * The oldest file (jedomi.log.N) is dropped. Every filesystem operation
+     * is error-suppressed: a failed rotation simply falls through to the
+     * normal append and must never interrupt the calling flow. rename() is
+     * atomic, so a race between two workers loses at most one rotation.
+     *
+     * @param string $logfile  Absolute path of the active log file.
+     * @param int    $maxfiles Number of rotated files to retain.
+     */
+    function local_jedomi_rotate_log(string $logfile, int $maxfiles): void {
+        @unlink($logfile . '.' . $maxfiles);
+        for ($i = $maxfiles - 1; $i >= 1; $i--) {
+            if (@file_exists($logfile . '.' . $i)) {
+                @rename($logfile . '.' . $i, $logfile . '.' . ($i + 1));
+            }
+        }
+        @rename($logfile, $logfile . '.1');
+    }
+}
+
 if (!function_exists('local_jedomi_log')) {
     /**
      * Write an entry to the Jedomi debug log.
      *
-     * Logs are stored in {$CFG->dataroot}/local/jedomi/jedomi.log
-     * in a human-readable format with timestamp and structured context.
+     * WHAT IS LOGGED: the plugin's operational and security trace — HMAC
+     * authentication failures (with source IP), rejected SQL statements and
+     * blocked file paths, plugin configuration writes, and Telegram webhook
+     * activity (chat ids, tool-loop checkpoints, gateway errors).
+     *
+     * WHERE AND RETENTION: entries go to {$CFG->dataroot}/local/jedomi/jedomi.log
+     * in a human-readable format with timestamp and structured context. The
+     * active file rotates by size once it exceeds LOCAL_JEDOMI_LOG_MAX_BYTES
+     * (5 MB, overridable via $CFG->local_jedomi_logmaxbytes) and up to
+     * LOCAL_JEDOMI_LOG_MAX_FILES (5) rotated files are kept — a deterministic
+     * cap of ~30 MB. There is no time-based retention: entries survive until
+     * newer traffic displaces them, oldest first.
      *
      * @param string $message Short description of what happened.
      * @param mixed  $data    Optional context data (array, string, or anything json-serializable).
@@ -1259,6 +1299,12 @@ if (!function_exists('local_jedomi_log')) {
             return; // Logging must never break the caller.
         }
         $logfile = $logdir . '/jedomi.log';
+
+        // Size-based rotation keeps dataroot growth bounded (~30 MB max).
+        $maxbytes = (int) ($CFG->local_jedomi_logmaxbytes ?? LOCAL_JEDOMI_LOG_MAX_BYTES);
+        if ($maxbytes > 0 && (int) @filesize($logfile) > $maxbytes) {
+            local_jedomi_rotate_log($logfile, LOCAL_JEDOMI_LOG_MAX_FILES);
+        }
 
         $timestamp = date('Y-m-d H:i:s.v');
         $entry = "[{$timestamp}] {$message}";

@@ -237,4 +237,79 @@ final class lib_test extends \advanced_testcase {
 
         $this->assertEquals($expectedsig, $signature);
     }
+
+    // ... ========================
+    // Log rotation
+    // ========================
+
+    /**
+     * Path of the active jedomi log inside the PHPUnit dataroot.
+     *
+     * @return string Absolute path to jedomi.log
+     */
+    private function get_log_path(): string {
+        global $CFG;
+        return $CFG->dataroot . '/local/jedomi/jedomi.log';
+    }
+
+    /**
+     * Test the log rotates to a numbered file once it exceeds the size cap.
+     */
+    public function test_log_rotates_when_exceeding_max(): void {
+        global $CFG;
+        $CFG->local_jedomi_logmaxbytes = 1024;
+        $logfile = $this->get_log_path();
+
+        // Fill the active log past the cap.
+        local_jedomi_log(str_repeat('x', 2048));
+        // Next write must rotate first, then append to a fresh file.
+        local_jedomi_log('after-rotation marker');
+
+        $this->assertFileExists($logfile . '.1', 'Oversized log should rotate to jedomi.log.1');
+        $this->assertStringContainsString('xxx', file_get_contents($logfile . '.1'));
+        $active = file_get_contents($logfile);
+        $this->assertStringContainsString('after-rotation marker', $active);
+        $this->assertLessThan(1024, strlen($active), 'Active log should restart small after rotation');
+    }
+
+    /**
+     * Test rotation keeps at most the configured number of files, dropping the oldest.
+     */
+    public function test_log_retention_cap(): void {
+        global $CFG;
+        $CFG->local_jedomi_logmaxbytes = 1024;
+        $logfile = $this->get_log_path();
+        $logdir = dirname($logfile);
+        check_dir_exists($logdir, true, true);
+
+        for ($i = 1; $i <= 5; $i++) {
+            file_put_contents($logfile . '.' . $i, "rotated-{$i}\n");
+        }
+        file_put_contents($logfile, str_repeat('y', 2048));
+
+        local_jedomi_log('trigger rotation');
+
+        $files = glob($logfile . '*');
+        $this->assertLessThanOrEqual(6, count($files), 'At most active + 5 rotated files are retained');
+        $this->assertStringContainsString('rotated-4', file_get_contents($logfile . '.5'), 'Old .4 should shift to .5');
+        $this->assertStringContainsString('yyy', file_get_contents($logfile . '.1'), 'Active log should shift to .1');
+        foreach ($files as $file) {
+            $this->assertStringNotContainsString('rotated-5', file_get_contents($file), 'Oldest rotated content is dropped');
+        }
+    }
+
+    /**
+     * Test a log write never throws and appends normally with and without the override.
+     */
+    public function test_log_write_never_throws(): void {
+        global $CFG;
+        $logfile = $this->get_log_path();
+
+        local_jedomi_log('plain entry', ['k' => 'v']);
+        $this->assertStringContainsString('plain entry', file_get_contents($logfile));
+
+        $CFG->local_jedomi_logmaxbytes = 1024;
+        local_jedomi_log('with override');
+        $this->assertStringContainsString('with override', file_get_contents($logfile));
+    }
 }
