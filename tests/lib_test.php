@@ -273,7 +273,14 @@ final class lib_test extends \advanced_testcase {
     }
 
     /**
-     * Test rotation keeps at most the configured number of files, dropping the oldest.
+     * Test the retention policy: bounded generations, oldest content dropped.
+     *
+     * Policy under test: one active jedomi.log capped at
+     * LOCAL_JEDOMI_LOG_MAX_BYTES (overridable via $CFG->local_jedomi_logmaxbytes)
+     * plus at most LOCAL_JEDOMI_LOG_MAX_FILES (5) rotated generations
+     * (jedomi.log.1 … .5) — a deterministic ~30 MB total. On rotation each
+     * generation shifts one position (.4 → .5) and the previous oldest (.5)
+     * is deleted. The jedomi.log.lock file guards rotation and holds no data.
      */
     public function test_log_retention_cap(): void {
         global $CFG;
@@ -289,13 +296,54 @@ final class lib_test extends \advanced_testcase {
 
         local_jedomi_log('trigger rotation');
 
-        $files = glob($logfile . '*');
+        $files = array_filter(glob($logfile . '*'), function (string $file): bool {
+            return !str_ends_with($file, '.lock');
+        });
         $this->assertLessThanOrEqual(6, count($files), 'At most active + 5 rotated files are retained');
         $this->assertStringContainsString('rotated-4', file_get_contents($logfile . '.5'), 'Old .4 should shift to .5');
         $this->assertStringContainsString('yyy', file_get_contents($logfile . '.1'), 'Active log should shift to .1');
         foreach ($files as $file) {
             $this->assertStringNotContainsString('rotated-5', file_get_contents($file), 'Oldest rotated content is dropped');
         }
+    }
+
+    /**
+     * Test rotation is skipped, without error, while another process holds the lock.
+     *
+     * flock() locks are per open file description, so a second fopen+flock in
+     * this same process behaves like a concurrent PHP-FPM worker. While the
+     * lock is held, a write to an oversized log must NOT rotate (no .1 file)
+     * but the entry must still be appended; after releasing the lock the next
+     * write rotates normally — proving check and rename chain sit under it.
+     */
+    public function test_log_rotation_skipped_while_lock_held(): void {
+        global $CFG;
+        $CFG->local_jedomi_logmaxbytes = 1024;
+        $logfile = $this->get_log_path();
+        check_dir_exists(dirname($logfile), true, true);
+
+        // Simulate a concurrent worker holding the rotation lock.
+        $holder = fopen($logfile . '.lock', 'c');
+        $this->assertNotFalse($holder);
+        $this->assertTrue(flock($holder, LOCK_EX));
+
+        file_put_contents($logfile, str_repeat('z', 2048));
+        local_jedomi_log('while lock held');
+
+        $this->assertFileDoesNotExist($logfile . '.1', 'No rotation may happen while the lock is held elsewhere');
+        $this->assertStringContainsString(
+            'while lock held',
+            file_get_contents($logfile),
+            'The worker that skips rotation must still append its entry'
+        );
+
+        // Release the lock: the next oversized write rotates normally.
+        flock($holder, LOCK_UN);
+        fclose($holder);
+        local_jedomi_log('after lock released');
+
+        $this->assertFileExists($logfile . '.1', 'Rotation must resume once the lock is free');
+        $this->assertStringContainsString('after lock released', file_get_contents($logfile));
     }
 
     /**

@@ -1250,22 +1250,44 @@ if (!function_exists('local_jedomi_rotate_log')) {
     /**
      * Rotate the jedomi log: shift jedomi.log.N-1 → .N and jedomi.log → .1.
      *
+     * The size check and the whole rename chain run under a non-blocking
+     * inter-process lock (flock on jedomi.log.lock): a worker that does not
+     * get the lock simply skips rotation — another worker is already doing
+     * it — and continues appending. The size is re-checked under the lock
+     * so the loser of a previous race never rotates a freshly rotated file.
+     *
      * The oldest file (jedomi.log.N) is dropped. Every filesystem operation
-     * is error-suppressed: a failed rotation simply falls through to the
-     * normal append and must never interrupt the calling flow. rename() is
-     * atomic, so a race between two workers loses at most one rotation.
+     * is error-suppressed: a failed lock or rotation simply falls through to
+     * the normal append and must never interrupt the calling flow.
      *
      * @param string $logfile  Absolute path of the active log file.
      * @param int    $maxfiles Number of rotated files to retain.
+     * @param int    $maxbytes Size threshold re-checked under the lock.
      */
-    function local_jedomi_rotate_log(string $logfile, int $maxfiles): void {
-        @unlink($logfile . '.' . $maxfiles);
-        for ($i = $maxfiles - 1; $i >= 1; $i--) {
-            if (@file_exists($logfile . '.' . $i)) {
-                @rename($logfile . '.' . $i, $logfile . '.' . ($i + 1));
-            }
+    function local_jedomi_rotate_log(string $logfile, int $maxfiles, int $maxbytes): void {
+        $lockhandle = @fopen($logfile . '.lock', 'c');
+        if ($lockhandle === false) {
+            return; // Cannot lock: skip rotation rather than risk interleaving.
         }
-        @rename($logfile, $logfile . '.1');
+        if (!@flock($lockhandle, LOCK_EX | LOCK_NB)) {
+            @fclose($lockhandle);
+            return; // Another worker is rotating: continue without rotating.
+        }
+
+        // Re-check under the lock: a concurrent worker may have just rotated.
+        clearstatcache(true, $logfile);
+        if ((int) @filesize($logfile) > $maxbytes) {
+            @unlink($logfile . '.' . $maxfiles);
+            for ($i = $maxfiles - 1; $i >= 1; $i--) {
+                if (@file_exists($logfile . '.' . $i)) {
+                    @rename($logfile . '.' . $i, $logfile . '.' . ($i + 1));
+                }
+            }
+            @rename($logfile, $logfile . '.1');
+        }
+
+        @flock($lockhandle, LOCK_UN);
+        @fclose($lockhandle);
     }
 }
 
@@ -1301,9 +1323,11 @@ if (!function_exists('local_jedomi_log')) {
         $logfile = $logdir . '/jedomi.log';
 
         // Size-based rotation keeps dataroot growth bounded (~30 MB max).
+        // Fast path: only touch the lock file when the size looks over the
+        // cap; the helper re-checks and rotates under an inter-process lock.
         $maxbytes = (int) ($CFG->local_jedomi_logmaxbytes ?? LOCAL_JEDOMI_LOG_MAX_BYTES);
         if ($maxbytes > 0 && (int) @filesize($logfile) > $maxbytes) {
-            local_jedomi_rotate_log($logfile, LOCAL_JEDOMI_LOG_MAX_FILES);
+            local_jedomi_rotate_log($logfile, LOCAL_JEDOMI_LOG_MAX_FILES, $maxbytes);
         }
 
         $timestamp = date('Y-m-d H:i:s.v');
