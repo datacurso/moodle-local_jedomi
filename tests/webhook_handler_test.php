@@ -564,14 +564,18 @@ final class webhook_handler_test extends \advanced_testcase {
      * Test that the built system prompt instructs the model to use Telegram HTML.
      *
      * Invokes the same builder the runtime uses (build_telegram_system_prompt,
-     * called from proxy_to_gateway) and asserts the format instruction in a
-     * wording-tolerant way: mention of Telegram HTML, the supported tags, and
-     * a prohibition on markdown.
+     * called from proxy_to_gateway, exposed as an internal entry point) and asserts
+     * the format instruction in a wording-tolerant way: mention of Telegram
+     * HTML, the supported tags, and a prohibition on markdown.
      */
     public function test_system_prompt_has_telegram_format(): void {
-        $prompt = $this->call_private_static('build_telegram_system_prompt', [
-            'admin', 'es', ['ws_search', 'execute_sql'], [], (int)get_admin()->id,
-        ]);
+        $prompt = \local_jedomi\telegram\webhook_handler::build_telegram_system_prompt(
+            'admin',
+            'es',
+            ['ws_search', 'execute_sql'],
+            [],
+            (int) get_admin()->id
+        );
 
         $this->assertIsString($prompt);
         $this->assertMatchesRegularExpression(
