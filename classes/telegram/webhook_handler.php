@@ -1428,6 +1428,8 @@ class webhook_handler {
      * Extracted from proxy_to_gateway() so tests can verify the built prompt
      * through the same code path the runtime uses.
      *
+     * @internal Exposed as a testable entry point; not a stable plugin API.
+     *
      * @param  string $role            Resolved role of the linked user (admin/manager/teacher/student).
      * @param  string $userlang       Language the model must respond in.
      * @param  array  $toolnames      Names of the tools exposed to the model.
@@ -1435,7 +1437,7 @@ class webhook_handler {
      * @param  int    $userid          Linked Moodle user id.
      * @return string The complete system prompt.
      */
-    private static function build_telegram_system_prompt(
+    public static function build_telegram_system_prompt(
         string $role,
         string $userlang,
         array $toolnames,
