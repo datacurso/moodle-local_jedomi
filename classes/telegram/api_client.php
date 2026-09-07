@@ -111,8 +111,9 @@ class api_client {
      * @param string $text The text to split.
      * @param bool $truncate If true, return single chunk truncated to 4000 + "… (truncated)".
      * @return array Array of text chunks.
+     * @internal Exposed as a testable entry point; not a stable plugin API.
      */
-    private function chunk_text(string $text, bool $truncate = false): array {
+    public function chunk_text(string $text, bool $truncate = false): array {
         $max = 4000;
         $text = trim($text);
 

@@ -88,7 +88,7 @@ final class webhook_handler_test extends \advanced_testcase {
      * @param bool $expected Expected result
      */
     public function test_looks_like_link_code(string $input, bool $expected): void {
-        $result = $this->call_private_static('looks_like_link_code', [$input]);
+        $result = \local_jedomi\telegram\webhook_handler::looks_like_link_code($input);
         $this->assertSame($expected, $result, "looks_like_link_code('$input') should return " . ($expected ? 'true' : 'false'));
     }
 
@@ -166,7 +166,7 @@ final class webhook_handler_test extends \advanced_testcase {
      * Test execute_tool returns error for unsupported tool.
      */
     public function test_execute_tool_unsupported(): void {
-        $result = $this->call_private_static('execute_tool', ['nonexistent_tool', []]);
+        $result = \local_jedomi\telegram\webhook_handler::execute_tool('nonexistent_tool', []);
         $this->assertStringContainsString('not supported', $result);
     }
 
@@ -174,7 +174,7 @@ final class webhook_handler_test extends \advanced_testcase {
      * Test execute_tool describe_table returns error for missing table name.
      */
     public function test_execute_tool_describe_table_no_name(): void {
-        $result = $this->call_private_static('execute_tool', ['describe_table', []]);
+        $result = \local_jedomi\telegram\webhook_handler::execute_tool('describe_table', []);
         $this->assertStringContainsString('Table name required', $result);
     }
 
@@ -185,7 +185,7 @@ final class webhook_handler_test extends \advanced_testcase {
         global $DB;
 
         // Use a standard Moodle table that always exists.
-        $result = $this->call_private_static('execute_tool', ['describe_table', ['tablename' => 'user']]);
+        $result = \local_jedomi\telegram\webhook_handler::execute_tool('describe_table', ['tablename' => 'user']);
         $this->assertStringContainsString('user', $result);
         $this->assertStringContainsString('columns', $result);
     }
@@ -194,7 +194,7 @@ final class webhook_handler_test extends \advanced_testcase {
      * Test execute_tool describe_table returns not found for non-existent table.
      */
     public function test_execute_tool_describe_table_not_found(): void {
-        $result = $this->call_private_static('execute_tool', ['describe_table', ['tablename' => 'nonexistent_table_xyz']]);
+        $result = \local_jedomi\telegram\webhook_handler::execute_tool('describe_table', ['tablename' => 'nonexistent_table_xyz']);
         $this->assertStringContainsString('not found', $result);
     }
 
@@ -202,7 +202,7 @@ final class webhook_handler_test extends \advanced_testcase {
      * Test execute_tool search_tables returns error for empty query.
      */
     public function test_execute_tool_search_tables_no_query(): void {
-        $result = $this->call_private_static('execute_tool', ['search_tables', []]);
+        $result = \local_jedomi\telegram\webhook_handler::execute_tool('search_tables', []);
         $this->assertStringContainsString('Search query required', $result);
     }
 
@@ -210,7 +210,7 @@ final class webhook_handler_test extends \advanced_testcase {
      * Test execute_tool search_tables finds tables matching query.
      */
     public function test_execute_tool_search_tables_success(): void {
-        $result = $this->call_private_static('execute_tool', ['search_tables', ['query' => 'user']]);
+        $result = \local_jedomi\telegram\webhook_handler::execute_tool('search_tables', ['query' => 'user']);
         $this->assertStringContainsString('Tables', $result);
     }
 
@@ -218,7 +218,7 @@ final class webhook_handler_test extends \advanced_testcase {
      * Test execute_tool search_tables respects limit.
      */
     public function test_execute_tool_search_tables_limit(): void {
-        $result = $this->call_private_static('execute_tool', ['search_tables', ['query' => 'a', 'limit' => 5]]);
+        $result = \local_jedomi\telegram\webhook_handler::execute_tool('search_tables', ['query' => 'a', 'limit' => 5]);
         // Should not error — just returns results.
         $this->assertIsString($result);
     }
@@ -227,7 +227,7 @@ final class webhook_handler_test extends \advanced_testcase {
      * Test execute_tool execute_sql returns error for empty SQL.
      */
     public function test_execute_tool_execute_sql_no_query(): void {
-        $result = $this->call_private_static('execute_tool', ['execute_sql', []]);
+        $result = \local_jedomi\telegram\webhook_handler::execute_tool('execute_sql', []);
         $this->assertStringContainsString('SQL query required', $result);
     }
 
@@ -235,7 +235,7 @@ final class webhook_handler_test extends \advanced_testcase {
      * Test execute_tool execute_sql rejects non-SELECT queries.
      */
     public function test_execute_tool_execute_sql_rejects_non_select(): void {
-        $result = $this->call_private_static('execute_tool', ['execute_sql', ['sql' => 'DELETE FROM {user}']]);
+        $result = \local_jedomi\telegram\webhook_handler::execute_tool('execute_sql', ['sql' => 'DELETE FROM {user}']);
         $this->assertStringContainsString('Only SELECT', $result);
     }
 
@@ -247,13 +247,13 @@ final class webhook_handler_test extends \advanced_testcase {
         $this->create_telegram_link((int)$admin->id, '12345');
 
         // Production resolves userid/role from the chat link and passes them in.
-        $result = $this->call_private_static('execute_tool', [
+        $result = \local_jedomi\telegram\webhook_handler::execute_tool(
             'execute_sql',
             ['sql' => 'SELECT id, username FROM {user} WHERE deleted = 0 LIMIT 5'],
             (int)$admin->id,
             'admin',
             [],
-        ]);
+        );
         $this->assertStringContainsString('Results', $result);
     }
 
@@ -263,13 +263,13 @@ final class webhook_handler_test extends \advanced_testcase {
     public function test_execute_tool_execute_sql_denied_without_privilege(): void {
         $user = $this->getDataGenerator()->create_user();
 
-        $result = $this->call_private_static('execute_tool', [
+        $result = \local_jedomi\telegram\webhook_handler::execute_tool(
             'execute_sql',
             ['sql' => 'SELECT id FROM {user} LIMIT 1'],
             (int)$user->id,
             'student',
             [],
-        ]);
+        );
         $this->assertStringContainsString('Permission denied', $result);
         $this->assertStringNotContainsString('Results', $result);
     }
@@ -282,10 +282,10 @@ final class webhook_handler_test extends \advanced_testcase {
      * Test execute_pending_action with unknown tool.
      */
     public function test_execute_pending_action_unknown(): void {
-        $result = $this->call_private_static('execute_pending_action', [
+        $result = \local_jedomi\telegram\webhook_handler::execute_pending_action(
             ['name' => 'unknown_tool', 'params' => []],
             '12345',
-        ]);
+        );
         $this->assertStringContainsString('not supported', $result);
     }
 
@@ -298,10 +298,10 @@ final class webhook_handler_test extends \advanced_testcase {
         $this->create_telegram_link((int)get_admin()->id, '12345');
         set_config('telegram_max_turns', 25, 'local_jedomi');
 
-        $result = $this->call_private_static('execute_pending_action', [
+        $result = \local_jedomi\telegram\webhook_handler::execute_pending_action(
             ['name' => 'get_config', 'params' => ['key' => 'telegram_max_turns']],
             '12345',
-        ]);
+        );
         $this->assertStringContainsString('telegram_max_turns', $result);
         $this->assertStringContainsString('25', $result);
     }
@@ -313,10 +313,10 @@ final class webhook_handler_test extends \advanced_testcase {
         $this->create_telegram_link((int)get_admin()->id, '12345');
         unset_config('telegram_gateway_timeout', 'local_jedomi');
 
-        $result = $this->call_private_static('execute_pending_action', [
+        $result = \local_jedomi\telegram\webhook_handler::execute_pending_action(
             ['name' => 'get_config', 'params' => ['key' => 'telegram_gateway_timeout']],
             '12345',
-        ]);
+        );
         $this->assertStringContainsString('not found', $result);
     }
 
@@ -324,10 +324,10 @@ final class webhook_handler_test extends \advanced_testcase {
      * Test execute_pending_action get_config denies a chat without a link.
      */
     public function test_execute_pending_action_get_config_denied_unlinked_chat(): void {
-        $result = $this->call_private_static('execute_pending_action', [
+        $result = \local_jedomi\telegram\webhook_handler::execute_pending_action(
             ['name' => 'get_config', 'params' => ['key' => 'telegram_max_turns']],
             'chat-without-link',
-        ]);
+        );
         $this->assertStringContainsString('Permission denied. Admin only.', $result);
     }
 
@@ -339,10 +339,10 @@ final class webhook_handler_test extends \advanced_testcase {
         $this->create_telegram_link((int)$user->id, '55555');
         set_config('telegram_max_turns', 25, 'local_jedomi');
 
-        $result = $this->call_private_static('execute_pending_action', [
+        $result = \local_jedomi\telegram\webhook_handler::execute_pending_action(
             ['name' => 'get_config', 'params' => ['key' => 'telegram_max_turns']],
             '55555',
-        ]);
+        );
         $this->assertStringContainsString('Permission denied. Admin only.', $result);
     }
 
@@ -366,10 +366,10 @@ final class webhook_handler_test extends \advanced_testcase {
      * @param string $action Pending action name under test
      */
     public function test_admin_only_pending_actions_deny_unlinked(string $action): void {
-        $result = $this->call_private_static('execute_pending_action', [
+        $result = \local_jedomi\telegram\webhook_handler::execute_pending_action(
             ['name' => $action, 'params' => []],
             'chat-without-link',
-        ]);
+        );
         $this->assertStringContainsString('Permission denied. Admin only.', $result);
     }
 
@@ -406,9 +406,13 @@ final class webhook_handler_test extends \advanced_testcase {
     public function test_gated_tools_deny_unprivileged_role(string $tool, array $args, string $marker): void {
         $user = $this->getDataGenerator()->create_user();
 
-        $result = $this->call_private_static('execute_tool', [
-            $tool, $args, (int)$user->id, 'student', [],
-        ]);
+        $result = \local_jedomi\telegram\webhook_handler::execute_tool(
+            $tool,
+            $args,
+            (int)$user->id,
+            'student',
+            []
+        );
         $this->assertStringContainsString(
             $marker,
             $result,
@@ -609,7 +613,7 @@ final class webhook_handler_test extends \advanced_testcase {
      * Test that get_linked_keyboard returns a valid inline keyboard array.
      */
     public function test_get_linked_keyboard_structure(): void {
-        $keyboard = $this->call_private_static('get_linked_keyboard');
+        $keyboard = \local_jedomi\telegram\webhook_handler::get_linked_keyboard();
         $this->assertIsArray($keyboard);
         $this->assertArrayHasKey('inline_keyboard', $keyboard);
         $this->assertCount(1, $keyboard['inline_keyboard']);
@@ -625,7 +629,7 @@ final class webhook_handler_test extends \advanced_testcase {
      * Test that get_unlinked_keyboard returns a valid inline keyboard array.
      */
     public function test_get_unlinked_keyboard_structure(): void {
-        $keyboard = $this->call_private_static('get_unlinked_keyboard');
+        $keyboard = \local_jedomi\telegram\webhook_handler::get_unlinked_keyboard();
         $this->assertIsArray($keyboard);
         $this->assertArrayHasKey('inline_keyboard', $keyboard);
         $this->assertCount(1, $keyboard['inline_keyboard']);
@@ -660,19 +664,39 @@ final class webhook_handler_test extends \advanced_testcase {
     }
 
     /**
-     * Test normalise_chat_id accepts signed numeric ids and rejects everything else.
+     * Test chat id validation through the public webhook entry point.
+     *
+     * A full Telegram update goes through handle(): an accepted (signed
+     * numeric) chat id reaches the rate limiter and leaves a rate_limit row;
+     * a rejected one returns before any DB access, leaving no rows at all.
      *
      * @dataProvider chat_id_provider
      * @param string $input Raw chat id from the webhook payload
      * @param string|null $expected Normalised id, or null when invalid
      */
-    public function test_normalise_chat_id(string $input, ?string $expected): void {
-        $result = $this->call_private_static('normalise_chat_id', [$input]);
-        $this->assertSame($expected, $result);
+    public function test_handle_validates_chat_id(string $input, ?string $expected): void {
+        global $DB;
+
+        $before = $DB->count_records('local_jedomi_telegram_rate_limit');
+
+        \local_jedomi\telegram\webhook_handler::handle([
+            'message' => ['chat' => ['id' => $input], 'text' => 'hola'],
+        ]);
+
+        $delta = $DB->count_records('local_jedomi_telegram_rate_limit') - $before;
+        if ($expected !== null) {
+            $this->assertSame(1, $delta, "Accepted chat id {$input} should be recorded by the rate limiter");
+            $this->assertTrue(
+                $DB->record_exists('local_jedomi_telegram_rate_limit', ['chatid' => $expected]),
+                'The rate limit row must use the normalised chat id'
+            );
+        } else {
+            $this->assertSame(0, $delta, "Rejected chat id must never reach the DB");
+        }
     }
 
     /**
-     * Test handle_message rejects a chat id with SQL metacharacters without touching the DB.
+     * Test handle() rejects a chat id with SQL metacharacters without touching the DB.
      */
     public function test_handle_message_rejects_non_numeric_chatid(): void {
         global $DB;
@@ -684,10 +708,9 @@ final class webhook_handler_test extends \advanced_testcase {
         ];
 
         foreach (["1'); DROP TABLE {user};--", 'abc', "1' OR SLEEP(5)--"] as $malicious) {
-            $this->call_private_static('handle_message', [[
-                'chat' => ['id' => $malicious],
-                'text' => 'hola',
-            ]]);
+            \local_jedomi\telegram\webhook_handler::handle([
+                'message' => ['chat' => ['id' => $malicious], 'text' => 'hola'],
+            ]);
         }
 
         $this->assertSame(
@@ -842,18 +865,5 @@ final class webhook_handler_test extends \advanced_testcase {
             'timecreated'       => time(),
             'lastproactivesent' => 0,
         ]);
-    }
-
-    /**
-     * Call a private static method on webhook_handler via reflection.
-     *
-     * @param string $methodname
-     * @param array $args
-     * @return mixed
-     */
-    private function call_private_static(string $methodname, array $args = []) {
-        $ref = new \ReflectionMethod(\local_jedomi\telegram\webhook_handler::class, $methodname);
-        $ref->setAccessible(true);
-        return $ref->invoke(null, ...$args);
     }
 }

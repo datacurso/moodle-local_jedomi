@@ -100,7 +100,7 @@ final class api_client_test extends \advanced_testcase {
      * @param int $expectedcount Expected number of chunks
      */
     public function test_chunk_text_count(string $text, bool $truncate, int $expectedcount): void {
-        $result = $this->call_private_method('chunk_text', [$text, $truncate]);
+        $result = (new \local_jedomi\telegram\api_client(''))->chunk_text($text, $truncate);
         $this->assertIsArray($result);
         $this->assertCount($expectedcount, $result, "Expected $expectedcount chunk(s) for " .
             (mb_strlen($text) > 50 ? mb_substr($text, 0, 50) . '...' : $text) .
@@ -112,7 +112,7 @@ final class api_client_test extends \advanced_testcase {
      */
     public function test_chunk_text_short_content(): void {
         $text = 'Hello world';
-        $result = $this->call_private_method('chunk_text', [$text, false]);
+        $result = (new \local_jedomi\telegram\api_client(''))->chunk_text($text, false);
         $this->assertCount(1, $result);
         $this->assertEquals($text, $result[0]);
     }
@@ -122,7 +122,7 @@ final class api_client_test extends \advanced_testcase {
      */
     public function test_chunk_text_truncate_suffix(): void {
         $text = str_repeat('x', 5000);
-        $result = $this->call_private_method('chunk_text', [$text, true]);
+        $result = (new \local_jedomi\telegram\api_client(''))->chunk_text($text, true);
         $this->assertCount(1, $result);
         $this->assertStringEndsWith('… (truncated)', $result[0]);
         // Truncated output should not exceed 4000.
@@ -134,7 +134,7 @@ final class api_client_test extends \advanced_testcase {
      */
     public function test_chunk_text_newline_boundary_split(): void {
         $text = str_repeat('x', 2500) . "\n\n" . str_repeat('y', 2000);
-        $result = $this->call_private_method('chunk_text', [$text, false]);
+        $result = (new \local_jedomi\telegram\api_client(''))->chunk_text($text, false);
         $this->assertCount(2, $result);
         // First chunk should end with the double newline.
         $this->assertStringEndsWith("\n\n", $result[0]);
@@ -147,7 +147,7 @@ final class api_client_test extends \advanced_testcase {
      */
     public function test_chunk_text_hard_cut(): void {
         $text = str_repeat('a', 4001);
-        $result = $this->call_private_method('chunk_text', [$text, false]);
+        $result = (new \local_jedomi\telegram\api_client(''))->chunk_text($text, false);
         $this->assertCount(2, $result);
         // First chunk should be exactly 4000 chars.
         $this->assertEquals(4000, mb_strlen($result[0]));
@@ -161,7 +161,7 @@ final class api_client_test extends \advanced_testcase {
      */
     public function test_chunk_text_preserves_content(): void {
         $original = str_repeat('a', 2000) . ' ' . str_repeat('b', 2000) . ' ' . str_repeat('c', 2000);
-        $result = $this->call_private_method('chunk_text', [$original, false]);
+        $result = (new \local_jedomi\telegram\api_client(''))->chunk_text($original, false);
         $reassembled = implode('', $result);
         // Without the spaces that were split boundaries, the core content should match.
         $originalchars = str_replace([' '], '', $original);
@@ -191,25 +191,5 @@ final class api_client_test extends \advanced_testcase {
         // Should not throw — chunk_text splits it, then post() fails with E001.
         $result = $client->send_message('12345', $longtext);
         $this->assertFalse($result, 'send_message with empty token should return false');
-    }
-
-    // ... ========================
-    // Helpers
-    // ========================
-
-    /**
-     * Call a private method on an api_client instance via reflection.
-     *
-     * The client is built with an empty token so no real HTTP call is possible.
-     *
-     * @param string $methodname
-     * @param array $args
-     * @return mixed
-     */
-    private function call_private_method(string $methodname, array $args = []) {
-        $client = new \local_jedomi\telegram\api_client('');
-        $ref = new \ReflectionMethod($client, $methodname);
-        $ref->setAccessible(true);
-        return $ref->invoke($client, ...$args);
     }
 }
