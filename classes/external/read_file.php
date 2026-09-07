@@ -180,9 +180,9 @@ class read_file extends external_api {
 
         self::verify_hmac('jedomi_read_file', $hmactimestamp, $payloadhash, $hmacsignature);
 
-        // Normalise path: strip leading slash, resolve .. traversal.
-        $cleanpath = ltrim(str_replace(['../', '..\\', '../'], '', $path), '/\\');
-        $cleanpath = str_replace('\\', '/', $cleanpath);
+        // Normalise separators only. No traversal "cleaning" is attempted:
+        // any path with a .. segment is rejected outright further down.
+        $cleanpath = ltrim(str_replace('\\', '/', $path), '/');
 
         // Block sensitive files unconditionally.
         foreach (self::BLOCKED_PATHS as $blocked) {
@@ -209,10 +209,14 @@ class read_file extends external_api {
         }
 
         // Build absolute path and verify it's inside dirroot.
-        $abspath = realpath($CFG->dirroot . '/' . $cleanpath);
-        $dirroot  = realpath($CFG->dirroot);
+        $abspath = self::resolve_inside_root($cleanpath, $CFG->dirroot);
 
-        if (!$abspath || !str_starts_with($abspath, $dirroot)) {
+        if ($abspath === null) {
+            \local_jedomi_log(sprintf(
+                '[local_jedomi] read_file BLOCKED path outside dirroot: %s ip=%s',
+                $cleanpath,
+                getremoteaddr()
+            ));
             return [
                 'path'        => $cleanpath,
                 'content'     => '',
@@ -266,5 +270,33 @@ class read_file extends external_api {
             'extension'   => pathinfo($cleanpath, PATHINFO_EXTENSION),
             'exists'      => true,
         ];
+    }
+
+    /**
+     * Resolve a relative path against a root directory, enforcing the boundary.
+     *
+     * No input cleaning is attempted: any path containing a traversal segment
+     * is rejected outright, and the realpath() result must be the root itself
+     * or live under root plus a separator — a sibling directory whose name
+     * shares the root's prefix (e.g. moodle-backup/ next to moodle/) must
+     * never pass.
+     *
+     * @param string $cleanpath Relative path (forward slashes, no leading slash)
+     * @param string $rootdir Absolute allowed root directory
+     * @return string|null Resolved absolute path, or null when rejected
+     */
+    private static function resolve_inside_root(string $cleanpath, string $rootdir): ?string {
+        if (preg_match('~(^|/)\.\.(/|$)~', $cleanpath)) {
+            return null;
+        }
+        $abspath = realpath($rootdir . '/' . $cleanpath);
+        $realroot = realpath($rootdir);
+        if ($abspath === false || $realroot === false) {
+            return null;
+        }
+        if ($abspath !== $realroot && !str_starts_with($abspath, $realroot . DIRECTORY_SEPARATOR)) {
+            return null;
+        }
+        return $abspath;
     }
 }
