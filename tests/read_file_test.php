@@ -93,9 +93,7 @@ final class read_file_test extends \advanced_testcase {
      */
     public function test_resolve_inside_root(string $relpath, bool $mustresolve): void {
         $root = $this->make_fake_root();
-        $ref = new \ReflectionMethod(read_file::class, 'resolve_inside_root');
-        $ref->setAccessible(true);
-        $result = $ref->invoke(null, $relpath, $root);
+        $result = read_file::resolve_inside_root($relpath, $root);
 
         if ($mustresolve) {
             $this->assertIsString($result, "Path {$relpath} should resolve inside the root");
@@ -127,6 +125,77 @@ final class read_file_test extends \advanced_testcase {
     public function test_execute_rejects_traversal_path(): void {
         $this->expectException(\core\exception\invalid_parameter_exception::class);
         $this->execute_signed('lib/....//....//etc/passwd');
+    }
+
+    /**
+     * Test execute() blocks a symlink escaping dirroot (real on-disk fixture).
+     *
+     * A symlink inside the whitelisted local/ tree pointing outside dirroot
+     * is the realistic escape without ".." segments: realpath() resolves it
+     * and the boundary check must reject the result.
+     */
+    public function test_execute_blocks_symlink_escape(): void {
+        global $CFG;
+
+        $fixturedir = $CFG->dirroot . '/local/jedomi/tests/fixtures';
+        if (!is_writable($CFG->dirroot . '/local/jedomi/tests')) {
+            $this->markTestSkipped('dirroot tests directory not writable, cannot create symlink fixture');
+        }
+
+        $outside = make_request_directory();
+        file_put_contents($outside . '/secret.txt', "outside dirroot\n");
+        @mkdir($fixturedir);
+        $linkpath = $fixturedir . '/escape_link';
+        @unlink($linkpath);
+        symlink($outside, $linkpath);
+
+        try {
+            $result = $this->execute_signed('local/jedomi/tests/fixtures/escape_link/secret.txt');
+            $this->assertFalse($result['exists'], 'A symlink escaping dirroot must not be readable');
+            $this->assertSame('', $result['content']);
+        } finally {
+            @unlink($linkpath);
+            @rmdir($fixturedir);
+        }
+    }
+
+    /**
+     * Test execute() blocks a sibling directory with a colliding name prefix.
+     *
+     * The fixture is a real sibling of dirroot (e.g. /var/www/html-jedomitest
+     * next to /var/www/html) reached via a symlink: its realpath STARTS WITH
+     * the dirroot string, so the old separator-less prefix check accepted it.
+     */
+    public function test_execute_blocks_prefix_colliding_sibling(): void {
+        global $CFG;
+
+        $parent = dirname($CFG->dirroot);
+        if (!is_writable($parent) || !is_writable($CFG->dirroot . '/local/jedomi/tests')) {
+            $this->markTestSkipped('dirroot parent not writable, cannot create colliding sibling fixture');
+        }
+
+        $sibling = $CFG->dirroot . '-jedomitest';
+        $fixturedir = $CFG->dirroot . '/local/jedomi/tests/fixtures';
+        @mkdir($sibling);
+        file_put_contents($sibling . '/secret.txt', "colliding sibling\n");
+        @mkdir($fixturedir);
+        $linkpath = $fixturedir . '/collide_link';
+        @unlink($linkpath);
+        symlink($sibling, $linkpath);
+
+        try {
+            $result = $this->execute_signed('local/jedomi/tests/fixtures/collide_link/secret.txt');
+            $this->assertFalse(
+                $result['exists'],
+                'A sibling whose name shares the dirroot prefix must not be readable'
+            );
+            $this->assertSame('', $result['content']);
+        } finally {
+            @unlink($linkpath);
+            @rmdir($fixturedir);
+            @unlink($sibling . '/secret.txt');
+            @rmdir($sibling);
+        }
     }
 
     /**

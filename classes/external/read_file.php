@@ -284,8 +284,9 @@ class read_file extends external_api {
      * @param string $cleanpath Relative path (forward slashes, no leading slash)
      * @param string $rootdir Absolute allowed root directory
      * @return string|null Resolved absolute path, or null when rejected
+     * @internal Exposed as a testable entry point; not a stable plugin API.
      */
-    private static function resolve_inside_root(string $cleanpath, string $rootdir): ?string {
+    public static function resolve_inside_root(string $cleanpath, string $rootdir): ?string {
         if (preg_match('~(^|/)\.\.(/|$)~', $cleanpath)) {
             return null;
         }

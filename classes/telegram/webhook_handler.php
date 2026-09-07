@@ -348,8 +348,9 @@ class webhook_handler {
 
     /**
      * Build inline keyboard for a linked user (new, help, unlink).
+     * @internal Exposed as a testable entry point; not a stable plugin API.
      */
-    private static function get_linked_keyboard(): array {
+    public static function get_linked_keyboard(): array {
         return [
             'inline_keyboard' => [[
                 ['text' => get_string('telegram_keyboard_new', 'local_jedomi'),
@@ -364,8 +365,9 @@ class webhook_handler {
 
     /**
      * Build inline keyboard for an unlinked user (howto link, help).
+     * @internal Exposed as a testable entry point; not a stable plugin API.
      */
-    private static function get_unlinked_keyboard(): array {
+    public static function get_unlinked_keyboard(): array {
         return [
             'inline_keyboard' => [[
                 ['text' => get_string('telegram_keyboard_howto_link', 'local_jedomi'),
@@ -1662,8 +1664,9 @@ class webhook_handler {
      * @param string $role Jedomi role shortname (admin|manager|teacher|student)
      * @param array $courseidsowned Course ids the user manages
      * @return string Tool execution result formatted for Telegram
+     * @internal Exposed as a testable entry point; not a stable plugin API.
      */
-    private static function execute_tool(
+    public static function execute_tool(
         string $name,
         array $args,
         int $userid = 0,
@@ -2157,8 +2160,9 @@ class webhook_handler {
      * @param array $action Pending action payload (action name and params)
      * @param string $chatid Telegram chat id
      * @return string Result message formatted for Telegram
+     * @internal Exposed as a testable entry point; not a stable plugin API.
      */
-    private static function execute_pending_action(array $action, string $chatid): string {
+    public static function execute_pending_action(array $action, string $chatid): string {
         global $DB;
 
         $toolname = $action['name'] ?? '';
@@ -2250,8 +2254,9 @@ class webhook_handler {
      *
      * @param string $text Incoming message text
      * @return bool True if the text matches the link code format
+     * @internal Exposed as a testable entry point; not a stable plugin API.
      */
-    private static function looks_like_link_code(string $text): bool {
+    public static function looks_like_link_code(string $text): bool {
         $text = strtoupper(trim($text));
         return (bool) preg_match('/^[A-Z0-9]{4,8}$/', $text);
     }
