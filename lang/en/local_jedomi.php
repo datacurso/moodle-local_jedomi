@@ -501,8 +501,6 @@ $string['ws_execute_error']        = 'Error executing web service: {$a}';
 $string['ws_no_services']          = 'No web services configured for this role.';
 $string['ws_pagination']           = 'Page {$a->page} of {$a->pages} ({$a->total} services)';
 $string['ws_none_found']           = 'No web services match your filters.';
-$string['tool_ws_search_desc']     = 'Search web service functions by intent or keywords and return the most relevant ones with full parameter and return type descriptions.';
-$string['tool_ws_describe_desc']   = 'Get complete documentation (description, parameters, return type) for a specific web service function by exact name.';
 $string['tool_ws_execute_desc']    = 'Execute a Moodle web service function on behalf of the current user. Use AFTER ws_search to get the exact function name and parameters. If the first attempt fails with "Missing required key" or "invalid parameter", retry with default values for optional fields. For batch operations (same action on multiple items), call this function MULTIPLE times — once per item.';
 
 // ── Tool execution errors ────────────────────────────────────────────
@@ -557,23 +555,23 @@ $string['dblabel_mysql'] = 'MySQL/MariaDB';
 $string['dblabel_pgsql'] = 'PostgreSQL';
 
 // ── Tool descriptions (lib.php) ──────────────────────────────────────
-$string['tool_describe_table_desc'] = 'Obtiene la estructura (columnas, tipos, claves, indices, foreign keys) de una tabla de la base de datos de Moodle. Cacheado 24h.';
-$string['tool_describe_table_tablename'] = 'Nombre de la tabla (ej: course, user, grade_grades)';
+$string['tool_describe_table_desc'] = 'Gets the structure (columns, types, keys, indexes, foreign keys) of a Moodle database table. Cached for 24h.';
+$string['tool_describe_table_tablename'] = 'Table name (e.g. course, user, grade_grades)';
 $string['tool_search_tables_desc'] = 'Search Moodle tables by intent or keywords in ENGLISH. FALLBACK for when web services cannot provide the needed data. Only use this AFTER confirming no relevant web service exists. Searches across table names AND their COMMENT descriptions from install.xml. Returns name, comment, field names, and field comments.';
 $string['tool_search_tables_query'] = 'Intent or keywords in ENGLISH (e.g. "user grades", "course enrolment", "student")';
 $string['tool_search_tables_limit'] = 'Maximum results (default: 8, max: 15)';
-$string['tool_execute_sql_desc'] = 'Ejecuta una consulta SELECT en la base de datos de Moodle y devuelve las filas como JSON. SOLO lectura. Limite: 100 filas, timeout 5 segundos.';
-$string['tool_execute_sql_sql'] = 'Consulta SELECT a ejecutar. Usa ? como placeholder para parametros. Ejemplo: SELECT id, fullname FROM {course} WHERE category = ?';
-$string['tool_execute_sql_params'] = 'Parametros vinculados para la consulta (opcional)';
-$string['tool_get_site_config_desc'] = 'Obtiene configuracion del sitio Moodle (sitename, lang, timezone, etc.). Solo disponible para administradores.';
-$string['tool_get_site_config_keys'] = 'Lista de claves de configuracion. Validas: sitename, siteurl, lang, country, timezone, maxbytes, passwordpolicy, enrol_plugins_enabled, auth_plugins_enabled';
+$string['tool_execute_sql_desc'] = 'Executes a SELECT query on the Moodle database and returns the rows as JSON. READ ONLY. Limit: 100 rows, 5 second timeout.';
+$string['tool_execute_sql_sql'] = 'SELECT query to execute. Use ? as a placeholder for parameters. Example: SELECT id, fullname FROM {course} WHERE category = ?';
+$string['tool_execute_sql_params'] = 'Bound parameters for the query (optional)';
+$string['tool_get_site_config_desc'] = 'Gets Moodle site configuration (sitename, lang, timezone, etc.). Only available to administrators.';
+$string['tool_get_site_config_keys'] = 'List of configuration keys. Valid: sitename, siteurl, lang, country, timezone, maxbytes, passwordpolicy, enrol_plugins_enabled, auth_plugins_enabled';
 $string['tool_ws_search_desc'] = 'Search Moodle web service functions by intent or keywords in ENGLISH. Returns the most relevant matches with full description, parameters (* = required), and return structure. If results include what you need: STOP searching entirely — call ws_describe on the exact name, then ws_execute. Do NOT call SQL tools (search_tables, describe_table, execute_sql) when WS already covers your need. Do NOT call ws_search again for the same task.';
 $string['tool_ws_search_query'] = 'Intent or keywords in ENGLISH (e.g. "create user", "enrol student", "get course grades")';
-$string['tool_ws_search_limit'] = 'Máximo de resultados a devolver (default: 6, max: 15)';
+$string['tool_ws_search_limit'] = 'Maximum results to return (default: 6, max: 15)';
 $string['tool_ws_describe_desc'] = 'Get full documentation (description, parameters with * = required, return type) for a specific web service function when you already know its exact name. ALWAYS call this AFTER ws_search and BEFORE ws_execute to verify required fields.';
 $string['tool_ws_describe_wsname'] = 'Exact function name (e.g. core_user_create_users)';
 $string['tool_ws_execute_wsname'] = 'Web service function name (e.g. core_course_get_courses)';
-$string['tool_ws_execute_params'] = 'JSON-encoded parameters for the web service function. MUST include every * (required) field. IMPORTANT: If the first attempt fails with "Detectado valor de parámetro no válido" or "Missing required key", the instance requires fields that the schema marks as optional. In that case, RETRY by adding default values for missing optional fields (e.g. description="", enrolmentkey="", idnumber="", visibility=0, participation=true).';
+$string['tool_ws_execute_params'] = 'JSON-encoded parameters for the web service function. MUST include every * (required) field. IMPORTANT: If the first attempt fails with "Invalid parameter value detected" or "Missing required key", the instance requires fields that the schema marks as optional. In that case, RETRY by adding default values for missing optional fields (e.g. description="", enrolmentkey="", idnumber="", visibility=0, participation=true).';
 
 // ── Agent tools ───────────────────────────────────────────────────────────────
 $string['tool_create_agent_desc'] = 'Create a scheduled AI agent. The agent will execute the given prompt on a recurring schedule, cache results, and send notifications via Telegram (if linked). Only available to admins and managers. Use this when a user wants to automate recurring AI tasks like daily summaries, monitoring, or periodic reports. Returns the new agent ID.';

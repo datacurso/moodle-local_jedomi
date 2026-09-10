@@ -497,8 +497,6 @@ $string['ws_execute_error']        = 'Error al ejecutar el servicio web: {$a}';
 $string['ws_no_services']          = 'No hay servicios web configurados para este rol.';
 $string['ws_pagination']           = 'Página {$a->page} de {$a->pages} ({$a->total} servicios)';
 $string['ws_none_found']           = 'Ningún servicio web coincide con tus filtros.';
-$string['tool_ws_search_desc']     = 'Buscar funciones de servicios web por intención o palabras clave y devolver las más relevantes con descripciones completas de parámetros y tipos de retorno.';
-$string['tool_ws_describe_desc']   = 'Obtener documentación completa (descripción, parámetros, tipo de retorno) de una función de servicio web específica por su nombre exacto.';
 $string['tool_ws_execute_desc']    = 'Ejecutá un servicio web de Moodle en nombre del usuario actual. Usalo DESPUÉS de ws_search para obtener el nombre exacto de la función y los parámetros. Si el primer intento falla por "campo requerido faltante", reintentá con valores predeterminados para los campos opcionales. Para operaciones batch (misma acción en múltiples items), llamá esta función VARIAS VECES — una por cada item.';
 
 // ── Tool execution errors ────────────────────────────────────────────
@@ -582,6 +580,16 @@ $string['tool_list_agents_desc'] = 'List all configured scheduled AI agents, opt
 $string['tool_list_agents_status'] = 'Optional filter: "enabled" for active agents, "disabled" for inactive. Empty = all.';
 $string['tool_delete_agent_desc'] = 'Delete a scheduled AI agent by ID. Permanent — removes agent and all cached results. Cannot be undone.';
 $string['tool_delete_agent_id'] = 'The numeric ID of the agent to delete. Use list_agents to find the ID.';
+
+// ── Admin CLI tools (non-WS actions) ─────────────────────────────────
+$string['tool_admin_search_desc'] = 'Search for CLI operations available to administrators (e.g. backup, purge caches, run scheduled tasks). Use this to discover what operations exist before describing or executing them.';
+$string['tool_admin_search_query'] = 'Search keywords to find relevant admin operations.';
+$string['tool_admin_search_limit'] = 'Maximum number of results to return (default: 8, max: 20).';
+$string['tool_admin_describe_desc'] = 'Get full documentation (parameters, types, required fields) for a specific admin CLI operation by name. Use this AFTER admin_search and BEFORE admin_execute to verify required parameters.';
+$string['tool_admin_describe_name'] = 'Operation name (e.g. backup, scheduled_task, purge_caches).';
+$string['tool_admin_execute_desc'] = 'Execute an admin CLI operation to create or modify Moodle data. Requires admin or manager role. USE WITH CAUTION — these operations modify the database. COMBINE with WS tools: first use ws_search/ws_execute to discover courses, sections, users, or verify data, then call admin_execute with the gathered info. Example flow: ws_execute(core_course_get_courses_by_field) to find course → admin_execute(create_mod, ...) to create an activity.';
+$string['tool_admin_execute_name'] = 'Operation name (e.g. backup, scheduled_task, purge_caches).';
+$string['tool_admin_execute_params'] = 'JSON object of parameters for the operation (use admin_describe first to see required fields).';
 
 // ── External WS errors ───────────────────────────────────────────────
 $string['ws_function_not_found'] = 'Función no encontrada: {$a}';
