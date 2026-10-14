@@ -1,5 +1,19 @@
 # Changes
 
+## 1.3.0 (2026-10-14)
+
+- Add optional Datacurso AI backend: new `ai_backend` setting (gateway | datacurso) and `datacurso_model` setting; the gateway remains the default and is used whenever the provider is missing or has no license key
+- Add `local_jedomi\ai` client layer (`client`, `gateway_backend`, `datacurso_backend`, `sse_parser`, `curl_transport`) replacing 7 duplicated cURL blocks across the chat proxy, agent runner, agent preview, Telegram webhook and CLI
+- Stop exposing the gateway URL and API key in the sidebar config when the Datacurso backend is active; the license key is never sent to the browser
+- Hide gateway-only sidebar features (voice input, file extraction, action confirmation, direct messages, feedback) when the Datacurso backend is active
+- Honour the `max_tokens` setting in web chat, Telegram and CLI (previously hardcoded to 16384)
+- Remove the `192.168.1.28:8080` development gateway fallback and the hardcoded default model in the CLI
+- Surface `data: {"error"}` SSE chunks as errors instead of silently ignoring them
+- Send `userid` to the Datacurso service as a string so the token-manager licence check accepts it
+- Preserve vendor keys on streamed tool_calls (e.g. Gemini `extra_content.thought_signature`) and echo them back in the agent preview so Gemini tool loops work
+- Fix parallel tool_calls streamed without `index` (Gemini OpenAI-compatible endpoint) being merged into a single call by `sse_parser`; entries are now keyed by `id` when `index` is absent, so every parallel call keeps its own id and arguments
+- Bump plugin version to 2026101400
+
 ## 1.2.3 (2026-05-25)
 
 - Add `duration_ms` and `row_count` to search_tables, describe_table, ws_search, ws_describe tools
