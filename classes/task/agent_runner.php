@@ -40,6 +40,8 @@ defined('MOODLE_INTERNAL') || die();
 
 require_once(__DIR__ . '/../../lib.php');
 
+use local_jedomi\ai\client;
+
 /**
  * Scheduled task that executes due AI agents through the gateway with tool calling and result caching.
  */
@@ -425,47 +427,23 @@ class agent_runner extends \core\task\scheduled_task {
                                 ],
                             ];
 
-                            $gatewayurl = rtrim(get_config('local_jedomi', 'gateway_url'), '/');
-                            $apikey = get_config('local_jedomi', 'api_key') ?: 'jedomi-local-key';
-                            $model = get_config('local_jedomi', 'model') ?: 'jedomi-e4b';
-                            $maxtokens = (int) get_config('local_jedomi', 'max_tokens');
-                            if ($maxtokens < 256) {
-                                $maxtokens = 16384;
-                            }
-                            if (empty($gatewayurl)) {
-                                $gatewayurl = 'http://localhost:8765';
-                            }
+                            $backend = client::create();
+                            $model = client::get_model();
+                            $maxtokens = client::get_max_tokens();
 
                             $replaystart = microtime(true);
-                            $ch = curl_init($gatewayurl . '/v1/chat/completions');
-                            curl_setopt_array($ch, [
-                                CURLOPT_POST           => true,
-                                CURLOPT_POSTFIELDS     => json_encode([
-                                    'model' => $model,
-                                    'messages' => $replaymessages,
-                                    'stream' => false,
-                                    'max_tokens' => $maxtokens,
-                                ], JSON_UNESCAPED_UNICODE),
-                                CURLOPT_RETURNTRANSFER => true,
-                                CURLOPT_TIMEOUT        => 120,
-                                CURLOPT_HTTPHEADER     => [
-                                    'Content-Type: application/json',
-                                    'Authorization: Bearer ' . $apikey,
-                                ],
+                            $r = $backend->complete($model, $replaymessages, [], [
+                                'max_tokens' => $maxtokens,
+                                'timeout' => 120,
                             ]);
-                            $replayresponse = curl_exec($ch);
-                            $replayhttp = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-                            $replayerrno = curl_errno($ch);
-                            $replayerror = curl_error($ch);
                             $replayduration = microtime(true) - $replaystart;
-                            curl_close($ch);
 
-                            if ($replayerrno !== 0) {
+                            if ($r['type'] === 'error' && ($r['curl_errno'] ?? 0) !== 0) {
+                                $replayerror = $r['curl_error'] ?? '';
                                 mtrace("[AGENT] {$agentlabel} — replay answer curl error ({$replayerror})");
                                 \local_jedomi_log("[AGENT] {$agentlabel} — replay answer curl error ({$replayerror})");
-                            } else if ($replayhttp === 200) {
-                                $replayresult = json_decode($replayresponse, true);
-                                $replaycontent = $replayresult['choices'][0]['message']['content'] ?? '';
+                            } else if ($r['type'] === 'text') {
+                                $replaycontent = $r['content'] ?? '';
                                 if (!empty(trim($replaycontent))) {
                                     $finalcontent = $replaycontent;
                                     $logline = "[AGENT] {$agentlabel} — replay answer generated"
@@ -505,25 +483,10 @@ class agent_runner extends \core\task\scheduled_task {
                         ['role' => 'user', 'content' => $agent->prompt],
                     ];
 
-                    // ... ── Gateway config ───────────────────────────────────────
-                    $gatewayurl = rtrim(get_config('local_jedomi', 'gateway_url'), '/');
-                    $apikey = get_config('local_jedomi', 'api_key');
-                    $model = get_config('local_jedomi', 'model');
-
-                    if (empty($gatewayurl)) {
-                        $gatewayurl = 'http://localhost:8765';
-                    }
-                    if (empty($apikey)) {
-                        $apikey = 'jedomi-local-key';
-                    }
-                    if (empty($model)) {
-                        $model = 'jedomi-e4b';
-                    }
-
-                    $maxtokens = (int) get_config('local_jedomi', 'max_tokens');
-                    if ($maxtokens < 256) {
-                        $maxtokens = 16384; // Default: 16k tokens.
-                    }
+                    // ... ── AI backend config ────────────────────────────────────
+                    $backend = client::create();
+                    $model = client::get_model();
+                    $maxtokens = client::get_max_tokens();
 
                     // ... ── Multi-turn gateway loop ──────────────────────────────
                     $finalcontent = '';
@@ -535,44 +498,22 @@ class agent_runner extends \core\task\scheduled_task {
                     for ($round = 1; $round <= self::MAX_TOOL_ITERATIONS; $round++) {
                         $totalrounds = $round;
 
-                        $payload = [
-                            'model' => $model,
-                            'messages' => $messages,
-                            'stream' => false,
-                            'max_tokens' => $maxtokens,
-                        ];
-                        if (!empty($tools)) {
-                            $payload['tools'] = $tools;
-                            $payload['tool_choice'] = 'auto';
-                        }
-
                         // ... ── Gateway call ─────────────────────────────────────
                         $gatewaystart = microtime(true);
                         mtrace("[AGENT] {$agentlabel} — round {$round} gateway call");
                         \local_jedomi_log("[AGENT] {$agentlabel} — round {$round} gateway call");
 
-                        $ch = curl_init($gatewayurl . '/v1/chat/completions');
-                        curl_setopt_array($ch, [
-                            CURLOPT_POST           => true,
-                            CURLOPT_POSTFIELDS     => json_encode($payload, JSON_UNESCAPED_UNICODE),
-                            CURLOPT_RETURNTRANSFER => true,
-                            CURLOPT_TIMEOUT        => 120,
-                            CURLOPT_HTTPHEADER     => [
-                                'Content-Type: application/json',
-                                'Authorization: Bearer ' . $apikey,
-                            ],
+                        $r = $backend->complete($model, $messages, $tools, [
+                            'max_tokens' => $maxtokens,
+                            'timeout' => 120,
                         ]);
-
-                        $response = curl_exec($ch);
-                        $httpcode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-                        $curlerrno = curl_errno($ch);
-                        $curlerror = curl_error($ch);
                         $roundduration = microtime(true) - $gatewaystart;
                         $totalduration += $roundduration;
-                        curl_close($ch);
 
-                        if ($curlerrno !== 0 || $httpcode !== 200) {
-                            $errmsg = $curlerror ?: "HTTP {$httpcode}";
+                        if ($r['type'] === 'error') {
+                            $curlerrno = (int) ($r['curl_errno'] ?? 0);
+                            $httpcode = (int) ($r['http_code'] ?? 0);
+                            $errmsg = ($r['curl_error'] ?? '') ?: ($r['message'] ?? '') ?: "HTTP {$httpcode}";
                             $durationfmt = number_format($roundduration, 2);
                             mtrace("[AGENT] {$agentlabel} — round {$round} FAILED ({$errmsg}, {$durationfmt}s)");
                             \local_jedomi_log("[AGENT] {$agentlabel} — round {$round} FAILED ({$errmsg}, {$durationfmt}s)");
@@ -586,20 +527,15 @@ class agent_runner extends \core\task\scheduled_task {
                             break;
                         }
 
-                        $result = json_decode($response, true);
-                        if (json_last_error() !== JSON_ERROR_NONE) {
-                            $durationfmt = number_format($roundduration, 2);
-                            mtrace("[AGENT] {$agentlabel} — round {$round} invalid JSON");
-                            \local_jedomi_log("[AGENT] {$agentlabel} — round {$round} invalid JSON");
-                            if ($round === 1) {
-                                throw new \RuntimeException('Invalid JSON response from gateway');
-                            }
-                            break;
+                        if ($r['type'] === 'notice') {
+                            // User-facing condition (budget, license...) — the agent cannot proceed.
+                            mtrace("[AGENT] {$agentlabel} — round {$round} NOTICE ({$r['message']})");
+                            \local_jedomi_log("[AGENT] {$agentlabel} — round {$round} NOTICE ({$r['message']})");
+                            throw new \RuntimeException($r['message']);
                         }
 
-                        $message = $result['choices'][0]['message'] ?? [];
-                        $nativetoolcalls = $message['tool_calls'] ?? [];
-                        $content = $message['content'] ?? '';
+                        $nativetoolcalls = $r['tool_calls'] ?? [];
+                        $content = $r['content'] ?? '';
 
                         // ... ── Parse text-based tool calls (only if tools are available) ──
                         $texttoolcalls = [];
@@ -611,7 +547,7 @@ class agent_runner extends \core\task\scheduled_task {
                         if (empty($alltoolcalls)) {
                             $finalcontent = $content;
                             $durationfmt = number_format($roundduration, 2);
-                            $bytes = strlen($response);
+                            $bytes = strlen($content);
                             $logline = "[AGENT] {$agentlabel} — round {$round} final response"
                                 . " ({$durationfmt}s, {$bytes}B)";
                             mtrace($logline);

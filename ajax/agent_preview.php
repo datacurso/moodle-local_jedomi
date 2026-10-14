@@ -33,6 +33,7 @@ require_capability('local/jedomi:manageagents', context_system::instance());
 require_sesskey();
 
 use local_jedomi\agent\tool_executor;
+use local_jedomi\ai\client;
 
 global $DB;
 
@@ -49,25 +50,10 @@ if (trim($prompt) === '') {
     exit;
 }
 
-// ... ── Gateway config ───────────────────────────────────────────────────────
-$gatewayurl = rtrim(get_config('local_jedomi', 'gateway_url'), '/');
-$apikey    = get_config('local_jedomi', 'api_key');
-$model      = get_config('local_jedomi', 'model');
-
-if (empty($gatewayurl)) {
-    $gatewayurl = 'http://localhost:8765';
-}
-if (empty($apikey)) {
-    $apikey     = 'jedomi-local-key';
-}
-if (empty($model)) {
-    $model       = 'jedomi-e4b';
-}
-
-$maxtokens = (int) get_config('local_jedomi', 'max_tokens');
-if ($maxtokens < 256) {
-    $maxtokens = 16384;
-}
+// ... ── AI backend config ────────────────────────────────────────────────────
+$backend = client::create();
+$model = client::get_model();
+$maxtokens = client::get_max_tokens();
 
 // ... ── Build messages (same rich context as web chat) ─────────────────────
 require_once(__DIR__ . '/../lib.php');
@@ -139,29 +125,13 @@ if ($cached && !empty($cached->result_json)) {
                     ['role' => 'user', 'content' => "Previous answer:\n{$cachedanswer}\n\n{$freshctx}"],
                 ];
 
-                $ch = curl_init($gatewayurl . '/v1/chat/completions');
-                curl_setopt_array($ch, [
-                    CURLOPT_POST           => true,
-                    CURLOPT_POSTFIELDS     => json_encode([
-                        'model' => $model,
-                        'messages' => $reformmessages,
-                        'stream' => false,
-                        'max_tokens' => $maxtokens,
-                    ], JSON_UNESCAPED_UNICODE),
-                    CURLOPT_RETURNTRANSFER => true,
-                    CURLOPT_TIMEOUT        => 120,
-                    CURLOPT_HTTPHEADER     => [
-                        'Content-Type: application/json',
-                        'Authorization: Bearer ' . $apikey,
-                    ],
+                $r = $backend->complete($model, $reformmessages, [], [
+                    'max_tokens' => $maxtokens,
+                    'timeout' => 120,
                 ]);
-                $reformresponse = curl_exec($ch);
-                $reformhttp = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-                curl_close($ch);
 
-                if ($reformhttp === 200) {
-                    $reformresult = json_decode($reformresponse, true);
-                    $reformanswer = $reformresult['choices'][0]['message']['content'] ?? '';
+                if ($r['type'] === 'text') {
+                    $reformanswer = $r['content'] ?? '';
                     if (!empty(trim($reformanswer))) {
                         echo json_encode([
                             'ok' => true,
@@ -206,49 +176,24 @@ $toolcallcounts = [];
 $loopbroken = false;
 
 for ($round = 1; $round <= $maxrounds; $round++) {
-    $payload = [
-        'model' => $model,
-        'messages' => $messages,
-        'stream' => false,
-        'max_tokens' => $maxtokens,
-    ];
-    if (!empty($tools)) {
-        $payload['tools'] = $tools;
-    }
-
     // ... ── Gateway call ─────────────────────────────────────────────────────
-    $ch = curl_init($gatewayurl . '/v1/chat/completions');
-    curl_setopt_array($ch, [
-        CURLOPT_POST           => true,
-        CURLOPT_POSTFIELDS     => json_encode($payload, JSON_UNESCAPED_UNICODE),
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT        => 120,
-        CURLOPT_HTTPHEADER     => [
-            'Content-Type: application/json',
-            'Authorization: Bearer ' . $apikey,
-        ],
+    $r = $backend->complete($model, $messages, $tools, [
+        'max_tokens' => $maxtokens,
+        'timeout' => 120,
     ]);
-    $response = curl_exec($ch);
-    $httpcode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $curlerrno = curl_errno($ch);
-    $curlerror = curl_error($ch);
-    curl_close($ch);
 
-    if ($curlerrno !== 0 || $httpcode !== 200) {
-        $err = $curlerror ?: "HTTP {$httpcode}";
+    if ($r['type'] === 'error') {
+        $err = ($r['curl_error'] ?? '') ?: ($r['message'] ?? '') ?: 'HTTP ' . (int) ($r['http_code'] ?? 0);
         echo json_encode(['ok' => false, 'error' => "Gateway error: {$err}"]);
         exit;
     }
-
-    $result = json_decode($response, true);
-    if (json_last_error() !== JSON_ERROR_NONE) {
-        echo json_encode(['ok' => false, 'error' => 'Invalid JSON from gateway']);
+    if ($r['type'] === 'notice') {
+        echo json_encode(['ok' => false, 'error' => $r['message']], JSON_UNESCAPED_UNICODE);
         exit;
     }
 
-    $message = $result['choices'][0]['message'] ?? [];
-    $nativetoolcalls = $message['tool_calls'] ?? [];
-    $content = $message['content'] ?? '';
+    $nativetoolcalls = $r['tool_calls'] ?? [];
+    $content = $r['content'] ?? '';
 
     // ... ── Parse text-based TOOL_CALL ──────────────────────────────────────
     $texttoolcalls = [];
@@ -262,10 +207,16 @@ for ($round = 1; $round <= $maxrounds; $round++) {
         break;
     }
 
-    $messages[] = [
-        'role' => 'assistant',
-        'content' => $content ?: '[Tool call requested]',
-    ];
+    // Native tool_calls are echoed back verbatim (including vendor keys such as Gemini's
+    // extra_content) so the next turn is a valid tool loop; text-parsed calls keep the content.
+    $assistantmsg = ['role' => 'assistant'];
+    if (!empty($nativetoolcalls)) {
+        $assistantmsg['content'] = $content ?: null;
+        $assistantmsg['tool_calls'] = $nativetoolcalls;
+    } else {
+        $assistantmsg['content'] = $content ?: '[Tool call requested]';
+    }
+    $messages[] = $assistantmsg;
 
     foreach ($alltoolcalls as $tc) {
         $funcname = $tc['function']['name'] ?? '?';

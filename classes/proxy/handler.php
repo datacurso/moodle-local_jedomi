@@ -32,6 +32,8 @@ defined('MOODLE_INTERNAL') || die();
 
 require_once(__DIR__ . '/../../lib.php');
 
+use local_jedomi\ai\client;
+
 /**
  * AI chat proxy handler: runs the tool-calling loop, dispatches tool executions and streams SSE.
  */
@@ -70,6 +72,13 @@ class handler {
                     ob_flush();
                 }
                 flush();
+                return;
+            }
+
+            if ($response['type'] === 'notice') {
+                // User-facing condition (budget, license...): show it as the assistant answer.
+                \local_jedomi_log('AI_RESPONSE_NOTICE', ['iteration' => $i, 'preview' => mb_substr($response['message'], 0, 200)]);
+                self::stream_sse_content($response['message']);
                 return;
             }
 
@@ -225,165 +234,16 @@ class handler {
     }
 
     /**
-     * Call the AI API with streaming (buffered) using native OpenAI function calling.
+     * Run one completion round through the configured AI backend.
      *
      * @param  string $model    Model name.
      * @param  array  $messages Conversation messages.
-     * @param  array  $spt      SPT payload.
+     * @param  array  $spt      SPT payload (kept for signature stability; not sent to the backend).
      * @param  array  $tools    OpenAI-format tool definitions.
-     * @return array            ['type'=>'text', 'content'=>'...']
-     *                          ['type'=>'tool_calls', 'tool_calls'=>[...]]
-     *                          ['type'=>'error', 'error'=>'...']
+     * @return array            Normalised result, see \local_jedomi\ai\backend.
      */
     private static function call_ai_api_buffer(string $model, array $messages, array $spt, array $tools = []): array {
-        $apiurl = rtrim(get_config('local_jedomi', 'gateway_url') ?: 'http://192.168.1.28:8080', '/');
-        $apikey = get_config('local_jedomi', 'api_key') ?: 'jedomi-local-key';
-
-        $payload = [
-            'model'      => $model,
-            'messages'   => $messages,
-            'stream'     => true,
-            'max_tokens' => 16384,
-        ];
-        if (!empty($tools)) {
-            $payload['tools']       = $tools;
-            $payload['tool_choice'] = 'auto';
-        }
-
-        // Log conversation context sent to AI (last 5 messages, truncated).
-        $contextpreview = array_map(static fn(array $msg): array => [
-            'role' => $msg['role'] ?? '?',
-            'content_preview' => isset($msg['content']) && is_string($msg['content'])
-                ? mb_substr($msg['content'], 0, 150)
-                : (isset($msg['tool_calls']) ? 'tool_calls:' . count($msg['tool_calls']) : ''),
-            'tool_call_id' => $msg['tool_call_id'] ?? null,
-        ], array_slice($messages, -5));
-        \local_jedomi_log('AI_API_REQUEST', [
-            'model' => $model,
-            'messages_count' => count($messages),
-            'last_messages' => $contextpreview,
-        ]);
-
-        $buffer = '';
-        $ch = curl_init($apiurl . '/v1/chat/completions');
-        curl_setopt_array($ch, [
-            CURLOPT_POST           => true,
-            CURLOPT_POSTFIELDS     => json_encode($payload, JSON_UNESCAPED_UNICODE),
-            CURLOPT_HTTPHEADER     => [
-                'Content-Type: application/json',
-                'Authorization: Bearer ' . $apikey,
-            ],
-            CURLOPT_RETURNTRANSFER => false,
-            CURLOPT_TIMEOUT        => 180,
-            CURLOPT_CONNECTTIMEOUT => 10,
-            CURLOPT_WRITEFUNCTION  => function ($ch, $data) use (&$buffer) {
-                $buffer .= $data;
-                return strlen($data);
-            },
-        ]);
-
-        curl_exec($ch);
-        $httpcode  = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $curlerror = curl_error($ch);
-        curl_close($ch);
-
-        if ($httpcode !== 200 || empty($buffer)) {
-            $bufpreview = substr($buffer, 0, 500);
-            \local_jedomi_log('AI_API_ERROR', ['http_code' => $httpcode, 'curl_error' => $curlerror, 'preview' => $bufpreview]);
-            \local_jedomi_log("[local_jedomi] AI API error: http=$httpcode curl='$curlerror' preview="
-                . json_encode($bufpreview, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_IGNORE));
-            return ['type' => 'error', 'error' => 'ai_api_error'];
-        }
-
-        $textbuf = '';
-        $reasonbuf = '';
-        $toolcallsacc = [];
-        $finishreason = '';
-
-        $lines = explode("\n", $buffer);
-        foreach ($lines as $line) {
-            $line = trim($line);
-            if (!str_starts_with($line, 'data: ')) {
-                continue;
-            }
-            $raw = trim(substr($line, 6));
-            if ($raw === '[DONE]') {
-                break;
-            }
-            $json = json_decode($raw, true);
-            if (!$json) {
-                continue;
-            }
-
-            $delta = $json['choices'][0]['delta'] ?? [];
-            $finishreason = $json['choices'][0]['finish_reason'] ?? $finishreason;
-
-            // Accumulate text content.
-            if (isset($delta['content']) && $delta['content'] !== null) {
-                $textbuf .= $delta['content'];
-            }
-            // Gemma reasoning_content (thinking tokens — fallback only).
-            if (isset($delta['reasoning_content']) && $delta['reasoning_content'] !== null) {
-                $reasonbuf .= $delta['reasoning_content'];
-            }
-            // Accumulate tool_calls streamed across multiple delta chunks.
-            if (!empty($delta['tool_calls'])) {
-                foreach ($delta['tool_calls'] as $tc) {
-                    $idx = $tc['index'] ?? 0;
-                    if (!isset($toolcallsacc[$idx])) {
-                        $toolcallsacc[$idx] = [
-                            'id'       => $tc['id'] ?? '',
-                            'type'     => $tc['type'] ?? 'function',
-                            'function' => ['name' => '', 'arguments' => ''],
-                        ];
-                    }
-                    if (!empty($tc['id'])) {
-                        $toolcallsacc[$idx]['id'] = $tc['id'];
-                    }
-                    if (!empty($tc['function']['name'])) {
-                        $toolcallsacc[$idx]['function']['name'] = $tc['function']['name'];
-                    }
-                    if (isset($tc['function']['arguments'])) {
-                        $arg = $tc['function']['arguments'];
-                        // Some Ollama versions send arguments as a pre-decoded object.
-                        if (is_array($arg)) {
-                            $toolcallsacc[$idx]['function']['arguments'] = json_encode($arg, JSON_UNESCAPED_UNICODE);
-                        } else {
-                            $toolcallsacc[$idx]['function']['arguments'] .= $arg;
-                        }
-                    }
-                }
-            }
-        }
-
-        // Tool calls detected — ensure every entry has a non-empty id.
-        if (!empty($toolcallsacc) || $finishreason === 'tool_calls') {
-            ksort($toolcallsacc);
-            $toolcalls = array_values($toolcallsacc);
-            foreach ($toolcalls as &$tc) {
-                if (empty($tc['id'])) {
-                    $tc['id'] = 'call_' . substr(md5($tc['function']['name'] . microtime()), 0, 12);
-                }
-            }
-            unset($tc);
-
-            $toolnames = array_map(static fn($tc) => $tc['function']['name'], $toolcalls);
-            \local_jedomi_log('AI_API_RESPONSE_TOOL_CALLS', ['function_count' => count($toolcalls), 'functions' => $toolnames]);
-
-            return ['type' => 'tool_calls', 'tool_calls' => $toolcalls];
-        }
-
-        // Text response: prefer content, fall back to reasoning (Gemma thinking tokens).
-        $text = !empty($textbuf) ? $textbuf : $reasonbuf;
-        if (empty($text) && !empty($buffer)) {
-            \local_jedomi_log('AI_API_RESPONSE_EMPTY', ['buffer_preview' => substr($buffer, 0, 500)]);
-            \local_jedomi_log("[local_jedomi] SSE parse warning: no content or tool_calls extracted. First 2KB: "
-                . json_encode(substr($buffer, 0, 2048), JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_IGNORE));
-        }
-
-        \local_jedomi_log('AI_API_RESPONSE_TEXT', ['length' => mb_strlen($text), 'preview' => mb_substr($text, 0, 200)]);
-
-        return ['type' => 'text', 'content' => $text];
+        return client::create()->complete($model, $messages, $tools, client::default_options());
     }
 
     /**

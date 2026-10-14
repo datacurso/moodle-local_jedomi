@@ -30,6 +30,8 @@ defined('MOODLE_INTERNAL') || die();
 
 require_once(__DIR__ . '/../../lib.php');
 
+use local_jedomi\ai\backend;
+use local_jedomi\ai\client;
 use local_jedomi\schema\table_indexer;
 use local_jedomi\schema\ws_indexer;
 
@@ -606,20 +608,9 @@ class webhook_handler {
             $spt = self::generate_spt_for_user($userid, $role, $userctx['course_ids_owned'], $userctx['course_ids_enrolled']);
             $tools = $spt['tools'] ?? [];
 
-            // Gateway config (from plugin settings, with safe fallbacks).
-            $gatewayurl = rtrim(get_config('local_jedomi', 'gateway_url'), '/');
-            $apikey = get_config('local_jedomi', 'api_key');
-            $model = get_config('local_jedomi', 'model');
+            // AI backend config (from plugin settings, with safe fallbacks).
+            $model = client::get_model();
             $timeout = (int) get_config('local_jedomi', 'telegram_gateway_timeout');
-            if (empty($gatewayurl)) {
-                $gatewayurl = 'http://localhost:8765';
-            }
-            if (empty($apikey)) {
-                $apikey = 'jedomi-local-key';
-            }
-            if (empty($model)) {
-                $model = 'jedomi-e4b';
-            }
             if ($timeout < 5) {
                 $timeout = 120;
             }
@@ -708,19 +699,8 @@ class webhook_handler {
                 $tools = $spt['tools'] ?? [];
             }
 
-            $gatewayurl = rtrim(get_config('local_jedomi', 'gateway_url'), '/');
-            $apikey = get_config('local_jedomi', 'api_key');
-            $model = get_config('local_jedomi', 'model');
+            $model = client::get_model();
             $timeout = (int) get_config('local_jedomi', 'telegram_gateway_timeout');
-            if (empty($gatewayurl)) {
-                $gatewayurl = 'http://localhost:8765';
-            }
-            if (empty($apikey)) {
-                $apikey = 'jedomi-local-key';
-            }
-            if (empty($model)) {
-                $model = 'jedomi-e4b';
-            }
             if ($timeout < 5) {
                 $timeout = 120;
             }
@@ -833,102 +813,71 @@ class webhook_handler {
                 (new api_client())->send_chat_action($chatid, 'typing');
             }
 
-            $payload = [
-                'model'       => $model,
-                'temperature' => 0.2,
-                'max_tokens'  => 16384,
-                'stream'      => false,
-                'messages'    => $messages,
-                'spt'         => $spt,
-            ];
-            if (!empty($tools)) {
-                $payload['tools']       = $tools;
-                $payload['tool_choice'] = 'auto';
-            }
-
-            // ... ── Stream from Gateway (same as web version) ──
-            $payload['stream'] = true;
-            $ssebuffer = '';
-            $httpcode = 0;
-            $curlerrno = 0;
-            $curlerror = '';
-
             // Adaptive Gateway timeout: shrink as we approach the hard guard
             // so we don't get stuck waiting when FPM is about to kill us.
             $curltimeout = max(5, min($timeout, $hardguard - (time() - $loopstart) - 5));
 
-            $ch = curl_init($gatewayurl . '/v1/chat/completions');
-            curl_setopt_array($ch, [
-                CURLOPT_POST           => true,
-                CURLOPT_POSTFIELDS     => json_encode($payload, JSON_UNESCAPED_UNICODE),
-                CURLOPT_RETURNTRANSFER => false,
-                CURLOPT_TIMEOUT        => $curltimeout,
-                CURLOPT_HTTPHEADER     => [
-                    'Content-Type: application/json',
-                    'Authorization: Bearer ' . $apikey,
-                ],
-                CURLOPT_WRITEFUNCTION  => function ($ch, $data) use (&$ssebuffer) {
-                    $ssebuffer .= $data;
-                    return strlen($data);
-                },
-            ]);
-
             \local_jedomi_log(sprintf(
-                '[GATELOOP] calling_gateway chat=%s iter=%d elapsed=%ds curl_timeout=%ds payload_bytes=%d msg_count=%d',
+                '[GATELOOP] calling_gateway chat=%s iter=%d elapsed=%ds curl_timeout=%ds msg_count=%d',
                 $chatid,
                 $iteration,
                 time() - $loopstart,
                 $curltimeout,
-                strlen(json_encode($payload, JSON_UNESCAPED_UNICODE)),
                 count($messages)
             ));
 
-            curl_exec($ch);
-            $httpcode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            $curlerrno = curl_errno($ch);
-            $curlerror = curl_error($ch);
-            curl_close($ch);
+            // ... ── Stream from the AI backend (same normalisation as the web version) ──
+            $result = client::create()->complete($model, $messages, $tools, [
+                'timeout' => $curltimeout,
+                'temperature' => 0.2,
+                'max_tokens' => client::get_max_tokens(),
+                'extra' => ['spt' => $spt],
+            ]);
 
             // ... ── Log Gateway response for debugging ──
             \local_jedomi_log(sprintf(
-                '[GATEWAY] iter=%d http=%d curl_errno=%d curl_err=%s sse_bytes=%d',
+                '[GATEWAY] iter=%d type=%s http=%d curl_errno=%d curl_err=%s',
                 $iteration,
-                $httpcode,
-                $curlerrno,
-                $curlerror ?: 'none',
-                strlen($ssebuffer)
+                $result['type'],
+                (int) ($result['http_code'] ?? 200),
+                (int) ($result['curl_errno'] ?? 0),
+                ($result['curl_error'] ?? '') ?: 'none'
             ));
 
             // ... ── Gateway errors ──
-            if ($curlerrno !== 0) {
-                if ($curlerrno === CURLE_OPERATION_TIMEDOUT) {
-                    \local_jedomi_log('[GATEWAY] Timeout on iter ' . $iteration . ', self-pinging');
-                    // Gateway timed out but there may be more time left for
-                    // FPM. Self-ping to continue with remaining iterations.
-                    $state['iteration'] = $iteration + 1;
-                    $state['messages'] = $messages;
-                    $state['is_locked'] = true;
-                    $state['locked_at'] = time();
-                    session::set_context($statekey, $state);
-                    self::self_ping($chatid);
-                } else {
-                    \local_jedomi_log('[GATEWAY] cURL error on iter ' . $iteration . ': ' . $curlerror);
-                    self::release_lock($statekey, $chatid, get_string('error_telegram_e004', 'local_jedomi'));
-                }
+            $failure = self::classify_backend_failure($result);
+            if ($failure === 'timeout') {
+                \local_jedomi_log('[GATEWAY] Timeout on iter ' . $iteration . ', self-pinging');
+                // Gateway timed out but there may be more time left for
+                // FPM. Self-ping to continue with remaining iterations.
+                $state['iteration'] = $iteration + 1;
+                $state['messages'] = $messages;
+                $state['is_locked'] = true;
+                $state['locked_at'] = time();
+                session::set_context($statekey, $state);
+                self::self_ping($chatid);
                 return;
             }
-            if ($httpcode !== 200) {
-                \local_jedomi_log('[GATEWAY] HTTP ' . $httpcode . ' on iter ' . $iteration
-                    . ', body: ' . substr($ssebuffer, 0, 200));
+            if ($failure === 'e004') {
+                \local_jedomi_log('[GATEWAY] cURL error on iter ' . $iteration . ': ' . ($result['curl_error'] ?? ''));
+                self::release_lock($statekey, $chatid, get_string('error_telegram_e004', 'local_jedomi'));
+                return;
+            }
+            if ($failure === 'e005') {
+                \local_jedomi_log('[GATEWAY] HTTP ' . (int) ($result['http_code'] ?? 0) . ' on iter ' . $iteration
+                    . ', body: ' . substr((string) ($result['preview'] ?? ''), 0, 200));
                 self::release_lock($statekey, $chatid, get_string('error_telegram_e005', 'local_jedomi'));
                 return;
             }
-
-            // ... ── Parse SSE buffer (same parser as web version) ──
-            $result = self::parse_sse_buffer($ssebuffer);
-            if ($result === null) {
-                \local_jedomi_log('[GATEWAY] SSE parse failed on iter ' . $iteration . ', buffer: ' . substr($ssebuffer, 0, 200));
+            if ($failure === 'e006') {
+                \local_jedomi_log('[GATEWAY] SSE parse failed on iter ' . $iteration
+                    . ', preview: ' . substr((string) ($result['preview'] ?? ($result['message'] ?? '')), 0, 200));
                 self::release_lock($statekey, $chatid, get_string('error_telegram_e006', 'local_jedomi'));
+                return;
+            }
+            if ($failure === 'notice') {
+                \local_jedomi_log('[GATEWAY] notice on iter ' . $iteration . ': ' . $result['message']);
+                self::release_lock($statekey, $chatid, $result['message']);
                 return;
             }
 
@@ -1429,98 +1378,40 @@ class webhook_handler {
 
 
     /**
-     * Parse SSE streamed buffer from the Gateway AI API.
+     * Map a normalised backend result to the Telegram failure it represents.
      *
-     * Same parser as the web version (handler.php::call_ai_api_buffer).
-     * Extracts text content, finish_reason, and tool_calls from SSE chunks.
+     * Preserves the historical error semantics of the cURL/SSE code path:
+     * - cURL timeout                → 'timeout' (self-ping and continue later)
+     * - any other cURL error        → 'e004'
+     * - HTTP status other than 200  → 'e005'
+     * - 200 but no usable content   → 'e006' (malformed stream or empty text)
+     * - user-facing notice          → 'notice' (message is shown as-is)
      *
-     * @param  string $buffer Raw SSE buffer from the Gateway.
-     * @return array|null     ['type'=>'text', 'content'=>'...']
-     *                        ['type'=>'tool_calls', 'tool_calls'=>[...]]
-     *                        null on parse failure.
+     * @param  array $result Result of backend::complete().
+     * @return string|null   One of the kinds above, or null when the result is usable.
      */
-    private static function parse_sse_buffer(string $buffer): ?array {
-        $textbuf = '';
-        $reasonbuf = '';
-        $toolcallsacc = [];
-        $finishreason = '';
-
-        $lines = explode("\n", $buffer);
-        foreach ($lines as $line) {
-            $line = trim($line);
-            if (!str_starts_with($line, 'data: ')) {
-                continue;
+    private static function classify_backend_failure(array $result): ?string {
+        $type = $result['type'] ?? '';
+        if ($type === backend::TYPE_ERROR) {
+            $curlerrno = (int) ($result['curl_errno'] ?? 0);
+            if ($curlerrno === CURLE_OPERATION_TIMEDOUT) {
+                return 'timeout';
             }
-            $raw = trim(substr($line, 6));
-            if ($raw === '[DONE]') {
-                break;
+            if ($curlerrno !== 0) {
+                return 'e004';
             }
-            $json = json_decode($raw, true);
-            if (!$json) {
-                continue;
+            if ((int) ($result['http_code'] ?? 0) !== 200) {
+                return 'e005';
             }
-
-            $delta = $json['choices'][0]['delta'] ?? [];
-            $finishreason = $json['choices'][0]['finish_reason'] ?? $finishreason;
-
-            // Accumulate text content.
-            if (isset($delta['content']) && $delta['content'] !== null) {
-                $textbuf .= $delta['content'];
-            }
-            // Gemma reasoning_content (thinking tokens — fallback only).
-            if (isset($delta['reasoning_content']) && $delta['reasoning_content'] !== null) {
-                $reasonbuf .= $delta['reasoning_content'];
-            }
-            // Accumulate tool_calls streamed across multiple delta chunks.
-            if (!empty($delta['tool_calls'])) {
-                foreach ($delta['tool_calls'] as $tc) {
-                    $idx = $tc['index'] ?? 0;
-                    if (!isset($toolcallsacc[$idx])) {
-                        $toolcallsacc[$idx] = [
-                            'id'       => $tc['id'] ?? '',
-                            'type'     => $tc['type'] ?? 'function',
-                            'function' => ['name' => '', 'arguments' => ''],
-                        ];
-                    }
-                    if (!empty($tc['id'])) {
-                        $toolcallsacc[$idx]['id'] = $tc['id'];
-                    }
-                    if (!empty($tc['function']['name'])) {
-                        $toolcallsacc[$idx]['function']['name'] = $tc['function']['name'];
-                    }
-                    if (isset($tc['function']['arguments'])) {
-                        $arg = $tc['function']['arguments'];
-                        if (is_array($arg)) {
-                            $toolcallsacc[$idx]['function']['arguments'] = json_encode($arg, JSON_UNESCAPED_UNICODE);
-                        } else {
-                            $toolcallsacc[$idx]['function']['arguments'] .= $arg;
-                        }
-                    }
-                }
-            }
+            return 'e006';
         }
-
-        // Tool calls detected — ensure every entry has a non-empty id.
-        if (!empty($toolcallsacc) || $finishreason === 'tool_calls') {
-            ksort($toolcallsacc);
-            $toolcalls = array_values($toolcallsacc);
-            foreach ($toolcalls as &$tc) {
-                if (empty($tc['id'])) {
-                    $tc['id'] = 'call_' . substr(md5($tc['function']['name'] . microtime()), 0, 12);
-                }
-            }
-            unset($tc);
-
-            return ['type' => 'tool_calls', 'tool_calls' => $toolcalls];
+        if ($type === backend::TYPE_NOTICE) {
+            return 'notice';
         }
-
-        // Text response: prefer content, fall back to reasoning (Gemma thinking tokens).
-        $text = !empty($textbuf) ? $textbuf : $reasonbuf;
-        if (empty($text)) {
-            return null;
+        if ($type === backend::TYPE_TEXT && trim((string) ($result['content'] ?? '')) === '') {
+            return 'e006';
         }
-
-        return ['type' => 'text', 'content' => $text];
+        return null;
     }
 
     /**

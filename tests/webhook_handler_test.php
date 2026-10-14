@@ -883,6 +883,70 @@ final class webhook_handler_test extends \advanced_testcase {
     }
 
     // ... ========================
+    // Backend result → Telegram failure mapping
+    // ========================
+
+    /**
+     * Data provider for classify_backend_failure.
+     *
+     * @return array
+     */
+    public static function classify_backend_failure_provider(): array {
+        return [
+            'curl timeout self-pings' => [
+                ['type' => 'error', 'error' => 'ai_api_error', 'http_code' => 0,
+                    'curl_errno' => CURLE_OPERATION_TIMEDOUT, 'curl_error' => 'timed out', 'preview' => ''],
+                'timeout',
+            ],
+            'other curl error is E004' => [
+                ['type' => 'error', 'error' => 'ai_api_error', 'http_code' => 0,
+                    'curl_errno' => CURLE_COULDNT_CONNECT, 'curl_error' => 'refused', 'preview' => ''],
+                'e004',
+            ],
+            'non-200 http is E005' => [
+                ['type' => 'error', 'error' => 'ai_api_error', 'http_code' => 502,
+                    'curl_errno' => 0, 'curl_error' => '', 'preview' => 'bad gateway'],
+                'e005',
+            ],
+            'malformed stream with 200 is E006' => [
+                ['type' => 'error', 'error' => 'ai_stream_error', 'http_code' => 200,
+                    'curl_errno' => 0, 'curl_error' => '', 'preview' => '', 'message' => 'upstream'],
+                'e006',
+            ],
+            'empty text is E006' => [
+                ['type' => 'text', 'content' => ''],
+                'e006',
+            ],
+            'notice is surfaced to the user' => [
+                ['type' => 'notice', 'message' => 'Not enough tokens'],
+                'notice',
+            ],
+            'text is usable' => [
+                ['type' => 'text', 'content' => 'Hola'],
+                null,
+            ],
+            'tool calls are usable' => [
+                ['type' => 'tool_calls', 'tool_calls' => [['id' => 'call_1', 'type' => 'function',
+                    'function' => ['name' => 'ws_search', 'arguments' => '{}']]]],
+                null,
+            ],
+        ];
+    }
+
+    /**
+     * Test the mapping of a normalised backend result to the Telegram failure kind.
+     *
+     * @dataProvider classify_backend_failure_provider
+     * @param array $result Normalised backend result.
+     * @param string|null $expected Failure kind, or null when the result is usable.
+     */
+    public function test_classify_backend_failure(array $result, ?string $expected): void {
+        $ref = new \ReflectionMethod(\local_jedomi\telegram\webhook_handler::class, 'classify_backend_failure');
+        $ref->setAccessible(true);
+        $this->assertSame($expected, $ref->invoke(null, $result));
+    }
+
+    // ... ========================
     // Helpers
     // ========================
 
