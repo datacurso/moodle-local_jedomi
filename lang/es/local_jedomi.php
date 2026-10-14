@@ -105,6 +105,28 @@ $string['agent_weekly'] = 'Semanal';
 $string['agent_ws_allowlist'] = 'Lista permitida de WS para agentes';
 $string['agent_ws_allowlist_help'] = 'Lista separada por comas de funciones de webservice de Moodle que los agentes pueden '
     . 'llamar. Dejá vacío para usar el conjunto predeterminado.';
+$string['ai_backend'] = 'Backend de IA';
+$string['ai_backend_datacurso'] = 'Servicios de IA de Datacurso';
+$string['ai_backend_datacurso_desc'] = 'Enruta el chat a través del proveedor Datacurso (clave de licencia, créditos, límites '
+    . 'de uso y reportes de consumo). La voz, la extracción de archivos, la confirmación de acciones, los mensajes directos y '
+    . 'el feedback siguen siendo exclusivos del gateway.';
+$string['ai_backend_datacurso_nolicense'] = 'El proveedor Datacurso está instalado pero no tiene una clave de licencia '
+    . 'configurada. Ingrésela en la <a href="{$a->settingsurl}">configuración del proveedor</a> o revise el '
+    . '<a href="{$a->configurl}">reporte de configuración de Datacurso</a>.';
+$string['ai_backend_datacurso_notinstalled'] = 'El proveedor de IA Datacurso (aiprovider_datacurso) no está instalado. '
+    . 'Instálelo para habilitar este backend.';
+$string['ai_backend_datacurso_oldversion'] = 'El proveedor Datacurso instalado (versión {$a->installed}) es anterior al '
+    . 'servicio de Jedomi (requiere {$a->required} o superior). Las solicitudes pueden ser rechazadas hasta actualizar el '
+    . 'proveedor.';
+$string['ai_backend_datacurso_ready'] = 'Proveedor Datacurso disponible. Administre los límites de uso de Jedomi en el '
+    . '<a href="{$a->configurl}">reporte de configuración de Datacurso</a>.';
+$string['ai_backend_forced_gateway'] = 'El backend Datacurso no está disponible (proveedor ausente o sin clave de licencia). '
+    . 'Se mantuvo el gateway autoalojado como backend activo.';
+$string['ai_backend_gateway'] = 'Gateway autoalojado';
+$string['ai_backend_gateway_desc'] = 'Gateway de Jedomi compatible con OpenAI, configurado con la URL y la API key de abajo. '
+    . 'Admite todas las funciones del sidebar.';
+$string['ai_backend_help'] = 'Seleccione qué servicio responde las solicitudes del chat. Si el proveedor Datacurso no está '
+    . 'instalado o no tiene clave de licencia, Jedomi usa siempre el gateway.';
 $string['ai_disclaimer'] = 'Jedomi es una IA y puede cometer errores.';
 $string['analyze_image'] = 'Analizá esta imagen.';
 $string['anon_basic'] = 'Básico (nombres y emails)';
@@ -192,6 +214,9 @@ $string['ctx_loc_messages'] = 'Actualmente en la sección de mensajes.';
 $string['ctx_loc_profile'] = 'Viendo actualmente un perfil de usuario.';
 $string['ctx_messages'] = 'Mensajes';
 $string['ctx_profile'] = 'Perfil';
+$string['datacurso_model'] = 'Modelo de Datacurso';
+$string['datacurso_model_desc'] = 'Nombre de modelo opcional que se envía al servicio de Datacurso cuando ese backend está '
+    . 'activo. Déjelo vacío para usar el modelo predeterminado del servidor.';
 $string['dblabel_mysql'] = 'MySQL/MariaDB';
 $string['dblabel_pgsql'] = 'PostgreSQL';
 $string['decryption_failed'] = 'Falló la desencriptación. El token puede estar corrompido o el salt del sitio cambió.';
@@ -230,6 +255,8 @@ $string['error_ws_search_failed'] = 'ws_search failed: {$a}';
 $string['error_wsname_required'] = 'wsname is required';
 $string['execute_sql_error'] = 'Error de base de datos al ejecutar la query.';
 $string['export_conversation'] = 'Exportar conversación';
+$string['feature_requires_gateway'] = 'Esta función solo está disponible cuando el gateway autoalojado de Jedomi es el '
+    . 'backend de IA activo.';
 $string['file'] = 'Archivo';
 $string['file_csv'] = 'CSV: {rows} filas, {columns} columnas';
 $string['file_loaded'] = 'cargado';

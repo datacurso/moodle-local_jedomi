@@ -60,10 +60,19 @@ function local_jedomi_get_sidebar_config(): array {
 
     $context = local_jedomi_get_page_context();
 
-    return [
-        'gateway_url'   => get_config('local_jedomi', 'gateway_url') ?: 'http://localhost:8765',
-        'api_key'       => get_config('local_jedomi', 'api_key') ?: 'jedomi-local-key',
-        'model'         => get_config('local_jedomi', 'model') ?: 'jedomi-e4b',
+    // The gateway credentials are only exposed to the browser when the gateway
+    // backend is active. The Datacurso license key never leaves the server.
+    $backend = \local_jedomi\ai\client::backend_key();
+    $connection = ['backend' => $backend];
+    if ($backend === \local_jedomi\ai\client::BACKEND_GATEWAY) {
+        $connection['gateway_url'] = get_config('local_jedomi', 'gateway_url')
+            ?: \local_jedomi\ai\gateway_backend::DEFAULT_URL;
+        $connection['api_key'] = get_config('local_jedomi', 'api_key')
+            ?: \local_jedomi\ai\gateway_backend::DEFAULT_API_KEY;
+    }
+
+    return $connection + [
+        'model'         => \local_jedomi\ai\client::get_model(),
         'chatproxy_url' => $CFG->wwwroot . '/local/jedomi/chatproxy.php',
         'user_name'     => fullname($USER),
         'user_role'     => local_jedomi_get_user_role(),
@@ -147,6 +156,7 @@ function local_jedomi_get_sidebar_config(): array {
             // Errors.
             'gateway_error_title'   => get_string('gateway_error_title', 'local_jedomi'),
             'gateway_error_hint'    => get_string('gateway_error_hint', 'local_jedomi'),
+            'feature_requires_gateway' => get_string('feature_requires_gateway', 'local_jedomi'),
             'listening'             => get_string('listening', 'local_jedomi'),
             'mic_error'             => get_string('mic_error', 'local_jedomi'),
             'silence_detected'      => get_string('silence_detected', 'local_jedomi'),

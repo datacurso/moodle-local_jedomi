@@ -105,6 +105,26 @@ $string['agent_weekly'] = 'Weekly';
 $string['agent_ws_allowlist'] = 'WebService allowlist for agents';
 $string['agent_ws_allowlist_help'] = 'Comma-separated list of Moodle web service function names that agents are allowed to call. '
     . 'Leave empty for the default set.';
+$string['ai_backend'] = 'AI backend';
+$string['ai_backend_datacurso'] = 'Datacurso AI services';
+$string['ai_backend_datacurso_desc'] = 'Route the chat through the Datacurso provider (license key, credits, rate limits and '
+    . 'usage reports). Voice, file extraction, action confirmation, direct messages and feedback remain gateway-only.';
+$string['ai_backend_datacurso_nolicense'] = 'The Datacurso provider is installed but no license key is configured. '
+    . 'Enter it in the <a href="{$a->settingsurl}">provider settings</a> or review the '
+    . '<a href="{$a->configurl}">Datacurso configuration report</a>.';
+$string['ai_backend_datacurso_notinstalled'] = 'The Datacurso AI provider (aiprovider_datacurso) is not installed. '
+    . 'Install it to enable this backend.';
+$string['ai_backend_datacurso_oldversion'] = 'The installed Datacurso provider (version {$a->installed}) predates the Jedomi '
+    . 'service (requires {$a->required} or later). Requests may be rejected until the provider is updated.';
+$string['ai_backend_datacurso_ready'] = 'Datacurso provider available. Manage the Jedomi rate limits in the '
+    . '<a href="{$a->configurl}">Datacurso configuration report</a>.';
+$string['ai_backend_forced_gateway'] = 'The Datacurso backend is not available (provider missing or no license key). '
+    . 'The self-hosted gateway has been kept as the active backend.';
+$string['ai_backend_gateway'] = 'Self-hosted gateway';
+$string['ai_backend_gateway_desc'] = 'OpenAI-compatible Jedomi gateway configured with the URL and API key below. '
+    . 'Supports every sidebar feature.';
+$string['ai_backend_help'] = 'Select which service answers the chat requests. If the Datacurso provider is not installed '
+    . 'or has no license key, Jedomi always uses the gateway.';
 $string['ai_disclaimer'] = 'Jedomi is an AI and can make mistakes.';
 $string['analyze_image'] = 'Analyze this image.';
 $string['anon_basic'] = 'Basic (names and emails)';
@@ -192,6 +212,9 @@ $string['ctx_loc_messages'] = 'Currently in the messages section.';
 $string['ctx_loc_profile'] = 'Currently viewing a user profile.';
 $string['ctx_messages'] = 'Messages';
 $string['ctx_profile'] = 'Profile';
+$string['datacurso_model'] = 'Datacurso model';
+$string['datacurso_model_desc'] = 'Optional model name forwarded to the Datacurso service when the Datacurso backend is '
+    . 'active. Leave empty to use the server default.';
 $string['dblabel_mysql'] = 'MySQL/MariaDB';
 $string['dblabel_pgsql'] = 'PostgreSQL';
 $string['decryption_failed'] = 'Decryption failed. The token may have been corrupted or the site salt changed.';
@@ -230,6 +253,8 @@ $string['error_ws_search_failed'] = 'ws_search failed: {$a}';
 $string['error_wsname_required'] = 'wsname is required';
 $string['execute_sql_error'] = 'Database error executing query.';
 $string['export_conversation'] = 'Export conversation';
+$string['feature_requires_gateway'] = 'This feature is only available when the self-hosted Jedomi gateway is the active '
+    . 'AI backend.';
 $string['file'] = 'File';
 $string['file_csv'] = 'CSV: {rows} rows, {columns} columns';
 $string['file_loaded'] = 'loaded';

@@ -53,6 +53,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && confirm_sesskey()) {
     switch ($savetype) {
         case 'general':
             set_config('enabled', optional_param('enabled', 0, PARAM_INT), 'local_jedomi');
+
+            // AI backend: whitelist the value and refuse Datacurso when the provider cannot serve requests.
+            $backend = optional_param('ai_backend', \local_jedomi\ai\client::BACKEND_GATEWAY, PARAM_ALPHA);
+            $allowedbackends = [\local_jedomi\ai\client::BACKEND_GATEWAY, \local_jedomi\ai\client::BACKEND_DATACURSO];
+            if (!in_array($backend, $allowedbackends, true)) {
+                $backend = \local_jedomi\ai\client::BACKEND_GATEWAY;
+            }
+            $backendforced = false;
+            if (
+                $backend === \local_jedomi\ai\client::BACKEND_DATACURSO
+                && !\local_jedomi\ai\datacurso_backend::is_available()
+            ) {
+                $backend = \local_jedomi\ai\client::BACKEND_GATEWAY;
+                $backendforced = true;
+            }
+            set_config('ai_backend', $backend, 'local_jedomi');
+            set_config('datacurso_model', trim(optional_param('datacurso_model', '', PARAM_TEXT)), 'local_jedomi');
+
             set_config('gateway_url', required_param('gateway_url', PARAM_URL), 'local_jedomi');
             set_config('api_key', required_param('api_key', PARAM_TEXT), 'local_jedomi');
             set_config('model', required_param('model', PARAM_TEXT), 'local_jedomi');
@@ -61,6 +79,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && confirm_sesskey()) {
             set_config('spt_secret', required_param('spt_secret', PARAM_TEXT), 'local_jedomi');
             set_config('collect_training_data', optional_param('collect_training_data', 0, PARAM_INT), 'local_jedomi');
 
+            if ($backendforced) {
+                redirect(
+                    new moodle_url($pageurl, ['tab' => 'general']),
+                    get_string('ai_backend_forced_gateway', 'local_jedomi'),
+                    null,
+                    \core\output\notification::NOTIFY_WARNING
+                );
+            }
             redirect(
                 new moodle_url($pageurl, ['tab' => 'general']),
                 get_string('changessaved'),
@@ -206,9 +232,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && confirm_sesskey()) {
 $cfg = [
     // General.
     'enabled'               => (int)(get_config('local_jedomi', 'enabled') ?? 1),
-    'gateway_url'           => get_config('local_jedomi', 'gateway_url') ?: 'http://localhost:8765',
+    'ai_backend'            => \local_jedomi\ai\client::resolve_backend_key(
+        (string) get_config('local_jedomi', 'ai_backend'),
+        \local_jedomi\ai\datacurso_backend::is_available()
+    ),
+    'datacurso_model'       => get_config('local_jedomi', 'datacurso_model') ?: '',
+    'gateway_url'           => get_config('local_jedomi', 'gateway_url') ?: \local_jedomi\ai\gateway_backend::DEFAULT_URL,
     'api_key'               => get_config('local_jedomi', 'api_key') ?: '',
-    'model'                 => get_config('local_jedomi', 'model') ?: 'jedomi-e4b',
+    'model'                 => get_config('local_jedomi', 'model') ?: \local_jedomi\ai\client::DEFAULT_MODEL,
     'docservice_url'        => get_config('local_jedomi', 'docservice_url') ?: '',
     'spt_secret'            => get_config('local_jedomi', 'spt_secret') ?: '',
     'collect_training_data' => (function () {
@@ -223,6 +254,30 @@ $cfg = [
     'anonymization_level'   => get_config('local_jedomi', 'anonymization_level') ?: 'basic',
     'hidden_roles'          => get_config('local_jedomi', 'hidden_roles') ?: '',
 ];
+
+// Datacurso backend availability (cheap checks only: nothing here performs a network call).
+$datacursoinstalled = class_exists('\aiprovider_datacurso\httpclient\ai_services_api');
+$datacursoavailable = \local_jedomi\ai\datacurso_backend::is_available();
+$datacursourls = (object) [
+    'settingsurl' => (new moodle_url('/admin/settings.php', ['section' => 'aiprovider_datacurso']))->out(false),
+    'configurl'   => (new moodle_url('/ai/provider/datacurso/admin/report_sections.php', ['tab' => 'config']))->out(false),
+];
+if (!$datacursoinstalled) {
+    $datacursostatus = ['class' => 'text-muted', 'icon' => 'fa-times-circle',
+        'text' => get_string('ai_backend_datacurso_notinstalled', 'local_jedomi')];
+} else if (!$datacursoavailable) {
+    $datacursostatus = ['class' => 'text-warning', 'icon' => 'fa-exclamation-triangle',
+        'text' => get_string('ai_backend_datacurso_nolicense', 'local_jedomi', $datacursourls)];
+} else if (!\local_jedomi\ai\datacurso_backend::provider_version_ok()) {
+    $datacursostatus = ['class' => 'text-warning', 'icon' => 'fa-exclamation-triangle',
+        'text' => get_string('ai_backend_datacurso_oldversion', 'local_jedomi', (object) [
+            'required'  => \local_jedomi\ai\datacurso_backend::MIN_PROVIDER_VERSION,
+            'installed' => (string) \local_jedomi\ai\datacurso_backend::get_provider_version(),
+        ])];
+} else {
+    $datacursostatus = ['class' => 'text-success', 'icon' => 'fa-check-circle',
+        'text' => get_string('ai_backend_datacurso_ready', 'local_jedomi', $datacursourls)];
+}
 
 // Load all roles for the role-visibility toggles.
 $allroles = $DB->get_records('role', null, 'sortorder ASC', 'id,shortname,name,description');
@@ -341,8 +396,58 @@ echo '</ul>';
                 </div>
             </div>
 
-            <!-- Gateway URL -->
+            <!-- AI backend -->
             <div class="mt-3">
+                <label class="form-label-main"><?php echo get_string('ai_backend', 'local_jedomi'); ?></label>
+                <p class="form-text mb-2"><?php echo get_string('ai_backend_help', 'local_jedomi'); ?></p>
+                <?php
+                $backends = [
+                    'gateway'   => ['label' => 'ai_backend_gateway', 'desc' => 'ai_backend_gateway_desc',
+                                    'icon' => 'fa-server', 'color' => '#6366f1', 'disabled' => false],
+                    'datacurso' => ['label' => 'ai_backend_datacurso', 'desc' => 'ai_backend_datacurso_desc',
+                                    'icon' => 'fa-cloud', 'color' => '#0ea5e9', 'disabled' => !$datacursoavailable],
+                ];
+                foreach ($backends as $bval => $bdef) :
+                    $checked = ($cfg['ai_backend'] === $bval);
+                    $bc = $checked ? $bdef['color'] : '#e5e7eb';
+                    $bg = $checked ? $bdef['color'] . '14' : '#fff';
+                    $extra = $bdef['disabled'] ? 'opacity:.6;cursor:not-allowed;' : '';
+                ?>
+                <label class="jedomi-mode-opt" data-color="<?php echo $bdef['color']; ?>"
+                       style="border-color:<?php echo $bc; ?>;background:<?php echo $bg; ?>;<?php echo $extra; ?>">
+                    <input type="radio" name="ai_backend" value="<?php echo $bval; ?>"
+                           <?php echo $checked ? 'checked' : ''; ?>
+                           <?php echo $bdef['disabled'] ? 'disabled' : ''; ?>>
+                    <div>
+                        <div class="d-flex align-items-center">
+                            <i class="fa <?php echo $bdef['icon']; ?> mr-2" style="color:<?php echo $bdef['color']; ?>"></i>
+                            <strong><?php echo get_string($bdef['label'], 'local_jedomi'); ?></strong>
+                        </div>
+                        <small><?php echo get_string($bdef['desc'], 'local_jedomi'); ?></small>
+                    </div>
+                </label>
+                <?php endforeach; ?>
+                <p class="form-text <?php echo $datacursostatus['class']; ?>">
+                    <i class="fa <?php echo $datacursostatus['icon']; ?> mr-1"></i>
+                    <?php echo $datacursostatus['text']; ?>
+                </p>
+            </div>
+
+            <!-- Datacurso model (only meaningful when the Datacurso backend is selected) -->
+            <div class="mt-3" id="jedomi-datacurso-model-wrap"
+                 style="display:<?php echo $cfg['ai_backend'] === 'datacurso' ? '' : 'none'; ?>">
+                <label class="form-label-main" for="jedomi-datacurso-model">
+                    <?php echo get_string('datacurso_model', 'local_jedomi'); ?>
+                </label>
+                <input type="text" id="jedomi-datacurso-model" name="datacurso_model"
+                       class="form-control" style="max-width:280px"
+                       value="<?php echo s($cfg['datacurso_model']); ?>"
+                       placeholder="<?php echo s(get_string('default')); ?>">
+                <p class="form-text"><?php echo get_string('datacurso_model_desc', 'local_jedomi'); ?></p>
+            </div>
+
+            <!-- Gateway URL -->
+            <div class="mt-3" data-jedomi-gateway-only="1">
                 <label class="form-label-main" for="jedomi-gateway-url">
                     <?php echo get_string('gateway_url', 'local_jedomi'); ?>
                 </label>
@@ -354,7 +459,7 @@ echo '</ul>';
             </div>
 
             <!-- API Key -->
-            <div class="mt-3">
+            <div class="mt-3" data-jedomi-gateway-only="1">
                 <label class="form-label-main" for="jedomi-api-key">
                     <?php echo get_string('api_key', 'local_jedomi'); ?>
                 </label>
@@ -1649,6 +1754,22 @@ function jdSubToggle(subId) {
     }
     wireRadioHighlight('input[name="course_mode"]');
     wireRadioHighlight('input[name="anonymization_level"]');
+    wireRadioHighlight('input[name="ai_backend"]');
+
+    // ── AI backend: dim gateway-only inputs and show the Datacurso model ────
+    var backendRadios = document.querySelectorAll('input[name="ai_backend"]');
+    if (backendRadios.length) {
+        var gatewayOnly = document.querySelectorAll('[data-jedomi-gateway-only]');
+        var dcModelWrap = document.getElementById('jedomi-datacurso-model-wrap');
+        function applyBackendState() {
+            var selected = document.querySelector('input[name="ai_backend"]:checked');
+            var isDatacurso = !!selected && selected.value === 'datacurso';
+            gatewayOnly.forEach(function(el) { el.style.opacity = isDatacurso ? '.5' : ''; });
+            if (dcModelWrap) dcModelWrap.style.display = isDatacurso ? '' : 'none';
+        }
+        backendRadios.forEach(function(r) { r.addEventListener('change', applyBackendState); });
+        applyBackendState();
+    }
 
     // ── Course selector show/hide ───────────────────────────────────────────
     var selectorWrap = document.getElementById('jedomi-course-selector');

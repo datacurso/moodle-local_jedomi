@@ -21,12 +21,14 @@
     drawer with the message area, thinking indicator and input controls.
 
     Context variables required for this template:
-    * gateway_url - AI gateway endpoint URL.
-    * api_key - API key passed to the gateway.
     * model - Model identifier used for chat.
     * context - JSON-encoded page context string.
     * user_name - Display name for the greeting message.
     * strings - Object with localised UI strings (title, placeholder).
+
+    Optional context variables (only present when the gateway backend is active):
+    * gateway_url - AI gateway endpoint URL.
+    * api_key - API key passed to the gateway.
 
     Example context (json):
     {
@@ -48,8 +50,8 @@
     class="jedomi-trigger"
     aria-label="Abrir Jedomi AI"
     title="Jedomi AI"
-    data-gateway="{{gateway_url}}"
-    data-apikey="{{api_key}}"
+    {{#gateway_url}}data-gateway="{{gateway_url}}"{{/gateway_url}}
+    {{#api_key}}data-apikey="{{api_key}}"{{/api_key}}
     data-model="{{model}}"
     data-context="{{context}}"
 >

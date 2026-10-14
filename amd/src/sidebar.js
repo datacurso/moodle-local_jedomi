@@ -95,6 +95,12 @@ define(['core/log'], function(Log) {
         }
     };
 
+    // Gateway-only features (voice, file extraction, action confirmation, direct
+    // messages, feedback) call the gateway straight from the browser. They are
+    // unavailable when the Datacurso backend is active: the server then redacts
+    // the gateway credentials from the config.
+    const hasGateway = () => cfg.backend !== 'datacurso' && !!cfg.gateway_url;
+
     const bootstrap = () => {
         // Prevenir doble inyección
         if (injected || document.getElementById('jedomi-trigger')) {
@@ -189,6 +195,14 @@ define(['core/log'], function(Log) {
         div.className = `jedomi-action-pending jedomi-action-pending--${severity}`;
         const CS = cfg.strings || {};
         const confirmKeyword = isCritical ? (CS.confirm_btn_yes || 'Confirm').toUpperCase() : '';
+        if (!hasGateway()) {
+            // Action execution is served by the gateway only.
+            div.innerHTML = `
+            <div class="jedomi-action-warning">${escHtml(pending.warning || '')}</div>
+            <div class="jedomi-action-desc">${escHtml(pending.action_desc || pending.tool)}</div>
+            <div class="jedomi-confirm-msg" style="opacity:0.8;margin-top:12px">${escHtml(CS.feature_requires_gateway || 'This feature requires the Jedomi gateway.')}</div>`;
+            return div;
+        }
         div.innerHTML = `
             <div class="jedomi-action-warning">${escHtml(pending.warning || '')}</div>
             <div class="jedomi-action-desc">${escHtml(pending.action_desc || pending.tool)}</div>
@@ -319,7 +333,7 @@ define(['core/log'], function(Log) {
                     <button id="jedomi-attach-btn" class="jedomi-input-icon" title="${S.attach || 'Attach'}">${SVG.plus}</button>
                     <div id="jedomi-attach-menu" class="jedomi-attach-menu jedomi-hidden">
                         <button class="jedomi-attach-option" data-type="image" title="${S.attach_image || 'Attach image'}">${SVG.camera} ${S.image || 'Image'}</button>
-                        <button class="jedomi-attach-option" data-type="file" title="${S.attach_file || 'Attach file'}">${SVG.attach} ${S.file || 'File'}</button>
+                        ${hasGateway() ? `<button class="jedomi-attach-option" data-type="file" title="${S.attach_file || 'Attach file'}">${SVG.attach} ${S.file || 'File'}</button>` : ''}
                     </div>
                 </div>
                 <button id="jedomi-send" class="jedomi-send-btn" title="${S.send || 'Send'}">${SVG.send}</button>
@@ -970,6 +984,12 @@ define(['core/log'], function(Log) {
                 // Agregar botón de confirmación de envío
                 const confirmDiv = document.createElement('div');
                 confirmDiv.className = 'jedomi-send-confirm';
+                if (!hasGateway()) {
+                    // Direct message sending is served by the gateway only.
+                    confirmDiv.innerHTML = `<div class="jedomi-confirm-msg">${escHtml(cfg.strings?.feature_requires_gateway || 'This feature requires the Jedomi gateway.')}</div>`;
+                    streamBubble.inner.appendChild(confirmDiv);
+                    fullText = cleanText;
+                } else {
                 confirmDiv.innerHTML = `
                     <div class="jedomi-confirm-msg">📬 ${((cfg.strings?.confirm_send_bulk || 'Send this message to {count} student(s)?').replace('{count}', '<strong>' + userIds.length + '</strong>'))}</div>
                     <div class="jedomi-confirm-preview">${msgText.substring(0, 120)}${msgText.length > 120 ? '...' : ''}</div>
@@ -1004,6 +1024,7 @@ define(['core/log'], function(Log) {
                 });
                 streamBubble.inner.appendChild(confirmDiv);
                 fullText = cleanText; // guardar sin el bloque técnico
+                }
             } else {
                 // ── Detectar acción pendiente de confirmación ─────────────────
                 const pendingMatch = fullText.match(
@@ -1049,11 +1070,14 @@ define(['core/log'], function(Log) {
                     `${cfg.strings?.session_expired_hint || 'Your Moodle session has expired. Please reload the page to continue.'}`
                 );
             } else {
+                const gatewayHint = hasGateway()
+                    ? `URL: \`${cfg.gateway_url}\`\n\n` +
+                      `${cfg.strings?.gateway_error_hint || 'Make sure the service is running:'}\n` +
+                      `\`docker compose up jedomi-api\``
+                    : '';
                 streamBubble.inner.innerHTML = renderMarkdown(
                     `⚠️ **${cfg.strings?.gateway_error_title || 'Could not connect to the Jedomi Gateway.'}**\n\n` +
-                    `URL: \`${cfg.gateway_url}\`\n\n` +
-                    `${cfg.strings?.gateway_error_hint || 'Make sure the service is running:'}\n` +
-                    `\`docker compose up jedomi-api\``
+                    gatewayHint
                 );
             }
             streamBubble.el.classList.remove('jedomi-hidden');
@@ -1305,7 +1329,7 @@ GENERAL INSTRUCTIONS:
 
     const saveFeedback = async (text, type) => {
         // Envía feedback al Gateway para guardarlo en PostgreSQL (RLHF)
-        if (lastMsgId && sessionId) {
+        if (hasGateway() && lastMsgId && sessionId) {
             try {
                 await fetch(`${cfg.gateway_url}/v1/chat/completions`, {
                     method: 'POST',
@@ -1477,6 +1501,10 @@ GENERAL INSTRUCTIONS:
             _stopRecording();
             return;
         }
+        if (!hasGateway()) {
+            addMessage('assistant', '⚠️ ' + (cfg.strings?.feature_requires_gateway || 'This feature requires the Jedomi gateway.'));
+            return;
+        }
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
@@ -1628,6 +1656,7 @@ GENERAL INSTRUCTIONS:
     };
 
     const transcribeAudio = async (blob) => {
+        if (!hasGateway()) return;
         const form = new FormData();
         form.append('file', blob, 'audio.webm');
         try {
@@ -1669,6 +1698,11 @@ GENERAL INSTRUCTIONS:
     const handleFileSelect = async (e) => {
         const file = e.target.files?.[0];
         if (!file) return;
+        if (!hasGateway()) {
+            addMessage('assistant', '⚠️ ' + (cfg.strings?.feature_requires_gateway || 'This feature requires the Jedomi gateway.'));
+            e.target.value = '';
+            return;
+        }
 
         const statusEl = g('jedomi-input');
         const origPlaceholder = statusEl?.placeholder;

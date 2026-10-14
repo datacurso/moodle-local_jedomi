@@ -239,6 +239,78 @@ final class lib_test extends \advanced_testcase {
     }
 
     // ... ========================
+    // local_jedomi_get_sidebar_config
+    // ========================
+
+    /**
+     * Prepare the global page so the page-context helper does not trigger a set_url() debugging notice.
+     */
+    private function prepare_sidebar_page(): void {
+        global $PAGE;
+        $this->setAdminUser();
+        $PAGE->set_url('/local/jedomi/ajax/sidebar_config.php');
+    }
+
+    /**
+     * Test the default (gateway) backend exposes the gateway connection keys and never a license key.
+     *
+     * @covers \local_jedomi_get_sidebar_config()
+     */
+    public function test_sidebar_config_gateway_backend_exposes_gateway_keys(): void {
+        $this->prepare_sidebar_page();
+
+        $config = local_jedomi_get_sidebar_config();
+
+        $this->assertSame('gateway', $config['backend']);
+        $this->assertArrayHasKey('gateway_url', $config);
+        $this->assertArrayHasKey('api_key', $config);
+        $this->assertNotEmpty($config['gateway_url']);
+        $this->assertNotEmpty($config['api_key']);
+        $this->assertArrayNotHasKey('licensekey', $config);
+        $this->assertArrayHasKey('feature_requires_gateway', $config['strings']);
+    }
+
+    /**
+     * Test the Datacurso backend redacts the gateway credentials from the browser config.
+     *
+     * @covers \local_jedomi_get_sidebar_config()
+     */
+    public function test_sidebar_config_datacurso_backend_redacts_gateway_keys(): void {
+        if (!class_exists('\aiprovider_datacurso\httpclient\ai_services_api')) {
+            $this->markTestSkipped('aiprovider_datacurso is not installed.');
+        }
+        $this->prepare_sidebar_page();
+        set_config('ai_backend', 'datacurso', 'local_jedomi');
+        set_config('licensekey', 'test-license-key', 'aiprovider_datacurso');
+
+        $config = local_jedomi_get_sidebar_config();
+
+        $this->assertSame('datacurso', $config['backend']);
+        $this->assertArrayNotHasKey('gateway_url', $config);
+        $this->assertArrayNotHasKey('api_key', $config);
+        $this->assertArrayNotHasKey('licensekey', $config);
+        $this->assertStringNotContainsString('test-license-key', json_encode($config));
+    }
+
+    /**
+     * Test that selecting Datacurso without a license key falls back to the gateway config.
+     *
+     * @covers \local_jedomi_get_sidebar_config()
+     */
+    public function test_sidebar_config_datacurso_without_license_falls_back_to_gateway(): void {
+        $this->prepare_sidebar_page();
+        set_config('ai_backend', 'datacurso', 'local_jedomi');
+        set_config('licensekey', '', 'aiprovider_datacurso');
+
+        $config = local_jedomi_get_sidebar_config();
+
+        $this->assertSame('gateway', $config['backend']);
+        $this->assertArrayHasKey('gateway_url', $config);
+        $this->assertArrayHasKey('api_key', $config);
+        $this->assertArrayNotHasKey('licensekey', $config);
+    }
+
+    // ... ========================
     // Log rotation
     // ========================
 
