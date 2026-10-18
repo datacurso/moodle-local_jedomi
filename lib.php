@@ -49,7 +49,10 @@ function local_jedomi_get_sidebar_config(): array {
 
     return [
         'gateway_url'   => get_config('local_jedomi', 'gateway_url') ?: 'http://localhost:8765',
-        'api_key'       => get_config('local_jedomi', 'api_key')     ?: 'jedomi-local-key',
+        // SEGURIDAD (rama local/stem-fisica): la API key del backend NO se envía al navegador. El chat principal
+        // va por chatproxy.php (servidor); las funciones que llamaban al gateway desde el cliente (transcripción,
+        // extracción de ficheros, petición directa) quedan deshabilitadas al no disponer de clave.
+        'api_key'       => '',
         'model'         => get_config('local_jedomi', 'model')        ?: 'jedomi-e4b',
         'chatproxy_url' => $CFG->wwwroot . '/local/jedomi/chatproxy.php',
         'user_name'     => fullname($USER),
