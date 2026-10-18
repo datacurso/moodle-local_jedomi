@@ -21,6 +21,10 @@
  * un SELECT u FROM mdl_user u, row_to_json(u) o u::text fallan con "permission denied" porque la referencia a la
  * fila completa exige SELECT sobre TODAS las columnas, y password/secret no están concedidas.
  *
+ * El rol es LOGIN (contraseña aleatoria rotada en cada ejecución, guardada en config_plugins, tabla vetada al rol) y
+ * jedomi_execute_sql abre una CONEXIÓN SEPARADA con él: session_user = jedomi_ro, sin rol superior al que revertir
+ * (QA r5: SET ROLE sobre la sesión de moodle se deshacía con set_config('role','none') + query_to_xml).
+ *
  * Uso (dentro del contenedor/servidor):
  *   php local/jedomi/cli/setup_sql_sandbox.php            # crea o actualiza el rol y los privilegios
  *   php local/jedomi/cli/setup_sql_sandbox.php --check    # sólo comprueba y prueba los bypass conocidos
@@ -72,11 +76,20 @@ if ($options['drop']) {
 }
 
 if (!$options['check']) {
+    // Rol LOGIN con contraseña aleatoria (rotada en cada ejecución) guardada en config_plugins (tabla vetada al rol).
+    $password = bin2hex(random_bytes(24));
+    $pwdliteral = "'" . str_replace("'", "''", $password) . "'";
+    $attrs = ' LOGIN PASSWORD ' . $pwdliteral . ' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS CONNECTION LIMIT 20';
     if (!$exists) {
-        $DB->execute('CREATE ROLE ' . $q($role) . ' NOLOGIN');
-        cli_writeln("Rol $role creado.");
+        $DB->execute('CREATE ROLE ' . $q($role) . $attrs);
+        cli_writeln("Rol $role creado (LOGIN).");
+    } else {
+        $DB->execute('ALTER ROLE ' . $q($role) . $attrs);
+        cli_writeln("Rol $role actualizado (contraseña rotada).");
     }
-    $DB->execute('GRANT ' . $q($role) . ' TO ' . $q($dbuser));
+    set_config('sandbox_db_password', $password, 'local_jedomi');
+    // Nadie es miembro del rol ni el rol lo es de nadie: session_user = jedomi_ro sin rol superior al que volver.
+    $DB->execute('REVOKE ' . $q($role) . ' FROM ' . $q($dbuser));
     $DB->execute('GRANT USAGE ON SCHEMA ' . $q($schema) . ' TO ' . $q($role));
     $DB->execute('GRANT SELECT ON ALL TABLES IN SCHEMA ' . $q($schema) . ' TO ' . $q($role));
     $DB->execute('ALTER DEFAULT PRIVILEGES FOR ROLE ' . $q($dbuser) . ' IN SCHEMA ' . $q($schema)
@@ -124,11 +137,23 @@ $tests = [
     'SELECT value FROM ' . $prefix . 'config_plugins WHERE name = \'hmac_secret\''      => false,
     'SELECT * FROM ' . $prefix . 'course LIMIT 1'                                       => true,
 ];
+$tests["SELECT set_config('role','none',false), current_user"]                                                  = true;  // QA r5: inofensivo, no hay rol superior
+$tests["SELECT set_config('role','none',false), query_to_xml('SELECT u FROM " . $prefix . "user u LIMIT 1',false,false,'')"] = false;
+$tests["SELECT query_to_xml('SELECT password FROM " . $prefix . "user LIMIT 1',false,false,'')"]                   = false;
+$tests["SELECT set_config('session_authorization','" . $dbuser . "',false)"]                                        = false;
+$tests["SELECT current_user AS who"]                                                                                = true;
 $ok = true;
-$DB->execute('SET ROLE ' . $q($role));
+try {
+    $sdb = execute_sql::open_sandbox_connection();
+} catch (\Throwable $e) {
+    cli_error('No se pudo abrir la conexión del sandbox: ' . $e->getMessage() . ' ' . ($e->debuginfo ?? ''), 3);
+}
+$who = $sdb->get_field_sql('SELECT session_user');
+cli_writeln("session_user de la conexión sandbox: $who" . ($who === $role ? '' : '  ← INESPERADO'));
+$ok = $ok && ($who === $role);
 foreach ($tests as $sql => $shouldwork) {
     try {
-        $DB->get_records_sql('SELECT ROW_NUMBER() OVER () AS rn, q.* FROM (' . $sql . ') q LIMIT 2');
+        $sdb->get_records_sql('SELECT ROW_NUMBER() OVER () AS rn, q.* FROM (' . $sql . ') q LIMIT 2');
         $worked = true;
         $why = 'ok';
     } catch (\Throwable $e) {
@@ -139,6 +164,11 @@ foreach ($tests as $sql => $shouldwork) {
     $ok = $ok && $pass;
     cli_writeln(($pass ? 'PASS ' : 'FAIL ') . str_pad(substr($sql, 0, 70), 72) . ($worked ? 'EJECUTA' : 'BLOQUEA') . " ($why)");
 }
-$DB->execute('RESET ROLE');
+// QA r5: tras intentar revertir el rol, el usuario efectivo debe seguir siendo el rol restringido.
+$who2 = $sdb->get_field_sql("SELECT current_user FROM (SELECT set_config('role', 'none', false)) AS x");
+$pass = ($who2 === $role);
+$ok = $ok && $pass;
+cli_writeln(($pass ? 'PASS ' : 'FAIL ') . str_pad("current_user tras set_config('role','none')", 72) . $who2);
+$sdb->dispose();
 cli_writeln($ok ? "SANDBOX OK: el rol $role bloquea los bypass conocidos y permite consultas legítimas." : "SANDBOX INCOMPLETO: revisa los FAIL.");
 exit($ok ? 0 : 1);

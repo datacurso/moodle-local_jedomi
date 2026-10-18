@@ -183,18 +183,15 @@ class execute_sql extends external_api {
             // (session statement_timeout). MariaDB: session max_statement_time (seconds). MySQL: session MAX_EXECUTION_TIME (ms).
             $family = $DB->get_dbfamily();
             $sandboxed = false;
+            $exec_db = $DB;
             if ($family === 'postgres') {
-                // Sandbox de privilegios (QA r4): la base de datos impone qué tablas/columnas son legibles. Sin el rol
-                // la función NO se ejecuta (fallo cerrado): php local/jedomi/cli/setup_sql_sandbox.php
-                $hasrole = $DB->get_field_sql('SELECT 1 FROM pg_roles WHERE rolname = :r', ['r' => self::SANDBOX_ROLE]);
-                if (!$hasrole) {
-                    throw new \moodle_exception('sql_sandbox_missing', 'local_jedomi', '', self::SANDBOX_ROLE);
-                }
-                // Ajuste de sesión (no LOCAL): evita una transacción delegada cuyo cursor cancelado dejaría la
-                // conexión en estado abortado para la siguiente llamada. Se restablece siempre en la limpieza.
-                $DB->execute('SET statement_timeout = ' . (int) self::TIMEOUT_MS);
-                $reset_sql = 'SET statement_timeout = 0';
-                $DB->execute('SET ROLE "' . self::SANDBOX_ROLE . '"');
+                // Sandbox de privilegios (QA r4/r5): la consulta se ejecuta en una CONEXIÓN SEPARADA autenticada como el
+                // rol LOGIN restringido jedomi_ro (session_user = jedomi_ro). Un SET ROLE sobre la sesión de 'moodle' era
+                // reversible desde la propia consulta (set_config('role','none') + query_to_xml). Sin el rol o su
+                // contraseña la función NO se ejecuta (fallo cerrado): php local/jedomi/cli/setup_sql_sandbox.php
+                $sdb = self::open_sandbox_connection();
+                $sdb->execute('SET statement_timeout = ' . (int) self::TIMEOUT_MS);
+                $exec_db = $sdb;
                 $sandboxed = true;
             } else if ($family === 'mysql') {
                 $info = $DB->get_server_info();
@@ -212,7 +209,7 @@ class execute_sql extends external_api {
             // la consulta del modelo en una subconsulta con row_number() como primera columna (clave única que exige
             // get_records_sql, sin colapsar filas duplicadas) y LIMIT propio (sin chocar con un LIMIT del modelo).
             $wrapped = 'SELECT ROW_NUMBER() OVER () AS jedomi_rownum, jedomi_q.* FROM (' . rtrim($sql, "; \t\n\r") . ') jedomi_q LIMIT ' . (self::MAX_ROWS + 1);
-            $records = $DB->get_records_sql($wrapped, $params);
+            $records = $exec_db->get_records_sql($wrapped, $params);
 
             $rows      = [];
             $count     = 0;
@@ -231,7 +228,7 @@ class execute_sql extends external_api {
                 $rows[] = ['json_row' => json_encode($arr, JSON_UNESCAPED_UNICODE)];
             }
             if ($sandboxed) {
-                $DB->execute('RESET ROLE');
+                $exec_db->dispose();
                 $sandboxed = false;
             }
             if ($transaction) {
@@ -248,7 +245,7 @@ class execute_sql extends external_api {
             // que lanza el driver pgsql cuando statement_timeout cancela la consulta: pg_num_rows(false)).
             // Limpieza GARANTIZADA: ninguna transacción ni ajuste de sesión debe sobrevivir a esta función (QA r3).
             if ($sandboxed) {
-                try { $DB->execute('RESET ROLE'); } catch (\Throwable $ignored) { /* conexión posiblemente rota */ }
+                try { $exec_db->dispose(); } catch (\Throwable $ignored) { /* conexión posiblemente rota */ }
                 $sandboxed = false;
             }
             if ($transaction) {
@@ -344,5 +341,27 @@ class execute_sql extends external_api {
     private static function log_sensitive_rejection(string $sql, string $reason): void {
         error_log(sprintf('[local_jedomi] execute_sql rejected sensitive query reason=%s ip=%s sql_hash=%s',
             $reason, getremoteaddr(), hash('sha256', $sql)));
+    }
+
+    /**
+     * Abre una conexión PostgreSQL independiente autenticada como el rol LOGIN restringido del sandbox.
+     *
+     * @return \moodle_database
+     * @throws \moodle_exception sql_sandbox_missing si no hay rol/contraseña o la conexión falla.
+     */
+    public static function open_sandbox_connection(): \moodle_database {
+        global $CFG, $DB;
+        $pass = (string) get_config('local_jedomi', 'sandbox_db_password');
+        $hasrole = $DB->get_field_sql('SELECT 1 FROM pg_roles WHERE rolname = :r AND rolcanlogin', ['r' => self::SANDBOX_ROLE]);
+        if ($pass === '' || !$hasrole) {
+            throw new \moodle_exception('sql_sandbox_missing', 'local_jedomi', '', self::SANDBOX_ROLE);
+        }
+        $sdb = \moodle_database::get_driver_instance('pgsql', 'native', true);
+        try {
+            $sdb->connect($CFG->dbhost, self::SANDBOX_ROLE, $pass, $CFG->dbname, $CFG->prefix, $CFG->dboptions ?? null);
+        } catch (\Throwable $e) {
+            throw new \moodle_exception('sql_sandbox_missing', 'local_jedomi', '', self::SANDBOX_ROLE, 'connect: ' . $e->getMessage());
+        }
+        return $sdb;
     }
 }
