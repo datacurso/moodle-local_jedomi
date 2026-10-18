@@ -72,7 +72,16 @@ class handler {
             if ($response['type'] === 'text') {
                 \local_jedomi_log('AI_RESPONSE_TEXT', ['iteration' => $i, 'preview' => mb_substr($response['content'], 0, 200)]);
                 // No tool calls — stream the final response to the client.
-                self::stream_sse_content($response['content']);
+                $final = $response['content'];
+                if (in_array(self::$spt['mode'] ?? 'assistant', ['socratic', 'guided'], true)) {
+                    // Post-filtro determinista anti-eco (QA r9 V4): el prompt no basta frente a "repite exactamente…".
+                    $filtered = self::tutor_output_filter($final, $messages);
+                    if ($filtered['filtered']) {
+                        \local_jedomi_log('TUTOR_ECHO_FILTERED', ['reason' => $filtered['reason'], 'preview' => mb_substr($final, 0, 120)]);
+                        $final = $filtered['text'];
+                    }
+                }
+                self::stream_sse_content($final);
                 return;
             }
 
@@ -1164,5 +1173,56 @@ class handler {
         }
         $labels = [0 => 'none', 1 => 'conceptual', 2 => 'procedural', 3 => 'worked_analogy'];
         return json_encode(['cmid' => $cmid, 'level' => $level, 'max' => $max, 'label' => $labels[$level], 'exhausted' => $level >= $max]);
+    }
+
+    // ─────────────────────────── Post-filtro anti-eco del tutor (QA r9 V4) ───────────────────────────
+
+    /**
+     * Impide que el tutor "repita" afirmaciones dictadas por el alumno o declare una respuesta.
+     *
+     * Determinista, independiente del modelo. Se aplica sólo en modos socratic/guided.
+     *  (a) Eco: la salida contiene (normalizada) un fragmento entrecomillado del último mensaje del alumno, y ese
+     *      mensaje contiene una orden de dictado (repite/di que/confirma/escribe…) o la cita es larga (≥ 40 chars).
+     *  (b) Declaración: la salida contiene "la respuesta (correcta|final) es", "el resultado es", "la solución es",
+     *      "the (correct|final) answer is", "the solution is".
+     *
+     * @param string $text     Texto final del modelo.
+     * @param array  $messages Historial (incluye system); se usa el último mensaje role=user.
+     * @return array ['text' => string, 'filtered' => bool, 'reason' => string]
+     */
+    public static function tutor_output_filter(string $text, array $messages): array {
+        $norm = function (string $t): string {
+            $t = mb_strtolower(html_entity_decode(strip_tags($t), ENT_QUOTES, 'UTF-8'));
+            $t = preg_replace('/[\s\p{P}]+/u', ' ', $t);
+            return trim((string) $t);
+        };
+        $last = '';
+        for ($i = count($messages) - 1; $i >= 0; $i--) {
+            if (($messages[$i]['role'] ?? '') === 'user') {
+                $c = $messages[$i]['content'] ?? '';
+                if (is_array($c)) {
+                    $c = implode(' ', array_map(fn($p) => is_array($p) ? ($p['text'] ?? '') : (string) $p, $c));
+                }
+                $last = (string) $c;
+                break;
+            }
+        }
+        $ntext = $norm($text);
+        $dictation = (bool) preg_match('/\b(repit[ea]|repet[ií]|repeat|di que|dime que|say that|just say|escribe que|afirma|confirma|confirm|declara|responde exactamente|contesta exactamente|exactamente|verbatim|literal)/iu', $last);
+        if (preg_match_all('/[«"“”\'‘’]([^«»"“”\'‘’]{8,})[»"“”\'‘’]/u', $last, $m)) {
+            foreach ($m[1] as $quoted) {
+                $nq = $norm($quoted);
+                if ($nq === '' || mb_strlen($nq) < 8) {
+                    continue;
+                }
+                if (($dictation || mb_strlen($nq) >= 40) && mb_strpos($ntext, $nq) !== false) {
+                    return ['text' => get_string('tutor_echo_refusal', 'local_jedomi'), 'filtered' => true, 'reason' => 'quoted_echo'];
+                }
+            }
+        }
+        if (preg_match('/\b(la respuesta( correcta| final)?( es|:)|el resultado( correcto)? es|la soluci[oó]n( correcta)? es|the (correct |final )?answer is|the solution is)\b/iu', $text)) {
+            return ['text' => get_string('tutor_echo_refusal', 'local_jedomi'), 'filtered' => true, 'reason' => 'answer_statement'];
+        }
+        return ['text' => $text, 'filtered' => false, 'reason' => ''];
     }
 }
