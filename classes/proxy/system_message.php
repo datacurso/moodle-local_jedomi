@@ -176,9 +176,13 @@ class system_message {
                 $activity = '';
             }
         }
-        $teacher = trim(strip_tags((string) get_config('local_jedomi', 'stem_tutor_prompt')));
-        $teacher = \core_text::substr($teacher, 0, 2000);
-        $maxq = max(1, min(10, (int) get_config('local_jedomi', 'stem_max_questions') ?: 3));
+        // Instrucciones y tope de preguntas: la configuración del curso/actividad prevalece sobre la plantilla.
+        require_once(__DIR__ . '/../../lib.php');
+        $cfg = \local_jedomi_stem_cfg($courseid, $cmid);
+        $teacher = ($cfg && trim((string) $cfg->tutor_prompt) !== '') ? (string) $cfg->tutor_prompt : (string) get_config('local_jedomi', 'stem_tutor_prompt');
+        $teacher = \core_text::substr(trim(strip_tags($teacher)), 0, 2000);
+        $maxq = ($cfg && (int) $cfg->max_questions > 0) ? (int) $cfg->max_questions : (int) get_config('local_jedomi', 'stem_max_questions');
+        $maxq = max(1, min(10, $maxq ?: 3));
 
         $a = (object) [
             'sitename'   => get_config('core', 'sitename') ?: 'Moodle',

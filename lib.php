@@ -820,24 +820,51 @@ function local_jedomi_get_tool_definitions(string $role, string $mode = 'assista
  * @param string $role  Rol ya resuelto en servidor.
  * @return string 'assistant' | 'socratic' | 'guided'
  */
-function local_jedomi_resolve_mode(int $courseid, int $cmid, string $role): string {
+function local_jedomi_stem_cfg(int $courseid, int $cmid = 0): ?stdClass {
     global $DB;
+    if ($courseid <= 1) {
+        return null;
+    }
+    if ($cmid > 0) {
+        $row = $DB->get_record('local_jedomi_stem_cfg', ['courseid' => $courseid, 'cmid' => $cmid]);
+        if ($row) {
+            return $row;
+        }
+    }
+    return $DB->get_record('local_jedomi_stem_cfg', ['courseid' => $courseid, 'cmid' => 0]) ?: null;
+}
+
+/**
+ * Resuelve el modo del asistente para un usuario en un curso/actividad. Se calcula SIEMPRE en servidor.
+ *
+ * El interruptor global `stem_enabled` (plantilla) permite a los cursos activar el tutor; la decisión concreta
+ * vive en local_jedomi_stem_cfg (fila por actividad, con respaldo en la fila del curso cmid=0). El modo
+ * 'inherit' toma `stem_tutor_mode` de la plantilla. Sólo aplica a estudiantes.
+ */
+function local_jedomi_resolve_mode(int $courseid, int $cmid, string $role): string {
     if ($role !== 'student' || $courseid <= 1) {
         return 'assistant';
     }
     if ((int) get_config('local_jedomi', 'stem_enabled') !== 1) {
         return 'assistant';
     }
-    $stemcmid = (int) get_config('local_jedomi', 'stem_assign_cmid');
-    if ($stemcmid <= 0) {
+    $cfg = local_jedomi_stem_cfg($courseid, $cmid);
+    if (!$cfg || (int) $cfg->enabled !== 1) {
         return 'assistant';
     }
-    $stemcourse = (int) $DB->get_field('course_modules', 'course', ['id' => $stemcmid]);
-    if ($stemcourse !== $courseid) {
-        return 'assistant';
-    }
-    $mode = (string) get_config('local_jedomi', 'stem_tutor_mode');
+    $mode = $cfg->tutor_mode === 'inherit' ? (string) get_config('local_jedomi', 'stem_tutor_mode') : $cfg->tutor_mode;
     return in_array($mode, ['socratic', 'guided'], true) ? $mode : 'assistant';
+}
+
+/**
+ * Enlace "Tutor STEM" en la navegación del curso para quien puede configurarlo.
+ */
+function local_jedomi_extend_navigation_course(navigation_node $navigation, stdClass $course, context_course $context): void {
+    if (!has_capability('local/jedomi:configuretutor', $context)) {
+        return;
+    }
+    $url = new moodle_url('/local/jedomi/course_stem.php', ['id' => $course->id]);
+    $navigation->add(get_string('course_stem_nav', 'local_jedomi'), $url, navigation_node::TYPE_SETTING, null, 'local_jedomi_stem', new pix_icon('i/settings', ''));
 }
 
 function local_jedomi_generate_spt(string $role, int $cmid = 0, string $mode = 'assistant'): array {

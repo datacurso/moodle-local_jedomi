@@ -48,4 +48,13 @@ $capabilities = [
             'frontpage'      => CAP_PROHIBIT,
         ],
     ],
+    // Configurar el tutor STEM (modo, instrucciones, tareas evaluadas) dentro de un curso.
+    'local/jedomi:configuretutor' => [
+        'captype'      => 'write',
+        'contextlevel' => CONTEXT_COURSE,
+        'archetypes'   => [
+            'editingteacher' => CAP_ALLOW,
+            'manager'        => CAP_ALLOW,
+        ],
+    ],
 ];

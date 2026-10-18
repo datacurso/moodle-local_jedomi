@@ -107,5 +107,25 @@
                 <INDEX NAME="agentid_context_hash_idx" UNIQUE="true" FIELDS="agentid, context_hash"/>
             </INDEXES>
         </TABLE>
+        <TABLE NAME="local_jedomi_stem_cfg" COMMENT="Configuración del tutor STEM por curso (cmid=0) o por actividad (cmid>0)">
+            <FIELDS>
+                <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+                <FIELD NAME="courseid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+                <FIELD NAME="cmid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+                <FIELD NAME="enabled" TYPE="int" LENGTH="2" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+                <FIELD NAME="tutor_mode" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="inherit" SEQUENCE="false"/>
+                <FIELD NAME="max_questions" TYPE="int" LENGTH="4" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+                <FIELD NAME="tutor_prompt" TYPE="text" NOTNULL="false" SEQUENCE="false"/>
+                <FIELD NAME="usermodified" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+                <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+            </FIELDS>
+            <KEYS>
+                <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+                <KEY NAME="courseid_fk" TYPE="foreign" FIELDS="courseid" REFTABLE="course" REFFIELDS="id"/>
+            </KEYS>
+            <INDEXES>
+                <INDEX NAME="courseid_cmid_uq" UNIQUE="true" FIELDS="courseid, cmid"/>
+            </INDEXES>
+        </TABLE>
     </TABLES>
 </XMLDB>

@@ -285,5 +285,38 @@ function xmldb_local_jedomi_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2026052503, 'local', 'jedomi');
     }
 
+    if ($oldversion < 2026101801) {
+        // Configuración del tutor STEM por curso/actividad (rama local/stem-fisica): la selección de tarea y el modo
+        // dejan de ser globales; la pestaña de administración pasa a ser una plantilla.
+        $table = new xmldb_table('local_jedomi_stem_cfg');
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+        $table->add_field('courseid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('cmid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('enabled', XMLDB_TYPE_INTEGER, '2', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('tutor_mode', XMLDB_TYPE_CHAR, '20', null, XMLDB_NOTNULL, null, 'inherit');
+        $table->add_field('max_questions', XMLDB_TYPE_INTEGER, '4', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('tutor_prompt', XMLDB_TYPE_TEXT, null, null, null, null, null);
+        $table->add_field('usermodified', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('timemodified', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+        $table->add_key('courseid_fk', XMLDB_KEY_FOREIGN, ['courseid'], 'course', ['id']);
+        $table->add_index('courseid_cmid_uq', XMLDB_INDEX_UNIQUE, ['courseid', 'cmid']);
+        if (!$dbman->table_exists($table)) {
+            $dbman->create_table($table);
+        }
+        // Migrar la antigua selección global de tarea (si existía) a una fila por actividad.
+        $oldcmid = (int) get_config('local_jedomi', 'stem_assign_cmid');
+        if ($oldcmid > 0) {
+            $courseid = (int) $DB->get_field('course_modules', 'course', ['id' => $oldcmid]);
+            if ($courseid && !$DB->record_exists('local_jedomi_stem_cfg', ['courseid' => $courseid, 'cmid' => $oldcmid])) {
+                $DB->insert_record('local_jedomi_stem_cfg', (object) ['courseid' => $courseid, 'cmid' => $oldcmid,
+                    'enabled' => (int) get_config('local_jedomi', 'stem_enabled'), 'tutor_mode' => 'inherit', 'max_questions' => 0,
+                    'tutor_prompt' => null, 'usermodified' => 0, 'timemodified' => time()]);
+            }
+        }
+        unset_config('stem_assign_cmid', 'local_jedomi');
+        upgrade_plugin_savepoint(true, 2026101801, 'local', 'jedomi');
+    }
+
     return true;
 }

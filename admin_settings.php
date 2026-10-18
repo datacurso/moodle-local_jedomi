@@ -36,7 +36,6 @@ $tab     = optional_param('tab', 'general', PARAM_ALPHA);
 // Única fuente de verdad para los scripts Python (se exportan como JSON vía ?tab=stem&export=json o WS).
 $STEM_DEFAULTS = [
     'stem_enabled'          => 0,
-    'stem_assign_cmid'      => 0,                      // cmid de la tarea mod_assign con rúbrica
     'stem_osc_host'         => '127.0.0.1',
     'stem_osc_port'         => 16284,                  // puerto de recepción de OBSBOT Center
     'stem_osc_reply_port'   => 16285,                  // puerto de envío de OBSBOT Center hacia la estación
@@ -115,7 +114,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && confirm_sesskey()) {
 
         case 'stem':
             set_config('stem_enabled',        optional_param('stem_enabled', 0, PARAM_INT), 'local_jedomi');
-            set_config('stem_assign_cmid',    optional_param('stem_assign_cmid', 0, PARAM_INT), 'local_jedomi');
             set_config('stem_osc_host',       optional_param('stem_osc_host', '127.0.0.1', PARAM_HOST), 'local_jedomi');
             set_config('stem_osc_port',       max(1, min(65535, optional_param('stem_osc_port', 16284, PARAM_INT))), 'local_jedomi');
             set_config('stem_osc_reply_port', max(0, min(65535, optional_param('stem_osc_reply_port', 16285, PARAM_INT))), 'local_jedomi');
@@ -548,10 +546,6 @@ echo '</ul>';
 <?php if ($tab === 'stem'):
     $sc = [];
     foreach ($STEM_DEFAULTS as $k => $v) { $sc[$k] = get_config('local_jedomi', $k); }
-    $assignopts = [];
-    foreach ($DB->get_records_sql("SELECT cm.id AS cmid, a.name, c.shortname FROM {course_modules} cm JOIN {modules} m ON m.id = cm.module AND m.name = 'assign' JOIN {assign} a ON a.id = cm.instance JOIN {course} c ON c.id = cm.course ORDER BY c.shortname, a.name") as $r) {
-        $assignopts[$r->cmid] = $r->shortname . ' · ' . $r->name;
-    }
     $field = function (string $name, string $type = 'text', array $attrs = []) use ($sc) {
         $a = '';
         foreach ($attrs as $k => $v) { $a .= ' ' . $k . '="' . s((string) $v) . '"'; }
@@ -570,20 +564,11 @@ echo '</ul>';
             <div><h5><?php echo get_string('stem_heading', 'local_jedomi'); ?></h5><small><?php echo get_string('stem_heading_help', 'local_jedomi'); ?></small></div>
         </div>
         <div class="card-body">
+            <div class="alert alert-info py-2"><?php echo get_string('stem_template_notice', 'local_jedomi'); ?></div>
             <div class="form-check form-switch mb-3">
                 <input type="checkbox" class="form-check-input" id="jedomi-stem_enabled" name="stem_enabled" value="1" <?php echo $sc['stem_enabled'] ? 'checked' : ''; ?>>
                 <label class="form-check-label" for="jedomi-stem_enabled"><?php echo get_string('stem_enabled', 'local_jedomi'); ?></label>
                 <div class="form-text"><?php echo get_string('stem_enabled_help', 'local_jedomi'); ?></div>
-            </div>
-            <div class="mb-3">
-                <label class="form-label-main" for="jedomi-stem_assign_cmid"><?php echo get_string('stem_assign_cmid', 'local_jedomi'); ?></label>
-                <select class="form-control" id="jedomi-stem_assign_cmid" name="stem_assign_cmid" style="max-width:560px">
-                    <option value="0">—</option>
-                    <?php foreach ($assignopts as $cmid => $label): ?>
-                    <option value="<?php echo $cmid; ?>" <?php echo ((int) $sc['stem_assign_cmid'] === (int) $cmid) ? 'selected' : ''; ?>><?php echo s($label); ?> (cmid <?php echo $cmid; ?>)</option>
-                    <?php endforeach; ?>
-                </select>
-                <div class="form-text"><?php echo get_string('stem_assign_cmid_help', 'local_jedomi'); ?></div>
             </div>
             <div class="mb-3">
                 <label class="form-label-main" for="jedomi-stem_tutor_mode"><?php echo get_string('stem_tutor_mode', 'local_jedomi'); ?></label>
@@ -627,6 +612,33 @@ echo '</ul>';
                     <div class="form-text"><?php echo get_string('stem_whisper_prompt_help', 'local_jedomi'); ?></div>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <div class="card mt-3">
+        <div class="card-header">
+            <div class="card-icon" style="background:#dcfce7"><i class="fa fa-camera" style="color:#15803d"></i></div>
+            <div><h5><?php echo get_string('stem_cameras_heading', 'local_jedomi'); ?></h5><small><?php echo get_string('stem_cameras_heading_help', 'local_jedomi'); ?></small></div>
+        </div>
+        <div class="card-body">
+            <ul class="mb-2">
+                <?php foreach (['stem_camera_rec_1', 'stem_camera_rec_2', 'stem_camera_rec_3', 'stem_camera_rec_4'] as $k): ?>
+                <li><?php echo get_string($k, 'local_jedomi'); ?></li>
+                <?php endforeach; ?>
+            </ul>
+            <p class="form-text mb-0"><?php echo get_string('stem_cameras_mount', 'local_jedomi'); ?></p>
+        </div>
+    </div>
+
+    <div class="card mt-3">
+        <div class="card-header">
+            <div class="card-icon" style="background:#fef9c3"><i class="fa fa-file-pdf-o" style="color:#a16207"></i></div>
+            <div><h5><?php echo get_string('stem_mat_download_heading', 'local_jedomi'); ?></h5><small><?php echo get_string('stem_mat_download_help', 'local_jedomi'); ?></small></div>
+        </div>
+        <div class="card-body">
+            <?php foreach (['tapete_A4_1hoja.pdf' => 'A4 · 1 hoja (277×138 mm)', 'tapete_2xA4.pdf' => 'A4 · 2 hojas (400×200 mm)', 'tapete_Carta_1hoja.pdf' => 'Carta · 1 hoja (259×130 mm)', 'tapete_2xCarta.pdf' => 'Carta · 2 hojas (400×200 mm)', 'tapete_lab_800x400.png' => 'Laboratorio · PNG 800×400 mm (sublimación)'] as $file => $label): ?>
+            <a class="btn btn-outline-secondary btn-sm me-2 mb-2" href="<?php echo (new moodle_url('/local/jedomi/stem/tapete.php', ['file' => $file]))->out(false); ?>"><i class="fa fa-download mr-1"></i><?php echo $label; ?></a>
+            <?php endforeach; ?>
         </div>
     </div>
 
