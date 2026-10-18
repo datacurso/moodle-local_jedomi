@@ -318,5 +318,63 @@ function xmldb_local_jedomi_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2026101801, 'local', 'jedomi');
     }
 
+    if ($oldversion < 2026101802) {
+        // Servicios de la estación: eventos de observación, propuestas de rúbrica y opción auto_release por curso.
+        $table = new xmldb_table('local_jedomi_stem_cfg');
+        $field = new xmldb_field('auto_release', XMLDB_TYPE_INTEGER, '2', null, XMLDB_NOTNULL, null, '0', 'tutor_prompt');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        $table = new xmldb_table('local_jedomi_assess_events');
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+        $table->add_field('courseid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('cmid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('userid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('sessionid', XMLDB_TYPE_CHAR, '64', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('source', XMLDB_TYPE_CHAR, '20', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('event_type', XMLDB_TYPE_CHAR, '40', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('payload', XMLDB_TYPE_TEXT, null, null, XMLDB_NOTNULL, null, null);
+        $table->add_field('nonce', XMLDB_TYPE_CHAR, '64', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('station_time', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('ingestedby', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+        $table->add_key('courseid_fk', XMLDB_KEY_FOREIGN, ['courseid'], 'course', ['id']);
+        $table->add_key('userid_fk', XMLDB_KEY_FOREIGN, ['userid'], 'user', ['id']);
+        $table->add_index('nonce_uq', XMLDB_INDEX_UNIQUE, ['nonce']);
+        $table->add_index('session_idx', XMLDB_INDEX_NOTUNIQUE, ['sessionid']);
+        $table->add_index('cmid_userid_idx', XMLDB_INDEX_NOTUNIQUE, ['cmid', 'userid']);
+        if (!$dbman->table_exists($table)) {
+            $dbman->create_table($table);
+        }
+
+        $table = new xmldb_table('local_jedomi_assess_proposals');
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+        $table->add_field('courseid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('cmid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('userid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('sessionid', XMLDB_TYPE_CHAR, '64', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('criteria_json', XMLDB_TYPE_TEXT, null, null, XMLDB_NOTNULL, null, null);
+        $table->add_field('feedback_html', XMLDB_TYPE_TEXT, null, null, XMLDB_NOTNULL, null, null);
+        $table->add_field('evidence_json', XMLDB_TYPE_TEXT, null, null, null, null, null);
+        $table->add_field('expected_grade', XMLDB_TYPE_NUMBER, '10, 5', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('status', XMLDB_TYPE_CHAR, '20', null, XMLDB_NOTNULL, null, 'proposed');
+        $table->add_field('nonce', XMLDB_TYPE_CHAR, '64', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('proposedby', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('appliedby', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('timeapplied', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+        $table->add_key('courseid_fk', XMLDB_KEY_FOREIGN, ['courseid'], 'course', ['id']);
+        $table->add_key('userid_fk', XMLDB_KEY_FOREIGN, ['userid'], 'user', ['id']);
+        $table->add_index('nonce_uq', XMLDB_INDEX_UNIQUE, ['nonce']);
+        $table->add_index('cmid_userid_status_idx', XMLDB_INDEX_NOTUNIQUE, ['cmid', 'userid', 'status']);
+        if (!$dbman->table_exists($table)) {
+            $dbman->create_table($table);
+        }
+        upgrade_plugin_savepoint(true, 2026101802, 'local', 'jedomi');
+    }
+
     return true;
 }

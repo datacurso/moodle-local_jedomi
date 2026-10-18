@@ -57,4 +57,27 @@ $capabilities = [
             'manager'        => CAP_ALLOW,
         ],
     ],
+    // La estación física (token de servicio) ingiere eventos de observación y propone rúbricas.
+    // Ningún arquetipo de usuario normal la tiene: se asigna explícitamente al rol/token de la estación.
+    'local/jedomi:ingestassessment' => [
+        'captype'      => 'write',
+        'contextlevel' => CONTEXT_SYSTEM,
+        'archetypes'   => [
+            'manager'        => CAP_ALLOW,
+            'editingteacher' => CAP_PROHIBIT,
+            'teacher'        => CAP_PROHIBIT,
+            'student'        => CAP_PROHIBIT,
+            'guest'          => CAP_PROHIBIT,
+            'user'           => CAP_PROHIBIT,
+        ],
+    ],
+    // Permite activar auto_release (publicar la nota propuesta por la estación sin revisión) en un curso.
+    'local/jedomi:autorelease' => [
+        'captype'      => 'write',
+        'contextlevel' => CONTEXT_COURSE,
+        'riskbitmask'  => RISK_DATALOSS,
+        'archetypes'   => [
+            'manager' => CAP_ALLOW,
+        ],
+    ],
 ];

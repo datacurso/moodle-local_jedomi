@@ -82,7 +82,21 @@ $functions = [
         'ajax'         => false,
         'services'     => ['jedomi_companion'],
     ],
-        'local_jedomi_get_stem_config' => [
+        'local_jedomi_ingest_assessment_event' => [
+        'classname'   => 'local_jedomi\\external\\ingest_assessment_event',
+        'description' => 'Estación STEM: ingiere un evento de observación (visión/voz/diálogo/espacial) firmado con el secreto de estación.',
+        'type'        => 'write',
+        'ajax'        => false,
+        'capabilities' => 'local/jedomi:ingestassessment',
+    ],
+    'local_jedomi_propose_rubric' => [
+        'classname'   => 'local_jedomi\\external\\propose_rubric',
+        'description' => 'Estación STEM: propone niveles de la rúbrica e informe HTML; se aplica en revisión o se libera según la configuración del curso.',
+        'type'        => 'write',
+        'ajax'        => false,
+        'capabilities' => 'local/jedomi:ingestassessment',
+    ],
+    'local_jedomi_get_stem_config' => [
         'classname'   => 'local_jedomi\\external\\get_stem_config',
         'description' => 'Configuración del Modo Evaluación Física STEM para la estación (requiere moodle/site:config).',
         'type'        => 'read',

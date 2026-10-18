@@ -54,6 +54,37 @@ $assigns = $DB->get_records_sql("
      WHERE cm.course = :courseid AND cm.deletioninprogress = 0
   ORDER BY a.name", ['courseid' => $course->id, 'ctxmod' => CONTEXT_MODULE]);
 
+$canautorelease = has_capability('local/jedomi:autorelease', $context);
+
+// Acciones sobre propuestas de la estación: aplicar (save_grade) o rechazar. Sólo profesores con mod/assign:grade en esa tarea.
+$proposalaction = optional_param('proposal_action', '', PARAM_ALPHA);
+$proposalid = optional_param('proposalid', 0, PARAM_INT);
+if ($proposalaction !== '' && $proposalid > 0) {
+    require_sesskey();
+    $proposal = $DB->get_record('local_jedomi_assess_proposals', ['id' => $proposalid, 'courseid' => $course->id], '*', MUST_EXIST);
+    if (!in_array($proposal->status, ['proposed', 'inreview'], true)) {
+        throw new moodle_exception('invalidrecord');
+    }
+    $pcm = get_coursemodule_from_id('assign', $proposal->cmid, $course->id, false, MUST_EXIST);
+    $pctx = context_module::instance($pcm->id);
+    require_capability('mod/assign:grade', $pctx);
+    if ($proposalaction === 'apply') {
+        $passign = $DB->get_record('assign', ['id' => $pcm->instance], 'id, markingworkflow', MUST_EXIST);
+        \local_jedomi\stem\rubric_proposal::apply($proposal, $pcm, $passign->markingworkflow ? 'released' : '');
+        $proposal->status = 'applied';
+        $msg = get_string('course_stem_proposal_applied', 'local_jedomi', $proposal->id);
+    } else if ($proposalaction === 'reject') {
+        $proposal->status = 'rejected';
+        $msg = get_string('course_stem_proposal_rejected', 'local_jedomi', $proposal->id);
+    } else {
+        throw new moodle_exception('invalidaction');
+    }
+    $proposal->appliedby = $USER->id;
+    $proposal->timeapplied = time();
+    $DB->update_record('local_jedomi_assess_proposals', $proposal);
+    redirect($PAGE->url, $msg, null, \core\output\notification::NOTIFY_SUCCESS);
+}
+
 if (optional_param('save', 0, PARAM_INT)) {
     require_sesskey();
     $now = time();
@@ -73,7 +104,10 @@ if (optional_param('save', 0, PARAM_INT)) {
         'tutor_mode'    => in_array($mode, $modes, true) ? $mode : 'inherit',
         'max_questions' => max(0, min(10, optional_param('max_questions', 0, PARAM_INT))),
         'tutor_prompt'  => core_text::substr(trim(strip_tags(optional_param('tutor_prompt', '', PARAM_TEXT))), 0, 2000),
-    ]);
+    ] + ($canautorelease ? ['auto_release' => optional_param('auto_release', 0, PARAM_INT) ? 1 : 0] : []));
+    if ($canautorelease && optional_param('auto_release', 0, PARAM_INT)) {
+        error_log(sprintf('[local_jedomi] auto_release ENABLED course=%d by user=%d', $course->id, $USER->id));
+    }
     $selected = optional_param_array('stem_assign', [], PARAM_INT);
     foreach ($assigns as $a) {
         $on = in_array((int) $a->cmid, array_map('intval', $selected), true) ? 1 : 0;
@@ -85,7 +119,7 @@ if (optional_param('save', 0, PARAM_INT)) {
     redirect($PAGE->url, get_string('changessaved'), null, \core\output\notification::NOTIFY_SUCCESS);
 }
 
-$cfg = $DB->get_record('local_jedomi_stem_cfg', ['courseid' => $course->id, 'cmid' => 0]) ?: (object) ['enabled' => 0, 'tutor_mode' => 'inherit', 'max_questions' => 0, 'tutor_prompt' => ''];
+$cfg = $DB->get_record('local_jedomi_stem_cfg', ['courseid' => $course->id, 'cmid' => 0]) ?: (object) ['enabled' => 0, 'tutor_mode' => 'inherit', 'max_questions' => 0, 'tutor_prompt' => '', 'auto_release' => 0];
 $activecms = $DB->get_fieldset_select('local_jedomi_stem_cfg', 'cmid', 'courseid = :c AND cmid > 0 AND enabled = 1', ['c' => $course->id]);
 $siteenabled = (int) get_config('local_jedomi', 'stem_enabled') === 1;
 $template = ['mode' => get_config('local_jedomi', 'stem_tutor_mode') ?: 'socratic', 'maxq' => (int) get_config('local_jedomi', 'stem_max_questions') ?: 3];
@@ -120,6 +154,14 @@ echo html_writer::empty_tag('input', ['type' => 'number', 'min' => 0, 'max' => 1
 echo html_writer::tag('label', get_string('course_stem_prompt', 'local_jedomi'), ['for' => 'stem-prompt', 'class' => 'form-label']);
 echo html_writer::tag('textarea', s((string) $cfg->tutor_prompt), ['id' => 'stem-prompt', 'name' => 'tutor_prompt', 'rows' => 5, 'maxlength' => 2000, 'class' => 'form-control']);
 echo html_writer::tag('div', get_string('course_stem_prompt_help', 'local_jedomi'), ['class' => 'form-text']);
+echo html_writer::start_div('form-check mt-3');
+$arattrs = ['type' => 'checkbox', 'class' => 'form-check-input', 'id' => 'stem-autorelease', 'name' => 'auto_release', 'value' => 1];
+if ((int) ($cfg->auto_release ?? 0) === 1) { $arattrs['checked'] = 'checked'; }
+if (!$canautorelease) { $arattrs['disabled'] = 'disabled'; }
+echo html_writer::empty_tag('input', $arattrs);
+echo html_writer::tag('label', get_string('course_stem_auto_release', 'local_jedomi'), ['class' => 'form-check-label', 'for' => 'stem-autorelease']);
+echo html_writer::tag('div', get_string('course_stem_auto_release_help', 'local_jedomi'), ['class' => 'form-text']);
+echo html_writer::end_div();
 echo html_writer::end_div(); echo html_writer::end_div();
 
 echo html_writer::start_div('card mb-3'); echo html_writer::start_div('card-body');
@@ -153,4 +195,34 @@ echo html_writer::end_div(); echo html_writer::end_div();
 
 echo html_writer::tag('button', '<i class="fa fa-save"></i> ' . get_string('savechanges'), ['type' => 'submit', 'class' => 'btn btn-primary']);
 echo html_writer::end_tag('form');
+
+// Propuestas pendientes de la estación.
+$pending = $DB->get_records_select('local_jedomi_assess_proposals', "courseid = :c AND status IN ('proposed','inreview')", ['c' => $course->id], 'timecreated DESC', '*', 0, 50);
+echo html_writer::start_div('card mt-4 mb-3'); echo html_writer::start_div('card-body');
+echo html_writer::tag('h5', get_string('course_stem_proposals_heading', 'local_jedomi'));
+if (!$pending) {
+    echo html_writer::tag('p', get_string('course_stem_proposals_none', 'local_jedomi'), ['class' => 'text-muted']);
+}
+foreach ($pending as $pr) {
+    $student = $DB->get_record('user', ['id' => $pr->userid], 'id, firstname, lastname, firstnamephonetic, lastnamephonetic, middlename, alternatename');
+    $pcm = get_coursemodule_from_id('assign', $pr->cmid, $course->id, false, IGNORE_MISSING);
+    $cangrade = $pcm && has_capability('mod/assign:grade', context_module::instance($pcm->id));
+    echo html_writer::start_div('border rounded p-3 mb-3');
+    echo html_writer::tag('div', html_writer::tag('strong', $student ? fullname($student) : "user {$pr->userid}") . ' · ' . ($pcm ? format_string($pcm->name) : "cmid {$pr->cmid}")
+        . ' · ' . html_writer::tag('span', s($pr->status), ['class' => 'badge bg-warning text-dark']) . ' · ' . userdate($pr->timecreated)
+        . ' · ' . get_string('stem_report_score', 'local_jedomi') . ': ' . html_writer::tag('strong', format_float((float) $pr->expected_grade, 2)));
+    echo html_writer::tag('details', html_writer::tag('summary', get_string('stem_report_title', 'local_jedomi')) . html_writer::div($pr->feedback_html, 'mt-2'), ['class' => 'mt-2']);
+    if ($cangrade) {
+        foreach (['apply' => ['course_stem_apply', 'btn-success'], 'reject' => ['course_stem_reject', 'btn-outline-danger']] as $act => [$str, $cls]) {
+            echo html_writer::start_tag('form', ['method' => 'post', 'action' => $PAGE->url->out(false), 'class' => 'd-inline me-2 mt-2']);
+            echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'sesskey', 'value' => sesskey()]);
+            echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'proposalid', 'value' => (int) $pr->id]);
+            echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'proposal_action', 'value' => $act]);
+            echo html_writer::tag('button', get_string($str, 'local_jedomi'), ['type' => 'submit', 'class' => "btn btn-sm $cls"]);
+            echo html_writer::end_tag('form');
+        }
+    }
+    echo html_writer::end_div();
+}
+echo html_writer::end_div(); echo html_writer::end_div();
 echo $OUTPUT->footer();

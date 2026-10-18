@@ -1542,3 +1542,28 @@ function local_jedomi_send_agent_notification(int|string $chatid, string $agent,
 
     return $sent;
 }
+
+/**
+ * Sirve las evidencias de la estación (filearea stem_evidence, itemid = id del evento). Sólo profesores con
+ * mod/assign:grade en la tarea (nunca el alumno ni usuarios anónimos): QA r11 #5.
+ */
+function local_jedomi_pluginfile($course, $cm, $context, string $filearea, array $args, bool $forcedownload, array $options = []): bool {
+    global $CFG, $DB;
+    require_once($CFG->libdir . '/filelib.php');
+    if ($context->contextlevel !== CONTEXT_MODULE || $filearea !== 'stem_evidence') {
+        return false;
+    }
+    require_login($course, false, $cm);
+    require_capability('mod/assign:grade', $context);
+    $itemid = (int) array_shift($args);
+    if (!$DB->record_exists('local_jedomi_assess_events', ['id' => $itemid, 'cmid' => $cm->id])) {
+        return false;
+    }
+    $filename = array_pop($args);
+    $file = get_file_storage()->get_file($context->id, 'local_jedomi', 'stem_evidence', $itemid, '/', $filename);
+    if (!$file || $file->is_directory()) {
+        return false;
+    }
+    send_stored_file($file, 0, 0, true, $options);
+    return true;
+}

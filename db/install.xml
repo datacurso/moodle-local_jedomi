@@ -116,6 +116,7 @@
                 <FIELD NAME="tutor_mode" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="inherit" SEQUENCE="false"/>
                 <FIELD NAME="max_questions" TYPE="int" LENGTH="4" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
                 <FIELD NAME="tutor_prompt" TYPE="text" NOTNULL="false" SEQUENCE="false"/>
+                <FIELD NAME="auto_release" TYPE="int" LENGTH="2" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="1 = la estación libera la nota directamente; 0 = en revisión/propuesta"/>
                 <FIELD NAME="usermodified" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
                 <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
             </FIELDS>
@@ -125,6 +126,60 @@
             </KEYS>
             <INDEXES>
                 <INDEX NAME="courseid_cmid_uq" UNIQUE="true" FIELDS="courseid, cmid"/>
+            </INDEXES>
+        </TABLE>
+        <TABLE NAME="local_jedomi_assess_events" COMMENT="Eventos de observación de la estación física (visión, voz, diálogo, espacial) firmados con el secreto de estación">
+            <FIELDS>
+                <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+                <FIELD NAME="courseid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+                <FIELD NAME="cmid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+                <FIELD NAME="userid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+                <FIELD NAME="sessionid" TYPE="char" LENGTH="64" NOTNULL="true" SEQUENCE="false"/>
+                <FIELD NAME="source" TYPE="char" LENGTH="20" NOTNULL="true" SEQUENCE="false"/>
+                <FIELD NAME="event_type" TYPE="char" LENGTH="40" NOTNULL="true" SEQUENCE="false"/>
+                <FIELD NAME="payload" TYPE="text" NOTNULL="true" SEQUENCE="false"/>
+                <FIELD NAME="nonce" TYPE="char" LENGTH="64" NOTNULL="true" SEQUENCE="false"/>
+                <FIELD NAME="station_time" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+                <FIELD NAME="ingestedby" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+                <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+            </FIELDS>
+            <KEYS>
+                <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+                <KEY NAME="courseid_fk" TYPE="foreign" FIELDS="courseid" REFTABLE="course" REFFIELDS="id"/>
+                <KEY NAME="userid_fk" TYPE="foreign" FIELDS="userid" REFTABLE="user" REFFIELDS="id"/>
+            </KEYS>
+            <INDEXES>
+                <INDEX NAME="nonce_uq" UNIQUE="true" FIELDS="nonce"/>
+                <INDEX NAME="session_idx" UNIQUE="false" FIELDS="sessionid"/>
+                <INDEX NAME="cmid_userid_idx" UNIQUE="false" FIELDS="cmid, userid"/>
+            </INDEXES>
+        </TABLE>
+        <TABLE NAME="local_jedomi_assess_proposals" COMMENT="Propuestas de calificación por rúbrica emitidas por la estación; el profesor las revisa/libera">
+            <FIELDS>
+                <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+                <FIELD NAME="courseid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+                <FIELD NAME="cmid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+                <FIELD NAME="userid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+                <FIELD NAME="sessionid" TYPE="char" LENGTH="64" NOTNULL="true" SEQUENCE="false"/>
+                <FIELD NAME="criteria_json" TYPE="text" NOTNULL="true" SEQUENCE="false"/>
+                <FIELD NAME="feedback_html" TYPE="text" NOTNULL="true" SEQUENCE="false"/>
+                <FIELD NAME="evidence_json" TYPE="text" NOTNULL="false" SEQUENCE="false"/>
+                <FIELD NAME="expected_grade" TYPE="number" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" DECIMALS="5"/>
+                <FIELD NAME="status" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="proposed" SEQUENCE="false" COMMENT="proposed|inreview|applied|released|rejected"/>
+                <FIELD NAME="nonce" TYPE="char" LENGTH="64" NOTNULL="true" SEQUENCE="false"/>
+                <FIELD NAME="proposedby" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+                <FIELD NAME="appliedby" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+                <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+                <FIELD NAME="timeapplied" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+            </FIELDS>
+            <KEYS>
+                <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+                <KEY NAME="courseid_fk" TYPE="foreign" FIELDS="courseid" REFTABLE="course" REFFIELDS="id"/>
+                <KEY NAME="userid_fk" TYPE="foreign" FIELDS="userid" REFTABLE="user" REFFIELDS="id"/>
+            </KEYS>
+            <INDEXES>
+                <INDEX NAME="nonce_uq" UNIQUE="true" FIELDS="nonce"/>
+                <INDEX NAME="cmid_userid_status_idx" UNIQUE="false" FIELDS="cmid, userid, status"/>
             </INDEXES>
         </TABLE>
     </TABLES>
