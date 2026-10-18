@@ -248,10 +248,7 @@ class handler {
         curl_setopt_array($ch, [
             CURLOPT_POST           => true,
             CURLOPT_POSTFIELDS     => json_encode($payload, JSON_UNESCAPED_UNICODE),
-            CURLOPT_HTTPHEADER     => [
-                'Content-Type: application/json',
-                'Authorization: Bearer ' . $apiKey,
-            ],
+            CURLOPT_HTTPHEADER     => \local_jedomi\gateway_headers::build($apiKey),
             CURLOPT_RETURNTRANSFER => false,
             CURLOPT_TIMEOUT        => 180,
             CURLOPT_CONNECTTIMEOUT => 10,

@@ -776,10 +776,7 @@ class webhook_handler {
                 CURLOPT_POSTFIELDS     => json_encode($payload, JSON_UNESCAPED_UNICODE),
                 CURLOPT_RETURNTRANSFER => false,
                 CURLOPT_TIMEOUT        => $curl_timeout,
-                CURLOPT_HTTPHEADER     => [
-                    'Content-Type: application/json',
-                    'Authorization: Bearer ' . $api_key,
-                ],
+                CURLOPT_HTTPHEADER     => \local_jedomi\gateway_headers::build($api_key),
                 CURLOPT_WRITEFUNCTION  => function ($ch, $data) use (&$sse_buffer) {
                     $sse_buffer .= $data;
                     return strlen($data);

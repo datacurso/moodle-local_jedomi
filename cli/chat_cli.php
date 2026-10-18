@@ -92,10 +92,7 @@ function call_ai(array $messages, array $tools = []): ?array {
     curl_setopt_array($ch, [
         CURLOPT_POST           => true,
         CURLOPT_POSTFIELDS     => json_encode($payload, JSON_UNESCAPED_UNICODE),
-        CURLOPT_HTTPHEADER     => [
-            'Content-Type: application/json',
-            'Authorization: Bearer ' . $API_KEY,
-        ],
+        CURLOPT_HTTPHEADER     => \local_jedomi\gateway_headers::build($API_KEY),
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_TIMEOUT        => 180,
         CURLOPT_CONNECTTIMEOUT => 10,

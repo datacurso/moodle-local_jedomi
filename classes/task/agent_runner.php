@@ -402,10 +402,7 @@ class agent_runner extends \core\task\scheduled_task {
                                 ], JSON_UNESCAPED_UNICODE),
                                 CURLOPT_RETURNTRANSFER => true,
                                 CURLOPT_TIMEOUT        => 120,
-                                CURLOPT_HTTPHEADER     => [
-                                    'Content-Type: application/json',
-                                    'Authorization: Bearer ' . $api_key,
-                                ],
+                                CURLOPT_HTTPHEADER     => \local_jedomi\gateway_headers::build($api_key),
                             ]);
                             $replayResponse = curl_exec($ch);
                             $replayHttp = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -509,10 +506,7 @@ class agent_runner extends \core\task\scheduled_task {
                             CURLOPT_POSTFIELDS     => json_encode($payload, JSON_UNESCAPED_UNICODE),
                             CURLOPT_RETURNTRANSFER => true,
                             CURLOPT_TIMEOUT        => 120,
-                            CURLOPT_HTTPHEADER     => [
-                                'Content-Type: application/json',
-                                'Authorization: Bearer ' . $api_key,
-                            ],
+                            CURLOPT_HTTPHEADER     => \local_jedomi\gateway_headers::build($api_key),
                         ]);
 
                         $response = curl_exec($ch);
