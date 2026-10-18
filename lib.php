@@ -419,6 +419,22 @@ function local_jedomi_is_role_allowed(): bool {
     return false; // All roles are hidden.
 }
 
+
+/**
+ * Secreto con el que se firman los SPT. Se autogenera (256 bits) la primera vez; NUNCA hay valor por defecto
+ * conocido (QA r7: con 'jedomi-spt-secret' cualquier usuario podía forjar un SPT con rol admin).
+ *
+ * @return string
+ */
+function local_jedomi_spt_secret(): string {
+    $secret = (string) get_config('local_jedomi', 'spt_secret');
+    if ($secret === '' || $secret === 'jedomi-spt-secret' || strlen($secret) < 32) {
+        $secret = bin2hex(random_bytes(32));
+        set_config('spt_secret', $secret, 'local_jedomi');
+    }
+    return $secret;
+}
+
 /**
  * Get tool definitions for a given role in OpenAI function-calling format.
  * These are embedded in the SPT so the gateway can configure the model.
@@ -817,7 +833,7 @@ function local_jedomi_generate_spt(string $role): array {
     // Firma HMAC con el static secret — el mismo que usa el Gateway Python para verificar.
     // El sesskey() se incluye en el payload (no como key) para binding de sesión:
     // si la sesión cambia, el payload cambia y el SPT queda inválido de todas formas.
-    $static_secret = get_config('local_jedomi', 'spt_secret') ?: 'jedomi-spt-secret';
+    $static_secret = local_jedomi_spt_secret();
     $payload['sesskey_hash'] = substr(hash('sha256', sesskey()), 0, 16); // binding sin exponer sesskey
 
     ksort($payload);  // ordenar claves antes de serializar (consistencia con Python sort_keys)
@@ -895,7 +911,7 @@ function local_jedomi_generate_spt_for_user(int $userid, string $role): array {
     ];
 
     // Same HMAC signing as the existing generate_spt function.
-    $static_secret = get_config('local_jedomi', 'spt_secret') ?: 'jedomi-spt-secret';
+    $static_secret = local_jedomi_spt_secret();
 
     ksort($payload);
     $to_sign = json_encode($payload);

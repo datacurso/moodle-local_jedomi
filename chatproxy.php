@@ -55,12 +55,21 @@ if (!$spt || !is_array($spt)) {
 }
 
 try {
-    $role = spt_validator::validate($spt);
+    spt_validator::validate($spt); // sesskey + userid + TTL + firma. El rol que trae NO se usa para autorizar.
 } catch (\moodle_exception $e) {
     http_response_code(403);
     header('Content-Type: application/json');
     die(json_encode(['error' => $e->getMessage()]));
 }
+// El rol se recalcula SIEMPRE en servidor a partir de las capacidades del usuario real (QA r7).
+require_once(__DIR__ . '/lib.php');
+$role = local_jedomi_get_user_role();
+$spt['role'] = $role;
+
+// Sólo se aceptan turnos user/assistant del cliente: nunca mensajes system/tool/developer inyectados.
+$messages = array_values(array_filter($messages, function ($m) {
+    return is_array($m) && isset($m['role']) && in_array($m['role'], ['user', 'assistant'], true);
+}));
 
 // ── Build system message ──
 $system   = system_message::build($role, $spt, $context);

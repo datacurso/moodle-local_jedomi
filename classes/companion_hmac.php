@@ -78,6 +78,23 @@ trait companion_hmac {
      * @param  array $params  Associative array of the non-auth function params
      * @return string         Hex SHA256 digest
      */
+    /**
+     * Verifica que el payload_hash firmado corresponde a los parámetros REALMENTE recibidos (QA r7: una firma
+     * capturada para 'SELECT 1' servía para ejecutar cualquier SQL durante 60 s). Llamar ANTES de verify_hmac.
+     *
+     * @param string $function_name
+     * @param string $payload_hash  Hash enviado por el cliente.
+     * @param array  $params        Parámetros no-auth validados (mismos nombres que el cliente serializa).
+     * @throws \moodle_exception unauthorized
+     */
+    protected static function verify_payload(string $function_name, string $payload_hash, array $params): void {
+        $expected = self::build_payload_hash($params);
+        if (!hash_equals($expected, strtolower($payload_hash))) {
+            self::log_hmac_failure($function_name, 'payload_mismatch');
+            throw new \moodle_exception('unauthorized', 'local_jedomi');
+        }
+    }
+
     protected static function build_payload_hash(array $params): string {
         ksort($params);
         return hash('sha256', json_encode($params, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));

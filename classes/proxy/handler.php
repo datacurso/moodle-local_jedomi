@@ -387,6 +387,14 @@ class handler {
         require_once(__DIR__ . '/../../lib.php');
         \local_jedomi_log('TOOL_CALL', ['tool' => $name, 'args' => $args, 'role' => $role]);
 
+        // Allowlist en EJECUCIÓN (QA r7): sólo las herramientas ofrecidas a este rol pueden ejecutarse, aunque el
+        // modelo (o un cliente manipulado) pida otra por nombre.
+        $allowed = array_map(fn($t) => $t['function']['name'] ?? '', spt_validator::get_tool_definitions($role));
+        if (!in_array($name, $allowed, true)) {
+            \local_jedomi_log('TOOL_DENIED', ['tool' => $name, 'role' => $role]);
+            return json_encode(['error' => 'tool_not_allowed', 'tool' => $name, 'role' => $role]);
+        }
+
         switch ($name) {
             case 'describe_table':
                 return self::describe_table_tool($args);

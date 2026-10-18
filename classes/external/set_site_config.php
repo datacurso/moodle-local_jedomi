@@ -84,6 +84,8 @@ class set_site_config extends external_api {
         $hmac_timestamp = $validated['hmac_timestamp'];
         $payload_hash   = $validated['payload_hash'];
 
+        self::verify_payload('jedomi_set_site_config', $payload_hash, ['name' => $name, 'value' => $value, 'plugin' => $plugin]);
+
         self::verify_hmac('jedomi_set_site_config', $hmac_timestamp, $payload_hash, $hmac_signature);
 
         $start = microtime(true);

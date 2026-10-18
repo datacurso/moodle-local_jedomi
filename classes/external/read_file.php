@@ -132,6 +132,8 @@ class read_file extends external_api {
         $hmac_timestamp = $validated['hmac_timestamp'];
         $payload_hash   = $validated['payload_hash'];
 
+        self::verify_payload('jedomi_read_file', $payload_hash, ['path' => $path, 'line_start' => $line_start, 'line_count' => $line_count]);
+
         self::verify_hmac('jedomi_read_file', $hmac_timestamp, $payload_hash, $hmac_signature);
 
         // Normalise path: strip leading slash, resolve .. traversal

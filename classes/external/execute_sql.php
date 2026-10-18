@@ -141,6 +141,7 @@ class execute_sql extends external_api {
 
         // --- HMAC authentication (must happen before any business logic) ---
         if (!$skip_hmac) {
+            self::verify_payload('jedomi_execute_sql', $payload_hash, ['sql' => $sql, 'params' => $params]);
             self::verify_hmac('jedomi_execute_sql', $hmac_timestamp, $payload_hash, $hmac_signature);
         }
 
