@@ -61,10 +61,28 @@ try {
     header('Content-Type: application/json');
     die(json_encode(['error' => $e->getMessage()]));
 }
-// El rol se recalcula SIEMPRE en servidor a partir de las capacidades del usuario real (QA r7).
+// Contexto de curso/actividad firmado en el SPT: se vuelve a comprobar el acceso del usuario (require_login)
+// para que $COURSE/$PAGE->cm sean los reales; el cliente no puede elegir otro curso.
 require_once(__DIR__ . '/lib.php');
+$spt_courseid = (int) ($spt['course_id'] ?? 0);
+$spt_cmid     = (int) ($spt['cmid'] ?? 0);
+$PAGE->set_url('/local/jedomi/chatproxy.php', ['courseid' => $spt_courseid, 'cmid' => $spt_cmid]);
+if ($spt_courseid > 1) {
+    try {
+        $course = get_course($spt_courseid);
+        $cm = $spt_cmid > 0 ? (get_coursemodule_from_id('', $spt_cmid, $spt_courseid, false, IGNORE_MISSING) ?: null) : null;
+        require_login($course, false, $cm);
+    } catch (\Throwable $e) {
+        http_response_code(403);
+        header('Content-Type: application/json');
+        die(json_encode(['error' => 'course_access_denied']));
+    }
+}
+// El rol y el modo se recalculan SIEMPRE en servidor a partir de las capacidades del usuario real (QA r7).
 $role = local_jedomi_get_user_role();
 $spt['role'] = $role;
+$spt['mode'] = local_jedomi_resolve_mode($spt_courseid, $spt_cmid, $role);
+$spt['cmid'] = $spt_cmid;
 
 // Sólo se aceptan turnos user/assistant del cliente: nunca mensajes system/tool/developer inyectados.
 $messages = array_values(array_filter($messages, function ($m) {

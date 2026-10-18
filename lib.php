@@ -435,6 +435,50 @@ function local_jedomi_spt_secret(): string {
     return $secret;
 }
 
+function local_jedomi_tool_def_ws_search(): array {
+    return [
+        'type' => 'function',
+        'function' => [
+            'name'        => 'ws_search',
+            'description' => get_string('tool_ws_search_desc', 'local_jedomi'),
+            'parameters'  => [
+                'type'       => 'object',
+                'properties' => [
+                    'query' => [
+                        'type'        => 'string',
+                        'description' => get_string('tool_ws_search_query', 'local_jedomi'),
+                    ],
+                    'limit' => [
+                        'type'        => 'integer',
+                        'description' => get_string('tool_ws_search_limit', 'local_jedomi'),
+                    ],
+                ],
+                'required' => ['query'],
+            ],
+        ],
+    ];
+}
+
+function local_jedomi_tool_def_ws_describe(): array {
+    return [
+        'type' => 'function',
+        'function' => [
+            'name'        => 'ws_describe',
+            'description' => get_string('tool_ws_describe_desc', 'local_jedomi'),
+            'parameters'  => [
+                'type'       => 'object',
+                'properties' => [
+                    'wsname' => [
+                        'type'        => 'string',
+                        'description' => get_string('tool_ws_describe_wsname', 'local_jedomi'),
+                    ],
+                ],
+                'required' => ['wsname'],
+            ],
+        ],
+    ];
+}
+
 /**
  * Get tool definitions for a given role in OpenAI function-calling format.
  * These are embedded in the SPT so the gateway can configure the model.
@@ -442,8 +486,36 @@ function local_jedomi_spt_secret(): string {
  * @param  string $role User role: admin, manager, teacher, student.
  * @return array        Array of OpenAI-style tool definitions.
  */
-function local_jedomi_get_tool_definitions(string $role): array {
+function local_jedomi_get_tool_definitions(string $role, string $mode = 'assistant'): array {
     $tools = [];
+
+    // ── Estudiante: herramientas de TUTOR, de solo lectura y acotadas a su curso. Nunca esquema de BD ni SQL. ──
+    if ($role === 'student') {
+        $tools[] = ['type' => 'function', 'function' => ['name' => 'get_course_outline',
+            'description' => get_string('tool_get_course_outline_desc', 'local_jedomi'),
+            'parameters' => ['type' => 'object', 'properties' => new stdClass(), 'required' => []]]];
+        $tools[] = ['type' => 'function', 'function' => ['name' => 'get_activity_content',
+            'description' => get_string('tool_get_activity_content_desc', 'local_jedomi'),
+            'parameters' => ['type' => 'object', 'properties' => ['cmid' => ['type' => 'integer',
+                'description' => get_string('tool_param_cmid_desc', 'local_jedomi')]], 'required' => ['cmid']]]];
+        $tools[] = ['type' => 'function', 'function' => ['name' => 'get_my_progress',
+            'description' => get_string('tool_get_my_progress_desc', 'local_jedomi'),
+            'parameters' => ['type' => 'object', 'properties' => new stdClass(), 'required' => []]]];
+        $tools[] = ['type' => 'function', 'function' => ['name' => 'get_hint_state',
+            'description' => get_string('tool_get_hint_state_desc', 'local_jedomi'),
+            'parameters' => ['type' => 'object', 'properties' => ['cmid' => ['type' => 'integer',
+                'description' => get_string('tool_param_cmid_desc', 'local_jedomi')]], 'required' => ['cmid']]]];
+        $tools[] = ['type' => 'function', 'function' => ['name' => 'advance_hint_level',
+            'description' => get_string('tool_advance_hint_level_desc', 'local_jedomi'),
+            'parameters' => ['type' => 'object', 'properties' => ['cmid' => ['type' => 'integer',
+                'description' => get_string('tool_param_cmid_desc', 'local_jedomi')]], 'required' => ['cmid']]]];
+        if ($mode === 'assistant') {
+            // Modo asistente clásico: además puede explorar servicios web de su allowlist (sin ejecutar).
+            $tools[] = local_jedomi_tool_def_ws_search();
+            $tools[] = local_jedomi_tool_def_ws_describe();
+        }
+        return $tools;
+    }
 
     // describe_table — todos los roles.
     $tools[] = [
@@ -536,46 +608,10 @@ function local_jedomi_get_tool_definitions(string $role): array {
     }
 
     // ws_search — todos los roles. Semantic keyword search returning full function docs.
-    $tools[] = [
-        'type' => 'function',
-        'function' => [
-            'name'        => 'ws_search',
-            'description' => get_string('tool_ws_search_desc', 'local_jedomi'),
-            'parameters'  => [
-                'type'       => 'object',
-                'properties' => [
-                    'query' => [
-                        'type'        => 'string',
-                        'description' => get_string('tool_ws_search_query', 'local_jedomi'),
-                    ],
-                    'limit' => [
-                        'type'        => 'integer',
-                        'description' => get_string('tool_ws_search_limit', 'local_jedomi'),
-                    ],
-                ],
-                'required' => ['query'],
-            ],
-        ],
-    ];
+    $tools[] = local_jedomi_tool_def_ws_search();
 
     // ws_describe — todos los roles. Full docs for a single known WS function.
-    $tools[] = [
-        'type' => 'function',
-        'function' => [
-            'name'        => 'ws_describe',
-            'description' => get_string('tool_ws_describe_desc', 'local_jedomi'),
-            'parameters'  => [
-                'type'       => 'object',
-                'properties' => [
-                    'wsname' => [
-                        'type'        => 'string',
-                        'description' => get_string('tool_ws_describe_wsname', 'local_jedomi'),
-                    ],
-                ],
-                'required' => ['wsname'],
-            ],
-        ],
-    ];
+    $tools[] = local_jedomi_tool_def_ws_describe();
 
     // ws_execute — admin, manager, teacher.
     if (in_array($role, ['admin', 'manager', 'teacher'], true)) {
@@ -773,7 +809,38 @@ function local_jedomi_get_tool_definitions(string $role): array {
     return $tools;
 }
 
-function local_jedomi_generate_spt(string $role): array {
+/**
+ * Resuelve el modo del asistente para un usuario en un curso/actividad. Se calcula SIEMPRE en servidor.
+ *
+ * Fase 1 (sin configuración por curso): el modo tutor del Modo Evaluación Física STEM se aplica a los
+ * ESTUDIANTES del curso de la tarea seleccionada en la pestaña "Estación STEM"; el resto usa 'assistant'.
+ *
+ * @param int    $courseid
+ * @param int    $cmid
+ * @param string $role  Rol ya resuelto en servidor.
+ * @return string 'assistant' | 'socratic' | 'guided'
+ */
+function local_jedomi_resolve_mode(int $courseid, int $cmid, string $role): string {
+    global $DB;
+    if ($role !== 'student' || $courseid <= 1) {
+        return 'assistant';
+    }
+    if ((int) get_config('local_jedomi', 'stem_enabled') !== 1) {
+        return 'assistant';
+    }
+    $stemcmid = (int) get_config('local_jedomi', 'stem_assign_cmid');
+    if ($stemcmid <= 0) {
+        return 'assistant';
+    }
+    $stemcourse = (int) $DB->get_field('course_modules', 'course', ['id' => $stemcmid]);
+    if ($stemcourse !== $courseid) {
+        return 'assistant';
+    }
+    $mode = (string) get_config('local_jedomi', 'stem_tutor_mode');
+    return in_array($mode, ['socratic', 'guided'], true) ? $mode : 'assistant';
+}
+
+function local_jedomi_generate_spt(string $role, int $cmid = 0, string $mode = 'assistant'): array {
     global $USER, $COURSE, $CFG, $DB;
 
     $sysctx    = context_system::instance();
@@ -815,10 +882,12 @@ function local_jedomi_generate_spt(string $role): array {
         }
     }
 
-    $tools = local_jedomi_get_tool_definitions($role);
+    $tools = local_jedomi_get_tool_definitions($role, $mode);
 
     $payload = [
         'userid'              => (int) $USER->id,
+        'cmid'                => $cmid,
+        'mode'                => $mode,
         'username'            => $USER->username,
         'role'                => $role,
         'course_id'           => (int) ($COURSE->id ?? 0),
@@ -836,8 +905,12 @@ function local_jedomi_generate_spt(string $role): array {
     $static_secret = local_jedomi_spt_secret();
     $payload['sesskey_hash'] = substr(hash('sha256', sesskey()), 0, 16); // binding sin exponer sesskey
 
-    ksort($payload);  // ordenar claves antes de serializar (consistencia con Python sort_keys)
-    $to_sign   = json_encode($payload);
+    // Las definiciones de tools NO se firman: son informativas (el servidor recalcula rol, modo y allowlist) y su
+    // serialización no es estable al pasar por JSON del navegador ({} ↔ []), lo que invalidaba la firma.
+    $to_sign_payload = $payload;
+    unset($to_sign_payload['tools']);
+    ksort($to_sign_payload);  // ordenar claves antes de serializar (consistencia con Python sort_keys)
+    $to_sign   = json_encode($to_sign_payload);
     $signature = hash_hmac('sha256', $to_sign, $static_secret);
 
     $payload['signature'] = $signature;
@@ -910,11 +983,13 @@ function local_jedomi_generate_spt_for_user(int $userid, string $role): array {
         'expires'             => time() + 1800,
     ];
 
-    // Same HMAC signing as the existing generate_spt function.
+    // Same HMAC signing as the existing generate_spt function (tools excluded from the signature).
     $static_secret = local_jedomi_spt_secret();
 
-    ksort($payload);
-    $to_sign = json_encode($payload);
+    $to_sign_payload = $payload;
+    unset($to_sign_payload['tools']);
+    ksort($to_sign_payload);
+    $to_sign = json_encode($to_sign_payload);
     $signature = hash_hmac('sha256', $to_sign, $static_secret);
 
     $payload['signature'] = $signature;

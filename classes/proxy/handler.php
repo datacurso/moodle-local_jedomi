@@ -44,11 +44,15 @@ class handler {
      * @param string $role     User role (already validated).
      * @param array  $spt      SPT payload.
      */
+    /** @var array SPT validado de la conversación en curso (curso, cmid, modo). */
+    private static array $spt = [];
+
     public static function run(string $model, array $messages, string $role, array $spt): void {
         require_once(__DIR__ . '/../../lib.php');
-        \local_jedomi_log('RUN_START', ['model' => $model, 'role' => $role, 'user_message_count' => count($messages)]);
+        self::$spt = $spt;
+        \local_jedomi_log('RUN_START', ['model' => $model, 'role' => $role, 'mode' => $spt['mode'] ?? 'assistant', 'user_message_count' => count($messages)]);
 
-        $tools = spt_validator::get_tool_definitions($role);
+        $tools = \local_jedomi_get_tool_definitions($role, $spt['mode'] ?? 'assistant');
         $toolrepeatcounts = [];
 
         for ($i = 0; $i < 50; $i++) {
@@ -389,13 +393,23 @@ class handler {
 
         // Allowlist en EJECUCIÓN (QA r7): sólo las herramientas ofrecidas a este rol pueden ejecutarse, aunque el
         // modelo (o un cliente manipulado) pida otra por nombre.
-        $allowed = array_map(fn($t) => $t['function']['name'] ?? '', spt_validator::get_tool_definitions($role));
+        $allowed = array_map(fn($t) => $t['function']['name'] ?? '', \local_jedomi_get_tool_definitions($role, self::$spt['mode'] ?? 'assistant'));
         if (!in_array($name, $allowed, true)) {
             \local_jedomi_log('TOOL_DENIED', ['tool' => $name, 'role' => $role]);
             return json_encode(['error' => 'tool_not_allowed', 'tool' => $name, 'role' => $role]);
         }
 
         switch ($name) {
+            case 'get_course_outline':
+                return self::tutor_course_outline_tool();
+            case 'get_activity_content':
+                return self::tutor_activity_content_tool($args);
+            case 'get_my_progress':
+                return self::tutor_my_progress_tool();
+            case 'get_hint_state':
+                return self::tutor_hint_tool($args, false);
+            case 'advance_hint_level':
+                return self::tutor_hint_tool($args, true);
             case 'describe_table':
                 return self::describe_table_tool($args);
             case 'search_tables':
@@ -1014,5 +1028,141 @@ class handler {
             'ws_execute' => get_string('summary_ws_executed', 'local_jedomi'),
             default => get_string('summary_done', 'local_jedomi'),
         };
+    }
+
+    // ─────────────────────────── Herramientas de TUTOR (solo lectura, acotadas al curso del SPT) ───────────────────────────
+
+    /** Curso del SPT validado (0 si no hay). */
+    private static function tutor_courseid(): int {
+        return (int) (self::$spt['course_id'] ?? 0);
+    }
+
+    private static function tutor_modinfo() {
+        global $USER;
+        $courseid = self::tutor_courseid();
+        if ($courseid <= 1) {
+            return null;
+        }
+        return get_fast_modinfo($courseid, $USER->id);
+    }
+
+    private static function tutor_course_outline_tool(): string {
+        $modinfo = self::tutor_modinfo();
+        if (!$modinfo) {
+            return json_encode(['error' => 'no_course_context']);
+        }
+        $out = ['course' => format_string($modinfo->get_course()->fullname), 'sections' => []];
+        $count = 0;
+        foreach ($modinfo->get_section_info_all() as $section) {
+            if (!$section->uservisible) {
+                continue;
+            }
+            $sec = ['name' => get_section_name($modinfo->get_course(), $section), 'modules' => []];
+            foreach ($modinfo->sections[$section->section] ?? [] as $cmid) {
+                $cm = $modinfo->get_cm($cmid);
+                if (!$cm->uservisible || $cm->modname === 'label') {
+                    continue;
+                }
+                $sec['modules'][] = ['cmid' => (int) $cm->id, 'type' => $cm->modname, 'name' => format_string($cm->name)];
+                if (++$count >= 200) {
+                    break 2;
+                }
+            }
+            $out['sections'][] = $sec;
+        }
+        return json_encode($out, JSON_UNESCAPED_UNICODE);
+    }
+
+    private static function tutor_activity_content_tool(array $args): string {
+        global $DB;
+        $modinfo = self::tutor_modinfo();
+        $cmid = (int) ($args['cmid'] ?? 0);
+        if (!$modinfo || $cmid <= 0) {
+            return json_encode(['error' => 'cmid_required_in_course_context']);
+        }
+        try {
+            $cm = $modinfo->get_cm($cmid); // lanza si el cmid no pertenece al curso del SPT
+        } catch (\Throwable $e) {
+            return json_encode(['error' => 'activity_not_in_this_course']);
+        }
+        if (!$cm->uservisible) {
+            return json_encode(['error' => 'activity_not_available_to_you']);
+        }
+        $instance = $DB->get_record($cm->modname, ['id' => $cm->instance]);
+        $intro = '';
+        if ($instance && isset($instance->intro)) {
+            $intro = html_to_text(format_text($instance->intro, $instance->introformat ?? FORMAT_HTML, ['context' => $cm->context]), 0, false);
+        }
+        $out = ['cmid' => (int) $cm->id, 'type' => $cm->modname, 'name' => format_string($cm->name),
+                'description' => \core_text::substr(trim($intro), 0, 6000)];
+        if ($cm->modname === 'page' && $instance && isset($instance->content)) {
+            $out['content'] = \core_text::substr(trim(html_to_text(format_text($instance->content, $instance->contentformat ?? FORMAT_HTML, ['context' => $cm->context]), 0, false)), 0, 8000);
+        }
+        if ($cm->modname === 'assign' && $instance) {
+            $out['duedate'] = $instance->duedate ? userdate($instance->duedate) : null;
+            $out['maxgrade'] = isset($instance->grade) ? (float) $instance->grade : null;
+            if (!empty($instance->activity)) {
+                $out['instructions'] = \core_text::substr(trim(html_to_text(format_text($instance->activity, $instance->activityformat ?? FORMAT_HTML, ['context' => $cm->context]), 0, false)), 0, 6000);
+            }
+        }
+        return json_encode($out, JSON_UNESCAPED_UNICODE);
+    }
+
+    private static function tutor_my_progress_tool(): string {
+        global $USER, $CFG;
+        $courseid = self::tutor_courseid();
+        if ($courseid <= 1) {
+            return json_encode(['error' => 'no_course_context']);
+        }
+        require_once($CFG->libdir . '/gradelib.php');
+        $out = ['course_total' => null, 'items' => []];
+        $courseitem = \grade_item::fetch_course_item($courseid);
+        if ($courseitem && !$courseitem->is_hidden()) {
+            $cg = \grade_grade::fetch(['itemid' => $courseitem->id, 'userid' => $USER->id]);
+            if ($cg && $cg->finalgrade !== null && !$cg->is_hidden()) {
+                $out['course_total'] = grade_format_gradevalue($cg->finalgrade, $courseitem);
+            }
+        }
+        $items = \grade_item::fetch_all(['courseid' => $courseid]) ?: [];
+        $n = 0;
+        foreach ($items as $item) {
+            if ($item->itemtype === 'course' || $item->is_hidden()) {
+                continue;
+            }
+            $g = \grade_grade::fetch(['itemid' => $item->id, 'userid' => $USER->id]);
+            if ($g && $g->is_hidden()) {
+                continue;
+            }
+            $out['items'][] = ['name' => $item->get_name(), 'grade' => $g && $g->finalgrade !== null ? grade_format_gradevalue($g->finalgrade, $item) : null,
+                               'max' => grade_format_gradevalue($item->grademax, $item), 'feedback' => $g ? \core_text::substr(html_to_text((string) $g->feedback, 0, false), 0, 500) : ''];
+            if (++$n >= 50) {
+                break;
+            }
+        }
+        return json_encode($out, JSON_UNESCAPED_UNICODE);
+    }
+
+    /** Nivel de pista 0..3 por alumno y actividad (preferencia de usuario). Sólo puede AVANZAR de uno en uno. */
+    private static function tutor_hint_tool(array $args, bool $advance): string {
+        global $USER;
+        $modinfo = self::tutor_modinfo();
+        $cmid = (int) ($args['cmid'] ?? 0);
+        if (!$modinfo || $cmid <= 0) {
+            return json_encode(['error' => 'cmid_required_in_course_context']);
+        }
+        try {
+            $modinfo->get_cm($cmid);
+        } catch (\Throwable $e) {
+            return json_encode(['error' => 'activity_not_in_this_course']);
+        }
+        $key = 'local_jedomi_hint_' . self::tutor_courseid() . '_' . $cmid;
+        $level = (int) get_user_preferences($key, 0, $USER);
+        $max = 3;
+        if ($advance && $level < $max) {
+            $level++;
+            set_user_preference($key, $level, $USER);
+        }
+        $labels = [0 => 'none', 1 => 'conceptual', 2 => 'procedural', 3 => 'worked_analogy'];
+        return json_encode(['cmid' => $cmid, 'level' => $level, 'max' => $max, 'label' => $labels[$level], 'exhausted' => $level >= $max]);
     }
 }

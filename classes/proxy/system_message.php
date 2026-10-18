@@ -41,6 +41,12 @@ class system_message {
     public static function build(string $role, array $spt, array $context = []): array {
         global $CFG;
 
+        // Perfil de TUTOR (socrático / guiado): sustituye por completo al perfil de asistente de datos.
+        $mode = $spt['mode'] ?? 'assistant';
+        if (in_array($mode, ['socratic', 'guided'], true)) {
+            return self::build_tutor($role, $mode, $spt, $context);
+        }
+
         $sitename  = get_config('core', 'sitename') ?: 'Moodle';
         $release   = $CFG->release ?? 'unknown';
         $courseId  = $spt['course_id'] ?? 0;
@@ -149,6 +155,45 @@ class system_message {
 
         $content .= "- User role: {$role}\n";
 
+        return ['role' => 'system', 'content' => $content];
+    }
+
+    /**
+     * Perfil pedagógico (diseño DISENO_TUTOR_STEM.md §3.1). Bloques en cadenas de idioma es/en + instrucciones del
+     * profesor (ajuste stem_tutor_prompt, con tope de longitud y sin HTML) + contexto de curso/actividad.
+     */
+    private static function build_tutor(string $role, string $mode, array $spt, array $context): array {
+        global $CFG, $DB;
+        $courseid = (int) ($spt['course_id'] ?? 0);
+        $cmid     = (int) ($spt['cmid'] ?? 0);
+        $coursename = $courseid > 1 ? format_string($DB->get_field('course', 'fullname', ['id' => $courseid]) ?: '') : '';
+        $activity = '';
+        if ($cmid > 0 && $courseid > 1) {
+            try {
+                $cm = get_fast_modinfo($courseid)->get_cm($cmid);
+                $activity = format_string($cm->name) . ' (' . $cm->modname . ', cmid ' . $cmid . ')';
+            } catch (\Throwable $e) {
+                $activity = '';
+            }
+        }
+        $teacher = trim(strip_tags((string) get_config('local_jedomi', 'stem_tutor_prompt')));
+        $teacher = \core_text::substr($teacher, 0, 2000);
+        $maxq = max(1, min(10, (int) get_config('local_jedomi', 'stem_max_questions') ?: 3));
+
+        $a = (object) [
+            'sitename'   => get_config('core', 'sitename') ?: 'Moodle',
+            'course'     => $coursename !== '' ? $coursename : get_string('prompt_tutor_no_course', 'local_jedomi'),
+            'activity'   => $activity !== '' ? $activity : get_string('prompt_tutor_no_activity', 'local_jedomi'),
+            'maxq'       => $maxq,
+        ];
+        $content  = get_string('prompt_tutor_identity', 'local_jedomi', $a) . "\n\n";
+        $content .= get_string($mode === 'guided' ? 'prompt_tutor_rules_guided' : 'prompt_tutor_rules_socratic', 'local_jedomi', $a) . "\n\n";
+        $content .= get_string('prompt_tutor_tools', 'local_jedomi') . "\n\n";
+        if ($teacher !== '') {
+            $content .= get_string('prompt_tutor_teacher_heading', 'local_jedomi') . "\n" . $teacher . "\n\n";
+        }
+        $content .= get_string('prompt_tutor_context', 'local_jedomi', $a) . "\n";
+        $content .= "- User role: {$role} | mode: {$mode}\n";
         return ['role' => 'system', 'content' => $content];
     }
 }

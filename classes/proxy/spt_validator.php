@@ -60,7 +60,7 @@ class spt_validator {
         require_once(__DIR__ . '/../../lib.php');
         $secret = \local_jedomi_spt_secret();
         $payload = $spt;
-        unset($payload['signature']);
+        unset($payload['signature'], $payload['tools']); // tools no firmadas (ver local_jedomi_generate_spt)
         ksort($payload);
         $expected = hash_hmac('sha256', json_encode($payload), $secret);
 

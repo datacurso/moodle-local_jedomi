@@ -135,7 +135,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && confirm_sesskey()) {
             set_config('stem_vision_model',   optional_param('stem_vision_model', 'claude-haiku-5-5', PARAM_TEXT), 'local_jedomi');
             set_config('stem_tutor_mode',     in_array(optional_param('stem_tutor_mode', 'socratic', PARAM_ALPHAEXT), ['socratic', 'guided', 'assessment_only'], true) ? optional_param('stem_tutor_mode', 'socratic', PARAM_ALPHAEXT) : 'socratic', 'local_jedomi');
             set_config('stem_max_questions',  max(1, min(10, optional_param('stem_max_questions', 3, PARAM_INT))), 'local_jedomi');
-            set_config('stem_tutor_prompt',   optional_param('stem_tutor_prompt', '', PARAM_TEXT), 'local_jedomi');
+            set_config('stem_tutor_prompt',   core_text::substr(trim(strip_tags(optional_param('stem_tutor_prompt', '', PARAM_TEXT))), 0, 2000), 'local_jedomi'); // tope 2000 (QA r7)
             if (optional_param('stem_rotate_secret', 0, PARAM_INT) || get_config('local_jedomi', 'stem_station_secret') === '') {
                 set_config('stem_station_secret', bin2hex(random_bytes(32)), 'local_jedomi');
             }
