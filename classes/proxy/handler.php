@@ -1196,32 +1196,47 @@ class handler {
             $t = preg_replace('/[\s\p{P}]+/u', ' ', $t);
             return trim((string) $t);
         };
-        $last = '';
-        for ($i = count($messages) - 1; $i >= 0; $i--) {
+        $flatten = function ($c): string {
+            if (is_array($c)) {
+                $c = implode(' ', array_map(fn($p) => is_array($p) ? ($p['text'] ?? '') : (string) $p, $c));
+            }
+            return (string) $c;
+        };
+        // Ventana reciente de mensajes del alumno (QA E3: la orden de dictado puede venir en un turno anterior).
+        $recent = [];
+        for ($i = count($messages) - 1; $i >= 0 && count($recent) < 6; $i--) {
             if (($messages[$i]['role'] ?? '') === 'user') {
-                $c = $messages[$i]['content'] ?? '';
-                if (is_array($c)) {
-                    $c = implode(' ', array_map(fn($p) => is_array($p) ? ($p['text'] ?? '') : (string) $p, $c));
-                }
-                $last = (string) $c;
-                break;
+                $recent[] = $flatten($messages[$i]['content'] ?? '');
             }
         }
+        $window = implode("\n", $recent);
         $ntext = $norm($text);
-        $dictation = (bool) preg_match('/\b(repit[ea]|repet[ií]|repeat|di que|dime que|say that|just say|escribe que|afirma|confirma|confirm|declara|responde exactamente|contesta exactamente|exactamente|verbatim|literal)/iu', $last);
-        if (preg_match_all('/[«"“”\'‘’]([^«»"“”\'‘’]{8,})[»"“”\'‘’]/u', $last, $m)) {
+        $refusal = fn(string $reason) => ['text' => get_string('tutor_echo_refusal', 'local_jedomi'), 'filtered' => true, 'reason' => $reason];
+
+        $dictation = (bool) preg_match('/\b(repit[ea]|repet[ií]|repeat|di que|dime que|cont[eé]stal[oa]|resp[oó]ndel[oa]|say that|just say|escribe que|escr[ií]belo|afirma|confirma|confirm|declara|exactamente|verbatim|literal|igual|tal cual|traduc[ei]|translate|entre comillas)/iu', $window);
+        // (a) Eco de cualquier fragmento entrecomillado reciente.
+        if (preg_match_all('/[«"“”\'‘’]([^«»"“”\'‘’]{6,})[»"“”\'‘’]/u', $window, $m)) {
             foreach ($m[1] as $quoted) {
                 $nq = $norm($quoted);
-                if ($nq === '' || mb_strlen($nq) < 8) {
+                if ($nq === '' || mb_strlen($nq) < 6) {
                     continue;
                 }
                 if (($dictation || mb_strlen($nq) >= 40) && mb_strpos($ntext, $nq) !== false) {
-                    return ['text' => get_string('tutor_echo_refusal', 'local_jedomi'), 'filtered' => true, 'reason' => 'quoted_echo'];
+                    return $refusal('quoted_echo');
                 }
             }
         }
-        if (preg_match('/\b(la respuesta( correcta| final)?( es|:)|el resultado( correcto)? es|la soluci[oó]n( correcta)? es|the (correct |final )?answer is|the solution is)\b/iu', $text)) {
-            return ['text' => get_string('tutor_echo_refusal', 'local_jedomi'), 'filtered' => true, 'reason' => 'answer_statement'];
+        // (b) Declaraciones de respuesta/valor (es/en, con sinónimos).
+        $decl = '/\b(la respuesta( correcta| final)?( es|:)|el (resultado|valor)( correcto| final)?( es|:)|la (soluci[oó]n|resistencia|tensi[oó]n|corriente)( correcta| necesaria| adecuada)? es\b|es (lo )?correct[oa]\b|equivale a\b|the (correct |final |right )?(answer|value|result|solution)( is|:)|is (the )?correct\b|should be\b)/iu';
+        if (preg_match($decl, $text)) {
+            return $refusal('answer_statement');
+        }
+        // (c) Invariante socrático independiente del idioma: afirma un número con unidad y no formula ninguna pregunta.
+        $hasnumber = (bool) preg_match('/\b\d+([.,]\d+)?\s?(k?Ω|ohm(io)?s?|ohms?|k(ilo)?ohm(io)?s?|m?A|mA|amperios?|V|voltios?|volts?|W|vatios?|watts?|Hz|µ?F|nF|pF|mm|cm|m|s|ms)\b/iu', $text)
+                  || (bool) preg_match('/\d+\s?Ω/u', $text);
+        $hasquestion = (bool) preg_match('/[?¿]/u', $text);
+        if ($hasnumber && !$hasquestion) {
+            return $refusal('numeric_assertion_without_question');
         }
         return ['text' => $text, 'filtered' => false, 'reason' => ''];
     }
