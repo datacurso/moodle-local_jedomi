@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 460" font-family="Helvetica, Arial, sans-serif">
+  <defs><style>.t{font-size:18px;fill:#1f2937}.s{font-size:14px;fill:#4b5563}.h{font-size:22px;font-weight:700;fill:#111827}</style></defs>
+  <rect width="1200" height="460" fill="#ffffff"/>
+  <!-- Panel 1: laboratorio -->
+  <text x="40" y="40" class="h">1 · Laboratorio: cámara en brazo sobre la mesa</text>
+  <rect x="40" y="330" width="520" height="14" fill="#9ca3af"/>
+  <text x="40" y="372" class="s">mesa</text>
+  <!-- tapete -->
+  <rect x="150" y="286" width="300" height="42" rx="3" fill="#3f3f46"/>
+  <g fill="#fff"><rect x="156" y="291" width="12" height="12"/><rect x="432" y="291" width="12" height="12"/><rect x="432" y="311" width="12" height="12"/><rect x="156" y="311" width="12" height="12"/></g>
+  <g fill="#000"><rect x="158" y="293" width="8" height="8"/><rect x="434" y="293" width="8" height="8"/><rect x="434" y="313" width="8" height="8"/><rect x="158" y="313" width="8" height="8"/></g>
+  <text x="300" y="368" class="s" text-anchor="middle">tapete ArUco (IDs 0·1·2·3 en las esquinas)</text>
+  <!-- brazo + cámara -->
+  <rect x="470" y="120" width="10" height="210" fill="#6b7280"/>
+  <rect x="330" y="120" width="150" height="10" fill="#6b7280"/>
+  <g transform="translate(330 125) rotate(32)"><rect x="-22" y="0" width="44" height="30" rx="6" fill="#111827"/><circle cx="0" cy="15" r="8" fill="#60a5fa"/></g>
+  <path d="M330 155 L190 290 M330 155 L450 290" stroke="#60a5fa" stroke-width="2" stroke-dasharray="6 6" fill="none"/>
+  <text x="520" y="110" class="s">brazo / trípode (rosca 1/4&quot;)</text>
+  <text x="520" y="160" class="s">cámara inclinada 30–35°</text>
+  <text x="520" y="180" class="s">altura 40–60 cm sobre el tapete</text>
+  <!-- alumno -->
+  <circle cx="90" cy="200" r="22" fill="#fbbf24"/><rect x="68" y="226" width="44" height="60" rx="10" fill="#2563eb"/>
+  <text x="90" y="310" class="s" text-anchor="middle">alumno</text>
+  <path d="M330 150 C 250 120, 170 140, 110 190" stroke="#f59e0b" stroke-width="2" stroke-dasharray="4 6" fill="none"/>
+  <text x="200" y="118" class="s" fill="#b45309">preset Rostro ↔ preset Mesa (gimbal)</text>
+  <!-- Panel 2: casa -->
+  <text x="640" y="40" class="h">2 · Casa: PC portátil o móvil frente a la hoja</text>
+  <rect x="640" y="330" width="520" height="14" fill="#9ca3af"/>
+  <text x="640" y="372" class="s">mesa</text>
+  <!-- hoja impresa -->
+  <rect x="760" y="280" width="240" height="48" rx="2" fill="#f3f4f6" stroke="#9ca3af"/>
+  <rect x="772" y="288" width="216" height="32" fill="#3f3f46"/>
+  <g fill="#fff"><rect x="776" y="292" width="9" height="9"/><rect x="975" y="292" width="9" height="9"/><rect x="975" y="307" width="9" height="9"/><rect x="776" y="307" width="9" height="9"/></g>
+  <text x="880" y="368" class="s" text-anchor="middle">hoja A4/Carta impresa al 100 % (barra de 50 mm)</text>
+  <!-- portátil -->
+  <rect x="1010" y="300" width="120" height="30" rx="3" fill="#374151"/>
+  <rect x="1016" y="180" width="108" height="118" rx="4" fill="#111827"/>
+  <circle cx="1070" cy="190" r="4" fill="#60a5fa"/>
+  <path d="M1070 192 L790 286 M1070 192 L1000 286" stroke="#60a5fa" stroke-width="2" stroke-dasharray="6 6" fill="none"/>
+  <text x="1010" y="170" class="s">portátil con la pantalla inclinada hacia la hoja</text>
+  <!-- móvil en soporte -->
+  <rect x="690" y="200" width="36" height="70" rx="6" fill="#111827" transform="rotate(-30 708 235)"/>
+  <circle cx="704" cy="214" r="3" fill="#60a5fa"/>
+  <path d="M706 218 L780 286 M706 218 L960 286" stroke="#60a5fa" stroke-width="2" stroke-dasharray="6 6" fill="none"/>
+  <rect x="700" y="268" width="6" height="62" fill="#6b7280"/>
+  <text x="640" y="190" class="s">o móvil en soporte, 30–40 cm</text>
+  <text x="600" y="430" class="t" text-anchor="middle">Coordenadas normalizadas del tapete: la IA evalúa igual con la cámara del laboratorio o con la de casa.</text>
+</svg>

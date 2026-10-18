@@ -114,22 +114,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && confirm_sesskey()) {
 
         case 'stem':
             set_config('stem_enabled',        optional_param('stem_enabled', 0, PARAM_INT), 'local_jedomi');
-            set_config('stem_osc_host',       optional_param('stem_osc_host', '127.0.0.1', PARAM_HOST), 'local_jedomi');
-            set_config('stem_osc_port',       max(1, min(65535, optional_param('stem_osc_port', 16284, PARAM_INT))), 'local_jedomi');
-            set_config('stem_osc_reply_port', max(0, min(65535, optional_param('stem_osc_reply_port', 16285, PARAM_INT))), 'local_jedomi');
-            set_config('stem_preset_face',    max(1, min(3, optional_param('stem_preset_face', 1, PARAM_INT))), 'local_jedomi');
-            set_config('stem_preset_table',   max(1, min(3, optional_param('stem_preset_table', 2, PARAM_INT))), 'local_jedomi');
-            set_config('stem_camera_index',   max(0, min(9, optional_param('stem_camera_index', 0, PARAM_INT))), 'local_jedomi');
-            set_config('stem_camera_width',   max(320, min(3840, optional_param('stem_camera_width', 1920, PARAM_INT))), 'local_jedomi');
-            set_config('stem_camera_height',  max(240, min(2160, optional_param('stem_camera_height', 1080, PARAM_INT))), 'local_jedomi');
-            set_config('stem_mic_match',      optional_param('stem_mic_match', 'OBSBOT', PARAM_TEXT), 'local_jedomi');
-            set_config('stem_mat_width_mm',   max(100, min(3000, optional_param('stem_mat_width_mm', 800, PARAM_INT))), 'local_jedomi');
-            set_config('stem_mat_height_mm',  max(100, min(3000, optional_param('stem_mat_height_mm', 400, PARAM_INT))), 'local_jedomi');
-            set_config('stem_marker_mm',      max(20, min(300, optional_param('stem_marker_mm', 60, PARAM_INT))), 'local_jedomi');
-            set_config('stem_margin_mm',      max(0, min(200, optional_param('stem_margin_mm', 20, PARAM_INT))), 'local_jedomi');
-            set_config('stem_aruco_dict',     'DICT_4X4_50', 'local_jedomi');
-            set_config('stem_whisper_model',  in_array(optional_param('stem_whisper_model', 'small', PARAM_ALPHANUMEXT), ['tiny', 'base', 'small', 'medium', 'large-v3'], true) ? optional_param('stem_whisper_model', 'small', PARAM_ALPHANUMEXT) : 'small', 'local_jedomi');
-            set_config('stem_whisper_prompt', optional_param('stem_whisper_prompt', '', PARAM_TEXT), 'local_jedomi');
             set_config('stem_vision_model',   optional_param('stem_vision_model', 'claude-haiku-5-5', PARAM_TEXT), 'local_jedomi');
             set_config('stem_tutor_mode',     in_array(optional_param('stem_tutor_mode', 'socratic', PARAM_ALPHAEXT), ['socratic', 'guided', 'assessment_only'], true) ? optional_param('stem_tutor_mode', 'socratic', PARAM_ALPHAEXT) : 'socratic', 'local_jedomi');
             set_config('stem_max_questions',  max(1, min(10, optional_param('stem_max_questions', 3, PARAM_INT))), 'local_jedomi');
@@ -591,32 +575,6 @@ echo '</ul>';
 
     <div class="card mt-3">
         <div class="card-header">
-            <div class="card-icon" style="background:#fef3c7"><i class="fa fa-video-camera" style="color:#d97706"></i></div>
-            <div><h5><?php echo get_string('stem_camera_heading', 'local_jedomi'); ?></h5><small><?php echo get_string('stem_camera_heading_help', 'local_jedomi'); ?></small></div>
-        </div>
-        <div class="card-body">
-            <div class="row">
-                <div class="col-md-4 mb-3"><?php echo $field('stem_osc_host'); ?></div>
-                <div class="col-md-4 mb-3"><?php echo $field('stem_osc_port', 'number', ['min' => 1, 'max' => 65535]); ?></div>
-                <div class="col-md-4 mb-3"><?php echo $field('stem_osc_reply_port', 'number', ['min' => 0, 'max' => 65535]); ?></div>
-                <div class="col-md-3 mb-3"><?php echo $field('stem_preset_face', 'number', ['min' => 1, 'max' => 3]); ?></div>
-                <div class="col-md-3 mb-3"><?php echo $field('stem_preset_table', 'number', ['min' => 1, 'max' => 3]); ?></div>
-                <div class="col-md-2 mb-3"><?php echo $field('stem_camera_index', 'number', ['min' => 0, 'max' => 9]); ?></div>
-                <div class="col-md-2 mb-3"><?php echo $field('stem_camera_width', 'number', ['min' => 320, 'max' => 3840]); ?></div>
-                <div class="col-md-2 mb-3"><?php echo $field('stem_camera_height', 'number', ['min' => 240, 'max' => 2160]); ?></div>
-                <div class="col-md-6 mb-3"><?php echo $field('stem_mic_match'); ?></div>
-                <div class="col-md-3 mb-3"><?php echo $field('stem_whisper_model'); ?></div>
-                <div class="col-md-12 mb-3">
-                    <label class="form-label-main" for="jedomi-stem_whisper_prompt"><?php echo get_string('stem_whisper_prompt', 'local_jedomi'); ?></label>
-                    <textarea class="form-control" id="jedomi-stem_whisper_prompt" name="stem_whisper_prompt" rows="2"><?php echo s((string) $sc['stem_whisper_prompt']); ?></textarea>
-                    <div class="form-text"><?php echo get_string('stem_whisper_prompt_help', 'local_jedomi'); ?></div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="card mt-3">
-        <div class="card-header">
             <div class="card-icon" style="background:#dcfce7"><i class="fa fa-camera" style="color:#15803d"></i></div>
             <div><h5><?php echo get_string('stem_cameras_heading', 'local_jedomi'); ?></h5><small><?php echo get_string('stem_cameras_heading_help', 'local_jedomi'); ?></small></div>
         </div>
@@ -632,6 +590,21 @@ echo '</ul>';
 
     <div class="card mt-3">
         <div class="card-header">
+            <div class="card-icon" style="background:#e0f2fe"><i class="fa fa-desktop" style="color:#0369a1"></i></div>
+            <div><h5><?php echo get_string('stem_placement_heading', 'local_jedomi'); ?></h5><small><?php echo get_string('stem_placement_help', 'local_jedomi'); ?></small></div>
+        </div>
+        <div class="card-body">
+            <img src="<?php echo (new moodle_url('/local/jedomi/stem/pix/colocacion.svg'))->out(false); ?>" alt="<?php echo get_string('stem_placement_alt', 'local_jedomi'); ?>" style="max-width:100%;height:auto;border:1px solid #e5e7eb;border-radius:.5rem">
+            <ol class="mt-3 mb-0">
+                <?php foreach (['stem_placement_step_1', 'stem_placement_step_2', 'stem_placement_step_3', 'stem_placement_step_4'] as $k): ?>
+                <li><?php echo get_string($k, 'local_jedomi'); ?></li>
+                <?php endforeach; ?>
+            </ol>
+        </div>
+    </div>
+
+    <div class="card mt-3">
+        <div class="card-header">
             <div class="card-icon" style="background:#fef9c3"><i class="fa fa-file-pdf-o" style="color:#a16207"></i></div>
             <div><h5><?php echo get_string('stem_mat_download_heading', 'local_jedomi'); ?></h5><small><?php echo get_string('stem_mat_download_help', 'local_jedomi'); ?></small></div>
         </div>
@@ -639,22 +612,6 @@ echo '</ul>';
             <?php foreach (['tapete_A4_1hoja.pdf' => 'A4 · 1 hoja (277×138 mm)', 'tapete_2xA4.pdf' => 'A4 · 2 hojas (400×200 mm)', 'tapete_Carta_1hoja.pdf' => 'Carta · 1 hoja (259×130 mm)', 'tapete_2xCarta.pdf' => 'Carta · 2 hojas (400×200 mm)', 'tapete_lab_800x400.png' => 'Laboratorio · PNG 800×400 mm (sublimación)'] as $file => $label): ?>
             <a class="btn btn-outline-secondary btn-sm me-2 mb-2" href="<?php echo (new moodle_url('/local/jedomi/stem/tapete.php', ['file' => $file]))->out(false); ?>"><i class="fa fa-download mr-1"></i><?php echo $label; ?></a>
             <?php endforeach; ?>
-        </div>
-    </div>
-
-    <div class="card mt-3">
-        <div class="card-header">
-            <div class="card-icon" style="background:#f1f5f9"><i class="fa fa-th" style="color:#334155"></i></div>
-            <div><h5><?php echo get_string('stem_mat_heading', 'local_jedomi'); ?></h5><small><?php echo get_string('stem_mat_heading_help', 'local_jedomi'); ?></small></div>
-        </div>
-        <div class="card-body">
-            <div class="row">
-                <div class="col-md-3 mb-3"><?php echo $field('stem_mat_width_mm', 'number', ['min' => 100, 'max' => 3000]); ?></div>
-                <div class="col-md-3 mb-3"><?php echo $field('stem_mat_height_mm', 'number', ['min' => 100, 'max' => 3000]); ?></div>
-                <div class="col-md-3 mb-3"><?php echo $field('stem_marker_mm', 'number', ['min' => 20, 'max' => 300]); ?></div>
-                <div class="col-md-3 mb-3"><?php echo $field('stem_margin_mm', 'number', ['min' => 0, 'max' => 200]); ?></div>
-            </div>
-            <p class="form-text mb-0"><?php echo get_string('stem_aruco_dict_note', 'local_jedomi'); ?> <code><?php echo s((string) $sc['stem_aruco_dict']); ?></code> · IDs 0 (sup. izq.), 1 (sup. der.), 2 (inf. der.), 3 (inf. izq.)</p>
         </div>
     </div>
 
