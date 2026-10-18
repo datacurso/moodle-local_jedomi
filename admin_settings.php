@@ -31,6 +31,59 @@ $context = context_system::instance();
 require_capability('moodle/site:config', $context);
 
 $tab     = optional_param('tab', 'general', PARAM_ALPHA);
+
+// ── Modo Evaluación Física STEM: ajustes de la estación (rama local/stem-fisica) ───────────────
+// Única fuente de verdad para los scripts Python (se exportan como JSON vía ?tab=stem&export=json o WS).
+$STEM_DEFAULTS = [
+    'stem_enabled'          => 0,
+    'stem_assign_cmid'      => 0,                      // cmid de la tarea mod_assign con rúbrica
+    'stem_osc_host'         => '127.0.0.1',
+    'stem_osc_port'         => 16284,                  // puerto de recepción de OBSBOT Center
+    'stem_osc_reply_port'   => 16285,                  // puerto de envío de OBSBOT Center hacia la estación
+    'stem_preset_face'      => 1,                      // Preset 1 = rostro / nivel ocular
+    'stem_preset_table'     => 2,                      // Preset 2 = mesa / tapete
+    'stem_camera_index'     => 0,                      // índice AVFoundation de la OBSBOT
+    'stem_camera_width'     => 1920,
+    'stem_camera_height'    => 1080,
+    'stem_mic_match'        => 'OBSBOT',               // subcadena del nombre del micrófono
+    'stem_mat_width_mm'     => 800,
+    'stem_mat_height_mm'    => 400,
+    'stem_marker_mm'        => 60,
+    'stem_margin_mm'        => 20,
+    'stem_aruco_dict'       => 'DICT_4X4_50',
+    'stem_whisper_model'    => 'small',
+    'stem_whisper_prompt'   => 'Clase de electrónica: resistencia, ohmios, LED, diodo, protoboard, voltaje, corriente, ley de Ohm, condensador, pila de nueve voltios, polaridad, ánodo, cátodo.',
+    'stem_vision_model'     => 'claude-haiku-5-5',
+    'stem_tutor_mode'       => 'socratic',             // socratic | guided | assessment_only
+    'stem_max_questions'    => 3,
+    'stem_tutor_prompt'     => "Eres un tutor socrático de electrónica en una estación física. Observas el montaje del alumno (imagen cenital del tapete) y escuchas su explicación. Nunca das la respuesta ni corriges directamente: formulas preguntas breves que lleven al alumno a descubrir el error o a justificar su diseño. Una pregunta por turno, en español, máximo dos frases. Al final emites una evaluación por criterio de la rúbrica con evidencia observada.",
+    'stem_station_secret'   => '',                     // HMAC para eventos estación → Moodle (se genera al guardar si está vacío)
+];
+foreach ($STEM_DEFAULTS as $k => $v) {
+    $cur = get_config('local_jedomi', $k);
+    if ($cur === false || $cur === null) {
+        set_config($k, $v, 'local_jedomi');
+    }
+}
+
+// ── STEM: exportación JSON de la configuración de la estación (sólo admin, misma sesión) ──────────
+if ($tab === 'stem' && optional_param('export', '', PARAM_ALPHA) === 'json') {
+    $out = [];
+    foreach ($STEM_DEFAULTS as $k => $v) {
+        $val = get_config('local_jedomi', $k);
+        if ($k === 'stem_station_secret') {
+            continue; // el secreto se entrega por WS autenticado, no por descarga
+        }
+        $out[substr($k, 5)] = is_numeric($val) && is_int($v) ? (int) $val : $val;
+    }
+    $out['exported_at'] = date('c');
+    $out['wwwroot'] = $CFG->wwwroot;
+    header('Content-Type: application/json; charset=utf-8');
+    header('Content-Disposition: attachment; filename="stem_station_config.json"');
+    echo json_encode($out, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    exit;
+}
+
 $pageurl = new moodle_url('/local/jedomi/admin_settings.php');
 
 $PAGE->set_context($context);
@@ -57,6 +110,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && confirm_sesskey()) {
             set_config('collect_training_data', optional_param('collect_training_data', 0, PARAM_INT),  'local_jedomi');
 
             redirect(new moodle_url($pageurl, ['tab' => 'general']),
+                get_string('changessaved'), null, \core\output\notification::NOTIFY_SUCCESS);
+            break;
+
+        case 'stem':
+            set_config('stem_enabled',        optional_param('stem_enabled', 0, PARAM_INT), 'local_jedomi');
+            set_config('stem_assign_cmid',    optional_param('stem_assign_cmid', 0, PARAM_INT), 'local_jedomi');
+            set_config('stem_osc_host',       optional_param('stem_osc_host', '127.0.0.1', PARAM_HOST), 'local_jedomi');
+            set_config('stem_osc_port',       max(1, min(65535, optional_param('stem_osc_port', 16284, PARAM_INT))), 'local_jedomi');
+            set_config('stem_osc_reply_port', max(0, min(65535, optional_param('stem_osc_reply_port', 16285, PARAM_INT))), 'local_jedomi');
+            set_config('stem_preset_face',    max(1, min(3, optional_param('stem_preset_face', 1, PARAM_INT))), 'local_jedomi');
+            set_config('stem_preset_table',   max(1, min(3, optional_param('stem_preset_table', 2, PARAM_INT))), 'local_jedomi');
+            set_config('stem_camera_index',   max(0, min(9, optional_param('stem_camera_index', 0, PARAM_INT))), 'local_jedomi');
+            set_config('stem_camera_width',   max(320, min(3840, optional_param('stem_camera_width', 1920, PARAM_INT))), 'local_jedomi');
+            set_config('stem_camera_height',  max(240, min(2160, optional_param('stem_camera_height', 1080, PARAM_INT))), 'local_jedomi');
+            set_config('stem_mic_match',      optional_param('stem_mic_match', 'OBSBOT', PARAM_TEXT), 'local_jedomi');
+            set_config('stem_mat_width_mm',   max(100, min(3000, optional_param('stem_mat_width_mm', 800, PARAM_INT))), 'local_jedomi');
+            set_config('stem_mat_height_mm',  max(100, min(3000, optional_param('stem_mat_height_mm', 400, PARAM_INT))), 'local_jedomi');
+            set_config('stem_marker_mm',      max(20, min(300, optional_param('stem_marker_mm', 60, PARAM_INT))), 'local_jedomi');
+            set_config('stem_margin_mm',      max(0, min(200, optional_param('stem_margin_mm', 20, PARAM_INT))), 'local_jedomi');
+            set_config('stem_aruco_dict',     'DICT_4X4_50', 'local_jedomi');
+            set_config('stem_whisper_model',  in_array(optional_param('stem_whisper_model', 'small', PARAM_ALPHANUMEXT), ['tiny', 'base', 'small', 'medium', 'large-v3'], true) ? optional_param('stem_whisper_model', 'small', PARAM_ALPHANUMEXT) : 'small', 'local_jedomi');
+            set_config('stem_whisper_prompt', optional_param('stem_whisper_prompt', '', PARAM_TEXT), 'local_jedomi');
+            set_config('stem_vision_model',   optional_param('stem_vision_model', 'claude-haiku-5-5', PARAM_TEXT), 'local_jedomi');
+            set_config('stem_tutor_mode',     in_array(optional_param('stem_tutor_mode', 'socratic', PARAM_ALPHAEXT), ['socratic', 'guided', 'assessment_only'], true) ? optional_param('stem_tutor_mode', 'socratic', PARAM_ALPHAEXT) : 'socratic', 'local_jedomi');
+            set_config('stem_max_questions',  max(1, min(10, optional_param('stem_max_questions', 3, PARAM_INT))), 'local_jedomi');
+            set_config('stem_tutor_prompt',   optional_param('stem_tutor_prompt', '', PARAM_TEXT), 'local_jedomi');
+            if (optional_param('stem_rotate_secret', 0, PARAM_INT) || get_config('local_jedomi', 'stem_station_secret') === '') {
+                set_config('stem_station_secret', bin2hex(random_bytes(32)), 'local_jedomi');
+            }
+            redirect(new moodle_url($pageurl, ['tab' => 'stem']),
                 get_string('changessaved'), null, \core\output\notification::NOTIFY_SUCCESS);
             break;
 
@@ -270,6 +353,7 @@ $tabs = [
     'apis'        => ['icon' => 'fa-cloud',          'label' => get_string('tab_apis',          'local_jedomi')],
     'agents'      => ['icon' => 'fa-robot',          'label' => get_string('tab_agents',        'local_jedomi')],
     'profiler'    => ['icon' => 'fa-chart-bar',    'label' => get_string('tab_profiler', 'local_jedomi')],
+    'stem'        => ['icon' => 'fa-flask',        'label' => get_string('tab_stem', 'local_jedomi')],
 ];
 
 echo '<ul class="nav nav-tabs mb-4" role="tablist">';
@@ -455,6 +539,130 @@ echo '</ul>';
         <button type="submit" class="btn btn-primary">
             <i class="fa fa-save mr-1"></i><?php echo get_string('savechanges'); ?>
         </button>
+    </div>
+</form>
+<?php endif; ?>
+
+
+<?php // ───────────────────────────── TAB: STEM (Evaluación Física) ─────────── ?>
+<?php if ($tab === 'stem'):
+    $sc = [];
+    foreach ($STEM_DEFAULTS as $k => $v) { $sc[$k] = get_config('local_jedomi', $k); }
+    $assignopts = [];
+    foreach ($DB->get_records_sql("SELECT cm.id AS cmid, a.name, c.shortname FROM {course_modules} cm JOIN {modules} m ON m.id = cm.module AND m.name = 'assign' JOIN {assign} a ON a.id = cm.instance JOIN {course} c ON c.id = cm.course ORDER BY c.shortname, a.name") as $r) {
+        $assignopts[$r->cmid] = $r->shortname . ' · ' . $r->name;
+    }
+    $field = function (string $name, string $type = 'text', array $attrs = []) use ($sc) {
+        $a = '';
+        foreach ($attrs as $k => $v) { $a .= ' ' . $k . '="' . s((string) $v) . '"'; }
+        return '<label class="form-label-main" for="jedomi-' . $name . '">' . get_string($name, 'local_jedomi') . '</label>'
+             . '<input type="' . $type . '" id="jedomi-' . $name . '" name="' . $name . '" class="form-control" value="' . s((string) $sc[$name]) . '"' . $a . '>'
+             . '<div class="form-text">' . get_string($name . '_help', 'local_jedomi') . '</div>';
+    };
+?>
+<form method="post" action="<?php echo (new moodle_url($pageurl, ['tab' => 'stem']))->out(false); ?>">
+    <input type="hidden" name="sesskey"     value="<?php echo sesskey(); ?>">
+    <input type="hidden" name="jedomi_save" value="stem">
+
+    <div class="card">
+        <div class="card-header">
+            <div class="card-icon" style="background:#ecfeff"><i class="fa fa-flask" style="color:#0891b2"></i></div>
+            <div><h5><?php echo get_string('stem_heading', 'local_jedomi'); ?></h5><small><?php echo get_string('stem_heading_help', 'local_jedomi'); ?></small></div>
+        </div>
+        <div class="card-body">
+            <div class="form-check form-switch mb-3">
+                <input type="checkbox" class="form-check-input" id="jedomi-stem_enabled" name="stem_enabled" value="1" <?php echo $sc['stem_enabled'] ? 'checked' : ''; ?>>
+                <label class="form-check-label" for="jedomi-stem_enabled"><?php echo get_string('stem_enabled', 'local_jedomi'); ?></label>
+                <div class="form-text"><?php echo get_string('stem_enabled_help', 'local_jedomi'); ?></div>
+            </div>
+            <div class="mb-3">
+                <label class="form-label-main" for="jedomi-stem_assign_cmid"><?php echo get_string('stem_assign_cmid', 'local_jedomi'); ?></label>
+                <select class="form-control" id="jedomi-stem_assign_cmid" name="stem_assign_cmid" style="max-width:560px">
+                    <option value="0">—</option>
+                    <?php foreach ($assignopts as $cmid => $label): ?>
+                    <option value="<?php echo $cmid; ?>" <?php echo ((int) $sc['stem_assign_cmid'] === (int) $cmid) ? 'selected' : ''; ?>><?php echo s($label); ?> (cmid <?php echo $cmid; ?>)</option>
+                    <?php endforeach; ?>
+                </select>
+                <div class="form-text"><?php echo get_string('stem_assign_cmid_help', 'local_jedomi'); ?></div>
+            </div>
+            <div class="mb-3">
+                <label class="form-label-main" for="jedomi-stem_tutor_mode"><?php echo get_string('stem_tutor_mode', 'local_jedomi'); ?></label>
+                <select class="form-control" id="jedomi-stem_tutor_mode" name="stem_tutor_mode" style="max-width:360px">
+                    <?php foreach (['socratic', 'guided', 'assessment_only'] as $m): ?>
+                    <option value="<?php echo $m; ?>" <?php echo $sc['stem_tutor_mode'] === $m ? 'selected' : ''; ?>><?php echo get_string('stem_tutor_mode_' . $m, 'local_jedomi'); ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <div class="form-text"><?php echo get_string('stem_tutor_mode_help', 'local_jedomi'); ?></div>
+            </div>
+            <div class="mb-3" style="max-width:200px"><?php echo $field('stem_max_questions', 'number', ['min' => 1, 'max' => 10]); ?></div>
+            <div class="mb-3">
+                <label class="form-label-main" for="jedomi-stem_tutor_prompt"><?php echo get_string('stem_tutor_prompt', 'local_jedomi'); ?></label>
+                <textarea class="form-control" id="jedomi-stem_tutor_prompt" name="stem_tutor_prompt" rows="5"><?php echo s((string) $sc['stem_tutor_prompt']); ?></textarea>
+                <div class="form-text"><?php echo get_string('stem_tutor_prompt_help', 'local_jedomi'); ?></div>
+            </div>
+            <div class="mb-3" style="max-width:360px"><?php echo $field('stem_vision_model'); ?></div>
+        </div>
+    </div>
+
+    <div class="card mt-3">
+        <div class="card-header">
+            <div class="card-icon" style="background:#fef3c7"><i class="fa fa-video-camera" style="color:#d97706"></i></div>
+            <div><h5><?php echo get_string('stem_camera_heading', 'local_jedomi'); ?></h5><small><?php echo get_string('stem_camera_heading_help', 'local_jedomi'); ?></small></div>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-4 mb-3"><?php echo $field('stem_osc_host'); ?></div>
+                <div class="col-md-4 mb-3"><?php echo $field('stem_osc_port', 'number', ['min' => 1, 'max' => 65535]); ?></div>
+                <div class="col-md-4 mb-3"><?php echo $field('stem_osc_reply_port', 'number', ['min' => 0, 'max' => 65535]); ?></div>
+                <div class="col-md-3 mb-3"><?php echo $field('stem_preset_face', 'number', ['min' => 1, 'max' => 3]); ?></div>
+                <div class="col-md-3 mb-3"><?php echo $field('stem_preset_table', 'number', ['min' => 1, 'max' => 3]); ?></div>
+                <div class="col-md-2 mb-3"><?php echo $field('stem_camera_index', 'number', ['min' => 0, 'max' => 9]); ?></div>
+                <div class="col-md-2 mb-3"><?php echo $field('stem_camera_width', 'number', ['min' => 320, 'max' => 3840]); ?></div>
+                <div class="col-md-2 mb-3"><?php echo $field('stem_camera_height', 'number', ['min' => 240, 'max' => 2160]); ?></div>
+                <div class="col-md-6 mb-3"><?php echo $field('stem_mic_match'); ?></div>
+                <div class="col-md-3 mb-3"><?php echo $field('stem_whisper_model'); ?></div>
+                <div class="col-md-12 mb-3">
+                    <label class="form-label-main" for="jedomi-stem_whisper_prompt"><?php echo get_string('stem_whisper_prompt', 'local_jedomi'); ?></label>
+                    <textarea class="form-control" id="jedomi-stem_whisper_prompt" name="stem_whisper_prompt" rows="2"><?php echo s((string) $sc['stem_whisper_prompt']); ?></textarea>
+                    <div class="form-text"><?php echo get_string('stem_whisper_prompt_help', 'local_jedomi'); ?></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mt-3">
+        <div class="card-header">
+            <div class="card-icon" style="background:#f1f5f9"><i class="fa fa-th" style="color:#334155"></i></div>
+            <div><h5><?php echo get_string('stem_mat_heading', 'local_jedomi'); ?></h5><small><?php echo get_string('stem_mat_heading_help', 'local_jedomi'); ?></small></div>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-3 mb-3"><?php echo $field('stem_mat_width_mm', 'number', ['min' => 100, 'max' => 3000]); ?></div>
+                <div class="col-md-3 mb-3"><?php echo $field('stem_mat_height_mm', 'number', ['min' => 100, 'max' => 3000]); ?></div>
+                <div class="col-md-3 mb-3"><?php echo $field('stem_marker_mm', 'number', ['min' => 20, 'max' => 300]); ?></div>
+                <div class="col-md-3 mb-3"><?php echo $field('stem_margin_mm', 'number', ['min' => 0, 'max' => 200]); ?></div>
+            </div>
+            <p class="form-text mb-0"><?php echo get_string('stem_aruco_dict_note', 'local_jedomi'); ?> <code><?php echo s((string) $sc['stem_aruco_dict']); ?></code> · IDs 0 (sup. izq.), 1 (sup. der.), 2 (inf. der.), 3 (inf. izq.)</p>
+        </div>
+    </div>
+
+    <div class="card mt-3">
+        <div class="card-header">
+            <div class="card-icon" style="background:#fee2e2"><i class="fa fa-key" style="color:#b91c1c"></i></div>
+            <div><h5><?php echo get_string('stem_secret_heading', 'local_jedomi'); ?></h5><small><?php echo get_string('stem_secret_heading_help', 'local_jedomi'); ?></small></div>
+        </div>
+        <div class="card-body">
+            <p class="mb-2"><?php echo get_string('stem_station_secret_status', 'local_jedomi', ['set' => $sc['stem_station_secret'] !== '' ? '●●●●●● (' . strlen((string) $sc['stem_station_secret']) . ' hex)' : '—']); ?></p>
+            <div class="form-check">
+                <input type="checkbox" class="form-check-input" id="jedomi-stem_rotate_secret" name="stem_rotate_secret" value="1">
+                <label class="form-check-label" for="jedomi-stem_rotate_secret"><?php echo get_string('stem_rotate_secret', 'local_jedomi'); ?></label>
+            </div>
+        </div>
+    </div>
+
+    <div class="mt-3 d-flex" style="gap:.75rem">
+        <button type="submit" class="btn btn-primary"><i class="fa fa-save mr-1"></i><?php echo get_string('savechanges'); ?></button>
+        <a class="btn btn-outline-secondary" href="<?php echo (new moodle_url($pageurl, ['tab' => 'stem', 'export' => 'json']))->out(false); ?>"><i class="fa fa-download mr-1"></i><?php echo get_string('stem_export_json', 'local_jedomi'); ?></a>
     </div>
 </form>
 <?php endif; ?>

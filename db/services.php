@@ -82,6 +82,13 @@ $functions = [
         'ajax'         => false,
         'services'     => ['jedomi_companion'],
     ],
+        'local_jedomi_get_stem_config' => [
+        'classname'   => 'local_jedomi\\external\\get_stem_config',
+        'description' => 'Configuración del Modo Evaluación Física STEM para la estación (requiere moodle/site:config).',
+        'type'        => 'read',
+        'ajax'        => false,
+        'capabilities' => 'moodle/site:config',
+    ],
     'local_jedomi_search_courses' => [
         'classname'    => 'local_jedomi\external\search_courses',
         'methodname'   => 'execute',
