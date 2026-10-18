@@ -278,7 +278,7 @@ class execute_sql extends external_api {
                 '[local_jedomi] DB error: %s class=%s sql_hash=%s execution_ms=%d msg="%s"%s',
                 $is_timeout ? 'query_timeout' : 'db_error', get_class($e), $sql_hash, $execution_ms, $e->getMessage(), $extra
             ));
-            if ($e instanceof \moodle_exception && in_array($e->errorcode, ['sensitive_data_rejected', 'sql_sandbox_missing'], true)) {
+            if ($e instanceof \moodle_exception && in_array($e->errorcode, ['sensitive_data_rejected', 'sql_sandbox_missing', 'sql_sandbox_busy'], true)) {
                 throw $e;
             }
             if (stripos($dbg, 'permission denied') !== false) {
@@ -360,6 +360,11 @@ class execute_sql extends external_api {
         try {
             $sdb->connect($CFG->dbhost, self::SANDBOX_ROLE, $pass, $CFG->dbname, $CFG->prefix, $CFG->dboptions ?? null);
         } catch (\Throwable $e) {
+            $msg = $e->getMessage() . ' ' . ($e->debuginfo ?? '');
+            if (stripos($msg, 'too many connections') !== false || stripos($msg, 'connection limit') !== false) {
+                // CONNECTION LIMIT del rol alcanzado (QA r6): error transitorio, no de configuración.
+                throw new \moodle_exception('sql_sandbox_busy', 'local_jedomi', '', self::SANDBOX_ROLE, 'connect: ' . $e->getMessage());
+            }
             throw new \moodle_exception('sql_sandbox_missing', 'local_jedomi', '', self::SANDBOX_ROLE, 'connect: ' . $e->getMessage());
         }
         return $sdb;

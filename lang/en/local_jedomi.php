@@ -258,6 +258,7 @@ $string['category_list_help']        = 'Enter category IDs separated by commas. 
 $string['non_select_rejected']    = 'Only SELECT queries are allowed.';
 $string['sensitive_data_rejected'] = 'Query rejected: it would expose sensitive data ({$a}). Credentials, secrets, tokens and session ids cannot be selected.';
 $string['sql_sandbox_missing'] = 'jedomi_execute_sql is disabled: the read-only database role \'{$a}\' does not exist. Run php local/jedomi/cli/setup_sql_sandbox.php as the site administrator.';
+$string['sql_sandbox_busy'] = 'jedomi_execute_sql is temporarily busy: the read-only database role \'{$a}\' has reached its connection limit. Retry in a few seconds.';
 $string['query_timeout']          = 'Query timed out.';
 $string['execute_sql_error']      = 'Database error executing query.';
 $string['unauthorized']           = 'Unauthorized.';
