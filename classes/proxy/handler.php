@@ -1231,12 +1231,29 @@ class handler {
         if (preg_match($decl, $text)) {
             return $refusal('answer_statement');
         }
-        // (c) Invariante socrático independiente del idioma: afirma un número con unidad y no formula ninguna pregunta.
-        $hasnumber = (bool) preg_match('/\b\d+([.,]\d+)?\s?(k?Ω|ohm(io)?s?|ohms?|k(ilo)?ohm(io)?s?|m?A|mA|amperios?|V|voltios?|volts?|W|vatios?|watts?|Hz|µ?F|nF|pF|mm|cm|m|s|ms)\b/iu', $text)
-                  || (bool) preg_match('/\d+\s?Ω/u', $text);
+        // (c) Invariantes socráticos independientes del idioma (QA v2 bypass: cálculo con premisas del alumno).
+        // Número con unidad: dígitos o números en letras (es/en).
+        $units = '(k?Ω|ohm(?:io)?s?|k(?:ilo)?ohm(?:io)?s?|m?A|amperios?|V|voltios?|volts?|W|vatios?|watts?|Hz|µ?F|nF|pF|mm|cm|m|s|ms)';
+        $numwords = '(?:(?:cero|un[oa]?|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|diecis[eé]is|diecisiete|dieciocho|diecinueve|veint\w*|treinta|cuarenta|cincuenta|sesenta|setenta|ochenta|noventa|cien(?:to)?s?|doscient[oa]s|trescient[oa]s|cuatrocient[oa]s|quinient[oa]s|seiscient[oa]s|setecient[oa]s|ochocient[oa]s|novecient[oa]s|mil|zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand)(?:\s+(?:y|and)?\s*)?){1,6}';
+        $hasnumber = (bool) preg_match('/\b\d+(?:[.,]\d+)?\s?' . $units . '\b/iu', $text)
+                  || (bool) preg_match('/\d+\s?Ω/u', $text)
+                  || (bool) preg_match('/\b' . $numwords . '\s*' . $units . '\b/iu', $text);
         $hasquestion = (bool) preg_match('/[?¿]/u', $text);
-        if ($hasnumber && !$hasquestion) {
-            return $refusal('numeric_assertion_without_question');
+        if ($hasnumber) {
+            // c1: afirmación numérica sin ninguna pregunta.
+            if (!$hasquestion) {
+                return $refusal('numeric_assertion_without_question');
+            }
+            // c2: portador imperativo/asertivo que ENTREGA el valor ("necesitas/usa/pon/son/te confirmo… 350 Ω"),
+            //     aunque lleve coletilla interrogativa. Las pistas usan datos de referencia ("suele caer unos 2 V").
+            $carrier = '/\b(necesitas?|necesitar[ií]as?|usa|utiliza|pon|coloca|monta|elige|escoge|conecta|debes? (?:usar|poner|colocar|montar)|deber[ií]as (?:usar|poner|colocar|montar)|tienes que (?:usar|poner|colocar)|son|ser[ií]an?|ser[aá]|sale|salen|da|resulta|te confirmo|confirmo|correcto|exacto|eso es|efectivamente|s[ií]|right|yes|correct|you need|you\'ll need|use|put|place|mount|choose|you should (?:use|put)|that\'?s|it\'?s|equals?|comes? (?:out )?to|gives?)\b[,:]?[^.?!\n]{0,40}?(?:\d+(?:[.,]\d+)?\s?' . $units . '|\d+\s?Ω|' . $numwords . '\s*' . $units . ')/iu';
+            if (preg_match($carrier, $text)) {
+                return $refusal('numeric_instruction_with_value');
+            }
+            // c3: fórmula resuelta con cantidades ("7 V ÷ 0,020 A", "= 350 Ω").
+            if (preg_match('/\d[^.?!\n]{0,25}(?:÷|\/|×|\*|−|-|\+)[^.?!\n]{0,25}\d/u', $text) || preg_match('/=\s*\d+(?:[.,]\d+)?\s?' . $units . '/iu', $text)) {
+                return $refusal('solved_formula');
+            }
         }
         return ['text' => $text, 'filtered' => false, 'reason' => ''];
     }
