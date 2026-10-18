@@ -186,14 +186,17 @@ class system_message {
             'activity'   => $activity !== '' ? $activity : get_string('prompt_tutor_no_activity', 'local_jedomi'),
             'maxq'       => $maxq,
         ];
+        // Orden (QA r9): identidad → contexto → instrucciones del profesor → herramientas → REGLAS → recordatorio final.
+        // Las reglas van al final para que pesen por recencia sobre cualquier instrucción contradictoria del profesor.
         $content  = get_string('prompt_tutor_identity', 'local_jedomi', $a) . "\n\n";
-        $content .= get_string($mode === 'guided' ? 'prompt_tutor_rules_guided' : 'prompt_tutor_rules_socratic', 'local_jedomi', $a) . "\n\n";
-        $content .= get_string('prompt_tutor_tools', 'local_jedomi') . "\n\n";
+        $content .= get_string('prompt_tutor_context', 'local_jedomi', $a) . "\n";
+        $content .= "- User role: {$role} | mode: {$mode}\n\n";
         if ($teacher !== '') {
             $content .= get_string('prompt_tutor_teacher_heading', 'local_jedomi') . "\n" . $teacher . "\n\n";
         }
-        $content .= get_string('prompt_tutor_context', 'local_jedomi', $a) . "\n";
-        $content .= "- User role: {$role} | mode: {$mode}\n";
+        $content .= get_string('prompt_tutor_tools', 'local_jedomi') . "\n\n";
+        $content .= get_string($mode === 'guided' ? 'prompt_tutor_rules_guided' : 'prompt_tutor_rules_socratic', 'local_jedomi', $a) . "\n\n";
+        $content .= get_string('prompt_tutor_final_reminder', 'local_jedomi') . "\n";
         return ['role' => 'system', 'content' => $content];
     }
 }
