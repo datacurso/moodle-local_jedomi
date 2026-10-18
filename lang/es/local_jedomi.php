@@ -250,6 +250,7 @@ $string['category_list_help']        = 'Ingresá los IDs de categorías separado
 
 // ── WS / security errors ──────────────────────────────────────────────────────
 $string['non_select_rejected']    = 'Solo se permiten queries SELECT.';
+$string['sensitive_data_rejected'] = 'Consulta rechazada: expondría datos sensibles ({$a}). No se pueden seleccionar credenciales, secretos, tokens ni identificadores de sesión.';
 $string['query_timeout']          = 'La query superó el tiempo límite.';
 $string['execute_sql_error']      = 'Error de base de datos al ejecutar la query.';
 $string['unauthorized']           = 'No autorizado.';

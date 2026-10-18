@@ -1,1 +1,4 @@
 .atl
+# ficheros de depuración: nunca en la raíz web del plugin
+tmp_*
+test_*.php
