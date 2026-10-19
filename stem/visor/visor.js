@@ -71,6 +71,7 @@ function poseFromHomography(H, fx, fy, cx, cy) {   // H = K [r1 r2 t] (coordenad
 
 // ---------- integración Moodle (window.JEDOMI_VISOR lo inyecta stem/visor.php); sin ella funciona como prototipo local
 const MOODLE = window.JEDOMI_VISOR || null;
+const TELEMETRY = new URLSearchParams(location.search).get("telemetry") === "1"; let telemetryT = 0;
 const BASE = MOODLE ? MOODLE.base : "";
 // ---------- estado
 const video = document.getElementById("video"), canvas = document.getElementById("three");
@@ -90,8 +91,8 @@ ground.position.set(MAT_W / 2, MAT_H / 2, 0); ground.receiveShadow = true; mat.a
 const frame = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry(MAT_W, MAT_H)), new THREE.LineBasicMaterial({ color: 0x22c55e }));
 frame.position.set(MAT_W / 2, MAT_H / 2, 0); mat.add(frame);
 const objGroup = new THREE.Group(); mat.add(objGroup);  // la pieza: posición (cx, cy, -lift), rotación R, escala para tamaño en mm
-const obj = { cx: MAT_W / 2, cy: MAT_H / 2, size: 180, yaw: 0, mesh: null, tris: 0, bbox: null };
-let poseOK = false, poseFrozen = false, nmark = 0, lastPose = null, fps = 0, frames = 0, fpsT = performance.now();
+const obj = { cx: MAT_W / 2, cy: MAT_H / 2, size: 220, yaw: 0, mesh: null, tris: 0, bbox: null };
+let poseOK = false, poseFrozen = false, nmark = 0, lastPose = null, fps = 0, frames = 0, fpsT = performance.now(); let frameNo = 0, lastMarkers = [];
 const cornerFilters = new Map();
 const detector = new AR.Detector({ dictionaryName: "ARUCO_4X4_1000", maxHammingDistance: 2 });
 const work = document.createElement("canvas"), wctx = work.getContext("2d", { willReadFrequently: true });
@@ -168,7 +169,7 @@ let pinchHold = new Set();
 function gestures(active, t) {
   const hull = objectHullPx();
   const near = h => { const d = h.pinchMM && Math.hypot(h.pinchMM[0] - obj.cx, h.pinchMM[1] - obj.cy); return d != null && d < obj.size * 0.6 * 2.2; };
-  let pinchers = active.filter(h => h.pinch && ((pinchHold.has(h.label) && near(h)) || overPx(hull, h.pinchPx, 40)));
+  let pinchers = active.filter(h => h.pinch && ((pinchHold.has(h.label) && near(h)) || overPx(hull, h.pinchPx, 60)));
   if (pinchers.length >= 2) { pinchers.sort((a, b) => Math.hypot(a.pinchMM[0] - obj.cx, a.pinchMM[1] - obj.cy) - Math.hypot(b.pinchMM[0] - obj.cx, b.pinchMM[1] - obj.cy)); }
   let grasping = new Set();
   if (pinchers.length >= 2) {
@@ -220,18 +221,23 @@ async function start() {
   work.width = Math.round(W / 4); work.height = Math.round(Hh / 4);   // ArUco a 1/4: ~4× más rápido (86 → ~20 ms)
   const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
   hands = await HandLandmarker.createFromOptions(vision, { baseOptions: { modelAssetPath: BASE + "models/hand_landmarker.task", delegate: "GPU" }, runningMode: "VIDEO", numHands: 2, minHandDetectionConfidence: 0.4, minHandPresenceConfidence: 0.4, minTrackingConfidence: 0.4 });
-  await loadModel(document.getElementById("model").value);
+  await loadModel(MOODLE ? "aro" : document.getElementById("model").value);   // prueba básica primero: el aro; la pieza real, después
+  if (MOODLE) document.getElementById("model").value = "aro";
   document.getElementById("start").style.display = "none";
   stepEl.textContent = "Coge la pieza por el borde con un pellizco. Dos pellizcos: gira como una rueda y escala.";
   requestAnimationFrame(loop);
 }
 function loop() {
   const t = performance.now() / 1000; frames++; if (performance.now() - fpsT > 1000) { fps = frames * 1000 / (performance.now() - fpsT); frames = 0; fpsT = performance.now(); }
-  // --- tapete
+  // --- tapete (un fotograma sí y otro no: la hoja no se mueve y la pose se mantiene; sube los fps de ~20 a ~30)
   const T0 = performance.now();
-  wctx.drawImage(source, 0, 0, work.width, work.height);
-  const img = wctx.getImageData(0, 0, work.width, work.height);
-  const markers = detector.detect(img).filter(m => m.id >= 0 && m.id <= 3);
+  frameNo++;
+  let markers = lastMarkers;
+  if (frameNo % 2 === 0 || !lastPose) {
+    wctx.drawImage(source, 0, 0, work.width, work.height);
+    const img = wctx.getImageData(0, 0, work.width, work.height);
+    markers = detector.detect(img).filter(m => m.id >= 0 && m.id <= 3); lastMarkers = markers;
+  }
   const T1 = performance.now();
   nmark = markers.length; const src = [], dst = [];
   for (const m of markers) { const mm = markerCornersMM(m.id); for (let k = 0; k < 4; k++) { const key = m.id * 4 + k; let f = cornerFilters.get(key); if (!f) { f = new OneEuro(0.8, 0.004); cornerFilters.set(key, f); } const p = f.filter([m.corners[k].x * 4, m.corners[k].y * 4], t); src.push(mm[k]); dst.push(p); } }
@@ -287,6 +293,10 @@ function loop() {
   }
   if (hull && active.some(h => h.pinch && overPx(hull, h.pinchPx, 70))) { octx.strokeStyle = "rgba(255,255,255,.9)"; octx.lineWidth = 3; octx.strokeRect(hull.x0 - 10, hull.y0 - 10, hull.x1 - hull.x0 + 20, hull.y1 - hull.y0 + 20); }
   window.__visor = { poseOK, poseFrozen, nmark, fps, tris: obj.tris, held: !!(heldBy || two), hands: active.length, obj: { cx: obj.cx, cy: obj.cy, size: obj.size } };
+  // telemetría de desarrollo (?telemetry=1): cada 2 s envía el estado a un servidor local para analizar la sesión sin acceso al navegador
+  if (TELEMETRY && t - telemetryT > 2) { telemetryT = t; const ms = window.__dbg ? window.__dbg.ms : null;
+    fetch("http://127.0.0.1:8766/metrics", { method: "POST", mode: "cors", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ t: Math.round(t), fps: Math.round(fps), nmark, poseFrozen, hands: active.length, pinching: active.filter(h => h.pinch).length, held: !!(heldBy || two), mode: two ? "pinch2" : (heldBy ? "pinch" : ""), size: Math.round(obj.size), tris: Math.round(obj.tris), ms: ms && { aruco: Math.round(ms.aruco), hands: Math.round(ms.hands), render: Math.round(ms.render * 10) / 10 }, W, Hh, grabs: logs.length }) }).catch(() => { }); }
   statusEl.textContent = `tapete ${poseOK ? (poseFrozen ? "congelado (destapa las esquinas)" : nmark + " marcadores") : "no visto"} · manos ${active.length} · ${heldBy || two ? "COGIDO" : "libre"} · ${Math.round(obj.tris / 1000)} k triángulos · ${fps.toFixed(0)} fps`;
   requestAnimationFrame(loop);
 }
@@ -295,7 +305,7 @@ function invert3(Mx) { const m = Mx.flat(); const [a, b, c, d, e, f, g, h, i] = 
 // ---------- controles
 document.getElementById("go").onclick = () => start().catch(e => { stepEl.textContent = "Error: " + e.message; console.error(e); });
 document.getElementById("model").onchange = e => loadModel(e.target.value);
-document.getElementById("reset").onclick = () => { obj.cx = MAT_W / 2; obj.cy = MAT_H / 2; obj.size = 180; obj.yaw = 0; };
+document.getElementById("reset").onclick = () => { obj.cx = MAT_W / 2; obj.cy = MAT_H / 2; obj.size = 220; obj.yaw = 0; };
 document.getElementById("quit").onclick = () => { const s = video.srcObject; if (s) s.getTracks().forEach(tr => tr.stop()); stepEl.textContent = "Sesión cerrada."; document.getElementById("start").style.display = "grid"; };
 document.getElementById("explain").onclick = async () => {
   // Dentro de Moodle: el visor habla con el tutor de Jedomi del curso (barra lateral ya cargada en la página): adjunta una

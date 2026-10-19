@@ -76,7 +76,7 @@ echo $OUTPUT->header();
   <div id="hud">
     <div class="vpanel" id="step">…</div>
     <div id="ctl">
-      <select id="model"><option value="<?php echo s($modelurl ?: 'aro'); ?>" selected><?php echo $model ? s($model->get_filename()) : 'Aro de prueba'; ?></option><option value="aro">Aro de prueba</option></select>
+      <select id="model"><option value="aro" selected>1) Aro de prueba</option><?php if ($model) { ?><option value="<?php echo s($modelurl); ?>">2) Pieza de la actividad: <?php echo s($model->get_filename()); ?></option><?php } ?></select>
       <button id="explain" class="primary"><?php echo get_string('stem_visor_explain', 'local_jedomi'); ?></button>
       <button id="reset"><?php echo get_string('stem_visor_reset', 'local_jedomi'); ?></button>
       <button id="quit" class="danger">X</button>
