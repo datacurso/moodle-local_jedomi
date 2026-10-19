@@ -50,8 +50,10 @@ $base = (new moodle_url('/local/jedomi/stem/visor/'))->out(false);
 $config = [
     'cmid' => $cmid, 'courseid' => (int) $course->id, 'modelUrl' => $modelurl, 'modelName' => $model ? $model->get_filename() : '',
     'base' => $base, 'sesskey' => sesskey(), 'enabled' => $enabled, 'userid' => (int) $USER->id,
+    'voiceEnabled' => (int) get_config('local_jedomi', 'stem_voice_enabled') === 1,
     'strings' => ['nomodel' => get_string('stem_visor_nomodel', 'local_jedomi'), 'intro' => get_string('stem_visor_intro', 'local_jedomi'),
-        'talk' => get_string('stem_visor_talk', 'local_jedomi'), 'talk_stop' => get_string('stem_visor_talk_stop', 'local_jedomi')],
+        'talk' => get_string('stem_visor_talk', 'local_jedomi'), 'talk_stop' => get_string('stem_visor_talk_stop', 'local_jedomi'),
+        'voice_consent' => get_string('stem_visor_voice_consent', 'local_jedomi'), 'voice_off' => get_string('stem_visor_voice_off', 'local_jedomi')],
 ];
 
 echo $OUTPUT->header();
@@ -82,7 +84,7 @@ echo $OUTPUT->header();
     <div class="vpanel" id="step">…</div>
     <div id="ctl">
       <select id="model"><option value="aro" selected>1) Aro de prueba</option><?php if ($model) { ?><option value="<?php echo s($modelurl); ?>">2) Pieza de la actividad: <?php echo s($model->get_filename()); ?></option><?php } ?></select>
-      <button id="talk" class="primary"><?php echo get_string('stem_visor_talk', 'local_jedomi'); ?></button>
+      <?php if ($config['voiceEnabled']) { ?><button id="talk" class="primary"><?php echo get_string('stem_visor_talk', 'local_jedomi'); ?></button><?php } ?>
       <button id="explain"><?php echo get_string('stem_visor_explain', 'local_jedomi'); ?></button>
       <button id="reset"><?php echo get_string('stem_visor_reset', 'local_jedomi'); ?></button>
       <button id="quit" class="danger">X</button>

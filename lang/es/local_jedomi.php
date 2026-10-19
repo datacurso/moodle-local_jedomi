@@ -827,3 +827,7 @@ $string['stem_visor_reset'] = 'Restablecer';
 $string['stem_visor_start'] = 'Activar cámara';
 $string['stem_visor_talk'] = 'Conversar';
 $string['stem_visor_talk_stop'] = 'Silenciar';
+$string['stem_voice_enabled'] = 'Permitir la conversación por voz en el visor RA del navegador';
+$string['stem_voice_enabled_help'] = 'Apagado por defecto. Encendido, el alumno ve un botón «Conversar» que usa el reconocimiento de voz del navegador: en Chrome/Edge el audio se envía al servicio de voz de Google/Microsoft. El alumno debe aceptar un aviso antes de activar el micrófono.';
+$string['stem_visor_voice_consent'] = 'El modo Conversar usa el micrófono y el reconocimiento de voz de tu navegador: lo que digas se envía al servicio de voz del navegador (Google en Chrome, Microsoft en Edge) para convertirlo en texto, y luego al tutor junto con lo que ve la cámara. ¿Aceptas?';
+$string['stem_visor_voice_off'] = 'La conversación por voz no está habilitada en este sitio; puedes escribir al tutor en el chat.';

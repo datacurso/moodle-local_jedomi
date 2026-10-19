@@ -841,3 +841,7 @@ $string['stem_visor_reset'] = 'Reset';
 $string['stem_visor_start'] = 'Start camera';
 $string['stem_visor_talk'] = 'Talk';
 $string['stem_visor_talk_stop'] = 'Mute';
+$string['stem_voice_enabled'] = 'Allow voice conversation in the browser AR viewer';
+$string['stem_voice_enabled_help'] = 'Off by default. When on, students see a "Talk" button that uses the browser speech recognition: in Chrome/Edge the audio is sent to the Google/Microsoft speech service. Students must accept a notice before the microphone is enabled.';
+$string['stem_visor_voice_consent'] = 'Talk mode uses your microphone and your browser speech recognition: what you say is sent to the browser speech service (Google in Chrome, Microsoft in Edge) to turn it into text, then to the tutor together with what the camera sees. Do you accept?';
+$string['stem_visor_voice_off'] = 'Voice conversation is not enabled on this site; you can type to the tutor in the chat.';

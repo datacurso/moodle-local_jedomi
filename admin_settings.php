@@ -36,6 +36,7 @@ $tab     = optional_param('tab', 'general', PARAM_ALPHA);
 // Única fuente de verdad para los scripts Python (se exportan como JSON vía ?tab=stem&export=json o WS).
 $STEM_DEFAULTS = [
     'stem_enabled'          => 0,
+    'stem_voice_enabled'    => 0,                      // voz en el visor RA del navegador (reconocimiento de voz del navegador: opt-in)
     'stem_osc_host'         => '127.0.0.1',
     'stem_osc_port'         => 16284,                  // puerto de recepción de OBSBOT Center
     'stem_osc_reply_port'   => 16285,                  // puerto de envío de OBSBOT Center hacia la estación
@@ -114,6 +115,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && confirm_sesskey()) {
 
         case 'stem':
             set_config('stem_enabled',        optional_param('stem_enabled', 0, PARAM_INT), 'local_jedomi');
+            set_config('stem_voice_enabled',  optional_param('stem_voice_enabled', 0, PARAM_INT), 'local_jedomi');
             set_config('stem_vision_model',   optional_param('stem_vision_model', 'claude-haiku-5-5', PARAM_TEXT), 'local_jedomi');
             set_config('stem_tutor_mode',     in_array(optional_param('stem_tutor_mode', 'socratic', PARAM_ALPHAEXT), ['socratic', 'guided', 'assessment_only'], true) ? optional_param('stem_tutor_mode', 'socratic', PARAM_ALPHAEXT) : 'socratic', 'local_jedomi');
             set_config('stem_max_questions',  max(1, min(10, optional_param('stem_max_questions', 3, PARAM_INT))), 'local_jedomi');
@@ -553,6 +555,11 @@ echo '</ul>';
                 <input type="checkbox" class="form-check-input" id="jedomi-stem_enabled" name="stem_enabled" value="1" <?php echo $sc['stem_enabled'] ? 'checked' : ''; ?>>
                 <label class="form-check-label" for="jedomi-stem_enabled"><?php echo get_string('stem_enabled', 'local_jedomi'); ?></label>
                 <div class="form-text"><?php echo get_string('stem_enabled_help', 'local_jedomi'); ?></div>
+            </div>
+            <div class="form-check form-switch mb-3">
+                <input type="checkbox" class="form-check-input" id="jedomi-stem_voice_enabled" name="stem_voice_enabled" value="1" <?php echo !empty($sc['stem_voice_enabled']) ? 'checked' : ''; ?>>
+                <label class="form-check-label" for="jedomi-stem_voice_enabled"><?php echo get_string('stem_voice_enabled', 'local_jedomi'); ?></label>
+                <div class="form-text"><?php echo get_string('stem_voice_enabled_help', 'local_jedomi'); ?></div>
             </div>
             <div class="mb-3">
                 <label class="form-label-main" for="jedomi-stem_tutor_mode"><?php echo get_string('stem_tutor_mode', 'local_jedomi'); ?></label>

@@ -324,7 +324,11 @@ async function snapshot() {                             // captura compuesta: fu
   sctx.drawImage(source, 0, 0, snap.width, snap.height); sctx.drawImage(canvas, 0, 0, snap.width, snap.height);
   return new Promise(r => snap.toBlob(r, "image/jpeg", 0.8));
 }
-let asking = false;
+let asking = false, lastShot = null;
+function sceneChanged() {                               // ¿ha cambiado lo que ve el alumno desde la última captura enviada?
+  const k = { m: document.getElementById("model").value, s: Math.round(obj.size / 20), y: Math.round(obj.yaw * 4 / Math.PI), x: Math.round(obj.cx / 80), c: Math.round(obj.cy / 80) };
+  const ch = !lastShot || Object.keys(k).some(q => k[q] !== lastShot[q]); if (ch) lastShot = k; return ch;
+}
 async function askTutor(text, withSnapshot = true) {    // devuelve la respuesta del tutor (texto plano) cuando termina el streaming
   if (!MOODLE || !J.trigger() || !J.input() || !J.send()) { iaEl.style.display = "block"; iaEl.textContent = "IA (prototipo local sin Moodle): " + text; return ""; }
   if (asking) return "";
@@ -347,7 +351,7 @@ async function askTutor(text, withSnapshot = true) {    // devuelve la respuesta
   } finally { asking = false; }
 }
 document.getElementById("explain").onclick = async () => {
-  const ans = await askTutor(`Estoy viendo en realidad aumentada el modelo 3D de esta actividad ${sceneText()}. Te adjunto la captura de lo que veo. Ayúdame a entender qué es y cómo funciona.`);
+  sceneChanged(); const ans = await askTutor(`Estoy viendo en realidad aumentada el modelo 3D de esta actividad ${sceneText()}. Te adjunto la captura de lo que veo. Ayúdame a entender qué es y cómo funciona.`);
   if (talk.on && ans) speak(ans);
 };
 
@@ -363,7 +367,7 @@ function speak(text) {
   const v = speechSynthesis.getVoices().find(x => x.lang.replace("_", "-").toLowerCase().startsWith(talk.lang.slice(0, 2))); if (v) u.voice = v;
   talk.speaking = true; stepEl.textContent = "🔊 Jedomi: " + plain(text).slice(0, 140) + (text.length > 140 ? "…" : "");
   try { talk.rec?.abort(); } catch (e) { }
-  u.onend = u.onerror = () => { talk.speaking = false; if (talk.on) { listen(); } };
+  u.onend = u.onerror = () => { setTimeout(() => { talk.speaking = false; if (talk.on) listen(); }, 500); };   // margen anti-auto-escucha (QA): el altavoz tarda en callar
   speechSynthesis.cancel(); speechSynthesis.speak(u);
 }
 function listen() {
@@ -377,7 +381,7 @@ function listen() {
     log("alumno dijo: " + said);
     if (/^(terminar|salir|basta|parar)\.?$/i.test(said)) { stopTalk(); speak("Hasta luego."); return; }
     stepEl.textContent = "⌛ Tú: " + said;
-    const ans = await askTutor(`${said} ${sceneText()}`); if (ans) speak(ans); else if (talk.on) listen();
+    const ans = await askTutor(`${said} ${sceneText()}`, sceneChanged()); if (ans) speak(ans); else if (talk.on) listen();
   };
   r.onerror = e => { if (e.error === "not-allowed" || e.error === "service-not-allowed") { stopTalk(); stepEl.textContent = "El navegador no permite el micrófono aquí (" + e.error + "). Puedes seguir leyendo al tutor en el chat de la izquierda."; } };
   r.onend = () => { if (talk.on && !talk.speaking && !asking) setTimeout(listen, 250); };   // Chrome corta la escucha continua cada ~60 s
@@ -385,7 +389,9 @@ function listen() {
 }
 async function startTalk() {
   if (!SR) { stepEl.textContent = "Este navegador no permite reconocimiento de voz (usa Chrome o Edge)."; return; }
-  talk.on = true; const b = document.getElementById("talk"); b.textContent = (MOODLE?.strings?.talk_stop) || "Silenciar"; b.classList.add("danger");
+  if (!MOODLE?.voiceEnabled) { stepEl.textContent = MOODLE?.strings?.voice_off || "Voz no habilitada."; return; }
+  if (!talk.consent) { if (!window.confirm(MOODLE?.strings?.voice_consent || "¿Aceptas usar el micrófono y el reconocimiento de voz del navegador?")) return; talk.consent = true; log("consentimiento de voz aceptado"); }
+  sceneChanged(); talk.on = true; const b = document.getElementById("talk"); b.textContent = (MOODLE?.strings?.talk_stop) || "Silenciar"; b.classList.add("danger");
   openPanel();
   const ans = await askTutor(`Activo el modo conversación en el visor de realidad aumentada de esta actividad. Te adjunto lo que veo ahora ${sceneText()}. Salúdame en una frase y hazme la primera pregunta o indicación según el modo del curso. Responde en frases cortas: te voy a escuchar en voz alta.`);
   if (ans) speak(ans); else listen();
@@ -395,5 +401,5 @@ function stopTalk() {
   const b = document.getElementById("talk"); if (b) { b.textContent = (MOODLE?.strings?.talk) || "Conversar"; b.classList.remove("danger"); }
   if (video.srcObject) stepEl.textContent = "Coge la pieza por el borde con un pellizco. Dos pellizcos: gira como una rueda y escala.";
 }
-document.getElementById("talk").onclick = () => talk.on ? stopTalk() : startTalk();
+const talkBtn = document.getElementById("talk"); if (talkBtn) talkBtn.onclick = () => talk.on ? stopTalk() : startTalk();   // el botón sólo existe si el sitio habilita la voz
 if ("speechSynthesis" in window) speechSynthesis.getVoices();           // precarga la lista de voces (en Chrome llega de forma asíncrona)
