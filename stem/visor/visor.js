@@ -76,7 +76,7 @@ const BASE = MOODLE ? MOODLE.base : "";
 const video = document.getElementById("video"), canvas = document.getElementById("three");
 const stepEl = document.getElementById("step"), statusEl = document.getElementById("status"), iaEl = document.getElementById("ia");
 let W = 1280, Hh = 720, FX = 0.9;                   // FX·W ≈ focal estimada (demo_guiada)
-const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, preserveDrawingBuffer: true });   // la captura de «Explícame» necesita leer el lienzo 3D
 renderer.setPixelRatio(Math.min(2, window.devicePixelRatio)); renderer.shadowMap.enabled = true;
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(50, 16 / 9, 10, 20000);  // mm
@@ -308,6 +308,7 @@ document.getElementById("explain").onclick = async () => {
   }
   try {
     // captura compuesta: fuente de vídeo + 3D
+    renderer.render(scene, camera);
     const snap = document.createElement("canvas"); snap.width = Math.round(W / 2); snap.height = Math.round(Hh / 2); const sctx = snap.getContext("2d");
     sctx.drawImage(source, 0, 0, snap.width, snap.height); sctx.drawImage(canvas, 0, 0, snap.width, snap.height);
     const blob = await new Promise(r => snap.toBlob(r, "image/jpeg", 0.8));
