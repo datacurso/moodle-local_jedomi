@@ -297,7 +297,26 @@ document.getElementById("go").onclick = () => start().catch(e => { stepEl.textCo
 document.getElementById("model").onchange = e => loadModel(e.target.value);
 document.getElementById("reset").onclick = () => { obj.cx = MAT_W / 2; obj.cy = MAT_H / 2; obj.size = 180; obj.yaw = 0; };
 document.getElementById("quit").onclick = () => { const s = video.srcObject; if (s) s.getTracks().forEach(tr => tr.stop()); stepEl.textContent = "Sesión cerrada."; document.getElementById("start").style.display = "grid"; };
-document.getElementById("explain").onclick = () => {
-  iaEl.style.display = "block";
-  iaEl.textContent = `IA (pendiente de conectar a Jedomi): aquí el tutor describirá la pieza visible — ${Math.round(obj.tris / 1000)} k triángulos, tamaño ${Math.round(obj.size)} mm, giro ${Math.round(obj.yaw * 180 / Math.PI)}° — y hará una pregunta socrática sobre ella.`;
+document.getElementById("explain").onclick = async () => {
+  // Dentro de Moodle: el visor habla con el tutor de Jedomi del curso (barra lateral ya cargada en la página): adjunta una
+  // captura de lo que ve el alumno y envía el contexto. El tutor responde según la configuración del curso (socrático/guiado).
+  const trigger = document.getElementById("jedomi-trigger"), input = document.getElementById("jedomi-input"), send = document.getElementById("jedomi-send");
+  const name = (MOODLE && MOODLE.modelName) || document.getElementById("model").selectedOptions[0]?.textContent || "la pieza";
+  const ctx = `Estoy viendo en realidad aumentada el modelo 3D «${name}» de esta actividad (${Math.round(obj.tris / 1000)} mil triángulos, tamaño ${Math.round(obj.size)} mm, giro ${Math.round(obj.yaw * 180 / Math.PI)}°). Te adjunto la captura de lo que veo. Ayúdame a entender qué es y cómo funciona.`;
+  if (!MOODLE || !trigger || !input || !send) {
+    iaEl.style.display = "block"; iaEl.textContent = "IA (prototipo local sin Moodle): " + ctx; return;
+  }
+  try {
+    // captura compuesta: fuente de vídeo + 3D
+    const snap = document.createElement("canvas"); snap.width = Math.round(W / 2); snap.height = Math.round(Hh / 2); const sctx = snap.getContext("2d");
+    sctx.drawImage(source, 0, 0, snap.width, snap.height); sctx.drawImage(canvas, 0, 0, snap.width, snap.height);
+    const blob = await new Promise(r => snap.toBlob(r, "image/jpeg", 0.8));
+    const fileInput = document.getElementById("jedomi-image-input");
+    if (fileInput && blob) {
+      const dt = new DataTransfer(); dt.items.add(new File([blob], "visor-ar.jpg", { type: "image/jpeg" })); fileInput.files = dt.files;
+      fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  } catch (e) { console.warn("captura no adjuntada", e); }
+  if (document.getElementById("jedomi-sidebar")?.classList.contains("jedomi-closed")) trigger.click();
+  setTimeout(() => { input.value = ctx; input.dispatchEvent(new Event("input", { bubbles: true })); send.click(); log("Explícame enviado al tutor de Jedomi"); }, 400);
 };
