@@ -825,3 +825,5 @@ $string['stem_visor_intro'] = 'Coloca la hoja del tapete delante de la cámara. 
 $string['stem_visor_explain'] = 'Explícame';
 $string['stem_visor_reset'] = 'Restablecer';
 $string['stem_visor_start'] = 'Activar cámara';
+$string['stem_visor_talk'] = 'Conversar';
+$string['stem_visor_talk_stop'] = 'Silenciar';

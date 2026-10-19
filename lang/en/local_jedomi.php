@@ -839,3 +839,5 @@ $string['stem_visor_intro'] = 'Place the mat sheet in front of the camera. Grab 
 $string['stem_visor_explain'] = 'Explain this';
 $string['stem_visor_reset'] = 'Reset';
 $string['stem_visor_start'] = 'Start camera';
+$string['stem_visor_talk'] = 'Talk';
+$string['stem_visor_talk_stop'] = 'Mute';

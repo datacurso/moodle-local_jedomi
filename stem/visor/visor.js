@@ -306,28 +306,94 @@ function invert3(Mx) { const m = Mx.flat(); const [a, b, c, d, e, f, g, h, i] = 
 document.getElementById("go").onclick = () => start().catch(e => { stepEl.textContent = "Error: " + e.message; console.error(e); });
 document.getElementById("model").onchange = e => loadModel(e.target.value);
 document.getElementById("reset").onclick = () => { obj.cx = MAT_W / 2; obj.cy = MAT_H / 2; obj.size = 220; obj.yaw = 0; };
-document.getElementById("quit").onclick = () => { const s = video.srcObject; if (s) s.getTracks().forEach(tr => tr.stop()); stepEl.textContent = "Sesión cerrada."; document.getElementById("start").style.display = "grid"; };
-document.getElementById("explain").onclick = async () => {
-  // Dentro de Moodle: el visor habla con el tutor de Jedomi del curso (barra lateral ya cargada en la página): adjunta una
-  // captura de lo que ve el alumno y envía el contexto. El tutor responde según la configuración del curso (socrático/guiado).
-  const trigger = document.getElementById("jedomi-trigger"), input = document.getElementById("jedomi-input"), send = document.getElementById("jedomi-send");
-  const name = (MOODLE && MOODLE.modelName) || document.getElementById("model").selectedOptions[0]?.textContent || "la pieza";
-  const ctx = `Estoy viendo en realidad aumentada el modelo 3D «${name}» de esta actividad (${Math.round(obj.tris / 1000)} mil triángulos, tamaño ${Math.round(obj.size)} mm, giro ${Math.round(obj.yaw * 180 / Math.PI)}°). Te adjunto la captura de lo que veo. Ayúdame a entender qué es y cómo funciona.`;
-  if (!MOODLE || !trigger || !input || !send) {
-    iaEl.style.display = "block"; iaEl.textContent = "IA (prototipo local sin Moodle): " + ctx; return;
-  }
+document.getElementById("quit").onclick = () => { stopTalk(); const s = video.srcObject; if (s) s.getTracks().forEach(tr => tr.stop()); stepEl.textContent = "Sesión cerrada."; document.getElementById("start").style.display = "grid"; };
+
+// ---------- tutor de Jedomi (barra lateral del curso, ya inyectada en esta página por el plugin)
+// El visor no habla con la IA directamente: escribe en el chat de Jedomi y lee su respuesta. Así la conversación queda en la
+// sesión del alumno, con el modo del curso (socrático/guiado) resuelto en servidor, y el docente la ve como cualquier otra.
+const J = { sidebar: () => document.getElementById("jedomi-sidebar"), trigger: () => document.getElementById("jedomi-trigger"),
+  input: () => document.getElementById("jedomi-input"), send: () => document.getElementById("jedomi-send"), file: () => document.getElementById("jedomi-image-input"),
+  lastAnswer: () => { const b = document.querySelectorAll("#jedomi-messages .jedomi-message-assistant .jedomi-bubble"); if (!b.length) return "";
+    const c = b[b.length - 1].cloneNode(true); c.querySelectorAll(".jedomi-msg-actions, button").forEach(x => x.remove()); return c.innerText.trim(); } };
+const modelLabel = () => (MOODLE && document.getElementById("model").value !== "aro" && MOODLE.modelName) || (document.getElementById("model").selectedOptions[0]?.textContent || "la pieza").replace(/^\d\)\s*/, "");
+const sceneText = () => `(modelo «${modelLabel()}», ${Math.round(obj.tris / 1000)} mil triángulos, tamaño ${Math.round(obj.size)} mm, giro ${Math.round(obj.yaw * 180 / Math.PI)}°, ${heldBy || two ? "la tengo cogida" : "está apoyada en el tapete"})`;
+function openPanel() { const sb = J.sidebar(); if (sb && sb.classList.contains("jedomi-closed")) J.trigger()?.click(); }
+async function snapshot() {                             // captura compuesta: fuente de vídeo + lienzo 3D, a media resolución
+  renderer.render(scene, camera);
+  const snap = document.createElement("canvas"); snap.width = Math.round(W / 2); snap.height = Math.round(Hh / 2); const sctx = snap.getContext("2d");
+  sctx.drawImage(source, 0, 0, snap.width, snap.height); sctx.drawImage(canvas, 0, 0, snap.width, snap.height);
+  return new Promise(r => snap.toBlob(r, "image/jpeg", 0.8));
+}
+let asking = false;
+async function askTutor(text, withSnapshot = true) {    // devuelve la respuesta del tutor (texto plano) cuando termina el streaming
+  if (!MOODLE || !J.trigger() || !J.input() || !J.send()) { iaEl.style.display = "block"; iaEl.textContent = "IA (prototipo local sin Moodle): " + text; return ""; }
+  if (asking) return "";
+  asking = true; openPanel();
   try {
-    // captura compuesta: fuente de vídeo + 3D
-    renderer.render(scene, camera);
-    const snap = document.createElement("canvas"); snap.width = Math.round(W / 2); snap.height = Math.round(Hh / 2); const sctx = snap.getContext("2d");
-    sctx.drawImage(source, 0, 0, snap.width, snap.height); sctx.drawImage(canvas, 0, 0, snap.width, snap.height);
-    const blob = await new Promise(r => snap.toBlob(r, "image/jpeg", 0.8));
-    const fileInput = document.getElementById("jedomi-image-input");
-    if (fileInput && blob) {
-      const dt = new DataTransfer(); dt.items.add(new File([blob], "visor-ar.jpg", { type: "image/jpeg" })); fileInput.files = dt.files;
-      fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+    if (withSnapshot) {
+      try { const blob = await snapshot(); const fi = J.file();
+        if (fi && blob) { const dt = new DataTransfer(); dt.items.add(new File([blob], "visor-ar.jpg", { type: "image/jpeg" })); fi.files = dt.files; fi.dispatchEvent(new Event("change", { bubbles: true }));
+          await new Promise(r => setTimeout(r, 500)); }                     // la barra lee el fichero de forma asíncrona (FileReader)
+      } catch (e) { console.warn("captura no adjuntada", e); }
     }
-  } catch (e) { console.warn("captura no adjuntada", e); }
-  if (document.getElementById("jedomi-sidebar")?.classList.contains("jedomi-closed")) trigger.click();
-  setTimeout(() => { input.value = ctx; input.dispatchEvent(new Event("input", { bubbles: true })); send.click(); log("Explícame enviado al tutor de Jedomi"); }, 400);
+    const input = J.input(), send = J.send(); input.value = text; input.dispatchEvent(new Event("input", { bubbles: true }));
+    const before = J.lastAnswer();
+    send.click(); log("enviado al tutor de Jedomi: " + text.slice(0, 60));
+    // la barra deshabilita «enviar» mientras responde y lo rehabilita al terminar (finally) → esperamos ese flanco
+    await new Promise(r => setTimeout(r, 300));
+    await new Promise(resolve => { const t0 = performance.now();
+      const tick = () => { if (!send.disabled && performance.now() - t0 > 1500) return resolve(); if (performance.now() - t0 > 90000) return resolve(); setTimeout(tick, 150); }; tick(); });
+    const ans = J.lastAnswer(); return ans !== before ? ans : "";
+  } finally { asking = false; }
+}
+document.getElementById("explain").onclick = async () => {
+  const ans = await askTutor(`Estoy viendo en realidad aumentada el modelo 3D de esta actividad ${sceneText()}. Te adjunto la captura de lo que veo. Ayúdame a entender qué es y cómo funciona.`);
+  if (talk.on && ans) speak(ans);
 };
+
+// ---------- modo conversación: el tutor habla y escucha, como en la estación física
+// Voz → texto: SpeechRecognition del navegador (Chrome/Edge; en Chrome el audio pasa por el servicio de voz de Google).
+// Texto → voz: speechSynthesis del navegador. Mientras el tutor habla no se escucha (anti-eco), igual que en voice_worker.py.
+const talk = { on: false, rec: null, speaking: false, lang: (document.documentElement.lang || "es").startsWith("es") ? "es-ES" : (document.documentElement.lang || "en-US") };
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+function plain(md) { return md.replace(/```[\s\S]*?```/g, " ").replace(/`([^`]*)`/g, "$1").replace(/!\[[^\]]*\]\([^)]*\)/g, "").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/[*_#>|]+/g, " ").replace(/\s+/g, " ").trim(); }
+function speak(text) {
+  if (!("speechSynthesis" in window)) return;
+  const u = new SpeechSynthesisUtterance(plain(text).slice(0, 1200)); u.lang = talk.lang; u.rate = 1.0;
+  const v = speechSynthesis.getVoices().find(x => x.lang.replace("_", "-").toLowerCase().startsWith(talk.lang.slice(0, 2))); if (v) u.voice = v;
+  talk.speaking = true; stepEl.textContent = "🔊 Jedomi: " + plain(text).slice(0, 140) + (text.length > 140 ? "…" : "");
+  try { talk.rec?.abort(); } catch (e) { }
+  u.onend = u.onerror = () => { talk.speaking = false; if (talk.on) { listen(); } };
+  speechSynthesis.cancel(); speechSynthesis.speak(u);
+}
+function listen() {
+  if (!talk.on || !SR) return;
+  try { talk.rec?.abort(); } catch (e) { }
+  const r = new SR(); r.lang = talk.lang; r.continuous = true; r.interimResults = false; r.maxAlternatives = 1; talk.rec = r;
+  stepEl.textContent = "🎙️ Te escucho. Habla con normalidad; di «terminar» para cerrar la conversación.";
+  r.onresult = async ev => {
+    const res = ev.results[ev.results.length - 1]; if (!res.isFinal) return;
+    const said = res[0].transcript.trim(); if (!said || talk.speaking || asking) return;
+    log("alumno dijo: " + said);
+    if (/^(terminar|salir|basta|parar)\.?$/i.test(said)) { stopTalk(); speak("Hasta luego."); return; }
+    stepEl.textContent = "⌛ Tú: " + said;
+    const ans = await askTutor(`${said} ${sceneText()}`); if (ans) speak(ans); else if (talk.on) listen();
+  };
+  r.onerror = e => { if (e.error === "not-allowed" || e.error === "service-not-allowed") { stopTalk(); stepEl.textContent = "El navegador no permite el micrófono aquí (" + e.error + "). Puedes seguir leyendo al tutor en el chat de la izquierda."; } };
+  r.onend = () => { if (talk.on && !talk.speaking && !asking) setTimeout(listen, 250); };   // Chrome corta la escucha continua cada ~60 s
+  try { r.start(); } catch (e) { }
+}
+async function startTalk() {
+  if (!SR) { stepEl.textContent = "Este navegador no permite reconocimiento de voz (usa Chrome o Edge)."; return; }
+  talk.on = true; const b = document.getElementById("talk"); b.textContent = (MOODLE?.strings?.talk_stop) || "Silenciar"; b.classList.add("danger");
+  openPanel();
+  const ans = await askTutor(`Activo el modo conversación en el visor de realidad aumentada de esta actividad. Te adjunto lo que veo ahora ${sceneText()}. Salúdame en una frase y hazme la primera pregunta o indicación según el modo del curso. Responde en frases cortas: te voy a escuchar en voz alta.`);
+  if (ans) speak(ans); else listen();
+}
+function stopTalk() {
+  talk.on = false; try { talk.rec?.abort(); } catch (e) { } talk.rec = null; if ("speechSynthesis" in window) speechSynthesis.cancel(); talk.speaking = false;
+  const b = document.getElementById("talk"); if (b) { b.textContent = (MOODLE?.strings?.talk) || "Conversar"; b.classList.remove("danger"); }
+  if (video.srcObject) stepEl.textContent = "Coge la pieza por el borde con un pellizco. Dos pellizcos: gira como una rueda y escala.";
+}
+document.getElementById("talk").onclick = () => talk.on ? stopTalk() : startTalk();
+if ("speechSynthesis" in window) speechSynthesis.getVoices();           // precarga la lista de voces (en Chrome llega de forma asíncrona)

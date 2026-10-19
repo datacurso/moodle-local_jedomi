@@ -17,7 +17,8 @@
 /**
  * Visor de realidad aumentada del modelo 3D de una actividad (alumno o profesor, dentro del curso).
  * Carga el GLB adjunto por el docente (filearea stem_model) y lo manipula con los gestos de la estación
- * (pellizco en el borde; dos pellizcos). La IA se consulta a través del chat de Jedomi del propio curso.
+ * (pellizco en el borde; dos pellizcos). La IA se consulta a través del chat de Jedomi del propio curso, que en esta
+ * página arranca desplegado junto al escenario; el botón «Conversar» abre el modo conversacional (voz en ambos sentidos).
  *
  * @package    local_jedomi
  * @copyright  2026 Datacurso
@@ -49,7 +50,8 @@ $base = (new moodle_url('/local/jedomi/stem/visor/'))->out(false);
 $config = [
     'cmid' => $cmid, 'courseid' => (int) $course->id, 'modelUrl' => $modelurl, 'modelName' => $model ? $model->get_filename() : '',
     'base' => $base, 'sesskey' => sesskey(), 'enabled' => $enabled, 'userid' => (int) $USER->id,
-    'strings' => ['nomodel' => get_string('stem_visor_nomodel', 'local_jedomi'), 'intro' => get_string('stem_visor_intro', 'local_jedomi')],
+    'strings' => ['nomodel' => get_string('stem_visor_nomodel', 'local_jedomi'), 'intro' => get_string('stem_visor_intro', 'local_jedomi'),
+        'talk' => get_string('stem_visor_talk', 'local_jedomi'), 'talk_stop' => get_string('stem_visor_talk_stop', 'local_jedomi')],
 ];
 
 echo $OUTPUT->header();
@@ -69,6 +71,9 @@ echo $OUTPUT->header();
   #ia{position:absolute;right:16px;bottom:16px;max-width:40%;font-size:15px;display:none}
   #start{position:absolute;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.72)}
   #start .vpanel{max-width:560px;font-size:16px;line-height:1.5}
+  body:has(#jedomi-sidebar.jedomi-open) #stage{margin-left:var(--j-width,400px);width:auto}
+  body:has(#jedomi-sidebar.jedomi-open.jedomi-expand-half) #stage{margin-left:50vw}
+  body:has(#jedomi-sidebar.jedomi-open) #jedomi-trigger{display:none}
 </style>
 <div id="stage">
   <video id="video" autoplay playsinline muted></video>
@@ -77,7 +82,8 @@ echo $OUTPUT->header();
     <div class="vpanel" id="step">…</div>
     <div id="ctl">
       <select id="model"><option value="aro" selected>1) Aro de prueba</option><?php if ($model) { ?><option value="<?php echo s($modelurl); ?>">2) Pieza de la actividad: <?php echo s($model->get_filename()); ?></option><?php } ?></select>
-      <button id="explain" class="primary"><?php echo get_string('stem_visor_explain', 'local_jedomi'); ?></button>
+      <button id="talk" class="primary"><?php echo get_string('stem_visor_talk', 'local_jedomi'); ?></button>
+      <button id="explain"><?php echo get_string('stem_visor_explain', 'local_jedomi'); ?></button>
       <button id="reset"><?php echo get_string('stem_visor_reset', 'local_jedomi'); ?></button>
       <button id="quit" class="danger">X</button>
     </div>
@@ -94,7 +100,8 @@ echo $OUTPUT->header();
 { "imports": { "three": "<?php echo $base; ?>vendor/three/three.module.js",
                "three/addons/": "<?php echo $base; ?>vendor/three/" } }
 </script>
-<script>window.JEDOMI_VISOR = <?php echo json_encode($config, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;</script>
+<script>try { sessionStorage.setItem('jedomi_open', '1'); } catch (e) { }
+window.JEDOMI_VISOR = <?php echo json_encode($config, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;</script>
 <script src="<?php echo $base; ?>vendor/cv.js"></script>
 <script src="<?php echo $base; ?>vendor/aruco.js"></script>
 <script src="<?php echo $base; ?>vendor/dictionaries/aruco_4x4_1000.js"></script>
