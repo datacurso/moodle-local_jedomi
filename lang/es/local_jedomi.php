@@ -807,3 +807,21 @@ $string['course_stem_proposal_applied'] = 'Propuesta {$a} aplicada.';
 $string['course_stem_proposal_rejected'] = 'Propuesta {$a} rechazada.';
 $string['jedomi:ingestassessment'] = 'Ingerir eventos de evaluación y propuestas de rúbrica desde la estación STEM física';
 $string['jedomi:autorelease'] = 'Activar la liberación automática de notas de la estación en un curso';
+
+// Modelos 3D de la actividad (visor RA).
+$string['course_stem_model_current'] = 'Modelo 3D actual: {$a->name} ({$a->kb})';
+$string['course_stem_model_open'] = 'Abrir visor RA';
+$string['course_stem_model_delete'] = 'quitar';
+$string['course_stem_model_none'] = 'Sin modelo 3D adjunto.';
+$string['course_stem_model_help'] = 'Adjunta un archivo .glb autocontenido (sin enlaces externos, hasta 30 MB y 1,5 M de triángulos). Los estudiantes lo ven en realidad aumentada sobre el tapete y el tutor lo explica y evalúa con la configuración del curso.';
+$string['stem_model_too_big'] = 'El modelo 3D supera {$a} MB.';
+$string['stem_model_not_glb'] = 'El archivo no es un modelo glTF binario (.glb) válido.';
+$string['stem_model_external_uri'] = 'El modelo referencia recursos externos ({$a}); sólo se aceptan .glb autocontenidos.';
+$string['stem_model_extension'] = 'El modelo requiere extensiones no soportadas ({$a}).';
+$string['stem_model_too_complex'] = 'El modelo es demasiado complejo para el navegador ({$a}).';
+$string['stem_visor_title'] = 'Visor de realidad aumentada';
+$string['stem_visor_nomodel'] = 'Esta actividad aún no tiene un modelo 3D adjunto. Pídeselo a tu profesor o prueba con el aro.';
+$string['stem_visor_intro'] = 'Coloca la hoja del tapete delante de la cámara. Coge la pieza pellizcando su borde con pulgar e índice, muévela, gírala con los dedos como una moneda; con dos pellizcos la giras como una rueda y la escalas. Abre los dedos para soltar.';
+$string['stem_visor_explain'] = 'Explícame';
+$string['stem_visor_reset'] = 'Restablecer';
+$string['stem_visor_start'] = 'Activar cámara';

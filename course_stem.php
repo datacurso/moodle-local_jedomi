@@ -108,6 +108,25 @@ if (optional_param('save', 0, PARAM_INT)) {
     if ($canautorelease && optional_param('auto_release', 0, PARAM_INT)) {
         error_log(sprintf('[local_jedomi] auto_release ENABLED course=%d by user=%d', $course->id, $USER->id));
     }
+    // Modelos 3D por actividad (GLB autocontenido, validado; File API filearea stem_model, itemid 0).
+    $fs = get_file_storage();
+    foreach ($assigns as $a) {
+        $mctx = context_module::instance((int) $a->cmid);
+        if (optional_param('stem_model_del_' . $a->cmid, 0, PARAM_INT)) {
+            $fs->delete_area_files($mctx->id, 'local_jedomi', 'stem_model');
+        }
+        $key = 'stem_model_' . $a->cmid;
+        if (!empty($_FILES[$key]['tmp_name']) && is_uploaded_file($_FILES[$key]['tmp_name'])) {
+            $content = file_get_contents($_FILES[$key]['tmp_name']);
+            $info = \local_jedomi\stem\model_validator::validate_glb($content);   // lanza excepción si no es válido
+            $fs->delete_area_files($mctx->id, 'local_jedomi', 'stem_model');
+            $name = clean_param(basename((string) $_FILES[$key]['name']), PARAM_FILE) ?: 'modelo.glb';
+            if (!preg_match('/\.glb$/i', $name)) { $name .= '.glb'; }
+            $fs->create_file_from_string(['contextid' => $mctx->id, 'component' => 'local_jedomi', 'filearea' => 'stem_model', 'itemid' => 0,
+                'filepath' => '/', 'filename' => $name, 'userid' => $USER->id, 'mimetype' => 'model/gltf-binary'], $content);
+            error_log(sprintf('[local_jedomi] stem_model uploaded cmid=%d by user=%d %s (%d triángulos, %d bytes)', $a->cmid, $USER->id, $name, $info['triangles'], $info['bytes']));
+        }
+    }
     $selected = optional_param_array('stem_assign', [], PARAM_INT);
     foreach ($assigns as $a) {
         $on = in_array((int) $a->cmid, array_map('intval', $selected), true) ? 1 : 0;
@@ -130,7 +149,7 @@ if (!$siteenabled) {
     echo $OUTPUT->notification(get_string('course_stem_site_disabled', 'local_jedomi'), 'warning');
 }
 echo html_writer::tag('p', get_string('course_stem_intro', 'local_jedomi'));
-echo html_writer::start_tag('form', ['method' => 'post', 'action' => $PAGE->url->out(false)]);
+echo html_writer::start_tag('form', ['method' => 'post', 'action' => $PAGE->url->out(false), 'enctype' => 'multipart/form-data']);
 echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'sesskey', 'value' => sesskey()]);
 echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'save', 'value' => 1]);
 
@@ -181,6 +200,21 @@ foreach ($assigns as $a) {
     $badge = $hasrubric ? html_writer::tag('span', get_string('course_stem_badge_rubric', 'local_jedomi'), ['class' => 'badge badge-success bg-success ms-2'])
                         : html_writer::tag('span', get_string('course_stem_badge_norubric', 'local_jedomi'), ['class' => 'badge badge-secondary bg-secondary ms-2']);
     echo html_writer::tag('label', format_string($a->name) . ' ' . html_writer::tag('small', "(cmid {$a->cmid})", ['class' => 'text-muted']) . $badge, ['class' => 'form-check-label', 'for' => $id]);
+    // Modelo 3D de la actividad
+    $mctx = context_module::instance((int) $a->cmid);
+    $model = \local_jedomi\stem\model_validator::get_model($mctx);
+    echo html_writer::start_div('ms-4 mb-2 small');
+    if ($model) {
+        $url = moodle_url::make_pluginfile_url($mctx->id, 'local_jedomi', 'stem_model', 0, '/', $model->get_filename());
+        echo html_writer::tag('span', get_string('course_stem_model_current', 'local_jedomi', (object) ['name' => s($model->get_filename()), 'kb' => display_size($model->get_filesize())]), ['class' => 'me-2']);
+        echo html_writer::link(new moodle_url('/local/jedomi/stem/visor.php', ['cmid' => $a->cmid]), '<i class="fa fa-cube"></i> ' . get_string('course_stem_model_open', 'local_jedomi'), ['class' => 'btn btn-outline-primary btn-sm me-2', 'target' => '_blank']);
+        echo html_writer::tag('label', html_writer::empty_tag('input', ['type' => 'checkbox', 'name' => 'stem_model_del_' . $a->cmid, 'value' => 1, 'class' => 'me-1']) . get_string('course_stem_model_delete', 'local_jedomi'), ['class' => 'me-2']);
+    } else {
+        echo html_writer::tag('span', get_string('course_stem_model_none', 'local_jedomi'), ['class' => 'text-muted me-2']);
+    }
+    echo html_writer::empty_tag('input', ['type' => 'file', 'name' => 'stem_model_' . $a->cmid, 'accept' => '.glb,model/gltf-binary', 'class' => 'form-control form-control-sm d-inline-block', 'style' => 'max-width:360px']);
+    echo html_writer::tag('div', get_string('course_stem_model_help', 'local_jedomi'), ['class' => 'form-text']);
+    echo html_writer::end_div();
     echo html_writer::end_div();
 }
 echo html_writer::end_div(); echo html_writer::end_div();

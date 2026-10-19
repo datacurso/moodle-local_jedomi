@@ -821,3 +821,21 @@ $string['course_stem_proposal_applied'] = 'Proposal {$a} applied.';
 $string['course_stem_proposal_rejected'] = 'Proposal {$a} rejected.';
 $string['jedomi:ingestassessment'] = 'Ingest assessment events and rubric proposals from the physical STEM station';
 $string['jedomi:autorelease'] = 'Enable automatic release of station grades in a course';
+
+// Modelos 3D de la actividad (visor RA).
+$string['course_stem_model_current'] = 'Current 3D model: {$a->name} ({$a->kb})';
+$string['course_stem_model_open'] = 'Open AR viewer';
+$string['course_stem_model_delete'] = 'remove';
+$string['course_stem_model_none'] = 'No 3D model attached.';
+$string['course_stem_model_help'] = 'Attach a self-contained .glb file (no external links, up to 30 MB and 1.5 M triangles). Students see it in augmented reality on the mat and the tutor explains and assesses it with the course settings.';
+$string['stem_model_too_big'] = 'The 3D model exceeds {$a} MB.';
+$string['stem_model_not_glb'] = 'The file is not a valid binary glTF (.glb) model.';
+$string['stem_model_external_uri'] = 'The model references external resources ({$a}); only self-contained .glb files are accepted.';
+$string['stem_model_extension'] = 'The model requires unsupported extensions ({$a}).';
+$string['stem_model_too_complex'] = 'The model is too complex for the browser ({$a}).';
+$string['stem_visor_title'] = 'AR viewer';
+$string['stem_visor_nomodel'] = 'This activity has no 3D model attached yet. Ask your teacher, or try the test ring.';
+$string['stem_visor_intro'] = 'Place the mat sheet in front of the camera. Grab the part by pinching its edge with thumb and index, move it, turn it with your fingers like a coin; with two pinches you turn it like a wheel and scale it. Open your fingers to release.';
+$string['stem_visor_explain'] = 'Explain this';
+$string['stem_visor_reset'] = 'Reset';
+$string['stem_visor_start'] = 'Start camera';

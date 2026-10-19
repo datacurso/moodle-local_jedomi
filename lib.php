@@ -1550,10 +1550,22 @@ function local_jedomi_send_agent_notification(int|string $chatid, string $agent,
 function local_jedomi_pluginfile($course, $cm, $context, string $filearea, array $args, bool $forcedownload, array $options = []): bool {
     global $CFG, $DB;
     require_once($CFG->libdir . '/filelib.php');
-    if ($context->contextlevel !== CONTEXT_MODULE || $filearea !== 'stem_evidence') {
+    if ($context->contextlevel !== CONTEXT_MODULE || !in_array($filearea, ['stem_evidence', 'stem_model'], true)) {
         return false;
     }
     require_login($course, false, $cm);
+    if ($filearea === 'stem_model') {
+        // Modelo 3D de la actividad: cualquier usuario matriculado con acceso a la actividad (lo carga el visor del alumno).
+        $itemid = (int) array_shift($args);
+        $filename = array_pop($args);
+        $file = get_file_storage()->get_file($context->id, 'local_jedomi', 'stem_model', $itemid, '/', $filename);
+        if (!$file || $file->is_directory()) {
+            return false;
+        }
+        $options['cacheability'] = 'private';
+        send_stored_file($file, 86400, 0, $forcedownload, $options);
+        return true;
+    }
     require_capability('mod/assign:grade', $context);
     $itemid = (int) array_shift($args);
     if (!$DB->record_exists('local_jedomi_assess_events', ['id' => $itemid, 'cmid' => $cm->id])) {
