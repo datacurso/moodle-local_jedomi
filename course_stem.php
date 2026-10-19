@@ -117,6 +117,9 @@ if (optional_param('save', 0, PARAM_INT)) {
         }
         $key = 'stem_model_' . $a->cmid;
         if (!empty($_FILES[$key]['tmp_name']) && is_uploaded_file($_FILES[$key]['tmp_name'])) {
+            if ((int) ($_FILES[$key]['size'] ?? 0) > \local_jedomi\stem\model_validator::MAX_BYTES) {   // antes de leerlo en memoria (QA)
+                throw new moodle_exception('stem_model_too_big', 'local_jedomi', '', round(\local_jedomi\stem\model_validator::MAX_BYTES / 1048576));
+            }
             $content = file_get_contents($_FILES[$key]['tmp_name']);
             $info = \local_jedomi\stem\model_validator::validate_glb($content);   // lanza excepción si no es válido
             $fs->delete_area_files($mctx->id, 'local_jedomi', 'stem_model');

@@ -91,8 +91,8 @@ echo $OUTPUT->header();
   </div></div>
 </div>
 <script type="importmap">
-{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-               "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/" } }
+{ "imports": { "three": "<?php echo $base; ?>vendor/three/three.module.js",
+               "three/addons/": "<?php echo $base; ?>vendor/three/" } }
 </script>
 <script>window.JEDOMI_VISOR = <?php echo json_encode($config, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;</script>
 <script src="<?php echo $base; ?>vendor/cv.js"></script>

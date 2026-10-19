@@ -59,12 +59,17 @@ class model_validator {
         if (!is_array($json) || empty($json['asset'])) {
             throw new \moodle_exception('stem_model_not_glb', 'local_jedomi');
         }
-        // Autocontenido: ningún buffer ni imagen con URI (ni siquiera data:, que ya iría en el chunk BIN de un GLB bien formado).
-        foreach (['buffers', 'images'] as $k) {
-            foreach ($json[$k] ?? [] as $item) {
-                if (isset($item['uri'])) {
-                    throw new \moodle_exception('stem_model_external_uri', 'local_jedomi', '', s(substr((string) $item['uri'], 0, 60)));
-                }
+        // Autocontenido: ninguna clave «uri» en NINGÚN nivel del JSON (buffers, imágenes, extensiones…), ni siquiera data: (QA P13-J).
+        $found = self::find_uri($json);
+        if ($found !== null) {
+            throw new \moodle_exception('stem_model_external_uri', 'local_jedomi', '', s(substr($found, 0, 60)));
+        }
+        // Segundo chunk (BIN): tipo y longitud coherentes con el fichero (QA P13-M).
+        $off = 20 + $chunk['len'];
+        if ($off + 8 <= $len) {
+            $bin = unpack('Vlen/Vtype', substr($content, $off, 8));
+            if ($bin['type'] !== 0x004E4942 || $off + 8 + $bin['len'] > $len) {   // 'BIN\0'
+                throw new \moodle_exception('stem_model_not_glb', 'local_jedomi');
             }
         }
         if (!empty($json['extensionsRequired'])) {
@@ -89,6 +94,25 @@ class model_validator {
             throw new \moodle_exception('stem_model_too_complex', 'local_jedomi', '', 'images');
         }
         return ['triangles' => $triangles, 'meshes' => count($json['meshes'] ?? []), 'images' => count($json['images'] ?? []), 'bytes' => $len];
+    }
+
+    /** Busca recursivamente una clave «uri» (string) en el JSON del glTF; devuelve su valor o null. */
+    private static function find_uri($node): ?string {
+        if (!is_array($node)) {
+            return null;
+        }
+        foreach ($node as $k => $v) {
+            if ($k === 'uri' && is_string($v)) {
+                return $v;
+            }
+            if (is_array($v)) {
+                $r = self::find_uri($v);
+                if ($r !== null) {
+                    return $r;
+                }
+            }
+        }
+        return null;
     }
 
     /** Devuelve el fichero GLB de la actividad o null. */
