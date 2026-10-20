@@ -57,3 +57,6 @@
 body:has(#jedomi-sidebar.jedomi-open) #stage{margin-left:var(--j-width,400px);width:auto}
 body:has(#jedomi-sidebar.jedomi-open.jedomi-expand-half) #stage{margin-left:50vw}
 body:has(#jedomi-sidebar.jedomi-open) #jedomi-trigger{display:none}
+#pttbar{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);z-index:6;display:flex;gap:10px;align-items:center;padding:8px 12px}
+#pttbar button{font-size:16px;padding:10px 16px;border-radius:12px;border:1px solid rgba(255,255,255,.2);background:#1f2937;color:#f3f4f6;cursor:pointer;touch-action:none;user-select:none}
+#pttbar #ptt{background:#f59e0b;color:#111;font-weight:600;min-width:220px}#pttbar #ptt.danger{background:#dc2626;color:#fff}

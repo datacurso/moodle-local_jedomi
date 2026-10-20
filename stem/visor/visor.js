@@ -399,7 +399,7 @@ function screenToPx(ev) {                                // pantalla → píxele
   return [(ev.clientX - (r.left + (r.width - dw) / 2)) / sc, (ev.clientY - (r.top + (r.height - dh) / 2)) / sc];
 }
 const clampX = v => Math.min(1.3 * MAT_W, Math.max(-0.3 * MAT_W, v)), clampY = v => Math.min(1.3 * MAT_H, Math.max(-0.3 * MAT_H, v));
-const uiTarget = ev => ev.target.closest && ev.target.closest("#ctl,#titlebar,#start,#jv-intro,#ia,#status,#step,#partinfo,#credit,#pad,.jedomi-sidebar,#jedomi-trigger");
+const uiTarget = ev => ev.target.closest && ev.target.closest("#ctl,#titlebar,#start,#jv-intro,#ia,#status,#step,#partinfo,#credit,#pad,#pttbar,.jedomi-sidebar,#jedomi-trigger");
 stageEl.addEventListener("pointerdown", ev => {
   if (uiTarget(ev) || !poseOK || !obj.mesh) return;
   const p = screenToPx(ev), over = overPx(objectHullPx(), p, 40);
@@ -669,26 +669,55 @@ function speak(text) {
   u.onend = u.onerror = () => { setTimeout(() => { talk.speaking = false; if (talk.on) listen(); }, 500); };   // margen anti-auto-escucha (QA): el altavoz tarda en callar
   speechSynthesis.cancel(); speechSynthesis.speak(u);
 }
+// Escucha. Por defecto «pulsar para hablar» (QA: la escucha continua capta voces del entorno y Chrome suele dar confianza 0):
+// sólo se reconoce mientras el alumno mantiene pulsado «Hablar» o la barra espaciadora. «Manos libres» recupera la escucha
+// continua (útil con las manos ocupadas en el tapete). Con ambos, nunca se escucha mientras habla el tutor.
+talk.ptt = (() => { try { return localStorage.getItem("jedomi_visor_handsfree") !== "1"; } catch (e) { return true; } })();
+const pttBar = document.getElementById("pttbar"), pttBtn = document.getElementById("ptt"), pttMode = document.getElementById("pttmode");
+function pttUI() {
+  if (!pttBar) return; pttBar.hidden = !talk.on;
+  if (pttMode) { pttMode.setAttribute("aria-pressed", String(!talk.ptt)); pttMode.textContent = talk.ptt ? (MOODLE?.strings?.ptt_handsfree || "Manos libres") : (MOODLE?.strings?.ptt_hold_mode || "Pulsar para hablar"); }
+  if (pttBtn) pttBtn.hidden = !talk.ptt;
+}
+async function handleUtterance(said, conf) {
+  said = (said || "").trim(); if (!said || talk.speaking || asking) return;
+  log("alumno dijo: " + said + " (confianza " + (conf ?? 0).toFixed(2) + ")");
+  if (!talk.ptt && conf > 0 && conf < 0.55) { stepEl.textContent = "🤔 No te entendí bien: «" + said + "». Repítelo, por favor."; return; }   // manos libres: dictado dudoso no se envía
+  if (ASK_POINT_RE.test(said)) pointAt(findPart(said) || pieces.sel, "alumno");
+  if (/^(terminar|salir|basta|parar)\.?$/i.test(said)) { stopTalk(); speak("Hasta luego."); return; }
+  stepEl.textContent = "⌛ Tú: " + said;
+  const ans = await askTutor(`${said} ${sceneText()}`, sceneChanged()); if (ans) speak(handlePointMarks(ans)); else if (talk.on) listen();
+}
+function newRec(continuous) { const r = new SR(); r.lang = talk.lang; r.continuous = continuous; r.interimResults = false; r.maxAlternatives = 1; return r; }
 function listen() {
-  if (!talk.on || !SR) return;
-  try { talk.rec?.abort(); } catch (e) { }
-  const r = new SR(); r.lang = talk.lang; r.continuous = true; r.interimResults = false; r.maxAlternatives = 1; talk.rec = r;
-  stepEl.textContent = "🎙️ Te escucho. Habla con normalidad; di «terminar» para cerrar la conversación.";
-  r.onresult = async ev => {
-    const res = ev.results[ev.results.length - 1]; if (!res.isFinal) return;
-    const said = res[0].transcript.trim(); if (!said || talk.speaking || asking) return;
-    const conf = typeof res[0].confidence === "number" ? res[0].confidence : 1;
-    log("alumno dijo: " + said + " (confianza " + conf.toFixed(2) + ")");
-    if (conf > 0 && conf < 0.55) { stepEl.textContent = "🤔 No te entendí bien: «" + said + "». Repítelo, por favor."; return; }   // dictado dudoso: no se envía
-    if (ASK_POINT_RE.test(said)) pointAt(findPart(said) || pieces.sel, "alumno");
-    if (/^(terminar|salir|basta|parar)\.?$/i.test(said)) { stopTalk(); speak("Hasta luego."); return; }
-    stepEl.textContent = "⌛ Tú: " + said;
-    const ans = await askTutor(`${said} ${sceneText()}`, sceneChanged()); if (ans) speak(handlePointMarks(ans)); else if (talk.on) listen();
-  };
+  if (!talk.on || !SR) return; pttUI();
+  try { talk.rec?.abort(); } catch (e) { } talk.rec = null;
+  if (talk.ptt) { stepEl.textContent = "🎙️ " + (MOODLE?.strings?.ptt_hint || "Mantén pulsado «Hablar» (o la barra espaciadora) mientras hablas; suelta para enviar."); return; }
+  const r = newRec(true); talk.rec = r;
+  stepEl.textContent = "🎙️ Te escucho (manos libres). Di «terminar» para cerrar la conversación.";
+  r.onresult = ev => { const res = ev.results[ev.results.length - 1]; if (res.isFinal) handleUtterance(res[0].transcript, typeof res[0].confidence === "number" ? res[0].confidence : 0); };
   r.onerror = e => { if (e.error === "not-allowed" || e.error === "service-not-allowed") { stopTalk(); stepEl.textContent = "El navegador no permite el micrófono aquí (" + e.error + "). Puedes seguir leyendo al tutor en el chat de la izquierda."; } };
-  r.onend = () => { if (talk.on && !talk.speaking && !asking) setTimeout(listen, 250); };   // Chrome corta la escucha continua cada ~60 s
+  r.onend = () => { if (talk.on && !talk.ptt && !talk.speaking && !asking) setTimeout(listen, 250); };   // Chrome corta la escucha continua cada ~60 s
   try { r.start(); } catch (e) { }
 }
+// pulsar para hablar: empieza al pulsar, junta todo lo dicho y lo envía al soltar
+const ptt = { on: false, parts: [], conf: 1 };
+function pttStart() {
+  if (!talk.on || !talk.ptt || ptt.on || talk.speaking || asking || !SR) return;
+  ptt.on = true; ptt.parts = []; ptt.conf = 1; pttBtn?.classList.add("danger");
+  const r = newRec(true); talk.rec = r;
+  r.onresult = ev => { for (let i = ev.resultIndex; i < ev.results.length; i++) if (ev.results[i].isFinal) { ptt.parts.push(ev.results[i][0].transcript); const c = ev.results[i][0].confidence; if (typeof c === "number" && c > 0) ptt.conf = Math.min(ptt.conf, c); } };
+  r.onerror = e => { if (e.error === "not-allowed" || e.error === "service-not-allowed") { stopTalk(); stepEl.textContent = "El navegador no permite el micrófono aquí (" + e.error + ")."; } };
+  r.onend = () => { const said = ptt.parts.join(" "); ptt.on = false; pttBtn?.classList.remove("danger"); if (said.trim()) handleUtterance(said, ptt.conf); else if (talk.on) listen(); };
+  stepEl.textContent = "🔴 " + (MOODLE?.strings?.ptt_listening || "Te escucho… suelta para enviar.");
+  try { r.start(); } catch (e) { ptt.on = false; }
+}
+function pttEnd() { if (ptt.on) { try { talk.rec?.stop(); } catch (e) { } } }
+if (pttBtn) { pttBtn.addEventListener("pointerdown", ev => { ev.preventDefault(); pttStart(); }); ["pointerup", "pointerleave", "pointercancel"].forEach(e => pttBtn.addEventListener(e, pttEnd)); }
+const typing = el => el && (el.isContentEditable || /^(input|textarea|select)$/i.test(el.tagName));
+window.addEventListener("keydown", ev => { if (ev.code === "Space" && talk.on && talk.ptt && !typing(document.activeElement) && !ev.repeat) { ev.preventDefault(); pttStart(); } });
+window.addEventListener("keyup", ev => { if (ev.code === "Space" && ptt.on) { ev.preventDefault(); pttEnd(); } });
+if (pttMode) pttMode.onclick = () => { talk.ptt = !talk.ptt; try { localStorage.setItem("jedomi_visor_handsfree", talk.ptt ? "0" : "1"); } catch (e) { } log("voz: " + (talk.ptt ? "pulsar para hablar" : "manos libres")); listen(); };
 async function startTalk() {
   if (!SR) { stepEl.textContent = "Este navegador no permite reconocimiento de voz (usa Chrome o Edge)."; return; }
   if (!MOODLE?.voiceEnabled) { stepEl.textContent = MOODLE?.strings?.voice_off || "Voz no habilitada."; return; }
@@ -701,6 +730,7 @@ async function startTalk() {
 function stopTalk() {
   talk.on = false; try { talk.rec?.abort(); } catch (e) { } talk.rec = null; if ("speechSynthesis" in window) speechSynthesis.cancel(); talk.speaking = false;
   const b = document.getElementById("talk"); if (b) { b.textContent = "🎙 " + ((MOODLE?.strings?.talk) || "Conversar"); b.classList.remove("danger"); }
+  ptt.on = false; if (pttBar) pttBar.hidden = true;
   if (video.srcObject) stepEl.textContent = "① Pellizca el borde de la pieza con pulgar e índice para cogerla.";
 }
 const talkBtn = document.getElementById("talk"); if (talkBtn) talkBtn.onclick = () => talk.on ? stopTalk() : startTalk();   // el botón sólo existe si el sitio habilita la voz
