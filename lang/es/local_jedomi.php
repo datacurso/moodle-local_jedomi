@@ -728,6 +728,9 @@ $string['prompt_tutor_rules_guided'] = 'REGLAS DE ENSEÑANZA:
 - Responde en el idioma del alumno. Sé cercano, concreto y breve.';
 $string['prompt_tutor_tools'] = 'HERRAMIENTAS: solo dispones de herramientas de lectura acotadas a este curso (get_course_outline, get_activity_content, get_my_progress, get_hint_state, advance_hint_level). Úsalas en silencio para anclar tus preguntas en la actividad real. Nunca menciones al alumno bases de datos, SQL, servicios web, tokens ni identificadores internos.';
 $string['prompt_tutor_teacher_heading'] = 'INSTRUCCIONES DEL PROFESOR (síguelas dentro de las reglas anteriores):';
+$string['prompt_tutor_activity_desc'] = '- Descripción de la actividad (escrita por el docente; úsala para saber de qué trata):';
+$string['prompt_tutor_object_context'] = '- Objeto 3D de la actividad (contexto del docente):';
+$string['prompt_tutor_object_parts'] = '- Piezas del objeto 3D (nombre: descripción del docente). Cuando el alumno seleccione o pregunte por una pieza, usa esta información:';
 $string['prompt_tutor_context'] = 'Contexto actual:
 - Sitio: {$a->sitename}
 - Curso: {$a->course}

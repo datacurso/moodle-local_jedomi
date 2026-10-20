@@ -849,11 +849,92 @@ function local_jedomi_resolve_mode(int $courseid, int $cmid, string $role): stri
         return 'assistant';
     }
     $cfg = local_jedomi_stem_cfg($courseid, $cmid);
+    $jedomiarmode = local_jedomi_jedomiar_tutormode($courseid, $cmid);
+    if ($jedomiarmode !== null && !($cfg && (int) $cfg->cmid === $cmid)) {
+        // Actividad RA (mod_jedomiar): el modo lo fija la instancia; una fila stem_cfg propia de la actividad, si existe, prevalece.
+        $mode = $jedomiarmode === 'inherit' ? (string) get_config('local_jedomi', 'stem_tutor_mode') : $jedomiarmode;
+        return in_array($mode, ['socratic', 'guided'], true) ? $mode : 'assistant';
+    }
     if (!$cfg || (int) $cfg->enabled !== 1) {
         return 'assistant';
     }
     $mode = $cfg->tutor_mode === 'inherit' ? (string) get_config('local_jedomi', 'stem_tutor_mode') : $cfg->tutor_mode;
     return in_array($mode, ['socratic', 'guided'], true) ? $mode : 'assistant';
+}
+
+/**
+ * Modo del tutor de una actividad mod_jedomiar (inherit|socratic|guided) o null si el cmid no es de ese módulo.
+ */
+function local_jedomi_jedomiar_tutormode(int $courseid, int $cmid): ?string {
+    global $DB;
+    if ($cmid <= 0 || $courseid <= 1 || !core_component::get_component_directory('mod_jedomiar')) {
+        return null;
+    }
+    try {
+        $cm = get_fast_modinfo($courseid)->get_cm($cmid);
+    } catch (\Throwable $e) {
+        return null;
+    }
+    if ($cm->modname !== 'jedomiar') {
+        return null;
+    }
+    $mode = $DB->get_field('jedomiar', 'tutormode', ['id' => $cm->instance]);
+    return $mode === false ? null : (string) $mode;
+}
+
+/**
+ * Contexto pedagógico de la actividad para el tutor: descripción de la actividad (sin HTML, acotada) y, en actividades
+ * de realidad aumentada (mod_jedomiar), el contexto del objeto 3D y sus piezas tal como los describió el docente.
+ * Devuelve texto plano listo para el mensaje de sistema; cadena vacía si no hay nada que aportar.
+ */
+function local_jedomi_activity_context(int $courseid, int $cmid): string {
+    global $DB;
+    if ($cmid <= 0 || $courseid <= 1) {
+        return '';
+    }
+    try {
+        $cm = get_fast_modinfo($courseid)->get_cm($cmid);
+    } catch (\Throwable $e) {
+        return '';
+    }
+    $out = [];
+    $intro = $DB->get_field($cm->modname, 'intro', ['id' => $cm->instance], IGNORE_MISSING);
+    $intro = $intro ? trim(preg_replace('/\s+/u', ' ', html_entity_decode(strip_tags((string) $intro), ENT_QUOTES | ENT_HTML5, 'UTF-8'))) : '';
+    if ($intro !== '') {
+        $out[] = get_string('prompt_tutor_activity_desc', 'local_jedomi') . ' ' . core_text::substr($intro, 0, 2500);
+    }
+    if ($cm->modname === 'jedomiar') {
+        $payload = null;
+        foreach (['\\mod_jedomiar\\local\\service\\model_service', '\\mod_jedomiar\\local\\model_service'] as $cls) {
+            if (class_exists($cls) && method_exists($cls, 'get_viewer_payload')) {
+                try {
+                    $payload = $cls::get_viewer_payload($cm);
+                } catch (\Throwable $e) {
+                    $payload = null;
+                }
+                break;
+            }
+        }
+        if (is_array($payload)) {
+            $obj = trim(strip_tags((string) ($payload['objectcontext'] ?? '')));
+            if ($obj !== '') {
+                $out[] = get_string('prompt_tutor_object_context', 'local_jedomi') . ' ' . core_text::substr($obj, 0, 2500);
+            }
+            $lines = [];
+            foreach (array_slice((array) ($payload['parts'] ?? []), 0, 60) as $p) {
+                $name = trim(strip_tags((string) ($p['name'] ?? '')));
+                if ($name === '') {
+                    continue;
+                }
+                $desc = trim(strip_tags((string) ($p['description'] ?? '')));
+                $lines[] = '- ' . $name . ($desc !== '' ? ': ' . core_text::substr($desc, 0, 300) : '');
+            }
+            if ($lines) {
+                $out[] = get_string('prompt_tutor_object_parts', 'local_jedomi') . "\n" . implode("\n", $lines);
+            }
+        }
+    }
+    return implode("\n", $out);
 }
 
 /**

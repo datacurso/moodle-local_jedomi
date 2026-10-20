@@ -194,7 +194,10 @@ class system_message {
         // Las reglas van al final para que pesen por recencia sobre cualquier instrucción contradictoria del profesor.
         $content  = get_string('prompt_tutor_identity', 'local_jedomi', $a) . "\n\n";
         $content .= get_string('prompt_tutor_context', 'local_jedomi', $a) . "\n";
-        $content .= "- User role: {$role} | mode: {$mode}\n\n";
+        $content .= "- User role: {$role} | mode: {$mode}\n";
+        // Descripción de la actividad y, en actividades RA, contexto del objeto 3D y de sus piezas aportado por el docente.
+        $activityctx = \local_jedomi_activity_context($courseid, $cmid);
+        $content .= ($activityctx !== '' ? $activityctx . "\n" : '') . "\n";
         if ($teacher !== '') {
             $content .= get_string('prompt_tutor_teacher_heading', 'local_jedomi') . "\n" . $teacher . "\n\n";
         }

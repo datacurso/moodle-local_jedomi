@@ -127,7 +127,7 @@ async function loadModel(spec) {
   wrap.rotation.x = -Math.PI / 2;
   objGroup.add(wrap); obj.mesh = wrap; obj.root = root; obj.yaw = 0; obj.rot.identity(); objGroup.rotation.set(0, 0, 0);
   obj.bbox = new THREE.Box3().setFromObject(wrap);
-  pieces.list = buildParts(root); pieces.explode = pieces.target = 0; pieces.sel = pieces.hover = null; refreshPiecesUI();
+  pieces.list = buildParts(root, spec === MOODLE?.modelUrl ? MOODLE?.parts : null);   // piezas descritas por el docente (mod_jedomiar) o catálogo pieces.explode = pieces.target = 0; pieces.sel = pieces.hover = null; refreshPiecesUI();
   log("piezas: " + pieces.list.length + (pieces.list.length ? " (" + pieces.list.slice(0, 6).map(p => p.name).join(", ") + "…)" : ""));
   console.log("modelo", spec, "triángulos", Math.round(obj.tris));
 }

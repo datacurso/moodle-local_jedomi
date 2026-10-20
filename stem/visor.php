@@ -29,16 +29,39 @@ require_once(__DIR__ . '/../../../config.php');
 require_once($CFG->dirroot . '/local/jedomi/lib.php');
 
 $cmid = required_param('cmid', PARAM_INT);
-$cm = get_coursemodule_from_id('assign', $cmid, 0, false, MUST_EXIST);
+$cm = get_coursemodule_from_id('', $cmid, 0, false, MUST_EXIST);
+if (!in_array($cm->modname, ['assign', 'jedomiar'], true)) {
+    throw new moodle_exception('invalidcoursemodule');
+}
 $course = get_course($cm->course);
 $context = context_module::instance($cm->id);
 require_login($course, false, $cm);
-require_capability('mod/assign:view', $context);
+require_capability('mod/' . $cm->modname . ':view', $context);
 
-$model = \local_jedomi\stem\model_validator::get_model($context);
-$modelurl = $model ? moodle_url::make_pluginfile_url($context->id, 'local_jedomi', 'stem_model', 0, '/', $model->get_filename())->out(false) : '';
-$cfg = local_jedomi_stem_cfg((int) $course->id, (int) $cm->id);
-$enabled = (int) get_config('local_jedomi', 'stem_enabled') === 1 && $cfg && (int) $cfg->enabled === 1;
+$parts = []; $objectcontext = '';
+if ($cm->modname === 'jedomiar') {
+    // Actividad RA propia: modelo y piezas descritas por el docente (mod_jedomiar)
+    $payload = null;
+    foreach (['\\mod_jedomiar\\local\\service\\model_service', '\\mod_jedomiar\\local\\model_service'] as $cls) {
+        if (class_exists($cls) && method_exists($cls, 'get_viewer_payload')) { $payload = $cls::get_viewer_payload($cm); break; }
+    }
+    if (is_array($payload)) {
+        $modelurl = (string) ($payload['modelurl'] ?? ''); $modelname = (string) ($payload['modelname'] ?? '');
+        $parts = array_values((array) ($payload['parts'] ?? [])); $objectcontext = (string) ($payload['objectcontext'] ?? '');
+    } else {
+        $f = \mod_jedomiar\local\service\model_service::get_model($context);
+        $u = \mod_jedomiar\local\service\model_service::get_model_url($context);
+        $modelurl = $u ? $u->out(false) : ''; $modelname = $f ? $f->get_filename() : '';
+    }
+    $model = $modelurl !== '' ? (object) ['name' => $modelname] : null;
+    $enabled = (int) get_config('local_jedomi', 'stem_enabled') === 1;
+} else {
+    $file = \local_jedomi\stem\model_validator::get_model($context);
+    $modelurl = $file ? moodle_url::make_pluginfile_url($context->id, 'local_jedomi', 'stem_model', 0, '/', $file->get_filename())->out(false) : '';
+    $model = $file ? (object) ['name' => $file->get_filename()] : null;
+    $cfg = local_jedomi_stem_cfg((int) $course->id, (int) $cm->id);
+    $enabled = (int) get_config('local_jedomi', 'stem_enabled') === 1 && $cfg && (int) $cfg->enabled === 1;
+}
 
 $PAGE->set_url(new moodle_url('/local/jedomi/stem/visor.php', ['cmid' => $cmid]));
 $PAGE->set_context($context);
@@ -46,11 +69,12 @@ $PAGE->set_pagelayout('embedded');
 $PAGE->set_title(get_string('stem_visor_title', 'local_jedomi') . ': ' . format_string($cm->name));
 $PAGE->set_heading(format_string($course->fullname));
 $PAGE->activityheader->disable();   // la cabecera de la actividad la pinta el propio visor (barra de título a la derecha del chat)
-$courseurl = (new moodle_url('/course/view.php', ['id' => $course->id]))->out(false);
+$courseurl = ($cm->modname === 'jedomiar' ? new moodle_url('/mod/jedomiar/view.php', ['id' => $cm->id]) : new moodle_url('/course/view.php', ['id' => $course->id]))->out(false);
 
 $base = (new moodle_url('/local/jedomi/stem/visor/'))->out(false);
 $config = [
-    'cmid' => $cmid, 'courseid' => (int) $course->id, 'modelUrl' => $modelurl, 'modelName' => $model ? $model->get_filename() : '',
+    'cmid' => $cmid, 'courseid' => (int) $course->id, 'modelUrl' => $modelurl, 'modelName' => $model ? $model->name : '', 'modname' => $cm->modname,
+    'parts' => array_map(fn($p) => ['key' => (string) ($p['key'] ?? ''), 'name' => (string) ($p['name'] ?? ''), 'description' => (string) ($p['description'] ?? ''), 'nodes' => array_values(array_map('strval', (array) ($p['nodes'] ?? [])))], $parts),
     'base' => $base, 'sesskey' => sesskey(), 'enabled' => $enabled, 'userid' => (int) $USER->id,
     'voiceEnabled' => (int) get_config('local_jedomi', 'stem_voice_enabled') === 1, 'courseUrl' => $courseurl,
     'dev' => optional_param('dev', 0, PARAM_INT) === 1 && has_capability('local/jedomi:configuretutor', context_course::instance($course->id)),
@@ -128,7 +152,7 @@ echo $OUTPUT->header();
     <div class="vpanel" id="step">…</div>
     <div id="ctl">
       <?php // el selector sólo existe para quien puede configurar el tutor (capacidad comprobada en servidor); el alumno recibe únicamente la pieza del docente ?>
-      <select id="model" <?php echo $config['dev'] ? '' : 'hidden'; ?>><?php if ($model) { ?><option value="<?php echo s($modelurl); ?>" selected><?php echo s($model->get_filename()); ?></option><?php } ?><?php if ($config['dev'] || !$model) { ?><option value="aro" <?php echo $model ? '' : 'selected'; ?>>Aro de prueba (desarrollo)</option><?php } ?></select>
+      <select id="model" <?php echo $config['dev'] ? '' : 'hidden'; ?>><?php if ($model) { ?><option value="<?php echo s($modelurl); ?>" selected><?php echo s($model->name); ?></option><?php } ?><?php if ($config['dev'] || !$model) { ?><option value="aro" <?php echo $model ? '' : 'selected'; ?>>Aro de prueba (desarrollo)</option><?php } ?></select>
       <?php if ($config['voiceEnabled']) { ?><button id="talk" class="primary" title="<?php echo get_string('stem_visor_talk_help', 'local_jedomi'); ?>">🎙 <?php echo get_string('stem_visor_talk', 'local_jedomi'); ?></button><?php } ?>
       <button id="explain" title="<?php echo get_string('stem_visor_explain_help', 'local_jedomi'); ?>">💬 <?php echo get_string('stem_visor_explain', 'local_jedomi'); ?></button>
       <button id="reset" title="<?php echo get_string('stem_visor_reset_help', 'local_jedomi'); ?>">⟲ <?php echo get_string('stem_visor_reset', 'local_jedomi'); ?></button>

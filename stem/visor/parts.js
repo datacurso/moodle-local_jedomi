@@ -32,9 +32,13 @@ function classify(name) {
   return { key: "n:" + clean.toLowerCase(), name: clean, desc: "" };
 }
 
-// Construye las piezas tras cargar el modelo (root ya colocado en la escena y con matrices actualizadas)
-export function buildParts(root) {
+// Construye las piezas tras cargar el modelo (root ya colocado en la escena y con matrices actualizadas).
+// meta (opcional): piezas definidas por el docente en la actividad [{key, name, description, nodes:[nombres crudos del GLB]}];
+// tienen prioridad sobre el catálogo. GLTFLoader sanea los nombres de nodo (quita [ ] . : /), así que se comparan saneados.
+export function buildParts(root, meta = null) {
   root.updateMatrixWorld(true);
+  const byNode = new Map();
+  for (const p of (Array.isArray(meta) ? meta : [])) for (const n of (p.nodes || [])) byNode.set(THREE.PropertyBinding.sanitizeNodeName(String(n)), p);
   const groups = new Map(), meshes = [];
   root.traverse(o => { if (o.isMesh) meshes.push(o); });
   if (meshes.length < 2) return [];
@@ -42,7 +46,9 @@ export function buildParts(root) {
     // se desplaza la propia malla; el nombre es el de la malla o, si GLTFLoader la creó como primitiva sin nombre propio, el de su grupo
     const node = m;
     const generic = !m.name || /^(mesh|primitive|object)?_?\d*$/i.test(m.name);
-    const c = classify((generic && m.parent ? m.parent.name : m.name) || "");
+    const nm = (generic && m.parent ? m.parent.name : m.name) || "";
+    const t = byNode.get(nm) || byNode.get(m.name) || (m.parent && byNode.get(m.parent.name));
+    const c = t ? { key: "t:" + (t.key || t.name), name: t.name || nm, desc: t.description || "" } : classify(nm);
     if (!groups.has(c.key)) groups.set(c.key, { ...c, nodes: new Set(), meshes: [] });
     const g = groups.get(c.key); g.nodes.add(node); g.meshes.push(m);
   }
