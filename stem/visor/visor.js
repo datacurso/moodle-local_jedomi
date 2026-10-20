@@ -150,11 +150,13 @@ class Hand {
     const now = this.pinch ? this.pinchCm < openThr : (this.pinchCm < 3.5 && (easy || idxExt > 1.3));
     if (now) { this.openSince = null; this.pinch = true; } else { this.openSince = this.openSince ?? t; if (t - this.openSince > 0.10 || !this.pinch) this.pinch = false; }
     this.fingerAngle = Math.atan2(raw[8][1] - raw[4][1], raw[8][0] - raw[4][0]);
-    // marco de la mano (v13, modelo rígido): x = muñeca→nudillo índice, plano con muñeca→nudillo meñique, z = normal de la palma.
+    // marco de la mano (v13.1, modelo rígido): x = muñeca→nudillo índice, plano con muñeca→nudillo meñique, z = normal de la palma.
     // Su orientación (cuaternión) se filtra con One Euro sobre las 4 componentes con continuidad de signo: la pieza cogida gira igual que la mano.
-    { const w0 = wlm[0], w5 = wlm[5], w17 = wlm[17];
-      let x = [w5.x - w0.x, w5.y - w0.y, w5.z - w0.z]; const lx = Math.hypot(...x) || 1; x = x.map(v => v / lx);
-      const yt = [w17.x - w0.x, w17.y - w0.y, w17.z - w0.z]; let z = cross3(x, yt); const lz = Math.hypot(...z) || 1; z = z.map(v => v / lz); const y = cross3(z, x);
+    // Marco: landmarks de IMAGEN (x→ derecha, y↓ en píxeles) con su profundidad z (misma escala que x: z·W; menor = más cerca de la cámara),
+    // es decir, el marco de cámara de OpenCV, el mismo en que está la pose del tapete (QA v13: los worldLandmarks usan otra convención).
+    { const P = k => [lm[k].x * W, lm[k].y * Hh, lm[k].z * W]; const w0 = P(0), w5 = P(5), w17 = P(17);
+      let x = [w5[0] - w0[0], w5[1] - w0[1], w5[2] - w0[2]]; const lx = Math.hypot(...x) || 1; x = x.map(v => v / lx);
+      const yt = [w17[0] - w0[0], w17[1] - w0[1], w17[2] - w0[2]]; let z = cross3(x, yt); const lz = Math.hypot(...z) || 1; z = z.map(v => v / lz); const y = cross3(z, x);
       const q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().set(x[0], y[0], z[0], 0, x[1], y[1], z[1], 0, x[2], y[2], z[2], 0, 0, 0, 0, 1));
       const pr = this.qRaw; if (pr && q.x * pr[0] + q.y * pr[1] + q.z * pr[2] + q.w * pr[3] < 0) { q.x = -q.x; q.y = -q.y; q.z = -q.z; q.w = -q.w; }
       this.qRaw = [q.x, q.y, q.z, q.w]; const f = this.qf.filter(this.qRaw, t); this.qHand = new THREE.Quaternion(f[0], f[1], f[2], f[3]).normalize(); }
