@@ -87,7 +87,7 @@ $base = (new moodle_url('/local/jedomi/stem/visor/'))->out(false);
 // Cadenas que usa el JavaScript del visor (clave JS => clave de idioma sin el prefijo stem_visor_).
 $jsstrings = ['nomodel', 'intro', 'talk', 'talk_stop', 'pj_nocam', 'pj_speak', 'pj_nodev', 'pj_nomic', 'zoom_refit', 'zoom_fitting',
     'zoom_off', 'parts_explode', 'parts_join', 'pad_whole', 'voice_consent', 'voice_off', 'intro_next', 'intro_done',
-    'intro_s1', 'intro_s2', 'intro_s3', 'intro_s4', 'intro_s5', 'ptt_hint', 'ptt_listening', 'ptt_handsfree', 'ptt_hold_mode'];
+    'intro_s1', 'intro_s2', 'intro_s3', 'intro_s4', 'intro_s5', 'ptt_hint', 'ptt_listening', 'ptt_handsfree', 'ptt_hold_mode', 'view_ar', 'view_web'];
 $strings = [];
 foreach ($jsstrings as $k) {
     $strings[$k] = get_string('stem_visor_' . $k, 'local_jedomi');

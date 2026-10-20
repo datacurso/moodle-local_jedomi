@@ -2,6 +2,7 @@
 // + MediaPipe HandLandmarker (gestos portados de demo_guiada.py v12.3: pellizco en el borde coge/mueve/gira, dos pellizcos giran/escalan).
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { initPrejoin } from "./devices.js";
 import { buildParts, applyParts, setHighlight, pickPart, resetPart } from "./parts.js";
 import { FilesetResolver, HandLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
@@ -178,7 +179,16 @@ class Hand {
 }
 // píxel → mm del tapete usando la homografía inversa de la pose actual
 let Hinv = null;
-function pxToMM(p) { if (!Hinv) return null; const v = mulMatVec(Hinv, [p[0], p[1], 1]); return [v[0] / v[2], v[1] / v[2]]; }
+function pxToMM(p) {
+  if (view.mode === "web") {                                       // vista 3D: rayo de la cámara orbital contra el plano del tapete (z = 0)
+    mat.updateWorldMatrix(true, false); camera.updateMatrixWorld();
+    _ray.setFromCamera(new THREE.Vector2(p[0] / W * 2 - 1, -(p[1] / Hh * 2 - 1)), camera);
+    const o = mat.worldToLocal(_ray.ray.origin.clone()), d = mat.worldToLocal(_ray.ray.origin.clone().add(_ray.ray.direction)).sub(o);
+    if (Math.abs(d.z) < 1e-9) return null; const k = -o.z / d.z; return k > 0 ? [o.x + k * d.x, o.y + k * d.y] : null;
+  }
+  if (!Hinv) return null; const v = mulMatVec(Hinv, [p[0], p[1], 1]); return [v[0] / v[2], v[1] / v[2]];
+}
+const _ray = new THREE.Raycaster();
 // silueta del objeto en pantalla (caja envolvente proyectada)
 function objectHullPx() {
   if (!obj.mesh || !poseOK) return null;
@@ -200,6 +210,7 @@ let heldBy = null, grabOff = [0, 0], two = null; const objFilter = new OneEuro(1
 let pinchHold = new Set(), holdPts = [], lastHoldT = 0;
 let qHand0 = null, rot0 = null, rotArmed = false; const ROT_DEAD = 6 * Math.PI / 180;   // 6° para empezar a girar (luego sigue 1:1, re-anclado al armar: sin salto)
 let gestureName = "libre";
+const WEB_HINT = { "libre": "🖱 Vista 3D: arrastra para girar la vista, rueda para acercar, botón derecho para desplazar. Activa 🧩 Piezas para tocar cada pieza.", "modo piezas": "🧩 Pasa el ratón para ver el nombre; arrastra una pieza para sacarla; Mayús+arrastrar la gira; el panel de controles la mueve con precisión.", "ratón": "🖱 Moviendo el modelo." };
 const GESTURE_HINT = { "modo piezas": "🧩 Modo piezas: pasa el ratón para ver el nombre; arrastra o pellizca una pieza para sacarla; clic derecho y arrastrar la gira; el panel de controles la mueve con precisión.", "pieza cogida": "🧩 Pieza cogida: muévela y gira la mano para girarla; abre los dedos para soltarla. «Devolver a su sitio» la recoloca.", "ratón": "🖱 Arrastra para mover · rueda: tamaño · botón derecho o Mayús+arrastrar: girar en 3D.", "libre": "① Pellizca el borde de la pieza con pulgar e índice para cogerla.", "cogida": "② Cogida: muévela con la mano; gira la mano para girarla. Abre los dedos para soltar.", "cogida: girando": "② Girando con tu mano. Abre los dedos para soltar.", "dos pellizcos": "③ Dos pellizcos: separa o junta para agrandar/encoger; gira las manos para girarla sobre el tapete." };
 function gestures(active, t) {
   const hull = objectHullPx();
@@ -321,9 +332,10 @@ function partsTick() {                                   // animación de la sep
   applyParts(pieces.list, pieces.explode);
 }
 // una pieza no se aleja de su sitio más que el tamaño del modelo (evita que salga volando fuera del tapete)
-function clampPartOffset(p) { const lim = (obj.size / (obj.root ? obj.root.getWorldScale(new THREE.Vector3()).x / mat.getWorldScale(new THREE.Vector3()).x : 1)) * 0.9; if (p.offset.length() > lim) p.offset.setLength(lim); }
+function clampPartOffset(p) { mat.updateWorldMatrix(true, true); const lim = (obj.size / (obj.root ? obj.root.getWorldScale(new THREE.Vector3()).x / mat.getWorldScale(new THREE.Vector3()).x : 1)) * 0.9; if (p.offset.length() > lim) p.offset.setLength(lim); }
 // desplazamiento en mm del tapete → desplazamiento en coordenadas del modelo (root)
 function matDeltaToRoot(a, b) {
+  mat.updateWorldMatrix(true, true);                     // matrices al día aunque aún no se haya pintado el fotograma
   const z = objGroup.position.z, pa = mat.localToWorld(new THREE.Vector3(a[0], a[1], z)), pb = mat.localToWorld(new THREE.Vector3(b[0], b[1], z));
   return obj.root.worldToLocal(pb).sub(obj.root.worldToLocal(pa));
 }
@@ -401,21 +413,24 @@ function screenToPx(ev) {                                // pantalla → píxele
 const clampX = v => Math.min(1.3 * MAT_W, Math.max(-0.3 * MAT_W, v)), clampY = v => Math.min(1.3 * MAT_H, Math.max(-0.3 * MAT_H, v));
 const uiTarget = ev => ev.target.closest && ev.target.closest("#ctl,#titlebar,#start,#jv-intro,#ia,#status,#step,#partinfo,#credit,#pad,#pttbar,.jedomi-sidebar,#jedomi-trigger");
 stageEl.addEventListener("pointerdown", ev => {
-  if (uiTarget(ev) || !poseOK || !obj.mesh) return;
+  if (view.controls) view.controls.enabled = view.mode === "web";   // por defecto la órbita actúa; se apaga abajo si se coge algo
+  if (uiTarget(ev) || !poseOK || !obj.mesh) { if (view.controls && uiTarget(ev)) view.controls.enabled = false; return; }
+  if (view.mode === "web" && ev.button === 2 && !(pieces.on && pieces.sel && ev.shiftKey)) return;   // vista 3D: botón derecho = desplazar la vista
   const p = screenToPx(ev), over = overPx(objectHullPx(), p, 40);
   if (pieces.on && ev.button === 0 && !ev.shiftKey) {               // modo piezas: arrastrar una pieza la saca de su sitio; clic la selecciona
     const part = hoverPart(p);
     if (part) { selectPart(part); mouse.part = part; mouse.down = true; mouse.btn = 0; mouse.shift = false; mouse.last = p; mouse.lastMM = pxToMM(p);
-      stageEl.setPointerCapture(ev.pointerId); ev.preventDefault(); lockZoom("interacción"); log("ratón: pieza " + part.name); return; }
+      stageEl.setPointerCapture(ev.pointerId); ev.preventDefault(); if (view.controls) view.controls.enabled = false; lockZoom("interacción"); log("ratón: pieza " + part.name); return; }
   }
   if (pieces.on && ev.button === 0 && !ev.shiftKey) return;         // modo piezas: el botón izquierdo sólo actúa sobre piezas
   if (pieces.on && pieces.sel && (ev.button === 2 || ev.shiftKey)) {  // modo piezas: girar la pieza seleccionada
     mouse.down = true; mouse.btn = 2; mouse.shift = true; mouse.last = p; mouse.rotPart = pieces.sel;
-    stageEl.setPointerCapture(ev.pointerId); ev.preventDefault(); lockZoom("interacción"); log("ratón: girar pieza " + pieces.sel.name); return; }
+    stageEl.setPointerCapture(ev.pointerId); ev.preventDefault(); if (view.controls) view.controls.enabled = false; lockZoom("interacción"); log("ratón: girar pieza " + pieces.sel.name); return; }
+  if (view.mode === "web" && !ev.shiftKey && !(over && ev.button === 0 && !pieces.on)) return;   // vista 3D: arrastrar en vacío = orbitar
   if (!over && !(ev.button === 2 || ev.shiftKey)) return;          // sin pieza debajo sólo se admite el giro (derecho/Mayús)
   mouse.down = true; mouse.btn = ev.button; mouse.shift = ev.shiftKey; mouse.last = p;
   const mm = pxToMM(p); mouse.offset = mm ? [mm[0] - obj.cx, mm[1] - obj.cy] : [0, 0];
-  stageEl.setPointerCapture(ev.pointerId); ev.preventDefault(); log("ratón: " + (ev.button === 2 || ev.shiftKey ? "girar" : "mover")); lockZoom("interacción");
+  stageEl.setPointerCapture(ev.pointerId); ev.preventDefault(); if (view.controls) view.controls.enabled = false; log("ratón: " + (ev.button === 2 || ev.shiftKey ? "girar" : "mover")); lockZoom("interacción");
 });
 stageEl.addEventListener("pointermove", ev => {
   if (!mouse.down && pieces.on && !uiTarget(ev) && poseOK && obj.root) {
@@ -435,9 +450,9 @@ stageEl.addEventListener("pointermove", ev => {
     stageEl.style.cursor = "move"; }
   mouse.last = p;
 });
-const mouseUp = ev => { if (!mouse.down) return; mouse.down = false; mouse.rotPart = null; if (mouse.part) { log(`ratón: pieza suelta (${Math.round(mouse.movedMM || 0)} mm en el tapete → ${Math.round(mouse.movedRoot || 0)} u. del modelo)`); mouse.part = null; mouse.movedMM = mouse.movedRoot = 0; } stageEl.style.cursor = mouse.over ? "grab" : ""; log("ratón: suelto"); };
+const mouseUp = ev => { if (view.controls) view.controls.enabled = view.mode === "web"; if (!mouse.down) return; mouse.down = false; mouse.rotPart = null; if (mouse.part) { log(`ratón: pieza suelta (${Math.round(mouse.movedMM || 0)} mm en el tapete → ${Math.round(mouse.movedRoot || 0)} u. del modelo)`); mouse.part = null; mouse.movedMM = mouse.movedRoot = 0; } stageEl.style.cursor = mouse.over ? "grab" : ""; log("ratón: suelto"); };
 stageEl.addEventListener("pointerup", mouseUp); stageEl.addEventListener("pointercancel", mouseUp);
-stageEl.addEventListener("wheel", ev => { if (uiTarget(ev) || !poseOK || !obj.mesh) return; if (!mouse.over && !mouse.down) return;
+stageEl.addEventListener("wheel", ev => { if (view.mode === "web" || uiTarget(ev) || !poseOK || !obj.mesh) return;   // vista 3D: la rueda acerca la cámara if (!mouse.over && !mouse.down) return;
   obj.size = Math.min(300, Math.max(90, obj.size * (ev.deltaY < 0 ? 1.08 : 0.92))); ev.preventDefault(); }, { passive: false });
 stageEl.addEventListener("contextmenu", ev => { if (!uiTarget(ev)) ev.preventDefault(); });   // el botón derecho gira: sin menú contextual sobre el escenario
 window.__ar = { obj, mouse, pieces: null, camera, pxToMM: p => pxToMM(p), screenToPx: e => screenToPx(e) };                               // depuración/QA (window.__visor lo usa el bucle)
@@ -447,32 +462,88 @@ const logs = []; function log(m) { const s = new Date().toLocaleTimeString() + "
 let actx = null; function beep(f) { try { actx = actx || new AudioContext(); const o = actx.createOscillator(), g = actx.createGain(); o.frequency.value = f; g.gain.value = 0.08; o.connect(g); g.connect(actx.destination); o.start(); o.stop(actx.currentTime + 0.07); } catch (e) { } }
 const overlay = document.createElement("canvas"); overlay.style.cssText = "position:absolute;inset:0;width:100%;height:100%;object-fit:contain;pointer-events:none"; document.getElementById("view").appendChild(overlay); const octx = overlay.getContext("2d");
 
+// ---------- vistas: «web» (3D en pantalla, sin cámara: tapete virtual, cámara orbital, fondo elegible) y «ar» (cámara + tapete real)
+const view = { mode: "ar", controls: null, ro: null, bg: "#dfe6ee" };
+try { view.bg = localStorage.getItem("jedomi_visor_bg") || view.bg; } catch (e) { }
+const virtualMat = new THREE.Group(); virtualMat.visible = false; mat.add(virtualMat);
+{ // tapete virtual: hoja clara con los 4 marcadores en las esquinas (mismo tamaño que el real)
+  const sheet = new THREE.Mesh(new THREE.PlaneGeometry(MAT_W, MAT_H), new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.9 }));
+  sheet.position.set(MAT_W / 2, MAT_H / 2, 0.5); sheet.receiveShadow = true; virtualMat.add(sheet);
+  const mk = new THREE.MeshBasicMaterial({ color: 0x111111 });
+  for (let id = 0; id < 4; id++) { const c = markerCornersMM(id); const cx = (c[0][0] + c[2][0]) / 2, cy = (c[0][1] + c[2][1]) / 2;
+    const q = new THREE.Mesh(new THREE.PlaneGeometry(MARKER, MARKER), mk); q.position.set(cx, cy, 0.2); virtualMat.add(q); }
+}
+function webSize() { const r = document.getElementById("stage").getBoundingClientRect(); const dpr = Math.min(2, window.devicePixelRatio || 1);
+  W = Math.max(320, Math.round(r.width * dpr)); Hh = Math.max(240, Math.round(r.height * dpr));
+  renderer.setSize(W, Hh, false); overlay.width = W; overlay.height = Hh; camera.aspect = W / Hh; camera.fov = 45; camera.updateProjectionMatrix(); }
+function enterWeb() {
+  view.mode = "web"; poseOK = true; poseFrozen = false; nmark = 4;
+  const s = video.srcObject; if (s) s.getTracks().forEach(tr => tr.stop()); video.srcObject = null; video.style.display = "none";
+  document.querySelectorAll("#view > canvas:not(#three)").forEach(c => { if (c !== overlay) c.style.display = "none"; });
+  // el tapete queda horizontal en el mundo: x del tapete → x, y del tapete → z (hacia el espectador), z del tapete → −y (hacia abajo)
+  const M = new THREE.Matrix4().set(1, 0, 0, -MAT_W / 2, 0, 0, -1, 0, 0, 1, 0, -MAT_H / 2, 0, 0, 0, 1);
+  mat.matrixAutoUpdate = false; mat.matrix.copy(M); mat.matrixWorldNeedsUpdate = true; virtualMat.visible = true;
+  lastPose = { H: [[1, 0, 0], [0, 1, 0], [0, 0, 1]], pose: { R: [[1, 0, 0], [0, 1, 0], [0, 0, 1]], t: [0, 0, 0] } };   // sólo para que el código de piezas tenga una pose
+  scene.background = new THREE.Color(view.bg); renderer.setClearColor(view.bg, 1);
+  camera.position.set(0, 520, 620); camera.up.set(0, 1, 0); camera.lookAt(0, 0, 0);
+  if (!view.controls) { view.controls = new OrbitControls(camera, document.getElementById("stage")); view.controls.enableDamping = true; view.controls.target.set(0, 40, 0);
+    view.controls.minDistance = 150; view.controls.maxDistance = 2500; view.controls.maxPolarAngle = Math.PI * 0.49; }
+  view.controls.enabled = true; view.controls.update();
+  webSize(); if (!view.ro) { view.ro = new ResizeObserver(() => { if (view.mode === "web") webSize(); }); view.ro.observe(document.getElementById("stage")); }
+  zoom.on = false; viewEl.style.transform = ""; setZoomBtn();
+  document.body.classList.add("jv-web"); viewUI(); log("vista web 3D"); try { localStorage.setItem("jedomi_visor_view", "web"); } catch (e) { }
+}
+async function enterAR(opts = {}) {
+  view.mode = "ar"; virtualMat.visible = false; scene.background = null; renderer.setClearColor(0x000000, 0);
+  if (view.controls) view.controls.enabled = false;
+  camera.position.set(0, 0, 0); camera.rotation.set(0, 0, 0); camera.up.set(0, 1, 0); camera.updateMatrixWorld();
+  document.body.classList.remove("jv-web"); lastPose = null; poseOK = false; Hinv = null;
+  try { zoom.on = localStorage.getItem("jedomi_visor_zoom") !== "0"; } catch (e) { zoom.on = true; } zoom.locked = false; setZoomBtn();
+  await startSource(opts); viewUI(); log("vista RA"); try { localStorage.setItem("jedomi_visor_view", "ar"); } catch (e) { }
+}
+function viewUI() {
+  const b = document.getElementById("viewtoggle"); if (b) { b.textContent = view.mode === "web" ? "📷 " + (MOODLE?.strings?.view_ar || "Vista RA") : "🖥 " + (MOODLE?.strings?.view_web || "Vista 3D"); b.setAttribute("aria-pressed", String(view.mode === "web")); }
+  const bg = document.getElementById("bgpick"); if (bg) { bg.hidden = view.mode !== "web"; const i = document.getElementById("bgcolor"); if (i) i.value = view.bg; }
+  const z = document.getElementById("zoom"); if (z) z.hidden = view.mode === "web";
+}
+document.getElementById("viewtoggle")?.addEventListener("click", () => { if (view.mode === "web") enterAR({ cameraId: (() => { try { return localStorage.getItem("jedomi_visor_cam") || null; } catch (e) { return null; } })() }).catch(e => { stepEl.textContent = "No se pudo abrir la cámara: " + e.message; enterWeb(); }); else enterWeb(); });
+function setBg(c) { view.bg = c; try { localStorage.setItem("jedomi_visor_bg", c); } catch (e) { } if (view.mode === "web") { scene.background = new THREE.Color(c); renderer.setClearColor(c, 1); } }
+document.getElementById("bgcolor")?.addEventListener("input", e => setBg(e.target.value));
+document.querySelectorAll("#bgpick button[data-bg]").forEach(b => b.addEventListener("click", () => { setBg(b.dataset.bg); const i = document.getElementById("bgcolor"); if (i) i.value = b.dataset.bg; }));
+
 // ---------- bucle
 let source = video;                                   // fuente de imagen: la cámara o, en modo prueba (?img=…), una foto fija
-async function start(opts = {}) {
+async function startSource(opts = {}) {                // vista RA: cámara (o foto de prueba ?img=) + modelo de manos
   const imgParam = new URLSearchParams(location.search).get("img");
   if (imgParam) {                                     // modo prueba sin cámara (el panel del navegador de Claude no permite captura)
-    const im = new Image(); await new Promise((res, rej) => { im.onload = res; im.onerror = () => rej(new Error("no se pudo cargar " + imgParam)); im.src = imgParam; }); source = im;   // onload, no decode(): decode() se aplaza en pestañas ocultas
+    const im = new Image(); await new Promise((res, rej) => { im.onload = res; im.onerror = () => rej(new Error("no se pudo cargar " + imgParam)); im.src = imgParam; }); source = im;   // onload, no decode()
     W = im.naturalWidth; Hh = im.naturalHeight; video.style.display = "none";
-    const bg = document.createElement("canvas"); bg.width = W; bg.height = Hh; bg.getContext("2d").drawImage(im, 0, 0);
-    bg.style.cssText = "position:absolute;inset:0;width:100%;height:100%;object-fit:contain"; document.getElementById("view").prepend(bg);
+    let bg = document.getElementById("jv-testbg");
+    if (!bg) { bg = document.createElement("canvas"); bg.id = "jv-testbg"; bg.style.cssText = "position:absolute;inset:0;width:100%;height:100%;object-fit:contain"; document.getElementById("view").prepend(bg); }
+    bg.width = W; bg.height = Hh; bg.getContext("2d").drawImage(im, 0, 0); bg.style.display = "";
   } else {
     // la cámara la eligió el alumno en la pantalla previa (devices.js); sin elección, la predeterminada del navegador
     const vc = opts.cameraId ? { deviceId: { exact: opts.cameraId }, width: { ideal: 1920 }, height: { ideal: 1080 } } : { width: { ideal: 1920 }, height: { ideal: 1080 }, facingMode: "environment" };
     const stream = await navigator.mediaDevices.getUserMedia({ video: vc, audio: false });
     log("cámara: " + (stream.getVideoTracks()[0]?.label || "?"));
-    video.srcObject = stream; await video.play();
+    video.srcObject = stream; video.style.display = ""; await video.play(); source = video;
     W = video.videoWidth; Hh = video.videoHeight;
   }
   renderer.setSize(W, Hh, false); overlay.width = W; overlay.height = Hh;
   const fx = FX * W; camera.fov = 2 * Math.atan(Hh / (2 * fx)) * 180 / Math.PI; camera.aspect = W / Hh; camera.updateProjectionMatrix();
   work.width = Math.round(W / 4); work.height = Math.round(Hh / 4);   // ArUco a 1/4: ~4× más rápido (86 → ~20 ms)
-  const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
-  hands = await HandLandmarker.createFromOptions(vision, { baseOptions: { modelAssetPath: BASE + "models/hand_landmarker.task", delegate: "GPU" }, runningMode: "VIDEO", numHands: 2, minHandDetectionConfidence: 0.4, minHandPresenceConfidence: 0.4, minTrackingConfidence: 0.4 });
+  if (!hands) {
+    const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
+    hands = await HandLandmarker.createFromOptions(vision, { baseOptions: { modelAssetPath: BASE + "models/hand_landmarker.task", delegate: "GPU" }, runningMode: "VIDEO", numHands: 2, minHandDetectionConfidence: 0.4, minHandPresenceConfidence: 0.4, minTrackingConfidence: 0.4 });
+  }
+}
+let started = false;
+async function start(opts = {}) {
+  if (opts.view === "web") enterWeb(); else await enterAR(opts);
   await loadModel(MOODLE ? (MOODLE.modelUrl || "aro") : document.getElementById("model").value);   // la pieza que adjuntó el docente; el aro sólo como respaldo
   document.getElementById("start").style.display = "none";
-  stepEl.textContent = "① Pellizca el borde de la pieza con pulgar e índice para cogerla.";
-  requestAnimationFrame(loop);
+  stepEl.textContent = view.mode === "web" ? "🖱 Arrastra para girar la vista, rueda para acercar; activa 🧩 Piezas para tocar cada pieza." : "① Pellizca el borde de la pieza con pulgar e índice para cogerla.";
+  if (!started) { started = true; requestAnimationFrame(loop); }
 }
 function loop() {
   const t = performance.now() / 1000; frames++; if (performance.now() - fpsT > 1000) { fps = frames * 1000 / (performance.now() - fpsT); frames = 0; fpsT = performance.now(); }
@@ -480,13 +551,14 @@ function loop() {
   const T0 = performance.now();
   frameNo++;
   let markers = lastMarkers;
-  if (frameNo % 2 === 0 || !lastPose) {
+  if (view.mode === "web") { if (view.controls) view.controls.update(); markers = []; }
+  else if (frameNo % 2 === 0 || !lastPose) {
     wctx.drawImage(source, 0, 0, work.width, work.height);
     const img = wctx.getImageData(0, 0, work.width, work.height);
     markers = detector.detect(img).filter(m => m.id >= 0 && m.id <= 3); lastMarkers = markers;
   }
   const T1 = performance.now();
-  nmark = markers.length; const src = [], dst = [];
+  if (view.mode !== "web") nmark = markers.length; const src = [], dst = [];
   for (const m of markers) { const mm = markerCornersMM(m.id); for (let k = 0; k < 4; k++) { const key = m.id * 4 + k; let f = cornerFilters.get(key); if (!f) { f = new OneEuro(0.8, 0.004); cornerFilters.set(key, f); } const p = f.filter([m.corners[k].x * 4, m.corners[k].y * 4], t); src.push(mm[k]); dst.push(p); } }
   for (const key of [...cornerFilters.keys()]) if (!markers.some(m => Math.floor(key / 4) === m.id)) cornerFilters.delete(key);
   if (nmark >= 3) {
@@ -501,8 +573,8 @@ function loop() {
       }
       poseFrozen = false; poseOK = true;
     }
-  } else { poseFrozen = !!lastPose; }
-  if (lastPose) {
+  } else if (view.mode !== "web") { poseFrozen = !!lastPose; }
+  if (lastPose && view.mode !== "web") {
     const { R, t: tv } = lastPose.pose;
     // OpenCV (x→, y↓, z adelante) → Three (x→, y↑, z hacia el espectador): flip Y y Z
     const M = new THREE.Matrix4().set(R[0][0], R[0][1], R[0][2], tv[0], -R[1][0], -R[1][1], -R[1][2], -tv[1], -R[2][0], -R[2][1], -R[2][2], -tv[2], 0, 0, 0, 1);
@@ -512,7 +584,7 @@ function loop() {
   // --- manos
   const T2 = performance.now();
   let active = [];
-  if (hands) {
+  if (hands && view.mode !== "web") {
     const res = hands.detectForVideo(source, performance.now());
     const dets = res.landmarks.map((lm, i) => ({ lm, wlm: res.worldLandmarks[i], palm: [0, 5, 9, 13, 17].reduce((a, k) => [a[0] + lm[k].x * W / 5, a[1] + lm[k].y * Hh / 5], [0, 0]), side: res.handedness[i]?.[0]?.categoryName || "Hand" }));
     const used = new Set(), seen = new Set();
@@ -531,7 +603,7 @@ function loop() {
   renderer.render(scene, camera);
   const T4 = performance.now();
   const cornersPx = [[0, 0], [MAT_W, 0], [MAT_W, MAT_H], [0, MAT_H]].map(([x, y]) => { const v = new THREE.Vector3(x, y, 0); mat.localToWorld(v); v.project(camera); return [Math.round((v.x + 1) / 2 * W), Math.round((1 - v.y) / 2 * Hh)]; });
-  autoFrame(cornersPx, hull, t);
+  if (view.mode !== "web") autoFrame(cornersPx, hull, t);
   window.__dbg = { ms: { aruco: T1 - T0, hands: T3 - T2, render: T4 - T3 }, cornersPx, markersPx: markers.map(m => ({ id: m.id, c: m.corners.map(c => [Math.round(c.x * 4), Math.round(c.y * 4)]) })), pose: lastPose && lastPose.pose, drawTris: renderer.info.render.triangles, W, Hh };
   octx.clearRect(0, 0, W, Hh);
   for (const h of active) {
@@ -546,8 +618,8 @@ function loop() {
   if (TELEMETRY && t - telemetryT > 2) { telemetryT = t; const ms = window.__dbg ? window.__dbg.ms : null;
     fetch("http://127.0.0.1:8766/metrics", { method: "POST", mode: "cors", headers: { "content-type": "application/json" },
       body: JSON.stringify({ t: Math.round(t), fps: Math.round(fps), cam: (video.srcObject && video.srcObject.getVideoTracks()[0] || {}).label || "", nmark, poseFrozen, hands: active.length, pinching: active.filter(h => h.pinch).length, held: !!(heldBy || two), mode: two ? "pinch2" : (heldBy ? "pinch" : ""), size: Math.round(obj.size), tris: Math.round(obj.tris), tilt: Math.round(tiltDeg(obj.rot)), gesture: gestureName, parts: pieces.list.length, piecesOn: pieces.on, explode: +pieces.explode.toFixed(2), sel: pieces.sel ? pieces.sel.name : "", talk: talk.on, asking, sidebar: !!document.getElementById("jedomi-sidebar"), log: logs.slice(-4), ms: ms && { aruco: Math.round(ms.aruco), hands: Math.round(ms.hands), render: Math.round(ms.render * 10) / 10 }, W, Hh, grabs: logs.length }) }).catch(() => { }); }
-  if (!talk.on && !asking) stepEl.textContent = GESTURE_HINT[gestureName] || gestureName;
-  statusEl.textContent = `tapete ${poseOK ? (poseFrozen ? "congelado (destapa las esquinas)" : nmark + " marcadores") : "no visto"} · manos ${active.length} · ${heldBy || two ? "COGIDO" : "libre"} · ${Math.round(obj.tris / 1000)} k triángulos · ${fps.toFixed(0)} fps`;
+  if (!talk.on && !asking) stepEl.textContent = (view.mode === "web" ? WEB_HINT[gestureName] : null) || GESTURE_HINT[gestureName] || gestureName;
+  if (view.mode === "web") statusEl.textContent = `vista 3D · ${Math.round(obj.tris / 1000)} k triángulos · ${fps.toFixed(0)} fps`; else statusEl.textContent = `tapete ${poseOK ? (poseFrozen ? "congelado (destapa las esquinas)" : nmark + " marcadores") : "no visto"} · manos ${active.length} · ${heldBy || two ? "COGIDO" : "libre"} · ${Math.round(obj.tris / 1000)} k triángulos · ${fps.toFixed(0)} fps`;
   requestAnimationFrame(loop);
 }
 function cross3(a, b) { return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]; }
@@ -574,7 +646,7 @@ function openPanel() { const sb = J.sidebar(); if (sb && sb.classList.contains("
 async function snapshot() {                             // captura compuesta: fuente de vídeo + lienzo 3D, a media resolución
   renderer.render(scene, camera);
   const snap = document.createElement("canvas"); snap.width = Math.round(W / 2); snap.height = Math.round(Hh / 2); const sctx = snap.getContext("2d");
-  sctx.drawImage(source, 0, 0, snap.width, snap.height); sctx.drawImage(canvas, 0, 0, snap.width, snap.height);
+  if (view.mode !== "web") sctx.drawImage(source, 0, 0, snap.width, snap.height); sctx.drawImage(canvas, 0, 0, snap.width, snap.height);
   return new Promise(r => snap.toBlob(r, "image/jpeg", 0.8));
 }
 let asking = false, lastShot = null;

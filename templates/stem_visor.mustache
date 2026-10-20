@@ -51,7 +51,14 @@
             <button id="pieces" hidden aria-pressed="false" title="{{#str}}stem_visor_parts_help, local_jedomi{{/str}}">🧩 {{#str}}stem_visor_parts, local_jedomi{{/str}}</button>
             <button id="explode" hidden aria-pressed="false" title="{{#str}}stem_visor_parts_explode_help, local_jedomi{{/str}}">💥 {{#str}}stem_visor_parts_explode, local_jedomi{{/str}}</button>
             <button id="padtoggle" aria-pressed="true" title="{{#str}}stem_visor_pad_help, local_jedomi{{/str}}">🎮 {{#str}}stem_visor_pad, local_jedomi{{/str}}</button>
+            <button id="viewtoggle" aria-pressed="false" title="{{#str}}stem_visor_view_help, local_jedomi{{/str}}">🖥 {{#str}}stem_visor_view_web, local_jedomi{{/str}}</button>
             <button id="zoom" title="{{#str}}stem_visor_zoom_help, local_jedomi{{/str}}" aria-pressed="true">🔍 {{#str}}stem_visor_zoom, local_jedomi{{/str}}</button>
+            <span id="bgpick" hidden role="group" aria-label="{{#str}}stem_visor_bg, local_jedomi{{/str}}">{{#str}}stem_visor_bg, local_jedomi{{/str}}
+                <button data-bg="#dfe6ee" title="{{#str}}stem_visor_bg_light, local_jedomi{{/str}}" style="background:#dfe6ee"></button>
+                <button data-bg="#1e293b" title="{{#str}}stem_visor_bg_dark, local_jedomi{{/str}}" style="background:#1e293b"></button>
+                <button data-bg="#ffffff" title="{{#str}}stem_visor_bg_white, local_jedomi{{/str}}" style="background:#ffffff"></button>
+                <input type="color" id="bgcolor" value="#dfe6ee" aria-label="{{#str}}stem_visor_bg_custom, local_jedomi{{/str}}">
+            </span>
         </div>
     </div>
     <div class="vpanel" id="pad" role="group" aria-label="{{#str}}stem_visor_pad, local_jedomi{{/str}}">
@@ -92,10 +99,14 @@
     </div>
     <div id="start"><div class="vpanel prejoin">
         <b>{{#str}}stem_visor_pj_title, local_jedomi{{/str}}</b>
+        <fieldset class="pjview"><legend>{{#str}}stem_visor_view_choose, local_jedomi{{/str}}</legend>
+            <label><input type="radio" name="jv-view" value="ar" checked> 📷 {{#str}}stem_visor_view_ar, local_jedomi{{/str}} <small>{{#str}}stem_visor_view_ar_help, local_jedomi{{/str}}</small></label>
+            <label><input type="radio" name="jv-view" value="web"> 🖥 {{#str}}stem_visor_view_web, local_jedomi{{/str}} <small>{{#str}}stem_visor_view_web_help, local_jedomi{{/str}}</small></label>
+        </fieldset>
         <div class="pj">
             <div class="pjcam"><video id="pjvideo" autoplay playsinline muted></video><div id="pjcamnote"></div></div>
             <div class="pjctl">
-                <label>{{#str}}stem_visor_pj_camera, local_jedomi{{/str}}<select id="pjcam"></select></label>
+                <label id="pjcamblock">{{#str}}stem_visor_pj_camera, local_jedomi{{/str}}<select id="pjcam"></select></label>
                 <label>{{#str}}stem_visor_pj_mic, local_jedomi{{/str}}<select id="pjmic"></select></label>
                 <div class="meter" aria-hidden="true"><div id="pjlevel"></div></div>
                 <small id="pjmicnote">{{#str}}stem_visor_pj_micnote, local_jedomi{{/str}}</small>

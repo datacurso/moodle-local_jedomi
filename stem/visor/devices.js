@@ -38,7 +38,14 @@ export function initPrejoin({ strings = {}, testMode = false, onEnter }) {
   }
   camSel.onchange = () => { store("jedomi_visor_cam", camSel.value); openPreview(); };
   micSel.onchange = () => { store("jedomi_visor_mic", micSel.value); openPreview(); };
-  go.onclick = () => { const camId = camSel.value || null; store("jedomi_visor_cam", camId || ""); stopAll(); onEnter({ cameraId: camId }); };
+  // vista elegida: «ar» (cámara y tapete) o «web» (3D en pantalla, sin cámara); se recuerda
+  const viewRadios = [...document.querySelectorAll('input[name="jv-view"]')];
+  const camBlock = document.getElementById("pjcamblock");
+  const applyView = () => { const v = (viewRadios.find(r => r.checked) || {}).value || "ar"; if (camBlock) camBlock.hidden = v === "web"; document.querySelector(".pjcam")?.toggleAttribute("hidden", v === "web"); if (v === "web") { cancelAnimationFrame(raf); if (stream) stream.getVideoTracks().forEach(t => t.stop()); } };
+  const savedView = read("jedomi_visor_view"); if (savedView) viewRadios.forEach(r => { r.checked = r.value === savedView; });
+  viewRadios.forEach(r => r.addEventListener("change", () => { store("jedomi_visor_view", r.value); applyView(); if (r.value === "ar" && r.checked) openPreview(); }));
+  go.onclick = () => { const v = (viewRadios.find(r => r.checked) || {}).value || "ar"; const camId = camSel.value || null; store("jedomi_visor_cam", camId || ""); stopAll(); onEnter({ cameraId: camId, view: v }); };
+  setTimeout(applyView, 0);
   fill();
   return { stop: stopAll, isReady: () => ready };
 }
