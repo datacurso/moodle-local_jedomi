@@ -103,6 +103,11 @@ const work = document.createElement("canvas"), wctx = work.getContext("2d", { wi
 
 // ---------- pieza
 const loader = new GLTFLoader();
+function showCredit(text) {                            // pie de crédito del modelo, discreto, abajo a la derecha (texto plano, sin HTML)
+  let el = document.getElementById("credit");
+  if (!el) { el = document.createElement("div"); el.id = "credit"; document.getElementById("stage").appendChild(el); }
+  el.textContent = text; el.hidden = !text; el.title = text;
+}
 async function loadModel(spec) {
   objGroup.clear(); obj.mesh = null; obj.tris = 0;
   let root;
@@ -110,6 +115,7 @@ async function loadModel(spec) {
     root = new THREE.Mesh(new THREE.TorusGeometry(0.4, 0.1, 24, 48), new THREE.MeshStandardMaterial({ color: 0xffc83c, metalness: 0.2, roughness: 0.5 }));
   } else {
     const gltf = await loader.loadAsync(spec); root = gltf.scene;
+    showCredit(gltf.parser?.json?.asset?.copyright || "");   // atribución del modelo (campo estándar glTF asset.copyright), p. ej. CC BY
   }
   root.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; const g = o.geometry; obj.tris += g.index ? g.index.count / 3 : g.attributes.position.count / 3; } });
   // normalizar: centrar y escalar la dimensión mayor a 1 (luego obj.size en mm)
@@ -212,7 +218,7 @@ function gestures(active, t) {
   } else if (pinchers.length === 1) {
     const h = pinchers[0]; two = null;
     if (heldBy !== h.label) {
-      if (!(heldBy && nearHold(h))) { grabOff = [h.pinchMM[0] - obj.cx, h.pinchMM[1] - obj.cy]; objFilter.reset(); log(`cogido por el borde con ${h.label}`); beep(880); }
+      if (!(heldBy && nearHold(h))) { grabOff = [h.pinchMM[0] - obj.cx, h.pinchMM[1] - obj.cy]; objFilter.reset(); log(`cogido por el borde con ${h.label}`); beep(880); lockZoom("interacción"); }
       heldBy = h.label; qHand0 = h.qHand ? h.qHand.clone() : null; rot0 = obj.rot.clone(); rotArmed = false;   // (re)anclar la orientación: sin saltos al re-etiquetar
     }
     // traslación: la pieza sigue al pellizco (filtrada)
@@ -239,27 +245,33 @@ function gestures(active, t) {
 // ---------- encuadre automático del tapete (zoom digital): cuando se ven los marcadores con margen seguro, la vista se acerca
 // hasta que la zona del tapete (más la pieza y algo de aire por encima) llena el área; suave, con histéresis; se congela si se pierde la pose.
 const viewEl = document.getElementById("view"), zoomBtn = document.getElementById("zoom");
-const zoom = { on: true, k: 1, cx: 0, cy: 0, tk: 1, tcx: 0, tcy: 0, lastT: 0 };
+const zoom = { on: true, k: 1, cx: 0, cy: 0, tk: 1, tcx: 0, tcy: 0, lastT: 0, locked: false, stableSince: 0 };   // locked: encuadre fijo durante la interacción
 try { zoom.on = localStorage.getItem("jedomi_visor_zoom") !== "0"; } catch (e) { }
-function setZoomBtn() { if (zoomBtn) { zoomBtn.setAttribute("aria-pressed", String(zoom.on)); zoomBtn.style.opacity = zoom.on ? "1" : ".6"; } }
-if (zoomBtn) zoomBtn.onclick = () => { zoom.on = !zoom.on; try { localStorage.setItem("jedomi_visor_zoom", zoom.on ? "1" : "0"); } catch (e) { } setZoomBtn(); if (!zoom.on) { zoom.k = zoom.tk = 1; viewEl.style.transform = ""; } log("encuadre " + (zoom.on ? "activado" : "desactivado")); };
+function setZoomBtn() { if (zoomBtn) { zoomBtn.setAttribute("aria-pressed", String(zoom.on)); zoomBtn.style.opacity = zoom.on ? "1" : ".6";
+  const lbl = MOODLE?.strings || {}; zoomBtn.textContent = "🔍 " + (!zoom.on ? (lbl.zoom_off || "Encuadre desactivado") : zoom.locked ? (lbl.zoom_refit || "Reencuadrar") : (lbl.zoom_fitting || "Encuadrando…")); } }
+// el botón vuelve a encuadrar (se desbloquea, busca el tapete y se fija de nuevo al converger); con Mayús lo desactiva/activa
+if (zoomBtn) zoomBtn.onclick = ev => {
+  if (ev.shiftKey || !zoom.on) { zoom.on = !zoom.on; try { localStorage.setItem("jedomi_visor_zoom", zoom.on ? "1" : "0"); } catch (e) { } if (!zoom.on) { zoom.k = zoom.tk = 1; zoom.cx = zoom.cy = zoom.tcx = zoom.tcy = 0; viewEl.style.transform = ""; } }
+  zoom.locked = false; zoom.stableSince = 0; setZoomBtn(); log("encuadre " + (zoom.on ? "recalculando" : "desactivado"));
+};
+function lockZoom(why) { if (zoom.on && !zoom.locked) { zoom.locked = true; zoom.k = zoom.tk; zoom.cx = zoom.tcx; zoom.cy = zoom.tcy; applyZoom(); setZoomBtn(); log("encuadre fijado (" + why + ")"); } }
+function applyZoom() { viewEl.style.transform = zoom.k > 1.01 ? `translate(${(-zoom.cx * zoom.k).toFixed(1)}px, ${(-zoom.cy * zoom.k).toFixed(1)}px) scale(${zoom.k.toFixed(3)})` : ""; }
 setZoomBtn();
 function autoFrame(cornersPx, hull, t) {
-  if (!zoom.on || !viewEl) return;
-  if (cornersPx && nmark >= 3 && !poseFrozen) {
+  if (!zoom.on || !viewEl || zoom.locked) return;              // fijo: no se mueve mientras el alumno interactúa
+  if (cornersPx && nmark >= 4 && !poseFrozen) {                 // sólo con los 4 marcadores (márgenes seguros a la vista)
     let x0 = Math.min(...cornersPx.map(c => c[0])), x1 = Math.max(...cornersPx.map(c => c[0])), y0 = Math.min(...cornersPx.map(c => c[1])), y1 = Math.max(...cornersPx.map(c => c[1]));
-    if (hull) { x0 = Math.min(x0, hull.x0); x1 = Math.max(x1, hull.x1); y0 = Math.min(y0, hull.y0); y1 = Math.max(y1, hull.y1); }
-    const mw = x1 - x0, mh = y1 - y0, mx = 0.10 * mw, my = 0.12 * mh;                 // margen seguro alrededor
-    x0 -= mx; x1 += mx; y0 -= my + 0.18 * mh; y1 += my;                               // aire extra por encima (pieza levantada, manos)
+    const mw = x1 - x0, mh = y1 - y0;
+    x0 -= 0.08 * mw; x1 += 0.08 * mw; y0 -= 0.35 * mh; y1 += 0.08 * mh;               // margen + aire por encima (pieza levantada y manos)
     const r = viewEl.getBoundingClientRect(); const sc = Math.min(r.width / W, r.height / Hh); const dw = W * sc, dh = Hh * sc;   // imagen mostrada (contain)
     const k = Math.min(3, Math.max(1, Math.min(r.width / ((x1 - x0) * sc), r.height / ((y1 - y0) * sc))));
-    const bcx = (r.width - dw) / 2 + (x0 + x1) / 2 * sc - r.width / 2, bcy = (r.height - dh) / 2 + (y0 + y1) / 2 * sc - r.height / 2;   // centro del recuadro respecto al centro de la vista (px de pantalla)
-    // histéresis: sólo cambia el objetivo si la variación es apreciable (evita respirar con el ruido de las esquinas)
-    if (Math.abs(k - zoom.tk) > 0.06 * zoom.tk || Math.hypot(bcx - zoom.tcx, bcy - zoom.tcy) > 0.03 * r.width) { zoom.tk = k; zoom.tcx = bcx; zoom.tcy = bcy; }
+    const bcx = (r.width - dw) / 2 + (x0 + x1) / 2 * sc - r.width / 2, bcy = (r.height - dh) / 2 + (y0 + y1) / 2 * sc - r.height / 2;
+    const moved = Math.abs(k - zoom.tk) > 0.04 * zoom.tk || Math.hypot(bcx - zoom.tcx, bcy - zoom.tcy) > 0.02 * r.width;
+    if (moved) { zoom.tk = k; zoom.tcx = bcx; zoom.tcy = bcy; zoom.stableSince = t; }
+    else if (zoom.stableSince && t - zoom.stableSince > 1.2) { lockZoom("tapete estable"); return; }   // convergido: se fija solo
   }
-  // seguimiento suave hacia el objetivo (la transición CSS alisa el resto)
-  const a = 0.12; zoom.k += (zoom.tk - zoom.k) * a; zoom.cx += (zoom.tcx - zoom.cx) * a; zoom.cy += (zoom.tcy - zoom.cy) * a;
-  if (t - zoom.lastT > 0.1) { zoom.lastT = t; viewEl.style.transform = zoom.k > 1.01 ? `translate(${(-zoom.cx * zoom.k).toFixed(1)}px, ${(-zoom.cy * zoom.k).toFixed(1)}px) scale(${zoom.k.toFixed(3)})` : ""; }
+  const a = 0.15; zoom.k += (zoom.tk - zoom.k) * a; zoom.cx += (zoom.tcx - zoom.cx) * a; zoom.cy += (zoom.tcy - zoom.cy) * a;
+  if (t - zoom.lastT > 0.1) { zoom.lastT = t; applyZoom(); }
 }
 
 // ---------- ratón con «superpoderes» (teclado/ratón como alternativa a las manos): arrastrar mueve, rueda escala,
@@ -278,7 +290,7 @@ stageEl.addEventListener("pointerdown", ev => {
   if (!over && !(ev.button === 2 || ev.shiftKey)) return;          // sin pieza debajo sólo se admite el giro (derecho/Mayús)
   mouse.down = true; mouse.btn = ev.button; mouse.shift = ev.shiftKey; mouse.last = p;
   const mm = pxToMM(p); mouse.offset = mm ? [mm[0] - obj.cx, mm[1] - obj.cy] : [0, 0];
-  stageEl.setPointerCapture(ev.pointerId); ev.preventDefault(); log("ratón: " + (ev.button === 2 || ev.shiftKey ? "girar" : "mover"));
+  stageEl.setPointerCapture(ev.pointerId); ev.preventDefault(); log("ratón: " + (ev.button === 2 || ev.shiftKey ? "girar" : "mover")); lockZoom("interacción");
 });
 stageEl.addEventListener("pointermove", ev => {
   if (!mouse.down) { if (!uiTarget(ev) && poseOK && obj.mesh) { const over = overPx(objectHullPx(), screenToPx(ev), 40); if (over !== mouse.over) { mouse.over = over; stageEl.style.cursor = over ? "grab" : ""; } } return; }

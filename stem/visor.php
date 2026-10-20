@@ -57,6 +57,7 @@ $config = [
     'strings' => ['nomodel' => get_string('stem_visor_nomodel', 'local_jedomi'), 'intro' => get_string('stem_visor_intro', 'local_jedomi'),
         'talk' => get_string('stem_visor_talk', 'local_jedomi'), 'talk_stop' => get_string('stem_visor_talk_stop', 'local_jedomi'),
         'pj_nocam' => get_string('stem_visor_pj_nocam', 'local_jedomi'), 'pj_speak' => get_string('stem_visor_pj_speak', 'local_jedomi'), 'pj_nodev' => get_string('stem_visor_pj_nodev', 'local_jedomi'), 'pj_nomic' => get_string('stem_visor_pj_nomic', 'local_jedomi'),
+        'zoom_refit' => get_string('stem_visor_zoom_refit', 'local_jedomi'), 'zoom_fitting' => get_string('stem_visor_zoom_fitting', 'local_jedomi'), 'zoom_off' => get_string('stem_visor_zoom_off', 'local_jedomi'),
         'voice_consent' => get_string('stem_visor_voice_consent', 'local_jedomi'), 'voice_off' => get_string('stem_visor_voice_off', 'local_jedomi'),
         'intro_next' => get_string('stem_visor_intro_next', 'local_jedomi'), 'intro_done' => get_string('stem_visor_intro_done', 'local_jedomi'),
         'intro_s1' => get_string('stem_visor_intro_s1', 'local_jedomi'), 'intro_s2' => get_string('stem_visor_intro_s2', 'local_jedomi'), 'intro_s3' => get_string('stem_visor_intro_s3', 'local_jedomi'),
@@ -67,6 +68,7 @@ echo $OUTPUT->header();
 ?>
 <style>
   #stage{position:relative;width:100%;height:calc(100vh - 16px);min-height:480px;background:#000;border-radius:12px;overflow:hidden}
+  #credit{position:absolute;right:12px;bottom:8px;max-width:46%;font-size:11px;line-height:1.3;color:#cbd5e1;background:rgba(15,17,21,.6);padding:3px 8px;border-radius:6px;z-index:3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   #view{position:absolute;inset:0;transform-origin:50% 50%;will-change:transform;transition:transform .35s ease-out}
   #view video,#view canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
   #three{pointer-events:none}
