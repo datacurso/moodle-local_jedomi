@@ -91,7 +91,10 @@ ground.position.set(MAT_W / 2, MAT_H / 2, 0); ground.receiveShadow = true; mat.a
 const frame = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry(MAT_W, MAT_H)), new THREE.LineBasicMaterial({ color: 0x22c55e }));
 frame.position.set(MAT_W / 2, MAT_H / 2, 0); mat.add(frame);
 const objGroup = new THREE.Group(); mat.add(objGroup);  // la pieza: posición (cx, cy, -lift), rotación R, escala para tamaño en mm
-const obj = { cx: MAT_W / 2, cy: MAT_H / 2, size: 220, yaw: 0, tilt: new THREE.Quaternion(), mesh: null, tris: 0, bbox: null };   // tilt: volteo 3D acumulado (v12.5)
+const obj = { cx: MAT_W / 2, cy: MAT_H / 2, size: 220, yaw: 0, rot: new THREE.Quaternion(), mesh: null, tris: 0, bbox: null };   // rot: orientación 3D (marco del tapete); yaw se deriva de rot
+function yawOf(q) { const v = new THREE.Vector3(1, 0, 0).applyQuaternion(q); return Math.atan2(v.y, v.x); }
+function tiltDeg(q) { const v = new THREE.Vector3(0, 0, 1).applyQuaternion(q); return Math.acos(Math.min(1, Math.max(-1, v.z))) * 180 / Math.PI; }
+function matQuat() { const R = lastPose.pose.R; return new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().set(R[0][0], R[1][0], R[2][0], 0, R[0][1], R[1][1], R[2][1], 0, R[0][2], R[1][2], R[2][2], 0, 0, 0, 0, 1)); }   // tapete→cámara (R en columnas r1 r2 r3)
 let poseOK = false, poseFrozen = false, nmark = 0, lastPose = null, fps = 0, frames = 0, fpsT = performance.now(); let frameNo = 0, lastMarkers = [];
 const cornerFilters = new Map();
 const detector = new AR.Detector({ dictionaryName: "ARUCO_4X4_1000", maxHammingDistance: 2 });
@@ -114,7 +117,7 @@ async function loadModel(spec) {
   const wrap = new THREE.Group(); wrap.add(root);
   // el modelo viene con Y arriba; nuestro marco tiene Z hacia la cámara (−Z = arriba del tapete): girar −90° en X para que «arriba» = −Z
   wrap.rotation.x = -Math.PI / 2;
-  objGroup.add(wrap); obj.mesh = wrap; obj.yaw = 0; obj.tilt.identity(); objGroup.rotation.set(0, 0, 0);
+  objGroup.add(wrap); obj.mesh = wrap; obj.yaw = 0; obj.rot.identity(); objGroup.rotation.set(0, 0, 0);
   obj.bbox = new THREE.Box3().setFromObject(wrap);
   console.log("modelo", spec, "triángulos", Math.round(obj.tris));
 }
@@ -123,7 +126,7 @@ function placeObject(lifted) {
   const s = obj.size; objGroup.scale.setScalar(s);
   const gap = s * (lifted ? 0.45 : 0.04);
   // orientación completa = giro sobre el tapete (Z) ∘ volteo 3D; la pieza apoya su punto más bajo (max.z tras rotar) a «gap» del plano
-  const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), obj.yaw).multiply(obj.tilt);
+  const q = obj.rot; obj.yaw = yawOf(q);
   let low = s * 0.5;
   if (obj.bbox) { low = -Infinity; const b = obj.bbox, v = new THREE.Vector3();
     for (const x of [b.min.x, b.max.x]) for (const y of [b.min.y, b.max.y]) for (const z of [b.min.z, b.max.z]) { v.set(x, y, z).applyQuaternion(q); if (v.z * s > low) low = v.z * s; } }
@@ -134,7 +137,7 @@ function placeObject(lifted) {
 // ---------- manos
 let hands = null; const H = new Map();              // identidad por posición, como demo_guiada
 class Hand {
-  constructor(label) { this.label = label; this.pts = null; this.raw = null; this.palm = null; this.pinch = false; this.pinchCm = null; this.pinchPx = null; this.pinchMM = null; this.last = 0; this.f = new OneEuro(2.5, 0.08); this.holding = false; this.otherHolding = false; this.openSince = null; }
+  constructor(label) { this.label = label; this.pts = null; this.raw = null; this.palm = null; this.pinch = false; this.pinchCm = null; this.pinchPx = null; this.pinchMM = null; this.last = 0; this.f = new OneEuro(2.5, 0.08); this.qf = new OneEuro(0.6, 1.5); this.qRaw = null; this.qHand = null; this.holding = false; this.otherHolding = false; this.openSince = null; }
   update(lm, wlm, t) {
     const raw = lm.map(p => [p.x * W, p.y * Hh]); this.raw = raw;
     const flat = this.f.filter(raw.flat(), t); this.pts = []; for (let i = 0; i < 21; i++) this.pts.push([flat[2 * i], flat[2 * i + 1]]);
@@ -147,17 +150,14 @@ class Hand {
     const now = this.pinch ? this.pinchCm < openThr : (this.pinchCm < 3.5 && (easy || idxExt > 1.3));
     if (now) { this.openSince = null; this.pinch = true; } else { this.openSince = this.openSince ?? t; if (t - this.openSince > 0.10 || !this.pinch) this.pinch = false; }
     this.fingerAngle = Math.atan2(raw[8][1] - raw[4][1], raw[8][0] - raw[4][0]);
-    // volteo (v12.5): girar la muñeca con la pieza pellizcada, como quien gira una moneda para ver la otra cara. Eje = pulgar→índice;
-    // referencia = vector del pellizco a la base del corazón (nudillo 9) proyectado al plano perpendicular al eje; su ángulo gira con la muñeca.
-    { const a = [w8.x - w4.x, w8.y - w4.y, w8.z - w4.z], la = Math.hypot(...a) || 1; const ax = a.map(v => v / la);
-      const w9 = wlm[9], mid = [(w4.x + w8.x) / 2, (w4.y + w8.y) / 2, (w4.z + w8.z) / 2]; const v = [w9.x - mid[0], w9.y - mid[1], w9.z - mid[2]];
-      // base CONTINUA (QA v12.5): se arrastra el e1 del fotograma anterior y se re-ortonormaliza contra el eje nuevo (Gram-Schmidt);
-      // así no conmuta cuando el eje pulgar→índice se acerca a la vertical de la cámara. Sólo la primera vez se construye con un «arriba» fijo.
-      let e1 = this.e1prev; if (!e1) { const up = Math.abs(ax[2]) < 0.9 ? [0, 0, 1] : [0, 1, 0]; e1 = cross3(ax, up); }
-      const da = dot3(e1, ax); e1 = e1.map((x, i) => x - da * ax[i]); let l1 = Math.hypot(...e1);
-      if (l1 < 1e-3) { const up = Math.abs(ax[2]) < 0.9 ? [0, 0, 1] : [0, 1, 0]; e1 = cross3(ax, up); l1 = Math.hypot(...e1) || 1; }
-      e1 = e1.map(x => x / l1); const e2 = cross3(ax, e1); this.e1prev = e1;
-      this.flip = Math.atan2(dot3(v, e2), dot3(v, e1)); this.axisCam = ax; }
+    // marco de la mano (v13, modelo rígido): x = muñeca→nudillo índice, plano con muñeca→nudillo meñique, z = normal de la palma.
+    // Su orientación (cuaternión) se filtra con One Euro sobre las 4 componentes con continuidad de signo: la pieza cogida gira igual que la mano.
+    { const w0 = wlm[0], w5 = wlm[5], w17 = wlm[17];
+      let x = [w5.x - w0.x, w5.y - w0.y, w5.z - w0.z]; const lx = Math.hypot(...x) || 1; x = x.map(v => v / lx);
+      const yt = [w17.x - w0.x, w17.y - w0.y, w17.z - w0.z]; let z = cross3(x, yt); const lz = Math.hypot(...z) || 1; z = z.map(v => v / lz); const y = cross3(z, x);
+      const q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().set(x[0], y[0], z[0], 0, x[1], y[1], z[1], 0, x[2], y[2], z[2], 0, 0, 0, 0, 1));
+      const pr = this.qRaw; if (pr && q.x * pr[0] + q.y * pr[1] + q.z * pr[2] + q.w * pr[3] < 0) { q.x = -q.x; q.y = -q.y; q.z = -q.z; q.w = -q.w; }
+      this.qRaw = [q.x, q.y, q.z, q.w]; const f = this.qf.filter(this.qRaw, t); this.qHand = new THREE.Quaternion(f[0], f[1], f[2], f[3]).normalize(); }
     this.last = t;
   }
 }
@@ -176,19 +176,20 @@ function objectHullPx() {
 }
 function overPx(hull, p, margin) { return hull && p[0] > hull.x0 - margin && p[0] < hull.x1 + margin && p[1] > hull.y0 - margin && p[1] < hull.y1 + margin; }
 
-// ---------- gestos (v12.4)
-// v12.4 (sesión 2026-10-20): (a) con el objeto ya cogido, un segundo pellizco se une aunque no caiga justo en el borde (como el
-// segundo dedo en la pantalla de un móvil); (b) la identidad de quien sujeta se mantiene por POSICIÓN del pellizco, no por la
-// etiqueta de la mano (al perder y recuperar la mano la etiqueta cambia: Left → Left3, y eso soltaba el objeto); (c) 0,35 s de
-// gracia si el pellizco desaparece un instante (mano fuera de cuadro o detección perdida) antes de dar el objeto por soltado.
-let heldBy = null, grabOff = [0, 0], grabYaw = 0, grabAngle = null, two = null; const objFilter = new OneEuro(1.3, 0.04);
-let grabFlip = null, flipLast = null, flipArmed = false; const FLIP_SIGN = 1, FLIP_DEAD = 8 * Math.PI / 180, FLIP_STEP_DEAD = 2.5 * Math.PI / 180;
+// ---------- gestos (v13 — modelo rígido, «la pieza queda pegada a la mano»)
+// Estándar de gestos Jedomi RA v1 (ver python/ESTANDAR_GESTOS_RA.md): 1) pellizco en el borde = coger; mientras está cogida la pieza
+// SIGUE A LA MANO: se traslada con el pellizco y gira exactamente como gira la mano (3D, 1:1), como un objeto físico; 2) dos pellizcos =
+// escalar y girar sobre el tapete; 3) abrir los dedos = soltar; la pieza conserva posición y orientación. Mismo modelo que la manipulación
+// directa de visionOS (pinch+drag, rotación con la mano, dos manos para escala).
+let heldBy = null, grabOff = [0, 0], two = null; const objFilter = new OneEuro(1.3, 0.04);
 let pinchHold = new Set(), holdPts = [], lastHoldT = 0;
+let qHand0 = null, rot0 = null, rotArmed = false; const ROT_DEAD = 6 * Math.PI / 180;   // 6° para empezar a girar (luego sigue 1:1, re-anclado al armar: sin salto)
+let gestureName = "libre";
+const GESTURE_HINT = { "libre": "① Pellizca el borde de la pieza con pulgar e índice para cogerla.", "cogida": "② Cogida: muévela con la mano; gira la mano para girarla. Abre los dedos para soltar.", "cogida: girando": "② Girando con tu mano. Abre los dedos para soltar.", "dos pellizcos": "③ Dos pellizcos: separa o junta para agrandar/encoger; gira las manos para girarla sobre el tapete." };
 function gestures(active, t) {
   const hull = objectHullPx();
   const nearHold = h => h.pinchMM && holdPts.some(p => Math.hypot(h.pinchMM[0] - p[0], h.pinchMM[1] - p[1]) < 90);
-  // 2.º pellizco: cerca del centro (radio acotado a 230 mm: con la pieza a 300 mm, 1,4× daba 42 cm, demasiado; QA v12.4) y además
-  // a menos de un diámetro del pellizco que ya sujeta, para que la otra mano no dispare giro/escala desde lejos
+  // 2.º pellizco: cerca del centro (radio acotado a 230 mm; QA v12.4) y a menos de un diámetro del pellizco que ya sujeta
   const nearObj = h => h.pinchMM && Math.hypot(h.pinchMM[0] - obj.cx, h.pinchMM[1] - obj.cy) < Math.min(obj.size * 1.4, 230)
     && holdPts.some(p => Math.hypot(h.pinchMM[0] - p[0], h.pinchMM[1] - p[1]) < Math.max(obj.size, 160) * 1.1);
   const holding = !!(heldBy || two);
@@ -198,40 +199,34 @@ function gestures(active, t) {
   if (pinchers.length >= 2) {
     const a = pinchers[0], b = pinchers[1], p1 = a.pinchMM, p2 = b.pinchMM;
     const dist = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]), ang = Math.atan2(p2[1] - p1[1], p2[0] - p1[0]), mid = [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2];
-    if (!two) { two = { dist, size: obj.size, ang, yaw: obj.yaw, mid, c: [obj.cx, obj.cy], last: ang }; heldBy = null; log("dos pellizcos: girar/escalar/mover"); beep(990); }
+    if (!two) { two = { dist, size: obj.size, ang, rot0: obj.rot.clone(), mid, c: [obj.cx, obj.cy], last: ang }; heldBy = null; log("dos pellizcos: escalar/girar"); beep(990); }
     let a2 = two.last + ((ang - two.last + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI; two.last = a2;
     obj.size = Math.min(300, Math.max(90, two.size * Math.min(1.7, Math.max(0.6, dist / two.dist))));
-    obj.yaw = two.yaw + (a2 - two.ang);
+    obj.rot.copy(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), a2 - two.ang).multiply(two.rot0));   // giro sobre el tapete (eje Z)
     obj.cx = two.c[0] + (mid[0] - two.mid[0]); obj.cy = two.c[1] + (mid[1] - two.mid[1]);
-    pinchHold = new Set([a.label, b.label]); holdPts = [p1, p2]; lastHoldT = t; grasping.add(a.label); grasping.add(b.label);
+    pinchHold = new Set([a.label, b.label]); holdPts = [p1, p2]; lastHoldT = t; grasping.add(a.label); grasping.add(b.label); gestureName = "dos pellizcos";
   } else if (pinchers.length === 1) {
     const h = pinchers[0]; two = null;
     if (heldBy !== h.label) {
-      if (heldBy && nearHold(h)) { heldBy = h.label; }           // misma mano con etiqueta nueva: sigue cogido sin saltos
-      else { heldBy = h.label; grabOff = [h.pinchMM[0] - obj.cx, h.pinchMM[1] - obj.cy]; grabYaw = obj.yaw; grabAngle = h.fingerAngle; objFilter.reset(); log(`cogido por el borde con ${h.label}`); beep(880); }
-      grabFlip = h.flip; flipLast = h.flip; flipArmed = false;
+      if (!(heldBy && nearHold(h))) { grabOff = [h.pinchMM[0] - obj.cx, h.pinchMM[1] - obj.cy]; objFilter.reset(); log(`cogido por el borde con ${h.label}`); beep(880); }
+      heldBy = h.label; qHand0 = h.qHand ? h.qHand.clone() : null; rot0 = obj.rot.clone(); rotArmed = false;   // (re)anclar la orientación: sin saltos al re-etiquetar
     }
-    // volteo de muñeca (v12.5): pasado el umbral, cada incremento del ángulo de la muñeca gira la pieza alrededor del eje pulgar→índice
-    if (h.flip != null && flipLast != null && lastPose) {
-      const wrap = x => ((x + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
-      if (!flipArmed && Math.abs(wrap(h.flip - grabFlip)) > FLIP_DEAD) { flipArmed = true; flipLast = h.flip; log("volteo"); }
-      if (flipArmed) { const step = wrap(h.flip - flipLast);
-        if (Math.abs(step) >= 0.6) flipLast = h.flip;                   // salto espurio: se descarta y se re-ancla la referencia
-        else if (Math.abs(step) >= FLIP_STEP_DEAD) { flipLast = h.flip;   // zona muerta por paso (QA): el temblor no se acumula como deriva                                     // eje cámara → tapete: a_mat = Rᵀ·a_cam (R en columnas r1 r2 r3)
-          const R = lastPose.pose.R, ac = h.axisCam, am = new THREE.Vector3(dot3(R[0], ac), dot3(R[1], ac), dot3(R[2], ac)).normalize();
-          am.applyAxisAngle(new THREE.Vector3(0, 0, 1), -obj.yaw);      // el volteo se compone tras el giro Z: T' = Q(Rz(−yaw)·a, δ)·T
-          obj.tilt.premultiply(new THREE.Quaternion().setFromAxisAngle(am, FLIP_SIGN * step)); } }
-    }
+    // traslación: la pieza sigue al pellizco (filtrada)
     const tgt = objFilter.filter([h.pinchMM[0] - grabOff[0], h.pinchMM[1] - grabOff[1]], t);
     obj.cx = Math.min(1.3 * MAT_W, Math.max(-0.3 * MAT_W, tgt[0])); obj.cy = Math.min(1.3 * MAT_H, Math.max(-0.3 * MAT_H, tgt[1]));
-    const d = ((h.fingerAngle - grabAngle + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
-    if (Math.abs(d) > 3 * Math.PI / 180) obj.yaw = grabYaw + d;
-    pinchHold = new Set([h.label]); holdPts = [h.pinchMM]; lastHoldT = t; grasping.add(h.label);
+    // rotación rígida: la pieza gira como la mano. qRel = rotación de la mano desde el agarre (marco cámara) → al marco del tapete por conjugación
+    if (h.qHand && qHand0 && lastPose) {
+      const qRel = h.qHand.clone().multiply(qHand0.clone().invert());
+      const ang = 2 * Math.acos(Math.min(1, Math.abs(qRel.w)));
+      if (!rotArmed) { if (ang > ROT_DEAD) { rotArmed = true; qHand0 = h.qHand.clone(); rot0 = obj.rot.clone(); log("gira con la mano"); } }
+      else { const qR = matQuat(); obj.rot.copy(qR.clone().invert().multiply(qRel).multiply(qR).multiply(rot0)); }
+    }
+    pinchHold = new Set([h.label]); holdPts = [h.pinchMM]; lastHoldT = t; grasping.add(h.label); gestureName = rotArmed ? "cogida: girando" : "cogida";
   } else if (holding && t - lastHoldT < 0.35) {
-    // gracia: el pellizco desapareció un instante; mantenemos el agarre sin mover el objeto
+    // gracia: el pellizco desapareció un instante; mantenemos el agarre sin mover la pieza
   } else {
     if (heldBy || two) { log("soltado"); beep(440); }
-    heldBy = null; two = null; pinchHold = new Set(); holdPts = [];
+    heldBy = null; two = null; pinchHold = new Set(); holdPts = []; qHand0 = null; rotArmed = false; gestureName = "libre";
   }
   for (const h of active) { h.holding = grasping.has(h.label); h.otherHolding = (heldBy && heldBy !== h.label) || false; }
   return { grasping, hull };
@@ -347,7 +342,8 @@ function loop() {
   // telemetría de desarrollo (?telemetry=1): cada 2 s envía el estado a un servidor local para analizar la sesión sin acceso al navegador
   if (TELEMETRY && t - telemetryT > 2) { telemetryT = t; const ms = window.__dbg ? window.__dbg.ms : null;
     fetch("http://127.0.0.1:8766/metrics", { method: "POST", mode: "cors", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ t: Math.round(t), fps: Math.round(fps), cam: (video.srcObject && video.srcObject.getVideoTracks()[0] || {}).label || "", nmark, poseFrozen, hands: active.length, pinching: active.filter(h => h.pinch).length, held: !!(heldBy || two), mode: two ? "pinch2" : (heldBy ? "pinch" : ""), size: Math.round(obj.size), tris: Math.round(obj.tris), tilt: Math.round(2 * Math.acos(Math.min(1, Math.abs(obj.tilt.w))) * 180 / Math.PI), talk: talk.on, asking, sidebar: !!document.getElementById("jedomi-sidebar"), log: logs.slice(-4), ms: ms && { aruco: Math.round(ms.aruco), hands: Math.round(ms.hands), render: Math.round(ms.render * 10) / 10 }, W, Hh, grabs: logs.length }) }).catch(() => { }); }
+      body: JSON.stringify({ t: Math.round(t), fps: Math.round(fps), cam: (video.srcObject && video.srcObject.getVideoTracks()[0] || {}).label || "", nmark, poseFrozen, hands: active.length, pinching: active.filter(h => h.pinch).length, held: !!(heldBy || two), mode: two ? "pinch2" : (heldBy ? "pinch" : ""), size: Math.round(obj.size), tris: Math.round(obj.tris), tilt: Math.round(tiltDeg(obj.rot)), gesture: gestureName, talk: talk.on, asking, sidebar: !!document.getElementById("jedomi-sidebar"), log: logs.slice(-4), ms: ms && { aruco: Math.round(ms.aruco), hands: Math.round(ms.hands), render: Math.round(ms.render * 10) / 10 }, W, Hh, grabs: logs.length }) }).catch(() => { }); }
+  if (!talk.on && !asking) stepEl.textContent = GESTURE_HINT[gestureName] || gestureName;
   statusEl.textContent = `tapete ${poseOK ? (poseFrozen ? "congelado (destapa las esquinas)" : nmark + " marcadores") : "no visto"} · manos ${active.length} · ${heldBy || two ? "COGIDO" : "libre"} · ${Math.round(obj.tris / 1000)} k triángulos · ${fps.toFixed(0)} fps`;
   requestAnimationFrame(loop);
 }
@@ -358,7 +354,7 @@ function invert3(Mx) { const m = Mx.flat(); const [a, b, c, d, e, f, g, h, i] = 
 // ---------- controles
 document.getElementById("go").onclick = () => start().catch(e => { stepEl.textContent = "Error: " + e.message; console.error(e); });
 document.getElementById("model").onchange = e => loadModel(e.target.value);
-document.getElementById("reset").onclick = () => { obj.cx = MAT_W / 2; obj.cy = MAT_H / 2; obj.size = 220; obj.yaw = 0; obj.tilt.identity(); };
+document.getElementById("reset").onclick = () => { obj.cx = MAT_W / 2; obj.cy = MAT_H / 2; obj.size = 220; obj.yaw = 0; obj.rot.identity(); };
 document.getElementById("quit").onclick = () => { stopTalk(); const s = video.srcObject; if (s) s.getTracks().forEach(tr => tr.stop()); stepEl.textContent = "Sesión cerrada."; document.getElementById("start").style.display = "grid"; };
 
 // ---------- tutor de Jedomi (barra lateral del curso, ya inyectada en esta página por el plugin)
@@ -369,7 +365,7 @@ const J = { sidebar: () => document.getElementById("jedomi-sidebar"), trigger: (
   lastAnswer: () => { const b = document.querySelectorAll("#jedomi-messages .jedomi-message-assistant .jedomi-bubble"); if (!b.length) return "";
     const c = b[b.length - 1].cloneNode(true); c.querySelectorAll(".jedomi-msg-actions, button").forEach(x => x.remove()); return c.innerText.trim(); } };
 const modelLabel = () => (MOODLE && document.getElementById("model").value !== "aro" && MOODLE.modelName) || (document.getElementById("model").selectedOptions[0]?.textContent || "la pieza").replace(/^\d\)\s*/, "");
-const sceneText = () => `(modelo «${modelLabel()}», ${Math.round(obj.tris / 1000)} mil triángulos, tamaño ${Math.round(obj.size)} mm, giro ${Math.round(obj.yaw * 180 / Math.PI)}°, volteo ${Math.round(2 * Math.acos(Math.min(1, Math.abs(obj.tilt.w))) * 180 / Math.PI)}°, ${heldBy || two ? "la tengo cogida" : "está apoyada en el tapete"})`;
+const sceneText = () => `(modelo «${modelLabel()}», ${Math.round(obj.tris / 1000)} mil triángulos, tamaño ${Math.round(obj.size)} mm, giro ${Math.round(obj.yaw * 180 / Math.PI)}°, inclinación ${Math.round(tiltDeg(obj.rot))}°, ${heldBy || two ? "la tengo cogida" : "está apoyada en el tapete"})`;
 function openPanel() { const sb = J.sidebar(); if (sb && sb.classList.contains("jedomi-closed")) J.trigger()?.click(); }
 async function snapshot() {                             // captura compuesta: fuente de vídeo + lienzo 3D, a media resolución
   renderer.render(scene, camera);

@@ -73,6 +73,14 @@ echo $OUTPUT->header();
   #ia{position:absolute;right:16px;bottom:16px;max-width:40%;font-size:15px;display:none}
   #start{position:absolute;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.72)}
   #start .vpanel{max-width:560px;font-size:16px;line-height:1.5}
+  #start .tut{max-width:720px}
+  .tuthead{margin:12px 0 8px;font-weight:600;color:#fbbf24}
+  .cards{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .card{display:flex;gap:10px;align-items:center;background:rgba(255,255,255,.06);border-radius:10px;padding:8px 10px;font-size:14px;line-height:1.35}
+  .card svg{width:64px;height:64px;flex:none;fill:none;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
+  .card .ring{stroke:#f59e0b}.card .fin{stroke:#e5e7eb}.card .dot{fill:#22c55e;stroke:none}.card .arr{stroke:#60a5fa}
+  .tutnote{margin:10px 0 12px;font-size:14px;color:#9aa3af}
+  @media (max-width:900px){.cards{grid-template-columns:1fr}}
   body:has(#jedomi-sidebar.jedomi-open) #stage{margin-left:var(--j-width,400px);width:auto}
   body:has(#jedomi-sidebar.jedomi-open.jedomi-expand-half) #stage{margin-left:50vw}
   body:has(#jedomi-sidebar.jedomi-open) #jedomi-trigger{display:none}
@@ -92,9 +100,20 @@ echo $OUTPUT->header();
   </div>
   <div class="vpanel" id="status">—</div>
   <div class="vpanel" id="ia"></div>
-  <div id="start"><div class="vpanel">
-    <b><?php echo get_string('stem_visor_title', 'local_jedomi'); ?></b> · <?php echo format_string($cm->name); ?><br><br>
-    <?php echo $model ? get_string('stem_visor_intro', 'local_jedomi') : get_string('stem_visor_nomodel', 'local_jedomi'); ?><br><br>
+  <div id="start"><div class="vpanel tut">
+    <b><?php echo get_string('stem_visor_title', 'local_jedomi'); ?></b> · <?php echo format_string($cm->name); ?>
+    <div class="tuthead"><?php echo get_string('stem_visor_tut_title', 'local_jedomi'); ?></div>
+    <div class="cards">
+      <div class="card"><svg viewBox="0 0 64 64"><circle cx="32" cy="36" r="14" class="ring"/><path d="M14 10 Q20 22 26 30" class="fin"/><path d="M40 8 Q36 20 32 28" class="fin"/><circle cx="29" cy="30" r="3" class="dot"/></svg>
+        <div><b>①</b> <?php echo get_string('stem_visor_tut_grab', 'local_jedomi'); ?></div></div>
+      <div class="card"><svg viewBox="0 0 64 64"><ellipse cx="32" cy="36" rx="14" ry="6" class="ring"/><path d="M12 24 A22 22 0 0 1 52 24" class="arr"/><path d="M48 18 L52 24 L46 27" class="arr"/><path d="M26 18 Q32 10 38 18" class="fin"/></svg>
+        <div><b>②</b> <?php echo get_string('stem_visor_tut_rotate', 'local_jedomi'); ?></div></div>
+      <div class="card"><svg viewBox="0 0 64 64"><circle cx="32" cy="34" r="12" class="ring"/><circle cx="14" cy="34" r="3" class="dot"/><circle cx="50" cy="34" r="3" class="dot"/><path d="M4 34 L10 34 M54 34 L60 34" class="arr"/><path d="M6 31 L4 34 L6 37 M58 31 L60 34 L58 37" class="arr"/></svg>
+        <div><b>③</b> <?php echo get_string('stem_visor_tut_two', 'local_jedomi'); ?></div></div>
+      <div class="card"><svg viewBox="0 0 64 64"><circle cx="32" cy="42" r="10" class="ring"/><path d="M18 26 L10 12 M28 22 L26 6 M38 22 L42 6 M46 26 L56 14" class="fin"/></svg>
+        <div><b>④</b> <?php echo get_string('stem_visor_tut_release', 'local_jedomi'); ?></div></div>
+    </div>
+    <div class="tutnote"><?php echo $model ? get_string('stem_visor_tut_mat', 'local_jedomi') : get_string('stem_visor_nomodel', 'local_jedomi'); ?></div>
     <button id="go" class="primary"><?php echo get_string('stem_visor_start', 'local_jedomi'); ?></button>
   </div></div>
 </div>
