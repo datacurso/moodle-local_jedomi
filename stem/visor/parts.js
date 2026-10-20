@@ -47,9 +47,15 @@ export function buildParts(root, meta = null) {
     const node = m;
     const generic = !m.name || /^(mesh|primitive|object)?_?\d*$/i.test(m.name);
     const nm = (generic && m.parent ? m.parent.name : m.name) || "";
-    const t = byNode.get(nm) || byNode.get(m.name) || (m.parent && byNode.get(m.parent.name));
+    // con jerarquía (GLB del conversor fiel: ensamblaje → instancia → malla) la pieza del docente puede nombrar un ensamblaje:
+    // se sube por los antecesores hasta encontrar un nodo descrito
+    let t = null; for (let a = m; a && a !== root && !t; a = a.parent) t = byNode.get(a.name) || null;
+    if (!t && byNode.size) { const raw = byNode.get(nm); if (raw) t = raw; }
     // con piezas del docente, lo que no describió (p. ej. piezas que ocultó) queda como resto inerte: no se elige ni se separa
-    const c = t ? { key: "t:" + (t.key || t.name), name: t.name || nm, desc: t.description || "" } : (byNode.size ? { key: "_rest", name: "", desc: "", inert: true } : classify(nm));
+    let c;
+    if (t) c = { key: "t:" + (t.key || t.name), name: t.name || nm, desc: t.description || "" };
+    else if (byNode.size) c = { key: "_rest", name: "", desc: "", inert: true };
+    else { c = classify(nm); for (let a = m.parent; a && a !== root && c.key.startsWith("n:"); a = a.parent) { const ca = classify(a.name || ""); if (!ca.key.startsWith("n:")) c = ca; } }
     if (!groups.has(c.key)) groups.set(c.key, { ...c, nodes: new Set(), meshes: [] });   // c.inert se conserva
     const g = groups.get(c.key); g.nodes.add(node); g.meshes.push(m);
   }
