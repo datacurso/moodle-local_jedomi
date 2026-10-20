@@ -102,28 +102,28 @@ echo $OUTPUT->header();
   #iscene .hand{transform-box:view-box;opacity:.96}
   #iscene .finger,#iscene .thumb{transition:transform .5s}
   /* posiciones base: mano A entra por abajo; mano B (espejo) sólo en el paso 4 */
-  #iscene .ha{transform:translate(372px,470px)}#iscene .hb{display:none}
+  #iscene .ha{transform:translate(327px,540px)}#iscene .hb{display:none}
   /* pellizco: pulgar e índice se cierran sobre el borde; los otros dedos se recogen */
-  .pinched .f1{transform:rotate(14deg) scaleY(.9)}.pinched .thumb{transform:rotate(38deg) translate(14px,-6px)}.pinched .f2,.pinched .f3,.pinched .f4{transform:scaleY(.72)}
+  .pinched .f1{transform:rotate(25deg) scaleY(.7)}.pinched .thumb{transform:rotate(80deg) translate(10px,-20px)}.pinched .f2,.pinched .f3,.pinched .f4{transform:scaleY(.72)}
   /* paso 1: acercarse y coger */
   #intro[data-step="1"] .ha{animation:reach 5.2s ease-in-out infinite}
   #intro[data-step="1"] .ha .f1{animation:f1pinch 5.2s ease-in-out infinite}#intro[data-step="1"] .ha .thumb{animation:thpinch 5.2s ease-in-out infinite}
   #intro[data-step="1"] .ha .f2,#intro[data-step="1"] .ha .f3,#intro[data-step="1"] .ha .f4{animation:curl 5.2s ease-in-out infinite}
   #intro[data-step="1"] .shadow{animation:lift 5.2s ease-in-out infinite}
-  @keyframes reach{0%{transform:translate(372px,470px)}35%,100%{transform:translate(372px,338px)}}
-  @keyframes f1pinch{0%,35%{transform:none}55%,100%{transform:rotate(14deg) scaleY(.9)}}
-  @keyframes thpinch{0%,35%{transform:none}55%,100%{transform:rotate(38deg) translate(14px,-6px)}}
+  @keyframes reach{0%{transform:translate(327px,540px)}35%,100%{transform:translate(327px,391px)}}
+  @keyframes f1pinch{0%,35%{transform:none}55%,100%{transform:rotate(25deg) scaleY(.7)}}
+  @keyframes thpinch{0%,35%{transform:none}55%,100%{transform:rotate(80deg) translate(10px,-20px)}}
   @keyframes curl{0%,35%{transform:none}55%,100%{transform:scaleY(.72)}}
   @keyframes lift{0%,50%{transform:scale(1);opacity:.18}65%,100%{transform:scale(1.12) translate(0,10px);opacity:.28}}
-  #intro[data-step="2"] .ha .f1,#intro[data-step="3"] .ha .f1,#intro[data-step="4"] .hand .f1{transform:rotate(14deg) scaleY(.9)}
-  #intro[data-step="2"] .ha .thumb,#intro[data-step="3"] .ha .thumb,#intro[data-step="4"] .hand .thumb{transform:rotate(38deg) translate(14px,-6px)}
+  #intro[data-step="2"] .ha .f1,#intro[data-step="3"] .ha .f1,#intro[data-step="4"] .hand .f1{transform:rotate(25deg) scaleY(.7)}
+  #intro[data-step="2"] .ha .thumb,#intro[data-step="3"] .ha .thumb,#intro[data-step="4"] .hand .thumb{transform:rotate(80deg) translate(10px,-20px)}
   #intro[data-step="2"] .ha .f2,#intro[data-step="2"] .ha .f3,#intro[data-step="2"] .ha .f4,#intro[data-step="3"] .ha .f2,#intro[data-step="3"] .ha .f3,#intro[data-step="3"] .ha .f4,#intro[data-step="4"] .hand .f2,#intro[data-step="4"] .hand .f3,#intro[data-step="4"] .hand .f4{transform:scaleY(.72)}
   /* paso 2: mover (mano y aro juntos) */
-  #intro[data-step="2"] .ha{transform:translate(372px,338px)}#intro[data-step="2"] .ha .finger,#intro[data-step="2"] .ha .thumb{transition:none}
+  #intro[data-step="2"] .ha{transform:translate(327px,391px)}#intro[data-step="2"] .ha .finger,#intro[data-step="2"] .ha .thumb{transition:none}
   #intro[data-step="2"] .world{animation:slide 5.2s ease-in-out infinite}#intro[data-step="2"] .shadow{transform:scale(1.12) translate(0,10px);opacity:.28}
   @keyframes slide{0%,10%{transform:translateX(0)}45%{transform:translateX(-130px)}80%,100%{transform:translateX(90px)}}
   /* paso 3: girar la mano → la pieza gira igual (en el plano y volteo) */
-  #intro[data-step="3"] .ha{transform:translate(372px,338px)}
+  #intro[data-step="3"] .ha{transform:translate(327px,391px)}
   #intro[data-step="3"] .world{transform-origin:320px 200px;animation:turn 5.2s ease-in-out infinite}
   #intro[data-step="3"] .ringtilt{animation:tilt 5.2s ease-in-out infinite}#intro[data-step="3"] .shadow{transform:scale(1.12) translate(0,10px);opacity:.28}
   @keyframes turn{0%,10%{transform:rotate(0)}50%{transform:rotate(-40deg)}90%,100%{transform:rotate(25deg)}}
@@ -131,17 +131,19 @@ echo $OUTPUT->header();
   /* paso 4: dos pellizcos → separar agranda, girar las dos manos rota sobre el tapete */
   #intro[data-step="4"] .ha{animation:twoA 5.2s ease-in-out infinite}#intro[data-step="4"] .hb{display:block;animation:twoB 5.2s ease-in-out infinite}
   #intro[data-step="4"] .ringwrap{transform-origin:320px 200px;animation:grow 5.2s ease-in-out infinite}
-  @keyframes twoA{0%,15%{transform:translate(268px,338px)}55%{transform:translate(214px,338px)}85%,100%{transform:translate(236px,296px) rotate(-18deg)}}
-  @keyframes twoB{0%,15%{transform:translate(372px,338px) scaleX(-1)}55%{transform:translate(426px,338px) scaleX(-1)}85%,100%{transform:translate(404px,380px) scaleX(-1) rotate(18deg)}}
-  @keyframes grow{0%,15%{transform:scale(1) rotate(0)}55%{transform:scale(1.45) rotate(0)}85%,100%{transform:scale(1.45) rotate(-30deg)}}
+  #intro[data-step="4"] .world{transform-origin:320px 200px;animation:turn2 5.2s ease-in-out infinite}
+  @keyframes turn2{0%,60%{transform:rotate(0)}90%,100%{transform:rotate(-30deg)}}
+  @keyframes twoA{0%,15%{transform:translate(257px,319px)}55%,100%{transform:translate(226px,319px)}}
+  @keyframes twoB{0%,15%{transform:translate(383px,319px) scaleX(-1)}55%,100%{transform:translate(414px,319px) scaleX(-1)}}
+  @keyframes grow{0%,15%{transform:scale(1)}55%,100%{transform:scale(1.45)}}
   /* paso 5: soltar → abrir los dedos y retirar la mano; la pieza se queda apoyada */
   #intro[data-step="5"] .ha{animation:leave 5.2s ease-in-out infinite}
   #intro[data-step="5"] .ha .f1{animation:f1open 5.2s ease-in-out infinite}#intro[data-step="5"] .ha .thumb{animation:thopen 5.2s ease-in-out infinite}
   #intro[data-step="5"] .ha .f2,#intro[data-step="5"] .ha .f3,#intro[data-step="5"] .ha .f4{animation:uncurl 5.2s ease-in-out infinite}
   #intro[data-step="5"] .shadow{animation:drop 5.2s ease-in-out infinite}
-  @keyframes leave{0%,45%{transform:translate(372px,338px)}80%,100%{transform:translate(372px,470px)}}
-  @keyframes f1open{0%,20%{transform:rotate(14deg) scaleY(.9)}40%,100%{transform:none}}
-  @keyframes thopen{0%,20%{transform:rotate(38deg) translate(14px,-6px)}40%,100%{transform:none}}
+  @keyframes leave{0%,45%{transform:translate(327px,391px)}80%,100%{transform:translate(327px,540px)}}
+  @keyframes f1open{0%,20%{transform:rotate(25deg) scaleY(.7)}40%,100%{transform:none}}
+  @keyframes thopen{0%,20%{transform:rotate(80deg) translate(10px,-20px)}40%,100%{transform:none}}
   @keyframes uncurl{0%,20%{transform:scaleY(.72)}40%,100%{transform:none}}
   @keyframes drop{0%,30%{transform:scale(1.12) translate(0,10px);opacity:.28}50%,100%{transform:scale(1);opacity:.18}}
   @media (prefers-reduced-motion: reduce){#iscene *{animation-duration:.01s!important}}
@@ -178,7 +180,7 @@ echo $OUTPUT->header();
           <g class="finger f2" style="transform-origin:-9px -72px"><rect x="-19" y="-158" width="20" height="90" rx="10"/></g>
           <g class="finger f3" style="transform-origin:9px -72px"><rect x="-1" y="-152" width="20" height="84" rx="10"/></g>
           <g class="finger f4" style="transform-origin:27px -70px"><rect x="17" y="-134" width="20" height="68" rx="10"/></g>
-          <g class="thumb" style="transform-origin:-40px -30px"><rect x="-104" y="-46" width="68" height="22" rx="11" transform="rotate(-25 -40 -30)"/></g></g>
+          <g class="thumb" style="transform-origin:-40px -30px"><rect x="-104" y="-46" width="68" height="22" rx="11" transform="rotate(25 -40 -30)"/></g></g>
           <g class="hand hb"><path class="palm" d="M-42 0 Q-48 -40 -36 -72 L36 -72 Q48 -40 42 0 Q30 22 0 24 Q-30 22 -42 0 Z"/>
           <g class="finger f1" style="transform-origin:-27px -70px"><rect x="-37" y="-140" width="20" height="74" rx="10"/></g>
           <g class="finger f2" style="transform-origin:-9px -72px"><rect x="-19" y="-158" width="20" height="90" rx="10"/></g>
