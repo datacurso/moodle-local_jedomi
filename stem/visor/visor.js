@@ -303,7 +303,12 @@ function refreshPiecesUI() {
   if (explodeBtn) { explodeBtn.hidden = !has; explodeBtn.setAttribute("aria-pressed", String(apart)); explodeBtn.textContent = (apart ? "🧲 " + (S_.parts_join || "Unir piezas") : "💥 " + (S_.parts_explode || "Separar piezas")); }
   if (!has || !pieces.on) { showPart(null); if (labelEl) labelEl.hidden = true; }
 }
-function selectPart(p) { if (pieces.sel && pieces.sel !== p) setHighlight(pieces.sel, null); pieces.sel = p; if (p) setHighlight(p, "selected"); showPart(p); }
+function selectPart(p) {
+  const changed = p && p !== pieces.sel;
+  if (pieces.sel && pieces.sel !== p) setHighlight(pieces.sel, null); pieces.sel = p; if (p) setHighlight(p, "selected"); showPart(p);
+  // explicación inmediata (sin IA): con la conversación activa se lee al momento lo que el docente escribió de la pieza
+  if (changed && talk.on && !talk.speaking && !asking && !ptt.on) speak(p.name + (p.desc ? ". " + p.desc : ""));
+}
 function showPart(p) {
   if (!infoEl) return; infoEl.hidden = !p; if (!p) return;
   infoEl.querySelector(".pname").textContent = p.name; infoEl.querySelector(".pdesc").textContent = p.desc || "";
@@ -318,7 +323,7 @@ document.getElementById("part-home")?.addEventListener("click", () => { if (piec
 document.getElementById("part-close")?.addEventListener("click", () => selectPart(null));
 document.getElementById("part-explain")?.addEventListener("click", async () => {
   const p = pieces.sel; if (!p) return;
-  const ans = await askTutor(`Estoy viendo la pieza «${p.name}» del modelo ${modelLabel()}${p.desc ? " (" + p.desc + ")" : ""}. Te adjunto la captura. Explícame qué función cumple esta pieza y cómo se relaciona con las demás.`);
+  const ans = await askTutor(`Explícame la pieza «${p.name}» del modelo ${modelLabel()}.${p.desc ? " Descripción del docente: " + p.desc.replace(/[.\s]+$/, "") + "." : ""} Responde ya, sin pedir imágenes: en 2–3 frases qué es, para qué sirve y con qué otras piezas se relaciona, y termina con una sola pregunta corta para comprobar que lo entendí.`);
   if (ans) { const clean = handlePointMarks(ans); if (talk.on) speak(clean); }
 });
 function partsTick() {                                   // animación de la separación + aplicar desplazamientos
@@ -463,7 +468,7 @@ let actx = null; function beep(f) { try { actx = actx || new AudioContext(); con
 const overlay = document.createElement("canvas"); overlay.style.cssText = "position:absolute;inset:0;width:100%;height:100%;object-fit:contain;pointer-events:none"; document.getElementById("view").appendChild(overlay); const octx = overlay.getContext("2d");
 
 // ---------- vistas: «web» (3D en pantalla, sin cámara: tapete virtual, cámara orbital, fondo elegible) y «ar» (cámara + tapete real)
-const view = { mode: "ar", controls: null, ro: null, bg: "#dfe6ee", bgAR: "#dfe6ee" };
+const view = { mode: "ar", controls: null, ro: null, bg: "#dfe6ee", bgAR: "#dfe6ee", ready: false };
 try { view.bg = localStorage.getItem("jedomi_visor_bg") || view.bg; view.bgAR = localStorage.getItem("jedomi_visor_bg_ar") || view.bgAR; } catch (e) { }
 const curBg = () => view.mode === "web" ? view.bg : view.bgAR;
 function applyWebBg() { if (view.bg === "none") { scene.background = null; renderer.setClearColor(0x000000, 0); } else { scene.background = new THREE.Color(view.bg); renderer.setClearColor(view.bg, 1); } }
@@ -479,7 +484,7 @@ function webSize() { const r = document.getElementById("stage").getBoundingClien
   W = Math.max(320, Math.round(r.width * dpr)); Hh = Math.max(240, Math.round(r.height * dpr));
   renderer.setSize(W, Hh, false); overlay.width = W; overlay.height = Hh; camera.aspect = W / Hh; camera.fov = 45; camera.updateProjectionMatrix(); }
 function enterWeb() {
-  view.mode = "web"; poseOK = true; poseFrozen = false; nmark = 4;
+  view.mode = "web"; view.ready = true; poseOK = true; poseFrozen = false; nmark = 4;
   const s = video.srcObject; if (s) s.getTracks().forEach(tr => tr.stop()); video.srcObject = null; video.style.display = "none";
   document.querySelectorAll("#view > canvas:not(#three)").forEach(c => { if (c !== overlay) c.style.display = "none"; });
   // el tapete queda horizontal en el mundo: x del tapete → x, y del tapete → z (hacia el espectador), z del tapete → −y (hacia abajo)
@@ -496,13 +501,14 @@ function enterWeb() {
   document.body.classList.add("jv-web"); viewUI(); log("vista web 3D"); try { localStorage.setItem("jedomi_visor_view", "web"); } catch (e) { }
 }
 async function enterAR(opts = {}) {
-  view.mode = "ar"; virtualMat.visible = false; scene.background = null; renderer.setClearColor(0x000000, 0);
+  view.ready = false; view.mode = "ar"; cornerFilters.clear(); lastMarkers = []; virtualMat.visible = false; scene.background = null; renderer.setClearColor(0x000000, 0);
   if (view.controls) view.controls.enabled = false;
   camera.position.set(0, 0, 0); camera.rotation.set(0, 0, 0); camera.up.set(0, 1, 0); camera.updateMatrixWorld();
   document.body.classList.remove("jv-web"); lastPose = null; poseOK = false; Hinv = null;
   try { zoom.on = localStorage.getItem("jedomi_visor_zoom") !== "0"; } catch (e) { zoom.on = true; } zoom.locked = false; setZoomBtn();
   if (matbg) matbg.style.display = "";
-  await startSource(opts); viewUI(); bgUI(); log("vista RA"); try { localStorage.setItem("jedomi_visor_view", "ar"); } catch (e) { }
+  try { await startSource(opts); } finally { lastPose = null; poseOK = false; Hinv = null; view.ready = true; }   // la pose se recalcula con los tamaños nuevos
+  viewUI(); bgUI(); log("vista RA"); try { localStorage.setItem("jedomi_visor_view", "ar"); } catch (e) { }
 }
 function viewUI() {
   const b = document.getElementById("viewtoggle"); if (b) { b.textContent = view.mode === "web" ? "📷 " + (MOODLE?.strings?.view_ar || "Vista RA") : "🖥 " + (MOODLE?.strings?.view_web || "Vista 3D"); b.setAttribute("aria-pressed", String(view.mode === "web")); }
@@ -588,6 +594,7 @@ async function start(opts = {}) {
   if (!started) { started = true; requestAnimationFrame(loop); }
 }
 function loop() {
+  if (!view.ready) { requestAnimationFrame(loop); return; }   // cambiando de vista: no procesar con tamaños o fuente a medias
   const t = performance.now() / 1000; frames++; if (performance.now() - fpsT > 1000) { fps = frames * 1000 / (performance.now() - fpsT); frames = 0; fpsT = performance.now(); }
   // --- tapete (un fotograma sí y otro no: la hoja no se mueve y la pose se mantiene; sube los fps de ~20 a ~30)
   const T0 = performance.now();
@@ -603,15 +610,15 @@ function loop() {
   if (view.mode !== "web") nmark = markers.length; const src = [], dst = [];
   for (const m of markers) { const mm = markerCornersMM(m.id); for (let k = 0; k < 4; k++) { const key = m.id * 4 + k; let f = cornerFilters.get(key); if (!f) { f = new OneEuro(0.8, 0.004); cornerFilters.set(key, f); } const p = f.filter([m.corners[k].x * 4, m.corners[k].y * 4], t); src.push(mm[k]); dst.push(p); } }
   for (const key of [...cornerFilters.keys()]) if (!markers.some(m => Math.floor(key / 4) === m.id)) cornerFilters.delete(key);
-  if (nmark >= 3) {
+  if (view.mode !== "web" && nmark >= 3) {
     const Hm = solveHomography(src, dst);
     if (Hm) {
       // mantener la pose previa si las esquinas coinciden (< 6 px): no re-resolver (evita el escalón 4→3 y el ruido)
       let keep = false;
-      if (lastPose && lastPose.H) { let err = 0; for (let i = 0; i < src.length; i++) { const v = mulMatVec(lastPose.H, [src[i][0], src[i][1], 1]); err += Math.hypot(v[0] / v[2] - dst[i][0], v[1] / v[2] - dst[i][1]); } keep = err / src.length < 6; }
+      if (lastPose && lastPose.H && lastPose.W === W && lastPose.Hh === Hh) { let err = 0; for (let i = 0; i < src.length; i++) { const v = mulMatVec(lastPose.H, [src[i][0], src[i][1], 1]); err += Math.hypot(v[0] / v[2] - dst[i][0], v[1] / v[2] - dst[i][1]); } keep = err / src.length < 6; }
       if (!keep) {
         const pose = poseFromHomography(Hm, FX * W, FX * W, W / 2, Hh / 2);
-        lastPose = { H: Hm, pose };
+        lastPose = { H: Hm, pose, W, Hh };
       }
       poseFrozen = false; poseOK = true;
     }
@@ -684,7 +691,7 @@ const J = { sidebar: () => document.getElementById("jedomi-sidebar"), trigger: (
   lastAnswer: () => { const b = document.querySelectorAll("#jedomi-messages .jedomi-message-assistant .jedomi-bubble"); if (!b.length) return "";
     const c = b[b.length - 1].cloneNode(true); c.querySelectorAll(".jedomi-msg-actions, button").forEach(x => x.remove()); return c.innerText.trim(); } };
 const modelLabel = () => (MOODLE && document.getElementById("model").value !== "aro" && MOODLE.modelName) || (document.getElementById("model").selectedOptions[0]?.textContent || "la pieza");
-const sceneText = () => `(${pieces.sel ? "pieza seleccionada «" + pieces.sel.name + "», resaltada en naranja en la captura; " : ""}modelo «${modelLabel()}», ${Math.round(obj.tris / 1000)} mil triángulos, tamaño ${Math.round(obj.size)} mm, giro ${Math.round(obj.yaw * 180 / Math.PI)}°, inclinación ${Math.round(tiltDeg(obj.rot))}°, ${heldBy || two ? "la tengo cogida" : "está apoyada en el tapete"})`;
+const sceneText = () => `(${pieces.sel ? "pieza seleccionada «" + pieces.sel.name + "»" + (pieces.sel.desc ? " — " + pieces.sel.desc : "") + "; " : ""}modelo «${modelLabel()}», ${Math.round(obj.tris / 1000)} mil triángulos, tamaño ${Math.round(obj.size)} mm, giro ${Math.round(obj.yaw * 180 / Math.PI)}°, inclinación ${Math.round(tiltDeg(obj.rot))}°, ${heldBy || two ? "la tengo cogida" : "está apoyada en el tapete"})`;
 function openPanel() { const sb = J.sidebar(); if (sb && sb.classList.contains("jedomi-closed")) J.trigger()?.click(); }
 async function snapshot() {                             // captura compuesta: fuente de vídeo + lienzo 3D, a media resolución
   renderer.render(scene, camera);
@@ -697,7 +704,7 @@ function sceneChanged() {                               // ¿ha cambiado lo que 
   const k = { m: document.getElementById("model").value, s: Math.round(obj.size / 20), y: Math.round(obj.yaw * 4 / Math.PI), x: Math.round(obj.cx / 80), c: Math.round(obj.cy / 80) };
   const ch = !lastShot || Object.keys(k).some(q => k[q] !== lastShot[q]); if (ch) lastShot = k; return ch;
 }
-async function askTutor(text, withSnapshot = true) {    // devuelve la respuesta del tutor (texto plano) cuando termina el streaming
+async function askTutor(text, withSnapshot = false) {   // sin captura: el tutor ya conoce el objeto y sus piezas por el contexto del docente    // devuelve la respuesta del tutor (texto plano) cuando termina el streaming
   if (!MOODLE || !J.trigger() || !J.input() || !J.send()) { iaEl.style.display = "block"; iaEl.textContent = "IA (prototipo local sin Moodle): " + text; return ""; }
   if (asking) return "";
   asking = true; openPanel();
@@ -719,7 +726,9 @@ async function askTutor(text, withSnapshot = true) {    // devuelve la respuesta
   } finally { asking = false; }
 }
 document.getElementById("explain").onclick = async () => {
-  sceneChanged(); const ans = await askTutor(`Estoy viendo en realidad aumentada el modelo 3D de esta actividad ${sceneText()}. Te adjunto la captura de lo que veo. Ayúdame a entender qué es y cómo funciona.`);
+  const ans = await askTutor(pieces.sel
+    ? `Explícame la pieza «${pieces.sel.name}»${pieces.sel.desc ? " (descripción del docente: " + pieces.sel.desc + ")" : ""}. Responde ya, en 2–3 frases, y termina con una pregunta corta.`
+    : `Explícame el objeto de esta actividad ${sceneText()}: qué es, sus piezas principales y para qué sirve, en 3–4 frases, usando el contexto del docente. Termina con una pregunta corta.`);
   if (ans) { const clean = handlePointMarks(ans); if (talk.on) speak(clean); }
 };
 
@@ -767,7 +776,7 @@ function handlePointMarks(ans) {                          // el tutor señala: �
   POINT_RE.lastIndex = 0; return ans.replace(POINT_RE, "").trim();
 }
 const ASK_POINT_RE = { test: t => /\b(senal|muestr|ensen|indica|donde (esta|queda)|cual es)/.test(norm(t)) };   // sin tildes: «señálamela», «muéstrame»…
-queueMicrotask(() => { if (window.__ar) Object.assign(window.__ar, { point: t => pointAt(findPart(t), "qa"), marks: handlePointMarks, findPart, asks: t => ASK_POINT_RE.test(t), frame: () => loop(), setBg }); });   // QA (frame: avanza un fotograma a mano en pestañas ocultas)
+queueMicrotask(() => { if (window.__ar) Object.assign(window.__ar, { view, enterWeb, enterAR, objGroup, mat, renderer, scene, point: t => pointAt(findPart(t), "qa"), marks: handlePointMarks, findPart, asks: t => ASK_POINT_RE.test(t), frame: () => loop(), setBg }); });   // QA (frame: avanza un fotograma a mano en pestañas ocultas)
 
 // ---------- modo conversación: el tutor habla y escucha, como en la estación física
 // Voz → texto: SpeechRecognition del navegador (Chrome/Edge; en Chrome el audio pasa por el servicio de voz de Google).
@@ -801,7 +810,7 @@ async function handleUtterance(said, conf) {
   if (ASK_POINT_RE.test(said)) pointAt(findPart(said) || pieces.sel, "alumno");
   if (/^(terminar|salir|basta|parar)\.?$/i.test(said)) { stopTalk(); speak("Hasta luego."); return; }
   stepEl.textContent = "⌛ Tú: " + said;
-  const ans = await askTutor(`${said} ${sceneText()}`, sceneChanged()); if (ans) speak(handlePointMarks(ans)); else if (talk.on) listen();
+  const ans = await askTutor(`${said} ${sceneText()}`); if (ans) speak(handlePointMarks(ans)); else if (talk.on) listen();
 }
 function newRec(continuous) { const r = new SR(); r.lang = talk.lang; r.continuous = continuous; r.interimResults = false; r.maxAlternatives = 1; return r; }
 function listen() {
@@ -839,7 +848,7 @@ async function startTalk() {
   if (!talk.consent) { if (!window.confirm(MOODLE?.strings?.voice_consent || "¿Aceptas usar el micrófono y el reconocimiento de voz del navegador?")) return; talk.consent = true; log("consentimiento de voz aceptado"); }
   sceneChanged(); talk.on = true; const b = document.getElementById("talk"); b.textContent = "⏹ " + ((MOODLE?.strings?.talk_stop) || "Parar voz"); b.classList.add("danger");
   openPanel();
-  const ans = await askTutor(`Activo el modo conversación en el visor de realidad aumentada de esta actividad. Te adjunto lo que veo ahora ${sceneText()}. Salúdame en una frase y hazme la primera pregunta o indicación según el modo del curso. Responde en frases cortas: te voy a escuchar en voz alta.`);
+  const ans = await askTutor(`Activo el modo conversación en el visor de esta actividad ${sceneText()}. Salúdame en una frase y, usando el contexto del docente, dime en una frase qué vamos a explorar y hazme la primera pregunta. Responde en frases cortas: te voy a escuchar en voz alta.`);
   if (ans) speak(handlePointMarks(ans)); else listen();
 }
 function stopTalk() {
