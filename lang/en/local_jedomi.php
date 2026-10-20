@@ -875,3 +875,5 @@ $string['stem_visor_pj_nocam'] = 'Could not access the camera. Check the browser
 $string['stem_visor_pj_speak'] = 'Speak to see the level…';
 $string['stem_visor_pj_nodev'] = 'This browser gives no camera or microphone access here.';
 $string['stem_visor_pj_nomic'] = 'No microphone access: you can view and handle the part, but not talk by voice.';
+$string['stem_visor_zoom'] = 'Auto framing';
+$string['stem_visor_zoom_help'] = 'When the whole mat is visible, zooms in so the mat fills the screen';

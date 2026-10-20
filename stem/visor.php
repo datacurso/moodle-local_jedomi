@@ -67,7 +67,8 @@ echo $OUTPUT->header();
 ?>
 <style>
   #stage{position:relative;width:100%;height:calc(100vh - 16px);min-height:480px;background:#000;border-radius:12px;overflow:hidden}
-  #stage video,#stage canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
+  #view{position:absolute;inset:0;transform-origin:50% 50%;will-change:transform;transition:transform .35s ease-out}
+  #view video,#view canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
   #three{pointer-events:none}
   #hud{position:absolute;left:16px;top:16px;right:16px;display:flex;gap:12px;align-items:flex-start;pointer-events:none}
   .vpanel{background:rgba(15,17,21,.78);color:#f3f4f6;border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:12px 16px}
@@ -167,8 +168,7 @@ echo $OUTPUT->header();
 <div id="stage">
   <div id="titlebar"><span class="tname"><?php echo format_string($cm->name); ?></span><span class="tcourse"><?php echo format_string($course->fullname); ?></span>
     <a id="quit" class="tquit" href="<?php echo s($courseurl); ?>" title="<?php echo get_string('stem_visor_quit_help', 'local_jedomi'); ?>">✕ <?php echo get_string('stem_visor_quit', 'local_jedomi'); ?></a></div>
-  <video id="video" autoplay playsinline muted></video>
-  <canvas id="three"></canvas>
+  <div id="view"><video id="video" autoplay playsinline muted></video><canvas id="three"></canvas></div>
   <div id="hud">
     <div class="vpanel" id="step">…</div>
     <div id="ctl">
@@ -177,6 +177,7 @@ echo $OUTPUT->header();
       <?php if ($config['voiceEnabled']) { ?><button id="talk" class="primary" title="<?php echo get_string('stem_visor_talk_help', 'local_jedomi'); ?>">🎙 <?php echo get_string('stem_visor_talk', 'local_jedomi'); ?></button><?php } ?>
       <button id="explain" title="<?php echo get_string('stem_visor_explain_help', 'local_jedomi'); ?>">💬 <?php echo get_string('stem_visor_explain', 'local_jedomi'); ?></button>
       <button id="reset" title="<?php echo get_string('stem_visor_reset_help', 'local_jedomi'); ?>">⟲ <?php echo get_string('stem_visor_reset', 'local_jedomi'); ?></button>
+      <button id="zoom" title="<?php echo get_string('stem_visor_zoom_help', 'local_jedomi'); ?>" aria-pressed="true">🔍 <?php echo get_string('stem_visor_zoom', 'local_jedomi'); ?></button>
     </div>
   </div>
   <div class="vpanel" id="status">—</div>

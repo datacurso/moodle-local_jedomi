@@ -92,7 +92,7 @@ ground.position.set(MAT_W / 2, MAT_H / 2, 0); ground.receiveShadow = true; mat.a
 const frame = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry(MAT_W, MAT_H)), new THREE.LineBasicMaterial({ color: 0x22c55e }));
 frame.position.set(MAT_W / 2, MAT_H / 2, 0); mat.add(frame);
 const objGroup = new THREE.Group(); mat.add(objGroup);  // la pieza: posición (cx, cy, -lift), rotación R, escala para tamaño en mm
-const obj = { cx: MAT_W / 2, cy: MAT_H / 2, size: 220, yaw: 0, rot: new THREE.Quaternion(), mesh: null, tris: 0, bbox: null };   // rot: orientación 3D (marco del tapete); yaw se deriva de rot
+const obj = { cx: MAT_W / 2, cy: MAT_H / 2, size: 260, yaw: 0, rot: new THREE.Quaternion(), mesh: null, tris: 0, bbox: null };   // rot: orientación 3D (marco del tapete); yaw se deriva de rot
 function yawOf(q) { const v = new THREE.Vector3(1, 0, 0).applyQuaternion(q); return Math.atan2(v.y, v.x); }
 function tiltDeg(q) { const v = new THREE.Vector3(0, 0, 1).applyQuaternion(q); return Math.acos(Math.min(1, Math.max(-1, v.z))) * 180 / Math.PI; }
 function matQuat() { const R = lastPose.pose.R; return new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().set(R[0][0], R[1][0], R[2][0], 0, R[0][1], R[1][1], R[2][1], 0, R[0][2], R[1][2], R[2][2], 0, 0, 0, 0, 1)); }   // tapete→cámara (R en columnas r1 r2 r3)
@@ -236,6 +236,32 @@ function gestures(active, t) {
   return { grasping, hull };
 }
 
+// ---------- encuadre automático del tapete (zoom digital): cuando se ven los marcadores con margen seguro, la vista se acerca
+// hasta que la zona del tapete (más la pieza y algo de aire por encima) llena el área; suave, con histéresis; se congela si se pierde la pose.
+const viewEl = document.getElementById("view"), zoomBtn = document.getElementById("zoom");
+const zoom = { on: true, k: 1, cx: 0, cy: 0, tk: 1, tcx: 0, tcy: 0, lastT: 0 };
+try { zoom.on = localStorage.getItem("jedomi_visor_zoom") !== "0"; } catch (e) { }
+function setZoomBtn() { if (zoomBtn) { zoomBtn.setAttribute("aria-pressed", String(zoom.on)); zoomBtn.style.opacity = zoom.on ? "1" : ".6"; } }
+if (zoomBtn) zoomBtn.onclick = () => { zoom.on = !zoom.on; try { localStorage.setItem("jedomi_visor_zoom", zoom.on ? "1" : "0"); } catch (e) { } setZoomBtn(); if (!zoom.on) { zoom.k = zoom.tk = 1; viewEl.style.transform = ""; } log("encuadre " + (zoom.on ? "activado" : "desactivado")); };
+setZoomBtn();
+function autoFrame(cornersPx, hull, t) {
+  if (!zoom.on || !viewEl) return;
+  if (cornersPx && nmark >= 3 && !poseFrozen) {
+    let x0 = Math.min(...cornersPx.map(c => c[0])), x1 = Math.max(...cornersPx.map(c => c[0])), y0 = Math.min(...cornersPx.map(c => c[1])), y1 = Math.max(...cornersPx.map(c => c[1]));
+    if (hull) { x0 = Math.min(x0, hull.x0); x1 = Math.max(x1, hull.x1); y0 = Math.min(y0, hull.y0); y1 = Math.max(y1, hull.y1); }
+    const mw = x1 - x0, mh = y1 - y0, mx = 0.10 * mw, my = 0.12 * mh;                 // margen seguro alrededor
+    x0 -= mx; x1 += mx; y0 -= my + 0.18 * mh; y1 += my;                               // aire extra por encima (pieza levantada, manos)
+    const r = viewEl.getBoundingClientRect(); const sc = Math.min(r.width / W, r.height / Hh); const dw = W * sc, dh = Hh * sc;   // imagen mostrada (contain)
+    const k = Math.min(3, Math.max(1, Math.min(r.width / ((x1 - x0) * sc), r.height / ((y1 - y0) * sc))));
+    const bcx = (r.width - dw) / 2 + (x0 + x1) / 2 * sc - r.width / 2, bcy = (r.height - dh) / 2 + (y0 + y1) / 2 * sc - r.height / 2;   // centro del recuadro respecto al centro de la vista (px de pantalla)
+    // histéresis: sólo cambia el objetivo si la variación es apreciable (evita respirar con el ruido de las esquinas)
+    if (Math.abs(k - zoom.tk) > 0.06 * zoom.tk || Math.hypot(bcx - zoom.tcx, bcy - zoom.tcy) > 0.03 * r.width) { zoom.tk = k; zoom.tcx = bcx; zoom.tcy = bcy; }
+  }
+  // seguimiento suave hacia el objetivo (la transición CSS alisa el resto)
+  const a = 0.12; zoom.k += (zoom.tk - zoom.k) * a; zoom.cx += (zoom.tcx - zoom.cx) * a; zoom.cy += (zoom.tcy - zoom.cy) * a;
+  if (t - zoom.lastT > 0.1) { zoom.lastT = t; viewEl.style.transform = zoom.k > 1.01 ? `translate(${(-zoom.cx * zoom.k).toFixed(1)}px, ${(-zoom.cy * zoom.k).toFixed(1)}px) scale(${zoom.k.toFixed(3)})` : ""; }
+}
+
 // ---------- ratón con «superpoderes» (teclado/ratón como alternativa a las manos): arrastrar mueve, rueda escala,
 // botón derecho o Mayús+arrastrar gira en 3D (horizontal: sobre el tapete; vertical: volteo hacia/desde la cámara)
 const stageEl = document.getElementById("stage");
@@ -274,7 +300,7 @@ window.__ar = { obj, mouse };                               // depuración/QA (w
 // ---------- utilidades UI
 const logs = []; function log(m) { const s = new Date().toLocaleTimeString() + " " + m; logs.push(s); console.log(s); }
 let actx = null; function beep(f) { try { actx = actx || new AudioContext(); const o = actx.createOscillator(), g = actx.createGain(); o.frequency.value = f; g.gain.value = 0.08; o.connect(g); g.connect(actx.destination); o.start(); o.stop(actx.currentTime + 0.07); } catch (e) { } }
-const overlay = document.createElement("canvas"); overlay.style.cssText = "position:absolute;inset:0;width:100%;height:100%;object-fit:contain;pointer-events:none"; document.getElementById("stage").insertBefore(overlay, document.getElementById("hud")); const octx = overlay.getContext("2d");
+const overlay = document.createElement("canvas"); overlay.style.cssText = "position:absolute;inset:0;width:100%;height:100%;object-fit:contain;pointer-events:none"; document.getElementById("view").appendChild(overlay); const octx = overlay.getContext("2d");
 
 // ---------- bucle
 let source = video;                                   // fuente de imagen: la cámara o, en modo prueba (?img=…), una foto fija
@@ -284,7 +310,7 @@ async function start(opts = {}) {
     const im = new Image(); await new Promise((res, rej) => { im.onload = res; im.onerror = () => rej(new Error("no se pudo cargar " + imgParam)); im.src = imgParam; }); source = im;   // onload, no decode(): decode() se aplaza en pestañas ocultas
     W = im.naturalWidth; Hh = im.naturalHeight; video.style.display = "none";
     const bg = document.createElement("canvas"); bg.width = W; bg.height = Hh; bg.getContext("2d").drawImage(im, 0, 0);
-    bg.style.cssText = "position:absolute;inset:0;width:100%;height:100%;object-fit:contain"; document.getElementById("stage").prepend(bg);
+    bg.style.cssText = "position:absolute;inset:0;width:100%;height:100%;object-fit:contain"; document.getElementById("view").prepend(bg);
   } else {
     // la cámara la eligió el alumno en la pantalla previa (devices.js); sin elección, la predeterminada del navegador
     const vc = opts.cameraId ? { deviceId: { exact: opts.cameraId }, width: { ideal: 1920 }, height: { ideal: 1080 } } : { width: { ideal: 1920 }, height: { ideal: 1080 }, facingMode: "environment" };
@@ -359,6 +385,7 @@ function loop() {
   renderer.render(scene, camera);
   const T4 = performance.now();
   const cornersPx = [[0, 0], [MAT_W, 0], [MAT_W, MAT_H], [0, MAT_H]].map(([x, y]) => { const v = new THREE.Vector3(x, y, 0); mat.localToWorld(v); v.project(camera); return [Math.round((v.x + 1) / 2 * W), Math.round((1 - v.y) / 2 * Hh)]; });
+  autoFrame(cornersPx, hull, t);
   window.__dbg = { ms: { aruco: T1 - T0, hands: T3 - T2, render: T4 - T3 }, cornersPx, markersPx: markers.map(m => ({ id: m.id, c: m.corners.map(c => [Math.round(c.x * 4), Math.round(c.y * 4)]) })), pose: lastPose && lastPose.pose, drawTris: renderer.info.render.triangles, W, Hh };
   octx.clearRect(0, 0, W, Hh);
   for (const h of active) {
@@ -385,7 +412,7 @@ function invert3(Mx) { const m = Mx.flat(); const [a, b, c, d, e, f, g, h, i] = 
 const prejoin = initPrejoin({ strings: MOODLE?.strings || {}, testMode: !!new URLSearchParams(location.search).get("img"),
   onEnter: o => start(o).catch(e => { stepEl.textContent = "Error: " + e.message; document.getElementById("pjstatus").textContent = "Error: " + e.message; document.getElementById("start").style.display = "grid"; console.error(e); }) });
 document.getElementById("model").onchange = e => loadModel(e.target.value);
-document.getElementById("reset").onclick = () => { obj.cx = MAT_W / 2; obj.cy = MAT_H / 2; obj.size = 220; obj.yaw = 0; obj.rot.identity(); };
+document.getElementById("reset").onclick = () => { obj.cx = MAT_W / 2; obj.cy = MAT_H / 2; obj.size = 260; obj.yaw = 0; obj.rot.identity(); };
 document.getElementById("quit").onclick = () => { stopTalk(); const s = video.srcObject; if (s) s.getTracks().forEach(tr => tr.stop()); };   // es un enlace: vuelve al curso
 
 // ---------- tutor de Jedomi (barra lateral del curso, ya inyectada en esta página por el plugin)

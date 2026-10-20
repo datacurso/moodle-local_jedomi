@@ -861,3 +861,5 @@ $string['stem_visor_pj_nocam'] = 'No se pudo acceder a la cámara. Revisa el per
 $string['stem_visor_pj_speak'] = 'Habla para ver el nivel…';
 $string['stem_visor_pj_nodev'] = 'Este navegador no da acceso a cámara o micrófono aquí.';
 $string['stem_visor_pj_nomic'] = 'Sin acceso al micrófono: podrás ver y manipular la pieza, pero no conversar por voz.';
+$string['stem_visor_zoom'] = 'Encuadre automático';
+$string['stem_visor_zoom_help'] = 'Cuando se ve el tapete entero, acerca la imagen para que el tapete llene la pantalla';
