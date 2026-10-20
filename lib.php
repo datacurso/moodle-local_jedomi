@@ -911,6 +911,14 @@ function local_jedomi_activity_context(int $courseid, int $cmid): string {
     if ($intro !== '') {
         $out[] = get_string('prompt_tutor_activity_desc', 'local_jedomi') . ' ' . core_text::substr($intro, 0, 2500);
     }
+    // Actividad con visor RA (modelo 3D): cómo se ve la selección y cómo puede el tutor señalar una pieza en el visor.
+    $hasmodel = $cm->modname === 'jedomiar';
+    if (!$hasmodel && $cm->modname === 'assign') {
+        $hasmodel = (bool) \local_jedomi\stem\model_validator::get_model(\context_module::instance($cm->id));
+    }
+    if ($hasmodel) {
+        $out[] = get_string('prompt_tutor_visor_point', 'local_jedomi');
+    }
     if ($cm->modname === 'jedomiar') {
         $payload = null;
         foreach (['\\mod_jedomiar\\local\\service\\model_service', '\\mod_jedomiar\\local\\model_service'] as $cls) {

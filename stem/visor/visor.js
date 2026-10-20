@@ -308,7 +308,7 @@ document.getElementById("part-close")?.addEventListener("click", () => selectPar
 document.getElementById("part-explain")?.addEventListener("click", async () => {
   const p = pieces.sel; if (!p) return;
   const ans = await askTutor(`Estoy viendo la pieza «${p.name}» del modelo ${modelLabel()}${p.desc ? " (" + p.desc + ")" : ""}. Te adjunto la captura. Explícame qué función cumple esta pieza y cómo se relaciona con las demás.`);
-  if (talk.on && ans) speak(ans);
+  if (ans) { const clean = handlePointMarks(ans); if (talk.on) speak(clean); }
 });
 function partsTick() {                                   // animación de la separación + aplicar desplazamientos
   if (!pieces.list.length) return;
@@ -320,6 +320,8 @@ function partsTick() {                                   // animación de la sep
   }
   applyParts(pieces.list, pieces.explode);
 }
+// una pieza no se aleja de su sitio más que el tamaño del modelo (evita que salga volando fuera del tapete)
+function clampPartOffset(p) { const lim = (obj.size / (obj.root ? obj.root.getWorldScale(new THREE.Vector3()).x / mat.getWorldScale(new THREE.Vector3()).x : 1)) * 0.9; if (p.offset.length() > lim) p.offset.setLength(lim); }
 // desplazamiento en mm del tapete → desplazamiento en coordenadas del modelo (root)
 function matDeltaToRoot(a, b) {
   const z = objGroup.position.z, pa = mat.localToWorld(new THREE.Vector3(a[0], a[1], z)), pb = mat.localToWorld(new THREE.Vector3(b[0], b[1], z));
@@ -344,7 +346,7 @@ function partGestures(active, t, hull) {
   const g = pieces.grab;
   if (g) {
     const h = active.find(h => h.pinch && h.pinchMM && (h.label === g.label || Math.hypot(h.pinchMM[0] - g.last[0], h.pinchMM[1] - g.last[1]) < 90));
-    if (h) { g.part.offset.add(matDeltaToRoot(g.last, h.pinchMM)); g.last = h.pinchMM.slice(); g.label = h.label; g.t = t;
+    if (h) { g.part.offset.add(matDeltaToRoot(g.last, h.pinchMM)); clampPartOffset(g.part); g.last = h.pinchMM.slice(); g.label = h.label; g.t = t;
       if (h.qHand && g.q0 && lastPose) { const qRel = h.qHand.clone().multiply(g.q0.clone().invert()); const ang = 2 * Math.acos(Math.min(1, Math.abs(qRel.w)));
         if (!g.armed && ang > ROT_DEAD) { g.armed = true; g.q0 = h.qHand.clone(); g.rot0 = g.part.rot.clone(); }
         else if (g.armed) { const qR = matQuat(); g.part.rot.copy(matRotToRoot(qR.clone().invert().multiply(qRel).multiply(qR)).multiply(g.rot0)); } }
@@ -367,7 +369,7 @@ function padRefresh() { if (padTarget) padTarget.textContent = padTargetPart() ?
 const STEP_MM = 10, STEP_ANG = 10 * Math.PI / 180;
 function padAction(a) {
   const part = padTargetPart(); lockZoom("interacción");
-  const mv = (dx, dy) => { if (part) part.offset.add(matDeltaToRoot([0, 0], [dx, dy])); else { obj.cx = clampX(obj.cx + dx); obj.cy = clampY(obj.cy + dy); } };
+  const mv = (dx, dy) => { if (part) { part.offset.add(matDeltaToRoot([0, 0], [dx, dy])); clampPartOffset(part); } else { obj.cx = clampX(obj.cx + dx); obj.cy = clampY(obj.cy + dy); } };
   const rt = (axis, ang) => { if (part) rotatePart(part, axis, ang); else obj.rot.premultiply(new THREE.Quaternion().setFromAxisAngle(axis, ang)); };
   switch (a) {
     case "left": mv(-STEP_MM, 0); break; case "right": mv(STEP_MM, 0); break; case "up": mv(0, -STEP_MM); break; case "down": mv(0, STEP_MM); break;
@@ -424,7 +426,7 @@ stageEl.addEventListener("pointermove", ev => {
   }
   if (!mouse.down) { if (!uiTarget(ev) && poseOK && obj.mesh) { const over = overPx(objectHullPx(), screenToPx(ev), 40); if (over !== mouse.over) { mouse.over = over; stageEl.style.cursor = over ? "grab" : ""; } } return; }
   const p = screenToPx(ev);
-  if (mouse.part) { const mm = pxToMM(p); if (mm && mouse.lastMM) { const d = matDeltaToRoot(mouse.lastMM, mm); mouse.part.offset.add(d); mouse.movedMM = (mouse.movedMM || 0) + Math.hypot(mm[0] - mouse.lastMM[0], mm[1] - mouse.lastMM[1]); mouse.movedRoot = (mouse.movedRoot || 0) + d.length(); mouse.lastMM = mm; } stageEl.style.cursor = "grabbing"; mouse.last = p; return; }
+  if (mouse.part) { const mm = pxToMM(p); if (mm && mouse.lastMM) { const d = matDeltaToRoot(mouse.lastMM, mm); mouse.part.offset.add(d); clampPartOffset(mouse.part); mouse.movedMM = (mouse.movedMM || 0) + Math.hypot(mm[0] - mouse.lastMM[0], mm[1] - mouse.lastMM[1]); mouse.movedRoot = (mouse.movedRoot || 0) + d.length(); mouse.lastMM = mm; } stageEl.style.cursor = "grabbing"; mouse.last = p; return; }
   if (mouse.btn === 0 && !mouse.shift) { const mm = pxToMM(p); if (mm) { obj.cx = clampX(mm[0] - mouse.offset[0]); obj.cy = clampY(mm[1] - mouse.offset[1]); } stageEl.style.cursor = "grabbing"; }
   else if (mouse.rotPart) { const dx = p[0] - mouse.last[0], dy = p[1] - mouse.last[1]; rotatePart(mouse.rotPart, AX.z, dx * 0.008); rotatePart(mouse.rotPart, AX.x, -dy * 0.008); stageEl.style.cursor = "move"; }
   else { const dx = p[0] - mouse.last[0], dy = p[1] - mouse.last[1];
@@ -567,7 +569,7 @@ const J = { sidebar: () => document.getElementById("jedomi-sidebar"), trigger: (
   lastAnswer: () => { const b = document.querySelectorAll("#jedomi-messages .jedomi-message-assistant .jedomi-bubble"); if (!b.length) return "";
     const c = b[b.length - 1].cloneNode(true); c.querySelectorAll(".jedomi-msg-actions, button").forEach(x => x.remove()); return c.innerText.trim(); } };
 const modelLabel = () => (MOODLE && document.getElementById("model").value !== "aro" && MOODLE.modelName) || (document.getElementById("model").selectedOptions[0]?.textContent || "la pieza");
-const sceneText = () => `(${pieces.sel ? "pieza seleccionada «" + pieces.sel.name + "», " : ""}modelo «${modelLabel()}», ${Math.round(obj.tris / 1000)} mil triángulos, tamaño ${Math.round(obj.size)} mm, giro ${Math.round(obj.yaw * 180 / Math.PI)}°, inclinación ${Math.round(tiltDeg(obj.rot))}°, ${heldBy || two ? "la tengo cogida" : "está apoyada en el tapete"})`;
+const sceneText = () => `(${pieces.sel ? "pieza seleccionada «" + pieces.sel.name + "», resaltada en naranja en la captura; " : ""}modelo «${modelLabel()}», ${Math.round(obj.tris / 1000)} mil triángulos, tamaño ${Math.round(obj.size)} mm, giro ${Math.round(obj.yaw * 180 / Math.PI)}°, inclinación ${Math.round(tiltDeg(obj.rot))}°, ${heldBy || two ? "la tengo cogida" : "está apoyada en el tapete"})`;
 function openPanel() { const sb = J.sidebar(); if (sb && sb.classList.contains("jedomi-closed")) J.trigger()?.click(); }
 async function snapshot() {                             // captura compuesta: fuente de vídeo + lienzo 3D, a media resolución
   renderer.render(scene, camera);
@@ -603,7 +605,7 @@ async function askTutor(text, withSnapshot = true) {    // devuelve la respuesta
 }
 document.getElementById("explain").onclick = async () => {
   sceneChanged(); const ans = await askTutor(`Estoy viendo en realidad aumentada el modelo 3D de esta actividad ${sceneText()}. Te adjunto la captura de lo que veo. Ayúdame a entender qué es y cómo funciona.`);
-  if (talk.on && ans) speak(ans);
+  if (ans) { const clean = handlePointMarks(ans); if (talk.on) speak(clean); }
 };
 
 // ---------- conversación nueva al entrar en otra actividad: el chat de Jedomi es de sesión y arrastraba el contexto de
@@ -615,6 +617,42 @@ document.getElementById("explain").onclick = async () => {
   if (last === String(MOODLE.cmid)) return;
   let tries = 0; const t = setInterval(() => { const b = document.getElementById("jedomi-clear"); if (b) { clearInterval(t); setTimeout(() => { b.click(); log("conversación nueva para esta actividad"); }, 800); } else if (++tries > 40) clearInterval(t); }, 150);
 })();
+
+// ---------- señalar piezas: el visor hace parpadear la pieza (a petición del alumno o del tutor con ⟦señalar: Nombre⟧)
+const norm = t => (t || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+function findPart(text) {                                // pieza que más palabras de su nombre comparte con el texto
+  const t = " " + norm(text) + " ", STOP = new Set(["de", "la", "el", "del", "los", "las", "y", "en", "a"]);
+  let best = null, bestScore = 0;
+  for (const p of pieces.list) {
+    if (p.inert || !p.name) continue;
+    const toks = norm(p.name).split(" ").filter(w => w.length >= 2 && !STOP.has(w));
+    let score = toks.reduce((acc, w) => acc + (t.includes(" " + w + " ") ? w.length : 0), 0);
+    if (t.includes(" " + norm(p.name) + " ")) score += 100;                  // nombre completo
+    const compact = t.replace(/ /g, "");                                     // «USB-C» = «usb c» = «usbc»
+    for (const h of (p.name.match(/[A-Za-z0-9]+-[A-Za-z0-9]+/g) || [])) if (compact.includes(norm(h).replace(/ /g, ""))) score += 50;
+    if (score > bestScore) { best = p; bestScore = score; }
+  }
+  return best;
+}
+function pointAt(p, why) {
+  if (!p) return false;
+  if (!pieces.on) { pieces.on = true; refreshPiecesUI(); }
+  selectPart(p); let k = 0;
+  const blink = setInterval(() => { setHighlight(p, k % 2 ? "selected" : "hover"); if (++k >= 8) { clearInterval(blink); setHighlight(p, "selected"); } }, 220);
+  if (labelEl) { const r = stageEl.getBoundingClientRect(); labelEl.hidden = false; labelEl.textContent = "👉 " + p.name; labelEl.style.left = (r.width / 2 - 60) + "px"; labelEl.style.top = "70px"; setTimeout(() => { labelEl.hidden = true; }, 2600); }
+  log("señalada: " + p.name + " (" + why + ")"); return true;
+}
+const POINT_RE = /⟦\s*se[ñn]alar\s*:\s*([^⟧]+)⟧/gi;
+function handlePointMarks(ans) {                          // el tutor señala: ⟦señalar: Teclado⟧ → parpadeo; se quita del texto y del chat
+  let any = false; for (const m of ans.matchAll(POINT_RE)) { const p = pieces.list.find(x => norm(x.name) === norm(m[1])) || findPart(m[1]); if (pointAt(p, "tutor")) any = true; }
+  if (any || POINT_RE.test(ans)) {
+    const b = document.querySelectorAll("#jedomi-messages .jedomi-message-assistant .jedomi-bubble"); const last = b[b.length - 1];
+    if (last) { const w = document.createTreeWalker(last, NodeFilter.SHOW_TEXT); let n; while ((n = w.nextNode())) if (n.nodeValue.includes("⟦")) n.nodeValue = n.nodeValue.replace(POINT_RE, "👉"); }
+  }
+  POINT_RE.lastIndex = 0; return ans.replace(POINT_RE, "").trim();
+}
+const ASK_POINT_RE = { test: t => /\b(senal|muestr|ensen|indica|donde (esta|queda)|cual es)/.test(norm(t)) };   // sin tildes: «señálamela», «muéstrame»…
+queueMicrotask(() => { if (window.__ar) Object.assign(window.__ar, { point: t => pointAt(findPart(t), "qa"), marks: handlePointMarks, findPart, asks: t => ASK_POINT_RE.test(t) }); });   // QA
 
 // ---------- modo conversación: el tutor habla y escucha, como en la estación física
 // Voz → texto: SpeechRecognition del navegador (Chrome/Edge; en Chrome el audio pasa por el servicio de voz de Google).
@@ -639,10 +677,13 @@ function listen() {
   r.onresult = async ev => {
     const res = ev.results[ev.results.length - 1]; if (!res.isFinal) return;
     const said = res[0].transcript.trim(); if (!said || talk.speaking || asking) return;
-    log("alumno dijo: " + said);
+    const conf = typeof res[0].confidence === "number" ? res[0].confidence : 1;
+    log("alumno dijo: " + said + " (confianza " + conf.toFixed(2) + ")");
+    if (conf > 0 && conf < 0.55) { stepEl.textContent = "🤔 No te entendí bien: «" + said + "». Repítelo, por favor."; return; }   // dictado dudoso: no se envía
+    if (ASK_POINT_RE.test(said)) pointAt(findPart(said) || pieces.sel, "alumno");
     if (/^(terminar|salir|basta|parar)\.?$/i.test(said)) { stopTalk(); speak("Hasta luego."); return; }
     stepEl.textContent = "⌛ Tú: " + said;
-    const ans = await askTutor(`${said} ${sceneText()}`, sceneChanged()); if (ans) speak(ans); else if (talk.on) listen();
+    const ans = await askTutor(`${said} ${sceneText()}`, sceneChanged()); if (ans) speak(handlePointMarks(ans)); else if (talk.on) listen();
   };
   r.onerror = e => { if (e.error === "not-allowed" || e.error === "service-not-allowed") { stopTalk(); stepEl.textContent = "El navegador no permite el micrófono aquí (" + e.error + "). Puedes seguir leyendo al tutor en el chat de la izquierda."; } };
   r.onend = () => { if (talk.on && !talk.speaking && !asking) setTimeout(listen, 250); };   // Chrome corta la escucha continua cada ~60 s
@@ -655,7 +696,7 @@ async function startTalk() {
   sceneChanged(); talk.on = true; const b = document.getElementById("talk"); b.textContent = "⏹ " + ((MOODLE?.strings?.talk_stop) || "Parar voz"); b.classList.add("danger");
   openPanel();
   const ans = await askTutor(`Activo el modo conversación en el visor de realidad aumentada de esta actividad. Te adjunto lo que veo ahora ${sceneText()}. Salúdame en una frase y hazme la primera pregunta o indicación según el modo del curso. Responde en frases cortas: te voy a escuchar en voz alta.`);
-  if (ans) speak(ans); else listen();
+  if (ans) speak(handlePointMarks(ans)); else listen();
 }
 function stopTalk() {
   talk.on = false; try { talk.rec?.abort(); } catch (e) { } talk.rec = null; if ("speechSynthesis" in window) speechSynthesis.cancel(); talk.speaking = false;
