@@ -107,6 +107,6 @@ window.JEDOMI_VISOR = <?php echo json_encode($config, JSON_UNESCAPED_SLASHES | J
 <script src="<?php echo $base; ?>vendor/cv.js"></script>
 <script src="<?php echo $base; ?>vendor/aruco.js"></script>
 <script src="<?php echo $base; ?>vendor/dictionaries/aruco_4x4_1000.js"></script>
-<script type="module" src="<?php echo $base; ?>visor.js"></script>
+<script type="module" src="<?php echo $base; ?>visor.js?v=<?php echo (int) get_config('local_jedomi', 'version'); ?>"></script>
 <?php
 echo $OUTPUT->footer();

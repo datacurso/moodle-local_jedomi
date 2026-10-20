@@ -163,35 +163,46 @@ function objectHullPx() {
 }
 function overPx(hull, p, margin) { return hull && p[0] > hull.x0 - margin && p[0] < hull.x1 + margin && p[1] > hull.y0 - margin && p[1] < hull.y1 + margin; }
 
-// ---------- gestos (v12.3)
+// ---------- gestos (v12.4)
+// v12.4 (sesión 2026-10-20): (a) con el objeto ya cogido, un segundo pellizco se une aunque no caiga justo en el borde (como el
+// segundo dedo en la pantalla de un móvil); (b) la identidad de quien sujeta se mantiene por POSICIÓN del pellizco, no por la
+// etiqueta de la mano (al perder y recuperar la mano la etiqueta cambia: Left → Left3, y eso soltaba el objeto); (c) 0,35 s de
+// gracia si el pellizco desaparece un instante (mano fuera de cuadro o detección perdida) antes de dar el objeto por soltado.
 let heldBy = null, grabOff = [0, 0], grabYaw = 0, grabAngle = null, two = null; const objFilter = new OneEuro(1.3, 0.04);
-let pinchHold = new Set();
+let pinchHold = new Set(), holdPts = [], lastHoldT = 0;
 function gestures(active, t) {
   const hull = objectHullPx();
-  const near = h => { const d = h.pinchMM && Math.hypot(h.pinchMM[0] - obj.cx, h.pinchMM[1] - obj.cy); return d != null && d < obj.size * 0.6 * 2.2; };
-  let pinchers = active.filter(h => h.pinch && ((pinchHold.has(h.label) && near(h)) || overPx(hull, h.pinchPx, 60)));
+  const nearHold = h => h.pinchMM && holdPts.some(p => Math.hypot(h.pinchMM[0] - p[0], h.pinchMM[1] - p[1]) < 90);
+  const nearObj = h => h.pinchMM && Math.hypot(h.pinchMM[0] - obj.cx, h.pinchMM[1] - obj.cy) < obj.size * 1.4;
+  const holding = !!(heldBy || two);
+  let pinchers = active.filter(h => h.pinch && h.pinchMM && (nearHold(h) || overPx(hull, h.pinchPx, 60) || (holding && nearObj(h))));
   if (pinchers.length >= 2) { pinchers.sort((a, b) => Math.hypot(a.pinchMM[0] - obj.cx, a.pinchMM[1] - obj.cy) - Math.hypot(b.pinchMM[0] - obj.cx, b.pinchMM[1] - obj.cy)); }
   let grasping = new Set();
   if (pinchers.length >= 2) {
     const a = pinchers[0], b = pinchers[1], p1 = a.pinchMM, p2 = b.pinchMM;
     const dist = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]), ang = Math.atan2(p2[1] - p1[1], p2[0] - p1[0]), mid = [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2];
-    if (!two) { two = { dist, size: obj.size, ang, yaw: obj.yaw, mid, c: [obj.cx, obj.cy], last: ang }; heldBy = null; log("dos pellizcos: girar/escalar"); }
+    if (!two) { two = { dist, size: obj.size, ang, yaw: obj.yaw, mid, c: [obj.cx, obj.cy], last: ang }; heldBy = null; log("dos pellizcos: girar/escalar/mover"); beep(990); }
     let a2 = two.last + ((ang - two.last + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI; two.last = a2;
     obj.size = Math.min(300, Math.max(90, two.size * Math.min(1.7, Math.max(0.6, dist / two.dist))));
     obj.yaw = two.yaw + (a2 - two.ang);
     obj.cx = two.c[0] + (mid[0] - two.mid[0]); obj.cy = two.c[1] + (mid[1] - two.mid[1]);
-    pinchHold = new Set([a.label, b.label]); grasping.add(a.label); grasping.add(b.label);
+    pinchHold = new Set([a.label, b.label]); holdPts = [p1, p2]; lastHoldT = t; grasping.add(a.label); grasping.add(b.label);
   } else if (pinchers.length === 1) {
     const h = pinchers[0]; two = null;
-    if (heldBy !== h.label) { heldBy = h.label; grabOff = [h.pinchMM[0] - obj.cx, h.pinchMM[1] - obj.cy]; grabYaw = obj.yaw; grabAngle = h.fingerAngle; objFilter.reset(); log(`cogido por el borde con ${h.label}`); beep(880); }
+    if (heldBy !== h.label) {
+      if (heldBy && nearHold(h)) { heldBy = h.label; }           // misma mano con etiqueta nueva: sigue cogido sin saltos
+      else { heldBy = h.label; grabOff = [h.pinchMM[0] - obj.cx, h.pinchMM[1] - obj.cy]; grabYaw = obj.yaw; grabAngle = h.fingerAngle; objFilter.reset(); log(`cogido por el borde con ${h.label}`); beep(880); }
+    }
     const tgt = objFilter.filter([h.pinchMM[0] - grabOff[0], h.pinchMM[1] - grabOff[1]], t);
     obj.cx = Math.min(1.3 * MAT_W, Math.max(-0.3 * MAT_W, tgt[0])); obj.cy = Math.min(1.3 * MAT_H, Math.max(-0.3 * MAT_H, tgt[1]));
     const d = ((h.fingerAngle - grabAngle + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
     if (Math.abs(d) > 3 * Math.PI / 180) obj.yaw = grabYaw + d;
-    pinchHold = new Set([h.label]); grasping.add(h.label);
+    pinchHold = new Set([h.label]); holdPts = [h.pinchMM]; lastHoldT = t; grasping.add(h.label);
+  } else if (holding && t - lastHoldT < 0.35) {
+    // gracia: el pellizco desapareció un instante; mantenemos el agarre sin mover el objeto
   } else {
     if (heldBy || two) { log("soltado"); beep(440); }
-    heldBy = null; two = null; pinchHold = new Set();
+    heldBy = null; two = null; pinchHold = new Set(); holdPts = [];
   }
   for (const h of active) { h.holding = grasping.has(h.label); h.otherHolding = (heldBy && heldBy !== h.label) || false; }
   return { grasping, hull };
@@ -207,12 +218,23 @@ let source = video;                                   // fuente de imagen: la c�
 async function start() {
   const imgParam = new URLSearchParams(location.search).get("img");
   if (imgParam) {                                     // modo prueba sin cámara (el panel del navegador de Claude no permite captura)
-    const im = new Image(); im.src = imgParam; await im.decode(); source = im;
+    const im = new Image(); await new Promise((res, rej) => { im.onload = res; im.onerror = () => rej(new Error("no se pudo cargar " + imgParam)); im.src = imgParam; }); source = im;   // onload, no decode(): decode() se aplaza en pestañas ocultas
     W = im.naturalWidth; Hh = im.naturalHeight; video.style.display = "none";
     const bg = document.createElement("canvas"); bg.width = W; bg.height = Hh; bg.getContext("2d").drawImage(im, 0, 0);
     bg.style.cssText = "position:absolute;inset:0;width:100%;height:100%;object-fit:contain"; document.getElementById("stage").prepend(bg);
   } else {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1920 }, height: { ideal: 1080 }, facingMode: "environment" }, audio: false });
+    let stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1920 }, height: { ideal: 1080 }, facingMode: "environment" }, audio: false });
+    // autodetección como en la estación: si hay una OBSBOT y el navegador abrió otra cámara (p. ej. la FaceTime del portátil), cambiamos a la OBSBOT
+    try {
+      const cams = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === "videoinput");
+      const cur = stream.getVideoTracks()[0]; const obsbot = cams.find(d => /obsbot/i.test(d.label));
+      log("cámaras: " + cams.map(d => d.label || d.deviceId.slice(0, 6)).join(" | ") + " → usando " + (cur ? cur.label : "?"));
+      if (obsbot && cur && cur.getSettings().deviceId !== obsbot.deviceId) {
+        cur.stop();
+        stream = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: obsbot.deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
+        log("cambiada a " + obsbot.label);
+      }
+    } catch (e) { console.warn("selección de cámara", e); }
     video.srcObject = stream; await video.play();
     W = video.videoWidth; Hh = video.videoHeight;
   }
@@ -296,7 +318,7 @@ function loop() {
   // telemetría de desarrollo (?telemetry=1): cada 2 s envía el estado a un servidor local para analizar la sesión sin acceso al navegador
   if (TELEMETRY && t - telemetryT > 2) { telemetryT = t; const ms = window.__dbg ? window.__dbg.ms : null;
     fetch("http://127.0.0.1:8766/metrics", { method: "POST", mode: "cors", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ t: Math.round(t), fps: Math.round(fps), nmark, poseFrozen, hands: active.length, pinching: active.filter(h => h.pinch).length, held: !!(heldBy || two), mode: two ? "pinch2" : (heldBy ? "pinch" : ""), size: Math.round(obj.size), tris: Math.round(obj.tris), ms: ms && { aruco: Math.round(ms.aruco), hands: Math.round(ms.hands), render: Math.round(ms.render * 10) / 10 }, W, Hh, grabs: logs.length }) }).catch(() => { }); }
+      body: JSON.stringify({ t: Math.round(t), fps: Math.round(fps), cam: (video.srcObject && video.srcObject.getVideoTracks()[0] || {}).label || "", nmark, poseFrozen, hands: active.length, pinching: active.filter(h => h.pinch).length, held: !!(heldBy || two), mode: two ? "pinch2" : (heldBy ? "pinch" : ""), size: Math.round(obj.size), tris: Math.round(obj.tris), talk: talk.on, asking, sidebar: !!document.getElementById("jedomi-sidebar"), log: logs.slice(-4), ms: ms && { aruco: Math.round(ms.aruco), hands: Math.round(ms.hands), render: Math.round(ms.render * 10) / 10 }, W, Hh, grabs: logs.length }) }).catch(() => { }); }
   statusEl.textContent = `tapete ${poseOK ? (poseFrozen ? "congelado (destapa las esquinas)" : nmark + " marcadores") : "no visto"} · manos ${active.length} · ${heldBy || two ? "COGIDO" : "libre"} · ${Math.round(obj.tris / 1000)} k triángulos · ${fps.toFixed(0)} fps`;
   requestAnimationFrame(loop);
 }
