@@ -48,8 +48,9 @@ export function buildParts(root, meta = null) {
     const generic = !m.name || /^(mesh|primitive|object)?_?\d*$/i.test(m.name);
     const nm = (generic && m.parent ? m.parent.name : m.name) || "";
     const t = byNode.get(nm) || byNode.get(m.name) || (m.parent && byNode.get(m.parent.name));
-    const c = t ? { key: "t:" + (t.key || t.name), name: t.name || nm, desc: t.description || "" } : classify(nm);
-    if (!groups.has(c.key)) groups.set(c.key, { ...c, nodes: new Set(), meshes: [] });
+    // con piezas del docente, lo que no describió (p. ej. piezas que ocultó) queda como resto inerte: no se elige ni se separa
+    const c = t ? { key: "t:" + (t.key || t.name), name: t.name || nm, desc: t.description || "" } : (byNode.size ? { key: "_rest", name: "", desc: "", inert: true } : classify(nm));
+    if (!groups.has(c.key)) groups.set(c.key, { ...c, nodes: new Set(), meshes: [] });   // c.inert se conserva
     const g = groups.get(c.key); g.nodes.add(node); g.meshes.push(m);
   }
   // centro del modelo y de cada pieza en coordenadas de root
@@ -66,13 +67,14 @@ export function buildParts(root, meta = null) {
       return { n, m4, L0, p0: n.position.clone(), q0: n.quaternion.clone(), s0: n.scale.clone() };
     });
     for (const m of g.meshes) { if (Array.isArray(m.material)) m.material = m.material.map(x => x.clone()); else m.material = m.material.clone(); }
-    parts.push({ key: g.key, name: g.name, desc: g.desc, meshes: g.meshes, nodes, centerL: cL, dir: new THREE.Vector3(), offset: new THREE.Vector3(), rot: new THREE.Quaternion() });
+    parts.push({ key: g.key, name: g.name, desc: g.desc, inert: !!g.inert, meshes: g.meshes, nodes, centerL: cL, dir: new THREE.Vector3(), offset: new THREE.Vector3(), rot: new THREE.Quaternion() });
   }
   const cModel = mbox.getCenter(new THREE.Vector3()).applyMatrix4(inv);
   const sizeL = new THREE.Box3().setFromObject(root).getSize(new THREE.Vector3()).length() / (root.matrixWorld.getMaxScaleOnAxis() || 1);
   for (const p of parts) {
     const d = p.centerL.clone().sub(cModel);
-    if (d.length() < 1e-6 * sizeL) d.set(0, 1, 0).multiplyScalar(0.05 * sizeL);   // pieza centrada (bastidor): sube un poco
+    if (p.inert) d.set(0, 0, 0);                                                     // el resto inerte no se separa
+    else if (d.length() < 1e-6 * sizeL) d.set(0, 1, 0).multiplyScalar(0.05 * sizeL);   // pieza centrada (bastidor): sube un poco
     d.y *= 1.6;                                                                    // separar más en vertical: las capas del portátil se ven mejor
     p.dir.copy(d);
   }
@@ -109,5 +111,5 @@ export function pickPart(parts, root, camera, px, W, H) {   // px: píxel de la 
   if (!parts.length) return null;
   ray.setFromCamera(new THREE.Vector2(px[0] / W * 2 - 1, -(px[1] / H * 2 - 1)), camera);
   const hit = ray.intersectObject(root, true)[0]; if (!hit) return null;
-  return parts.find(p => p.meshes.includes(hit.object)) || null;
+  const p = parts.find(p => p.meshes.includes(hit.object)); return p && !p.inert ? p : null;
 }

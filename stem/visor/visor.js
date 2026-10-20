@@ -127,8 +127,10 @@ async function loadModel(spec) {
   wrap.rotation.x = -Math.PI / 2;
   objGroup.add(wrap); obj.mesh = wrap; obj.root = root; obj.yaw = 0; obj.rot.identity(); objGroup.rotation.set(0, 0, 0);
   obj.bbox = new THREE.Box3().setFromObject(wrap);
-  pieces.list = buildParts(root, spec === MOODLE?.modelUrl ? MOODLE?.parts : null);   // piezas descritas por el docente (mod_jedomiar) o catálogo pieces.explode = pieces.target = 0; pieces.sel = pieces.hover = null; refreshPiecesUI();
-  log("piezas: " + pieces.list.length + (pieces.list.length ? " (" + pieces.list.slice(0, 6).map(p => p.name).join(", ") + "…)" : ""));
+  // piezas descritas por el docente (mod_jedomiar) o, si no hay, catálogo
+  pieces.list = buildParts(root, spec === MOODLE?.modelUrl ? MOODLE?.parts : null);
+  pieces.explode = pieces.target = 0; pieces.sel = pieces.hover = null; refreshPiecesUI();
+  const named = pieces.list.filter(p => !p.inert); log("piezas: " + named.length + (named.length ? " (" + named.slice(0, 6).map(p => p.name).join(", ") + "…)" : ""));
   console.log("modelo", spec, "triángulos", Math.round(obj.tris));
 }
 function placeObject(lifted) {
@@ -283,7 +285,7 @@ const pieces = { list: [], on: false, explode: 0, target: 0, sel: null, hover: n
 const piecesBtn = document.getElementById("pieces"), explodeBtn = document.getElementById("explode"), infoEl = document.getElementById("partinfo"), labelEl = document.getElementById("partlabel");
 const S_ = MOODLE?.strings || {};
 function refreshPiecesUI() {
-  const has = pieces.list.length > 1;
+  const has = pieces.list.filter(p => !p.inert).length > 1;
   if (piecesBtn) { piecesBtn.hidden = !has; piecesBtn.setAttribute("aria-pressed", String(pieces.on)); piecesBtn.classList.toggle("primary", pieces.on); }
   const apart = pieces.target > 0 || pieces.list.some(p => p.offset.lengthSq() > 1e-6 || Math.abs(p.rot.w) < 0.9999);
   if (explodeBtn) { explodeBtn.hidden = !has; explodeBtn.setAttribute("aria-pressed", String(apart)); explodeBtn.textContent = (apart ? "🧲 " + (S_.parts_join || "Unir piezas") : "💥 " + (S_.parts_explode || "Separar piezas")); }
