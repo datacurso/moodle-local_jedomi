@@ -860,3 +860,4 @@ $string['stem_visor_pj_enter'] = 'Entrar a la actividad';
 $string['stem_visor_pj_nocam'] = 'No se pudo acceder a la cámara. Revisa el permiso del navegador y vuelve a intentarlo.';
 $string['stem_visor_pj_speak'] = 'Habla para ver el nivel…';
 $string['stem_visor_pj_nodev'] = 'Este navegador no da acceso a cámara o micrófono aquí.';
+$string['stem_visor_pj_nomic'] = 'Sin acceso al micrófono: podrás ver y manipular la pieza, pero no conversar por voz.';

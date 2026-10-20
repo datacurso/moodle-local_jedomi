@@ -13,7 +13,7 @@ export function initPrejoin({ strings = {}, testMode = false, onEnter }) {
     const camId = camSel.value, micId = micSel.value;
     const c = { video: camId ? { deviceId: { exact: camId }, width: { ideal: 1280 }, height: { ideal: 720 } } : { width: { ideal: 1280 } }, audio: micId ? { deviceId: { exact: micId } } : true };
     try { stream = await navigator.mediaDevices.getUserMedia(c); }
-    catch (e) { try { stream = await navigator.mediaDevices.getUserMedia({ video: c.video, audio: false }); status.textContent = strings.pj_speak ? "" : ""; } catch (e2) { note.textContent = strings.pj_nocam || "Sin cámara"; return; } }
+    catch (e) { try { stream = await navigator.mediaDevices.getUserMedia({ video: c.video, audio: false }); status.textContent = strings.pj_nomic || "Sin acceso al micrófono: podrás ver, pero no conversar por voz."; } catch (e2) { note.textContent = strings.pj_nocam || "Sin cámara"; return; } }
     pv.srcObject = stream; pv.play().catch(() => { });
     const at = stream.getAudioTracks()[0];
     if (at) { actx = new (window.AudioContext || window.webkitAudioContext)(); const src = actx.createMediaStreamSource(new MediaStream([at])); const an = actx.createAnalyser(); an.fftSize = 512; src.connect(an);

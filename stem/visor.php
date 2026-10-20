@@ -56,7 +56,7 @@ $config = [
     'dev' => optional_param('dev', 0, PARAM_INT) === 1 && has_capability('local/jedomi:configuretutor', context_course::instance($course->id)),
     'strings' => ['nomodel' => get_string('stem_visor_nomodel', 'local_jedomi'), 'intro' => get_string('stem_visor_intro', 'local_jedomi'),
         'talk' => get_string('stem_visor_talk', 'local_jedomi'), 'talk_stop' => get_string('stem_visor_talk_stop', 'local_jedomi'),
-        'pj_nocam' => get_string('stem_visor_pj_nocam', 'local_jedomi'), 'pj_speak' => get_string('stem_visor_pj_speak', 'local_jedomi'), 'pj_nodev' => get_string('stem_visor_pj_nodev', 'local_jedomi'),
+        'pj_nocam' => get_string('stem_visor_pj_nocam', 'local_jedomi'), 'pj_speak' => get_string('stem_visor_pj_speak', 'local_jedomi'), 'pj_nodev' => get_string('stem_visor_pj_nodev', 'local_jedomi'), 'pj_nomic' => get_string('stem_visor_pj_nomic', 'local_jedomi'),
         'voice_consent' => get_string('stem_visor_voice_consent', 'local_jedomi'), 'voice_off' => get_string('stem_visor_voice_off', 'local_jedomi'),
         'intro_next' => get_string('stem_visor_intro_next', 'local_jedomi'), 'intro_done' => get_string('stem_visor_intro_done', 'local_jedomi'),
         'intro_s1' => get_string('stem_visor_intro_s1', 'local_jedomi'), 'intro_s2' => get_string('stem_visor_intro_s2', 'local_jedomi'), 'intro_s3' => get_string('stem_visor_intro_s3', 'local_jedomi'),

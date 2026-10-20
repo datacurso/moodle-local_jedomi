@@ -188,9 +188,10 @@ let heldBy = null, grabOff = [0, 0], two = null; const objFilter = new OneEuro(1
 let pinchHold = new Set(), holdPts = [], lastHoldT = 0;
 let qHand0 = null, rot0 = null, rotArmed = false; const ROT_DEAD = 6 * Math.PI / 180;   // 6° para empezar a girar (luego sigue 1:1, re-anclado al armar: sin salto)
 let gestureName = "libre";
-const GESTURE_HINT = { "libre": "① Pellizca el borde de la pieza con pulgar e índice para cogerla.", "cogida": "② Cogida: muévela con la mano; gira la mano para girarla. Abre los dedos para soltar.", "cogida: girando": "② Girando con tu mano. Abre los dedos para soltar.", "dos pellizcos": "③ Dos pellizcos: separa o junta para agrandar/encoger; gira las manos para girarla sobre el tapete." };
+const GESTURE_HINT = { "ratón": "🖱 Arrastra para mover · rueda: tamaño · botón derecho o Mayús+arrastrar: girar en 3D.", "libre": "① Pellizca el borde de la pieza con pulgar e índice para cogerla.", "cogida": "② Cogida: muévela con la mano; gira la mano para girarla. Abre los dedos para soltar.", "cogida: girando": "② Girando con tu mano. Abre los dedos para soltar.", "dos pellizcos": "③ Dos pellizcos: separa o junta para agrandar/encoger; gira las manos para girarla sobre el tapete." };
 function gestures(active, t) {
   const hull = objectHullPx();
+  if (mouse.down) { for (const h of active) { h.holding = false; h.otherHolding = false; } heldBy = null; two = null; holdPts = []; gestureName = "ratón"; return { grasping: new Set(["ratón"]), hull }; }
   const nearHold = h => h.pinchMM && holdPts.some(p => Math.hypot(h.pinchMM[0] - p[0], h.pinchMM[1] - p[1]) < 90);
   // 2.º pellizco: cerca del centro (radio acotado a 230 mm; QA v12.4) y a menos de un diámetro del pellizco que ya sujeta
   const nearObj = h => h.pinchMM && Math.hypot(h.pinchMM[0] - obj.cx, h.pinchMM[1] - obj.cy) < Math.min(obj.size * 1.4, 230)
@@ -234,6 +235,41 @@ function gestures(active, t) {
   for (const h of active) { h.holding = grasping.has(h.label); h.otherHolding = (heldBy && heldBy !== h.label) || false; }
   return { grasping, hull };
 }
+
+// ---------- ratón con «superpoderes» (teclado/ratón como alternativa a las manos): arrastrar mueve, rueda escala,
+// botón derecho o Mayús+arrastrar gira en 3D (horizontal: sobre el tapete; vertical: volteo hacia/desde la cámara)
+const stageEl = document.getElementById("stage");
+const mouse = { down: false, btn: 0, shift: false, last: null, offset: [0, 0], over: false };
+function screenToPx(ev) {                                // pantalla → píxeles de la imagen (object-fit: contain)
+  const r = canvas.getBoundingClientRect(); const sc = Math.min(r.width / W, r.height / Hh); const dw = W * sc, dh = Hh * sc;
+  return [(ev.clientX - (r.left + (r.width - dw) / 2)) / sc, (ev.clientY - (r.top + (r.height - dh) / 2)) / sc];
+}
+const clampX = v => Math.min(1.3 * MAT_W, Math.max(-0.3 * MAT_W, v)), clampY = v => Math.min(1.3 * MAT_H, Math.max(-0.3 * MAT_H, v));
+const uiTarget = ev => ev.target.closest && ev.target.closest("#ctl,#titlebar,#start,#jv-intro,#ia,#status,#step,.jedomi-sidebar,#jedomi-trigger");
+stageEl.addEventListener("pointerdown", ev => {
+  if (uiTarget(ev) || !poseOK || !obj.mesh) return;
+  const p = screenToPx(ev), over = overPx(objectHullPx(), p, 40);
+  if (!over && !(ev.button === 2 || ev.shiftKey)) return;          // sin pieza debajo sólo se admite el giro (derecho/Mayús)
+  mouse.down = true; mouse.btn = ev.button; mouse.shift = ev.shiftKey; mouse.last = p;
+  const mm = pxToMM(p); mouse.offset = mm ? [mm[0] - obj.cx, mm[1] - obj.cy] : [0, 0];
+  stageEl.setPointerCapture(ev.pointerId); ev.preventDefault(); log("ratón: " + (ev.button === 2 || ev.shiftKey ? "girar" : "mover"));
+});
+stageEl.addEventListener("pointermove", ev => {
+  if (!mouse.down) { if (!uiTarget(ev) && poseOK && obj.mesh) { const over = overPx(objectHullPx(), screenToPx(ev), 40); if (over !== mouse.over) { mouse.over = over; stageEl.style.cursor = over ? "grab" : ""; } } return; }
+  const p = screenToPx(ev);
+  if (mouse.btn === 0 && !mouse.shift) { const mm = pxToMM(p); if (mm) { obj.cx = clampX(mm[0] - mouse.offset[0]); obj.cy = clampY(mm[1] - mouse.offset[1]); } stageEl.style.cursor = "grabbing"; }
+  else { const dx = p[0] - mouse.last[0], dy = p[1] - mouse.last[1];
+    obj.rot.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), dx * 0.008));   // giro sobre el tapete
+    obj.rot.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -dy * 0.008));  // volteo hacia/desde la cámara
+    stageEl.style.cursor = "move"; }
+  mouse.last = p;
+});
+const mouseUp = ev => { if (!mouse.down) return; mouse.down = false; stageEl.style.cursor = mouse.over ? "grab" : ""; log("ratón: suelto"); };
+stageEl.addEventListener("pointerup", mouseUp); stageEl.addEventListener("pointercancel", mouseUp);
+stageEl.addEventListener("wheel", ev => { if (uiTarget(ev) || !poseOK || !obj.mesh) return; if (!mouse.over && !mouse.down) return;
+  obj.size = Math.min(300, Math.max(90, obj.size * (ev.deltaY < 0 ? 1.08 : 0.92))); ev.preventDefault(); }, { passive: false });
+stageEl.addEventListener("contextmenu", ev => { if (!uiTarget(ev)) ev.preventDefault(); });   // el botón derecho gira: sin menú contextual sobre el escenario
+window.__ar = { obj, mouse };                               // depuración/QA (window.__visor lo usa el bucle)
 
 // ---------- utilidades UI
 const logs = []; function log(m) { const s = new Date().toLocaleTimeString() + " " + m; logs.push(s); console.log(s); }
@@ -319,7 +355,7 @@ function loop() {
   const T3 = performance.now();
   const { grasping, hull } = poseOK ? gestures(active, t) : { grasping: new Set(), hull: null };
   // --- dibujo
-  placeObject(grasping.size > 0);
+  placeObject(grasping.size > 0 || mouse.down);
   renderer.render(scene, camera);
   const T4 = performance.now();
   const cornersPx = [[0, 0], [MAT_W, 0], [MAT_W, MAT_H], [0, MAT_H]].map(([x, y]) => { const v = new THREE.Vector3(x, y, 0); mat.localToWorld(v); v.project(camera); return [Math.round((v.x + 1) / 2 * W), Math.round((1 - v.y) / 2 * Hh)]; });
