@@ -1,0 +1,111 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template local_jedomi/stem_visor
+
+    Visor de realidad aumentada del alumno: escenario (vídeo + 3D), barra de título, controles, panel de controles,
+    ficha de pieza, intro animada y pantalla previa de dispositivos. El comportamiento lo aportan los ES modules de
+    stem/visor/ (visor.js, intro.js, devices.js, parts.js, hands3d.js) cargados al final con un importmap versionado.
+
+    Context variables required for this template:
+    * activityname, coursename, quiturl - Textos y salida
+    * dev - Muestra el selector de modelo (sólo con local/jedomi:configuretutor)
+    * hasmodel, modelurl, modelname, showaro - Opciones del selector
+    * voiceenabled - Botón Conversar
+    * base, importmap, config, verintro, vervisor - Carga de guiones (JSON ya codificado en servidor)
+
+    Example context (json):
+    {"activityname": "Framework Laptop 13", "coursename": "Laboratorio STEM", "quiturl": "#", "dev": false,
+     "hasmodel": true, "modelurl": "#", "modelname": "framework_laptop_13.glb", "showaro": false, "voiceenabled": true,
+     "base": "/local/jedomi/stem/visor/", "importmap": "{}", "config": "{}", "verintro": 1, "vervisor": 1}
+}}
+<div id="stage">
+    <div id="titlebar"><span class="tname">{{activityname}}</span><span class="tcourse">{{coursename}}</span>
+        <a id="quit" class="tquit" href="{{quiturl}}" title="{{#str}}stem_visor_quit_help, local_jedomi{{/str}}">✕ {{#str}}stem_visor_quit, local_jedomi{{/str}}</a></div>
+    <div id="view"><video id="video" autoplay playsinline muted></video><canvas id="three"></canvas></div>
+    <div id="hud">
+        <div class="vpanel" id="step">…</div>
+        <div id="ctl">
+            {{! El selector sólo existe para quien puede configurar el tutor; el alumno recibe únicamente la pieza del docente. }}
+            <select id="model" {{^dev}}hidden{{/dev}}>
+                {{#hasmodel}}<option value="{{modelurl}}" selected>{{modelname}}</option>{{/hasmodel}}
+                {{#showaro}}<option value="aro" {{^hasmodel}}selected{{/hasmodel}}>Aro de prueba (desarrollo)</option>{{/showaro}}
+            </select>
+            {{#voiceenabled}}<button id="talk" class="primary" title="{{#str}}stem_visor_talk_help, local_jedomi{{/str}}">🎙 {{#str}}stem_visor_talk, local_jedomi{{/str}}</button>{{/voiceenabled}}
+            <button id="explain" title="{{#str}}stem_visor_explain_help, local_jedomi{{/str}}">💬 {{#str}}stem_visor_explain, local_jedomi{{/str}}</button>
+            <button id="reset" title="{{#str}}stem_visor_reset_help, local_jedomi{{/str}}">⟲ {{#str}}stem_visor_reset, local_jedomi{{/str}}</button>
+            <button id="pieces" hidden aria-pressed="false" title="{{#str}}stem_visor_parts_help, local_jedomi{{/str}}">🧩 {{#str}}stem_visor_parts, local_jedomi{{/str}}</button>
+            <button id="explode" hidden aria-pressed="false" title="{{#str}}stem_visor_parts_explode_help, local_jedomi{{/str}}">💥 {{#str}}stem_visor_parts_explode, local_jedomi{{/str}}</button>
+            <button id="padtoggle" aria-pressed="true" title="{{#str}}stem_visor_pad_help, local_jedomi{{/str}}">🎮 {{#str}}stem_visor_pad, local_jedomi{{/str}}</button>
+            <button id="zoom" title="{{#str}}stem_visor_zoom_help, local_jedomi{{/str}}" aria-pressed="true">🔍 {{#str}}stem_visor_zoom, local_jedomi{{/str}}</button>
+        </div>
+    </div>
+    <div class="vpanel" id="pad" role="group" aria-label="{{#str}}stem_visor_pad, local_jedomi{{/str}}">
+        <div id="pad-target"></div>
+        <div class="padgrid">
+            <div class="padsec"><span>{{#str}}stem_visor_pad_move, local_jedomi{{/str}}</span>
+                <div class="dpad"><i></i><button data-a="up" title="{{#str}}stem_visor_pad_up, local_jedomi{{/str}}" aria-label="{{#str}}stem_visor_pad_up, local_jedomi{{/str}}">▲</button><i></i><button data-a="left" title="{{#str}}stem_visor_pad_left, local_jedomi{{/str}}" aria-label="{{#str}}stem_visor_pad_left, local_jedomi{{/str}}">◀</button><button data-a="home" title="{{#str}}stem_visor_pad_home, local_jedomi{{/str}}" aria-label="{{#str}}stem_visor_pad_home, local_jedomi{{/str}}">⌂</button><button data-a="right" title="{{#str}}stem_visor_pad_right, local_jedomi{{/str}}" aria-label="{{#str}}stem_visor_pad_right, local_jedomi{{/str}}">▶</button><i></i><button data-a="down" title="{{#str}}stem_visor_pad_down, local_jedomi{{/str}}" aria-label="{{#str}}stem_visor_pad_down, local_jedomi{{/str}}">▼</button><i></i></div>
+            </div>
+            <div class="padsec"><span>{{#str}}stem_visor_pad_rotate, local_jedomi{{/str}}</span>
+                <div class="rpad"><button data-a="yawl" title="{{#str}}stem_visor_pad_yawl, local_jedomi{{/str}}" aria-label="{{#str}}stem_visor_pad_yawl, local_jedomi{{/str}}">⟲</button><button data-a="yawr" title="{{#str}}stem_visor_pad_yawr, local_jedomi{{/str}}" aria-label="{{#str}}stem_visor_pad_yawr, local_jedomi{{/str}}">⟳</button><button data-a="pitchf" title="{{#str}}stem_visor_pad_pitchf, local_jedomi{{/str}}" aria-label="{{#str}}stem_visor_pad_pitchf, local_jedomi{{/str}}">⤓</button><button data-a="pitchb" title="{{#str}}stem_visor_pad_pitchb, local_jedomi{{/str}}" aria-label="{{#str}}stem_visor_pad_pitchb, local_jedomi{{/str}}">⤒</button><button data-a="rolll" title="{{#str}}stem_visor_pad_rolll, local_jedomi{{/str}}" aria-label="{{#str}}stem_visor_pad_rolll, local_jedomi{{/str}}">↶</button><button data-a="rollr" title="{{#str}}stem_visor_pad_rollr, local_jedomi{{/str}}" aria-label="{{#str}}stem_visor_pad_rollr, local_jedomi{{/str}}">↷</button></div>
+            </div>
+            <div class="padsec"><span>{{#str}}stem_visor_pad_size, local_jedomi{{/str}}</span>
+                <div class="spad"><button data-a="bigger" title="{{#str}}stem_visor_pad_bigger, local_jedomi{{/str}}" aria-label="{{#str}}stem_visor_pad_bigger, local_jedomi{{/str}}">＋</button><button data-a="smaller" title="{{#str}}stem_visor_pad_smaller, local_jedomi{{/str}}" aria-label="{{#str}}stem_visor_pad_smaller, local_jedomi{{/str}}">－</button></div>
+            </div>
+        </div>
+    </div>
+    <div id="partlabel" hidden></div>
+    <div class="vpanel" id="partinfo" hidden aria-live="polite"><div class="pname"></div><div class="pdesc"></div>
+        <div class="pbtns">
+            <button id="part-explain" class="primary">💬 {{#str}}stem_visor_parts_explain, local_jedomi{{/str}}</button>
+            <button id="part-home">↩ {{#str}}stem_visor_parts_home, local_jedomi{{/str}}</button>
+            <button id="part-close" aria-label="{{#str}}closebuttontitle{{/str}}">✕</button>
+        </div>
+    </div>
+    <div class="vpanel" id="status">—</div>
+    <div class="vpanel" id="ia"></div>
+    <div id="jv-intro" data-step="1" role="dialog" aria-modal="true" aria-labelledby="intro-title">
+        <div class="ipanel">
+            <div class="ihead"><b id="intro-title">{{#str}}stem_visor_intro_title, local_jedomi{{/str}}</b><button id="intro-skip">{{#str}}stem_visor_intro_skip, local_jedomi{{/str}} ›</button></div>
+            <canvas id="jv-hands3d" aria-hidden="true"></canvas>
+            <div id="intro-caption" aria-live="polite">…</div>
+            <div class="ifoot"><div id="intro-dots"></div><button id="intro-next" class="primary">{{#str}}stem_visor_intro_next, local_jedomi{{/str}}</button></div>
+        </div>
+    </div>
+    <div id="start"><div class="vpanel prejoin">
+        <b>{{#str}}stem_visor_pj_title, local_jedomi{{/str}}</b>
+        <div class="pj">
+            <div class="pjcam"><video id="pjvideo" autoplay playsinline muted></video><div id="pjcamnote"></div></div>
+            <div class="pjctl">
+                <label>{{#str}}stem_visor_pj_camera, local_jedomi{{/str}}<select id="pjcam"></select></label>
+                <label>{{#str}}stem_visor_pj_mic, local_jedomi{{/str}}<select id="pjmic"></select></label>
+                <div class="meter" aria-hidden="true"><div id="pjlevel"></div></div>
+                <small id="pjmicnote">{{#str}}stem_visor_pj_micnote, local_jedomi{{/str}}</small>
+                <div id="pjstatus" aria-live="polite"></div>
+                <button id="go" class="primary">{{#str}}stem_visor_pj_enter, local_jedomi{{/str}}</button>
+                <a href="#" id="intro-replay" class="replay">{{#str}}stem_visor_intro_replay, local_jedomi{{/str}}</a>
+            </div>
+        </div>
+    </div></div>
+</div>
+<script type="importmap">{{{importmap}}}</script>
+<script>try { sessionStorage.setItem('jedomi_open', '1'); } catch (e) { } window.JEDOMI_VISOR = {{{config}}};</script>
+<script src="{{base}}vendor/cv.js"></script>
+<script src="{{base}}vendor/aruco.js"></script>
+<script src="{{base}}vendor/dictionaries/aruco_4x4_1000.js"></script>
+<script type="module" src="{{base}}intro.js?v={{verintro}}"></script>
+<script type="module" src="{{base}}visor.js?v={{vervisor}}"></script>
