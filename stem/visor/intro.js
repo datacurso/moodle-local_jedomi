@@ -3,7 +3,7 @@
 // (localStorage, sólo comodidad del espectador) para no repetirla; «Ver la intro otra vez» la relanza.
 (function () {
   const cfg = window.JEDOMI_VISOR || {}, S = cfg.strings || {};
-  const intro = document.getElementById("intro"); if (!intro) return;
+  const intro = document.getElementById("jv-intro"); if (!intro) return;
   const caption = document.getElementById("intro-caption"), dots = document.getElementById("intro-dots"), nextBtn = document.getElementById("intro-next"), skipBtn = document.getElementById("intro-skip"), replay = document.getElementById("intro-replay");
   const steps = [S.intro_s1, S.intro_s2, S.intro_s3, S.intro_s4, S.intro_s5].map((s, k) => s || ("Paso " + (k + 1)));
   const STEP_MS = 5200; let i = 0, timer = null, paused = false;

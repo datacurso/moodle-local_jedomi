@@ -85,7 +85,7 @@ echo $OUTPUT->header();
   .tutnote{margin:10px 0 12px;font-size:14px;color:#9aa3af}
   @media (max-width:900px){.cards{grid-template-columns:1fr}}
   /* ── intro animada ── */
-  #intro{position:absolute;inset:0;z-index:5;display:grid;place-items:center;background:rgba(0,0,0,.86)}
+  #jv-intro{position:absolute;inset:0;z-index:5;display:grid;place-items:center;background:rgba(0,0,0,.86)}
   .ipanel{width:min(760px,96%);background:#0f1115;border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:14px 18px;color:#f3f4f6}
   .ihead{display:flex;justify-content:space-between;align-items:center;font-size:17px}
   .ihead button{background:transparent;color:#9aa3af;border:1px solid rgba(255,255,255,.2);border-radius:8px;padding:6px 10px;cursor:pointer;font-size:14px}
@@ -106,41 +106,41 @@ echo $OUTPUT->header();
   /* pellizco: pulgar e índice se cierran sobre el borde; los otros dedos se recogen */
   .pinched .f1{transform:rotate(25deg) scaleY(.7)}.pinched .thumb{transform:rotate(80deg) translate(10px,-20px)}.pinched .f2,.pinched .f3,.pinched .f4{transform:scaleY(.72)}
   /* paso 1: acercarse y coger */
-  #intro[data-step="1"] .ha{animation:reach 5.2s ease-in-out infinite}
-  #intro[data-step="1"] .ha .f1{animation:f1pinch 5.2s ease-in-out infinite}#intro[data-step="1"] .ha .thumb{animation:thpinch 5.2s ease-in-out infinite}
-  #intro[data-step="1"] .ha .f2,#intro[data-step="1"] .ha .f3,#intro[data-step="1"] .ha .f4{animation:curl 5.2s ease-in-out infinite}
-  #intro[data-step="1"] .shadow{animation:lift 5.2s ease-in-out infinite}
+  #jv-intro[data-step="1"] .ha{animation:reach 5.2s ease-in-out infinite}
+  #jv-intro[data-step="1"] .ha .f1{animation:f1pinch 5.2s ease-in-out infinite}#jv-intro[data-step="1"] .ha .thumb{animation:thpinch 5.2s ease-in-out infinite}
+  #jv-intro[data-step="1"] .ha .f2,#jv-intro[data-step="1"] .ha .f3,#jv-intro[data-step="1"] .ha .f4{animation:curl 5.2s ease-in-out infinite}
+  #jv-intro[data-step="1"] .shadow{animation:lift 5.2s ease-in-out infinite}
   @keyframes reach{0%{transform:translate(327px,540px)}35%,100%{transform:translate(327px,391px)}}
   @keyframes f1pinch{0%,35%{transform:none}55%,100%{transform:rotate(25deg) scaleY(.7)}}
   @keyframes thpinch{0%,35%{transform:none}55%,100%{transform:rotate(80deg) translate(10px,-20px)}}
   @keyframes curl{0%,35%{transform:none}55%,100%{transform:scaleY(.72)}}
   @keyframes lift{0%,50%{transform:scale(1);opacity:.18}65%,100%{transform:scale(1.12) translate(0,10px);opacity:.28}}
-  #intro[data-step="2"] .ha .f1,#intro[data-step="3"] .ha .f1,#intro[data-step="4"] .hand .f1{transform:rotate(25deg) scaleY(.7)}
-  #intro[data-step="2"] .ha .thumb,#intro[data-step="3"] .ha .thumb,#intro[data-step="4"] .hand .thumb{transform:rotate(80deg) translate(10px,-20px)}
-  #intro[data-step="2"] .ha .f2,#intro[data-step="2"] .ha .f3,#intro[data-step="2"] .ha .f4,#intro[data-step="3"] .ha .f2,#intro[data-step="3"] .ha .f3,#intro[data-step="3"] .ha .f4,#intro[data-step="4"] .hand .f2,#intro[data-step="4"] .hand .f3,#intro[data-step="4"] .hand .f4{transform:scaleY(.72)}
+  #jv-intro[data-step="2"] .ha .f1,#jv-intro[data-step="3"] .ha .f1,#jv-intro[data-step="4"] .hand .f1{transform:rotate(25deg) scaleY(.7)}
+  #jv-intro[data-step="2"] .ha .thumb,#jv-intro[data-step="3"] .ha .thumb,#jv-intro[data-step="4"] .hand .thumb{transform:rotate(80deg) translate(10px,-20px)}
+  #jv-intro[data-step="2"] .ha .f2,#jv-intro[data-step="2"] .ha .f3,#jv-intro[data-step="2"] .ha .f4,#jv-intro[data-step="3"] .ha .f2,#jv-intro[data-step="3"] .ha .f3,#jv-intro[data-step="3"] .ha .f4,#jv-intro[data-step="4"] .hand .f2,#jv-intro[data-step="4"] .hand .f3,#jv-intro[data-step="4"] .hand .f4{transform:scaleY(.72)}
   /* paso 2: mover (mano y aro juntos) */
-  #intro[data-step="2"] .ha{transform:translate(327px,391px)}#intro[data-step="2"] .ha .finger,#intro[data-step="2"] .ha .thumb{transition:none}
-  #intro[data-step="2"] .world{animation:slide 5.2s ease-in-out infinite}#intro[data-step="2"] .shadow{transform:scale(1.12) translate(0,10px);opacity:.28}
+  #jv-intro[data-step="2"] .ha{transform:translate(327px,391px)}#jv-intro[data-step="2"] .ha .finger,#jv-intro[data-step="2"] .ha .thumb{transition:none}
+  #jv-intro[data-step="2"] .world{animation:slide 5.2s ease-in-out infinite}#jv-intro[data-step="2"] .shadow{transform:scale(1.12) translate(0,10px);opacity:.28}
   @keyframes slide{0%,10%{transform:translateX(0)}45%{transform:translateX(-130px)}80%,100%{transform:translateX(90px)}}
   /* paso 3: girar la mano → la pieza gira igual (en el plano y volteo) */
-  #intro[data-step="3"] .ha{transform:translate(327px,391px)}
-  #intro[data-step="3"] .world{transform-origin:320px 200px;animation:turn 5.2s ease-in-out infinite}
-  #intro[data-step="3"] .ringtilt{animation:tilt 5.2s ease-in-out infinite}#intro[data-step="3"] .shadow{transform:scale(1.12) translate(0,10px);opacity:.28}
+  #jv-intro[data-step="3"] .ha{transform:translate(327px,391px)}
+  #jv-intro[data-step="3"] .world{transform-origin:320px 200px;animation:turn 5.2s ease-in-out infinite}
+  #jv-intro[data-step="3"] .ringtilt{animation:tilt 5.2s ease-in-out infinite}#jv-intro[data-step="3"] .shadow{transform:scale(1.12) translate(0,10px);opacity:.28}
   @keyframes turn{0%,10%{transform:rotate(0)}50%{transform:rotate(-40deg)}90%,100%{transform:rotate(25deg)}}
   @keyframes tilt{0%,10%{transform:scaleY(1)}50%{transform:scaleY(.38)}90%,100%{transform:scaleY(.8)}}
   /* paso 4: dos pellizcos → separar agranda, girar las dos manos rota sobre el tapete */
-  #intro[data-step="4"] .ha{animation:twoA 5.2s ease-in-out infinite}#intro[data-step="4"] .hb{display:block;animation:twoB 5.2s ease-in-out infinite}
-  #intro[data-step="4"] .ringwrap{transform-origin:320px 200px;animation:grow 5.2s ease-in-out infinite}
-  #intro[data-step="4"] .world{transform-origin:320px 200px;animation:turn2 5.2s ease-in-out infinite}
+  #jv-intro[data-step="4"] .ha{animation:twoA 5.2s ease-in-out infinite}#jv-intro[data-step="4"] .hb{display:block;animation:twoB 5.2s ease-in-out infinite}
+  #jv-intro[data-step="4"] .ringwrap{transform-origin:320px 200px;animation:grow 5.2s ease-in-out infinite}
+  #jv-intro[data-step="4"] .world{transform-origin:320px 200px;animation:turn2 5.2s ease-in-out infinite}
   @keyframes turn2{0%,60%{transform:rotate(0)}90%,100%{transform:rotate(-30deg)}}
   @keyframes twoA{0%,15%{transform:translate(257px,319px)}55%,100%{transform:translate(226px,319px)}}
   @keyframes twoB{0%,15%{transform:translate(383px,319px) scaleX(-1)}55%,100%{transform:translate(414px,319px) scaleX(-1)}}
   @keyframes grow{0%,15%{transform:scale(1)}55%,100%{transform:scale(1.45)}}
   /* paso 5: soltar → abrir los dedos y retirar la mano; la pieza se queda apoyada */
-  #intro[data-step="5"] .ha{animation:leave 5.2s ease-in-out infinite}
-  #intro[data-step="5"] .ha .f1{animation:f1open 5.2s ease-in-out infinite}#intro[data-step="5"] .ha .thumb{animation:thopen 5.2s ease-in-out infinite}
-  #intro[data-step="5"] .ha .f2,#intro[data-step="5"] .ha .f3,#intro[data-step="5"] .ha .f4{animation:uncurl 5.2s ease-in-out infinite}
-  #intro[data-step="5"] .shadow{animation:drop 5.2s ease-in-out infinite}
+  #jv-intro[data-step="5"] .ha{animation:leave 5.2s ease-in-out infinite}
+  #jv-intro[data-step="5"] .ha .f1{animation:f1open 5.2s ease-in-out infinite}#jv-intro[data-step="5"] .ha .thumb{animation:thopen 5.2s ease-in-out infinite}
+  #jv-intro[data-step="5"] .ha .f2,#jv-intro[data-step="5"] .ha .f3,#jv-intro[data-step="5"] .ha .f4{animation:uncurl 5.2s ease-in-out infinite}
+  #jv-intro[data-step="5"] .shadow{animation:drop 5.2s ease-in-out infinite}
   @keyframes leave{0%,45%{transform:translate(327px,391px)}80%,100%{transform:translate(327px,540px)}}
   @keyframes f1open{0%,20%{transform:rotate(25deg) scaleY(.7)}40%,100%{transform:none}}
   @keyframes thopen{0%,20%{transform:rotate(80deg) translate(10px,-20px)}40%,100%{transform:none}}
@@ -167,7 +167,7 @@ echo $OUTPUT->header();
   </div>
   <div class="vpanel" id="status">—</div>
   <div class="vpanel" id="ia"></div>
-  <div id="intro" data-step="1" role="dialog" aria-modal="true" aria-labelledby="intro-title">
+  <div id="jv-intro" data-step="1" role="dialog" aria-modal="true" aria-labelledby="intro-title">
     <div class="ipanel">
       <div class="ihead"><b id="intro-title"><?php echo get_string('stem_visor_intro_title', 'local_jedomi'); ?></b><button id="intro-skip"><?php echo get_string('stem_visor_intro_skip', 'local_jedomi'); ?> ›</button></div>
       <svg id="iscene" viewBox="0 0 640 400" aria-hidden="true" focusable="false">
