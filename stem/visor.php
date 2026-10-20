@@ -45,14 +45,18 @@ $PAGE->set_context($context);
 $PAGE->set_pagelayout('embedded');
 $PAGE->set_title(get_string('stem_visor_title', 'local_jedomi') . ': ' . format_string($cm->name));
 $PAGE->set_heading(format_string($course->fullname));
+$PAGE->activityheader->disable();   // la cabecera de la actividad la pinta el propio visor (barra de título a la derecha del chat)
+$courseurl = (new moodle_url('/course/view.php', ['id' => $course->id]))->out(false);
 
 $base = (new moodle_url('/local/jedomi/stem/visor/'))->out(false);
 $config = [
     'cmid' => $cmid, 'courseid' => (int) $course->id, 'modelUrl' => $modelurl, 'modelName' => $model ? $model->get_filename() : '',
     'base' => $base, 'sesskey' => sesskey(), 'enabled' => $enabled, 'userid' => (int) $USER->id,
-    'voiceEnabled' => (int) get_config('local_jedomi', 'stem_voice_enabled') === 1,
+    'voiceEnabled' => (int) get_config('local_jedomi', 'stem_voice_enabled') === 1, 'courseUrl' => $courseurl,
+    'dev' => optional_param('dev', 0, PARAM_INT) === 1 && has_capability('local/jedomi:configuretutor', context_course::instance($course->id)),
     'strings' => ['nomodel' => get_string('stem_visor_nomodel', 'local_jedomi'), 'intro' => get_string('stem_visor_intro', 'local_jedomi'),
         'talk' => get_string('stem_visor_talk', 'local_jedomi'), 'talk_stop' => get_string('stem_visor_talk_stop', 'local_jedomi'),
+        'pj_nocam' => get_string('stem_visor_pj_nocam', 'local_jedomi'), 'pj_speak' => get_string('stem_visor_pj_speak', 'local_jedomi'), 'pj_nodev' => get_string('stem_visor_pj_nodev', 'local_jedomi'),
         'voice_consent' => get_string('stem_visor_voice_consent', 'local_jedomi'), 'voice_off' => get_string('stem_visor_voice_off', 'local_jedomi'),
         'intro_next' => get_string('stem_visor_intro_next', 'local_jedomi'), 'intro_done' => get_string('stem_visor_intro_done', 'local_jedomi'),
         'intro_s1' => get_string('stem_visor_intro_s1', 'local_jedomi'), 'intro_s2' => get_string('stem_visor_intro_s2', 'local_jedomi'), 'intro_s3' => get_string('stem_visor_intro_s3', 'local_jedomi'),
@@ -62,7 +66,7 @@ $config = [
 echo $OUTPUT->header();
 ?>
 <style>
-  #stage{position:relative;width:100%;height:calc(100vh - 60px);min-height:480px;background:#000;border-radius:12px;overflow:hidden}
+  #stage{position:relative;width:100%;height:calc(100vh - 16px);min-height:480px;background:#000;border-radius:12px;overflow:hidden}
   #stage video,#stage canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
   #three{pointer-events:none}
   #hud{position:absolute;left:16px;top:16px;right:16px;display:flex;gap:12px;align-items:flex-start;pointer-events:none}
@@ -76,14 +80,22 @@ echo $OUTPUT->header();
   #ia{position:absolute;right:16px;bottom:16px;max-width:40%;font-size:15px;display:none}
   #start{position:absolute;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.72)}
   #start .vpanel{max-width:560px;font-size:16px;line-height:1.5}
-  #start .tut{max-width:720px}
-  .tuthead{margin:12px 0 8px;font-weight:600;color:#fbbf24}
-  .cards{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-  .card{display:flex;gap:10px;align-items:center;background:rgba(255,255,255,.06);border-radius:10px;padding:8px 10px;font-size:14px;line-height:1.35}
-  .card svg{width:64px;height:64px;flex:none;fill:none;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
-  .card .ring{stroke:#f59e0b}.card .fin{stroke:#e5e7eb}.card .dot{fill:#22c55e;stroke:none}.card .arr{stroke:#60a5fa}
-  .tutnote{margin:10px 0 12px;font-size:14px;color:#9aa3af}
-  @media (max-width:900px){.cards{grid-template-columns:1fr}}
+  #titlebar{position:absolute;left:0;right:0;top:0;height:44px;display:flex;align-items:center;gap:12px;padding:0 16px;background:rgba(15,17,21,.85);color:#f3f4f6;z-index:4;border-bottom:1px solid rgba(255,255,255,.1)}
+  #titlebar .tname{font-weight:600;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #titlebar .tcourse{color:#9aa3af;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #titlebar .tquit{margin-left:auto;color:#fca5a5;text-decoration:none;font-size:14px;border:1px solid rgba(252,165,165,.4);border-radius:8px;padding:4px 10px}
+  #hud{top:56px}
+  #start .prejoin{max-width:860px;width:min(860px,96%)}
+  .pj{display:grid;grid-template-columns:1.3fr 1fr;gap:16px;margin-top:12px}
+  .pjcam{position:relative;background:#111;border-radius:10px;overflow:hidden;min-height:240px}
+  .pjcam video{width:100%;height:100%;object-fit:cover;display:block;aspect-ratio:16/9}
+  #pjcamnote{position:absolute;inset:0;display:grid;place-items:center;color:#9aa3af;font-size:14px;text-align:center;padding:12px;pointer-events:none}
+  .pjctl{display:flex;flex-direction:column;gap:10px}
+  .pjctl label{display:flex;flex-direction:column;gap:4px;font-size:14px;color:#cbd5e1}
+  .pjctl select{font-size:15px;padding:8px;border-radius:8px;background:#1f2937;color:#f3f4f6;border:1px solid rgba(255,255,255,.2)}
+  .meter{height:10px;background:#1f2937;border-radius:5px;overflow:hidden}#pjlevel{height:100%;width:0;background:linear-gradient(90deg,#22c55e,#f59e0b);transition:width .08s}
+  #pjmicnote{color:#9aa3af;font-size:12px}#pjstatus{font-size:13px;color:#fbbf24;min-height:18px}
+  @media (max-width:900px){.pj{grid-template-columns:1fr}}
   /* ── intro animada ── */
   #jv-intro{position:absolute;inset:0;z-index:5;display:grid;place-items:center;background:rgba(0,0,0,.86)}
   .ipanel{width:min(760px,96%);background:#0f1115;border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:14px 18px;color:#f3f4f6}
@@ -153,16 +165,17 @@ echo $OUTPUT->header();
   body:has(#jedomi-sidebar.jedomi-open) #jedomi-trigger{display:none}
 </style>
 <div id="stage">
+  <div id="titlebar"><span class="tname"><?php echo format_string($cm->name); ?></span><span class="tcourse"><?php echo format_string($course->fullname); ?></span>
+    <a id="quit" class="tquit" href="<?php echo s($courseurl); ?>" title="<?php echo get_string('stem_visor_quit_help', 'local_jedomi'); ?>">✕ <?php echo get_string('stem_visor_quit', 'local_jedomi'); ?></a></div>
   <video id="video" autoplay playsinline muted></video>
   <canvas id="three"></canvas>
   <div id="hud">
     <div class="vpanel" id="step">…</div>
     <div id="ctl">
-      <select id="model"><option value="aro" selected>1) Aro de prueba</option><?php if ($model) { ?><option value="<?php echo s($modelurl); ?>">2) Pieza de la actividad: <?php echo s($model->get_filename()); ?></option><?php } ?></select>
-      <?php if ($config['voiceEnabled']) { ?><button id="talk" class="primary"><?php echo get_string('stem_visor_talk', 'local_jedomi'); ?></button><?php } ?>
-      <button id="explain"><?php echo get_string('stem_visor_explain', 'local_jedomi'); ?></button>
-      <button id="reset"><?php echo get_string('stem_visor_reset', 'local_jedomi'); ?></button>
-      <button id="quit" class="danger">X</button>
+      <select id="model" <?php echo $config['dev'] ? '' : 'hidden'; ?>><?php if ($model) { ?><option value="<?php echo s($modelurl); ?>" selected><?php echo s($model->get_filename()); ?></option><?php } ?><option value="aro" <?php echo $model ? '' : 'selected'; ?>>Aro de prueba (desarrollo)</option></select>
+      <?php if ($config['voiceEnabled']) { ?><button id="talk" class="primary" title="<?php echo get_string('stem_visor_talk_help', 'local_jedomi'); ?>">🎙 <?php echo get_string('stem_visor_talk', 'local_jedomi'); ?></button><?php } ?>
+      <button id="explain" title="<?php echo get_string('stem_visor_explain_help', 'local_jedomi'); ?>">💬 <?php echo get_string('stem_visor_explain', 'local_jedomi'); ?></button>
+      <button id="reset" title="<?php echo get_string('stem_visor_reset_help', 'local_jedomi'); ?>">⟲ <?php echo get_string('stem_visor_reset', 'local_jedomi'); ?></button>
     </div>
   </div>
   <div class="vpanel" id="status">—</div>
@@ -193,22 +206,20 @@ echo $OUTPUT->header();
       <div class="ifoot"><div id="intro-dots"></div><button id="intro-next" class="primary"><?php echo get_string('stem_visor_intro_next', 'local_jedomi'); ?></button></div>
     </div>
   </div>
-  <div id="start"><div class="vpanel tut">
-    <b><?php echo get_string('stem_visor_title', 'local_jedomi'); ?></b> · <?php echo format_string($cm->name); ?>
-    <div class="tuthead"><?php echo get_string('stem_visor_tut_title', 'local_jedomi'); ?></div>
-    <div class="cards">
-      <div class="card"><svg viewBox="0 0 64 64"><circle cx="32" cy="36" r="14" class="ring"/><path d="M14 10 Q20 22 26 30" class="fin"/><path d="M40 8 Q36 20 32 28" class="fin"/><circle cx="29" cy="30" r="3" class="dot"/></svg>
-        <div><b>①</b> <?php echo get_string('stem_visor_tut_grab', 'local_jedomi'); ?></div></div>
-      <div class="card"><svg viewBox="0 0 64 64"><ellipse cx="32" cy="36" rx="14" ry="6" class="ring"/><path d="M12 24 A22 22 0 0 1 52 24" class="arr"/><path d="M48 18 L52 24 L46 27" class="arr"/><path d="M26 18 Q32 10 38 18" class="fin"/></svg>
-        <div><b>②</b> <?php echo get_string('stem_visor_tut_rotate', 'local_jedomi'); ?></div></div>
-      <div class="card"><svg viewBox="0 0 64 64"><circle cx="32" cy="34" r="12" class="ring"/><circle cx="14" cy="34" r="3" class="dot"/><circle cx="50" cy="34" r="3" class="dot"/><path d="M4 34 L10 34 M54 34 L60 34" class="arr"/><path d="M6 31 L4 34 L6 37 M58 31 L60 34 L58 37" class="arr"/></svg>
-        <div><b>③</b> <?php echo get_string('stem_visor_tut_two', 'local_jedomi'); ?></div></div>
-      <div class="card"><svg viewBox="0 0 64 64"><circle cx="32" cy="42" r="10" class="ring"/><path d="M18 26 L10 12 M28 22 L26 6 M38 22 L42 6 M46 26 L56 14" class="fin"/></svg>
-        <div><b>④</b> <?php echo get_string('stem_visor_tut_release', 'local_jedomi'); ?></div></div>
+  <div id="start"><div class="vpanel prejoin">
+    <b><?php echo get_string('stem_visor_pj_title', 'local_jedomi'); ?></b>
+    <div class="pj">
+      <div class="pjcam"><video id="pjvideo" autoplay playsinline muted></video><div id="pjcamnote"></div></div>
+      <div class="pjctl">
+        <label><?php echo get_string('stem_visor_pj_camera', 'local_jedomi'); ?><select id="pjcam"></select></label>
+        <label><?php echo get_string('stem_visor_pj_mic', 'local_jedomi'); ?><select id="pjmic"></select></label>
+        <div class="meter" aria-hidden="true"><div id="pjlevel"></div></div>
+        <small id="pjmicnote"><?php echo get_string('stem_visor_pj_micnote', 'local_jedomi'); ?></small>
+        <div id="pjstatus" aria-live="polite"></div>
+        <button id="go" class="primary"><?php echo get_string('stem_visor_pj_enter', 'local_jedomi'); ?></button>
+        <a href="#" id="intro-replay" class="replay"><?php echo get_string('stem_visor_intro_replay', 'local_jedomi'); ?></a>
+      </div>
     </div>
-    <div class="tutnote"><?php echo $model ? get_string('stem_visor_tut_mat', 'local_jedomi') : get_string('stem_visor_nomodel', 'local_jedomi'); ?></div>
-    <button id="go" class="primary"><?php echo get_string('stem_visor_start', 'local_jedomi'); ?></button>
-    <a href="#" id="intro-replay" class="replay"><?php echo get_string('stem_visor_intro_replay', 'local_jedomi'); ?></a>
   </div></div>
 </div>
 <script type="importmap">

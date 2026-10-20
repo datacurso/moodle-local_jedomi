@@ -2,6 +2,7 @@
 // + MediaPipe HandLandmarker (gestos portados de demo_guiada.py v12.3: pellizco en el borde coge/mueve/gira, dos pellizcos giran/escalan).
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { initPrejoin } from "./devices.js";
 import { FilesetResolver, HandLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
 
 // ---------- geometría del tapete (idéntica a stem_vision.py)
@@ -241,7 +242,7 @@ const overlay = document.createElement("canvas"); overlay.style.cssText = "posit
 
 // ---------- bucle
 let source = video;                                   // fuente de imagen: la cámara o, en modo prueba (?img=…), una foto fija
-async function start() {
+async function start(opts = {}) {
   const imgParam = new URLSearchParams(location.search).get("img");
   if (imgParam) {                                     // modo prueba sin cámara (el panel del navegador de Claude no permite captura)
     const im = new Image(); await new Promise((res, rej) => { im.onload = res; im.onerror = () => rej(new Error("no se pudo cargar " + imgParam)); im.src = imgParam; }); source = im;   // onload, no decode(): decode() se aplaza en pestañas ocultas
@@ -249,18 +250,10 @@ async function start() {
     const bg = document.createElement("canvas"); bg.width = W; bg.height = Hh; bg.getContext("2d").drawImage(im, 0, 0);
     bg.style.cssText = "position:absolute;inset:0;width:100%;height:100%;object-fit:contain"; document.getElementById("stage").prepend(bg);
   } else {
-    let stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1920 }, height: { ideal: 1080 }, facingMode: "environment" }, audio: false });
-    // autodetección como en la estación: si hay una OBSBOT y el navegador abrió otra cámara (p. ej. la FaceTime del portátil), cambiamos a la OBSBOT
-    try {
-      const cams = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === "videoinput");
-      const cur = stream.getVideoTracks()[0]; const obsbot = cams.find(d => /obsbot/i.test(d.label));
-      log("cámaras: " + cams.map(d => d.label || d.deviceId.slice(0, 6)).join(" | ") + " → usando " + (cur ? cur.label : "?"));
-      if (obsbot && cur && cur.getSettings().deviceId !== obsbot.deviceId) {
-        cur.stop();
-        stream = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: obsbot.deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
-        log("cambiada a " + obsbot.label);
-      }
-    } catch (e) { console.warn("selección de cámara", e); }
+    // la cámara la eligió el alumno en la pantalla previa (devices.js); sin elección, la predeterminada del navegador
+    const vc = opts.cameraId ? { deviceId: { exact: opts.cameraId }, width: { ideal: 1920 }, height: { ideal: 1080 } } : { width: { ideal: 1920 }, height: { ideal: 1080 }, facingMode: "environment" };
+    const stream = await navigator.mediaDevices.getUserMedia({ video: vc, audio: false });
+    log("cámara: " + (stream.getVideoTracks()[0]?.label || "?"));
     video.srcObject = stream; await video.play();
     W = video.videoWidth; Hh = video.videoHeight;
   }
@@ -269,8 +262,7 @@ async function start() {
   work.width = Math.round(W / 4); work.height = Math.round(Hh / 4);   // ArUco a 1/4: ~4× más rápido (86 → ~20 ms)
   const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
   hands = await HandLandmarker.createFromOptions(vision, { baseOptions: { modelAssetPath: BASE + "models/hand_landmarker.task", delegate: "GPU" }, runningMode: "VIDEO", numHands: 2, minHandDetectionConfidence: 0.4, minHandPresenceConfidence: 0.4, minTrackingConfidence: 0.4 });
-  await loadModel(MOODLE ? "aro" : document.getElementById("model").value);   // prueba básica primero: el aro; la pieza real, después
-  if (MOODLE) document.getElementById("model").value = "aro";
+  await loadModel(MOODLE ? (MOODLE.modelUrl || "aro") : document.getElementById("model").value);   // la pieza que adjuntó el docente; el aro sólo como respaldo
   document.getElementById("start").style.display = "none";
   stepEl.textContent = "① Pellizca el borde de la pieza con pulgar e índice para cogerla.";
   requestAnimationFrame(loop);
@@ -354,10 +346,11 @@ function dot3(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
 function invert3(Mx) { const m = Mx.flat(); const [a, b, c, d, e, f, g, h, i] = m; const det = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g); if (Math.abs(det) < 1e-12) return null; const k = 1 / det; return [[(e * i - f * h) * k, (c * h - b * i) * k, (b * f - c * e) * k], [(f * g - d * i) * k, (a * i - c * g) * k, (c * d - a * f) * k], [(d * h - e * g) * k, (b * g - a * h) * k, (a * e - b * d) * k]]; }
 
 // ---------- controles
-document.getElementById("go").onclick = () => start().catch(e => { stepEl.textContent = "Error: " + e.message; console.error(e); });
+const prejoin = initPrejoin({ strings: MOODLE?.strings || {}, testMode: !!new URLSearchParams(location.search).get("img"),
+  onEnter: o => start(o).catch(e => { stepEl.textContent = "Error: " + e.message; document.getElementById("pjstatus").textContent = "Error: " + e.message; document.getElementById("start").style.display = "grid"; console.error(e); }) });
 document.getElementById("model").onchange = e => loadModel(e.target.value);
 document.getElementById("reset").onclick = () => { obj.cx = MAT_W / 2; obj.cy = MAT_H / 2; obj.size = 220; obj.yaw = 0; obj.rot.identity(); };
-document.getElementById("quit").onclick = () => { stopTalk(); const s = video.srcObject; if (s) s.getTracks().forEach(tr => tr.stop()); stepEl.textContent = "Sesión cerrada."; document.getElementById("start").style.display = "grid"; };
+document.getElementById("quit").onclick = () => { stopTalk(); const s = video.srcObject; if (s) s.getTracks().forEach(tr => tr.stop()); };   // es un enlace: vuelve al curso
 
 // ---------- tutor de Jedomi (barra lateral del curso, ya inyectada en esta página por el plugin)
 // El visor no habla con la IA directamente: escribe en el chat de Jedomi y lee su respuesta. Así la conversación queda en la
@@ -366,7 +359,7 @@ const J = { sidebar: () => document.getElementById("jedomi-sidebar"), trigger: (
   input: () => document.getElementById("jedomi-input"), send: () => document.getElementById("jedomi-send"), file: () => document.getElementById("jedomi-image-input"),
   lastAnswer: () => { const b = document.querySelectorAll("#jedomi-messages .jedomi-message-assistant .jedomi-bubble"); if (!b.length) return "";
     const c = b[b.length - 1].cloneNode(true); c.querySelectorAll(".jedomi-msg-actions, button").forEach(x => x.remove()); return c.innerText.trim(); } };
-const modelLabel = () => (MOODLE && document.getElementById("model").value !== "aro" && MOODLE.modelName) || (document.getElementById("model").selectedOptions[0]?.textContent || "la pieza").replace(/^\d\)\s*/, "");
+const modelLabel = () => (MOODLE && document.getElementById("model").value !== "aro" && MOODLE.modelName) || (document.getElementById("model").selectedOptions[0]?.textContent || "la pieza");
 const sceneText = () => `(modelo «${modelLabel()}», ${Math.round(obj.tris / 1000)} mil triángulos, tamaño ${Math.round(obj.size)} mm, giro ${Math.round(obj.yaw * 180 / Math.PI)}°, inclinación ${Math.round(tiltDeg(obj.rot))}°, ${heldBy || two ? "la tengo cogida" : "está apoyada en el tapete"})`;
 function openPanel() { const sb = J.sidebar(); if (sb && sb.classList.contains("jedomi-closed")) J.trigger()?.click(); }
 async function snapshot() {                             // captura compuesta: fuente de vídeo + lienzo 3D, a media resolución
@@ -442,14 +435,14 @@ async function startTalk() {
   if (!SR) { stepEl.textContent = "Este navegador no permite reconocimiento de voz (usa Chrome o Edge)."; return; }
   if (!MOODLE?.voiceEnabled) { stepEl.textContent = MOODLE?.strings?.voice_off || "Voz no habilitada."; return; }
   if (!talk.consent) { if (!window.confirm(MOODLE?.strings?.voice_consent || "¿Aceptas usar el micrófono y el reconocimiento de voz del navegador?")) return; talk.consent = true; log("consentimiento de voz aceptado"); }
-  sceneChanged(); talk.on = true; const b = document.getElementById("talk"); b.textContent = (MOODLE?.strings?.talk_stop) || "Silenciar"; b.classList.add("danger");
+  sceneChanged(); talk.on = true; const b = document.getElementById("talk"); b.textContent = "⏹ " + ((MOODLE?.strings?.talk_stop) || "Parar voz"); b.classList.add("danger");
   openPanel();
   const ans = await askTutor(`Activo el modo conversación en el visor de realidad aumentada de esta actividad. Te adjunto lo que veo ahora ${sceneText()}. Salúdame en una frase y hazme la primera pregunta o indicación según el modo del curso. Responde en frases cortas: te voy a escuchar en voz alta.`);
   if (ans) speak(ans); else listen();
 }
 function stopTalk() {
   talk.on = false; try { talk.rec?.abort(); } catch (e) { } talk.rec = null; if ("speechSynthesis" in window) speechSynthesis.cancel(); talk.speaking = false;
-  const b = document.getElementById("talk"); if (b) { b.textContent = (MOODLE?.strings?.talk) || "Conversar"; b.classList.remove("danger"); }
+  const b = document.getElementById("talk"); if (b) { b.textContent = "🎙 " + ((MOODLE?.strings?.talk) || "Conversar"); b.classList.remove("danger"); }
   if (video.srcObject) stepEl.textContent = "① Pellizca el borde de la pieza con pulgar e índice para cogerla.";
 }
 const talkBtn = document.getElementById("talk"); if (talkBtn) talkBtn.onclick = () => talk.on ? stopTalk() : startTalk();   // el botón sólo existe si el sitio habilita la voz
