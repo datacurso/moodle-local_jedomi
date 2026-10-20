@@ -92,7 +92,7 @@ echo $OUTPUT->header();
   #iscene{width:100%;height:auto;display:block;margin:10px 0;background:#15181f;border-radius:10px}
   #intro-caption{font-size:18px;line-height:1.4;min-height:52px}
   .ifoot{display:flex;justify-content:space-between;align-items:center;margin-top:8px}
-  #intro-dots span{display:inline-block;width:10px;height:10px;border-radius:50%;background:#374151;margin-right:6px}#intro-dots span.on{background:#f59e0b}
+  #intro-dots button{display:inline-block;width:12px;height:12px;padding:0;border:0;border-radius:50%;background:#374151;margin-right:8px;cursor:pointer}#intro-dots button.on{background:#f59e0b}#intro-dots button:focus-visible{outline:2px solid #60a5fa;outline-offset:2px}
   .ifoot .primary{background:#f59e0b;color:#111;border:0;border-radius:10px;padding:9px 16px;font-size:15px;font-weight:600;cursor:pointer}
   .replay{display:block;margin-top:10px;color:#9aa3af;font-size:13px}
   #iscene .mat{fill:#f8fafc;opacity:.92}#iscene .aruco rect{fill:#111}
@@ -167,10 +167,10 @@ echo $OUTPUT->header();
   </div>
   <div class="vpanel" id="status">—</div>
   <div class="vpanel" id="ia"></div>
-  <div id="intro" data-step="1">
+  <div id="intro" data-step="1" role="dialog" aria-modal="true" aria-labelledby="intro-title">
     <div class="ipanel">
-      <div class="ihead"><b><?php echo get_string('stem_visor_intro_title', 'local_jedomi'); ?></b><button id="intro-skip"><?php echo get_string('stem_visor_intro_skip', 'local_jedomi'); ?> ›</button></div>
-      <svg id="iscene" viewBox="0 0 640 400">
+      <div class="ihead"><b id="intro-title"><?php echo get_string('stem_visor_intro_title', 'local_jedomi'); ?></b><button id="intro-skip"><?php echo get_string('stem_visor_intro_skip', 'local_jedomi'); ?> ›</button></div>
+      <svg id="iscene" viewBox="0 0 640 400" aria-hidden="true" focusable="false">
         <rect class="mat" x="60" y="40" width="520" height="260" rx="10"/>
         <g class="aruco"><rect x="76" y="56" width="34" height="34"/><rect x="530" y="56" width="34" height="34"/><rect x="76" y="250" width="34" height="34"/><rect x="530" y="250" width="34" height="34"/></g>
         <g class="world">
@@ -189,7 +189,7 @@ echo $OUTPUT->header();
           <g class="thumb" style="transform-origin:-40px -30px"><rect x="-104" y="-46" width="68" height="22" rx="11" transform="rotate(-25 -40 -30)"/></g></g>
         </g>
       </svg>
-      <div id="intro-caption">…</div>
+      <div id="intro-caption" aria-live="polite">…</div>
       <div class="ifoot"><div id="intro-dots"></div><button id="intro-next" class="primary"><?php echo get_string('stem_visor_intro_next', 'local_jedomi'); ?></button></div>
     </div>
   </div>

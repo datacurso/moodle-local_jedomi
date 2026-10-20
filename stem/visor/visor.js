@@ -272,7 +272,7 @@ async function start() {
   await loadModel(MOODLE ? "aro" : document.getElementById("model").value);   // prueba básica primero: el aro; la pieza real, después
   if (MOODLE) document.getElementById("model").value = "aro";
   document.getElementById("start").style.display = "none";
-  stepEl.textContent = "Coge la pieza por el borde con un pellizco. Dos pellizcos: gira como una rueda y escala.";
+  stepEl.textContent = "① Pellizca el borde de la pieza con pulgar e índice para cogerla.";
   requestAnimationFrame(loop);
 }
 function loop() {
@@ -450,7 +450,7 @@ async function startTalk() {
 function stopTalk() {
   talk.on = false; try { talk.rec?.abort(); } catch (e) { } talk.rec = null; if ("speechSynthesis" in window) speechSynthesis.cancel(); talk.speaking = false;
   const b = document.getElementById("talk"); if (b) { b.textContent = (MOODLE?.strings?.talk) || "Conversar"; b.classList.remove("danger"); }
-  if (video.srcObject) stepEl.textContent = "Coge la pieza por el borde con un pellizco. Dos pellizcos: gira como una rueda y escala.";
+  if (video.srcObject) stepEl.textContent = "① Pellizca el borde de la pieza con pulgar e índice para cogerla.";
 }
 const talkBtn = document.getElementById("talk"); if (talkBtn) talkBtn.onclick = () => talk.on ? stopTalk() : startTalk();   // el botón sólo existe si el sitio habilita la voz
 if ("speechSynthesis" in window) speechSynthesis.getVoices();           // precarga la lista de voces (en Chrome llega de forma asíncrona)
