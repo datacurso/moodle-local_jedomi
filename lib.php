@@ -810,15 +810,11 @@ function local_jedomi_get_tool_definitions(string $role, string $mode = 'assista
 }
 
 /**
- * Resuelve el modo del asistente para un usuario en un curso/actividad. Se calcula SIEMPRE en servidor.
+ * Configuración STEM de una actividad (fila por cmid) con respaldo en la fila del curso (cmid = 0).
  *
- * Fase 1 (sin configuración por curso): el modo tutor del Modo Evaluación Física STEM se aplica a los
- * ESTUDIANTES del curso de la tarea seleccionada en la pestaña "Estación STEM"; el resto usa 'assistant'.
- *
- * @param int    $courseid
- * @param int    $cmid
- * @param string $role  Rol ya resuelto en servidor.
- * @return string 'assistant' | 'socratic' | 'guided'
+ * @param int $courseid Id del curso.
+ * @param int $cmid Id del módulo de curso, o 0 para la fila del curso.
+ * @return stdClass|null Fila de local_jedomi_stem_cfg o null si no hay configuración.
  */
 function local_jedomi_stem_cfg(int $courseid, int $cmid = 0): ?stdClass {
     global $DB;
@@ -840,6 +836,11 @@ function local_jedomi_stem_cfg(int $courseid, int $cmid = 0): ?stdClass {
  * El interruptor global `stem_enabled` (plantilla) permite a los cursos activar el tutor; la decisión concreta
  * vive en local_jedomi_stem_cfg (fila por actividad, con respaldo en la fila del curso cmid=0). El modo
  * 'inherit' toma `stem_tutor_mode` de la plantilla. Sólo aplica a estudiantes.
+ *
+ * @param int $courseid Id del curso.
+ * @param int $cmid Id del módulo de curso.
+ * @param string $role Rol ya resuelto en servidor.
+ * @return string 'assistant' | 'socratic' | 'guided'
  */
 function local_jedomi_resolve_mode(int $courseid, int $cmid, string $role): string {
     if ($role !== 'student' || $courseid <= 1) {
@@ -864,6 +865,10 @@ function local_jedomi_resolve_mode(int $courseid, int $cmid, string $role): stri
 
 /**
  * Modo del tutor de una actividad mod_jedomiar (inherit|socratic|guided) o null si el cmid no es de ese módulo.
+ *
+ * @param int $courseid Id del curso.
+ * @param int $cmid Id del módulo de curso.
+ * @return string|null Modo de la instancia o null si no es una actividad mod_jedomiar.
  */
 function local_jedomi_jedomiar_tutormode(int $courseid, int $cmid): ?string {
     global $DB;
@@ -885,7 +890,10 @@ function local_jedomi_jedomiar_tutormode(int $courseid, int $cmid): ?string {
 /**
  * Contexto pedagógico de la actividad para el tutor: descripción de la actividad (sin HTML, acotada) y, en actividades
  * de realidad aumentada (mod_jedomiar), el contexto del objeto 3D y sus piezas tal como los describió el docente.
- * Devuelve texto plano listo para el mensaje de sistema; cadena vacía si no hay nada que aportar.
+ *
+ * @param int $courseid Id del curso.
+ * @param int $cmid Id del módulo de curso.
+ * @return string Texto plano listo para el mensaje de sistema; cadena vacía si no hay nada que aportar.
  */
 function local_jedomi_activity_context(int $courseid, int $cmid): string {
     global $DB;
@@ -939,6 +947,11 @@ function local_jedomi_activity_context(int $courseid, int $cmid): string {
 
 /**
  * Enlace "Tutor STEM" en la navegación del curso para quien puede configurarlo.
+ *
+ * @param navigation_node $navigation Nodo de navegación del curso.
+ * @param stdClass $course Curso.
+ * @param context_course $context Contexto del curso.
+ * @return void
  */
 function local_jedomi_extend_navigation_course(navigation_node $navigation, stdClass $course, context_course $context): void {
     if (!has_capability('local/jedomi:configuretutor', $context)) {
@@ -1627,6 +1640,15 @@ function local_jedomi_send_agent_notification(int|string $chatid, string $agent,
 /**
  * Sirve las evidencias de la estación (filearea stem_evidence, itemid = id del evento). Sólo profesores con
  * mod/assign:grade en la tarea (nunca el alumno ni usuarios anónimos): QA r11 #5.
+ *
+ * @param stdClass $course Curso.
+ * @param stdClass $cm Módulo de curso.
+ * @param context $context Contexto del fichero.
+ * @param string $filearea Área de ficheros.
+ * @param array $args Argumentos de la ruta (itemid, ruta, nombre).
+ * @param bool $forcedownload Forzar descarga.
+ * @param array $options Opciones de send_stored_file.
+ * @return bool false si no se sirve.
  */
 function local_jedomi_pluginfile($course, $cm, $context, string $filearea, array $args, bool $forcedownload, array $options = []): bool {
     global $CFG, $DB;
