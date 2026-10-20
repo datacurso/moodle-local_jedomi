@@ -172,7 +172,8 @@ echo $OUTPUT->header();
   <div id="hud">
     <div class="vpanel" id="step">…</div>
     <div id="ctl">
-      <select id="model" <?php echo $config['dev'] ? '' : 'hidden'; ?>><?php if ($model) { ?><option value="<?php echo s($modelurl); ?>" selected><?php echo s($model->get_filename()); ?></option><?php } ?><option value="aro" <?php echo $model ? '' : 'selected'; ?>>Aro de prueba (desarrollo)</option></select>
+      <?php // el selector sólo existe para quien puede configurar el tutor (capacidad comprobada en servidor); el alumno recibe únicamente la pieza del docente ?>
+      <select id="model" <?php echo $config['dev'] ? '' : 'hidden'; ?>><?php if ($model) { ?><option value="<?php echo s($modelurl); ?>" selected><?php echo s($model->get_filename()); ?></option><?php } ?><?php if ($config['dev'] || !$model) { ?><option value="aro" <?php echo $model ? '' : 'selected'; ?>>Aro de prueba (desarrollo)</option><?php } ?></select>
       <?php if ($config['voiceEnabled']) { ?><button id="talk" class="primary" title="<?php echo get_string('stem_visor_talk_help', 'local_jedomi'); ?>">🎙 <?php echo get_string('stem_visor_talk', 'local_jedomi'); ?></button><?php } ?>
       <button id="explain" title="<?php echo get_string('stem_visor_explain_help', 'local_jedomi'); ?>">💬 <?php echo get_string('stem_visor_explain', 'local_jedomi'); ?></button>
       <button id="reset" title="<?php echo get_string('stem_visor_reset_help', 'local_jedomi'); ?>">⟲ <?php echo get_string('stem_visor_reset', 'local_jedomi'); ?></button>
