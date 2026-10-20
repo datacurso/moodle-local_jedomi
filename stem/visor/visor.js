@@ -91,7 +91,7 @@ ground.position.set(MAT_W / 2, MAT_H / 2, 0); ground.receiveShadow = true; mat.a
 const frame = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry(MAT_W, MAT_H)), new THREE.LineBasicMaterial({ color: 0x22c55e }));
 frame.position.set(MAT_W / 2, MAT_H / 2, 0); mat.add(frame);
 const objGroup = new THREE.Group(); mat.add(objGroup);  // la pieza: posición (cx, cy, -lift), rotación R, escala para tamaño en mm
-const obj = { cx: MAT_W / 2, cy: MAT_H / 2, size: 220, yaw: 0, mesh: null, tris: 0, bbox: null };
+const obj = { cx: MAT_W / 2, cy: MAT_H / 2, size: 220, yaw: 0, tilt: new THREE.Quaternion(), mesh: null, tris: 0, bbox: null };   // tilt: volteo 3D acumulado (v12.5)
 let poseOK = false, poseFrozen = false, nmark = 0, lastPose = null, fps = 0, frames = 0, fpsT = performance.now(); let frameNo = 0, lastMarkers = [];
 const cornerFilters = new Map();
 const detector = new AR.Detector({ dictionaryName: "ARUCO_4X4_1000", maxHammingDistance: 2 });
@@ -114,19 +114,21 @@ async function loadModel(spec) {
   const wrap = new THREE.Group(); wrap.add(root);
   // el modelo viene con Y arriba; nuestro marco tiene Z hacia la cámara (−Z = arriba del tapete): girar −90° en X para que «arriba» = −Z
   wrap.rotation.x = -Math.PI / 2;
-  objGroup.add(wrap); obj.mesh = wrap; obj.yaw = 0; objGroup.rotation.set(0, 0, 0);
+  objGroup.add(wrap); obj.mesh = wrap; obj.yaw = 0; obj.tilt.identity(); objGroup.rotation.set(0, 0, 0);
   obj.bbox = new THREE.Box3().setFromObject(wrap);
   console.log("modelo", spec, "triángulos", Math.round(obj.tris));
 }
 function placeObject(lifted) {
   if (!obj.mesh) return;
   const s = obj.size; objGroup.scale.setScalar(s);
-  const bottom = obj.bbox ? -obj.bbox.min.z * s : s * 0.5;   // en nuestro marco «arriba» es −Z: la parte más alta del modelo está en min.z (negativo)
   const gap = s * (lifted ? 0.45 : 0.04);
-  // la pieza apoya su parte baja (max.z, hacia el tapete) a «gap» del plano
-  const low = obj.bbox ? obj.bbox.max.z * s : s * 0.5;
+  // orientación completa = giro sobre el tapete (Z) ∘ volteo 3D; la pieza apoya su punto más bajo (max.z tras rotar) a «gap» del plano
+  const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), obj.yaw).multiply(obj.tilt);
+  let low = s * 0.5;
+  if (obj.bbox) { low = -Infinity; const b = obj.bbox, v = new THREE.Vector3();
+    for (const x of [b.min.x, b.max.x]) for (const y of [b.min.y, b.max.y]) for (const z of [b.min.z, b.max.z]) { v.set(x, y, z).applyQuaternion(q); if (v.z * s > low) low = v.z * s; } }
   objGroup.position.set(obj.cx, obj.cy, -(gap + low));
-  objGroup.rotation.z = obj.yaw;
+  objGroup.quaternion.copy(q);
 }
 
 // ---------- manos
@@ -145,6 +147,12 @@ class Hand {
     const now = this.pinch ? this.pinchCm < openThr : (this.pinchCm < 3.5 && (easy || idxExt > 1.3));
     if (now) { this.openSince = null; this.pinch = true; } else { this.openSince = this.openSince ?? t; if (t - this.openSince > 0.10 || !this.pinch) this.pinch = false; }
     this.fingerAngle = Math.atan2(raw[8][1] - raw[4][1], raw[8][0] - raw[4][0]);
+    // volteo (v12.5): girar la muñeca con la pieza pellizcada, como quien gira una moneda para ver la otra cara. Eje = pulgar→índice;
+    // referencia = vector del pellizco a la base del corazón (nudillo 9) proyectado al plano perpendicular al eje; su ángulo gira con la muñeca.
+    { const a = [w8.x - w4.x, w8.y - w4.y, w8.z - w4.z], la = Math.hypot(...a) || 1; const ax = a.map(v => v / la);
+      const w9 = wlm[9], mid = [(w4.x + w8.x) / 2, (w4.y + w8.y) / 2, (w4.z + w8.z) / 2]; const v = [w9.x - mid[0], w9.y - mid[1], w9.z - mid[2]];
+      const up = Math.abs(ax[2]) < 0.9 ? [0, 0, 1] : [0, 1, 0]; let e1 = cross3(ax, up); const l1 = Math.hypot(...e1) || 1; e1 = e1.map(x => x / l1); const e2 = cross3(ax, e1);
+      this.flip = Math.atan2(dot3(v, e2), dot3(v, e1)); this.axisCam = ax; }
     this.last = t;
   }
 }
@@ -169,11 +177,15 @@ function overPx(hull, p, margin) { return hull && p[0] > hull.x0 - margin && p[0
 // etiqueta de la mano (al perder y recuperar la mano la etiqueta cambia: Left → Left3, y eso soltaba el objeto); (c) 0,35 s de
 // gracia si el pellizco desaparece un instante (mano fuera de cuadro o detección perdida) antes de dar el objeto por soltado.
 let heldBy = null, grabOff = [0, 0], grabYaw = 0, grabAngle = null, two = null; const objFilter = new OneEuro(1.3, 0.04);
+let grabFlip = null, flipLast = null, flipArmed = false; const FLIP_SIGN = 1, FLIP_DEAD = 8 * Math.PI / 180;
 let pinchHold = new Set(), holdPts = [], lastHoldT = 0;
 function gestures(active, t) {
   const hull = objectHullPx();
   const nearHold = h => h.pinchMM && holdPts.some(p => Math.hypot(h.pinchMM[0] - p[0], h.pinchMM[1] - p[1]) < 90);
-  const nearObj = h => h.pinchMM && Math.hypot(h.pinchMM[0] - obj.cx, h.pinchMM[1] - obj.cy) < obj.size * 1.4;
+  // 2.º pellizco: cerca del centro (radio acotado a 230 mm: con la pieza a 300 mm, 1,4× daba 42 cm, demasiado; QA v12.4) y además
+  // a menos de un diámetro del pellizco que ya sujeta, para que la otra mano no dispare giro/escala desde lejos
+  const nearObj = h => h.pinchMM && Math.hypot(h.pinchMM[0] - obj.cx, h.pinchMM[1] - obj.cy) < Math.min(obj.size * 1.4, 230)
+    && holdPts.some(p => Math.hypot(h.pinchMM[0] - p[0], h.pinchMM[1] - p[1]) < Math.max(obj.size, 160) * 1.1);
   const holding = !!(heldBy || two);
   let pinchers = active.filter(h => h.pinch && h.pinchMM && (nearHold(h) || overPx(hull, h.pinchPx, 60) || (holding && nearObj(h))));
   if (pinchers.length >= 2) { pinchers.sort((a, b) => Math.hypot(a.pinchMM[0] - obj.cx, a.pinchMM[1] - obj.cy) - Math.hypot(b.pinchMM[0] - obj.cx, b.pinchMM[1] - obj.cy)); }
@@ -192,6 +204,17 @@ function gestures(active, t) {
     if (heldBy !== h.label) {
       if (heldBy && nearHold(h)) { heldBy = h.label; }           // misma mano con etiqueta nueva: sigue cogido sin saltos
       else { heldBy = h.label; grabOff = [h.pinchMM[0] - obj.cx, h.pinchMM[1] - obj.cy]; grabYaw = obj.yaw; grabAngle = h.fingerAngle; objFilter.reset(); log(`cogido por el borde con ${h.label}`); beep(880); }
+      grabFlip = h.flip; flipLast = h.flip; flipArmed = false;
+    }
+    // volteo de muñeca (v12.5): pasado el umbral, cada incremento del ángulo de la muñeca gira la pieza alrededor del eje pulgar→índice
+    if (h.flip != null && flipLast != null && lastPose) {
+      const wrap = x => ((x + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
+      if (!flipArmed && Math.abs(wrap(h.flip - grabFlip)) > FLIP_DEAD) { flipArmed = true; flipLast = h.flip; log("volteo"); }
+      if (flipArmed) { const step = wrap(h.flip - flipLast); flipLast = h.flip;
+        if (Math.abs(step) < 0.6) {                                     // eje cámara → tapete: a_mat = Rᵀ·a_cam (R en columnas r1 r2 r3)
+          const R = lastPose.pose.R, ac = h.axisCam, am = new THREE.Vector3(dot3(R[0], ac), dot3(R[1], ac), dot3(R[2], ac)).normalize();
+          am.applyAxisAngle(new THREE.Vector3(0, 0, 1), -obj.yaw);      // el volteo se compone tras el giro Z: T' = Q(Rz(−yaw)·a, δ)·T
+          obj.tilt.premultiply(new THREE.Quaternion().setFromAxisAngle(am, FLIP_SIGN * step)); } }
     }
     const tgt = objFilter.filter([h.pinchMM[0] - grabOff[0], h.pinchMM[1] - grabOff[1]], t);
     obj.cx = Math.min(1.3 * MAT_W, Math.max(-0.3 * MAT_W, tgt[0])); obj.cy = Math.min(1.3 * MAT_H, Math.max(-0.3 * MAT_H, tgt[1]));
@@ -318,16 +341,18 @@ function loop() {
   // telemetría de desarrollo (?telemetry=1): cada 2 s envía el estado a un servidor local para analizar la sesión sin acceso al navegador
   if (TELEMETRY && t - telemetryT > 2) { telemetryT = t; const ms = window.__dbg ? window.__dbg.ms : null;
     fetch("http://127.0.0.1:8766/metrics", { method: "POST", mode: "cors", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ t: Math.round(t), fps: Math.round(fps), cam: (video.srcObject && video.srcObject.getVideoTracks()[0] || {}).label || "", nmark, poseFrozen, hands: active.length, pinching: active.filter(h => h.pinch).length, held: !!(heldBy || two), mode: two ? "pinch2" : (heldBy ? "pinch" : ""), size: Math.round(obj.size), tris: Math.round(obj.tris), talk: talk.on, asking, sidebar: !!document.getElementById("jedomi-sidebar"), log: logs.slice(-4), ms: ms && { aruco: Math.round(ms.aruco), hands: Math.round(ms.hands), render: Math.round(ms.render * 10) / 10 }, W, Hh, grabs: logs.length }) }).catch(() => { }); }
+      body: JSON.stringify({ t: Math.round(t), fps: Math.round(fps), cam: (video.srcObject && video.srcObject.getVideoTracks()[0] || {}).label || "", nmark, poseFrozen, hands: active.length, pinching: active.filter(h => h.pinch).length, held: !!(heldBy || two), mode: two ? "pinch2" : (heldBy ? "pinch" : ""), size: Math.round(obj.size), tris: Math.round(obj.tris), tilt: Math.round(2 * Math.acos(Math.min(1, Math.abs(obj.tilt.w))) * 180 / Math.PI), talk: talk.on, asking, sidebar: !!document.getElementById("jedomi-sidebar"), log: logs.slice(-4), ms: ms && { aruco: Math.round(ms.aruco), hands: Math.round(ms.hands), render: Math.round(ms.render * 10) / 10 }, W, Hh, grabs: logs.length }) }).catch(() => { }); }
   statusEl.textContent = `tapete ${poseOK ? (poseFrozen ? "congelado (destapa las esquinas)" : nmark + " marcadores") : "no visto"} · manos ${active.length} · ${heldBy || two ? "COGIDO" : "libre"} · ${Math.round(obj.tris / 1000)} k triángulos · ${fps.toFixed(0)} fps`;
   requestAnimationFrame(loop);
 }
+function cross3(a, b) { return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]; }
+function dot3(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
 function invert3(Mx) { const m = Mx.flat(); const [a, b, c, d, e, f, g, h, i] = m; const det = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g); if (Math.abs(det) < 1e-12) return null; const k = 1 / det; return [[(e * i - f * h) * k, (c * h - b * i) * k, (b * f - c * e) * k], [(f * g - d * i) * k, (a * i - c * g) * k, (c * d - a * f) * k], [(d * h - e * g) * k, (b * g - a * h) * k, (a * e - b * d) * k]]; }
 
 // ---------- controles
 document.getElementById("go").onclick = () => start().catch(e => { stepEl.textContent = "Error: " + e.message; console.error(e); });
 document.getElementById("model").onchange = e => loadModel(e.target.value);
-document.getElementById("reset").onclick = () => { obj.cx = MAT_W / 2; obj.cy = MAT_H / 2; obj.size = 220; obj.yaw = 0; };
+document.getElementById("reset").onclick = () => { obj.cx = MAT_W / 2; obj.cy = MAT_H / 2; obj.size = 220; obj.yaw = 0; obj.tilt.identity(); };
 document.getElementById("quit").onclick = () => { stopTalk(); const s = video.srcObject; if (s) s.getTracks().forEach(tr => tr.stop()); stepEl.textContent = "Sesión cerrada."; document.getElementById("start").style.display = "grid"; };
 
 // ---------- tutor de Jedomi (barra lateral del curso, ya inyectada en esta página por el plugin)
@@ -338,7 +363,7 @@ const J = { sidebar: () => document.getElementById("jedomi-sidebar"), trigger: (
   lastAnswer: () => { const b = document.querySelectorAll("#jedomi-messages .jedomi-message-assistant .jedomi-bubble"); if (!b.length) return "";
     const c = b[b.length - 1].cloneNode(true); c.querySelectorAll(".jedomi-msg-actions, button").forEach(x => x.remove()); return c.innerText.trim(); } };
 const modelLabel = () => (MOODLE && document.getElementById("model").value !== "aro" && MOODLE.modelName) || (document.getElementById("model").selectedOptions[0]?.textContent || "la pieza").replace(/^\d\)\s*/, "");
-const sceneText = () => `(modelo «${modelLabel()}», ${Math.round(obj.tris / 1000)} mil triángulos, tamaño ${Math.round(obj.size)} mm, giro ${Math.round(obj.yaw * 180 / Math.PI)}°, ${heldBy || two ? "la tengo cogida" : "está apoyada en el tapete"})`;
+const sceneText = () => `(modelo «${modelLabel()}», ${Math.round(obj.tris / 1000)} mil triángulos, tamaño ${Math.round(obj.size)} mm, giro ${Math.round(obj.yaw * 180 / Math.PI)}°, volteo ${Math.round(2 * Math.acos(Math.min(1, Math.abs(obj.tilt.w))) * 180 / Math.PI)}°, ${heldBy || two ? "la tengo cogida" : "está apoyada en el tapete"})`;
 function openPanel() { const sb = J.sidebar(); if (sb && sb.classList.contains("jedomi-closed")) J.trigger()?.click(); }
 async function snapshot() {                             // captura compuesta: fuente de vídeo + lienzo 3D, a media resolución
   renderer.render(scene, camera);
