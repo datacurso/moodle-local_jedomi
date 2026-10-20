@@ -60,12 +60,13 @@ export function buildParts(root, meta = null) {
     const cW = box.getCenter(new THREE.Vector3()), cL = cW.clone().applyMatrix4(inv);
     mbox.union(box);
     const nodes = [...g.nodes].map(n => {
-      // matriz lineal root→padre del nodo (para expresar desplazamientos de root en el espacio del padre)
-      const m4 = n.parent.matrixWorld.clone().invert().multiply(root.matrixWorld), o4 = new THREE.Vector3().applyMatrix4(m4);
-      return { n, p0: n.position.clone(), m4, o4 };
+      // M: root→padre del nodo. L0: matriz original del nodo expresada en coordenadas de root (para girar/mover la pieza en root)
+      const m4 = n.parent.matrixWorld.clone().invert().multiply(root.matrixWorld); n.updateMatrix();
+      const L0 = m4.clone().invert().multiply(n.matrix);
+      return { n, m4, L0, p0: n.position.clone(), q0: n.quaternion.clone(), s0: n.scale.clone() };
     });
     for (const m of g.meshes) { if (Array.isArray(m.material)) m.material = m.material.map(x => x.clone()); else m.material = m.material.clone(); }
-    parts.push({ key: g.key, name: g.name, desc: g.desc, meshes: g.meshes, nodes, centerL: cL, dir: new THREE.Vector3(), offset: new THREE.Vector3() });
+    parts.push({ key: g.key, name: g.name, desc: g.desc, meshes: g.meshes, nodes, centerL: cL, dir: new THREE.Vector3(), offset: new THREE.Vector3(), rot: new THREE.Quaternion() });
   }
   const cModel = mbox.getCenter(new THREE.Vector3()).applyMatrix4(inv);
   const sizeL = new THREE.Box3().setFromObject(root).getSize(new THREE.Vector3()).length() / (root.matrixWorld.getMaxScaleOnAxis() || 1);
@@ -79,14 +80,20 @@ export function buildParts(root, meta = null) {
   return parts;
 }
 
-// aplica separación (0…1,2) + desplazamiento manual de cada pieza
+// aplica separación (0…1,2) + desplazamiento y giro propios de cada pieza (giro alrededor de su centro), en coordenadas de root
+const _T = new THREE.Matrix4(), _A = new THREE.Matrix4(), _B = new THREE.Matrix4(), _R = new THREE.Matrix4(), _v = new THREE.Vector3();
 export function applyParts(parts, explode) {
-  const v = new THREE.Vector3();
   for (const p of parts) {
-    v.copy(p.dir).multiplyScalar(explode).add(p.offset);                        // en coordenadas de root
-    for (const k of p.nodes) { const local = v.clone().applyMatrix4(k.m4).sub(k.o4); k.n.position.copy(k.p0).add(local); }
+    _v.copy(p.dir).multiplyScalar(explode).add(p.offset);
+    _T.makeTranslation(_v.x, _v.y, _v.z);
+    _A.makeTranslation(p.centerL.x, p.centerL.y, p.centerL.z); _B.makeTranslation(-p.centerL.x, -p.centerL.y, -p.centerL.z); _R.makeRotationFromQuaternion(p.rot);
+    const W = _T.clone().multiply(_A).multiply(_R).multiply(_B);          // transformación de la pieza en root
+    for (const k of p.nodes) { const m = k.m4.clone().multiply(W).multiply(k.L0); m.decompose(k.n.position, k.n.quaternion, k.n.scale); }
   }
 }
+export function resetPart(p) { p.offset.set(0, 0, 0); p.rot.identity(); }
+// centro actual de la pieza en root (tras separación y desplazamiento)
+export function partCenter(p, explode) { return p.centerL.clone().addScaledVector(p.dir, explode).add(p.offset); }
 
 export function setHighlight(part, kind) {        // kind: "hover" | "selected" | null
   if (!part) return;

@@ -81,7 +81,7 @@ $config = [
     'strings' => ['nomodel' => get_string('stem_visor_nomodel', 'local_jedomi'), 'intro' => get_string('stem_visor_intro', 'local_jedomi'),
         'talk' => get_string('stem_visor_talk', 'local_jedomi'), 'talk_stop' => get_string('stem_visor_talk_stop', 'local_jedomi'),
         'pj_nocam' => get_string('stem_visor_pj_nocam', 'local_jedomi'), 'pj_speak' => get_string('stem_visor_pj_speak', 'local_jedomi'), 'pj_nodev' => get_string('stem_visor_pj_nodev', 'local_jedomi'), 'pj_nomic' => get_string('stem_visor_pj_nomic', 'local_jedomi'),
-        'zoom_refit' => get_string('stem_visor_zoom_refit', 'local_jedomi'), 'parts_explode' => get_string('stem_visor_parts_explode', 'local_jedomi'), 'parts_join' => get_string('stem_visor_parts_join', 'local_jedomi'), 'zoom_fitting' => get_string('stem_visor_zoom_fitting', 'local_jedomi'), 'zoom_off' => get_string('stem_visor_zoom_off', 'local_jedomi'),
+        'zoom_refit' => get_string('stem_visor_zoom_refit', 'local_jedomi'), 'parts_explode' => get_string('stem_visor_parts_explode', 'local_jedomi'), 'pad_whole' => get_string('stem_visor_pad_whole', 'local_jedomi'), 'parts_join' => get_string('stem_visor_parts_join', 'local_jedomi'), 'zoom_fitting' => get_string('stem_visor_zoom_fitting', 'local_jedomi'), 'zoom_off' => get_string('stem_visor_zoom_off', 'local_jedomi'),
         'voice_consent' => get_string('stem_visor_voice_consent', 'local_jedomi'), 'voice_off' => get_string('stem_visor_voice_off', 'local_jedomi'),
         'intro_next' => get_string('stem_visor_intro_next', 'local_jedomi'), 'intro_done' => get_string('stem_visor_intro_done', 'local_jedomi'),
         'intro_s1' => get_string('stem_visor_intro_s1', 'local_jedomi'), 'intro_s2' => get_string('stem_visor_intro_s2', 'local_jedomi'), 'intro_s3' => get_string('stem_visor_intro_s3', 'local_jedomi'),
@@ -92,6 +92,12 @@ echo $OUTPUT->header();
 ?>
 <style>
   #stage{position:relative;width:100%;height:calc(100vh - 16px);min-height:480px;background:#000;border-radius:12px;overflow:hidden}
+  #pad{position:absolute;right:16px;bottom:40px;z-index:5;padding:10px 12px;font-size:12px;color:#cbd5e1}
+  #pad-target{font-weight:600;color:#fbbf24;font-size:13px;margin-bottom:6px;max-width:300px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #pad .padgrid{display:flex;gap:12px;align-items:flex-start}#pad .padsec{display:flex;flex-direction:column;gap:4px;align-items:center}
+  #pad .dpad{display:grid;grid-template-columns:repeat(3,34px);gap:3px}#pad .rpad{display:grid;grid-template-columns:repeat(2,34px);gap:3px}#pad .spad{display:grid;grid-template-columns:34px;gap:3px}
+  #pad button{width:34px;height:34px;font-size:16px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:#1f2937;color:#f3f4f6;cursor:pointer;touch-action:none;user-select:none}
+  #pad button:active{background:#f59e0b;color:#111}#pad button:focus-visible{outline:2px solid #60a5fa;outline-offset:1px}
   #partlabel{position:absolute;z-index:6;pointer-events:none;background:rgba(15,17,21,.9);color:#f3f4f6;font-size:13px;padding:3px 8px;border-radius:6px;border:1px solid rgba(56,189,248,.6)}
   #partinfo{position:absolute;left:16px;bottom:56px;max-width:min(420px,60%);z-index:5;font-size:14px;line-height:1.4}
   #partinfo .pname{font-weight:600;font-size:16px;color:#fbbf24;margin-bottom:4px}#partinfo .pdesc{color:#e5e7eb}
@@ -158,7 +164,16 @@ echo $OUTPUT->header();
       <button id="reset" title="<?php echo get_string('stem_visor_reset_help', 'local_jedomi'); ?>">⟲ <?php echo get_string('stem_visor_reset', 'local_jedomi'); ?></button>
       <button id="pieces" hidden aria-pressed="false" title="<?php echo get_string('stem_visor_parts_help', 'local_jedomi'); ?>">🧩 <?php echo get_string('stem_visor_parts', 'local_jedomi'); ?></button>
       <button id="explode" hidden aria-pressed="false" title="<?php echo get_string('stem_visor_parts_explode_help', 'local_jedomi'); ?>">💥 <?php echo get_string('stem_visor_parts_explode', 'local_jedomi'); ?></button>
+      <button id="padtoggle" aria-pressed="true" title="<?php echo get_string('stem_visor_pad_help', 'local_jedomi'); ?>">🎮 <?php echo get_string('stem_visor_pad', 'local_jedomi'); ?></button>
       <button id="zoom" title="<?php echo get_string('stem_visor_zoom_help', 'local_jedomi'); ?>" aria-pressed="true">🔍 <?php echo get_string('stem_visor_zoom', 'local_jedomi'); ?></button>
+    </div>
+  </div>
+  <div class="vpanel" id="pad" role="group" aria-label="<?php echo get_string('stem_visor_pad', 'local_jedomi'); ?>">
+    <div id="pad-target"></div>
+    <div class="padgrid">
+      <div class="padsec"><span><?php echo get_string('stem_visor_pad_move', 'local_jedomi'); ?></span><div class="dpad"><i></i><button data-a="up" title="<?php echo get_string('stem_visor_pad_up', 'local_jedomi'); ?>" aria-label="<?php echo get_string('stem_visor_pad_up', 'local_jedomi'); ?>">▲</button><i></i><button data-a="left" title="<?php echo get_string('stem_visor_pad_left', 'local_jedomi'); ?>" aria-label="<?php echo get_string('stem_visor_pad_left', 'local_jedomi'); ?>">◀</button><button data-a="home" title="<?php echo get_string('stem_visor_pad_home', 'local_jedomi'); ?>" aria-label="<?php echo get_string('stem_visor_pad_home', 'local_jedomi'); ?>">⌂</button><button data-a="right" title="<?php echo get_string('stem_visor_pad_right', 'local_jedomi'); ?>" aria-label="<?php echo get_string('stem_visor_pad_right', 'local_jedomi'); ?>">▶</button><i></i><button data-a="down" title="<?php echo get_string('stem_visor_pad_down', 'local_jedomi'); ?>" aria-label="<?php echo get_string('stem_visor_pad_down', 'local_jedomi'); ?>">▼</button><i></i></div></div>
+      <div class="padsec"><span><?php echo get_string('stem_visor_pad_rotate', 'local_jedomi'); ?></span><div class="rpad"><button data-a="yawl" title="<?php echo get_string('stem_visor_pad_yawl', 'local_jedomi'); ?>" aria-label="<?php echo get_string('stem_visor_pad_yawl', 'local_jedomi'); ?>">⟲</button><button data-a="yawr" title="<?php echo get_string('stem_visor_pad_yawr', 'local_jedomi'); ?>" aria-label="<?php echo get_string('stem_visor_pad_yawr', 'local_jedomi'); ?>">⟳</button><button data-a="pitchf" title="<?php echo get_string('stem_visor_pad_pitchf', 'local_jedomi'); ?>" aria-label="<?php echo get_string('stem_visor_pad_pitchf', 'local_jedomi'); ?>">⤓</button><button data-a="pitchb" title="<?php echo get_string('stem_visor_pad_pitchb', 'local_jedomi'); ?>" aria-label="<?php echo get_string('stem_visor_pad_pitchb', 'local_jedomi'); ?>">⤒</button><button data-a="rolll" title="<?php echo get_string('stem_visor_pad_rolll', 'local_jedomi'); ?>" aria-label="<?php echo get_string('stem_visor_pad_rolll', 'local_jedomi'); ?>">↶</button><button data-a="rollr" title="<?php echo get_string('stem_visor_pad_rollr', 'local_jedomi'); ?>" aria-label="<?php echo get_string('stem_visor_pad_rollr', 'local_jedomi'); ?>">↷</button></div></div>
+      <div class="padsec"><span><?php echo get_string('stem_visor_pad_size', 'local_jedomi'); ?></span><div class="spad"><button data-a="bigger" title="<?php echo get_string('stem_visor_pad_bigger', 'local_jedomi'); ?>" aria-label="<?php echo get_string('stem_visor_pad_bigger', 'local_jedomi'); ?>">＋</button><button data-a="smaller" title="<?php echo get_string('stem_visor_pad_smaller', 'local_jedomi'); ?>" aria-label="<?php echo get_string('stem_visor_pad_smaller', 'local_jedomi'); ?>">－</button></div></div>
     </div>
   </div>
   <div id="partlabel" hidden></div>

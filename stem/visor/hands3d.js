@@ -560,7 +560,7 @@ export function createHandsIntro(canvas, opts = {}) {
       if (ro) ro.disconnect();
       scene.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
       skin.dispose();
-      renderer.dispose();
+      scene.traverse(o => { const ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : []; for (const m of ms) { for (const k in m) { const v = m[k]; if (v && v.isTexture) v.dispose(); } m.dispose(); } }); renderer.dispose(); renderer.forceContextLoss();
     },
   };
 }
