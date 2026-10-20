@@ -34,34 +34,47 @@
      "base": "/local/jedomi/stem/visor/", "importmap": "{}", "config": "{}", "verintro": 1, "vervisor": 1}
 }}
 <div id="stage">
-    <div id="titlebar"><span class="tname">{{activityname}}</span><span class="tcourse">{{coursename}}</span>
-        <a id="quit" class="tquit" href="{{quiturl}}" title="{{#str}}stem_visor_quit_help, local_jedomi{{/str}}">✕ {{#str}}stem_visor_quit, local_jedomi{{/str}}</a></div>
-    <div id="view"><video id="video" autoplay playsinline muted></video><canvas id="three"></canvas></div>
-    <div id="hud">
-        <div class="vpanel" id="step">…</div>
-        <div id="ctl">
+    <div id="titlebar">
+        <div class="tinfo"><span class="tname">{{activityname}}</span><span class="tcourse">{{coursename}}</span></div>
+        <div id="ctl" role="toolbar" aria-label="{{#str}}stem_visor_toolbar, local_jedomi{{/str}}">
             {{! El selector sólo existe para quien puede configurar el tutor; el alumno recibe únicamente la pieza del docente. }}
             <select id="model" {{^dev}}hidden{{/dev}}>
                 {{#hasmodel}}<option value="{{modelurl}}" selected>{{modelname}}</option>{{/hasmodel}}
                 {{#showaro}}<option value="aro" {{^hasmodel}}selected{{/hasmodel}}>Aro de prueba (desarrollo)</option>{{/showaro}}
             </select>
-            {{#voiceenabled}}<button id="talk" class="primary" title="{{#str}}stem_visor_talk_help, local_jedomi{{/str}}">🎙 {{#str}}stem_visor_talk, local_jedomi{{/str}}</button>{{/voiceenabled}}
-            <button id="explain" title="{{#str}}stem_visor_explain_help, local_jedomi{{/str}}">💬 {{#str}}stem_visor_explain, local_jedomi{{/str}}</button>
-            <button id="reset" title="{{#str}}stem_visor_reset_help, local_jedomi{{/str}}">⟲ {{#str}}stem_visor_reset, local_jedomi{{/str}}</button>
+            <button id="viewtoggle" aria-pressed="false" title="{{#str}}stem_visor_view_help, local_jedomi{{/str}}">🖥 {{#str}}stem_visor_view_web, local_jedomi{{/str}}</button>
+            <span class="tsep" aria-hidden="true"></span>
             <button id="pieces" hidden aria-pressed="false" title="{{#str}}stem_visor_parts_help, local_jedomi{{/str}}">🧩 {{#str}}stem_visor_parts, local_jedomi{{/str}}</button>
             <button id="explode" hidden aria-pressed="false" title="{{#str}}stem_visor_parts_explode_help, local_jedomi{{/str}}">💥 {{#str}}stem_visor_parts_explode, local_jedomi{{/str}}</button>
-            <button id="padtoggle" aria-pressed="true" title="{{#str}}stem_visor_pad_help, local_jedomi{{/str}}">🎮 {{#str}}stem_visor_pad, local_jedomi{{/str}}</button>
-            <button id="viewtoggle" aria-pressed="false" title="{{#str}}stem_visor_view_help, local_jedomi{{/str}}">🖥 {{#str}}stem_visor_view_web, local_jedomi{{/str}}</button>
+            <button id="reset" title="{{#str}}stem_visor_reset_help, local_jedomi{{/str}}">⟲ {{#str}}stem_visor_reset, local_jedomi{{/str}}</button>
             <button id="zoom" title="{{#str}}stem_visor_zoom_help, local_jedomi{{/str}}" aria-pressed="true">🔍 {{#str}}stem_visor_zoom, local_jedomi{{/str}}</button>
-            <span id="bgpick" hidden role="group" aria-label="{{#str}}stem_visor_bg, local_jedomi{{/str}}">{{#str}}stem_visor_bg, local_jedomi{{/str}}
-                <button data-bg="#dfe6ee" title="{{#str}}stem_visor_bg_light, local_jedomi{{/str}}" style="background:#dfe6ee"></button>
-                <button data-bg="#1e293b" title="{{#str}}stem_visor_bg_dark, local_jedomi{{/str}}" style="background:#1e293b"></button>
-                <button data-bg="#ffffff" title="{{#str}}stem_visor_bg_white, local_jedomi{{/str}}" style="background:#ffffff"></button>
+            <span id="bgpick" role="group" aria-label="{{#str}}stem_visor_bg, local_jedomi{{/str}}" title="{{#str}}stem_visor_bg_help, local_jedomi{{/str}}">🎨
+                <button data-bg="none" class="bgnone" title="{{#str}}stem_visor_bg_none, local_jedomi{{/str}}" aria-label="{{#str}}stem_visor_bg_none, local_jedomi{{/str}}">∅</button>
+                <button data-bg="#dfe6ee" title="{{#str}}stem_visor_bg_light, local_jedomi{{/str}}" aria-label="{{#str}}stem_visor_bg_light, local_jedomi{{/str}}" style="background:#dfe6ee"></button>
+                <button data-bg="#1e293b" title="{{#str}}stem_visor_bg_dark, local_jedomi{{/str}}" aria-label="{{#str}}stem_visor_bg_dark, local_jedomi{{/str}}" style="background:#1e293b"></button>
+                <button data-bg="#14532d" title="{{#str}}stem_visor_bg_green, local_jedomi{{/str}}" aria-label="{{#str}}stem_visor_bg_green, local_jedomi{{/str}}" style="background:#14532d"></button>
                 <input type="color" id="bgcolor" value="#dfe6ee" aria-label="{{#str}}stem_visor_bg_custom, local_jedomi{{/str}}">
             </span>
         </div>
+        <a id="quit" class="tquit" href="{{quiturl}}" title="{{#str}}stem_visor_quit_help, local_jedomi{{/str}}">✕ {{#str}}stem_visor_quit, local_jedomi{{/str}}</a>
     </div>
-    <div class="vpanel" id="pad" role="group" aria-label="{{#str}}stem_visor_pad, local_jedomi{{/str}}">
+    <div id="view"><video id="video" autoplay playsinline muted></video><canvas id="matbg" aria-hidden="true"></canvas><canvas id="three"></canvas></div>
+    <div id="bottombar">
+        <div class="vpanel" id="step" aria-live="polite">…</div>
+        <div class="bbcenter">
+            {{#voiceenabled}}<button id="talk" class="primary" title="{{#str}}stem_visor_talk_help, local_jedomi{{/str}}">🎙 {{#str}}stem_visor_talk, local_jedomi{{/str}}</button>{{/voiceenabled}}
+            <span id="pttbar" hidden>
+                <button id="ptt" class="primary" aria-label="{{#str}}stem_visor_ptt_hold, local_jedomi{{/str}}">🎤 {{#str}}stem_visor_ptt_hold, local_jedomi{{/str}}</button>
+                <button id="pttmode" aria-pressed="false">{{#str}}stem_visor_ptt_handsfree, local_jedomi{{/str}}</button>
+            </span>
+            <button id="explain" title="{{#str}}stem_visor_explain_help, local_jedomi{{/str}}">💬 {{#str}}stem_visor_explain, local_jedomi{{/str}}</button>
+        </div>
+        <div class="bbright">
+            <button id="padtoggle" aria-pressed="false" title="{{#str}}stem_visor_pad_help, local_jedomi{{/str}}">🎮 {{#str}}stem_visor_pad, local_jedomi{{/str}}</button>
+            <span id="status" title="{{#str}}stem_visor_status_help, local_jedomi{{/str}}">—</span>
+        </div>
+    </div>
+    <div class="vpanel" id="pad" hidden role="group" aria-label="{{#str}}stem_visor_pad, local_jedomi{{/str}}">
         <div id="pad-target"></div>
         <div class="padgrid">
             <div class="padsec"><span>{{#str}}stem_visor_pad_move, local_jedomi{{/str}}</span>
@@ -83,12 +96,7 @@
             <button id="part-close" aria-label="{{#str}}closebuttontitle{{/str}}">✕</button>
         </div>
     </div>
-    <div class="vpanel" id="pttbar" hidden>
-        <button id="ptt" class="primary" aria-label="{{#str}}stem_visor_ptt_hold, local_jedomi{{/str}}">🎤 {{#str}}stem_visor_ptt_hold, local_jedomi{{/str}}</button>
-        <button id="pttmode" aria-pressed="false">{{#str}}stem_visor_ptt_handsfree, local_jedomi{{/str}}</button>
-    </div>
-    <div class="vpanel" id="status">—</div>
-    <div class="vpanel" id="ia"></div>
+    <div class="vpanel" id="ia" hidden></div>
     <div id="jv-intro" data-step="1" role="dialog" aria-modal="true" aria-labelledby="intro-title">
         <div class="ipanel">
             <div class="ihead"><b id="intro-title">{{#str}}stem_visor_intro_title, local_jedomi{{/str}}</b><button id="intro-skip">{{#str}}stem_visor_intro_skip, local_jedomi{{/str}} ›</button></div>

@@ -463,8 +463,10 @@ let actx = null; function beep(f) { try { actx = actx || new AudioContext(); con
 const overlay = document.createElement("canvas"); overlay.style.cssText = "position:absolute;inset:0;width:100%;height:100%;object-fit:contain;pointer-events:none"; document.getElementById("view").appendChild(overlay); const octx = overlay.getContext("2d");
 
 // ---------- vistas: «web» (3D en pantalla, sin cámara: tapete virtual, cámara orbital, fondo elegible) y «ar» (cámara + tapete real)
-const view = { mode: "ar", controls: null, ro: null, bg: "#dfe6ee" };
-try { view.bg = localStorage.getItem("jedomi_visor_bg") || view.bg; } catch (e) { }
+const view = { mode: "ar", controls: null, ro: null, bg: "#dfe6ee", bgAR: "#dfe6ee" };
+try { view.bg = localStorage.getItem("jedomi_visor_bg") || view.bg; view.bgAR = localStorage.getItem("jedomi_visor_bg_ar") || view.bgAR; } catch (e) { }
+const curBg = () => view.mode === "web" ? view.bg : view.bgAR;
+function applyWebBg() { if (view.bg === "none") { scene.background = null; renderer.setClearColor(0x000000, 0); } else { scene.background = new THREE.Color(view.bg); renderer.setClearColor(view.bg, 1); } }
 const virtualMat = new THREE.Group(); virtualMat.visible = false; mat.add(virtualMat);
 { // tapete virtual: hoja clara con los 4 marcadores en las esquinas (mismo tamaño que el real)
   const sheet = new THREE.Mesh(new THREE.PlaneGeometry(MAT_W, MAT_H), new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.9 }));
@@ -484,7 +486,7 @@ function enterWeb() {
   const M = new THREE.Matrix4().set(1, 0, 0, -MAT_W / 2, 0, 0, -1, 0, 0, 1, 0, -MAT_H / 2, 0, 0, 0, 1);
   mat.matrixAutoUpdate = false; mat.matrix.copy(M); mat.matrixWorldNeedsUpdate = true; virtualMat.visible = true;
   lastPose = { H: [[1, 0, 0], [0, 1, 0], [0, 0, 1]], pose: { R: [[1, 0, 0], [0, 1, 0], [0, 0, 1]], t: [0, 0, 0] } };   // sólo para que el código de piezas tenga una pose
-  scene.background = new THREE.Color(view.bg); renderer.setClearColor(view.bg, 1);
+  applyWebBg();
   camera.position.set(0, 520, 620); camera.up.set(0, 1, 0); camera.lookAt(0, 0, 0);
   if (!view.controls) { view.controls = new OrbitControls(camera, document.getElementById("stage")); view.controls.enableDamping = true; view.controls.target.set(0, 40, 0);
     view.controls.minDistance = 150; view.controls.maxDistance = 2500; view.controls.maxPolarAngle = Math.PI * 0.49; }
@@ -499,17 +501,57 @@ async function enterAR(opts = {}) {
   camera.position.set(0, 0, 0); camera.rotation.set(0, 0, 0); camera.up.set(0, 1, 0); camera.updateMatrixWorld();
   document.body.classList.remove("jv-web"); lastPose = null; poseOK = false; Hinv = null;
   try { zoom.on = localStorage.getItem("jedomi_visor_zoom") !== "0"; } catch (e) { zoom.on = true; } zoom.locked = false; setZoomBtn();
-  await startSource(opts); viewUI(); log("vista RA"); try { localStorage.setItem("jedomi_visor_view", "ar"); } catch (e) { }
+  if (matbg) matbg.style.display = "";
+  await startSource(opts); viewUI(); bgUI(); log("vista RA"); try { localStorage.setItem("jedomi_visor_view", "ar"); } catch (e) { }
 }
 function viewUI() {
   const b = document.getElementById("viewtoggle"); if (b) { b.textContent = view.mode === "web" ? "📷 " + (MOODLE?.strings?.view_ar || "Vista RA") : "🖥 " + (MOODLE?.strings?.view_web || "Vista 3D"); b.setAttribute("aria-pressed", String(view.mode === "web")); }
-  const bg = document.getElementById("bgpick"); if (bg) { bg.hidden = view.mode !== "web"; const i = document.getElementById("bgcolor"); if (i) i.value = view.bg; }
+  bgUI();
   const z = document.getElementById("zoom"); if (z) z.hidden = view.mode === "web";
 }
 document.getElementById("viewtoggle")?.addEventListener("click", () => { if (view.mode === "web") enterAR({ cameraId: (() => { try { return localStorage.getItem("jedomi_visor_cam") || null; } catch (e) { return null; } })() }).catch(e => { stepEl.textContent = "No se pudo abrir la cámara: " + e.message; enterWeb(); }); else enterWeb(); });
-function setBg(c) { view.bg = c; try { localStorage.setItem("jedomi_visor_bg", c); } catch (e) { } if (view.mode === "web") { scene.background = new THREE.Color(c); renderer.setClearColor(c, 1); } }
+function bgUI() {
+  const c = curBg(), i = document.getElementById("bgcolor"); if (i && c !== "none") i.value = c;
+  document.querySelectorAll("#bgpick button[data-bg]").forEach(b => b.classList.toggle("on", b.dataset.bg === c));
+}
+function setBg(c) {
+  if (view.mode === "web") { view.bg = c; try { localStorage.setItem("jedomi_visor_bg", c); } catch (e) { } applyWebBg(); }
+  else { view.bgAR = c; try { localStorage.setItem("jedomi_visor_bg_ar", c); } catch (e) { } }
+  bgUI(); log("fondo " + view.mode + ": " + c);
+}
 document.getElementById("bgcolor")?.addEventListener("input", e => setBg(e.target.value));
-document.querySelectorAll("#bgpick button[data-bg]").forEach(b => b.addEventListener("click", () => { setBg(b.dataset.bg); const i = document.getElementById("bgcolor"); if (i) i.value = b.dataset.bg; }));
+document.querySelectorAll("#bgpick button[data-bg]").forEach(b => b.addEventListener("click", () => setBg(b.dataset.bg)));
+// tapete de color en la vista RA: se pinta sobre la hoja (polígono proyectado de sus esquinas), dejando a la vista los 4 códigos
+// (con su margen blanco) y recortando las manos para que siempre se vean por encima del color
+const matbg = document.getElementById("matbg"), mctx = matbg ? matbg.getContext("2d") : null;
+function projMat(x, y) { const v = mat.localToWorld(new THREE.Vector3(x, y, 0)); v.project(camera); return [(v.x + 1) / 2 * W, (1 - v.y) / 2 * Hh]; }
+function hull2(pts) {                                    // envolvente convexa (cadena monótona)
+  const P = pts.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]); const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lo = [], up = []; for (const p of P) { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop(); lo.push(p); }
+  for (let i = P.length - 1; i >= 0; i--) { const p = P[i]; while (up.length >= 2 && cr(up[up.length - 2], up[up.length - 1], p) <= 0) up.pop(); up.push(p); }
+  return lo.slice(0, -1).concat(up.slice(0, -1));
+}
+function drawMatBg(active) {
+  if (!mctx) return;
+  if (matbg.width !== W || matbg.height !== Hh) { matbg.width = W; matbg.height = Hh; }
+  mctx.clearRect(0, 0, W, Hh);
+  if (view.mode === "web" || view.bgAR === "none" || !lastPose) return;
+  const poly = [[0, 0], [MAT_W, 0], [MAT_W, MAT_H], [0, MAT_H]].map(([x, y]) => projMat(x, y));
+  mctx.globalCompositeOperation = "source-over"; mctx.fillStyle = view.bgAR; mctx.globalAlpha = 1;
+  mctx.beginPath(); poly.forEach((p, i) => i ? mctx.lineTo(p[0], p[1]) : mctx.moveTo(p[0], p[1])); mctx.closePath(); mctx.fill();
+  mctx.globalCompositeOperation = "destination-out";
+  for (let id = 0; id < 4; id++) {                       // los códigos de las esquinas (con 6 mm de margen blanco) siguen viéndose
+    const c = markerCornersMM(id), q = 6; const x0 = Math.min(...c.map(p => p[0])) - q, x1 = Math.max(...c.map(p => p[0])) + q, y0 = Math.min(...c.map(p => p[1])) - q, y1 = Math.max(...c.map(p => p[1])) + q;
+    const sq = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]].map(([x, y]) => projMat(x, y));
+    mctx.beginPath(); sq.forEach((p, i) => i ? mctx.lineTo(p[0], p[1]) : mctx.moveTo(p[0], p[1])); mctx.closePath(); mctx.fill();
+  }
+  mctx.lineJoin = "round"; mctx.lineWidth = Math.max(18, W / 60);
+  for (const h of active) {                              // las manos quedan por encima del color
+    if (!h.raw) continue; const hp = hull2(h.raw); if (hp.length < 3) continue;
+    mctx.beginPath(); hp.forEach((p, i) => i ? mctx.lineTo(p[0], p[1]) : mctx.moveTo(p[0], p[1])); mctx.closePath(); mctx.fill(); mctx.stroke();
+  }
+  mctx.globalCompositeOperation = "source-over";
+}
 
 // ---------- bucle
 let source = video;                                   // fuente de imagen: la cámara o, en modo prueba (?img=…), una foto fija
@@ -604,6 +646,7 @@ function loop() {
   const T4 = performance.now();
   const cornersPx = [[0, 0], [MAT_W, 0], [MAT_W, MAT_H], [0, MAT_H]].map(([x, y]) => { const v = new THREE.Vector3(x, y, 0); mat.localToWorld(v); v.project(camera); return [Math.round((v.x + 1) / 2 * W), Math.round((1 - v.y) / 2 * Hh)]; });
   if (view.mode !== "web") autoFrame(cornersPx, hull, t);
+  drawMatBg(active);
   window.__dbg = { ms: { aruco: T1 - T0, hands: T3 - T2, render: T4 - T3 }, cornersPx, markersPx: markers.map(m => ({ id: m.id, c: m.corners.map(c => [Math.round(c.x * 4), Math.round(c.y * 4)]) })), pose: lastPose && lastPose.pose, drawTris: renderer.info.render.triangles, W, Hh };
   octx.clearRect(0, 0, W, Hh);
   for (const h of active) {
@@ -619,7 +662,7 @@ function loop() {
     fetch("http://127.0.0.1:8766/metrics", { method: "POST", mode: "cors", headers: { "content-type": "application/json" },
       body: JSON.stringify({ t: Math.round(t), fps: Math.round(fps), cam: (video.srcObject && video.srcObject.getVideoTracks()[0] || {}).label || "", nmark, poseFrozen, hands: active.length, pinching: active.filter(h => h.pinch).length, held: !!(heldBy || two), mode: two ? "pinch2" : (heldBy ? "pinch" : ""), size: Math.round(obj.size), tris: Math.round(obj.tris), tilt: Math.round(tiltDeg(obj.rot)), gesture: gestureName, parts: pieces.list.length, piecesOn: pieces.on, explode: +pieces.explode.toFixed(2), sel: pieces.sel ? pieces.sel.name : "", talk: talk.on, asking, sidebar: !!document.getElementById("jedomi-sidebar"), log: logs.slice(-4), ms: ms && { aruco: Math.round(ms.aruco), hands: Math.round(ms.hands), render: Math.round(ms.render * 10) / 10 }, W, Hh, grabs: logs.length }) }).catch(() => { }); }
   if (!talk.on && !asking) stepEl.textContent = (view.mode === "web" ? WEB_HINT[gestureName] : null) || GESTURE_HINT[gestureName] || gestureName;
-  if (view.mode === "web") statusEl.textContent = `vista 3D · ${Math.round(obj.tris / 1000)} k triángulos · ${fps.toFixed(0)} fps`; else statusEl.textContent = `tapete ${poseOK ? (poseFrozen ? "congelado (destapa las esquinas)" : nmark + " marcadores") : "no visto"} · manos ${active.length} · ${heldBy || two ? "COGIDO" : "libre"} · ${Math.round(obj.tris / 1000)} k triángulos · ${fps.toFixed(0)} fps`;
+  if (view.mode === "web") statusEl.textContent = `🖥 3D · ${fps.toFixed(0)} fps`; else statusEl.textContent = `${poseOK ? (poseFrozen ? "⚠ destapa las esquinas" : "tapete ✓") : "⚠ tapete no visto"} · ✋ ${active.length} · ${fps.toFixed(0)} fps`;
   requestAnimationFrame(loop);
 }
 function cross3(a, b) { return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]; }
@@ -724,7 +767,7 @@ function handlePointMarks(ans) {                          // el tutor señala: �
   POINT_RE.lastIndex = 0; return ans.replace(POINT_RE, "").trim();
 }
 const ASK_POINT_RE = { test: t => /\b(senal|muestr|ensen|indica|donde (esta|queda)|cual es)/.test(norm(t)) };   // sin tildes: «señálamela», «muéstrame»…
-queueMicrotask(() => { if (window.__ar) Object.assign(window.__ar, { point: t => pointAt(findPart(t), "qa"), marks: handlePointMarks, findPart, asks: t => ASK_POINT_RE.test(t) }); });   // QA
+queueMicrotask(() => { if (window.__ar) Object.assign(window.__ar, { point: t => pointAt(findPart(t), "qa"), marks: handlePointMarks, findPart, asks: t => ASK_POINT_RE.test(t), frame: () => loop(), setBg }); });   // QA (frame: avanza un fotograma a mano en pestañas ocultas)
 
 // ---------- modo conversación: el tutor habla y escucha, como en la estación física
 // Voz → texto: SpeechRecognition del navegador (Chrome/Edge; en Chrome el audio pasa por el servicio de voz de Google).
