@@ -151,7 +151,12 @@ class Hand {
     // referencia = vector del pellizco a la base del corazón (nudillo 9) proyectado al plano perpendicular al eje; su ángulo gira con la muñeca.
     { const a = [w8.x - w4.x, w8.y - w4.y, w8.z - w4.z], la = Math.hypot(...a) || 1; const ax = a.map(v => v / la);
       const w9 = wlm[9], mid = [(w4.x + w8.x) / 2, (w4.y + w8.y) / 2, (w4.z + w8.z) / 2]; const v = [w9.x - mid[0], w9.y - mid[1], w9.z - mid[2]];
-      const up = Math.abs(ax[2]) < 0.9 ? [0, 0, 1] : [0, 1, 0]; let e1 = cross3(ax, up); const l1 = Math.hypot(...e1) || 1; e1 = e1.map(x => x / l1); const e2 = cross3(ax, e1);
+      // base CONTINUA (QA v12.5): se arrastra el e1 del fotograma anterior y se re-ortonormaliza contra el eje nuevo (Gram-Schmidt);
+      // así no conmuta cuando el eje pulgar→índice se acerca a la vertical de la cámara. Sólo la primera vez se construye con un «arriba» fijo.
+      let e1 = this.e1prev; if (!e1) { const up = Math.abs(ax[2]) < 0.9 ? [0, 0, 1] : [0, 1, 0]; e1 = cross3(ax, up); }
+      const da = dot3(e1, ax); e1 = e1.map((x, i) => x - da * ax[i]); let l1 = Math.hypot(...e1);
+      if (l1 < 1e-3) { const up = Math.abs(ax[2]) < 0.9 ? [0, 0, 1] : [0, 1, 0]; e1 = cross3(ax, up); l1 = Math.hypot(...e1) || 1; }
+      e1 = e1.map(x => x / l1); const e2 = cross3(ax, e1); this.e1prev = e1;
       this.flip = Math.atan2(dot3(v, e2), dot3(v, e1)); this.axisCam = ax; }
     this.last = t;
   }
@@ -177,7 +182,7 @@ function overPx(hull, p, margin) { return hull && p[0] > hull.x0 - margin && p[0
 // etiqueta de la mano (al perder y recuperar la mano la etiqueta cambia: Left → Left3, y eso soltaba el objeto); (c) 0,35 s de
 // gracia si el pellizco desaparece un instante (mano fuera de cuadro o detección perdida) antes de dar el objeto por soltado.
 let heldBy = null, grabOff = [0, 0], grabYaw = 0, grabAngle = null, two = null; const objFilter = new OneEuro(1.3, 0.04);
-let grabFlip = null, flipLast = null, flipArmed = false; const FLIP_SIGN = 1, FLIP_DEAD = 8 * Math.PI / 180;
+let grabFlip = null, flipLast = null, flipArmed = false; const FLIP_SIGN = 1, FLIP_DEAD = 8 * Math.PI / 180, FLIP_STEP_DEAD = 2.5 * Math.PI / 180;
 let pinchHold = new Set(), holdPts = [], lastHoldT = 0;
 function gestures(active, t) {
   const hull = objectHullPx();
@@ -210,8 +215,9 @@ function gestures(active, t) {
     if (h.flip != null && flipLast != null && lastPose) {
       const wrap = x => ((x + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
       if (!flipArmed && Math.abs(wrap(h.flip - grabFlip)) > FLIP_DEAD) { flipArmed = true; flipLast = h.flip; log("volteo"); }
-      if (flipArmed) { const step = wrap(h.flip - flipLast); flipLast = h.flip;
-        if (Math.abs(step) < 0.6) {                                     // eje cámara → tapete: a_mat = Rᵀ·a_cam (R en columnas r1 r2 r3)
+      if (flipArmed) { const step = wrap(h.flip - flipLast);
+        if (Math.abs(step) >= 0.6) flipLast = h.flip;                   // salto espurio: se descarta y se re-ancla la referencia
+        else if (Math.abs(step) >= FLIP_STEP_DEAD) { flipLast = h.flip;   // zona muerta por paso (QA): el temblor no se acumula como deriva                                     // eje cámara → tapete: a_mat = Rᵀ·a_cam (R en columnas r1 r2 r3)
           const R = lastPose.pose.R, ac = h.axisCam, am = new THREE.Vector3(dot3(R[0], ac), dot3(R[1], ac), dot3(R[2], ac)).normalize();
           am.applyAxisAngle(new THREE.Vector3(0, 0, 1), -obj.yaw);      // el volteo se compone tras el giro Z: T' = Q(Rz(−yaw)·a, δ)·T
           obj.tilt.premultiply(new THREE.Quaternion().setFromAxisAngle(am, FLIP_SIGN * step)); } }
