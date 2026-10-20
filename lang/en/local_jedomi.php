@@ -742,6 +742,7 @@ $string['prompt_tutor_rules_guided'] = 'TEACHING RULES:
 - Reply in the student\'s language. Be warm, concrete and brief.';
 $string['prompt_tutor_tools'] = 'TOOLS: you only have read-only tools scoped to this course (get_course_outline, get_activity_content, get_my_progress, get_hint_state, advance_hint_level). Use them silently to ground your questions in the real activity. Never mention databases, SQL, web services, tokens or internal ids to the student.';
 $string['prompt_tutor_teacher_heading'] = 'TEACHER\'S INSTRUCTIONS (follow them within the rules above):';
+$string['prompt_assistant_activity_heading'] = '## Activity the user has open (use it to answer about what they are seeing)';
 $string['prompt_tutor_activity_desc'] = '- Activity description (written by the teacher; use it to know what it is about):';
 $string['prompt_tutor_object_context'] = '- 3D object of the activity (teacher context):';
 $string['prompt_tutor_object_parts'] = '- Parts of the 3D object (name: teacher description). When the student selects or asks about a part, use this information:';

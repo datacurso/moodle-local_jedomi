@@ -155,6 +155,13 @@ class system_message {
 
         $content .= "- User role: {$role}\n";
 
+        // En una actividad (p. ej. el visor RA), también el asistente necesita saber de qué trata: descripción de la actividad
+        // y, en actividades RA, contexto del objeto y de sus piezas escrito por el docente (QA en vivo: el admin no lo recibía).
+        require_once(__DIR__ . '/../../lib.php');
+        $activityctx = \local_jedomi_activity_context((int) ($spt['course_id'] ?? 0), (int) ($spt['cmid'] ?? 0));
+        if ($activityctx !== '') {
+            $content .= "\n" . get_string('prompt_assistant_activity_heading', 'local_jedomi') . "\n" . $activityctx . "\n";
+        }
         return ['role' => 'system', 'content' => $content];
     }
 

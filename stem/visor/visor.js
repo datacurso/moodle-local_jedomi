@@ -73,7 +73,8 @@ function poseFromHomography(H, fx, fy, cx, cy) {   // H = K [r1 r2 t] (coordenad
 
 // ---------- integración Moodle (window.JEDOMI_VISOR lo inyecta stem/visor.php); sin ella funciona como prototipo local
 const MOODLE = window.JEDOMI_VISOR || null;
-const TELEMETRY = new URLSearchParams(location.search).get("telemetry") === "1"; let telemetryT = 0;
+// telemetría de desarrollo: ?telemetry=1 la activa para esta pestaña (sessionStorage) y sobrevive a la navegación por «Entrar»; ?telemetry=0 la apaga
+const TELEMETRY = (() => { const q = new URLSearchParams(location.search).get("telemetry"); try { if (q === "1") sessionStorage.setItem("jedomi_visor_telemetry", "1"); if (q === "0") sessionStorage.removeItem("jedomi_visor_telemetry"); return sessionStorage.getItem("jedomi_visor_telemetry") === "1"; } catch (e) { return q === "1"; } })(); let telemetryT = 0;
 const BASE = MOODLE ? MOODLE.base : "";
 // ---------- estado
 const video = document.getElementById("video"), canvas = document.getElementById("three");
@@ -604,6 +605,16 @@ document.getElementById("explain").onclick = async () => {
   sceneChanged(); const ans = await askTutor(`Estoy viendo en realidad aumentada el modelo 3D de esta actividad ${sceneText()}. Te adjunto la captura de lo que veo. Ayúdame a entender qué es y cómo funciona.`);
   if (talk.on && ans) speak(ans);
 };
+
+// ---------- conversación nueva al entrar en otra actividad: el chat de Jedomi es de sesión y arrastraba el contexto de
+// actividades anteriores (QA en vivo: el tutor hablaba del aro y de otra pieza). Al cambiar de actividad, se empieza de cero.
+(function freshChatPerActivity() {
+  if (!MOODLE) return;
+  let last = null; try { last = sessionStorage.getItem("jedomi_visor_last_cmid"); } catch (e) { }
+  try { sessionStorage.setItem("jedomi_visor_last_cmid", String(MOODLE.cmid)); } catch (e) { }
+  if (last === String(MOODLE.cmid)) return;
+  let tries = 0; const t = setInterval(() => { const b = document.getElementById("jedomi-clear"); if (b) { clearInterval(t); setTimeout(() => { b.click(); log("conversación nueva para esta actividad"); }, 800); } else if (++tries > 40) clearInterval(t); }, 150);
+})();
 
 // ---------- modo conversación: el tutor habla y escucha, como en la estación física
 // Voz → texto: SpeechRecognition del navegador (Chrome/Edge; en Chrome el audio pasa por el servicio de voz de Google).
