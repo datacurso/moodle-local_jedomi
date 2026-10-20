@@ -3,6 +3,7 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { initPrejoin } from "./devices.js";
+import { buildParts, applyParts, setHighlight, pickPart } from "./parts.js";
 import { FilesetResolver, HandLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
 
 // ---------- geometría del tapete (idéntica a stem_vision.py)
@@ -124,8 +125,10 @@ async function loadModel(spec) {
   const wrap = new THREE.Group(); wrap.add(root);
   // el modelo viene con Y arriba; nuestro marco tiene Z hacia la cámara (−Z = arriba del tapete): girar −90° en X para que «arriba» = −Z
   wrap.rotation.x = -Math.PI / 2;
-  objGroup.add(wrap); obj.mesh = wrap; obj.yaw = 0; obj.rot.identity(); objGroup.rotation.set(0, 0, 0);
+  objGroup.add(wrap); obj.mesh = wrap; obj.root = root; obj.yaw = 0; obj.rot.identity(); objGroup.rotation.set(0, 0, 0);
   obj.bbox = new THREE.Box3().setFromObject(wrap);
+  pieces.list = buildParts(root); pieces.explode = pieces.target = 0; pieces.sel = pieces.hover = null; refreshPiecesUI();
+  log("piezas: " + pieces.list.length + (pieces.list.length ? " (" + pieces.list.slice(0, 6).map(p => p.name).join(", ") + "…)" : ""));
   console.log("modelo", spec, "triángulos", Math.round(obj.tris));
 }
 function placeObject(lifted) {
@@ -194,10 +197,11 @@ let heldBy = null, grabOff = [0, 0], two = null; const objFilter = new OneEuro(1
 let pinchHold = new Set(), holdPts = [], lastHoldT = 0;
 let qHand0 = null, rot0 = null, rotArmed = false; const ROT_DEAD = 6 * Math.PI / 180;   // 6° para empezar a girar (luego sigue 1:1, re-anclado al armar: sin salto)
 let gestureName = "libre";
-const GESTURE_HINT = { "ratón": "🖱 Arrastra para mover · rueda: tamaño · botón derecho o Mayús+arrastrar: girar en 3D.", "libre": "① Pellizca el borde de la pieza con pulgar e índice para cogerla.", "cogida": "② Cogida: muévela con la mano; gira la mano para girarla. Abre los dedos para soltar.", "cogida: girando": "② Girando con tu mano. Abre los dedos para soltar.", "dos pellizcos": "③ Dos pellizcos: separa o junta para agrandar/encoger; gira las manos para girarla sobre el tapete." };
+const GESTURE_HINT = { "modo piezas": "🧩 Modo piezas: pasa el ratón para ver el nombre; arrastra o pellizca una pieza para sacarla; «Separar piezas» las abre todas.", "pieza cogida": "🧩 Pieza cogida: muévela; abre los dedos para soltarla. «Devolver a su sitio» la recoloca.", "ratón": "🖱 Arrastra para mover · rueda: tamaño · botón derecho o Mayús+arrastrar: girar en 3D.", "libre": "① Pellizca el borde de la pieza con pulgar e índice para cogerla.", "cogida": "② Cogida: muévela con la mano; gira la mano para girarla. Abre los dedos para soltar.", "cogida: girando": "② Girando con tu mano. Abre los dedos para soltar.", "dos pellizcos": "③ Dos pellizcos: separa o junta para agrandar/encoger; gira las manos para girarla sobre el tapete." };
 function gestures(active, t) {
   const hull = objectHullPx();
   if (mouse.down) { for (const h of active) { h.holding = false; h.otherHolding = false; } heldBy = null; two = null; holdPts = []; gestureName = "ratón"; return { grasping: new Set(["ratón"]), hull }; }
+  if (pieces.on && pieces.list.length > 1) { heldBy = null; two = null; holdPts = []; return partGestures(active, t, hull); }
   const nearHold = h => h.pinchMM && holdPts.some(p => Math.hypot(h.pinchMM[0] - p[0], h.pinchMM[1] - p[1]) < 90);
   // 2.º pellizco: cerca del centro (radio acotado a 230 mm; QA v12.4) y a menos de un diámetro del pellizco que ya sujeta
   const nearObj = h => h.pinchMM && Math.hypot(h.pinchMM[0] - obj.cx, h.pinchMM[1] - obj.cy) < Math.min(obj.size * 1.4, 230)
@@ -274,6 +278,63 @@ function autoFrame(cornersPx, hull, t) {
   if (t - zoom.lastT > 0.1) { zoom.lastT = t; applyZoom(); }
 }
 
+// ---------- piezas del modelo: resaltar, nombrar, separar (vista explosionada) y sacar una pieza de su sitio (ratón o pellizco)
+const pieces = { list: [], on: false, explode: 0, target: 0, sel: null, hover: null, grab: null }; queueMicrotask(() => { if (window.__ar) window.__ar.pieces = pieces; });
+const piecesBtn = document.getElementById("pieces"), explodeBtn = document.getElementById("explode"), infoEl = document.getElementById("partinfo"), labelEl = document.getElementById("partlabel");
+const S_ = MOODLE?.strings || {};
+function refreshPiecesUI() {
+  const has = pieces.list.length > 1;
+  if (piecesBtn) { piecesBtn.hidden = !has; piecesBtn.setAttribute("aria-pressed", String(pieces.on)); piecesBtn.classList.toggle("primary", pieces.on); }
+  if (explodeBtn) { explodeBtn.hidden = !has; explodeBtn.setAttribute("aria-pressed", String(pieces.target > 0)); explodeBtn.textContent = (pieces.target > 0 ? "🧲 " + (S_.parts_join || "Unir piezas") : "💥 " + (S_.parts_explode || "Separar piezas")); }
+  if (!has || !pieces.on) { showPart(null); if (labelEl) labelEl.hidden = true; }
+}
+function selectPart(p) { if (pieces.sel && pieces.sel !== p) setHighlight(pieces.sel, null); pieces.sel = p; if (p) setHighlight(p, "selected"); showPart(p); }
+function showPart(p) {
+  if (!infoEl) return; infoEl.hidden = !p; if (!p) return;
+  infoEl.querySelector(".pname").textContent = p.name; infoEl.querySelector(".pdesc").textContent = p.desc || "";
+}
+if (piecesBtn) piecesBtn.onclick = () => { pieces.on = !pieces.on; if (!pieces.on) { if (pieces.hover) setHighlight(pieces.hover, null); pieces.hover = null; selectPart(null); } refreshPiecesUI(); log("modo piezas " + (pieces.on ? "activado" : "desactivado")); };
+if (explodeBtn) explodeBtn.onclick = () => { pieces.target = pieces.target > 0 ? 0 : 1; if (pieces.target > 0 && !pieces.on) { pieces.on = true; } refreshPiecesUI(); lockZoom("interacción"); log(pieces.target ? "piezas separadas" : "piezas unidas"); };
+document.getElementById("part-home")?.addEventListener("click", () => { if (pieces.sel) { pieces.sel.offset.set(0, 0, 0); log("pieza devuelta: " + pieces.sel.name); } });
+document.getElementById("part-close")?.addEventListener("click", () => selectPart(null));
+document.getElementById("part-explain")?.addEventListener("click", async () => {
+  const p = pieces.sel; if (!p) return;
+  const ans = await askTutor(`Estoy viendo la pieza «${p.name}» del modelo ${modelLabel()}${p.desc ? " (" + p.desc + ")" : ""}. Te adjunto la captura. Explícame qué función cumple esta pieza y cómo se relaciona con las demás.`);
+  if (talk.on && ans) speak(ans);
+});
+function partsTick() {                                   // animación de la separación + aplicar desplazamientos
+  if (!pieces.list.length) return;
+  pieces.explode += (pieces.target - pieces.explode) * 0.12; if (Math.abs(pieces.target - pieces.explode) < 0.002) pieces.explode = pieces.target;
+  applyParts(pieces.list, pieces.explode);
+}
+// desplazamiento en mm del tapete → desplazamiento en coordenadas del modelo (root)
+function matDeltaToRoot(a, b) {
+  const z = objGroup.position.z, pa = mat.localToWorld(new THREE.Vector3(a[0], a[1], z)), pb = mat.localToWorld(new THREE.Vector3(b[0], b[1], z));
+  return obj.root.worldToLocal(pb).sub(obj.root.worldToLocal(pa));
+}
+function hoverPart(px) {
+  if (!pieces.on || !obj.root) return null;
+  const p = pickPart(pieces.list, obj.root, camera, px, W, Hh);
+  if (p !== pieces.hover) { if (pieces.hover && pieces.hover !== pieces.sel) setHighlight(pieces.hover, null); pieces.hover = p; if (p && p !== pieces.sel) setHighlight(p, "hover"); }
+  return p;
+}
+// con las manos en modo piezas: un pellizco sobre una pieza la coge y la saca de su sitio (sólo esa pieza)
+function partGestures(active, t, hull) {
+  const g = pieces.grab;
+  if (g) {
+    const h = active.find(h => h.pinch && h.pinchMM && (h.label === g.label || Math.hypot(h.pinchMM[0] - g.last[0], h.pinchMM[1] - g.last[1]) < 90));
+    if (h) { g.part.offset.add(matDeltaToRoot(g.last, h.pinchMM)); g.last = h.pinchMM.slice(); g.label = h.label; g.t = t; gestureName = "pieza cogida"; return { grasping: new Set([h.label]), hull }; }
+    if (t - g.t < 0.35) return { grasping: new Set([g.label]), hull };
+    log("pieza soltada: " + g.part.name); beep(440); pieces.grab = null;
+  }
+  for (const h of active) {
+    if (!h.pinch || !h.pinchMM || !h.pinchPx) continue;
+    const p = pickPart(pieces.list, obj.root, camera, h.pinchPx, W, Hh);
+    if (p) { pieces.grab = { part: p, label: h.label, last: h.pinchMM.slice(), t }; selectPart(p); lockZoom("interacción"); log("pieza cogida: " + p.name); beep(880); gestureName = "pieza cogida"; return { grasping: new Set([h.label]), hull }; }
+  }
+  gestureName = "modo piezas"; return { grasping: new Set(), hull };
+}
+
 // ---------- ratón con «superpoderes» (teclado/ratón como alternativa a las manos): arrastrar mueve, rueda escala,
 // botón derecho o Mayús+arrastrar gira en 3D (horizontal: sobre el tapete; vertical: volteo hacia/desde la cámara)
 const stageEl = document.getElementById("stage");
@@ -283,18 +344,30 @@ function screenToPx(ev) {                                // pantalla → píxele
   return [(ev.clientX - (r.left + (r.width - dw) / 2)) / sc, (ev.clientY - (r.top + (r.height - dh) / 2)) / sc];
 }
 const clampX = v => Math.min(1.3 * MAT_W, Math.max(-0.3 * MAT_W, v)), clampY = v => Math.min(1.3 * MAT_H, Math.max(-0.3 * MAT_H, v));
-const uiTarget = ev => ev.target.closest && ev.target.closest("#ctl,#titlebar,#start,#jv-intro,#ia,#status,#step,.jedomi-sidebar,#jedomi-trigger");
+const uiTarget = ev => ev.target.closest && ev.target.closest("#ctl,#titlebar,#start,#jv-intro,#ia,#status,#step,#partinfo,#credit,.jedomi-sidebar,#jedomi-trigger");
 stageEl.addEventListener("pointerdown", ev => {
   if (uiTarget(ev) || !poseOK || !obj.mesh) return;
   const p = screenToPx(ev), over = overPx(objectHullPx(), p, 40);
+  if (pieces.on && ev.button === 0 && !ev.shiftKey) {               // modo piezas: arrastrar una pieza la saca de su sitio; clic la selecciona
+    const part = hoverPart(p);
+    if (part) { selectPart(part); mouse.part = part; mouse.down = true; mouse.btn = 0; mouse.shift = false; mouse.last = p; mouse.lastMM = pxToMM(p);
+      stageEl.setPointerCapture(ev.pointerId); ev.preventDefault(); lockZoom("interacción"); log("ratón: pieza " + part.name); return; }
+  }
   if (!over && !(ev.button === 2 || ev.shiftKey)) return;          // sin pieza debajo sólo se admite el giro (derecho/Mayús)
   mouse.down = true; mouse.btn = ev.button; mouse.shift = ev.shiftKey; mouse.last = p;
   const mm = pxToMM(p); mouse.offset = mm ? [mm[0] - obj.cx, mm[1] - obj.cy] : [0, 0];
   stageEl.setPointerCapture(ev.pointerId); ev.preventDefault(); log("ratón: " + (ev.button === 2 || ev.shiftKey ? "girar" : "mover")); lockZoom("interacción");
 });
 stageEl.addEventListener("pointermove", ev => {
+  if (!mouse.down && pieces.on && !uiTarget(ev) && poseOK && obj.root) {
+    const now = performance.now(); if (now - (mouse.pickT || 0) > 70) { mouse.pickT = now; const part = hoverPart(screenToPx(ev));
+      if (labelEl) { labelEl.hidden = !part; if (part) { labelEl.textContent = part.name; const r = stageEl.getBoundingClientRect(); labelEl.style.left = (ev.clientX - r.left + 14) + "px"; labelEl.style.top = (ev.clientY - r.top + 14) + "px"; } }
+      stageEl.style.cursor = part ? "pointer" : ""; }
+    return;
+  }
   if (!mouse.down) { if (!uiTarget(ev) && poseOK && obj.mesh) { const over = overPx(objectHullPx(), screenToPx(ev), 40); if (over !== mouse.over) { mouse.over = over; stageEl.style.cursor = over ? "grab" : ""; } } return; }
   const p = screenToPx(ev);
+  if (mouse.part) { const mm = pxToMM(p); if (mm && mouse.lastMM) { const d = matDeltaToRoot(mouse.lastMM, mm); mouse.part.offset.add(d); mouse.movedMM = (mouse.movedMM || 0) + Math.hypot(mm[0] - mouse.lastMM[0], mm[1] - mouse.lastMM[1]); mouse.movedRoot = (mouse.movedRoot || 0) + d.length(); mouse.lastMM = mm; } stageEl.style.cursor = "grabbing"; mouse.last = p; return; }
   if (mouse.btn === 0 && !mouse.shift) { const mm = pxToMM(p); if (mm) { obj.cx = clampX(mm[0] - mouse.offset[0]); obj.cy = clampY(mm[1] - mouse.offset[1]); } stageEl.style.cursor = "grabbing"; }
   else { const dx = p[0] - mouse.last[0], dy = p[1] - mouse.last[1];
     obj.rot.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), dx * 0.008));   // giro sobre el tapete
@@ -302,12 +375,12 @@ stageEl.addEventListener("pointermove", ev => {
     stageEl.style.cursor = "move"; }
   mouse.last = p;
 });
-const mouseUp = ev => { if (!mouse.down) return; mouse.down = false; stageEl.style.cursor = mouse.over ? "grab" : ""; log("ratón: suelto"); };
+const mouseUp = ev => { if (!mouse.down) return; mouse.down = false; if (mouse.part) { log(`ratón: pieza suelta (${Math.round(mouse.movedMM || 0)} mm en el tapete → ${Math.round(mouse.movedRoot || 0)} u. del modelo)`); mouse.part = null; mouse.movedMM = mouse.movedRoot = 0; } stageEl.style.cursor = mouse.over ? "grab" : ""; log("ratón: suelto"); };
 stageEl.addEventListener("pointerup", mouseUp); stageEl.addEventListener("pointercancel", mouseUp);
 stageEl.addEventListener("wheel", ev => { if (uiTarget(ev) || !poseOK || !obj.mesh) return; if (!mouse.over && !mouse.down) return;
   obj.size = Math.min(300, Math.max(90, obj.size * (ev.deltaY < 0 ? 1.08 : 0.92))); ev.preventDefault(); }, { passive: false });
 stageEl.addEventListener("contextmenu", ev => { if (!uiTarget(ev)) ev.preventDefault(); });   // el botón derecho gira: sin menú contextual sobre el escenario
-window.__ar = { obj, mouse };                               // depuración/QA (window.__visor lo usa el bucle)
+window.__ar = { obj, mouse, pieces: null, camera, pxToMM: p => pxToMM(p), screenToPx: e => screenToPx(e) };                               // depuración/QA (window.__visor lo usa el bucle)
 
 // ---------- utilidades UI
 const logs = []; function log(m) { const s = new Date().toLocaleTimeString() + " " + m; logs.push(s); console.log(s); }
@@ -393,7 +466,8 @@ function loop() {
   const T3 = performance.now();
   const { grasping, hull } = poseOK ? gestures(active, t) : { grasping: new Set(), hull: null };
   // --- dibujo
-  placeObject(grasping.size > 0 || mouse.down);
+  partsTick();
+  placeObject(grasping.size > 0 || mouse.down || pieces.explode > 0.05);
   renderer.render(scene, camera);
   const T4 = performance.now();
   const cornersPx = [[0, 0], [MAT_W, 0], [MAT_W, MAT_H], [0, MAT_H]].map(([x, y]) => { const v = new THREE.Vector3(x, y, 0); mat.localToWorld(v); v.project(camera); return [Math.round((v.x + 1) / 2 * W), Math.round((1 - v.y) / 2 * Hh)]; });
@@ -411,7 +485,7 @@ function loop() {
   // telemetría de desarrollo (?telemetry=1): cada 2 s envía el estado a un servidor local para analizar la sesión sin acceso al navegador
   if (TELEMETRY && t - telemetryT > 2) { telemetryT = t; const ms = window.__dbg ? window.__dbg.ms : null;
     fetch("http://127.0.0.1:8766/metrics", { method: "POST", mode: "cors", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ t: Math.round(t), fps: Math.round(fps), cam: (video.srcObject && video.srcObject.getVideoTracks()[0] || {}).label || "", nmark, poseFrozen, hands: active.length, pinching: active.filter(h => h.pinch).length, held: !!(heldBy || two), mode: two ? "pinch2" : (heldBy ? "pinch" : ""), size: Math.round(obj.size), tris: Math.round(obj.tris), tilt: Math.round(tiltDeg(obj.rot)), gesture: gestureName, talk: talk.on, asking, sidebar: !!document.getElementById("jedomi-sidebar"), log: logs.slice(-4), ms: ms && { aruco: Math.round(ms.aruco), hands: Math.round(ms.hands), render: Math.round(ms.render * 10) / 10 }, W, Hh, grabs: logs.length }) }).catch(() => { }); }
+      body: JSON.stringify({ t: Math.round(t), fps: Math.round(fps), cam: (video.srcObject && video.srcObject.getVideoTracks()[0] || {}).label || "", nmark, poseFrozen, hands: active.length, pinching: active.filter(h => h.pinch).length, held: !!(heldBy || two), mode: two ? "pinch2" : (heldBy ? "pinch" : ""), size: Math.round(obj.size), tris: Math.round(obj.tris), tilt: Math.round(tiltDeg(obj.rot)), gesture: gestureName, parts: pieces.list.length, piecesOn: pieces.on, explode: +pieces.explode.toFixed(2), sel: pieces.sel ? pieces.sel.name : "", talk: talk.on, asking, sidebar: !!document.getElementById("jedomi-sidebar"), log: logs.slice(-4), ms: ms && { aruco: Math.round(ms.aruco), hands: Math.round(ms.hands), render: Math.round(ms.render * 10) / 10 }, W, Hh, grabs: logs.length }) }).catch(() => { }); }
   if (!talk.on && !asking) stepEl.textContent = GESTURE_HINT[gestureName] || gestureName;
   statusEl.textContent = `tapete ${poseOK ? (poseFrozen ? "congelado (destapa las esquinas)" : nmark + " marcadores") : "no visto"} · manos ${active.length} · ${heldBy || two ? "COGIDO" : "libre"} · ${Math.round(obj.tris / 1000)} k triángulos · ${fps.toFixed(0)} fps`;
   requestAnimationFrame(loop);
@@ -424,7 +498,7 @@ function invert3(Mx) { const m = Mx.flat(); const [a, b, c, d, e, f, g, h, i] = 
 const prejoin = initPrejoin({ strings: MOODLE?.strings || {}, testMode: !!new URLSearchParams(location.search).get("img"),
   onEnter: o => start(o).catch(e => { stepEl.textContent = "Error: " + e.message; document.getElementById("pjstatus").textContent = "Error: " + e.message; document.getElementById("start").style.display = "grid"; console.error(e); }) });
 document.getElementById("model").onchange = e => loadModel(e.target.value);
-document.getElementById("reset").onclick = () => { obj.cx = MAT_W / 2; obj.cy = MAT_H / 2; obj.size = 260; obj.yaw = 0; obj.rot.identity(); };
+document.getElementById("reset").onclick = () => { obj.cx = MAT_W / 2; obj.cy = MAT_H / 2; obj.size = 260; obj.yaw = 0; obj.rot.identity(); for (const p of pieces.list) p.offset.set(0, 0, 0); pieces.target = 0; refreshPiecesUI(); };
 document.getElementById("quit").onclick = () => { stopTalk(); const s = video.srcObject; if (s) s.getTracks().forEach(tr => tr.stop()); };   // es un enlace: vuelve al curso
 
 // ---------- tutor de Jedomi (barra lateral del curso, ya inyectada en esta página por el plugin)
@@ -435,7 +509,7 @@ const J = { sidebar: () => document.getElementById("jedomi-sidebar"), trigger: (
   lastAnswer: () => { const b = document.querySelectorAll("#jedomi-messages .jedomi-message-assistant .jedomi-bubble"); if (!b.length) return "";
     const c = b[b.length - 1].cloneNode(true); c.querySelectorAll(".jedomi-msg-actions, button").forEach(x => x.remove()); return c.innerText.trim(); } };
 const modelLabel = () => (MOODLE && document.getElementById("model").value !== "aro" && MOODLE.modelName) || (document.getElementById("model").selectedOptions[0]?.textContent || "la pieza");
-const sceneText = () => `(modelo «${modelLabel()}», ${Math.round(obj.tris / 1000)} mil triángulos, tamaño ${Math.round(obj.size)} mm, giro ${Math.round(obj.yaw * 180 / Math.PI)}°, inclinación ${Math.round(tiltDeg(obj.rot))}°, ${heldBy || two ? "la tengo cogida" : "está apoyada en el tapete"})`;
+const sceneText = () => `(${pieces.sel ? "pieza seleccionada «" + pieces.sel.name + "», " : ""}modelo «${modelLabel()}», ${Math.round(obj.tris / 1000)} mil triángulos, tamaño ${Math.round(obj.size)} mm, giro ${Math.round(obj.yaw * 180 / Math.PI)}°, inclinación ${Math.round(tiltDeg(obj.rot))}°, ${heldBy || two ? "la tengo cogida" : "está apoyada en el tapete"})`;
 function openPanel() { const sb = J.sidebar(); if (sb && sb.classList.contains("jedomi-closed")) J.trigger()?.click(); }
 async function snapshot() {                             // captura compuesta: fuente de vídeo + lienzo 3D, a media resolución
   renderer.render(scene, camera);

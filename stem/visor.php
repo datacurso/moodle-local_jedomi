@@ -57,7 +57,7 @@ $config = [
     'strings' => ['nomodel' => get_string('stem_visor_nomodel', 'local_jedomi'), 'intro' => get_string('stem_visor_intro', 'local_jedomi'),
         'talk' => get_string('stem_visor_talk', 'local_jedomi'), 'talk_stop' => get_string('stem_visor_talk_stop', 'local_jedomi'),
         'pj_nocam' => get_string('stem_visor_pj_nocam', 'local_jedomi'), 'pj_speak' => get_string('stem_visor_pj_speak', 'local_jedomi'), 'pj_nodev' => get_string('stem_visor_pj_nodev', 'local_jedomi'), 'pj_nomic' => get_string('stem_visor_pj_nomic', 'local_jedomi'),
-        'zoom_refit' => get_string('stem_visor_zoom_refit', 'local_jedomi'), 'zoom_fitting' => get_string('stem_visor_zoom_fitting', 'local_jedomi'), 'zoom_off' => get_string('stem_visor_zoom_off', 'local_jedomi'),
+        'zoom_refit' => get_string('stem_visor_zoom_refit', 'local_jedomi'), 'parts_explode' => get_string('stem_visor_parts_explode', 'local_jedomi'), 'parts_join' => get_string('stem_visor_parts_join', 'local_jedomi'), 'zoom_fitting' => get_string('stem_visor_zoom_fitting', 'local_jedomi'), 'zoom_off' => get_string('stem_visor_zoom_off', 'local_jedomi'),
         'voice_consent' => get_string('stem_visor_voice_consent', 'local_jedomi'), 'voice_off' => get_string('stem_visor_voice_off', 'local_jedomi'),
         'intro_next' => get_string('stem_visor_intro_next', 'local_jedomi'), 'intro_done' => get_string('stem_visor_intro_done', 'local_jedomi'),
         'intro_s1' => get_string('stem_visor_intro_s1', 'local_jedomi'), 'intro_s2' => get_string('stem_visor_intro_s2', 'local_jedomi'), 'intro_s3' => get_string('stem_visor_intro_s3', 'local_jedomi'),
@@ -68,6 +68,11 @@ echo $OUTPUT->header();
 ?>
 <style>
   #stage{position:relative;width:100%;height:calc(100vh - 16px);min-height:480px;background:#000;border-radius:12px;overflow:hidden}
+  #partlabel{position:absolute;z-index:6;pointer-events:none;background:rgba(15,17,21,.9);color:#f3f4f6;font-size:13px;padding:3px 8px;border-radius:6px;border:1px solid rgba(56,189,248,.6)}
+  #partinfo{position:absolute;left:16px;bottom:56px;max-width:min(420px,60%);z-index:5;font-size:14px;line-height:1.4}
+  #partinfo .pname{font-weight:600;font-size:16px;color:#fbbf24;margin-bottom:4px}#partinfo .pdesc{color:#e5e7eb}
+  #partinfo .pbtns{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+  #partinfo button{font-size:14px;padding:6px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:#1f2937;color:#f3f4f6;cursor:pointer}#partinfo .primary{background:#f59e0b;color:#111;border-color:transparent;font-weight:600}
   #credit{position:absolute;right:12px;bottom:8px;max-width:46%;font-size:11px;line-height:1.3;color:#cbd5e1;background:rgba(15,17,21,.6);padding:3px 8px;border-radius:6px;z-index:3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   #view{position:absolute;inset:0;transform-origin:50% 50%;will-change:transform;transition:transform .35s ease-out}
   #view video,#view canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
@@ -179,9 +184,14 @@ echo $OUTPUT->header();
       <?php if ($config['voiceEnabled']) { ?><button id="talk" class="primary" title="<?php echo get_string('stem_visor_talk_help', 'local_jedomi'); ?>">🎙 <?php echo get_string('stem_visor_talk', 'local_jedomi'); ?></button><?php } ?>
       <button id="explain" title="<?php echo get_string('stem_visor_explain_help', 'local_jedomi'); ?>">💬 <?php echo get_string('stem_visor_explain', 'local_jedomi'); ?></button>
       <button id="reset" title="<?php echo get_string('stem_visor_reset_help', 'local_jedomi'); ?>">⟲ <?php echo get_string('stem_visor_reset', 'local_jedomi'); ?></button>
+      <button id="pieces" hidden aria-pressed="false" title="<?php echo get_string('stem_visor_parts_help', 'local_jedomi'); ?>">🧩 <?php echo get_string('stem_visor_parts', 'local_jedomi'); ?></button>
+      <button id="explode" hidden aria-pressed="false" title="<?php echo get_string('stem_visor_parts_explode_help', 'local_jedomi'); ?>">💥 <?php echo get_string('stem_visor_parts_explode', 'local_jedomi'); ?></button>
       <button id="zoom" title="<?php echo get_string('stem_visor_zoom_help', 'local_jedomi'); ?>" aria-pressed="true">🔍 <?php echo get_string('stem_visor_zoom', 'local_jedomi'); ?></button>
     </div>
   </div>
+  <div id="partlabel" hidden></div>
+  <div class="vpanel" id="partinfo" hidden aria-live="polite"><div class="pname"></div><div class="pdesc"></div>
+    <div class="pbtns"><button id="part-explain" class="primary">💬 <?php echo get_string('stem_visor_parts_explain', 'local_jedomi'); ?></button><button id="part-home">↩ <?php echo get_string('stem_visor_parts_home', 'local_jedomi'); ?></button><button id="part-close" aria-label="<?php echo get_string('closebuttontitle'); ?>">✕</button></div></div>
   <div class="vpanel" id="status">—</div>
   <div class="vpanel" id="ia"></div>
   <div id="jv-intro" data-step="1" role="dialog" aria-modal="true" aria-labelledby="intro-title">
