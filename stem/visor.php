@@ -93,7 +93,7 @@ $jsstrings = ['nomodel', 'intro', 'talk', 'talk_stop', 'pj_nocam', 'pj_speak', '
     'hint_part_held', 'hint_parts', 'hint_two', 'hint_web_free', 'hint_web_mouse', 'hint_web_parts', 'ia_offline',
     'img_failed', 'mic_blocked', 'mic_blocked_chat', 'model_generic', 'no_speech_api', 'scene', 'scene_held',
     'scene_resting', 'scene_selected', 'status_mat_covered', 'status_mat_missing', 'status_mat_ok', 'voice_bye',
-    'voice_handsfree', 'voice_stop_words', 'voice_unclear', 'you_said'];
+    'voice_handsfree', 'voice_stop_words', 'voice_unclear', 'you_said', 'speaking', 'status_web'];
 $strings = [];
 foreach ($jsstrings as $k) {
     $strings[$k] = get_string('stem_visor_' . $k, 'local_jedomi');

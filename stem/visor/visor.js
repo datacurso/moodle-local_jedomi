@@ -564,7 +564,7 @@ function drawMatBg(active) {
 let source = video;                                   // fuente de imagen: la cámara o, en modo prueba (?img=…), una foto fija
 async function startSource(opts = {}) {                // vista RA: cámara (o foto de prueba ?img=) + modelo de manos
   const imgParam = new URLSearchParams(location.search).get("img");
-  if (imgParam) {                                     // modo prueba sin cámara (el panel del navegador de Claude no permite captura)
+  if (imgParam) {                                     // modo prueba sin cámara: una imagen fija hace de fotograma (?img=URL)
     const im = new Image(); await new Promise((res, rej) => { im.onload = res; im.onerror = () => rej(new Error(T("img_failed", { url: imgParam }))); im.src = imgParam; }); source = im;   // onload, no decode()
     W = im.naturalWidth; Hh = im.naturalHeight; video.style.display = "none";
     let bg = document.getElementById("jv-testbg");
@@ -665,8 +665,8 @@ function loop() {
   }
   if (hull && active.some(h => h.pinch && overPx(hull, h.pinchPx, 70))) { octx.strokeStyle = "rgba(255,255,255,.9)"; octx.lineWidth = 3; octx.strokeRect(hull.x0 - 10, hull.y0 - 10, hull.x1 - hull.x0 + 20, hull.y1 - hull.y0 + 20); }
   window.__visor = { poseOK, poseFrozen, nmark, fps, tris: obj.tris, held: !!(heldBy || two), hands: active.length, obj: { cx: obj.cx, cy: obj.cy, size: obj.size } };
-  if (!talk.on && !asking) { const hk = (view.mode === "web" ? WEB_HINT[gestureName] : null) || GESTURE_HINT[gestureName]; stepEl.textContent = hk ? T(hk) : gestureName; }
-  if (view.mode === "web") statusEl.textContent = `🖥 3D · ${fps.toFixed(0)} fps`; else statusEl.textContent = `${T(poseOK ? (poseFrozen ? "status_mat_covered" : "status_mat_ok") : "status_mat_missing")} · ✋ ${active.length} · ${fps.toFixed(0)} fps`;
+  if (!talk.on && !asking) { const hk = (view.mode === "web" ? WEB_HINT[gestureName] : null) || GESTURE_HINT[gestureName]; stepEl.textContent = hk ? T(hk) : ""; }
+  if (view.mode === "web") statusEl.textContent = T("status_web", { fps: fps.toFixed(0) }); else statusEl.textContent = `${T(poseOK ? (poseFrozen ? "status_mat_covered" : "status_mat_ok") : "status_mat_missing")} · ✋ ${active.length} · ${fps.toFixed(0)} fps`;
   requestAnimationFrame(loop);
 }
 function cross3(a, b) { return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]; }
@@ -784,7 +784,7 @@ function speak(text) {
   if (!("speechSynthesis" in window)) return;
   const u = new SpeechSynthesisUtterance(plain(text).slice(0, 1200)); u.lang = talk.lang; u.rate = 1.0;
   const v = speechSynthesis.getVoices().find(x => x.lang.replace("_", "-").toLowerCase().startsWith(talk.lang.slice(0, 2))); if (v) u.voice = v;
-  talk.speaking = true; stepEl.textContent = "🔊 Jedomi: " + plain(text).slice(0, 140) + (text.length > 140 ? "…" : "");
+  talk.speaking = true; stepEl.textContent = T("speaking", { text: plain(text).slice(0, 140) + (text.length > 140 ? "…" : "") });
   try { talk.rec?.abort(); } catch (e) { }
   u.onend = u.onerror = () => { setTimeout(() => { talk.speaking = false; if (talk.on) listen(); }, 500); };   // margen anti-auto-escucha (QA): el altavoz tarda en callar
   speechSynthesis.cancel(); speechSynthesis.speak(u);
