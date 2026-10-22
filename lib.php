@@ -258,6 +258,7 @@ function local_jedomi_extend_navigation(\global_navigation $nav): void {
  * @param stdClass $user
  * @param bool $iscurrentuser
  * @param stdClass $course
+ * @return void
  */
 function local_jedomi_myprofile_navigation(\core_user\output\myprofile\tree $tree, $user, $iscurrentuser, $course): void {
     global $USER;
@@ -311,7 +312,7 @@ function local_jedomi_get_page_context(): array {
     try {
         $url = $PAGE->url->out(false);
     } catch (Exception $e) {
-        $url = $_SERVER['REQUEST_URI'] ?? '';
+        $url = qualified_me() ?: '';
     }
 
     $pagetype = $PAGE->pagetype ?? '';
@@ -1056,7 +1057,7 @@ function local_jedomi_generate_spt(string $role, int $cmid = 0, string $mode = '
         'capabilities'        => $capabilities,
         'tools'               => $tools, // Tool definitions in OpenAI format; the gateway configures the model with them.
         'moodle_url'          => $CFG->wwwroot,
-        'expires'             => time() + 1800, // 30 minutos (conversaciones con múltiples tool calls)
+        'expires'             => time() + 1800, // 30 minutes (conversations with several tool calls).
     ];
 
     // HMAC signature with the static secret, the same one the Python gateway verifies with.
@@ -1164,7 +1165,7 @@ function local_jedomi_generate_spt_for_user(int $userid, string $role): array {
 function local_jedomi_get_user_role(): string {
     global $USER, $COURSE;
 
-    // 1. Siteadmin → acceso total (arquetipo: admin)
+    // 1. Site admin: full access (archetype admin).
     if (is_siteadmin()) {
         return 'admin';
     }
@@ -1433,7 +1434,7 @@ function local_jedomi_get_ws_schema(string $wsname): ?array {
  * Returns empty string if classification is ambiguous.
  *
  * @param  string $wsname The web service function name (e.g. 'core_course_get_courses').
- * @return string         'Lectura', 'Escritura', or ''.
+ * @return string         Internal token 'Lectura', 'Escritura' or '' (shown through the ws_type_* strings).
  */
 function local_jedomi_classify_ws_access(string $wsname): string {
     // Extract the action part after the component prefix.
@@ -1705,7 +1706,7 @@ function local_jedomi_send_agent_notification(int|string $chatid, string $agent,
  * @param context $context File context.
  * @param string $filearea File area.
  * @param array $args Path arguments (itemid, path, name).
- * @param bool $forcedownload Forzar descarga.
+ * @param bool $forcedownload Force the download.
  * @param array $options Options of send_stored_file.
  * @return bool False when the file is not served.
  */
