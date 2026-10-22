@@ -74,8 +74,9 @@ function poseFromHomography(H, fx, fy, cx, cy) {   // H = K [r1 r2 t] (coordenad
 
 // ---------- integración Moodle (window.JEDOMI_VISOR lo inyecta stem/visor.php); sin ella funciona como prototipo local
 const MOODLE = window.JEDOMI_VISOR || null;
-// telemetría de desarrollo: ?telemetry=1 la activa para esta pestaña (sessionStorage) y sobrevive a la navegación por «Entrar»; ?telemetry=0 la apaga
-const TELEMETRY = (() => { const q = new URLSearchParams(location.search).get("telemetry"); try { if (q === "1") sessionStorage.setItem("jedomi_visor_telemetry", "1"); if (q === "0") sessionStorage.removeItem("jedomi_visor_telemetry"); return sessionStorage.getItem("jedomi_visor_telemetry") === "1"; } catch (e) { return q === "1"; } })(); let telemetryT = 0;
+const S_ = MOODLE?.strings || {};
+// UI text from the Moodle language pack; {name} placeholders are filled from `a`.
+const T = (k, a = {}) => Object.entries(a).reduce((s, [n, v]) => s.split("{" + n + "}").join(String(v)), S_[k] || k);
 const BASE = MOODLE ? MOODLE.base : "";
 // ---------- estado
 const video = document.getElementById("video"), canvas = document.getElementById("three");
@@ -210,8 +211,8 @@ let heldBy = null, grabOff = [0, 0], two = null; const objFilter = new OneEuro(1
 let pinchHold = new Set(), holdPts = [], lastHoldT = 0;
 let qHand0 = null, rot0 = null, rotArmed = false; const ROT_DEAD = 6 * Math.PI / 180;   // 6° para empezar a girar (luego sigue 1:1, re-anclado al armar: sin salto)
 let gestureName = "libre";
-const WEB_HINT = { "libre": "🖱 Vista 3D: arrastra para girar la vista, rueda para acercar, botón derecho para desplazar. Activa 🧩 Piezas para tocar cada pieza.", "modo piezas": "🧩 Pasa el ratón para ver el nombre; arrastra una pieza para sacarla; Mayús+arrastrar la gira; el panel de controles la mueve con precisión.", "ratón": "🖱 Moviendo el modelo." };
-const GESTURE_HINT = { "modo piezas": "🧩 Modo piezas: pasa el ratón para ver el nombre; arrastra o pellizca una pieza para sacarla; clic derecho y arrastrar la gira; el panel de controles la mueve con precisión.", "pieza cogida": "🧩 Pieza cogida: muévela y gira la mano para girarla; abre los dedos para soltarla. «Devolver a su sitio» la recoloca.", "ratón": "🖱 Arrastra para mover · rueda: tamaño · botón derecho o Mayús+arrastrar: girar en 3D.", "libre": "① Pellizca el borde de la pieza con pulgar e índice para cogerla.", "cogida": "② Cogida: muévela con la mano; gira la mano para girarla. Abre los dedos para soltar.", "cogida: girando": "② Girando con tu mano. Abre los dedos para soltar.", "dos pellizcos": "③ Dos pellizcos: separa o junta para agrandar/encoger; gira las manos para girarla sobre el tapete." };
+const WEB_HINT = { "libre": "hint_web_free", "modo piezas": "hint_web_parts", "ratón": "hint_web_mouse" };
+const GESTURE_HINT = { "modo piezas": "hint_parts", "pieza cogida": "hint_part_held", "ratón": "hint_mouse", "libre": "hint_free", "cogida": "hint_held", "cogida: girando": "hint_held_rotating", "dos pellizcos": "hint_two" };
 function gestures(active, t) {
   const hull = objectHullPx();
   if (mouse.down) { for (const h of active) { h.holding = false; h.otherHolding = false; } heldBy = null; two = null; holdPts = []; gestureName = "ratón"; return { grasping: new Set(["ratón"]), hull }; }
@@ -266,7 +267,7 @@ const viewEl = document.getElementById("view"), zoomBtn = document.getElementByI
 const zoom = { on: true, k: 1, cx: 0, cy: 0, tk: 1, tcx: 0, tcy: 0, lastT: 0, locked: false, stableSince: 0 };   // locked: encuadre fijo durante la interacción
 try { zoom.on = localStorage.getItem("jedomi_visor_zoom") !== "0"; } catch (e) { }
 function setZoomBtn() { if (zoomBtn) { zoomBtn.setAttribute("aria-pressed", String(zoom.on)); zoomBtn.style.opacity = zoom.on ? "1" : ".6";
-  const lbl = MOODLE?.strings || {}; zoomBtn.textContent = "🔍 " + (!zoom.on ? (lbl.zoom_off || "Encuadre desactivado") : zoom.locked ? (lbl.zoom_refit || "Reencuadrar") : (lbl.zoom_fitting || "Encuadrando…")); } }
+  zoomBtn.textContent = "🔍 " + T(!zoom.on ? "zoom_off" : zoom.locked ? "zoom_refit" : "zoom_fitting"); } }
 // el botón vuelve a encuadrar (se desbloquea, busca el tapete y se fija de nuevo al converger); con Mayús lo desactiva/activa
 if (zoomBtn) zoomBtn.onclick = ev => {
   if (ev.shiftKey || !zoom.on) { zoom.on = !zoom.on; try { localStorage.setItem("jedomi_visor_zoom", zoom.on ? "1" : "0"); } catch (e) { } if (!zoom.on) { zoom.k = zoom.tk = 1; zoom.cx = zoom.cy = zoom.tcx = zoom.tcy = 0; viewEl.style.transform = ""; } }
@@ -295,12 +296,11 @@ function autoFrame(cornersPx, hull, t) {
 // ---------- piezas del modelo: resaltar, nombrar, separar (vista explosionada) y sacar una pieza de su sitio (ratón o pellizco)
 const pieces = { list: [], on: false, explode: 0, target: 0, sel: null, hover: null, grab: null }; queueMicrotask(() => { if (window.__ar) window.__ar.pieces = pieces; });
 const piecesBtn = document.getElementById("pieces"), explodeBtn = document.getElementById("explode"), infoEl = document.getElementById("partinfo"), labelEl = document.getElementById("partlabel");
-const S_ = MOODLE?.strings || {};
 function refreshPiecesUI() {
   const has = pieces.list.filter(p => !p.inert).length > 1;
   if (piecesBtn) { piecesBtn.hidden = !has; piecesBtn.setAttribute("aria-pressed", String(pieces.on)); piecesBtn.classList.toggle("primary", pieces.on); }
   const apart = pieces.target > 0 || pieces.list.some(p => p.offset.lengthSq() > 1e-6 || Math.abs(p.rot.w) < 0.9999);
-  if (explodeBtn) { explodeBtn.hidden = !has; explodeBtn.setAttribute("aria-pressed", String(apart)); explodeBtn.textContent = (apart ? "🧲 " + (S_.parts_join || "Unir piezas") : "💥 " + (S_.parts_explode || "Separar piezas")); }
+  if (explodeBtn) { explodeBtn.hidden = !has; explodeBtn.setAttribute("aria-pressed", String(apart)); explodeBtn.textContent = (apart ? "🧲 " + T("parts_join") : "💥 " + T("parts_explode")); }
   if (!has || !pieces.on) { showPart(null); if (labelEl) labelEl.hidden = true; }
 }
 function selectPart(p) {
@@ -323,7 +323,7 @@ document.getElementById("part-home")?.addEventListener("click", () => { if (piec
 document.getElementById("part-close")?.addEventListener("click", () => selectPart(null));
 document.getElementById("part-explain")?.addEventListener("click", async () => {
   const p = pieces.sel; if (!p) return;
-  const ans = await askTutor(`Explícame la pieza «${p.name}» del modelo ${modelLabel()}.${p.desc ? " Descripción del docente: " + p.desc.replace(/[.\s]+$/, "") + "." : ""} Responde ya, sin pedir imágenes: en 2–3 frases qué es, para qué sirve y con qué otras piezas se relaciona, y termina con una sola pregunta corta para comprobar que lo entendí.`);
+  const ans = await askTutor(T("ask_part", { name: p.name, model: modelLabel(), desc: p.desc ? T("ask_part_desc", { desc: p.desc.replace(/[.\s]+$/, "") }) : "" }));
   if (ans) { const clean = handlePointMarks(ans); if (talk.on) speak(clean); }
 });
 function partsTick() {                                   // animación de la separación + aplicar desplazamientos
@@ -382,7 +382,7 @@ function partGestures(active, t, hull) {
 // ---------- panel de controles en pantalla (alternativa precisa a manos y ratón)
 const padEl = document.getElementById("pad"), padTarget = document.getElementById("pad-target");
 function padTargetPart() { return pieces.on && pieces.sel ? pieces.sel : null; }
-function padRefresh() { if (padTarget) padTarget.textContent = padTargetPart() ? "🧩 " + padTargetPart().name : "▣ " + (S_.pad_whole || "Todo el modelo"); }
+function padRefresh() { if (padTarget) padTarget.textContent = padTargetPart() ? "🧩 " + padTargetPart().name : "▣ " + T("pad_whole"); }
 const STEP_MM = 10, STEP_ANG = 10 * Math.PI / 180;
 function padAction(a) {
   const part = padTargetPart(); lockZoom("interacción");
@@ -457,7 +457,8 @@ stageEl.addEventListener("pointermove", ev => {
 });
 const mouseUp = ev => { if (view.controls) view.controls.enabled = view.mode === "web"; if (!mouse.down) return; mouse.down = false; mouse.rotPart = null; if (mouse.part) { log(`ratón: pieza suelta (${Math.round(mouse.movedMM || 0)} mm en el tapete → ${Math.round(mouse.movedRoot || 0)} u. del modelo)`); mouse.part = null; mouse.movedMM = mouse.movedRoot = 0; } stageEl.style.cursor = mouse.over ? "grab" : ""; log("ratón: suelto"); };
 stageEl.addEventListener("pointerup", mouseUp); stageEl.addEventListener("pointercancel", mouseUp);
-stageEl.addEventListener("wheel", ev => { if (view.mode === "web" || uiTarget(ev) || !poseOK || !obj.mesh) return;   // vista 3D: la rueda acerca la cámara if (!mouse.over && !mouse.down) return;
+stageEl.addEventListener("wheel", ev => { if (view.mode === "web" || uiTarget(ev) || !poseOK || !obj.mesh) return;   // vista 3D: la rueda acerca la cámara
+  if (!mouse.over && !mouse.down) return;
   obj.size = Math.min(300, Math.max(90, obj.size * (ev.deltaY < 0 ? 1.08 : 0.92))); ev.preventDefault(); }, { passive: false });
 stageEl.addEventListener("contextmenu", ev => { if (!uiTarget(ev)) ev.preventDefault(); });   // el botón derecho gira: sin menú contextual sobre el escenario
 window.__ar = { obj, mouse, pieces: null, camera, pxToMM: p => pxToMM(p), screenToPx: e => screenToPx(e) };                               // depuración/QA (window.__visor lo usa el bucle)
@@ -511,11 +512,11 @@ async function enterAR(opts = {}) {
   viewUI(); bgUI(); log("vista RA"); try { localStorage.setItem("jedomi_visor_view", "ar"); } catch (e) { }
 }
 function viewUI() {
-  const b = document.getElementById("viewtoggle"); if (b) { b.textContent = view.mode === "web" ? "📷 " + (MOODLE?.strings?.view_ar || "Vista RA") : "🖥 " + (MOODLE?.strings?.view_web || "Vista 3D"); b.setAttribute("aria-pressed", String(view.mode === "web")); }
+  const b = document.getElementById("viewtoggle"); if (b) { b.textContent = view.mode === "web" ? "📷 " + T("view_ar") : "🖥 " + T("view_web"); b.setAttribute("aria-pressed", String(view.mode === "web")); }
   bgUI();
   const z = document.getElementById("zoom"); if (z) z.hidden = view.mode === "web";
 }
-document.getElementById("viewtoggle")?.addEventListener("click", () => { if (view.mode === "web") enterAR({ cameraId: (() => { try { return localStorage.getItem("jedomi_visor_cam") || null; } catch (e) { return null; } })() }).catch(e => { stepEl.textContent = "No se pudo abrir la cámara: " + e.message; enterWeb(); }); else enterWeb(); });
+document.getElementById("viewtoggle")?.addEventListener("click", () => { if (view.mode === "web") enterAR({ cameraId: (() => { try { return localStorage.getItem("jedomi_visor_cam") || null; } catch (e) { return null; } })() }).catch(e => { stepEl.textContent = T("cam_failed", { msg: e.message }); enterWeb(); }); else enterWeb(); });
 function bgUI() {
   const c = curBg(), i = document.getElementById("bgcolor"); if (i && c !== "none") i.value = c;
   document.querySelectorAll("#bgpick button[data-bg]").forEach(b => b.classList.toggle("on", b.dataset.bg === c));
@@ -564,7 +565,7 @@ let source = video;                                   // fuente de imagen: la c�
 async function startSource(opts = {}) {                // vista RA: cámara (o foto de prueba ?img=) + modelo de manos
   const imgParam = new URLSearchParams(location.search).get("img");
   if (imgParam) {                                     // modo prueba sin cámara (el panel del navegador de Claude no permite captura)
-    const im = new Image(); await new Promise((res, rej) => { im.onload = res; im.onerror = () => rej(new Error("no se pudo cargar " + imgParam)); im.src = imgParam; }); source = im;   // onload, no decode()
+    const im = new Image(); await new Promise((res, rej) => { im.onload = res; im.onerror = () => rej(new Error(T("img_failed", { url: imgParam }))); im.src = imgParam; }); source = im;   // onload, no decode()
     W = im.naturalWidth; Hh = im.naturalHeight; video.style.display = "none";
     let bg = document.getElementById("jv-testbg");
     if (!bg) { bg = document.createElement("canvas"); bg.id = "jv-testbg"; bg.style.cssText = "position:absolute;inset:0;width:100%;height:100%;object-fit:contain"; document.getElementById("view").prepend(bg); }
@@ -590,7 +591,7 @@ async function start(opts = {}) {
   if (opts.view === "web") enterWeb(); else await enterAR(opts);
   await loadModel(MOODLE ? (MOODLE.modelUrl || "aro") : document.getElementById("model").value);   // la pieza que adjuntó el docente; el aro sólo como respaldo
   document.getElementById("start").style.display = "none";
-  stepEl.textContent = view.mode === "web" ? "🖱 Arrastra para girar la vista, rueda para acercar; activa 🧩 Piezas para tocar cada pieza." : "① Pellizca el borde de la pieza con pulgar e índice para cogerla.";
+  stepEl.textContent = T(view.mode === "web" ? "hint_web_free" : "hint_free");
   if (!started) { started = true; requestAnimationFrame(loop); }
 }
 function loop() {
@@ -664,21 +665,16 @@ function loop() {
   }
   if (hull && active.some(h => h.pinch && overPx(hull, h.pinchPx, 70))) { octx.strokeStyle = "rgba(255,255,255,.9)"; octx.lineWidth = 3; octx.strokeRect(hull.x0 - 10, hull.y0 - 10, hull.x1 - hull.x0 + 20, hull.y1 - hull.y0 + 20); }
   window.__visor = { poseOK, poseFrozen, nmark, fps, tris: obj.tris, held: !!(heldBy || two), hands: active.length, obj: { cx: obj.cx, cy: obj.cy, size: obj.size } };
-  // telemetría de desarrollo (?telemetry=1): cada 2 s envía el estado a un servidor local para analizar la sesión sin acceso al navegador
-  if (TELEMETRY && t - telemetryT > 2) { telemetryT = t; const ms = window.__dbg ? window.__dbg.ms : null;
-    fetch("http://127.0.0.1:8766/metrics", { method: "POST", mode: "cors", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ t: Math.round(t), fps: Math.round(fps), cam: (video.srcObject && video.srcObject.getVideoTracks()[0] || {}).label || "", nmark, poseFrozen, hands: active.length, pinching: active.filter(h => h.pinch).length, held: !!(heldBy || two), mode: two ? "pinch2" : (heldBy ? "pinch" : ""), size: Math.round(obj.size), tris: Math.round(obj.tris), tilt: Math.round(tiltDeg(obj.rot)), gesture: gestureName, parts: pieces.list.length, piecesOn: pieces.on, explode: +pieces.explode.toFixed(2), sel: pieces.sel ? pieces.sel.name : "", talk: talk.on, asking, sidebar: !!document.getElementById("jedomi-sidebar"), log: logs.slice(-4), ms: ms && { aruco: Math.round(ms.aruco), hands: Math.round(ms.hands), render: Math.round(ms.render * 10) / 10 }, W, Hh, grabs: logs.length }) }).catch(() => { }); }
-  if (!talk.on && !asking) stepEl.textContent = (view.mode === "web" ? WEB_HINT[gestureName] : null) || GESTURE_HINT[gestureName] || gestureName;
-  if (view.mode === "web") statusEl.textContent = `🖥 3D · ${fps.toFixed(0)} fps`; else statusEl.textContent = `${poseOK ? (poseFrozen ? "⚠ destapa las esquinas" : "tapete ✓") : "⚠ tapete no visto"} · ✋ ${active.length} · ${fps.toFixed(0)} fps`;
+  if (!talk.on && !asking) { const hk = (view.mode === "web" ? WEB_HINT[gestureName] : null) || GESTURE_HINT[gestureName]; stepEl.textContent = hk ? T(hk) : gestureName; }
+  if (view.mode === "web") statusEl.textContent = `🖥 3D · ${fps.toFixed(0)} fps`; else statusEl.textContent = `${T(poseOK ? (poseFrozen ? "status_mat_covered" : "status_mat_ok") : "status_mat_missing")} · ✋ ${active.length} · ${fps.toFixed(0)} fps`;
   requestAnimationFrame(loop);
 }
 function cross3(a, b) { return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]; }
-function dot3(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
 function invert3(Mx) { const m = Mx.flat(); const [a, b, c, d, e, f, g, h, i] = m; const det = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g); if (Math.abs(det) < 1e-12) return null; const k = 1 / det; return [[(e * i - f * h) * k, (c * h - b * i) * k, (b * f - c * e) * k], [(f * g - d * i) * k, (a * i - c * g) * k, (c * d - a * f) * k], [(d * h - e * g) * k, (b * g - a * h) * k, (a * e - b * d) * k]]; }
 
 // ---------- controles
 const prejoin = initPrejoin({ strings: MOODLE?.strings || {}, testMode: !!new URLSearchParams(location.search).get("img"),
-  onEnter: o => start(o).catch(e => { stepEl.textContent = "Error: " + e.message; document.getElementById("pjstatus").textContent = "Error: " + e.message; document.getElementById("start").style.display = "grid"; console.error(e); }) });
+  onEnter: o => start(o).catch(e => { stepEl.textContent = T("error", { msg: e.message }); document.getElementById("pjstatus").textContent = T("error", { msg: e.message }); document.getElementById("start").style.display = "grid"; console.error(e); }) });
 document.getElementById("model").onchange = e => loadModel(e.target.value);
 document.getElementById("reset").onclick = () => { obj.cx = MAT_W / 2; obj.cy = MAT_H / 2; obj.size = 260; obj.yaw = 0; obj.rot.identity(); for (const p of pieces.list) resetPart(p); pieces.target = 0; pieces.explode = 0; refreshPiecesUI(); };
 document.getElementById("quit").onclick = () => { stopTalk(); const s = video.srcObject; if (s) s.getTracks().forEach(tr => tr.stop()); };   // es un enlace: vuelve al curso
@@ -690,8 +686,8 @@ const J = { sidebar: () => document.getElementById("jedomi-sidebar"), trigger: (
   input: () => document.getElementById("jedomi-input"), send: () => document.getElementById("jedomi-send"), file: () => document.getElementById("jedomi-image-input"),
   lastAnswer: () => { const b = document.querySelectorAll("#jedomi-messages .jedomi-message-assistant .jedomi-bubble"); if (!b.length) return "";
     const c = b[b.length - 1].cloneNode(true); c.querySelectorAll(".jedomi-msg-actions, button").forEach(x => x.remove()); return c.innerText.trim(); } };
-const modelLabel = () => (MOODLE && document.getElementById("model").value !== "aro" && MOODLE.modelName) || (document.getElementById("model").selectedOptions[0]?.textContent || "la pieza");
-const sceneText = () => `(${pieces.sel ? "pieza seleccionada «" + pieces.sel.name + "»" + (pieces.sel.desc ? " — " + pieces.sel.desc : "") + "; " : ""}modelo «${modelLabel()}», ${Math.round(obj.tris / 1000)} mil triángulos, tamaño ${Math.round(obj.size)} mm, giro ${Math.round(obj.yaw * 180 / Math.PI)}°, inclinación ${Math.round(tiltDeg(obj.rot))}°, ${heldBy || two ? "la tengo cogida" : "está apoyada en el tapete"})`;
+const modelLabel = () => (MOODLE && document.getElementById("model").value !== "aro" && MOODLE.modelName) || (document.getElementById("model").selectedOptions[0]?.textContent || T("model_generic"));
+const sceneText = () => T("scene", { selected: pieces.sel ? T("scene_selected", { name: pieces.sel.name, desc: pieces.sel.desc ? " — " + pieces.sel.desc : "" }) : "", model: modelLabel(), ktris: Math.round(obj.tris / 1000), size: Math.round(obj.size), yaw: Math.round(obj.yaw * 180 / Math.PI), tilt: Math.round(tiltDeg(obj.rot)), held: T(heldBy || two ? "scene_held" : "scene_resting") });
 function openPanel() { const sb = J.sidebar(); if (sb && sb.classList.contains("jedomi-closed")) J.trigger()?.click(); }
 async function snapshot() {                             // captura compuesta: fuente de vídeo + lienzo 3D, a media resolución
   renderer.render(scene, camera);
@@ -705,7 +701,7 @@ function sceneChanged() {                               // ¿ha cambiado lo que 
   const ch = !lastShot || Object.keys(k).some(q => k[q] !== lastShot[q]); if (ch) lastShot = k; return ch;
 }
 async function askTutor(text, withSnapshot = false) {   // sin captura: el tutor ya conoce el objeto y sus piezas por el contexto del docente    // devuelve la respuesta del tutor (texto plano) cuando termina el streaming
-  if (!MOODLE || !J.trigger() || !J.input() || !J.send()) { iaEl.style.display = "block"; iaEl.textContent = "IA (prototipo local sin Moodle): " + text; return ""; }
+  if (!MOODLE || !J.trigger() || !J.input() || !J.send()) { iaEl.style.display = "block"; iaEl.textContent = T("ia_offline", { text }); return ""; }
   if (asking) return "";
   asking = true; openPanel();
   try {
@@ -727,8 +723,8 @@ async function askTutor(text, withSnapshot = false) {   // sin captura: el tutor
 }
 document.getElementById("explain").onclick = async () => {
   const ans = await askTutor(pieces.sel
-    ? `Explícame la pieza «${pieces.sel.name}»${pieces.sel.desc ? " (descripción del docente: " + pieces.sel.desc + ")" : ""}. Responde ya, en 2–3 frases, y termina con una pregunta corta.`
-    : `Explícame el objeto de esta actividad ${sceneText()}: qué es, sus piezas principales y para qué sirve, en 3–4 frases, usando el contexto del docente. Termina con una pregunta corta.`);
+    ? T("ask_selected", { name: pieces.sel.name, desc: pieces.sel.desc ? T("ask_selected_desc", { desc: pieces.sel.desc }) : "" })
+    : T("ask_object", { scene: sceneText() }));
   if (ans) { const clean = handlePointMarks(ans); if (talk.on) speak(clean); }
 };
 
@@ -800,27 +796,27 @@ talk.ptt = (() => { try { return localStorage.getItem("jedomi_visor_handsfree") 
 const pttBar = document.getElementById("pttbar"), pttBtn = document.getElementById("ptt"), pttMode = document.getElementById("pttmode");
 function pttUI() {
   if (!pttBar) return; pttBar.hidden = !talk.on;
-  if (pttMode) { pttMode.setAttribute("aria-pressed", String(!talk.ptt)); pttMode.textContent = talk.ptt ? (MOODLE?.strings?.ptt_handsfree || "Manos libres") : (MOODLE?.strings?.ptt_hold_mode || "Pulsar para hablar"); }
+  if (pttMode) { pttMode.setAttribute("aria-pressed", String(!talk.ptt)); pttMode.textContent = talk.ptt ? T("ptt_handsfree") : T("ptt_hold_mode"); }
   if (pttBtn) pttBtn.hidden = !talk.ptt;
 }
 async function handleUtterance(said, conf) {
   said = (said || "").trim(); if (!said || talk.speaking || asking) return;
   log("alumno dijo: " + said + " (confianza " + (conf ?? 0).toFixed(2) + ")");
-  if (!talk.ptt && conf > 0 && conf < 0.55) { stepEl.textContent = "🤔 No te entendí bien: «" + said + "». Repítelo, por favor."; return; }   // manos libres: dictado dudoso no se envía
+  if (!talk.ptt && conf > 0 && conf < 0.55) { stepEl.textContent = T("voice_unclear", { said }); return; }   // manos libres: dictado dudoso no se envía
   if (ASK_POINT_RE.test(said)) pointAt(findPart(said) || pieces.sel, "alumno");
-  if (/^(terminar|salir|basta|parar)\.?$/i.test(said)) { stopTalk(); speak("Hasta luego."); return; }
-  stepEl.textContent = "⌛ Tú: " + said;
+  if (new RegExp("^(" + T("voice_stop_words") + ")\\.?$", "i").test(said)) { stopTalk(); speak(T("voice_bye")); return; }
+  stepEl.textContent = T("you_said", { said });
   const ans = await askTutor(`${said} ${sceneText()}`); if (ans) speak(handlePointMarks(ans)); else if (talk.on) listen();
 }
 function newRec(continuous) { const r = new SR(); r.lang = talk.lang; r.continuous = continuous; r.interimResults = false; r.maxAlternatives = 1; return r; }
 function listen() {
   if (!talk.on || !SR) return; pttUI();
   try { talk.rec?.abort(); } catch (e) { } talk.rec = null;
-  if (talk.ptt) { stepEl.textContent = "🎙️ " + (MOODLE?.strings?.ptt_hint || "Mantén pulsado «Hablar» (o la barra espaciadora) mientras hablas; suelta para enviar."); return; }
+  if (talk.ptt) { stepEl.textContent = "🎙️ " + T("ptt_hint"); return; }
   const r = newRec(true); talk.rec = r;
-  stepEl.textContent = "🎙️ Te escucho (manos libres). Di «terminar» para cerrar la conversación.";
+  stepEl.textContent = T("voice_handsfree");
   r.onresult = ev => { const res = ev.results[ev.results.length - 1]; if (res.isFinal) handleUtterance(res[0].transcript, typeof res[0].confidence === "number" ? res[0].confidence : 0); };
-  r.onerror = e => { if (e.error === "not-allowed" || e.error === "service-not-allowed") { stopTalk(); stepEl.textContent = "El navegador no permite el micrófono aquí (" + e.error + "). Puedes seguir leyendo al tutor en el chat de la izquierda."; } };
+  r.onerror = e => { if (e.error === "not-allowed" || e.error === "service-not-allowed") { stopTalk(); stepEl.textContent = T("mic_blocked_chat", { err: e.error }); } };
   r.onend = () => { if (talk.on && !talk.ptt && !talk.speaking && !asking) setTimeout(listen, 250); };   // Chrome corta la escucha continua cada ~60 s
   try { r.start(); } catch (e) { }
 }
@@ -831,9 +827,9 @@ function pttStart() {
   ptt.on = true; ptt.parts = []; ptt.conf = 1; pttBtn?.classList.add("danger");
   const r = newRec(true); talk.rec = r;
   r.onresult = ev => { for (let i = ev.resultIndex; i < ev.results.length; i++) if (ev.results[i].isFinal) { ptt.parts.push(ev.results[i][0].transcript); const c = ev.results[i][0].confidence; if (typeof c === "number" && c > 0) ptt.conf = Math.min(ptt.conf, c); } };
-  r.onerror = e => { if (e.error === "not-allowed" || e.error === "service-not-allowed") { stopTalk(); stepEl.textContent = "El navegador no permite el micrófono aquí (" + e.error + ")."; } };
+  r.onerror = e => { if (e.error === "not-allowed" || e.error === "service-not-allowed") { stopTalk(); stepEl.textContent = T("mic_blocked", { err: e.error }); } };
   r.onend = () => { const said = ptt.parts.join(" "); ptt.on = false; pttBtn?.classList.remove("danger"); if (said.trim()) handleUtterance(said, ptt.conf); else if (talk.on) listen(); };
-  stepEl.textContent = "🔴 " + (MOODLE?.strings?.ptt_listening || "Te escucho… suelta para enviar.");
+  stepEl.textContent = "🔴 " + T("ptt_listening");
   try { r.start(); } catch (e) { ptt.on = false; }
 }
 function pttEnd() { if (ptt.on) { try { talk.rec?.stop(); } catch (e) { } } }
@@ -843,19 +839,19 @@ window.addEventListener("keydown", ev => { if (ev.code === "Space" && talk.on &&
 window.addEventListener("keyup", ev => { if (ev.code === "Space" && ptt.on) { ev.preventDefault(); pttEnd(); } });
 if (pttMode) pttMode.onclick = () => { talk.ptt = !talk.ptt; try { localStorage.setItem("jedomi_visor_handsfree", talk.ptt ? "0" : "1"); } catch (e) { } log("voz: " + (talk.ptt ? "pulsar para hablar" : "manos libres")); listen(); };
 async function startTalk() {
-  if (!SR) { stepEl.textContent = "Este navegador no permite reconocimiento de voz (usa Chrome o Edge)."; return; }
-  if (!MOODLE?.voiceEnabled) { stepEl.textContent = MOODLE?.strings?.voice_off || "Voz no habilitada."; return; }
-  if (!talk.consent) { if (!window.confirm(MOODLE?.strings?.voice_consent || "¿Aceptas usar el micrófono y el reconocimiento de voz del navegador?")) return; talk.consent = true; log("consentimiento de voz aceptado"); }
-  sceneChanged(); talk.on = true; const b = document.getElementById("talk"); b.textContent = "⏹ " + ((MOODLE?.strings?.talk_stop) || "Parar voz"); b.classList.add("danger");
+  if (!SR) { stepEl.textContent = T("no_speech_api"); return; }
+  if (!MOODLE?.voiceEnabled) { stepEl.textContent = T("voice_off"); return; }
+  if (!talk.consent) { if (!window.confirm(T("voice_consent"))) return; talk.consent = true; log("consentimiento de voz aceptado"); }
+  sceneChanged(); talk.on = true; const b = document.getElementById("talk"); b.textContent = "⏹ " + T("talk_stop"); b.classList.add("danger");
   openPanel();
-  const ans = await askTutor(`Activo el modo conversación en el visor de esta actividad ${sceneText()}. Salúdame en una frase y, usando el contexto del docente, dime en una frase qué vamos a explorar y hazme la primera pregunta. Responde en frases cortas: te voy a escuchar en voz alta.`);
+  const ans = await askTutor(T("ask_voice_start", { scene: sceneText() }));
   if (ans) speak(handlePointMarks(ans)); else listen();
 }
 function stopTalk() {
   talk.on = false; try { talk.rec?.abort(); } catch (e) { } talk.rec = null; if ("speechSynthesis" in window) speechSynthesis.cancel(); talk.speaking = false;
-  const b = document.getElementById("talk"); if (b) { b.textContent = "🎙 " + ((MOODLE?.strings?.talk) || "Conversar"); b.classList.remove("danger"); }
+  const b = document.getElementById("talk"); if (b) { b.textContent = "🎙 " + T("talk"); b.classList.remove("danger"); }
   ptt.on = false; if (pttBar) pttBar.hidden = true;
-  if (video.srcObject) stepEl.textContent = "① Pellizca el borde de la pieza con pulgar e índice para cogerla.";
+  if (video.srcObject) stepEl.textContent = T("hint_free");
 }
 const talkBtn = document.getElementById("talk"); if (talkBtn) talkBtn.onclick = () => talk.on ? stopTalk() : startTalk();   // el botón sólo existe si el sitio habilita la voz
 if ("speechSynthesis" in window) speechSynthesis.getVoices();           // precarga la lista de voces (en Chrome llega de forma asíncrona)

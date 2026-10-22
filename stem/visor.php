@@ -88,7 +88,12 @@ $base = (new moodle_url('/local/jedomi/stem/visor/'))->out(false);
 $jsstrings = ['nomodel', 'intro', 'talk', 'talk_stop', 'pj_nocam', 'pj_speak', 'pj_nodev', 'pj_nomic', 'zoom_refit', 'zoom_fitting',
     'zoom_off', 'parts_explode', 'parts_join', 'pad_whole', 'voice_consent', 'voice_off', 'intro_next', 'intro_done',
     'intro_s1', 'intro_s2', 'intro_s3', 'intro_s4', 'intro_s5', 'ptt_hint', 'ptt_listening', 'ptt_handsfree', 'ptt_hold_mode',
-    'view_ar', 'view_web'];
+    'view_ar', 'view_web', 'ask_object', 'ask_part', 'ask_part_desc', 'ask_selected', 'ask_selected_desc',
+    'ask_voice_start', 'cam_failed', 'error', 'hint_free', 'hint_held', 'hint_held_rotating', 'hint_mouse',
+    'hint_part_held', 'hint_parts', 'hint_two', 'hint_web_free', 'hint_web_mouse', 'hint_web_parts', 'ia_offline',
+    'img_failed', 'mic_blocked', 'mic_blocked_chat', 'model_generic', 'no_speech_api', 'scene', 'scene_held',
+    'scene_resting', 'scene_selected', 'status_mat_covered', 'status_mat_missing', 'status_mat_ok', 'voice_bye',
+    'voice_handsfree', 'voice_stop_words', 'voice_unclear', 'you_said'];
 $strings = [];
 foreach ($jsstrings as $k) {
     $strings[$k] = get_string('stem_visor_' . $k, 'local_jedomi');
