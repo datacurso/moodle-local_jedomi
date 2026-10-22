@@ -15,10 +15,10 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Visor de realidad aumentada del modelo 3D de una actividad (alumno o profesor, dentro del curso).
- * Carga el GLB adjunto por el docente (filearea stem_model) y lo manipula con los gestos de la estación
- * (pellizco en el borde; dos pellizcos). La IA se consulta a través del chat de Jedomi del propio curso, que en esta
- * página arranca desplegado junto al escenario; el botón «Conversar» abre el modo conversacional (voz en ambos sentidos).
+ * AR viewer of a Jedomi AR activity (mod_jedomiar): loads the activity model and the parts described by the teacher.
+ *
+ * The AI is reached through the course Jedomi chat, which starts expanded next to the stage on this page; the
+ * «Talk» button opens the voice conversation mode.
  *
  * @package    local_jedomi
  * @copyright  2026 Datacurso
@@ -29,62 +29,31 @@ require_once(__DIR__ . '/../../../config.php');
 require_once($CFG->dirroot . '/local/jedomi/lib.php');
 
 $cmid = required_param('cmid', PARAM_INT);
-$cm = get_coursemodule_from_id('', $cmid, 0, false, MUST_EXIST);
-if (!in_array($cm->modname, ['assign', 'jedomiar'], true)) {
-    throw new moodle_exception('invalidcoursemodule');
-}
+$cm = get_coursemodule_from_id('jedomiar', $cmid, 0, false, MUST_EXIST);
 $course = get_course($cm->course);
 $context = context_module::instance($cm->id);
 require_login($course, false, $cm);
-require_capability('mod/' . $cm->modname . ':view', $context);
+require_capability('mod/jedomiar:view', $context);
 
-$parts = [];
-$objectcontext = '';
-if ($cm->modname === 'jedomiar') {
-    // Actividad RA propia: modelo y piezas descritas por el docente (mod_jedomiar).
-    $payload = null;
-    foreach (['\\mod_jedomiar\\local\\service\\model_service', '\\mod_jedomiar\\local\\model_service'] as $cls) {
-        if (class_exists($cls) && method_exists($cls, 'get_viewer_payload')) {
-            $payload = $cls::get_viewer_payload($cm);
-            break;
-        }
-    }
-    if (is_array($payload)) {
-        $modelurl = (string) ($payload['modelurl'] ?? '');
-        $modelname = (string) ($payload['modelname'] ?? '');
-        $parts = array_values((array) ($payload['parts'] ?? []));
-        $objectcontext = (string) ($payload['objectcontext'] ?? '');
-    } else {
-        $f = \mod_jedomiar\local\service\model_service::get_model($context);
-        $u = \mod_jedomiar\local\service\model_service::get_model_url($context);
-        $modelurl = $u ? $u->out(false) : '';
-        $modelname = $f ? $f->get_filename() : '';
-    }
-    $model = $modelurl !== '' ? (object) ['name' => $modelname] : null;
-    $enabled = (int) get_config('local_jedomi', 'stem_enabled') === 1;
-} else {
-    $file = \local_jedomi\stem\model_validator::get_model($context);
-    $fileurl = $file
-        ? moodle_url::make_pluginfile_url($context->id, 'local_jedomi', 'stem_model', 0, '/', $file->get_filename())
-        : null;
-    $modelurl = $fileurl ? $fileurl->out(false) : '';
-    $model = $file ? (object) ['name' => $file->get_filename()] : null;
-    $cfg = local_jedomi_stem_cfg((int) $course->id, (int) $cm->id);
-    $enabled = (int) get_config('local_jedomi', 'stem_enabled') === 1 && $cfg && (int) $cfg->enabled === 1;
-}
+$payload = \mod_jedomiar\local\service\model_service::get_viewer_payload($cm);
+$modelurl = (string) ($payload['modelurl'] ?? '');
+$modelname = (string) ($payload['modelname'] ?? '');
+$parts = array_values((array) ($payload['parts'] ?? []));
+$objectcontext = (string) ($payload['objectcontext'] ?? '');
+$model = $modelurl !== '' ? (object) ['name' => $modelname] : null;
+$enabled = (int) get_config('local_jedomi', 'stem_enabled') === 1;
 
 $PAGE->set_url(new moodle_url('/local/jedomi/stem/visor.php', ['cmid' => $cmid]));
 $PAGE->set_context($context);
 $PAGE->set_pagelayout('embedded');
 $PAGE->set_title(get_string('stem_visor_title', 'local_jedomi') . ': ' . format_string($cm->name));
 $PAGE->set_heading(format_string($course->fullname));
-// La cabecera de la actividad la pinta el propio visor (barra de título a la derecha del chat).
+// The viewer draws its own activity header (title bar next to the chat).
 $PAGE->activityheader->disable();
-$courseurl = ($cm->modname === 'jedomiar' ? new moodle_url('/mod/jedomiar/view.php', ['id' => $cm->id])
-    : new moodle_url('/course/view.php', ['id' => $course->id]))->out(false);
+$courseurl = (new moodle_url('/mod/jedomiar/view.php', ['id' => $cm->id]))->out(false);
 
 $base = (new moodle_url('/local/jedomi/stem/visor/'))->out(false);
-// Cadenas que usa el JavaScript del visor (clave JS => clave de idioma sin el prefijo stem_visor_).
+// Strings used by the viewer JavaScript (JS key => language key without the stem_visor_ prefix).
 $jsstrings = ['nomodel', 'intro', 'talk', 'talk_stop', 'pj_nocam', 'pj_speak', 'pj_nodev', 'pj_nomic', 'zoom_refit', 'zoom_fitting',
     'zoom_off', 'parts_explode', 'parts_join', 'pad_whole', 'voice_consent', 'voice_off', 'intro_next', 'intro_done',
     'intro_s1', 'intro_s2', 'intro_s3', 'intro_s4', 'intro_s5', 'ptt_hint', 'ptt_listening', 'ptt_handsfree', 'ptt_hold_mode',
@@ -123,7 +92,7 @@ $config = [
 
 $vdir = __DIR__ . '/visor/';
 $ver = fn(string $f): int => (int) @filemtime($vdir . $f);
-// Versión por fecha de modificación de cada guion: evita que el navegador sirva copias viejas tras una actualización.
+// Version each script by its modification time so browsers never keep a stale copy after an update.
 $imports = ['three' => $base . 'vendor/three/three.module.js', 'three/addons/' => $base . 'vendor/three/'];
 foreach (['visor.js', 'intro.js', 'devices.js', 'parts.js', 'hands3d.js'] as $f) {
     $imports[$base . $f] = $base . $f . '?v=' . $ver($f);

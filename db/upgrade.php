@@ -1,17 +1,32 @@
 <?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
 /**
- * Upgrade file for local_jedomi — adds Telegram integration tables.
+ * Upgrade steps for local_jedomi.
  *
- * @package   local_jedomi
- * @copyright 2026 Jedomi Project
- * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ * @package    local_jedomi
+ * @copyright  2026 Datacurso
+ * @license    https://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-defined('MOODLE_INTERNAL') || die();
-
 /**
- * @param int $oldversion
- * @return bool
+ * Runs the upgrade steps of local_jedomi.
+ *
+ * @param int $oldversion Version installed before this upgrade.
+ * @return bool Always true.
  */
 function xmldb_local_jedomi_upgrade(int $oldversion): bool {
     global $DB, $CFG;
@@ -19,8 +34,7 @@ function xmldb_local_jedomi_upgrade(int $oldversion): bool {
     $dbman = $DB->get_manager();
 
     if ($oldversion < 2026051401) {
-
-        // ── Table: local_jedomi_telegram_links ──────────────────────────────
+        // Table: local_jedomi_telegram_links.
         $table = new xmldb_table('local_jedomi_telegram_links');
         $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
         $table->add_field('userid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
@@ -36,7 +50,7 @@ function xmldb_local_jedomi_upgrade(int $oldversion): bool {
             $dbman->create_table($table);
         }
 
-        // ── Table: local_jedomi_telegram_sessions ───────────────────────────
+        // Table: local_jedomi_telegram_sessions.
         $table = new xmldb_table('local_jedomi_telegram_sessions');
         $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
         $table->add_field('chatid', XMLDB_TYPE_CHAR, '32', null, XMLDB_NOTNULL, null, null);
@@ -49,7 +63,7 @@ function xmldb_local_jedomi_upgrade(int $oldversion): bool {
             $dbman->create_table($table);
         }
 
-        // ── Table: local_jedomi_telegram_pending_actions ────────────────────
+        // Table: local_jedomi_telegram_pending_actions.
         $table = new xmldb_table('local_jedomi_telegram_pending_actions');
         $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
         $table->add_field('callbackid', XMLDB_TYPE_CHAR, '64', null, XMLDB_NOTNULL, null, null);
@@ -64,7 +78,7 @@ function xmldb_local_jedomi_upgrade(int $oldversion): bool {
             $dbman->create_table($table);
         }
 
-        // ── Table: local_jedomi_telegram_rate_limit ─────────────────────────
+        // Table: local_jedomi_telegram_rate_limit.
         $table = new xmldb_table('local_jedomi_telegram_rate_limit');
         $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
         $table->add_field('chatid', XMLDB_TYPE_CHAR, '32', null, XMLDB_NOTNULL, null, null);
@@ -89,7 +103,7 @@ function xmldb_local_jedomi_upgrade(int $oldversion): bool {
     }
 
     if ($oldversion < 2026052402) {
-        // Add usercontext TEXT column to sessions table
+        // Add usercontext TEXT column to sessions table.
         $table = new xmldb_table('local_jedomi_telegram_sessions');
         $field = new xmldb_field('usercontext', XMLDB_TYPE_TEXT, null, null, null, null, null, 'messages');
         if (!$dbman->field_exists($table, $field)) {
@@ -129,8 +143,7 @@ function xmldb_local_jedomi_upgrade(int $oldversion): bool {
     }
 
     if ($oldversion < 2026052409) {
-
-        // ── Table: local_jedomi_agents ─────────────────────────────────────────
+        // Table: local_jedomi_agents.
         $table = new xmldb_table('local_jedomi_agents');
         $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
         $table->add_field('userid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
@@ -151,7 +164,7 @@ function xmldb_local_jedomi_upgrade(int $oldversion): bool {
             $dbman->create_table($table);
         }
 
-        // ── Table: local_jedomi_agent_cache ────────────────────────────────────
+        // Table: local_jedomi_agent_cache.
         $table = new xmldb_table('local_jedomi_agent_cache');
         $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
         $table->add_field('agentid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
@@ -217,8 +230,7 @@ function xmldb_local_jedomi_upgrade(int $oldversion): bool {
     }
 
     if ($oldversion < 2026052414) {
-
-        // ── Table: local_jedomi_query_log ─────────────────────────────────────
+        // Table: local_jedomi_query_log.
         $table = new xmldb_table('local_jedomi_query_log');
         $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
         $table->add_field('agentid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
@@ -237,8 +249,7 @@ function xmldb_local_jedomi_upgrade(int $oldversion): bool {
     }
 
     if ($oldversion < 2026052415) {
-
-        // ── Add "name" column to local_jedomi_agents ─────────────────────────
+        // Add "name" column to local_jedomi_agents.
         $table = new xmldb_table('local_jedomi_agents');
         $field = new xmldb_field('name', XMLDB_TYPE_CHAR, '255', null, null, null, null, 'userid');
         if (!$dbman->field_exists($table, $field)) {
@@ -286,8 +297,8 @@ function xmldb_local_jedomi_upgrade(int $oldversion): bool {
     }
 
     if ($oldversion < 2026101801) {
-        // Configuración del tutor STEM por curso/actividad (rama local/stem-fisica): la selección de tarea y el modo
-        // dejan de ser globales; la pestaña de administración pasa a ser una plantilla.
+        // Tutor settings per course and activity: the assignment selection and the mode stop being global;
+        // the administration tab becomes a template.
         $table = new xmldb_table('local_jedomi_stem_cfg');
         $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
         $table->add_field('courseid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
@@ -304,7 +315,7 @@ function xmldb_local_jedomi_upgrade(int $oldversion): bool {
         if (!$dbman->table_exists($table)) {
             $dbman->create_table($table);
         }
-        // Migrar la antigua selección global de tarea (si existía) a una fila por actividad.
+        // Move the old global assignment selection (if any) to a row per activity.
         $oldcmid = (int) get_config('local_jedomi', 'stem_assign_cmid');
         if ($oldcmid > 0) {
             $courseid = (int) $DB->get_field('course_modules', 'course', ['id' => $oldcmid]);
@@ -319,7 +330,7 @@ function xmldb_local_jedomi_upgrade(int $oldversion): bool {
     }
 
     if ($oldversion < 2026101802) {
-        // Servicios de la estación: eventos de observación, propuestas de rúbrica y opción auto_release por curso.
+        // Station services: observation events, rubric proposals and the auto_release option per course.
         $table = new xmldb_table('local_jedomi_stem_cfg');
         $field = new xmldb_field('auto_release', XMLDB_TYPE_INTEGER, '2', null, XMLDB_NOTNULL, null, '0', 'tutor_prompt');
         if (!$dbman->field_exists($table, $field)) {
@@ -374,6 +385,19 @@ function xmldb_local_jedomi_upgrade(int $oldversion): bool {
             $dbman->create_table($table);
         }
         upgrade_plugin_savepoint(true, 2026101802, 'local', 'jedomi');
+    }
+
+    if ($oldversion < 2026102200) {
+        // The AR viewer inside assignments is retired: its 3D models (file area stem_model) are no longer served.
+        $fs = get_file_storage();
+        $contextids = $DB->get_fieldset_sql(
+            "SELECT DISTINCT contextid FROM {files} WHERE component = :component AND filearea = :filearea",
+            ['component' => 'local_jedomi', 'filearea' => 'stem_model']
+        );
+        foreach ($contextids as $contextid) {
+            $fs->delete_area_files((int) $contextid, 'local_jedomi', 'stem_model');
+        }
+        upgrade_plugin_savepoint(true, 2026102200, 'local', 'jedomi');
     }
 
     return true;

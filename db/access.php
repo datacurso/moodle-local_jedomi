@@ -48,7 +48,7 @@ $capabilities = [
             'frontpage'      => CAP_PROHIBIT,
         ],
     ],
-    // Configurar el tutor STEM (modo, instrucciones, tareas evaluadas) dentro de un curso.
+    // Configure the AI tutor (mode, instructions) in a course.
     'local/jedomi:configuretutor' => [
         'captype'      => 'write',
         'contextlevel' => CONTEXT_COURSE,
@@ -57,7 +57,7 @@ $capabilities = [
             'manager'        => CAP_ALLOW,
         ],
     ],
-    // La estación física (token de servicio) ingiere eventos de observación y propone rúbricas.
+    // The physical station (service token) ingests observation events and proposes rubric grades.
     // Ningún arquetipo de usuario normal la tiene: se asigna explícitamente al rol/token de la estación.
     'local/jedomi:ingestassessment' => [
         'captype'      => 'write',

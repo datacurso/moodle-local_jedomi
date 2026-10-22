@@ -17,26 +17,25 @@
 namespace local_jedomi\stem;
 
 /**
- * Validación de modelos 3D que el docente adjunta a una actividad (QA r11 #3): sólo GLB binario autocontenido,
- * sin URIs externas (SSRF/tracking), con topes de tamaño y de complejidad (DoS en el navegador del alumno).
+ * Validation of the 3D models a teacher attaches to an activity: only self-contained binary glTF (GLB),
+ * no external URIs (SSRF, tracking), with size and complexity limits (denial of service in the student browser).
  *
  * @package    local_jedomi
  * @copyright  2026 Datacurso
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class model_validator {
-
-    /** Tamaño máximo del fichero GLB. */
+    /** @var int Maximum size of the GLB file in bytes. */
     public const MAX_BYTES = 30 * 1024 * 1024;
-    /** Triángulos máximos (suma de primitivas indexadas). */
+    /** @var int Maximum number of triangles (sum over indexed primitives). */
     public const MAX_TRIANGLES = 1500000;
-    /** Imágenes embebidas máximas. */
+    /** @var int Maximum number of embedded images. */
     public const MAX_IMAGES = 16;
 
     /**
-     * Valida el contenido de un GLB. Devuelve un resumen (triángulos, mallas, imágenes) o lanza moodle_exception.
+     * Validates the content of a GLB and returns a summary; throws moodle_exception when it is not acceptable.
      *
-     * @param string $content bytes del fichero
+     * @param string $content File bytes.
      * @return array ['triangles' => int, 'meshes' => int, 'images' => int, 'bytes' => int]
      */
     public static function validate_glb(string $content): array {
@@ -52,28 +51,28 @@ class model_validator {
             throw new \moodle_exception('stem_model_not_glb', 'local_jedomi');
         }
         $chunk = unpack('Vlen/Vtype', substr($content, 12, 8));
-        if ($chunk['type'] !== 0x4E4F534A || 20 + $chunk['len'] > $len) {   // 'JSON'
+        if ($chunk['type'] !== 0x4E4F534A || 20 + $chunk['len'] > $len) {   // Chunk type 'JSON'.
             throw new \moodle_exception('stem_model_not_glb', 'local_jedomi');
         }
         $json = json_decode(substr($content, 20, $chunk['len']), true);
         if (!is_array($json) || empty($json['asset'])) {
             throw new \moodle_exception('stem_model_not_glb', 'local_jedomi');
         }
-        // Autocontenido: ninguna clave «uri» en NINGÚN nivel del JSON (buffers, imágenes, extensiones…), ni siquiera data: (QA P13-J).
+        // Self-contained: no «uri» key at ANY level of the JSON (buffers, images, extensions…), not even data: URIs.
         $found = self::find_uri($json);
         if ($found !== null) {
             throw new \moodle_exception('stem_model_external_uri', 'local_jedomi', '', s(substr($found, 0, 60)));
         }
-        // Segundo chunk (BIN): tipo y longitud coherentes con el fichero (QA P13-M).
+        // Second chunk (BIN): type and length consistent with the file.
         $off = 20 + $chunk['len'];
         if ($off + 8 <= $len) {
             $bin = unpack('Vlen/Vtype', substr($content, $off, 8));
-            if ($bin['type'] !== 0x004E4942 || $off + 8 + $bin['len'] > $len) {   // 'BIN\0'
+            if ($bin['type'] !== 0x004E4942 || $off + 8 + $bin['len'] > $len) {   // Chunk type 'BIN\0'.
                 throw new \moodle_exception('stem_model_not_glb', 'local_jedomi');
             }
         }
         if (!empty($json['extensionsRequired'])) {
-            // Extensiones obligatorias (Draco, KTX2…) requieren decodificadores: se rechazan hasta soportarlas en el visor.
+            // Required extensions (Draco, KTX2…) need decoders: they are rejected until the viewer supports them.
             throw new \moodle_exception('stem_model_extension', 'local_jedomi', '', s(implode(', ', $json['extensionsRequired'])));
         }
         $triangles = 0;
@@ -93,10 +92,20 @@ class model_validator {
         if (count($json['images'] ?? []) > self::MAX_IMAGES) {
             throw new \moodle_exception('stem_model_too_complex', 'local_jedomi', '', 'images');
         }
-        return ['triangles' => $triangles, 'meshes' => count($json['meshes'] ?? []), 'images' => count($json['images'] ?? []), 'bytes' => $len];
+        return [
+            'triangles' => $triangles,
+            'meshes' => count($json['meshes'] ?? []),
+            'images' => count($json['images'] ?? []),
+            'bytes' => $len,
+        ];
     }
 
-    /** Busca recursivamente una clave «uri» (string) en el JSON del glTF; devuelve su valor o null. */
+    /**
+     * Searches the glTF JSON recursively for a string «uri» key.
+     *
+     * @param mixed $node JSON node.
+     * @return string|null The first uri found, or null.
+     */
     private static function find_uri($node): ?string {
         if (!is_array($node)) {
             return null;
@@ -113,11 +122,5 @@ class model_validator {
             }
         }
         return null;
-    }
-
-    /** Devuelve el fichero GLB de la actividad o null. */
-    public static function get_model(\context_module $context): ?\stored_file {
-        $files = get_file_storage()->get_area_files($context->id, 'local_jedomi', 'stem_model', 0, 'itemid, filepath, filename', false);
-        return $files ? reset($files) : null;
     }
 }
