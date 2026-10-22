@@ -211,7 +211,10 @@ let heldBy = null, grabOff = [0, 0], two = null; const objFilter = new OneEuro(1
 let pinchHold = new Set(), holdPts = [], lastHoldT = 0;
 let qHand0 = null, rot0 = null, rotArmed = false; const ROT_DEAD = 6 * Math.PI / 180;   // 6° para empezar a girar (luego sigue 1:1, re-anclado al armar: sin salto)
 let gestureName = "libre";
-const WEB_HINT = { "libre": "hint_web_free", "modo piezas": "hint_web_parts", "ratón": "hint_web_mouse" };
+// Touch screens (phones, tablets) get touch wording instead of mouse and wheel.
+const TOUCH = window.matchMedia?.("(pointer: coarse)").matches;
+const WEB_HINT = TOUCH ? { "libre": "hint_web_free_touch", "modo piezas": "hint_web_parts_touch", "ratón": "hint_web_mouse" }
+  : { "libre": "hint_web_free", "modo piezas": "hint_web_parts", "ratón": "hint_web_mouse" };
 const GESTURE_HINT = { "modo piezas": "hint_parts", "pieza cogida": "hint_part_held", "ratón": "hint_mouse", "libre": "hint_free", "cogida": "hint_held", "cogida: girando": "hint_held_rotating", "dos pellizcos": "hint_two" };
 function gestures(active, t) {
   const hull = objectHullPx();
@@ -591,7 +594,7 @@ async function start(opts = {}) {
   if (opts.view === "web") enterWeb(); else await enterAR(opts);
   await loadModel(MOODLE ? (MOODLE.modelUrl || "aro") : document.getElementById("model").value);   // la pieza que adjuntó el docente; el aro sólo como respaldo
   document.getElementById("start").style.display = "none";
-  stepEl.textContent = T(view.mode === "web" ? "hint_web_free" : "hint_free");
+  stepEl.textContent = T(view.mode === "web" ? WEB_HINT.libre : "hint_free");
   if (!started) { started = true; requestAnimationFrame(loop); }
 }
 function loop() {

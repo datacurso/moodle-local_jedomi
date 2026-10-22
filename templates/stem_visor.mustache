@@ -17,16 +17,16 @@
 {{!
     @template local_jedomi/stem_visor
 
-    Visor de realidad aumentada del alumno: escenario (vídeo + 3D), barra de título, controles, panel de controles,
-    ficha de pieza, intro animada y pantalla previa de dispositivos. El comportamiento lo aportan los ES modules de
-    stem/visor/ (visor.js, intro.js, devices.js, parts.js, hands3d.js) cargados al final con un importmap versionado.
+    Student AR viewer: stage (video + 3D), title bar, toolbar, controls panel, part card, animated intro and
+    device prejoin screen. Behaviour comes from the ES modules in stem/visor/ (visor.js, intro.js, devices.js,
+    parts.js, hands3d.js), loaded at the end through a versioned import map.
 
     Context variables required for this template:
-    * activityname, coursename, quiturl - Textos y salida
-    * dev - Muestra el selector de modelo (sólo con local/jedomi:configuretutor)
-    * hasmodel, modelurl, modelname, showaro - Opciones del selector
-    * voiceenabled - Botón Conversar
-    * base, importmap, config, verintro, vervisor - Carga de guiones (JSON ya codificado en servidor)
+    * activityname, coursename, quiturl - Texts and exit link
+    * dev - Shows the model selector (only with local/jedomi:configuretutor)
+    * hasmodel, modelurl, modelname, showaro - Selector options
+    * voiceenabled - Talk button
+    * base, importmap, config, verintro, vervisor - Script loading (JSON already encoded on the server)
 
     Example context (json):
     {"activityname": "Framework Laptop 13", "coursename": "Laboratorio STEM", "quiturl": "#", "dev": false,
@@ -126,7 +126,7 @@
     </div></div>
 </div>
 <script type="importmap">{{{importmap}}}</script>
-<script>try { sessionStorage.setItem('jedomi_open', '1'); } catch (e) { } window.JEDOMI_VISOR = {{{config}}};</script>
+<script>try { if (window.matchMedia('(min-width: 768px)').matches) { sessionStorage.setItem('jedomi_open', '1'); } } catch (e) { } window.JEDOMI_VISOR = {{{config}}};</script>
 <script src="{{base}}vendor/cv.js"></script>
 <script src="{{base}}vendor/aruco.js"></script>
 <script src="{{base}}vendor/dictionaries/aruco_4x4_1000.js"></script>

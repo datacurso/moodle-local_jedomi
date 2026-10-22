@@ -85,3 +85,12 @@ body:has(#jedomi-sidebar.jedomi-open) #jedomi-trigger{display:none}
 .pjview label small{color:#9aa3af;font-size:12px}.pjview input{margin-right:6px}
 body.jv-web #view video{display:none}
 #ctl button:focus-visible,#ctl select:focus-visible,#bottombar button:focus-visible,#bgpick button:focus-visible,#bgpick input:focus-visible,#titlebar a:focus-visible,#partinfo button:focus-visible{outline:2px solid #60a5fa;outline-offset:1px}
+/* Moodle's own activity navigation and completion footer are not part of the viewer: hide them so they neither show
+   through the bottom bar nor take keyboard focus. */
+.activity-navigation,#page-footer .activity-navigation{display:none!important}
+#bottombar{background:#111827}
+/* The chat launcher sits above the bottom bar instead of covering the help text. */
+body:has(#stage) #jedomi-trigger{bottom:72px}
+@media (max-width:900px){body:has(#stage) #jedomi-trigger{bottom:110px}#ctl{-webkit-mask-image:linear-gradient(to right,#000 88%,transparent);mask-image:linear-gradient(to right,#000 88%,transparent)}}
+/* On phones the chat overlays the viewer instead of pushing it off screen. */
+@media (max-width:767px){body:has(#jedomi-sidebar.jedomi-open) #stage,body:has(#jedomi-sidebar.jedomi-open.jedomi-expand-half) #stage{margin-left:0;width:100%}}

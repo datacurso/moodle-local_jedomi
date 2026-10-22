@@ -86,7 +86,7 @@ function local_jedomi_get_sidebar_config(): array {
             'file'              => get_string('file', 'local_jedomi'),
             'image'             => get_string('image', 'local_jedomi'),
             'message_input'     => get_string('message_input', 'local_jedomi'),
-            'placeholder'       => get_string('chat_placeholder', 'local_jedomi'),
+            'chat_placeholder'  => get_string('chat_placeholder', 'local_jedomi'),
             'send'              => get_string('send', 'local_jedomi'),
             'voice_input'       => get_string('voice_input', 'local_jedomi'),
             // Greeting.
