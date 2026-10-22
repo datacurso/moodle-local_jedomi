@@ -587,6 +587,7 @@ $string['stem_visor_status_web'] = '🖥 3D · {fps} fps';
 $string['stem_visor_talk'] = 'Conversar';
 $string['stem_visor_talk_help'] = 'Hablar con el tutor por voz: te escucha y te responde en voz alta';
 $string['stem_visor_talk_stop'] = 'Parar voz';
+$string['stem_visor_test_ring'] = 'Aro de prueba (desarrollo)';
 $string['stem_visor_title'] = 'Visor de realidad aumentada';
 $string['stem_visor_toolbar'] = 'Herramientas del visor';
 $string['stem_visor_view_ar'] = 'Vista RA';

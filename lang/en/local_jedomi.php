@@ -587,6 +587,7 @@ $string['stem_visor_status_web'] = '🖥 3D · {fps} fps';
 $string['stem_visor_talk'] = 'Talk';
 $string['stem_visor_talk_help'] = 'Talk to the tutor by voice: it listens and answers aloud';
 $string['stem_visor_talk_stop'] = 'Stop voice';
+$string['stem_visor_test_ring'] = 'Test ring (development)';
 $string['stem_visor_title'] = 'AR viewer';
 $string['stem_visor_toolbar'] = 'Viewer tools';
 $string['stem_visor_view_ar'] = 'AR view';
