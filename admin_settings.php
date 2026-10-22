@@ -2852,9 +2852,32 @@ function jdSubToggle(subId) {
         });
     }
 
-    // ── MD5 helper (simple for hashing preview prompt) ──────────────────────
-    // https://css-tricks.com/snippets/javascript/javascript-md5/
-    function md5(s){function L(k,d){return(k<<d)|(k>>>(32-d))}function K(G,k){var I,d,F,H,x;F=(G&2147483648)+(k&2147483648)|0;I=(G&1073741824)+(k&1073741824)|0;d=(G&1073741823)+(k&1073741823)|0;return F^I^(((d&1073741824)>>30)|((d&1073741823)<<2))|0}function V(G){var k,d='',F='0123456789abcdef';for(k=7;k>=0;k--){d+=F.charAt((G>>(k*4))&15)}return d}var C=Array(80),k=0,d=0,F=0,x=0,H=0,I=0,j=0,Q=0,w=0,l=0,o=0,p=0,t=0,u=0,A=0,N=0,M=-1,B=0,z=0;G=unescape(encodeURIComponent(s));s='';for(k=0;k<G.length;k++){s+=String.fromCharCode(G.charCodeAt(k))}var Y=s.length;var Z=[1732584193,-271733879,-1732584194,271733878];var a;for(k=0;k<=Y+72;k+=512){var c,Z2=Z[0],E=Z[1],m=Z[2],n=Z[3];for(j=0;j<16;j++){C[j]=(s.charCodeAt(B)||0)+(s.charCodeAt(B+1)||0)*256+(s.charCodeAt(B+2)||0)*65536+(s.charCodeAt(B+3)||0)*16777216;B+=4}var W;for(j=16;j<80;j++){C[j]=L(C[j-3]^C[j-8]^C[j-14]^C[j-16],1)}for(j=0;j<80;j++){if(j<20){a=(E&m)|((~E)&n)}else if(j<40){a=E^m^n}else if(j<60){a=(E&m)|(E&n)|(m&n)}else{a=E^m^n}W=K(K(L(Z2,5),a),K(K(0,C[j]),j<20?1518500249:j<40?1859775393:j<60?2400959708:-1894007588));a=n;n=m;m=L(E,30);E=Z2;Z2=W}Z[0]=K(Z2,Z[0]);Z[1]=K(E,Z[1]);Z[2]=K(m,Z[2]);Z[3]=K(n,Z[3])}return V(Z[0])+V(Z[1])+V(Z[2])+V(Z[3])}
+    // MD5 of the UTF-8 bytes, identical to PHP md5(): the server keys the preview cache with it.
+    function md5(str) {
+        var bytes = new TextEncoder().encode(str), n = bytes.length;
+        var words = new Array((((n + 8) >> 6) + 1) * 16).fill(0);
+        for (var i = 0; i < n; i++) { words[i >> 2] |= bytes[i] << ((i % 4) * 8); }
+        words[n >> 2] |= 0x80 << ((n % 4) * 8);
+        words[words.length - 2] = n * 8;
+        var S = [7, 12, 17, 22, 5, 9, 14, 20, 4, 11, 16, 23, 6, 10, 15, 21];
+        var T = []; for (var t = 0; t < 64; t++) { T[t] = Math.floor(Math.abs(Math.sin(t + 1)) * 4294967296) | 0; }
+        var a0 = 0x67452301, b0 = 0xefcdab89 | 0, c0 = 0x98badcfe | 0, d0 = 0x10325476;
+        for (var k = 0; k < words.length; k += 16) {
+            var a = a0, b = b0, c = c0, d = d0;
+            for (var j = 0; j < 64; j++) {
+                var f, g, r = j >> 4;
+                if (r === 0) { f = (b & c) | (~b & d); g = j; }
+                else if (r === 1) { f = (d & b) | (~d & c); g = (5 * j + 1) % 16; }
+                else if (r === 2) { f = b ^ c ^ d; g = (3 * j + 5) % 16; }
+                else { f = c ^ (b | ~d); g = (7 * j) % 16; }
+                var tmp = d; d = c; c = b;
+                var x = (a + f + T[j] + words[k + g]) | 0, s = S[r * 4 + (j % 4)];
+                b = (b + ((x << s) | (x >>> (32 - s)))) | 0; a = tmp;
+            }
+            a0 = (a0 + a) | 0; b0 = (b0 + b) | 0; c0 = (c0 + c) | 0; d0 = (d0 + d) | 0;
+        }
+        return [a0, b0, c0, d0].map(function(v) { var h = ''; for (var q = 0; q < 4; q++) { h += ((v >>> (q * 8)) & 255).toString(16).padStart(2, '0'); } return h; }).join('');
+    }
 
     // ── Purge form ────────────────────────────────────────────────────────
     var purgeForm = document.getElementById('agent-purge-form');
