@@ -54,7 +54,7 @@ $courseurl = (new moodle_url('/mod/jedomiar/view.php', ['id' => $cm->id]))->out(
 
 $base = (new moodle_url('/local/jedomi/stem/visor/'))->out(false);
 // Strings used by the viewer JavaScript (JS key => language key without the stem_visor_ prefix).
-$jsstrings = ['nomodel', 'intro', 'talk', 'talk_stop', 'pj_nocam', 'pj_speak', 'pj_nodev', 'pj_nomic', 'zoom_refit', 'zoom_fitting',
+$jsstrings = ['talk', 'talk_stop', 'pj_nocam', 'pj_speak', 'pj_nodev', 'pj_nomic', 'zoom_refit', 'zoom_fitting',
     'zoom_off', 'parts_explode', 'parts_join', 'pad_whole', 'voice_consent', 'voice_off', 'intro_next', 'intro_done',
     'intro_s1', 'intro_s2', 'intro_s3', 'intro_s4', 'intro_s5', 'ptt_hint', 'ptt_listening', 'ptt_handsfree', 'ptt_hold_mode',
     'view_ar', 'view_web', 'ask_object', 'ask_part', 'ask_part_desc', 'ask_selected', 'ask_selected_desc',

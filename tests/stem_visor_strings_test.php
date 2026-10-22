@@ -39,7 +39,7 @@ final class stem_visor_strings_test extends \advanced_testcase {
     }
 
     /**
-     * Keys the viewer reads through T("key") in visor.js and as strings.<key> in devices.js.
+     * Keys the viewer reads: T("key") in visor.js, strings.<key> in devices.js and S.<key> in intro.js.
      *
      * @return string[]
      */
@@ -54,12 +54,17 @@ final class stem_visor_strings_test extends \advanced_testcase {
             preg_match_all('/"([a-z][a-z0-9_]*)"/', $args, $lits);
             $used = array_merge($used, $lits[1]);
         }
+        // Calls whose arguments nest further calls: the key is the first literal argument.
+        preg_match_all('/\bT\(\s*"([a-z][a-z0-9_]*)"/', $src, $first);
+        $used = array_merge($used, $first[1]);
         preg_match_all('/"(hint_[a-z_]+)"/', $src, $hints);
         $used = array_merge($used, $hints[1]);
-        // The prejoin module reads its strings as strings.<key>.
+        // The prejoin module reads its strings as strings.<key>, the intro module as S.<key>.
         $prejoin = file_get_contents($CFG->dirroot . '/local/jedomi/stem/visor/devices.js');
         preg_match_all('/\bstrings\.([a-z][a-z0-9_]*)/', $prejoin, $direct);
-        return array_values(array_unique(array_merge($used, $direct[1])));
+        $intro = file_get_contents($CFG->dirroot . '/local/jedomi/stem/visor/intro.js');
+        preg_match_all('/\bS\.([a-z][a-z0-9_]*)/', $intro, $introkeys);
+        return array_values(array_unique(array_merge($used, $direct[1], $introkeys[1])));
     }
 
     /**
@@ -85,6 +90,16 @@ final class stem_visor_strings_test extends \advanced_testcase {
         $this->assertContains('you_said', $this->used_keys());
         $this->assertContains('hint_free', $this->used_keys());
         $this->assertContains('pj_cam_n', $this->used_keys());
+        $this->assertContains('intro_s1', $this->used_keys());
+    }
+
+    /**
+     * Every exported key is used by the viewer: no dead strings are sent to the page.
+     */
+    public function test_exported_keys_are_used(): void {
+        $this->resetAfterTest(true);
+        $unused = array_diff($this->exported_keys(), $this->used_keys());
+        $this->assertSame([], array_values($unused), 'Keys in $jsstrings that no viewer script reads');
     }
 
     /**
