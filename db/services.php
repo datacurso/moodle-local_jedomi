@@ -1,4 +1,19 @@
 <?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
 /**
  * Web Service function and service definitions for local_jedomi CompanionWS.
  *
@@ -81,27 +96,6 @@ $functions = [
         'capabilities' => 'moodle/site:config',
         'ajax'         => false,
         'services'     => ['jedomi_companion'],
-    ],
-        'local_jedomi_ingest_assessment_event' => [
-        'classname'   => 'local_jedomi\\external\\ingest_assessment_event',
-        'description' => 'Estación STEM: ingiere un evento de observación (visión/voz/diálogo/espacial) firmado con el secreto de estación.',
-        'type'        => 'write',
-        'ajax'        => false,
-        'capabilities' => 'local/jedomi:ingestassessment',
-    ],
-    'local_jedomi_propose_rubric' => [
-        'classname'   => 'local_jedomi\\external\\propose_rubric',
-        'description' => 'Estación STEM: propone niveles de la rúbrica e informe HTML; se aplica en revisión o se libera según la configuración del curso.',
-        'type'        => 'write',
-        'ajax'        => false,
-        'capabilities' => 'local/jedomi:ingestassessment',
-    ],
-    'local_jedomi_get_stem_config' => [
-        'classname'   => 'local_jedomi\\external\\get_stem_config',
-        'description' => 'Configuración del Modo Evaluación Física STEM para la estación (requiere moodle/site:config).',
-        'type'        => 'read',
-        'ajax'        => false,
-        'capabilities' => 'moodle/site:config',
     ],
     'local_jedomi_search_courses' => [
         'classname'    => 'local_jedomi\external\search_courses',

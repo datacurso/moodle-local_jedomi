@@ -39,7 +39,7 @@ final class stem_visor_strings_test extends \advanced_testcase {
     }
 
     /**
-     * Keys the viewer reads through T("key") in visor.js.
+     * Keys the viewer reads through T("key") in visor.js and as strings.<key> in devices.js.
      *
      * @return string[]
      */
@@ -55,7 +55,11 @@ final class stem_visor_strings_test extends \advanced_testcase {
             $used = array_merge($used, $lits[1]);
         }
         preg_match_all('/"(hint_[a-z_]+)"/', $src, $hints);
-        return array_values(array_unique(array_merge($used, $hints[1])));
+        $used = array_merge($used, $hints[1]);
+        // The prejoin module reads its strings as strings.<key>.
+        $prejoin = file_get_contents($CFG->dirroot . '/local/jedomi/stem/visor/devices.js');
+        preg_match_all('/\bstrings\.([a-z][a-z0-9_]*)/', $prejoin, $direct);
+        return array_values(array_unique(array_merge($used, $direct[1])));
     }
 
     /**
@@ -80,6 +84,7 @@ final class stem_visor_strings_test extends \advanced_testcase {
         $this->assertSame([], array_values($missing), 'Keys used by visor.js but missing from $jsstrings');
         $this->assertContains('you_said', $this->used_keys());
         $this->assertContains('hint_free', $this->used_keys());
+        $this->assertContains('pj_cam_n', $this->used_keys());
     }
 
     /**

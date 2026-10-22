@@ -36,6 +36,34 @@ class course_settings {
     public const MAXQ_MAX = 10;
 
     /**
+     * Site-wide tutor template defaults, used when the site has not saved its own value.
+     *
+     * @return array<string, int|string> Setting name => default value.
+     */
+    public static function site_defaults(): array {
+        return [
+            'stem_enabled' => 0,
+            'stem_voice_enabled' => 0,
+            'stem_tutor_mode' => 'socratic',
+            'stem_max_questions' => 3,
+            'stem_tutor_prompt' => get_string('stem_tutor_prompt_default', 'local_jedomi'),
+        ];
+    }
+
+    /**
+     * Stores the site defaults that are not set yet (install and upgrade).
+     *
+     * @return void
+     */
+    public static function seed_site_defaults(): void {
+        foreach (self::site_defaults() as $name => $value) {
+            if (get_config('local_jedomi', $name) === false) {
+                set_config($name, $value, 'local_jedomi');
+            }
+        }
+    }
+
+    /**
      * Current settings of a course, with defaults when none were saved.
      *
      * @param int $courseid Course id.

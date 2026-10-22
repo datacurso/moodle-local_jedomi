@@ -1,5 +1,5 @@
 <?php
-// This file is part of Moodle - http://moodle.org/
+// This file is part of Moodle - https://moodle.org/
 //
 // Moodle is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -12,22 +12,20 @@
 // GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License
-// along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
 
 /**
- * Post-install hook for local_jedomi.
- * Automatically deploys the bundled aiprovider_jedomi to the correct
- * Moodle directory so admins only need to install one plugin.
+ * Post-install steps of local_jedomi.
  *
- * @package   local_jedomi
- * @copyright 2026 Jedomi Project
- * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ * @package    local_jedomi
+ * @copyright  2026 Datacurso
+ * @license    https://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-
-defined('MOODLE_INTERNAL') || die();
 
 /**
  * Runs after local_jedomi is installed.
+ *
+ * @return bool Always true.
  */
 function xmldb_local_jedomi_install(): bool {
     global $DB, $CFG;
@@ -38,6 +36,8 @@ function xmldb_local_jedomi_install(): bool {
     if (in_array($dbtype, ['mysqli', 'mariadb'], true)) {
         $DB->execute("ALTER TABLE {local_jedomi_telegram_sessions} MODIFY COLUMN usercontext MEDIUMTEXT");
     }
+
+    \local_jedomi\tutor\course_settings::seed_site_defaults();
 
     return true;
 }

@@ -25,6 +25,7 @@
 
 require_once(__DIR__ . '/../../config.php');
 require_once($CFG->libdir . '/adminlib.php');
+require_once(__DIR__ . '/lib.php');
 
 require_login();
 $context = context_system::instance();
@@ -32,57 +33,8 @@ require_capability('moodle/site:config', $context);
 
 $tab     = optional_param('tab', 'general', PARAM_ALPHA);
 
-// ── Modo Evaluación Física STEM: ajustes de la estación (rama local/stem-fisica) ───────────────
-// Única fuente de verdad para los scripts Python (se exportan como JSON vía ?tab=stem&export=json o WS).
-$STEM_DEFAULTS = [
-    'stem_enabled'          => 0,
-    'stem_voice_enabled'    => 0,                      // voz en el visor RA del navegador (reconocimiento de voz del navegador: opt-in)
-    'stem_osc_host'         => '127.0.0.1',
-    'stem_osc_port'         => 16284,                  // puerto de recepción de OBSBOT Center
-    'stem_osc_reply_port'   => 16285,                  // puerto de envío de OBSBOT Center hacia la estación
-    'stem_preset_face'      => 1,                      // Preset 1 = rostro / nivel ocular
-    'stem_preset_table'     => 2,                      // Preset 2 = mesa / tapete
-    'stem_camera_index'     => 0,                      // índice AVFoundation de la OBSBOT
-    'stem_camera_width'     => 1920,
-    'stem_camera_height'    => 1080,
-    'stem_mic_match'        => 'OBSBOT',               // subcadena del nombre del micrófono
-    'stem_mat_width_mm'     => 800,
-    'stem_mat_height_mm'    => 400,
-    'stem_marker_mm'        => 60,
-    'stem_margin_mm'        => 20,
-    'stem_aruco_dict'       => 'DICT_4X4_50',
-    'stem_whisper_model'    => 'small',
-    'stem_whisper_prompt'   => 'Clase de electrónica: resistencia, ohmios, LED, diodo, protoboard, voltaje, corriente, ley de Ohm, condensador, pila de nueve voltios, polaridad, ánodo, cátodo.',
-    'stem_vision_model'     => 'claude-haiku-5-5',
-    'stem_tutor_mode'       => 'socratic',             // socratic | guided | assessment_only
-    'stem_max_questions'    => 3,
-    'stem_tutor_prompt'     => "Eres un tutor socrático de electrónica en una estación física. Observas el montaje del alumno (imagen cenital del tapete) y escuchas su explicación. Nunca das la respuesta ni corriges directamente: formulas preguntas breves que lleven al alumno a descubrir el error o a justificar su diseño. Una pregunta por turno, en español, máximo dos frases. Al final emites una evaluación por criterio de la rúbrica con evidencia observada.",
-    'stem_station_secret'   => '',                     // HMAC para eventos estación → Moodle (se genera al guardar si está vacío)
-];
-foreach ($STEM_DEFAULTS as $k => $v) {
-    $cur = get_config('local_jedomi', $k);
-    if ($cur === false || $cur === null) {
-        set_config($k, $v, 'local_jedomi');
-    }
-}
-
-// ── STEM: exportación JSON de la configuración de la estación (sólo admin, misma sesión) ──────────
-if ($tab === 'stem' && optional_param('export', '', PARAM_ALPHA) === 'json') {
-    $out = [];
-    foreach ($STEM_DEFAULTS as $k => $v) {
-        $val = get_config('local_jedomi', $k);
-        if ($k === 'stem_station_secret') {
-            continue; // el secreto se entrega por WS autenticado, no por descarga
-        }
-        $out[substr($k, 5)] = is_numeric($val) && is_int($v) ? (int) $val : $val;
-    }
-    $out['exported_at'] = date('c');
-    $out['wwwroot'] = $CFG->wwwroot;
-    header('Content-Type: application/json; charset=utf-8');
-    header('Content-Disposition: attachment; filename="stem_station_config.json"');
-    echo json_encode($out, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-    exit;
-}
+// AI tutor template: site defaults that courses inherit (the course settings live in tutor_settings.php).
+$stemdefaults = \local_jedomi\tutor\course_settings::site_defaults();
 
 $pageurl = new moodle_url('/local/jedomi/admin_settings.php');
 
@@ -93,7 +45,7 @@ $PAGE->set_title(get_string('pluginname', 'local_jedomi'));
 $PAGE->set_heading(get_string('pluginname', 'local_jedomi'));
 
 // ── Handle POST ──────────────────────────────────────────────────────────────
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && confirm_sesskey()) {
+if (data_submitted() && confirm_sesskey()) {
     $savetype = optional_param('jedomi_save', '', PARAM_ALPHA);
 
     switch ($savetype) {
@@ -101,12 +53,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && confirm_sesskey()) {
         case 'general':
             set_config('enabled',               optional_param('enabled',               0, PARAM_INT),  'local_jedomi');
             set_config('gateway_url',           required_param('gateway_url',           PARAM_URL),     'local_jedomi');
-            set_config('api_key',               required_param('api_key',               PARAM_TEXT),    'local_jedomi');
+            $apikey = optional_param('api_key', '', PARAM_TEXT);
+            if ($apikey !== '') {
+                set_config('api_key', $apikey, 'local_jedomi');
+            }
             set_config('workspace_id',          optional_param('workspace_id',          '',  PARAM_ALPHANUMEXT), 'local_jedomi');
             set_config('model',                 required_param('model',                 PARAM_TEXT),    'local_jedomi');
             set_config('max_tokens',            optional_param('max_tokens',           16384, PARAM_INT),'local_jedomi');
             set_config('docservice_url',        optional_param('docservice_url',        '',             PARAM_TEXT),    'local_jedomi');
-            set_config('spt_secret',            required_param('spt_secret',            PARAM_TEXT),    'local_jedomi');
+            $sptsecret = optional_param('spt_secret', '', PARAM_TEXT);
+            if ($sptsecret !== '') {
+                set_config('spt_secret', $sptsecret, 'local_jedomi');
+            }
             set_config('collect_training_data', optional_param('collect_training_data', 0, PARAM_INT),  'local_jedomi');
 
             redirect(new moodle_url($pageurl, ['tab' => 'general']),
@@ -114,15 +72,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && confirm_sesskey()) {
             break;
 
         case 'stem':
-            set_config('stem_enabled',        optional_param('stem_enabled', 0, PARAM_INT), 'local_jedomi');
-            set_config('stem_voice_enabled',  optional_param('stem_voice_enabled', 0, PARAM_INT), 'local_jedomi');
-            set_config('stem_vision_model',   optional_param('stem_vision_model', 'claude-haiku-5-5', PARAM_TEXT), 'local_jedomi');
-            set_config('stem_tutor_mode',     in_array(optional_param('stem_tutor_mode', 'socratic', PARAM_ALPHAEXT), ['socratic', 'guided', 'assessment_only'], true) ? optional_param('stem_tutor_mode', 'socratic', PARAM_ALPHAEXT) : 'socratic', 'local_jedomi');
-            set_config('stem_max_questions',  max(1, min(10, optional_param('stem_max_questions', 3, PARAM_INT))), 'local_jedomi');
-            set_config('stem_tutor_prompt',   core_text::substr(trim(strip_tags(optional_param('stem_tutor_prompt', '', PARAM_TEXT))), 0, 2000), 'local_jedomi'); // tope 2000 (QA r7)
-            if (optional_param('stem_rotate_secret', 0, PARAM_INT) || get_config('local_jedomi', 'stem_station_secret') === '') {
-                set_config('stem_station_secret', bin2hex(random_bytes(32)), 'local_jedomi');
-            }
+            $mode = optional_param('stem_tutor_mode', 'socratic', PARAM_ALPHAEXT);
+            set_config('stem_enabled', optional_param('stem_enabled', 0, PARAM_INT), 'local_jedomi');
+            set_config('stem_voice_enabled', optional_param('stem_voice_enabled', 0, PARAM_INT), 'local_jedomi');
+            set_config('stem_tutor_mode', in_array($mode, ['socratic', 'guided'], true) ? $mode : 'socratic', 'local_jedomi');
+            set_config('stem_max_questions', max(1, min(10, optional_param('stem_max_questions', 3, PARAM_INT))), 'local_jedomi');
+            $prompt = core_text::substr(trim(strip_tags(optional_param('stem_tutor_prompt', '', PARAM_TEXT))), 0, 2000);
+            set_config('stem_tutor_prompt', $prompt, 'local_jedomi');
             redirect(new moodle_url($pageurl, ['tab' => 'stem']),
                 get_string('changessaved'), null, \core\output\notification::NOTIFY_SUCCESS);
             break;
@@ -144,7 +100,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && confirm_sesskey()) {
 
         case 'privacy':
             set_config('hide_from_guests',    optional_param('hide_from_guests',    0, PARAM_INT), 'local_jedomi');
-            set_config('anonymization_level', required_param('anonymization_level', PARAM_ALPHA),  'local_jedomi');
+            $level = required_param('anonymization_level', PARAM_ALPHA);
+            set_config('anonymization_level', in_array($level, ['basic', 'strict', 'feedback'], true) ? $level : 'basic', 'local_jedomi');
 
             // Save hidden roles: collect all role IDs that were toggled OFF.
             $all_r   = $DB->get_records('role', null, 'sortorder ASC', 'id');
@@ -188,7 +145,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && confirm_sesskey()) {
                         \local_jedomi\telegram\manager::clear_last_webhook_error();
                     } else {
                         \local_jedomi\telegram\manager::set_last_webhook_error(
-                            'setWebhook failed after token save — check the URL is HTTPS and reachable'
+                            get_string('telegram_webhook_failed_after_save', 'local_jedomi')
                         );
                     }
                 } else {
@@ -296,6 +253,16 @@ if (!empty($courseids)) {
 
 // ── Render ───────────────────────────────────────────────────────────────────
 echo $OUTPUT->header();
+// Strings for the inline scripts of this page (admin_js_<key>), exposed once as window.JEDOMI_ADMIN_STR.
+$adminjs = [];
+foreach (['checking', 'api_error', 'unknown_error', 'webhook_url', 'pending_updates', 'telegram_error', 'last_registration', 'webhook_healthy', 'check_webhook', 'network_error', 'dropping', 'error', 'no_data', 'loading', 'user_n', 'agents_total', 'timeline', 'round', 'result_preview', 'arguments', 'total', 'write_prompt_first', 'cached_from', 'clear_cache', 'server_html', 'result_n', 'rows_n'] as $k) {
+    $adminjs[$k] = get_string('admin_js_' . $k, 'local_jedomi');
+}
+// Existing strings that the scripts also need.
+foreach (['agent_delete', 'agent_edit', 'agent_enable', 'agent_run_now', 'course_search_noresults', 'drop_pending_fail', 'drop_pending_success', 'drop_pending_updates', 'ws_pagination'] as $k) {
+    $adminjs[$k] = get_string($k, 'local_jedomi');
+}
+echo html_writer::script('window.JEDOMI_ADMIN_STR = ' . json_encode($adminjs, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) . ';');
 ?>
 <style>
 .jedomi-adm .card            { border-radius:.5rem; margin-bottom:1.25rem; border:1px solid #e5e7eb; }
@@ -358,7 +325,7 @@ echo '</ul>';
     <input type="hidden" name="sesskey"     value="<?php echo sesskey(); ?>">
     <input type="hidden" name="jedomi_save" value="general">
 
-    <!-- Card: Conexión al Gateway -->
+    <!-- Card: gateway connection -->
     <div class="card">
         <div class="card-header">
             <div class="card-icon" style="background:#ede9fe"><i class="fa fa-plug" style="color:#7c3aed"></i></div>
@@ -402,7 +369,8 @@ echo '</ul>';
                 <div style="position:relative;max-width:480px">
                     <input type="password" id="jedomi-api-key" name="api_key"
                            class="form-control"
-                           value="<?php echo s($cfg['api_key']); ?>"
+                           value="" autocomplete="new-password"
+                           placeholder="<?php echo $cfg['api_key'] !== '' ? get_string('secret_saved_placeholder', 'local_jedomi') : ''; ?>"
                            style="padding-right:2.5rem">
                     <button type="button" onclick="var i=document.getElementById('jedomi-api-key');i.type=i.type==='password'?'text':'password'"
                             style="position:absolute;right:.625rem;top:50%;transform:translateY(-50%);
@@ -462,7 +430,7 @@ echo '</ul>';
         </div>
     </div>
 
-    <!-- Card: Seguridad -->
+    <!-- Card: security -->
     <div class="card">
         <div class="card-header">
             <div class="card-icon" style="background:#fef3c7"><i class="fa fa-key" style="color:#d97706"></i></div>
@@ -481,7 +449,8 @@ echo '</ul>';
                 <div style="position:relative;max-width:480px">
                     <input type="password" id="jedomi-spt" name="spt_secret"
                            class="form-control"
-                           value="<?php echo s($cfg['spt_secret']); ?>"
+                           value="" autocomplete="new-password"
+                           placeholder="<?php echo $cfg['spt_secret'] !== '' ? get_string('secret_saved_placeholder', 'local_jedomi') : ''; ?>"
                            style="padding-right:2.5rem">
                     <button type="button" onclick="var i=document.getElementById('jedomi-spt');i.type=i.type==='password'?'text':'password'"
                             style="position:absolute;right:.625rem;top:50%;transform:translateY(-50%);
@@ -495,7 +464,7 @@ echo '</ul>';
         </div>
     </div>
 
-    <!-- Card: Mejora continua -->
+    <!-- Card: continuous improvement -->
     <div class="card">
         <div class="card-header">
             <div class="card-icon" style="background:#dcfce7"><i class="fa fa-chart-line" style="color:#16a34a"></i></div>
@@ -528,10 +497,13 @@ echo '</ul>';
 <?php endif; ?>
 
 
-<?php // ───────────────────────────── TAB: STEM (Evaluación Física) ─────────── ?>
+<?php // Tab: AI tutor template. ?>
 <?php if ($tab === 'stem'):
     $sc = [];
-    foreach ($STEM_DEFAULTS as $k => $v) { $sc[$k] = get_config('local_jedomi', $k); }
+    foreach ($stemdefaults as $k => $v) {
+        $cur = get_config('local_jedomi', $k);
+        $sc[$k] = ($cur === false || $cur === null) ? $v : $cur;
+    }
     $field = function (string $name, string $type = 'text', array $attrs = []) use ($sc) {
         $a = '';
         foreach ($attrs as $k => $v) { $a .= ' ' . $k . '="' . s((string) $v) . '"'; }
@@ -564,7 +536,7 @@ echo '</ul>';
             <div class="mb-3">
                 <label class="form-label-main" for="jedomi-stem_tutor_mode"><?php echo get_string('stem_tutor_mode', 'local_jedomi'); ?></label>
                 <select class="form-control" id="jedomi-stem_tutor_mode" name="stem_tutor_mode" style="max-width:360px">
-                    <?php foreach (['socratic', 'guided', 'assessment_only'] as $m): ?>
+                    <?php foreach (['socratic', 'guided'] as $m): ?>
                     <option value="<?php echo $m; ?>" <?php echo $sc['stem_tutor_mode'] === $m ? 'selected' : ''; ?>><?php echo get_string('stem_tutor_mode_' . $m, 'local_jedomi'); ?></option>
                     <?php endforeach; ?>
                 </select>
@@ -576,69 +548,11 @@ echo '</ul>';
                 <textarea class="form-control" id="jedomi-stem_tutor_prompt" name="stem_tutor_prompt" rows="5"><?php echo s((string) $sc['stem_tutor_prompt']); ?></textarea>
                 <div class="form-text"><?php echo get_string('stem_tutor_prompt_help', 'local_jedomi'); ?></div>
             </div>
-            <div class="mb-3" style="max-width:360px"><?php echo $field('stem_vision_model'); ?></div>
-        </div>
-    </div>
-
-    <div class="card mt-3">
-        <div class="card-header">
-            <div class="card-icon" style="background:#dcfce7"><i class="fa fa-camera" style="color:#15803d"></i></div>
-            <div><h5><?php echo get_string('stem_cameras_heading', 'local_jedomi'); ?></h5><small><?php echo get_string('stem_cameras_heading_help', 'local_jedomi'); ?></small></div>
-        </div>
-        <div class="card-body">
-            <ul class="mb-2">
-                <?php foreach (['stem_camera_rec_1', 'stem_camera_rec_2', 'stem_camera_rec_3', 'stem_camera_rec_4'] as $k): ?>
-                <li><?php echo get_string($k, 'local_jedomi'); ?></li>
-                <?php endforeach; ?>
-            </ul>
-            <p class="form-text mb-0"><?php echo get_string('stem_cameras_mount', 'local_jedomi'); ?></p>
-        </div>
-    </div>
-
-    <div class="card mt-3">
-        <div class="card-header">
-            <div class="card-icon" style="background:#e0f2fe"><i class="fa fa-desktop" style="color:#0369a1"></i></div>
-            <div><h5><?php echo get_string('stem_placement_heading', 'local_jedomi'); ?></h5><small><?php echo get_string('stem_placement_help', 'local_jedomi'); ?></small></div>
-        </div>
-        <div class="card-body">
-            <img src="<?php echo (new moodle_url('/local/jedomi/stem/pix/colocacion.svg'))->out(false); ?>" alt="<?php echo get_string('stem_placement_alt', 'local_jedomi'); ?>" style="max-width:100%;height:auto;border:1px solid #e5e7eb;border-radius:.5rem">
-            <ol class="mt-3 mb-0">
-                <?php foreach (['stem_placement_step_1', 'stem_placement_step_2', 'stem_placement_step_3', 'stem_placement_step_4'] as $k): ?>
-                <li><?php echo get_string($k, 'local_jedomi'); ?></li>
-                <?php endforeach; ?>
-            </ol>
-        </div>
-    </div>
-
-    <div class="card mt-3">
-        <div class="card-header">
-            <div class="card-icon" style="background:#fef9c3"><i class="fa fa-file-pdf-o" style="color:#a16207"></i></div>
-            <div><h5><?php echo get_string('stem_mat_download_heading', 'local_jedomi'); ?></h5><small><?php echo get_string('stem_mat_download_help', 'local_jedomi'); ?></small></div>
-        </div>
-        <div class="card-body">
-            <?php foreach (['tapete_A4_1hoja.pdf' => 'A4 · 1 hoja (277×138 mm)', 'tapete_2xA4.pdf' => 'A4 · 2 hojas (400×200 mm)', 'tapete_Carta_1hoja.pdf' => 'Carta · 1 hoja (259×130 mm)', 'tapete_2xCarta.pdf' => 'Carta · 2 hojas (400×200 mm)', 'tapete_lab_800x400.png' => 'Laboratorio · PNG 800×400 mm (sublimación)'] as $file => $label): ?>
-            <a class="btn btn-outline-secondary btn-sm me-2 mb-2" href="<?php echo (new moodle_url('/local/jedomi/stem/tapete.php', ['file' => $file]))->out(false); ?>"><i class="fa fa-download mr-1"></i><?php echo $label; ?></a>
-            <?php endforeach; ?>
-        </div>
-    </div>
-
-    <div class="card mt-3">
-        <div class="card-header">
-            <div class="card-icon" style="background:#fee2e2"><i class="fa fa-key" style="color:#b91c1c"></i></div>
-            <div><h5><?php echo get_string('stem_secret_heading', 'local_jedomi'); ?></h5><small><?php echo get_string('stem_secret_heading_help', 'local_jedomi'); ?></small></div>
-        </div>
-        <div class="card-body">
-            <p class="mb-2"><?php echo get_string('stem_station_secret_status', 'local_jedomi', ['set' => $sc['stem_station_secret'] !== '' ? '●●●●●● (' . strlen((string) $sc['stem_station_secret']) . ' hex)' : '—']); ?></p>
-            <div class="form-check">
-                <input type="checkbox" class="form-check-input" id="jedomi-stem_rotate_secret" name="stem_rotate_secret" value="1">
-                <label class="form-check-label" for="jedomi-stem_rotate_secret"><?php echo get_string('stem_rotate_secret', 'local_jedomi'); ?></label>
-            </div>
         </div>
     </div>
 
     <div class="mt-3 d-flex" style="gap:.75rem">
         <button type="submit" class="btn btn-primary"><i class="fa fa-save mr-1"></i><?php echo get_string('savechanges'); ?></button>
-        <a class="btn btn-outline-secondary" href="<?php echo (new moodle_url($pageurl, ['tab' => 'stem', 'export' => 'json']))->out(false); ?>"><i class="fa fa-download mr-1"></i><?php echo get_string('stem_export_json', 'local_jedomi'); ?></a>
     </div>
 </form>
 <?php endif; ?>
@@ -757,7 +671,7 @@ echo '</ul>';
     <input type="hidden" name="sesskey"     value="<?php echo sesskey(); ?>">
     <input type="hidden" name="jedomi_save" value="privacy">
 
-    <!-- Card: Acceso por rol -->
+    <!-- Card: access by role -->
     <div class="card">
         <div class="card-header">
             <div class="card-icon" style="background:#fee2e2"><i class="fa fa-users" style="color:#dc2626"></i></div>
@@ -812,7 +726,7 @@ echo '</ul>';
         </div>
     </div>
 
-    <!-- Card: Anonimización -->
+    <!-- Card: anonymisation -->
     <div class="card">
         <div class="card-header">
             <div class="card-icon" style="background:#e0f2fe"><i class="fa fa-mask" style="color:#0284c7"></i></div>
@@ -1000,7 +914,7 @@ echo '</ul>';
                     <div style="position:relative;max-width:480px">
                         <input type="password" id="jd-tg-token" name="telegram_bot_token"
                                class="form-control"
-                               placeholder="<?php echo $telegram_cfg['bot_token_set'] ? '●●●●●● (saved — leave blank to keep)' : 'Paste token from @BotFather'; ?>"
+                               placeholder="<?php echo get_string($telegram_cfg['bot_token_set'] ? 'secret_saved_placeholder' : 'telegram_token_placeholder', 'local_jedomi'); ?>"
                                style="padding-right:2.5rem">
                         <button type="button"
                                 onclick="var i=document.getElementById('jd-tg-token');i.type=i.type==='password'?'text':'password'"
@@ -1025,7 +939,7 @@ echo '</ul>';
                             </span>
                         <?php else: ?>
                             <span style="color:#9a3412">
-                                <?php echo get_string('telegram_status_disconnected', 'local_jedomi'); ?> — invalid token, re-paste and save.
+                                <?php echo get_string('telegram_status_disconnected', 'local_jedomi'); ?> — <?php echo get_string('telegram_token_invalid', 'local_jedomi'); ?>
                             </span>
                         <?php endif; ?>
                     </div>
@@ -1053,7 +967,7 @@ echo '</ul>';
                 <div class="mt-3 d-flex align-items-center gap-2 flex-wrap">
                     <button type="submit" name="telegram_regenerate_secret" value="1"
                             class="btn btn-outline-warning btn-sm"
-                            onclick="return confirm('<?php echo str_replace("'", "\'", get_string('telegram_webhook_secret_help', 'local_jedomi')); ?> Continue?')">
+                            onclick="return confirm(<?php echo s(json_encode(get_string('telegram_webhook_secret_help', 'local_jedomi') . ' ' . get_string('confirm_continue', 'local_jedomi'))); ?>)">
                         <i class="fa fa-refresh mr-1"></i><?php echo get_string('regenerate', 'local_jedomi'); ?>
                     </button>
                     <span class="form-text"><?php echo get_string('telegram_webhook_secret_help', 'local_jedomi'); ?></span>
@@ -1243,14 +1157,14 @@ echo '</ul>';
                              style="font-size:.8125rem;padding:.5rem .75rem;border-radius:.375rem;
                                     background:#f0fdf4;border:1px solid #bbf7d0;color:#166534">
                             <i class="fa fa-check-circle" style="color:#16a34a"></i>
-                            <span><strong>Webhook configurado automáticamente</strong> — al guardar el token, el sistema registró el webhook automáticamente.</span>
+                            <span><strong><?php echo get_string('telegram_webhook_auto', 'local_jedomi'); ?></strong> — <?php echo get_string('telegram_webhook_auto_help', 'local_jedomi'); ?></span>
                         </div>
                         <?php elseif ($telegram_cfg['bot_token_set']): ?>
                         <div class="d-flex align-items-center gap-2 mt-2"
                              style="font-size:.8125rem;padding:.5rem .75rem;border-radius:.375rem;
                                     background:#fff7ed;border:1px solid #fed7aa;color:#9a3412">
                             <i class="fa fa-exclamation-triangle" style="color:#ea580c"></i>
-                            <span><strong>⚠️ Webhook no registrado</strong> — intente guardar el token nuevamente.</span>
+                            <span><strong>⚠️ <?php echo get_string('telegram_webhook_missing', 'local_jedomi'); ?></strong> — <?php echo get_string('telegram_webhook_missing_help', 'local_jedomi'); ?></span>
                         </div>
                         <?php endif; ?>
                     </div>
@@ -1599,7 +1513,7 @@ function jdCheckWebhook() {
     var live  = document.getElementById('jd-webhook-live');
     if (!btn || !live) return;
     btn.disabled = true;
-    btn.innerHTML = '<i class="fa fa-spinner fa-pulse mr-1"></i> Checking...';
+    btn.innerHTML = '<i class="fa fa-spinner fa-pulse mr-1"></i> ' + window.JEDOMI_ADMIN_STR.checking;
     live.style.display = 'none';
 
     var url = '<?php echo (new moodle_url('/local/jedomi/ajax/telegram_webhook_status.php'))->out(false); ?>'
@@ -1609,8 +1523,8 @@ function jdCheckWebhook() {
         if (!d.ok) {
             live.innerHTML = '<div class="d-flex align-items-start gap-2" style="font-size:.8125rem;color:#9a3412">'
                 + '<i class="fa fa-times-circle" style="color:#dc2626;flex-shrink:0;margin-top:2px"></i>'
-                + '<div><strong style="display:block">API Error</strong>'
-                + '<span>' + (d.error || 'Unknown error') + '</span></div></div>';
+                + '<div><strong style="display:block">' + window.JEDOMI_ADMIN_STR.api_error + '</strong>'
+                + '<span>' + escHtml(d.error || window.JEDOMI_ADMIN_STR.unknown_error) + '</span></div></div>';
         } else {
             var pending = d.pending_update_count || 0;
             var lastErr = d.last_error_message || '';
@@ -1621,33 +1535,33 @@ function jdCheckWebhook() {
             var html = '<div style="font-size:.8125rem">';
 
             // Webhook URL
-            html += '<div class="mb-2"><strong style="color:#374151">Webhook URL:</strong><br>'
+            html += '<div class="mb-2"><strong style="color:#374151">' + window.JEDOMI_ADMIN_STR.webhook_url + '</strong><br>'
                 + '<code style="font-size:.75rem;word-break:break-all">' + escHtml(lastUrl) + '</code></div>';
 
             // Pending updates
             var pendingColor = pending > 0 ? '#ea580c' : '#16a34a';
-            html += '<div class="mb-2"><strong style="color:#374151">Pending updates:</strong> '
+            html += '<div class="mb-2"><strong style="color:#374151">' + window.JEDOMI_ADMIN_STR.pending_updates + '</strong> '
                 + '<span style="font-weight:600;color:' + pendingColor + '">' + pending + '</span></div>';
 
             // Last error from Telegram
             if (lastErr) {
                 html += '<div class="d-flex align-items-start gap-2 mb-2" style="color:#9a3412;background:#fff7ed;padding:.5rem .75rem;border-radius:.375rem;border:1px solid #fed7aa">'
                     + '<i class="fa fa-exclamation-triangle" style="color:#ea580c;flex-shrink:0;margin-top:2px"></i>'
-                    + '<div><strong>Telegram error:</strong><br><span>' + escHtml(lastErr) + '</span></div></div>';
+                    + '<div><strong>' + window.JEDOMI_ADMIN_STR.telegram_error + '</strong><br><span>' + escHtml(lastErr) + '</span></div></div>';
             }
 
             // Stored error from our last registration
             if (stored.message) {
                 html += '<div class="d-flex align-items-start gap-2" style="color:#9a3412;background:#fff7ed;padding:.5rem .75rem;border-radius:.375rem;border:1px solid #fed7aa">'
                     + '<i class="fa fa-info-circle" style="color:#d97706;flex-shrink:0;margin-top:2px"></i>'
-                    + '<div><strong>Last registration result:</strong><br><span>' + escHtml(stored.message) + '</span>'
+                    + '<div><strong>' + window.JEDOMI_ADMIN_STR.last_registration + '</strong><br><span>' + escHtml(stored.message) + '</span>'
                     + (stored.time ? '<br><span class="text-muted" style="font-size:.75rem">' + (new Date(stored.time * 1000)).toLocaleString() + '</span>' : '')
                     + '</div></div>';
             }
 
             if (!lastErr && !stored.message) {
                 html += '<div style="color:#166534"><i class="fa fa-check-circle" style="color:#16a34a"></i> '
-                    + 'Webhook is healthy.</div>';
+                    + window.JEDOMI_ADMIN_STR.webhook_healthy + '</div>';
             }
 
             html += '</div>';
@@ -1655,14 +1569,14 @@ function jdCheckWebhook() {
         }
         live.style.display = 'block';
         btn.disabled = false;
-        btn.innerHTML = '<i class="fa fa-sync mr-1"></i>Check webhook';
+        btn.innerHTML = '<i class="fa fa-sync mr-1"></i>' + window.JEDOMI_ADMIN_STR.check_webhook;
     }).catch(function(err){
         live.innerHTML = '<div class="d-flex align-items-start gap-2" style="font-size:.8125rem;color:#9a3412">'
             + '<i class="fa fa-times-circle" style="color:#dc2626;flex-shrink:0;margin-top:2px"></i>'
-            + '<div><strong>Network error</strong><br><span>' + escHtml(err.message) + '</span></div></div>';
+            + '<div><strong>' + window.JEDOMI_ADMIN_STR.network_error + '</strong><br><span>' + escHtml(err.message) + '</span></div></div>';
         live.style.display = 'block';
         btn.disabled = false;
-        btn.innerHTML = '<i class="fa fa-sync mr-1"></i>Check webhook';
+        btn.innerHTML = '<i class="fa fa-sync mr-1"></i>' + window.JEDOMI_ADMIN_STR.check_webhook;
     });
 }
 
@@ -1672,7 +1586,7 @@ function jdDropPending() {
     var result = document.getElementById('jd-drop-pending-result');
     if (!btn || !result) return;
     btn.disabled = true;
-    btn.innerHTML = '<i class="fa fa-spinner fa-pulse mr-1"></i> Dropping...';
+    btn.innerHTML = '<i class="fa fa-spinner fa-pulse mr-1"></i> ' + window.JEDOMI_ADMIN_STR.dropping;
     result.style.display = 'none';
 
     var url = '<?php echo (new moodle_url('/local/jedomi/ajax/telegram_drop_pending.php'))->out(false); ?>'
@@ -1681,24 +1595,24 @@ function jdDropPending() {
     fetch(url).then(function(r){ return r.json(); }).then(function(d){
         if (d.ok) {
             result.innerHTML = '<span style="color:#166534">'
-                + '<?php echo get_string('drop_pending_success', 'local_jedomi'); ?>'
+                + '' + escHtml(window.JEDOMI_ADMIN_STR.drop_pending_success) + ''
                 + '</span>';
         } else {
             result.innerHTML = '<span style="color:#9a3412">'
-                + '<?php echo get_string('drop_pending_fail', 'local_jedomi'); ?>'
+                + '' + escHtml(window.JEDOMI_ADMIN_STR.drop_pending_fail) + ''
                 + (d.error ? '<br><span class="text-muted" style="font-size:.75rem">' + escHtml(d.error) + '</span>' : '')
                 + '</span>';
         }
         result.style.display = 'block';
         btn.disabled = false;
-        btn.innerHTML = '<i class="fa fa-trash-alt mr-1"></i><?php echo get_string('drop_pending_updates', 'local_jedomi'); ?>';
+        btn.innerHTML = '<i class="fa fa-trash-alt mr-1"></i>' + escHtml(window.JEDOMI_ADMIN_STR.drop_pending_updates) + '';
     }).catch(function(err){
         result.innerHTML = '<span style="color:#9a3412">'
-            + '<?php echo get_string('drop_pending_fail', 'local_jedomi'); ?>'
+            + '' + escHtml(window.JEDOMI_ADMIN_STR.drop_pending_fail) + ''
             + '<br><span class="text-muted" style="font-size:.75rem">' + escHtml(err.message) + '</span></span>';
         result.style.display = 'block';
         btn.disabled = false;
-        btn.innerHTML = '<i class="fa fa-trash-alt mr-1"></i><?php echo get_string('drop_pending_updates', 'local_jedomi'); ?>';
+        btn.innerHTML = '<i class="fa fa-trash-alt mr-1"></i>' + escHtml(window.JEDOMI_ADMIN_STR.drop_pending_updates) + '';
     });
 }
 
@@ -1858,7 +1772,7 @@ function jdSubToggle(subId) {
                     var selected = getSelectedIds();
                     var courses  = result.courses.filter(function(c){ return selected.indexOf(c.id) === -1; });
                     if (!courses.length) {
-                        dropdown.innerHTML = '<div style="padding:.75rem;color:#94a3b8;font-size:.875rem"><?php echo get_string('course_search_noresults', 'local_jedomi'); ?></div>';
+                        dropdown.innerHTML = '<div style="padding:.75rem;color:#94a3b8;font-size:.875rem">' + window.JEDOMI_ADMIN_STR.course_search_noresults + '</div>';
                     } else {
                         dropdown.innerHTML = '';
                         courses.forEach(function(c){
@@ -1943,19 +1857,19 @@ function jdSubToggle(subId) {
                 try { return JSON.parse(text); }
                 catch(parseErr) {
                     console.error('WS table non-JSON response:', text.substring(0, 500));
-                    throw new Error('Server returned HTML instead of JSON. Check browser console for details.');
+                    throw new Error(window.JEDOMI_ADMIN_STR.server_html);
                 }
             });
         }).then(function(d){
             if (d.error) {
-                throw new Error(d.message || 'Unknown server error');
+                throw new Error(d.message || window.JEDOMI_ADMIN_STR.unknown_error);
             }
             if (tbody) tbody.innerHTML = d.rows;
             // Use real page from server (caps to max pages).
             s.page = d.page;
             var pw = document.getElementById('ap-pagination');
             if (pw) {
-                var info = '<?php echo get_string('ws_pagination', 'local_jedomi'); ?>'
+                var info = '' + window.JEDOMI_ADMIN_STR.ws_pagination + ''
                     .replace('{$a->page}', d.page).replace('{$a->pages}', d.pages).replace('{$a->total}', d.total);
                 pw.innerHTML = '<span class="text-muted" style="font-size:.8125rem">' + info + '</span>'
                     + (d.pagination || '');
@@ -1974,8 +1888,8 @@ function jdSubToggle(subId) {
         }).catch(function(e){
             console.error('WS table AJAX error', e);
             if (tbody) {
-                tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger py-4">'
-                    + 'Error: ' + e.message + '</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger py-4"></td></tr>';
+                tbody.querySelector('td').textContent = window.JEDOMI_ADMIN_STR.error + ' ' + e.message;
                 tbody.style.opacity = '';
             }
         });
@@ -2215,9 +2129,9 @@ function jdSubToggle(subId) {
                 <div class="col-md-4" id="agent-create-context-id-wrap" style="display:none">
                     <div class="form-group">
                         <label class="form-label-main" for="agent-create-context-id">
-                            <?php echo get_string('agent_context', 'local_jedomi'); ?> ID
+                            <?php echo get_string('agent_context_id', 'local_jedomi'); ?>
                         </label>
-                        <input type="text" id="agent-create-context-id" name="context_id" class="form-control" placeholder="e.g. 42">
+                        <input type="text" id="agent-create-context-id" name="context_id" class="form-control" placeholder="<?php echo get_string('example_id', 'local_jedomi'); ?>">
                     </div>
                 </div>
             </div>
@@ -2292,9 +2206,9 @@ function jdSubToggle(subId) {
                 <div class="col-md-4" id="agent-purge-context-id-wrap">
                     <div class="form-group">
                         <label class="form-label-main" for="agent-purge-context-id">
-                            <?php echo get_string('agent_context', 'local_jedomi'); ?> ID
+                            <?php echo get_string('agent_context_id', 'local_jedomi'); ?>
                         </label>
-                        <input type="text" id="agent-purge-context-id" name="context_id" class="form-control" placeholder="e.g. 42">
+                        <input type="text" id="agent-purge-context-id" name="context_id" class="form-control" placeholder="<?php echo get_string('example_id', 'local_jedomi'); ?>">
                     </div>
                 </div>
                 <div class="col-md-3">
@@ -2407,7 +2321,7 @@ function jdSubToggle(subId) {
             ctx.fillStyle = '#9ca3af';
             ctx.font = '12px sans-serif';
             ctx.textAlign = 'center';
-            ctx.fillText('No data', canvas.width/2, canvas.height/2);
+            ctx.fillText(window.JEDOMI_ADMIN_STR.no_data, canvas.width/2, canvas.height/2);
             return;
         }
         var cx = canvas.width / 2;
@@ -2419,7 +2333,7 @@ function jdSubToggle(subId) {
             ctx.fillStyle = '#9ca3af';
             ctx.font = '12px sans-serif';
             ctx.textAlign = 'center';
-            ctx.fillText('No data', canvas.width/2, canvas.height/2);
+            ctx.fillText(window.JEDOMI_ADMIN_STR.no_data, canvas.width/2, canvas.height/2);
             return;
         }
         var start = -Math.PI / 2;
@@ -2466,7 +2380,7 @@ function jdSubToggle(subId) {
             ctx.fillStyle = '#9ca3af';
             ctx.font = '12px sans-serif';
             ctx.textAlign = 'center';
-            ctx.fillText('No data', canvas.width/2, canvas.height/2);
+            ctx.fillText(window.JEDOMI_ADMIN_STR.no_data, canvas.width/2, canvas.height/2);
             return;
         }
         var pad = { t: 20, b: 18, l: 5, r: 5 };
@@ -2502,21 +2416,21 @@ function jdSubToggle(subId) {
     function loadAgents(filters, page, cb) {
         var tbody = document.getElementById('agent-table-body');
         if (tbody) {
-            tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">Loading\u2026</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">' + window.JEDOMI_ADMIN_STR.loading + '</td></tr>';
         }
 
         fetch(baseUrl + 'agent_stats.php?page=' + (page||1) + '&perpage=20&sesskey=' + sesskey
               + '&filters=' + encodeURIComponent(JSON.stringify(filters || {})))
             .then(function(r){ return r.json(); })
             .then(function(d){
-                if (!d.ok) { showTableError(d.error || 'Error'); if (cb) cb(null); return; }
+                if (!d.ok) { showTableError(d.error || window.JEDOMI_ADMIN_STR.unknown_error); if (cb) cb(null); return; }
                 if (tbody) tbody.innerHTML = renderTableRows(d.rows || []);
                 renderPagination(d.total || 0, d.page || 1);
                 if (cb) cb(d);
             })
             .catch(function(err){
                 console.error('Agent list error:', err);
-                showTableError(err.message || 'Network error');
+                showTableError(err.message || window.JEDOMI_ADMIN_STR.network_error);
                 if (cb) cb(null);
             });
     }
@@ -2542,7 +2456,7 @@ function jdSubToggle(subId) {
             var lastrunHtml = r.lastrun ? new Date(r.lastrun * 1000).toLocaleString() : '-';
             var nextrunHtml = r.nextrun ? new Date(r.nextrun * 1000).toLocaleString() : '-';
             html += '<tr>'
-                + '<td>' + escHtml(r.user_fullname || 'User #' + r.userid) + '</td>'
+                + '<td>' + escHtml(r.user_fullname || window.JEDOMI_ADMIN_STR.user_n.replace('{id}', r.userid)) + '</td>'
                 + '<td><strong>' + escHtml(agentName) + '</strong></td>'
                 + '<td>' + escHtml(promptExcerpt) + '</td>'
                 + '<td>' + escHtml(r.context_type) + (r.context_id ? ' #' + r.context_id : '') + '</td>'
@@ -2551,10 +2465,10 @@ function jdSubToggle(subId) {
                 + '<td>' + lastrunHtml + '</td>'
                 + '<td>' + nextrunHtml + '</td>'
                 + '<td>'
-                + '<button class="btn btn-sm btn-outline-primary me-1" data-agent-action="edit" data-agent-id="' + r.id + '" title="<?php echo get_string('agent_edit', 'local_jedomi'); ?>"><i class="fa fa-pen"></i></button>'
-                + '<button class="btn btn-sm btn-outline-success me-1" data-agent-action="run" data-agent-id="' + r.id + '" title="<?php echo get_string('agent_run_now', 'local_jedomi'); ?>"><i class="fa fa-play"></i></button>'
-                + '<button class="btn btn-sm me-1" data-agent-action="toggle" data-agent-id="' + r.id + '" title="<?php echo get_string('agent_enable', 'local_jedomi'); ?>" style="border:1px solid ' + (parseInt(r.enabled,10)===1?'#22c55e':'#6b7280') + ';color:' + (parseInt(r.enabled,10)===1?'#22c55e':'#6b7280') + ';background:transparent"><i class="fa ' + (parseInt(r.enabled,10)===1?'fa-toggle-on':'fa-toggle-off') + '"></i></button>'
-                + '<button class="btn btn-sm btn-outline-secondary" data-agent-action="delete" data-agent-id="' + r.id + '" title="<?php echo get_string('agent_delete', 'local_jedomi'); ?>"><i class="fa fa-trash-alt"></i></button>'
+                + '<button class="btn btn-sm btn-outline-primary me-1" data-agent-action="edit" data-agent-id="' + r.id + '" title="' + escHtml(window.JEDOMI_ADMIN_STR.agent_edit) + '"><i class="fa fa-pen"></i></button>'
+                + '<button class="btn btn-sm btn-outline-success me-1" data-agent-action="run" data-agent-id="' + r.id + '" title="' + escHtml(window.JEDOMI_ADMIN_STR.agent_run_now) + '"><i class="fa fa-play"></i></button>'
+                + '<button class="btn btn-sm me-1" data-agent-action="toggle" data-agent-id="' + r.id + '" title="' + escHtml(window.JEDOMI_ADMIN_STR.agent_enable) + '" style="border:1px solid ' + (parseInt(r.enabled,10)===1?'#22c55e':'#6b7280') + ';color:' + (parseInt(r.enabled,10)===1?'#22c55e':'#6b7280') + ';background:transparent"><i class="fa ' + (parseInt(r.enabled,10)===1?'fa-toggle-on':'fa-toggle-off') + '"></i></button>'
+                + '<button class="btn btn-sm btn-outline-secondary" data-agent-action="delete" data-agent-id="' + r.id + '" title="' + escHtml(window.JEDOMI_ADMIN_STR.agent_delete) + '"><i class="fa fa-trash-alt"></i></button>'
                 + '</td>'
                 + '</tr>';
         });
@@ -2567,7 +2481,7 @@ function jdSubToggle(subId) {
         var perpage = 20;
         var pages = Math.ceil(total / perpage);
         if (pages <= 1) { pw.innerHTML = ''; return; }
-        var html = '<span class="text-muted small">' + total + ' agents</span><nav><ul class="pagination pagination-sm mb-0">';
+        var html = '<span class="text-muted small">' + window.JEDOMI_ADMIN_STR.agents_total.replace('{n}', total) + '</span><nav><ul class="pagination pagination-sm mb-0">';
         for (var i = 1; i <= pages; i++) {
             var active = i === page ? ' active' : '';
             html += '<li class="page-item' + active + '"><a class="page-link" href="#" data-page="' + i + '">' + i + '</a></li>';
@@ -2616,7 +2530,7 @@ function jdSubToggle(subId) {
             })
             .then(function(r){ return r.json(); })
             .then(function(d){
-                if (!d.ok || !d.agent) { showTableError(d.error || 'Error'); return; }
+                if (!d.ok || !d.agent) { showTableError(d.error || window.JEDOMI_ADMIN_STR.unknown_error); return; }
                 var a = d.agent;
                 // Scroll to form
                 var heading = document.getElementById('agent-create-heading');
@@ -2660,7 +2574,7 @@ function jdSubToggle(subId) {
         })
         .then(function(r){ return r.json(); })
         .then(function(d){
-            if (!d.ok) { showTableError(d.error || 'Error'); return; }
+            if (!d.ok) { showTableError(d.error || window.JEDOMI_ADMIN_STR.unknown_error); return; }
             if (action === 'run') {
                 var msg = document.getElementById('agent-table-msg');
                 if (msg) {
@@ -2784,7 +2698,7 @@ function jdSubToggle(subId) {
     function renderTimeline(conversation) {
         if (!conversation || !conversation.length) return '';
         var html = '<div class="timeline" style="margin-bottom:10px;font-size:.8125rem">'
-            + '<strong style="display:block;margin-bottom:6px;color:#374151">Conversation Timeline</strong>';
+            + '<strong style="display:block;margin-bottom:6px;color:#374151">' + window.JEDOMI_ADMIN_STR.timeline + '</strong>';
         conversation.forEach(function(msg, i){
             var role = msg.role || 'unknown';
             var roleLabel = role.charAt(0).toUpperCase() + role.slice(1);
@@ -2794,7 +2708,7 @@ function jdSubToggle(subId) {
             html += '<div style="border:1px solid #e5e7eb;border-radius:6px;margin-bottom:4px;overflow:hidden">'
                 + '<div style="background:' + roleBg + ';padding:4px 8px;font-weight:600;font-size:.75rem;color:' + roleColor + ';border-bottom:1px solid #e5e7eb">'
                 + '<span class="badge" style="background:' + roleColor + ';color:#fff;padding:1px 6px;border-radius:3px;margin-right:4px">' + roleLabel + '</span>'
-                + ' Round ' + ((msg.round || 0) + 1) + '</div>';
+                + ' ' + window.JEDOMI_ADMIN_STR.round.replace('{n}', (msg.round || 0) + 1) + '</div>';
             if (content) {
                 html += '<div style="padding:6px 8px;white-space:pre-wrap;word-break:break-word;max-height:200px;overflow-y:auto">'
                     + escHtml(content) + '</div>';
@@ -2818,7 +2732,7 @@ function jdSubToggle(subId) {
                 html += '<div style="padding:6px 8px;border-top:1px solid #e5e7eb">';
                 msg.tool_results.forEach(function(tr, ti){
                     html += '<details style="margin-bottom:4px">'
-                        + '<summary style="cursor:pointer;font-weight:600;color:#059669;font-size:.75rem">📊 Result ' + (ti + 1) + '</summary>'
+                        + '<summary style="cursor:pointer;font-weight:600;color:#059669;font-size:.75rem">📊 ' + window.JEDOMI_ADMIN_STR.result_n.replace('{n}', ti + 1) + '</summary>'
                         + '<pre style="background:#ecfdf5;padding:6px;border-radius:4px;font-size:11px;overflow-x:auto;margin:4px 0 0;max-height:200px"><code>'
                         + esc(typeof tr === 'string' ? tr.substring(0, 5000) : JSON.stringify(tr, null, 2).substring(0, 5000))
                         + '</code></pre></details>';
@@ -2840,20 +2754,20 @@ function jdSubToggle(subId) {
             html += '<div class="profiler-entry" style="border:1px solid ' + borderColor + ';border-radius:6px;padding:8px;margin-bottom:6px;font-size:.8125rem">';
             html += '<div class="profiler-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px">';
             html += '<strong>' + esc(e.tool) + '</strong>';
-            html += '<span>' + (e.duration_ms || 0).toFixed(1) + 'ms &middot; ' + (e.row_count || 0) + ' rows</span>';
+            html += '<span>' + (e.duration_ms || 0).toFixed(1) + 'ms &middot; ' + window.JEDOMI_ADMIN_STR.rows_n.replace('{n}', e.row_count || 0) + '</span>';
             if (e.error) {
                 html += '<span style="color:#dc3545">❌ ' + esc(e.error) + '</span>';
             }
             html += '</div>';
             // ── Tool result preview (if available) ────────────────────
             if (e.result_preview) {
-                html += '<details style="margin-top:4px"><summary style="cursor:pointer;font-size:.75rem;color:#059669">Result preview</summary>';
+                html += '<details style="margin-top:4px"><summary style="cursor:pointer;font-size:.75rem;color:#059669">' + window.JEDOMI_ADMIN_STR.result_preview + '</summary>';
                 html += '<pre style="background:#ecfdf5;padding:6px;border-radius:4px;font-size:11px;overflow-x:auto;margin:4px 0 0;max-height:200px"><code>'
                     + esc(e.result_preview) + '</code></pre>';
                 html += '</details>';
             }
             if (e.arguments) {
-                html += '<details style="margin-top:4px"><summary style="cursor:pointer;font-size:.75rem;color:#6b7280">Arguments</summary>';
+                html += '<details style="margin-top:4px"><summary style="cursor:pointer;font-size:.75rem;color:#6b7280">' + window.JEDOMI_ADMIN_STR.arguments + '</summary>';
                 html += '<pre style="background:#f5f5f5;padding:6px;border-radius:4px;font-size:11px;overflow-x:auto;margin:4px 0 0;max-height:200px"><code>'
                     + esc(typeof e.arguments === 'string' ? e.arguments : JSON.stringify(e.arguments, null, 2))
                     + '</code></pre>';
@@ -2863,7 +2777,7 @@ function jdSubToggle(subId) {
         });
         if (totalTimeMs) {
             html += '<div style="padding:4px 0;font-size:.8125rem;color:#059669;font-weight:600">'
-                + '⚡ Total: ' + totalTimeMs.toFixed(1) + 'ms</div>';
+                + '⚡ ' + window.JEDOMI_ADMIN_STR.total + ' ' + totalTimeMs.toFixed(1) + 'ms</div>';
         }
         html += '</div>';
         return html;
@@ -2877,7 +2791,7 @@ function jdSubToggle(subId) {
             var prompt = document.getElementById('agent-create-prompt');
             if (!prompt || !prompt.value.trim()) {
                 var msg = document.getElementById('agent-create-msg');
-                if (msg) { msg.className = 'alert alert-warning'; msg.textContent = 'Write a prompt first.'; msg.style.display = 'block'; }
+                if (msg) { msg.className = 'alert alert-warning'; msg.textContent = window.JEDOMI_ADMIN_STR.write_prompt_first; msg.style.display = 'block'; }
                 return;
             }
             var panel = document.getElementById('agent-preview-panel');
@@ -2911,8 +2825,8 @@ function jdSubToggle(subId) {
                     // ── Cache indicator with "Clear" button ──────────
                     if (d.cached) {
                         html += '<div class="alert alert-info d-flex align-items-center justify-content-between" style="padding:8px;margin-bottom:8px;font-size:.8125rem">'
-                            + '<span>📦 Cached result from ' + new Date(d.cached_at * 1000).toLocaleString() + '</span>'
-                            + '<button type="button" class="btn btn-sm btn-outline-danger" onclick="clearPreviewCache(\'' + lastPreviewHash + '\').then(function(r){if(r.ok){document.getElementById(\'agent-preview-btn\').click()}})">Clear cache</button>'
+                            + '<span>📦 ' + window.JEDOMI_ADMIN_STR.cached_from + ' ' + new Date(d.cached_at * 1000).toLocaleString() + '</span>'
+                            + '<button type="button" class="btn btn-sm btn-outline-danger" onclick="clearPreviewCache(\'' + lastPreviewHash + '\').then(function(r){if(r.ok){document.getElementById(\'agent-preview-btn\').click()}})">' + window.JEDOMI_ADMIN_STR.clear_cache + '</button>'
                             + '</div>';
                     }
                     // ── Conversation timeline ────────────────────────
@@ -3089,7 +3003,7 @@ function jdSubToggle(subId) {
             <div class="row w-100">
                 <div class="col-md-4">
                     <input type="number" name="qp_min_ms" class="form-control form-control-sm" style="width:100%"
-                           placeholder="Min duration (ms)" value="<?php echo optional_param('qp_min_ms', '', PARAM_INT); ?>">
+                           placeholder="<?php echo get_string('query_min_ms', 'local_jedomi'); ?>" value="<?php echo optional_param('qp_min_ms', '', PARAM_INT); ?>">
                 </div>
                 <div class="col-md-2">
                     <select name="qp_sort" class="form-control form-control-sm" style="width:100%">
@@ -3146,11 +3060,11 @@ function jdSubToggle(subId) {
             <table class="table table-sm table-hover" style="font-size:.8rem">
                 <thead>
                     <tr>
-                        <th style="width:60px">ID</th>
+                        <th style="width:60px"><?php echo get_string('column_id', 'local_jedomi'); ?></th>
                         <th style="width:80px"><?php echo get_string('agent_creator', 'local_jedomi'); ?></th>
                         <th><?php echo get_string('query_profiler_sort_query', 'local_jedomi'); ?></th>
                         <th style="width:70px"><?php echo get_string('query_profiler_sort_duration', 'local_jedomi'); ?></th>
-                        <th style="width:60px">Filas</th>
+                        <th style="width:60px"><?php echo get_string('query_rows', 'local_jedomi'); ?></th>
                         <th style="width:80px"><?php echo get_string('query_profiler_sort_time', 'local_jedomi'); ?></th>
                     </tr>
                 </thead>
@@ -3161,7 +3075,7 @@ function jdSubToggle(subId) {
                         $agentLink = new \moodle_url('/local/jedomi/admin_settings.php', ['tab' => 'agents', 'edit_agent' => $qe->agentid]);
                     ?>
                     <tr>
-                        <td><a href="<?php echo $agentLink->out(false); ?>" class="badge badge-info" style="font-size:.75rem">Agent #<?php echo $qe->agentid; ?></a></td>
+                        <td><a href="<?php echo $agentLink->out(false); ?>" class="badge badge-info" style="font-size:.75rem"><?php echo get_string('agent_badge', 'local_jedomi', (int) $qe->agentid); ?></a></td>
                         <td><?php echo $quser ? s(fullname($quser)) : '?'; ?></td>
                         <td><code style="font-size:.7rem;word-break:break-all"><?php echo s(mb_substr($qe->query, 0, 100)); ?></code></td>
                         <td class="<?php echo $qe->duration_ms > 1000 ? 'text-danger' : ''; ?>"><?php echo round($qe->duration_ms, 2); ?> ms</td>

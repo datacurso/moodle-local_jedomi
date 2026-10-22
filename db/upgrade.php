@@ -400,5 +400,70 @@ function xmldb_local_jedomi_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2026102200, 'local', 'jedomi');
     }
 
+    if ($oldversion < 2026102201) {
+        // The physical station is retired: its tables, its evidence files, its auto_release option and its settings.
+        foreach (['local_jedomi_assess_events', 'local_jedomi_assess_proposals'] as $name) {
+            $table = new xmldb_table($name);
+            if ($dbman->table_exists($table)) {
+                $dbman->drop_table($table);
+            }
+        }
+        $table = new xmldb_table('local_jedomi_stem_cfg');
+        $field = new xmldb_field('auto_release');
+        if ($dbman->field_exists($table, $field)) {
+            $dbman->drop_field($table, $field);
+        }
+        $fs = get_file_storage();
+        $contextids = $DB->get_fieldset_sql(
+            "SELECT DISTINCT contextid FROM {files} WHERE component = :component AND filearea = :filearea",
+            ['component' => 'local_jedomi', 'filearea' => 'stem_evidence']
+        );
+        foreach ($contextids as $contextid) {
+            $fs->delete_area_files((int) $contextid, 'local_jedomi', 'stem_evidence');
+        }
+        $retired = ['stem_osc_host', 'stem_osc_port', 'stem_osc_reply_port', 'stem_preset_face', 'stem_preset_table',
+            'stem_camera_index', 'stem_camera_width', 'stem_camera_height', 'stem_mic_match', 'stem_mat_width_mm',
+            'stem_mat_height_mm', 'stem_marker_mm', 'stem_margin_mm', 'stem_aruco_dict', 'stem_whisper_model',
+            'stem_whisper_prompt', 'stem_vision_model', 'stem_station_secret'];
+        foreach ($retired as $name) {
+            unset_config($name, 'local_jedomi');
+        }
+        if (get_config('local_jedomi', 'stem_tutor_mode') === 'assessment_only') {
+            set_config('stem_tutor_mode', 'socratic', 'local_jedomi');
+        }
+        upgrade_plugin_savepoint(true, 2026102201, 'local', 'jedomi');
+    }
+
+    if ($oldversion < 2026102202) {
+        // Repair sites installed from an install.xml that lacked these structures: their upgrade steps have older
+        // version numbers and never ran there.
+        $table = new xmldb_table('local_jedomi_telegram_sessions');
+        $field = new xmldb_field('iteration', XMLDB_TYPE_INTEGER, '10', null, null, null, null, 'usercontext');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+        $table = new xmldb_table('local_jedomi_agents');
+        $field = new xmldb_field('name', XMLDB_TYPE_CHAR, '255', null, null, null, null, 'userid');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+        $table = new xmldb_table('local_jedomi_query_log');
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+        $table->add_field('agentid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('query', XMLDB_TYPE_TEXT, null, null, XMLDB_NOTNULL, null, null);
+        $table->add_field('duration_ms', XMLDB_TYPE_NUMBER, '10, 2', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('rowcount', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+        $table->add_index('duration_idx', XMLDB_INDEX_NOTUNIQUE, ['duration_ms']);
+        $table->add_index('timecreated_idx', XMLDB_INDEX_NOTUNIQUE, ['timecreated']);
+        if (!$dbman->table_exists($table)) {
+            $dbman->create_table($table);
+        }
+        // The tutor template defaults used to be written by the admin page on every visit; store them once here.
+        \local_jedomi\tutor\course_settings::seed_site_defaults();
+        upgrade_plugin_savepoint(true, 2026102202, 'local', 'jedomi');
+    }
+
     return true;
 }

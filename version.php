@@ -25,7 +25,7 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'local_jedomi';
-$plugin->version   = 2026102200; // Retire the AR viewer inside assignments (stem_model area).
+$plugin->version   = 2026102202; // Retire the physical station; repair structures missing from install.xml.
 $plugin->requires  = 2024100700; // Moodle 4.5.
 $plugin->maturity  = MATURITY_STABLE;
-$plugin->release   = '1.2.3-stem.4';
+$plugin->release   = '1.2.3-stem.5';

@@ -33,9 +33,26 @@ require_once($CFG->dirroot . '/local/jedomi/lib.php');
  */
 #[\PHPUnit\Framework\Attributes\CoversClass(course_settings::class)]
 #[\PHPUnit\Framework\Attributes\CoversClass(tutor_settings_form::class)]
-#[\PHPUnit\Framework\Attributes\CoversFunction('local_jedomi_pluginfile')]
 #[\PHPUnit\Framework\Attributes\CoversFunction('local_jedomi_activity_context')]
 final class tutor_course_settings_test extends \advanced_testcase {
+    /**
+     * Seeding stores the missing site defaults and never overwrites a saved value.
+     */
+    public function test_seed_site_defaults(): void {
+        $this->resetAfterTest(true);
+        foreach (array_keys(course_settings::site_defaults()) as $name) {
+            unset_config($name, 'local_jedomi');
+        }
+        set_config('stem_max_questions', 7, 'local_jedomi');
+
+        course_settings::seed_site_defaults();
+
+        $this->assertSame('socratic', get_config('local_jedomi', 'stem_tutor_mode'));
+        $this->assertSame('0', get_config('local_jedomi', 'stem_enabled'));
+        $this->assertSame('7', get_config('local_jedomi', 'stem_max_questions'));
+        $this->assertSame(get_string('stem_tutor_prompt_default', 'local_jedomi'), get_config('local_jedomi', 'stem_tutor_prompt'));
+    }
+
     /**
      * A course without saved settings gets the defaults.
      */
@@ -80,11 +97,11 @@ final class tutor_course_settings_test extends \advanced_testcase {
         $now = time();
         $courserowid = $DB->insert_record('local_jedomi_stem_cfg', (object) [
             'courseid' => $course->id, 'cmid' => 0, 'enabled' => 0, 'tutor_mode' => 'inherit', 'max_questions' => 0,
-            'tutor_prompt' => '', 'auto_release' => 1, 'usermodified' => 0, 'timemodified' => $now,
+            'tutor_prompt' => '', 'usermodified' => 0, 'timemodified' => $now,
         ]);
         $activityrowid = $DB->insert_record('local_jedomi_stem_cfg', (object) [
             'courseid' => $course->id, 'cmid' => 99, 'enabled' => 1, 'tutor_mode' => 'socratic', 'max_questions' => 2,
-            'tutor_prompt' => 'activity', 'auto_release' => 0, 'usermodified' => 0, 'timemodified' => $now,
+            'tutor_prompt' => 'activity', 'usermodified' => 0, 'timemodified' => $now,
         ]);
 
         $id = course_settings::save((int) $course->id, (object) [
@@ -95,7 +112,7 @@ final class tutor_course_settings_test extends \advanced_testcase {
         $this->assertSame(2, $DB->count_records('local_jedomi_stem_cfg', ['courseid' => $course->id]));
         $courserow = $DB->get_record('local_jedomi_stem_cfg', ['id' => $courserowid], '*', MUST_EXIST);
         $this->assertSame('socratic', $courserow->tutor_mode);
-        $this->assertSame(1, (int) $courserow->auto_release);
+        $this->assertSame(2, (int) $courserow->usermodified);
         $activityrow = $DB->get_record('local_jedomi_stem_cfg', ['id' => $activityrowid], '*', MUST_EXIST);
         $this->assertSame('activity', $activityrow->tutor_prompt);
         $this->assertSame(2, (int) $activityrow->max_questions);
@@ -135,15 +152,11 @@ final class tutor_course_settings_test extends \advanced_testcase {
     }
 
     /**
-     * The retired stem_model area is no longer served.
+     * The retired file areas (stem_model, stem_evidence) are gone: the plugin serves no files any more.
      */
-    public function test_pluginfile_refuses_stem_model(): void {
+    public function test_no_pluginfile_callback(): void {
         $this->resetAfterTest(true);
-        $course = $this->getDataGenerator()->create_course();
-        $assign = $this->getDataGenerator()->create_module('assign', ['course' => $course->id]);
-        $cm = get_coursemodule_from_instance('assign', $assign->id, $course->id, false, MUST_EXIST);
-        $context = \context_module::instance($cm->id);
-        $this->assertFalse(local_jedomi_pluginfile($course, $cm, $context, 'stem_model', [0, 'model.glb'], false));
+        $this->assertFalse(function_exists('local_jedomi_pluginfile'));
     }
 
     /**
