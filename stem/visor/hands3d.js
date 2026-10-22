@@ -72,7 +72,6 @@ function segment(keys, t) {
 
 const _q1 = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _e = new THREE.Euler();
 const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3();
-const _m1 = new THREE.Matrix4();
 
 /** Orientación de mano desde [pitch, yaw, roll] en grados (orden YXZ: guiñada, cabeceo, balanceo). */
 function quatFromPYR(out, pyr) {
