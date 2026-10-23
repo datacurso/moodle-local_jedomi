@@ -351,12 +351,13 @@ function local_jedomi_get_page_context(): array {
         $context['location']    = 'course';
     }
 
-    if (preg_match('/[?&]id=(\d+)/', $url, $m) && strpos($url, '/mod/') !== false) {
-        $context['activity_id'] = (int)$m[1];
-        $context['location']    = 'activity';
-        if (preg_match('/^mod-(\w+)-/', $pagetype, $mt)) {
-            $context['activity_type'] = $mt[1];
-        }
+    // The activity comes from the page's course module, not from the URL: the sidebar config endpoint has its own URL
+    // and sets the course module of the page that loaded it.
+    $cm = $PAGE->cm;
+    if ($cm) {
+        $context['activity_id']   = (int) $cm->id;
+        $context['activity_type'] = (string) $cm->modname;
+        $context['location']      = 'activity';
     }
 
     $locationmap = [
