@@ -118,10 +118,16 @@ define(['core/log'], function(Log) {
 
         // Cargar conversación desde el cache de sesión de Moodle (servidor)
         // No sessionStorage — el historial vive en el lado del servidor
+        // Once the stored conversation is on screen, pages may ask for a new one (see announceReady).
         _loadConversationFromServer().then(() => {
-            if (conversation.length > 0) {
-                setTimeout(() => _restoreConversationUI(), 150);
+            if (conversation.length === 0) {
+                announceReady();
+                return;
             }
+            setTimeout(() => {
+                _restoreConversationUI();
+                announceReady();
+            }, 150);
         });
 
         // 1. Reparar overflow:hidden — el problema más común con temas
@@ -589,6 +595,17 @@ define(['core/log'], function(Log) {
             credentials: 'same-origin',
             body,
         }).catch(() => {}); // silencioso
+    };
+
+    /**
+     * Tells the page the chat is ready: the root element gets data-jedomi-ready and the event jedomi:ready is
+     * dispatched on document. From then on, the event jedomi:new-conversation on document starts a new conversation
+     * (an activity uses it so the tutor does not carry the conversation of another activity).
+     */
+    const announceReady = () => {
+        document.addEventListener('jedomi:new-conversation', clearChat);
+        document.documentElement.dataset.jedomiReady = '1';
+        document.dispatchEvent(new CustomEvent('jedomi:ready'));
     };
 
     const clearChat = () => {
