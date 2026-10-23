@@ -106,8 +106,11 @@ final class tutor_mode_test extends \advanced_testcase {
     public function test_site_switch_and_role(): void {
         $this->module_answers('guided');
         $this->assertSame('guided', $this->mode());
-        $this->assertSame('assistant', local_jedomi_resolve_mode((int) $this->course->id, (int) $this->activity->cmid,
-            'teacher'));
+        $this->assertSame('assistant', local_jedomi_resolve_mode(
+            (int) $this->course->id,
+            (int) $this->activity->cmid,
+            'teacher'
+        ));
         set_config('stem_enabled', 0, 'local_jedomi');
         $this->assertSame('assistant', $this->mode());
     }
