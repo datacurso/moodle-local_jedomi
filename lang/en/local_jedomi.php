@@ -279,6 +279,7 @@ $string['greeting'] = 'Hi, {name}!';
 $string['half_width'] = 'Half width';
 $string['hello'] = "I'm Jedomi, your Moodle AI assistant. Ask me about courses, users, grades or settings.";
 $string['hello_student'] = 'I\'m Jedomi, your AI tutor. Ask me about this activity and what you are learning.';
+$string['hello_student_general'] = 'I\'m Jedomi, your AI tutor. Ask me about your courses and what you are learning.';
 $string['hide_from_guests'] = 'Hide from guest users';
 $string['hide_from_guests_help'] = 'When enabled, guests and unauthenticated users will not see the sidebar.';
 $string['hint_sql_braces'] = ' | HINT: In Moodle SQL, table names should use braces (e.g. {course}, {user}).';

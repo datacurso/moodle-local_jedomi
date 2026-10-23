@@ -279,6 +279,7 @@ $string['greeting'] = '¡Hola, {name}!';
 $string['half_width'] = 'Media pantalla';
 $string['hello'] = 'Soy Jedomi, tu asistente IA de Moodle. Pregúntame sobre cursos, alumnos, notas o configuraciones.';
 $string['hello_student'] = 'Soy Jedomi, tu tutor IA. Pregúntame sobre esta actividad y lo que estás aprendiendo.';
+$string['hello_student_general'] = 'Soy Jedomi, tu tutor IA. Pregúntame sobre tus cursos y lo que estás aprendiendo.';
 $string['hide_from_guests'] = 'Ocultar a usuarios invitados';
 $string['hide_from_guests_help'] = 'Cuando está activado, los invitados y usuarios no autenticados no verán el sidebar.';
 $string['hint_sql_braces'] = ' | PISTA: En SQL de Moodle, los nombres de tablas deben usar llaves (ej: {course}, {user}).';

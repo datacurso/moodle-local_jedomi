@@ -91,7 +91,7 @@ function local_jedomi_get_sidebar_config(): array {
             'voice_input'       => get_string('voice_input', 'local_jedomi'),
             // Greeting.
             'greeting'          => get_string('greeting', 'local_jedomi'),
-            'hello'             => get_string(local_jedomi_get_user_role() === 'student' ? 'hello_student' : 'hello', 'local_jedomi'),
+            'hello'             => get_string(local_jedomi_greeting_key($context, local_jedomi_get_user_role()), 'local_jedomi'),
             'thinking'          => get_string('thinking', 'local_jedomi'),
             'new_conversation_msg' => get_string('new_conversation_msg', 'local_jedomi'),
             // Files.
@@ -298,6 +298,21 @@ function local_jedomi_myprofile_navigation(\core_user\output\myprofile\tree $tre
 
     $tree->add_category($category);
     $tree->add_node($node);
+}
+
+/**
+ * Greeting of the sidebar: a student is greeted as a learner, about the activity open on the page or about their
+ * courses elsewhere; everyone else is greeted as a Moodle assistant.
+ *
+ * @param array $context Page context from local_jedomi_get_page_context().
+ * @param string $role User role from local_jedomi_get_user_role().
+ * @return string Language string identifier.
+ */
+function local_jedomi_greeting_key(array $context, string $role): string {
+    if ($role !== 'student') {
+        return 'hello';
+    }
+    return empty($context['activity_id']) ? 'hello_student_general' : 'hello_student';
 }
 
 /**
