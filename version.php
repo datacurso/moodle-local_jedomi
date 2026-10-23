@@ -25,7 +25,7 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'local_jedomi';
-$plugin->version   = 2026102202; // Retire the physical station; repair structures missing from install.xml.
+$plugin->version   = 2026102300; // The AR viewer moved to mod_jedomiar.
 $plugin->requires  = 2024100700; // Moodle 4.5.
 $plugin->maturity  = MATURITY_STABLE;
 $plugin->release   = '1.2.3-stem.5';

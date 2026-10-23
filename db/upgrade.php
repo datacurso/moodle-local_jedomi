@@ -465,5 +465,12 @@ function xmldb_local_jedomi_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2026102202, 'local', 'jedomi');
     }
 
+    if ($oldversion < 2026102300) {
+        // The AR viewer moved to mod_jedomiar, which carried the voice setting over in its own upgrade.
+        unset_config('stem_voice_enabled', 'local_jedomi');
+
+        upgrade_plugin_savepoint(true, 2026102300, 'local', 'jedomi');
+    }
+
     return true;
 }

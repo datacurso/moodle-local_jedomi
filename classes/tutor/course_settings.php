@@ -43,7 +43,6 @@ class course_settings {
     public static function site_defaults(): array {
         return [
             'stem_enabled' => 0,
-            'stem_voice_enabled' => 0,
             'stem_tutor_mode' => 'socratic',
             'stem_max_questions' => 3,
             'stem_tutor_prompt' => get_string('stem_tutor_prompt_default', 'local_jedomi'),
