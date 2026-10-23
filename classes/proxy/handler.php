@@ -54,6 +54,7 @@ class handler {
 
         $tools = \local_jedomi_get_tool_definitions($role, $spt['mode'] ?? 'assistant');
         $toolrepeatcounts = [];
+        $runusage = [];
 
         for ($i = 0; $i < 50; $i++) {
             echo ": thinking\n\n";
@@ -61,8 +62,10 @@ class handler {
             flush();
 
             $response = self::call_ai_api_buffer($model, $messages, $spt, $tools);
+            $runusage = usage::add($runusage, $response['usage'] ?? null);
 
             if ($response['type'] === 'error') {
+                \local_jedomi_log('RUN_USAGE', $runusage);
                 echo "data: {\"error\":\"ai_api_error\"}\n\n";
                 if (ob_get_level()) { ob_flush(); }
                 flush();
@@ -82,6 +85,7 @@ class handler {
                     }
                 }
                 self::stream_sse_content($final);
+                \local_jedomi_log('RUN_USAGE', $runusage);
                 return;
             }
 
@@ -183,6 +187,7 @@ class handler {
             }
         }
 
+        \local_jedomi_log('RUN_USAGE', $runusage);
         \local_jedomi_log('RUN_FALLBACK_ITERATIONS_EXCEEDED', ['iteration_count' => 10]);
         self::stream_sse_content(get_string('error_fallback_iterations', 'local_jedomi'));
     }
@@ -240,6 +245,7 @@ class handler {
             'model'      => $model,
             'messages'   => $messages,
             'stream'     => true,
+            'stream_options' => ['include_usage' => true], // Token counts in the last chunk (usage).
             'max_tokens' => 16384,
         ];
         if (!empty($tools)) {
@@ -345,6 +351,9 @@ class handler {
             }
         }
 
+        $usage = usage::from_sse($buffer);
+        \local_jedomi_log('AI_API_USAGE', ['model' => $model] + ($usage ?? ['reported' => false]));
+
         // Tool calls detected — ensure every entry has a non-empty id.
         if (!empty($tool_calls_acc) || $finish_reason === 'tool_calls') {
             ksort($tool_calls_acc);
@@ -359,7 +368,7 @@ class handler {
             $toolnames = array_map(static fn($tc) => $tc['function']['name'], $tool_calls);
             \local_jedomi_log('AI_API_RESPONSE_TOOL_CALLS', ['function_count' => count($tool_calls), 'functions' => $toolnames]);
 
-            return ['type' => 'tool_calls', 'tool_calls' => $tool_calls];
+            return ['type' => 'tool_calls', 'tool_calls' => $tool_calls, 'usage' => $usage];
         }
 
         // Text response: prefer content, fall back to reasoning (Gemma thinking tokens).
@@ -372,7 +381,7 @@ class handler {
 
         \local_jedomi_log('AI_API_RESPONSE_TEXT', ['length' => mb_strlen($text), 'preview' => mb_substr($text, 0, 200)]);
 
-        return ['type' => 'text', 'content' => $text];
+        return ['type' => 'text', 'content' => $text, 'usage' => $usage];
     }
 
     /**
