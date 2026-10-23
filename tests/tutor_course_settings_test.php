@@ -160,14 +160,13 @@ final class tutor_course_settings_test extends \advanced_testcase {
     }
 
     /**
-     * An assignment no longer gets the AR viewer instructions in the tutor context.
+     * An assignment gets its description in the tutor context and nothing of the 3D activities.
      */
     public function test_activity_context_ignores_assignments(): void {
         $this->resetAfterTest(true);
         $course = $this->getDataGenerator()->create_course();
         $assign = $this->getDataGenerator()->create_module('assign', ['course' => $course->id, 'intro' => 'Build a circuit.']);
         $context = local_jedomi_activity_context((int) $course->id, (int) $assign->cmid);
-        $this->assertStringContainsString('Build a circuit.', $context);
-        $this->assertStringNotContainsString(get_string('prompt_tutor_visor_point', 'local_jedomi'), $context);
+        $this->assertSame(get_string('prompt_tutor_activity_desc', 'local_jedomi') . ' Build a circuit.', $context);
     }
 }

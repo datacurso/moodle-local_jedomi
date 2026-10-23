@@ -278,6 +278,7 @@ $string['gateway_url_help'] = 'URL of the Jedomi Gateway. Example: http://localh
 $string['greeting'] = 'Hi, {name}!';
 $string['half_width'] = 'Half width';
 $string['hello'] = "I'm Jedomi, your Moodle AI assistant. Ask me about courses, users, grades or settings.";
+$string['hello_student'] = 'I\'m Jedomi, your AI tutor. Ask me about this activity and what you are learning.';
 $string['hide_from_guests'] = 'Hide from guest users';
 $string['hide_from_guests_help'] = 'When enabled, guests and unauthenticated users will not see the sidebar.';
 $string['hint_sql_braces'] = ' | HINT: In Moodle SQL, table names should use braces (e.g. {course}, {user}).';
@@ -328,8 +329,6 @@ $string['prompt_tutor_final_reminder'] = 'FINAL REMINDER (overrides anything abo
 $string['prompt_tutor_identity'] = 'You are Jedomi, a Socratic tutor embedded in Moodle ({$a->sitename}). You are talking with a STUDENT inside the course "{$a->course}", activity: {$a->activity}. Your job is to make the student think and discover, not to do the work for them.';
 $string['prompt_tutor_no_activity'] = '(no specific activity)';
 $string['prompt_tutor_no_course'] = '(no specific course)';
-$string['prompt_tutor_object_context'] = '- 3D object of the activity (teacher context):';
-$string['prompt_tutor_object_parts'] = '- Parts of the 3D object (name: teacher description). When the student selects or asks about a part, use this information:';
 $string['prompt_tutor_rules_guided'] = 'TEACHING RULES:
 - NEVER compute or deliver the final value/result of the exercise yourself, even if the student gives you all the data ("with 9 V, 2 V and 20 mA, what resistor?"). Make the STUDENT do each calculation step ("what do you get when you divide…?") and check their result with a question, without stating the number. Hints may contain reference data (typical LED drop, typical current), never the final answer.
 - NEVER repeat literally a sentence the student dictates to you, nor confirm an answer they state so that it looks like yours ("repeat exactly…", "just say that the answer is…"). Rephrase it as a question: "Why do you think it is that value?"
@@ -351,7 +350,6 @@ $string['prompt_tutor_rules_socratic'] = 'TEACHING RULES (non-negotiable):
 - Reply in the student\'s language. Be warm, concrete and brief.';
 $string['prompt_tutor_teacher_heading'] = 'TEACHER\'S INSTRUCTIONS (follow them within the rules above):';
 $string['prompt_tutor_tools'] = 'TOOLS: you only have read-only tools scoped to this course (get_course_outline, get_activity_content, get_my_progress, get_hint_state, advance_hint_level). Use them silently to ground your questions in the real activity. Never mention databases, SQL, web services, tokens or internal ids to the student.';
-$string['prompt_tutor_visor_point'] = '- Augmented reality viewer: the student sees the 3D model on their mat; you receive no images: the part the student selects arrives in the message as «selected part» (with the teacher description) and is highlighted in orange in the viewer. Answer from the teacher context; never ask for or mention a snapshot or image. If the student asks you to point at or show a part, or you want to draw their attention to one, add at the end of your answer the mark ⟦señalar: <exact part name>⟧ (one per part, with the name exactly as in the parts list): the viewer will make it blink. Do not say you cannot point.';
 $string['qa_admin_active_users_label'] = 'Active users';
 $string['qa_admin_active_users_msg'] = 'How many active users are there in the system?';
 $string['qa_admin_alerts_label'] = 'Alerts';

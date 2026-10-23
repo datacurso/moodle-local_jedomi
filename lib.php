@@ -91,7 +91,7 @@ function local_jedomi_get_sidebar_config(): array {
             'voice_input'       => get_string('voice_input', 'local_jedomi'),
             // Greeting.
             'greeting'          => get_string('greeting', 'local_jedomi'),
-            'hello'             => get_string('hello', 'local_jedomi'),
+            'hello'             => get_string(local_jedomi_get_user_role() === 'student' ? 'hello_student' : 'hello', 'local_jedomi'),
             'thinking'          => get_string('thinking', 'local_jedomi'),
             'new_conversation_msg' => get_string('new_conversation_msg', 'local_jedomi'),
             // Files.
@@ -857,9 +857,10 @@ function local_jedomi_stem_cfg(int $courseid, int $cmid = 0): ?stdClass {
 /**
  * Resolves the assistant mode of a user in a course or activity. It is ALWAYS computed on the server.
  *
- * The site switch `stem_enabled` (template) lets courses enable the tutor; the actual decision lives in
- * local_jedomi_stem_cfg (row per activity, falling back to the course row cmid = 0). The mode 'inherit'
- * takes `stem_tutor_mode` from the template. It only applies to students.
+ * Precedence: the site switch `stem_enabled` (template) applies first; a row of the activity in
+ * local_jedomi_stem_cfg wins next; then the mode the activity's module sets through the activity_context hook
+ * ('inherit' meaning the template's `stem_tutor_mode`, and the course row not consulted); otherwise the course row
+ * (cmid = 0). It only applies to students.
  *
  * @param int $courseid Course id.
  * @param int $cmid Course module id.
@@ -874,10 +875,10 @@ function local_jedomi_resolve_mode(int $courseid, int $cmid, string $role): stri
         return 'assistant';
     }
     $cfg = local_jedomi_stem_cfg($courseid, $cmid);
-    $jedomiarmode = local_jedomi_jedomiar_tutormode($courseid, $cmid);
-    if ($jedomiarmode !== null && !($cfg && (int) $cfg->cmid === $cmid)) {
-        // AR activity (mod_jedomiar): the instance sets the mode; an own stem_cfg row of the activity, if any, wins.
-        $mode = $jedomiarmode === 'inherit' ? (string) get_config('local_jedomi', 'stem_tutor_mode') : $jedomiarmode;
+    $modulemode = local_jedomi_activity_hook($courseid, $cmid)?->get_mode();
+    if ($modulemode !== null && !($cfg && (int) $cfg->cmid === $cmid)) {
+        // The activity's module sets the mode; an own stem_cfg row of the activity, if any, wins.
+        $mode = $modulemode === 'inherit' ? (string) get_config('local_jedomi', 'stem_tutor_mode') : $modulemode;
         return in_array($mode, ['socratic', 'guided'], true) ? $mode : 'assistant';
     }
     if (!$cfg || (int) $cfg->enabled !== 1) {
@@ -888,15 +889,16 @@ function local_jedomi_resolve_mode(int $courseid, int $cmid, string $role): stri
 }
 
 /**
- * Tutor mode of a mod_jedomiar activity (inherit|socratic|guided), or null when the cmid is not of that module.
+ * Dispatches the activity_context hook of an activity: its module sets the tutor mode and adds teaching context
+ * there (\local_jedomi\hook\activity_context).
  *
  * @param int $courseid Course id.
  * @param int $cmid Course module id.
- * @return string|null Mode of the instance, or null when it is not a mod_jedomiar activity.
+ * @return \local_jedomi\hook\activity_context|null The dispatched hook, or null outside an activity.
  */
-function local_jedomi_jedomiar_tutormode(int $courseid, int $cmid): ?string {
-    global $DB;
-    if ($cmid <= 0 || $courseid <= 1 || !core_component::get_component_directory('mod_jedomiar')) {
+function local_jedomi_activity_hook(int $courseid, int $cmid): ?\local_jedomi\hook\activity_context {
+    global $USER;
+    if ($cmid <= 0 || $courseid <= 1) {
         return null;
     }
     try {
@@ -904,16 +906,14 @@ function local_jedomi_jedomiar_tutormode(int $courseid, int $cmid): ?string {
     } catch (\Throwable $e) {
         return null;
     }
-    if ($cm->modname !== 'jedomiar') {
-        return null;
-    }
-    $mode = $DB->get_field('jedomiar', 'tutormode', ['id' => $cm->instance]);
-    return $mode === false ? null : (string) $mode;
+    $hook = new \local_jedomi\hook\activity_context($cm, (int) $USER->id);
+    \core\di::get(\core\hook\manager::class)->dispatch($hook);
+    return $hook;
 }
 
 /**
- * Teaching context of the activity for the tutor: its description (plain text, capped) and, in AR activities
- * (mod_jedomiar), the context of the 3D object and its parts as the teacher described them.
+ * Teaching context of the activity for the tutor: its description (plain text, capped) and the context its module
+ * adds through the activity_context hook (for a 3D activity, the object and its parts as the teacher described them).
  *
  * @param int $courseid Course id.
  * @param int $cmid Course module id.
@@ -940,32 +940,8 @@ function local_jedomi_activity_context(int $courseid, int $cmid): string {
     if ($intro !== '') {
         $out[] = get_string('prompt_tutor_activity_desc', 'local_jedomi') . ' ' . core_text::substr($intro, 0, 2500);
     }
-    // AR activity (mod_jedomiar): how the tutor can point at a part, the object context and the parts.
-    if ($cm->modname === 'jedomiar') {
-        $out[] = get_string('prompt_tutor_visor_point', 'local_jedomi');
-        try {
-            $payload = \mod_jedomiar\local\service\model_service::get_viewer_payload($cm);
-        } catch (\Throwable $e) {
-            $payload = null;
-        }
-        if (is_array($payload)) {
-            $obj = trim(strip_tags((string) ($payload['objectcontext'] ?? '')));
-            if ($obj !== '') {
-                $out[] = get_string('prompt_tutor_object_context', 'local_jedomi') . ' ' . core_text::substr($obj, 0, 2500);
-            }
-            $lines = [];
-            foreach (array_slice((array) ($payload['parts'] ?? []), 0, 60) as $p) {
-                $name = trim(strip_tags((string) ($p['name'] ?? '')));
-                if ($name === '') {
-                    continue;
-                }
-                $desc = trim(strip_tags((string) ($p['description'] ?? '')));
-                $lines[] = '- ' . $name . ($desc !== '' ? ': ' . core_text::substr($desc, 0, 300) : '');
-            }
-            if ($lines) {
-                $out[] = get_string('prompt_tutor_object_parts', 'local_jedomi') . "\n" . implode("\n", $lines);
-            }
-        }
+    foreach (local_jedomi_activity_hook($courseid, $cmid)?->get_context() ?? [] as $line) {
+        $out[] = $line;
     }
     return implode("\n", $out);
 }

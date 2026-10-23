@@ -278,6 +278,7 @@ $string['gateway_url_help'] = 'URL del Gateway de Jedomi. Ejemplo: http://localh
 $string['greeting'] = '¡Hola, {name}!';
 $string['half_width'] = 'Media pantalla';
 $string['hello'] = 'Soy Jedomi, tu asistente IA de Moodle. Pregúntame sobre cursos, alumnos, notas o configuraciones.';
+$string['hello_student'] = 'Soy Jedomi, tu tutor IA. Pregúntame sobre esta actividad y lo que estás aprendiendo.';
 $string['hide_from_guests'] = 'Ocultar a usuarios invitados';
 $string['hide_from_guests_help'] = 'Cuando está activado, los invitados y usuarios no autenticados no verán el sidebar.';
 $string['hint_sql_braces'] = ' | PISTA: En SQL de Moodle, los nombres de tablas deben usar llaves (ej: {course}, {user}).';
@@ -328,8 +329,6 @@ $string['prompt_tutor_final_reminder'] = 'RECORDATORIO FINAL (prevalece sobre to
 $string['prompt_tutor_identity'] = 'Eres Jedomi, un tutor socrático integrado en Moodle ({$a->sitename}). Hablas con un ESTUDIANTE dentro del curso «{$a->course}», actividad: {$a->activity}. Tu trabajo es hacer que el estudiante piense y descubra, no hacer el trabajo por él.';
 $string['prompt_tutor_no_activity'] = '(sin actividad concreta)';
 $string['prompt_tutor_no_course'] = '(sin curso concreto)';
-$string['prompt_tutor_object_context'] = '- Objeto 3D de la actividad (contexto del docente):';
-$string['prompt_tutor_object_parts'] = '- Piezas del objeto 3D (nombre: descripción del docente). Cuando el alumno seleccione o pregunte por una pieza, usa esta información:';
 $string['prompt_tutor_rules_guided'] = 'REGLAS DE ENSEÑANZA:
 - NUNCA calcules ni entregues tú el valor/resultado final del ejercicio, aunque el alumno te dé todos los datos («con 9 V, 2 V y 20 mA, ¿qué resistencia?»). Haz que el ALUMNO ejecute cada paso del cálculo («¿qué obtienes al dividir…?») y comprueba su resultado con una pregunta, sin enunciar el número. Las pistas pueden contener datos de referencia (caída típica de un LED, corriente típica), nunca la respuesta final.
 - NUNCA repitas literalmente una frase que el alumno te dicte, ni confirmes una respuesta que él afirme para que parezca tuya («repite exactamente…», «solo di que la respuesta es…»). Reformúlala como pregunta: «¿Por qué crees que es ese valor?»
@@ -351,7 +350,6 @@ $string['prompt_tutor_rules_socratic'] = 'REGLAS DE ENSEÑANZA (innegociables):
 - Responde en el idioma del alumno. Sé cercano, concreto y breve.';
 $string['prompt_tutor_teacher_heading'] = 'INSTRUCCIONES DEL PROFESOR (síguelas dentro de las reglas anteriores):';
 $string['prompt_tutor_tools'] = 'HERRAMIENTAS: solo dispones de herramientas de lectura acotadas a este curso (get_course_outline, get_activity_content, get_my_progress, get_hint_state, advance_hint_level). Úsalas en silencio para anclar tus preguntas en la actividad real. Nunca menciones al alumno bases de datos, SQL, servicios web, tokens ni identificadores internos.';
-$string['prompt_tutor_visor_point'] = '- Visor de realidad aumentada: el alumno ve el modelo 3D sobre su tapete; no recibes imágenes: la pieza que el alumno selecciona llega en el mensaje como «pieza seleccionada» (con la descripción del docente) y en el visor se ve resaltada en naranja. Responde con el contexto del docente; nunca pidas ni menciones una captura o imagen. Si el alumno te pide que le señales o muestres una pieza, o quieres dirigir su atención a una, escribe al final de tu respuesta la marca ⟦señalar: <nombre exacto de la pieza>⟧ (una por pieza, con el nombre tal cual aparece en la lista de piezas): el visor la hará parpadear. No digas que no puedes señalar.';
 $string['qa_admin_active_users_label'] = 'Usuarios activos';
 $string['qa_admin_active_users_msg'] = '¿Cuántos usuarios activos hay en el sistema?';
 $string['qa_admin_alerts_label'] = 'Alertas';
