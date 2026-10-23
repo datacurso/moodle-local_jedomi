@@ -126,7 +126,7 @@
     </div></div>
 </div>
 <script type="importmap">{{{importmap}}}</script>
-<script>try { if (window.matchMedia('(min-width: 768px)').matches) { sessionStorage.setItem('jedomi_open', '1'); } } catch (e) { } window.JEDOMI_VISOR = {{{config}}};</script>
+<script>try { if (window.matchMedia('(min-width: 768px)').matches) { sessionStorage.setItem('jedomi_open', '1'); } else { sessionStorage.removeItem('jedomi_open'); } } catch (e) { } window.JEDOMI_VISOR = {{{config}}};</script>
 <script src="{{base}}vendor/cv.js"></script>
 <script src="{{base}}vendor/aruco.js"></script>
 <script src="{{base}}vendor/dictionaries/aruco_4x4_1000.js"></script>
