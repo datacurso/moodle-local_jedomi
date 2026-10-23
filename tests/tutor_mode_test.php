@@ -36,6 +36,7 @@ require_once($CFG->dirroot . '/local/jedomi/lib.php');
 #[CoversFunction('local_jedomi_resolve_mode')]
 #[CoversFunction('local_jedomi_activity_hook')]
 #[CoversFunction('local_jedomi_activity_context')]
+#[CoversFunction('local_jedomi_client_state')]
 final class tutor_mode_test extends \advanced_testcase {
     /** @var \stdClass Course. */
     private \stdClass $course;
@@ -166,5 +167,30 @@ final class tutor_mode_test extends \advanced_testcase {
         $hook = new activity_context(get_fast_modinfo($this->course)->get_cm($this->activity->cmid), 2);
         $this->expectException(\coding_exception::class);
         $hook->set_mode('assistant');
+    }
+
+    /**
+     * The state the activity page reports reaches the module through the hook, reduced to short plain strings with
+     * word keys; a module that sets nothing about it changes nothing.
+     */
+    public function test_client_state_reaches_the_module(): void {
+        $seen = null;
+        \core\di::get(\core\hook\manager::class)->phpunit_redirect_hook(
+            activity_context::class,
+            function (activity_context $hook) use (&$seen): void {
+                $seen = $hook->client;
+                if (($hook->client['selectedpart'] ?? '') === 'p:lid') {
+                    $hook->add_context('Selected: lid.');
+                }
+            }
+        );
+        $client = ['selectedpart' => 'p:lid', 'step' => 3, 'Bad-Key' => 'x', 'nested' => ['a'], 'long' => str_repeat('a', 129),
+            'ctl' => "a\nb", 'empty' => ' '];
+        $text = local_jedomi_activity_context((int) $this->course->id, (int) $this->activity->cmid, $client);
+
+        $this->assertSame(['selectedpart' => 'p:lid', 'step' => '3'], $seen);
+        $this->assertStringEndsWith("\nSelected: lid.", $text);
+        $this->assertSame([], local_jedomi_client_state('p:lid'));
+        $this->assertCount(8, local_jedomi_client_state(array_combine(range('a', 'j'), range(1, 10))));
     }
 }

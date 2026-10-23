@@ -45,12 +45,16 @@ final class activity_context {
      *
      * @param \cm_info $cm Activity the tutor works in.
      * @param int $userid User talking to the tutor.
+     * @param array<string, string> $client State the activity page reported (for example the selected part), already
+     *     reduced by local_jedomi to short plain strings; untrusted, so the module checks it against its own data.
      */
     public function __construct(
         /** @var \cm_info Activity the tutor works in. */
         public readonly \cm_info $cm,
         /** @var int User talking to the tutor. */
         public readonly int $userid,
+        /** @var array<string, string> State the activity page reported, untrusted. */
+        public readonly array $client = [],
     ) {
     }
 

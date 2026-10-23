@@ -26,10 +26,14 @@
 
 namespace local_jedomi\proxy;
 
-defined('MOODLE_INTERNAL') || die();
-
+/**
+ * Builds the system message of the chat proxy: the data assistant profile, or the tutor profile in a tutored activity.
+ *
+ * @package    local_jedomi
+ * @copyright  2026 Jedomi Project
+ * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ */
 class system_message {
-
     /**
      * Build the system message for the AI model.
      *
@@ -41,7 +45,7 @@ class system_message {
     public static function build(string $role, array $spt, array $context = []): array {
         global $CFG;
 
-        // Perfil de TUTOR (socrático / guiado): sustituye por completo al perfil de asistente de datos.
+        // Tutor profile (socratic or guided): it replaces the data assistant profile entirely.
         $mode = $spt['mode'] ?? 'assistant';
         if (in_array($mode, ['socratic', 'guided'], true)) {
             return self::build_tutor($role, $mode, $spt, $context);
@@ -49,16 +53,18 @@ class system_message {
 
         $sitename  = get_config('core', 'sitename') ?: 'Moodle';
         $release   = $CFG->release ?? 'unknown';
-        $courseId  = $spt['course_id'] ?? 0;
-        $courseName = $context['course_name'] ?? '';
+        $courseid  = $spt['course_id'] ?? 0;
+        $coursename = $context['course_name'] ?? '';
         $location   = $context['location'] ?? 'unknown';
-        $pageUrl    = $context['page_url'] ?? '';
-        $pageTitle  = $context['page_title'] ?? '';
-        $output     = $context['output'] ?? 'web';  // 'web' or 'telegram'
+        $pageurl    = $context['page_url'] ?? '';
+        $pagetitle  = $context['page_title'] ?? '';
+        $output     = $context['output'] ?? 'web'; // Web or Telegram.
 
-        $locLabels = [
-            'course'    => get_string('ctx_loc_course', 'local_jedomi') . ($courseName ? " \"{$courseName}\"" : '') . get_string('ctx_loc_course_id', 'local_jedomi', $courseId),
-            'activity'  => get_string('ctx_loc_activity', 'local_jedomi') . ' "' . ($context['activity_type'] ?? 'unknown') . get_string('ctx_loc_activity_suffix', 'local_jedomi'),
+        $loclabels = [
+            'course'    => get_string('ctx_loc_course', 'local_jedomi') . ($coursename ? " \"{$coursename}\"" : '')
+                . get_string('ctx_loc_course_id', 'local_jedomi', $courseid),
+            'activity'  => get_string('ctx_loc_activity', 'local_jedomi') . ' "' . ($context['activity_type'] ?? 'unknown')
+                . get_string('ctx_loc_activity_suffix', 'local_jedomi'),
             'grades'    => get_string('ctx_loc_gradebook', 'local_jedomi'),
             'admin'     => get_string('ctx_loc_admin', 'local_jedomi'),
             'dashboard' => get_string('ctx_loc_dashboard', 'local_jedomi'),
@@ -88,7 +94,8 @@ class system_message {
         $content .= "DECISION RULE — WS FIRST, SQL SECOND:\n";
         $content .= "- Step 1: ws_search(query in ENGLISH). If a relevant function exists → ws_describe → ws_execute.\n";
         $content .= "- Step 2: Evaluate the WS result. If the data is COMPLETE and answers the question → stop and respond.\n";
-        $content .= "- Step 3: If the WS data is INSUFFICIENT (missing fields, wrong scope, incomplete) → complement with SQL: search_tables → describe_table → execute_sql.\n";
+        $content .= "- Step 3: If the WS data is INSUFFICIENT (missing fields, wrong scope, incomplete) → complement "
+            . "with SQL: search_tables → describe_table → execute_sql.\n";
         $content .= "- Do NOT search SQL before evaluating the WS result.\n";
         $content .= "- Do NOT search WS and SQL in parallel — always sequential.\n\n";
 
@@ -96,7 +103,9 @@ class system_message {
         $content .= "- ws_search(query in ENGLISH) → pick best match → ws_describe(exact name) → ws_execute with ALL * fields.\n";
         $content .= "- Batch operations: call ws_execute MULTIPLE times. No bulk function.\n";
         $content .= "- Once you have a match, stop exploring.\n";
-        $content .= "- RETRY STRATEGY: If ws_execute returns \"Missing required key\" or \"Detectado valor de parámetro no válido\" for a field NOT marked with *, retry adding that field with a sensible default (\"\" for text, 0 for int, false for bool, [] for arrays).\n\n";
+        $content .= "- RETRY STRATEGY: If ws_execute returns \"Missing required key\" or \"Detectado valor de parámetro "
+            . "no válido\" for a field NOT marked with *, retry adding that field with a sensible default (\"\" "
+            . "for text, 0 for int, false for bool, [] for arrays).\n\n";
 
         $content .= "SQL PATH (fallback / complement):\n";
         $content .= "- search_tables(keyword in ENGLISH) → describe_table(table) → execute_sql(SELECT with ? placeholders).\n";
@@ -107,19 +116,28 @@ class system_message {
         $content .= "- admin_search(query in ENGLISH) → discover what admin operations exist.\n";
         $content .= "- admin_describe(name) → see required parameters for an operation.\n";
         $content .= "- admin_execute(name, params) → execute the operation.\n";
-        $content .= "- COMBINE with WS: use ws_search/ws_execute FIRST to gather context (course info, sections, users), THEN call admin_execute to do the action.\n";
-        $content .= "- Example: to create a 'page' in section 1 of course X → ws_execute(core_course_get_courses_by_field) to verify course → admin_execute(create_mod, {courseid: X, resource_type: 'page', section: 1, parameters: {name: '...', content: '...', ...}}).\n\n";
+        $content .= "- COMBINE with WS: use ws_search/ws_execute FIRST to gather context (course info, sections, users), "
+            . "THEN call admin_execute to do the action.\n";
+        $content .= "- Example: to create a 'page' in section 1 of course X → "
+            . "ws_execute(core_course_get_courses_by_field) to verify course → admin_execute(create_mod, "
+            . "{courseid: X, resource_type: 'page', section: 1, parameters: {name: '...', content: '...', "
+            . "...}}).\n\n";
 
         $content .= "DOCUMENT READ PATH:\n";
-        $content .= "- When the user asks to read, analyze, summarize, or explain a document/file from any course activity → use document_read(cmid).\n";
+        $content .= "- When the user asks to read, analyze, summarize, or explain a document/file from any course "
+            . "activity → use document_read(cmid).\n";
         $content .= "- The cmid is available in the context below as \"Activity cmid\" when on an activity page.\n";
-        $content .= "- If you don't know the cmid, first discover it: ws_search for functions like core_course_get_courses_by_field or core_course_get_contents, then ws_execute to find the activity cmid.\n";
-        $content .= "- document_read returns each page as a base64 image — you SEE the original layout, tables, images, and formatting. Analyze them to answer.\n\n";
+        $content .= "- If you don't know the cmid, first discover it: ws_search for functions like "
+            . "core_course_get_courses_by_field or core_course_get_contents, then ws_execute to find the activity "
+            . "cmid.\n";
+        $content .= "- document_read returns each page as a base64 image — you SEE the original layout, tables, images, "
+            . "and formatting. Analyze them to answer.\n\n";
 
         $content .= "GENERAL RULES:\n";
         $content .= "- Never invent data.\n";
         $content .= "- ALWAYS exclude course ID 1 (site home) and guest user from any operation.\n";
-        $content .= "- If a tool fails, retry once (adjust params if applicable, see WS PATH for WS-specific retry). If it fails again, stop and report.\n";
+        $content .= "- If a tool fails, retry once (adjust params if applicable, see WS PATH for WS-specific retry). If "
+            . "it fails again, stop and report.\n";
         $content .= "- If you have enough data, stop and respond.\n";
 
         $content .= "RESPONSE RULES:\n";
@@ -144,8 +162,8 @@ class system_message {
         $content .= "- Site: {$sitename} ({$CFG->wwwroot})\n";
         $content .= "- Database: {$dblabel}\n";
         $content .= "- Location: {$location}\n";
-        $content .= "- Page: {$pageTitle} ({$pageUrl})\n";
-        $content .= isset($locLabels[$location]) ? "- {$locLabels[$location]}\n" : '';
+        $content .= "- Page: {$pagetitle} ({$pageurl})\n";
+        $content .= isset($loclabels[$location]) ? "- {$loclabels[$location]}\n" : '';
 
         // Add activity cmid when available.
         $cmid = $context['activity_id'] ?? 0;
@@ -155,10 +173,14 @@ class system_message {
 
         $content .= "- User role: {$role}\n";
 
-        // En una actividad (p. ej. el visor RA), también el asistente necesita saber de qué trata: descripción de la actividad
-        // y, en actividades RA, contexto del objeto y de sus piezas escrito por el docente (QA en vivo: el admin no lo recibía).
+        // In an activity the assistant also needs to know what it is about: the activity description and, in a 3D
+        // activity, the object and its parts as the teacher described them, plus the state the page reported.
         require_once(__DIR__ . '/../../lib.php');
-        $activityctx = \local_jedomi_activity_context((int) ($spt['course_id'] ?? 0), (int) ($spt['cmid'] ?? 0));
+        $activityctx = \local_jedomi_activity_context(
+            (int) ($spt['course_id'] ?? 0),
+            (int) ($spt['cmid'] ?? 0),
+            (array) ($context['activity'] ?? [])
+        );
         if ($activityctx !== '') {
             $content .= "\n" . get_string('prompt_assistant_activity_heading', 'local_jedomi') . "\n" . $activityctx . "\n";
         }
@@ -166,8 +188,14 @@ class system_message {
     }
 
     /**
-     * Perfil pedagógico (diseño DISENO_TUTOR_STEM.md §3.1). Bloques en cadenas de idioma es/en + instrucciones del
-     * profesor (ajuste stem_tutor_prompt, con tope de longitud y sin HTML) + contexto de curso/actividad.
+     * Tutor profile: blocks from language strings, the teacher's instructions (stem_tutor_prompt, capped and without
+     * HTML) and the course and activity context.
+     *
+     * @param string $role The user's resolved role.
+     * @param string $mode Tutor mode (socratic or guided).
+     * @param array $spt The validated SPT payload.
+     * @param array $context The current page context, with the state the activity page reported under 'activity'.
+     * @return array ['role' => 'system', 'content' => '...']
      */
     private static function build_tutor(string $role, string $mode, array $spt, array $context): array {
         global $CFG, $DB;
@@ -183,12 +211,14 @@ class system_message {
                 $activity = '';
             }
         }
-        // Instrucciones y tope de preguntas: la configuración del curso/actividad prevalece sobre la plantilla.
+        // Teacher instructions and question cap: the course or activity configuration wins over the site template.
         require_once(__DIR__ . '/../../lib.php');
         $cfg = \local_jedomi_stem_cfg($courseid, $cmid);
-        $teacher = ($cfg && trim((string) $cfg->tutor_prompt) !== '') ? (string) $cfg->tutor_prompt : (string) get_config('local_jedomi', 'stem_tutor_prompt');
+        $teacher = ($cfg && trim((string) $cfg->tutor_prompt) !== '') ? (string) $cfg->tutor_prompt
+            : (string) get_config('local_jedomi', 'stem_tutor_prompt');
         $teacher = \core_text::substr(trim(strip_tags($teacher)), 0, 2000);
-        $maxq = ($cfg && (int) $cfg->max_questions > 0) ? (int) $cfg->max_questions : (int) get_config('local_jedomi', 'stem_max_questions');
+        $maxq = ($cfg && (int) $cfg->max_questions > 0) ? (int) $cfg->max_questions
+            : (int) get_config('local_jedomi', 'stem_max_questions');
         $maxq = max(1, min(10, $maxq ?: 3));
 
         $a = (object) [
@@ -197,19 +227,20 @@ class system_message {
             'activity'   => $activity !== '' ? $activity : get_string('prompt_tutor_no_activity', 'local_jedomi'),
             'maxq'       => $maxq,
         ];
-        // Orden (QA r9): identidad → contexto → instrucciones del profesor → herramientas → REGLAS → recordatorio final.
-        // Las reglas van al final para que pesen por recencia sobre cualquier instrucción contradictoria del profesor.
+        // Order: identity, context, teacher instructions, tools, rules, final reminder. The rules go last so that, by
+        // recency, they outweigh any contradicting teacher instruction.
         $content  = get_string('prompt_tutor_identity', 'local_jedomi', $a) . "\n\n";
         $content .= get_string('prompt_tutor_context', 'local_jedomi', $a) . "\n";
         $content .= "- User role: {$role} | mode: {$mode}\n";
-        // Descripción de la actividad y, en actividades RA, contexto del objeto 3D y de sus piezas aportado por el docente.
-        $activityctx = \local_jedomi_activity_context($courseid, $cmid);
+        // Activity description and, in a 3D activity, the object and its parts from the teacher, plus the page state.
+        $activityctx = \local_jedomi_activity_context($courseid, $cmid, (array) ($context['activity'] ?? []));
         $content .= ($activityctx !== '' ? $activityctx . "\n" : '') . "\n";
         if ($teacher !== '') {
             $content .= get_string('prompt_tutor_teacher_heading', 'local_jedomi') . "\n" . $teacher . "\n\n";
         }
         $content .= get_string('prompt_tutor_tools', 'local_jedomi') . "\n\n";
-        $content .= get_string($mode === 'guided' ? 'prompt_tutor_rules_guided' : 'prompt_tutor_rules_socratic', 'local_jedomi', $a) . "\n\n";
+        $rules = $mode === 'guided' ? 'prompt_tutor_rules_guided' : 'prompt_tutor_rules_socratic';
+        $content .= get_string($rules, 'local_jedomi', $a) . "\n\n";
         $content .= get_string('prompt_tutor_final_reminder', 'local_jedomi') . "\n";
         return ['role' => 'system', 'content' => $content];
     }

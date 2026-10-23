@@ -57,6 +57,8 @@ define(['core/log'], function(Log) {
     // ── State ─────────────────────────────────────────────────────────────────
     let cfg          = {};
     let conversation = [];
+    let activityState = {}; // State the activity page reports (jedomi:context), sent with every message.
+    let busy         = false; // A message is being answered.
     let pendingImage = null;
     let isRecording  = false;
     let mediaRecorder = null;
@@ -408,7 +410,7 @@ define(['core/log'], function(Log) {
             });
         }
         on('jedomi-edit-last',    'click',  editLastMessage);
-        on('jedomi-send',         'click',  sendMessage);
+        on('jedomi-send',         'click',  () => sendMessage());
         on('jedomi-overlay',      'click',  closeSidebar);
         on('jedomi-voice-btn',    'click',  toggleVoice);
         on('jedomi-remove-image', 'click',  clearImage);
@@ -599,13 +601,39 @@ define(['core/log'], function(Log) {
 
     /**
      * Tells the page the chat is ready: the root element gets data-jedomi-ready and the event jedomi:ready is
-     * dispatched on document. From then on, the event jedomi:new-conversation on document starts a new conversation
-     * (an activity uses it so the tutor does not carry the conversation of another activity).
+     * dispatched on document. From then on, these events on document form the chat API of an activity page:
+     * - jedomi:new-conversation starts a new conversation (so the tutor does not carry another activity's);
+     * - jedomi:context {key: value} sets the state sent with every message (for example the selected part);
+     * - jedomi:send {id, text, open} asks the tutor as the student would, opening the panel when open is set.
+     * Every answer, asked by the page or typed, is announced with jedomi:answer {id, text, error} (see announceAnswer).
      */
     const announceReady = () => {
         document.addEventListener('jedomi:new-conversation', clearChat);
+        document.addEventListener('jedomi:context', (e) => {
+            activityState = (e.detail && typeof e.detail === 'object') ? {...e.detail} : {};
+        });
+        document.addEventListener('jedomi:send', (e) => {
+            const detail = e.detail || {};
+            if (detail.open) {
+                openSidebar();
+            }
+            sendMessage({id: detail.id ?? null, text: String(detail.text || '')});
+        });
         document.documentElement.dataset.jedomiReady = '1';
         document.dispatchEvent(new CustomEvent('jedomi:ready'));
+    };
+
+    /**
+     * Announces an answer of the tutor to the page: jedomi:answer on document, with the id of the jedomi:send that asked
+     * for it (null for a typed message), the full text (with any ⟦…⟧ marks for the page) and the error, if any
+     * ('busy' when another message was being answered, 'empty', or 'failed').
+     *
+     * @param {string|null} id Request id.
+     * @param {string} text Answer text.
+     * @param {string|null} error Error code.
+     */
+    const announceAnswer = (id, text, error = null) => {
+        document.dispatchEvent(new CustomEvent('jedomi:answer', {detail: {id, text, error}}));
     };
 
     const clearChat = () => {
@@ -888,28 +916,37 @@ define(['core/log'], function(Log) {
     };
 
     // ── Send Message ──────────────────────────────────────────────────────────
-    const sendMessage = async () => {
+    const sendMessage = async (request = null) => {
         const input   = g('jedomi-input');
         const sendBtn = g('jedomi-send');
-        const text    = input?.value.trim() || '';
+        const text    = request ? request.text.trim() : (input?.value.trim() || '');
+        const image   = request ? null : pendingImage;
 
-        if (!text && !pendingImage) return;
+        if (busy || (!text && !image)) {
+            if (request) {
+                announceAnswer(request.id, '', busy ? 'busy' : 'empty');
+            }
+            return;
+        }
+        busy = true;
 
         let userContent;
         let displayText = text;
 
-        if (pendingImage) {
+        if (image) {
             userContent = [
                 { type: 'text', text: text || (cfg.strings?.analyze_image || 'Analyze this image.') },
-                { type: 'image_url', image_url: { url: `data:${pendingImage.mimeType};base64,${pendingImage.base64}` } }
+                { type: 'image_url', image_url: { url: `data:${image.mimeType};base64,${image.base64}` } }
             ];
         } else {
             userContent = text;
         }
 
-        addMessage('user', displayText, pendingImage);
-        if (input) { input.value = ''; input.style.height = ''; }
-        clearImage();
+        addMessage('user', displayText, image);
+        if (!request) {
+            if (input) { input.value = ''; input.style.height = ''; }
+            clearImage();
+        }
         conversation.push({ role: 'user', content: userContent });
         _saveConversation(); // Guardar inmediatamente
 
@@ -1056,6 +1093,7 @@ define(['core/log'], function(Log) {
 
             conversation.push({ role: 'assistant', content: fullText });
             _saveConversation(); // Persistir en localStorage
+            announceAnswer(request ? request.id : null, fullText);
 
         } catch (err) {
             Log.error('Jedomi error', err);
@@ -1074,10 +1112,12 @@ define(['core/log'], function(Log) {
                 );
             }
             streamBubble.el.classList.remove('jedomi-hidden');
+            announceAnswer(request ? request.id : null, '', 'failed');
         } finally {
+            busy = false;
             setThinking(false);
             if (sendBtn) sendBtn.disabled = false;
-            input?.focus();
+            if (!request) input?.focus();
         }
     };
 
@@ -1099,6 +1139,7 @@ define(['core/log'], function(Log) {
                 page_title: document.title.replace(/\s*[|\-]\s*Moodle.*$/i, '').trim(),
                 location:   getCurrentLocation(),
                 course_id:  getCourseidFromUrl(),
+                activity:   activityState,
             },
         };
 
@@ -1177,6 +1218,7 @@ define(['core/log'], function(Log) {
                 page_title: document.title.replace(/\s*[|\-]\s*Moodle.*$/i, '').trim(),
                 location:   getCurrentLocation(),
                 course_id:  getCourseidFromUrl(),
+                activity:   activityState,
             },
         };
         const res = await fetch(cfg.chatproxy_url, {
@@ -1415,6 +1457,9 @@ GENERAL INSTRUCTIONS:
 
     const renderMarkdown = (text) => {
         if (!text) return '';
+        // ⟦…⟧ marks are actions for the activity page (jedomi:answer), not text for the student; an unclosed one is
+        // still streaming.
+        text = text.replace(/⟦[^⟧\n]{0,120}⟧/g, '').replace(/⟦[^⟧\n]{0,120}$/, '');
         let html = text
             .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
             // Code blocks

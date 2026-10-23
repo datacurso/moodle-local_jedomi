@@ -905,14 +905,40 @@ function local_jedomi_resolve_mode(int $courseid, int $cmid, string $role): stri
 }
 
 /**
+ * State an activity page reports to the tutor, reduced to what a module can check: at most 8 entries whose keys are
+ * short lowercase words and whose values are plain strings or numbers of up to 128 characters; anything else is
+ * dropped. The module still checks the values against its own data.
+ *
+ * @param mixed $raw State as the browser sent it.
+ * @return array<string, string> Clean state.
+ */
+function local_jedomi_client_state($raw): array {
+    $state = [];
+    foreach (is_array($raw) ? $raw : [] as $key => $value) {
+        if (count($state) >= 8) {
+            break;
+        }
+        if (!is_string($key) || !preg_match('/^[a-z]{1,32}$/', $key) || !(is_string($value) || is_int($value))) {
+            continue;
+        }
+        $value = trim((string) $value);
+        if ($value !== '' && core_text::strlen($value) <= 128 && !preg_match('/[\x00-\x1f]/', $value)) {
+            $state[$key] = $value;
+        }
+    }
+    return $state;
+}
+
+/**
  * Dispatches the activity_context hook of an activity: its module sets the tutor mode and adds teaching context
  * there (\local_jedomi\hook\activity_context).
  *
  * @param int $courseid Course id.
  * @param int $cmid Course module id.
+ * @param array $client State the activity page reported (local_jedomi_client_state()).
  * @return \local_jedomi\hook\activity_context|null The dispatched hook, or null outside an activity.
  */
-function local_jedomi_activity_hook(int $courseid, int $cmid): ?\local_jedomi\hook\activity_context {
+function local_jedomi_activity_hook(int $courseid, int $cmid, array $client = []): ?\local_jedomi\hook\activity_context {
     global $USER;
     if ($cmid <= 0 || $courseid <= 1) {
         return null;
@@ -922,7 +948,7 @@ function local_jedomi_activity_hook(int $courseid, int $cmid): ?\local_jedomi\ho
     } catch (\Throwable $e) {
         return null;
     }
-    $hook = new \local_jedomi\hook\activity_context($cm, (int) $USER->id);
+    $hook = new \local_jedomi\hook\activity_context($cm, (int) $USER->id, local_jedomi_client_state($client));
     \core\di::get(\core\hook\manager::class)->dispatch($hook);
     return $hook;
 }
@@ -933,9 +959,10 @@ function local_jedomi_activity_hook(int $courseid, int $cmid): ?\local_jedomi\ho
  *
  * @param int $courseid Course id.
  * @param int $cmid Course module id.
+ * @param array $client State the activity page reported (for example the selected part), passed to its module.
  * @return string Plain text for the system message; empty when there is nothing to add.
  */
-function local_jedomi_activity_context(int $courseid, int $cmid): string {
+function local_jedomi_activity_context(int $courseid, int $cmid, array $client = []): string {
     global $DB;
     if ($cmid <= 0 || $courseid <= 1) {
         return '';
@@ -956,7 +983,7 @@ function local_jedomi_activity_context(int $courseid, int $cmid): string {
     if ($intro !== '') {
         $out[] = get_string('prompt_tutor_activity_desc', 'local_jedomi') . ' ' . core_text::substr($intro, 0, 2500);
     }
-    foreach (local_jedomi_activity_hook($courseid, $cmid)?->get_context() ?? [] as $line) {
+    foreach (local_jedomi_activity_hook($courseid, $cmid, $client)?->get_context() ?? [] as $line) {
         $out[] = $line;
     }
     return implode("\n", $out);
