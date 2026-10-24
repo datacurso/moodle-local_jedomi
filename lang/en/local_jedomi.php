@@ -273,6 +273,7 @@ $string['gateway_error_hint'] = 'Make sure the service is running:';
 $string['gateway_error_title'] = 'Could not connect to the Jedomi Gateway.';
 $string['gateway_heading'] = 'Gateway connection';
 $string['gateway_heading_help'] = 'Connection settings for the Jedomi AI backend.';
+$string['gateway_notconfigured'] = 'The AI gateway is not configured: an administrator must set its URL and API key in the Jedomi settings.';
 $string['gateway_url'] = 'Gateway URL';
 $string['gateway_url_help'] = 'URL of the Jedomi Gateway. Example: http://localhost:8765';
 $string['greeting'] = 'Hi, {name}!';

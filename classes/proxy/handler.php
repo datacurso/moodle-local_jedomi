@@ -238,8 +238,13 @@ class handler {
      *                          ['type'=>'error', 'error'=>'...']
      */
     private static function call_ai_api_buffer(string $model, array $messages, array $spt, array $tools = []): array {
-        $apiUrl = rtrim(get_config('local_jedomi', 'gateway_url') ?: 'http://192.168.1.28:8080', '/');
-        $apiKey = get_config('local_jedomi', 'api_key') ?: 'jedomi-local-key';
+        $gateway = \local_jedomi\gateway_config::get();
+        if (!$gateway) {
+            \local_jedomi_log('AI_API_ERROR', ['reason' => 'gateway_notconfigured']);
+            return ['type' => 'error', 'error' => 'ai_api_error'];
+        }
+        $apiUrl = $gateway->url;
+        $apiKey = $gateway->key;
 
         $payload = [
             'model'      => $model,

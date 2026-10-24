@@ -31,8 +31,9 @@ if ($admin) {
 }
 
 // ── Config API ────────────────────────────────────────────────────────────
-$API_URL = rtrim(get_config('local_jedomi', 'gateway_url') ?: 'http://192.168.1.28:8080', '/');
-$API_KEY = get_config('local_jedomi', 'api_key');
+$gateway = \local_jedomi\gateway_config::require(); // No built-in fallback: configure the gateway first.
+$API_URL = $gateway->url;
+$API_KEY = $gateway->key;
 $MODEL   = get_config('local_jedomi', 'model') ?: 'peg-gemma4';
 
 // ── State ─────────────────────────────────────────────────────────────────

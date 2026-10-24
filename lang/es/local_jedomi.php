@@ -273,6 +273,7 @@ $string['gateway_error_hint'] = 'Verificá que el servicio esté corriendo:';
 $string['gateway_error_title'] = 'No pude conectarme al Gateway Jedomi.';
 $string['gateway_heading'] = 'Conexión al Gateway';
 $string['gateway_heading_help'] = 'Configuración de conexión con el backend de IA de Jedomi.';
+$string['gateway_notconfigured'] = 'El gateway de IA no está configurado: un administrador debe indicar su URL y su clave de API en los ajustes de Jedomi.';
 $string['gateway_url'] = 'URL del Gateway';
 $string['gateway_url_help'] = 'URL del Gateway de Jedomi. Ejemplo: http://localhost:8765';
 $string['greeting'] = '¡Hola, {name}!';

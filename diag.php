@@ -67,8 +67,15 @@ foreach ($classes as $cls) {
 // ═══════════════════════════════════════════════
 echo "<h2>3. Conectividad con el modelo AI</h2>";
 
-$aiUrl = rtrim($gatewayUrl ?: 'http://192.168.1.28:8080', '/');
-$token = $apiKey ?: '016e2b8b6aec7c18155842d6ef68894cc4f6b52f988eefae6bfd1cb06e549fd2';
+$gateway = \local_jedomi\gateway_config::get();
+if (!$gateway) {
+    // Without the gateway's URL and key there is nothing to test.
+    test("Gateway configurado", false, get_string('gateway_notconfigured', 'local_jedomi'));
+    echo "</body></html>";
+    exit;
+}
+$aiUrl = $gateway->url;
+$token = $gateway->key;
 
 test("URL del modelo", true, $aiUrl . '/v1/chat/completions');
 

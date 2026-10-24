@@ -35,13 +35,14 @@ if (trim($prompt) === '') {
 }
 
 // ── Gateway config ───────────────────────────────────────────────────────
-$gateway_url = rtrim(get_config('local_jedomi', 'gateway_url'), '/');
-$api_key    = get_config('local_jedomi', 'api_key');
-$model      = get_config('local_jedomi', 'model');
-
-if (empty($gateway_url)) { $gateway_url = 'http://localhost:8765'; }
-if (empty($api_key))     { $api_key     = 'jedomi-local-key'; }
-if (empty($model))       { $model       = 'jedomi-e4b'; }
+$gateway = \local_jedomi\gateway_config::get();
+if (!$gateway) {
+    echo json_encode(['ok' => false, 'error' => get_string('gateway_notconfigured', 'local_jedomi')]);
+    exit;
+}
+$gateway_url = $gateway->url;
+$api_key     = $gateway->key;
+$model       = $gateway->model;
 
 $max_tokens = (int) get_config('local_jedomi', 'max_tokens');
 if ($max_tokens < 256) { $max_tokens = 16384; }

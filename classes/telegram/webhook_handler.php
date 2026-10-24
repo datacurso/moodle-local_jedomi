@@ -455,6 +455,12 @@ class webhook_handler {
 
         $state_key = 'tool_loop_' . $chat_id;
 
+        // Without the gateway's URL and key there is nobody to ask.
+        if (!\local_jedomi\gateway_config::get()) {
+            (new api_client())->send_message($chat_id, get_string('gateway_notconfigured', 'local_jedomi'));
+            return;
+        }
+
         // ── Normal flow: build messages & context from scratch ──
         if (!$internal_ping) {
             // Check if another worker is already processing this chat.
@@ -516,13 +522,11 @@ class webhook_handler {
             $tools = $spt['tools'] ?? [];
 
             // Gateway config (from plugin settings, with safe fallbacks).
-            $gateway_url = rtrim(get_config('local_jedomi', 'gateway_url'), '/');
-            $api_key = get_config('local_jedomi', 'api_key');
-            $model = get_config('local_jedomi', 'model');
+            $gateway = \local_jedomi\gateway_config::require(); // Checked at the start of proxy_to_gateway().
+            $gateway_url = $gateway->url;
+            $api_key = $gateway->key;
+            $model = $gateway->model;
             $timeout = (int) get_config('local_jedomi', 'telegram_gateway_timeout');
-            if (empty($gateway_url)) { $gateway_url = 'http://localhost:8765'; }
-            if (empty($api_key)) { $api_key = 'jedomi-local-key'; }
-            if (empty($model)) { $model = 'jedomi-e4b'; }
             if ($timeout < 5) { $timeout = 120; }
             if ($timeout > 300) { $timeout = 300; }
 
@@ -591,13 +595,11 @@ class webhook_handler {
                 $tools = $spt['tools'] ?? [];
             }
 
-            $gateway_url = rtrim(get_config('local_jedomi', 'gateway_url'), '/');
-            $api_key = get_config('local_jedomi', 'api_key');
-            $model = get_config('local_jedomi', 'model');
+            $gateway = \local_jedomi\gateway_config::require(); // Checked at the start of proxy_to_gateway().
+            $gateway_url = $gateway->url;
+            $api_key = $gateway->key;
+            $model = $gateway->model;
             $timeout = (int) get_config('local_jedomi', 'telegram_gateway_timeout');
-            if (empty($gateway_url)) { $gateway_url = 'http://localhost:8765'; }
-            if (empty($api_key)) { $api_key = 'jedomi-local-key'; }
-            if (empty($model)) { $model = 'jedomi-e4b'; }
             if ($timeout < 5) { $timeout = 120; }
             if ($timeout > 300) { $timeout = 300; }
 
