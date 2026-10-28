@@ -922,7 +922,7 @@ final class webhook_handler_test extends \advanced_testcase {
         $chatid = '990000003';
         $user = $this->getDataGenerator()->create_user();
         set_config('licensekey', 'test-license', 'aiprovider_datacurso');
-        set_config('model', 'jedomi/mistralai/Mistral-Small-3.2-24B-Instruct-2506', 'local_jedomi');
+        set_config('model', 'jedomi/zai-org/GLM-5.3-Flash', 'local_jedomi');
         $curl = new fake_curl();
         $curl->enqueue('{"detail":"upstream down"}', 503);
         $client = new client(static fn(int $timeout): provider_api => new testable_provider_api($timeout, $curl));
@@ -938,7 +938,7 @@ final class webhook_handler_test extends \advanced_testcase {
         $this->assertStringEndsWith('/jedomi/v1/chat/completions', $curl->calls[0]['url']);
         $body = $curl->last_body();
         $this->assertArrayNotHasKey('spt', $body);
-        $this->assertSame('jedomi/mistralai/Mistral-Small-3.2-24B-Instruct-2506', $body['model']);
+        $this->assertSame('jedomi/zai-org/GLM-5.3-Flash', $body['model']);
         $this->assertFalse($body['stream']);
         $this->assertSame(0.2, $body['temperature']);
         $this->assertSame(

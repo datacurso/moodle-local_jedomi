@@ -151,7 +151,7 @@ final class handler_test extends \advanced_testcase {
         $this->resetAfterTest();
         $this->setAdminUser();
         set_config('licensekey', 'test-license', 'aiprovider_datacurso');
-        set_config('model', 'jedomi/mistralai/Mistral-Small-3.2-24B-Instruct-2506', 'local_jedomi');
+        set_config('model', 'jedomi/zai-org/GLM-5.3-Flash', 'local_jedomi');
         $curl = new fake_curl();
         $curl->enqueue(json_encode(['choices' => [['message' => ['role' => 'assistant', 'content' => 'ok']]]]));
         client::set_instance_for_testing(
@@ -166,7 +166,7 @@ final class handler_test extends \advanced_testcase {
         $this->capture(fn() => handler::run_from_request($input, 'admin', ['course_id' => 0], (int) get_admin()->id));
 
         $body = $curl->last_body();
-        $this->assertSame('jedomi/mistralai/Mistral-Small-3.2-24B-Instruct-2506', $body['model']);
+        $this->assertSame('jedomi/zai-org/GLM-5.3-Flash', $body['model']);
         $this->assertSame('system', $body['messages'][0]['role']);
         $this->assertSame(['role' => 'user', 'content' => 'hi'], $body['messages'][1]);
     }

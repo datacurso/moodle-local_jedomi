@@ -42,6 +42,15 @@ final class model_settings_test extends \advanced_testcase {
     }
 
     /**
+     * Load the plugin upgrade function and the upgrade library it uses.
+     */
+    private function load_upgrade_script(): void {
+        global $CFG;
+        require_once($CFG->libdir . '/upgradelib.php');
+        require_once($CFG->dirroot . '/local/jedomi/db/upgrade.php');
+    }
+
+    /**
      * Assert the settings the migration must not touch are unchanged.
      */
     private function assert_other_settings_unchanged(): void {
@@ -94,16 +103,109 @@ final class model_settings_test extends \advanced_testcase {
     }
 
     /**
-     * The default model is the cheapest priced one and every offered model uses the jedomi/ route.
+     * V7: the selector offers exactly the phase 7 list, with the default model first.
      */
-    public function test_available_models_are_priced_jedomi_models(): void {
+    public function test_available_models_are_the_final_list_with_default_first(): void {
         $models = model_settings::get_available_models();
 
         $this->assertSame('jedomi/google/gemma-4-26B-A4B-it', model_settings::DEFAULT_MODEL);
-        $this->assertArrayHasKey(model_settings::DEFAULT_MODEL, $models);
-        $this->assertArrayHasKey('jedomi/mistralai/Mistral-Small-3.2-24B-Instruct-2506', $models);
-        $this->assertArrayHasKey('jedomi/deepseek-ai/DeepSeek-V4.1-Flash-1017', $models);
-        $this->assertCount(3, $models);
+        $this->assertSame([
+            'jedomi/google/gemma-4-26B-A4B-it',
+            'jedomi/deepseek-ai/DeepSeek-V4.1-Flash-1017',
+            'jedomi/zai-org/GLM-5.3-Flash',
+            'jedomi/XiaomiMiMo/MiMo-V2.6-Flash',
+        ], array_keys($models));
+        $this->assertSame(model_settings::DEFAULT_MODEL, array_key_first($models));
+        foreach ($models as $model => $name) {
+            $this->assertTrue(model_settings::is_routable($model));
+            $this->assertNotEmpty($name);
+        }
+    }
+
+    /**
+     * V8: every listed model is used as saved.
+     */
+    public function test_get_model_returns_saved_listed_model(): void {
+        $this->resetAfterTest();
+
+        foreach (array_keys(model_settings::get_available_models()) as $model) {
+            set_config('model', $model, 'local_jedomi');
+            $this->assertSame($model, model_settings::get_model());
+        }
+    }
+
+    /**
+     * V8: a saved model outside the list, including a removed one or another case, falls back to the default.
+     *
+     * @dataProvider unlisted_model_provider
+     * @param string $model Saved model.
+     */
+    public function test_get_model_falls_back_to_default_for_unlisted_model(string $model): void {
+        $this->resetAfterTest();
+        set_config('model', $model, 'local_jedomi');
+
+        $this->assertSame(model_settings::DEFAULT_MODEL, model_settings::get_model());
+    }
+
+    /**
+     * Saved models that are not in the list.
+     *
+     * @return array<string, array{0: string}>
+     */
+    public static function unlisted_model_provider(): array {
+        return [
+            'removed mistral' => ['jedomi/mistralai/Mistral-Small-3.2-24B-Instruct-2506'],
+            'other case' => ['jedomi/google/gemma-4-26b-a4b-it'],
+            'unknown routable' => ['jedomi/acme/unknown-model'],
+            'legacy' => ['jedomi-e4b'],
+            'empty' => [''],
+        ];
+    }
+
+    /**
+     * A saved model outside the list is replaced with the default; a listed one is kept.
+     */
+    public function test_reset_unlisted_model(): void {
+        $this->resetAfterTest();
+
+        set_config('model', 'jedomi/mistralai/Mistral-Small-3.2-24B-Instruct-2506', 'local_jedomi');
+        model_settings::reset_unlisted_model();
+        $this->assertSame(model_settings::DEFAULT_MODEL, get_config('local_jedomi', 'model'));
+
+        set_config('model', 'jedomi/zai-org/GLM-5.3-Flash', 'local_jedomi');
+        model_settings::reset_unlisted_model();
+        $this->assertSame('jedomi/zai-org/GLM-5.3-Flash', get_config('local_jedomi', 'model'));
+    }
+
+    /**
+     * The 2026102801 upgrade step replaces a saved model outside the list with the default one.
+     */
+    public function test_upgrade_replaces_unlisted_model_with_default(): void {
+        $this->resetAfterTest();
+        $this->load_upgrade_script();
+        set_config('version', 2026102800, 'local_jedomi');
+        set_config('model', 'jedomi/mistralai/Mistral-Small-3.2-24B-Instruct-2506', 'local_jedomi');
+        set_config('max_tokens', 4096, 'local_jedomi');
+
+        $this->assertTrue(xmldb_local_jedomi_upgrade(2026102800));
+
+        $this->assertSame(model_settings::DEFAULT_MODEL, get_config('local_jedomi', 'model'));
+        $this->assertSame('4096', get_config('local_jedomi', 'max_tokens'));
+        $this->assertSame('2026102801', get_config('local_jedomi', 'version'));
+    }
+
+    /**
+     * The 2026102801 upgrade step keeps a saved model that is in the list.
+     */
+    public function test_upgrade_keeps_listed_model(): void {
+        $this->resetAfterTest();
+        $this->load_upgrade_script();
+        set_config('version', 2026102800, 'local_jedomi');
+        set_config('model', 'jedomi/XiaomiMiMo/MiMo-V2.6-Flash', 'local_jedomi');
+
+        $this->assertTrue(xmldb_local_jedomi_upgrade(2026102800));
+
+        $this->assertSame('jedomi/XiaomiMiMo/MiMo-V2.6-Flash', get_config('local_jedomi', 'model'));
     }
 
     /**

@@ -4,7 +4,8 @@
 
 - Route every AI call (web chat, scheduled agents, agent preview, Telegram and CLI) through the Datacurso AI provider to `POST /jedomi/v1/chat/completions`, using the provider license, rate limits and the pseudonymised user of each call
 - Require `aiprovider_datacurso` 1.7.0 (2026102700)
-- Replace the free-text model setting with a list of priced models; the default is `jedomi/google/gemma-4-26B-A4B-it`
+- Replace the free-text model setting with a list of evaluated and priced models: Gemma 4 26B A4B (default, `jedomi/google/gemma-4-26B-A4B-it`), DeepSeek V4.1 Flash, GLM 5.3 Flash and MiMo V2.6 Flash
+- Use the default model when the saved model is not in the list; the upgrade replaces such a saved model with the default one
 - Apply the `max_tokens` setting to every channel
 - Remove the `gateway_url` and `api_key` settings; the upgrade deletes them and replaces a model without the `jedomi/` prefix with the default one
 - Ignore the model sent by the browser to the web chat proxy

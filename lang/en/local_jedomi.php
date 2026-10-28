@@ -274,7 +274,6 @@ $string['messages_sent'] = '{sent} message(s) sent as Moodle internal messages.'
 $string['messages_sent_fail'] = '({failed} failed)';
 $string['mic_error'] = 'Could not access the microphone. Please check your browser permissions.';
 $string['model'] = 'Model';
-$string['model_current_unlisted'] = '{$a} (current value, not in the list)';
 $string['model_help'] = 'Model used by the web chat, scheduled agents, agent preview, Telegram and the CLI. Only models with a registered price are listed.';
 $string['new_conversation'] = 'New conversation';
 $string['new_conversation_msg'] = 'New conversation started. How can I help you?';

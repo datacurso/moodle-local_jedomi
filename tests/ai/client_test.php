@@ -61,7 +61,7 @@ final class client_test extends \advanced_testcase {
     public function test_complete_sends_configured_model_and_given_user_to_jedomi_route(): void {
         $this->resetAfterTest();
         set_config('licensekey', 'test-license', 'aiprovider_datacurso');
-        set_config('model', 'jedomi/mistralai/Mistral-Small-3.2-24B-Instruct-2506', 'local_jedomi');
+        set_config('model', 'jedomi/zai-org/GLM-5.3-Flash', 'local_jedomi');
         set_config('max_tokens', 2048, 'local_jedomi');
         $user = $this->getDataGenerator()->create_user();
 
@@ -73,7 +73,7 @@ final class client_test extends \advanced_testcase {
         $this->assertCount(1, $curl->calls);
         $this->assertStringEndsWith('/jedomi/v1/chat/completions', $curl->calls[0]['url']);
         $body = $curl->last_body();
-        $this->assertSame('jedomi/mistralai/Mistral-Small-3.2-24B-Instruct-2506', $body['model']);
+        $this->assertSame('jedomi/zai-org/GLM-5.3-Flash', $body['model']);
         $this->assertFalse($body['stream']);
         $this->assertSame(2048, $body['max_tokens']);
         $this->assertSame([['role' => 'user', 'content' => 'Hi']], $body['messages']);

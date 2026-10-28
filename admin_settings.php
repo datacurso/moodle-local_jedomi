@@ -53,10 +53,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && confirm_sesskey()) {
     switch ($savetype) {
         case 'general':
             set_config('enabled', optional_param('enabled', 0, PARAM_INT), 'local_jedomi');
-            // Only a listed model, or the value already stored, can be saved.
+            // Only a listed model can be saved.
             $model = required_param('model', PARAM_TEXT);
-            $currentmodel = (string) get_config('local_jedomi', 'model');
-            if (array_key_exists($model, \local_jedomi\ai\model_settings::get_available_models()) || $model === $currentmodel) {
+            if (array_key_exists($model, \local_jedomi\ai\model_settings::get_available_models())) {
                 set_config('model', $model, 'local_jedomi');
             }
             set_config('max_tokens', optional_param('max_tokens', 16384, PARAM_INT), 'local_jedomi');
@@ -350,11 +349,8 @@ echo '</ul>';
                 </label>
                 <select id="jedomi-model" name="model" class="form-select custom-select" style="max-width:480px">
                     <?php
+                    // The model setting is always listed: get_model() falls back to the default one.
                     $modeloptions = \local_jedomi\ai\model_settings::get_available_models();
-                    if (!array_key_exists($cfg['model'], $modeloptions)) {
-                        $modeloptions = [$cfg['model'] => get_string('model_current_unlisted', 'local_jedomi', $cfg['model'])]
-                            + $modeloptions;
-                    }
                     foreach ($modeloptions as $modelid => $modellabel) {
                         $selected = ($modelid === $cfg['model']) ? ' selected' : '';
                         echo '<option value="' . s($modelid) . '"' . $selected . '>' . s($modellabel) . '</option>';

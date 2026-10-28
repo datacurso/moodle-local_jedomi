@@ -274,7 +274,6 @@ $string['messages_sent'] = '{sent} mensaje(s) enviados como mensajes internos de
 $string['messages_sent_fail'] = '({failed} fallaron)';
 $string['mic_error'] = 'No se pudo acceder al micrófono. Verificá los permisos del navegador.';
 $string['model'] = 'Modelo';
-$string['model_current_unlisted'] = '{$a} (valor actual, no está en la lista)';
 $string['model_help'] = 'Modelo que usan el chat web, los agentes programados, la vista previa de agentes, Telegram y la CLI. Solo se muestran los modelos con precio registrado.';
 $string['new_conversation'] = 'Nueva conversación';
 $string['new_conversation_msg'] = 'Nueva conversación iniciada. ¿En qué te ayudo?';

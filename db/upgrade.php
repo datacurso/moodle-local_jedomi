@@ -318,5 +318,12 @@ function xmldb_local_jedomi_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2026102700, 'local', 'jedomi');
     }
 
+    if ($oldversion < 2026102801) {
+        // The model list changed after the model evaluation: a saved model that is no longer
+        // listed (for example Mistral Small 3.2) is replaced with the default one.
+        \local_jedomi\ai\model_settings::reset_unlisted_model();
+        upgrade_plugin_savepoint(true, 2026102801, 'local', 'jedomi');
+    }
+
     return true;
 }
