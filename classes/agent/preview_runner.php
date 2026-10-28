@@ -1,0 +1,469 @@
+<?php
+// This file is part of Moodle - http://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+
+namespace local_jedomi\agent;
+
+use local_jedomi\ai\client;
+use local_jedomi\ai\error_message;
+
+defined('MOODLE_INTERNAL') || die();
+
+require_once(__DIR__ . '/../../lib.php');
+
+/**
+ * Agent preview: runs a prompt through the AI client with tools, synchronously, for testing an agent.
+ *
+ * Same logic as the scheduled agent runner, plus a preview cache (agentid 0) and a profiler of tool calls.
+ *
+ * @package    local_jedomi
+ * @copyright  2026 Jedomi Project
+ * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ */
+class preview_runner {
+    /** @var int Maximum AI rounds per preview. */
+    private const MAX_ROUNDS = 15;
+
+    /** @var int Total timeout of each AI call, in seconds. */
+    private const AI_TIMEOUT = 120;
+
+    /**
+     * Run a preview.
+     *
+     * @param string $prompt Agent prompt.
+     * @param int $userid User the preview runs for (the AI calls are made for this user).
+     * @return array Response for the preview page: ok, answer, rounds, profiler, conversation, total_time_ms,
+     *               and cached/cached_at/reformulated for cache hits; or ok=false with error and error_code.
+     */
+    public static function run(string $prompt, int $userid): array {
+        global $DB;
+
+        $role = \local_jedomi_get_user_role_for_user($userid);
+        $tools = \local_jedomi_get_tool_definitions($role);
+
+        $spt = ['course_id' => 0];
+        $context = ['location' => 'site', 'course_name' => ''];
+        $system = \local_jedomi\proxy\system_message::build($role, $spt, $context);
+
+        if (!empty($tools)) {
+            $system['content'] .= "\n\n=== AVAILABLE TOOLS ===\n";
+            foreach ($tools as $t) {
+                $fn = $t['function'] ?? [];
+                $system['content'] .= '- ' . ($fn['name'] ?? '?') . ': ' . ($fn['description'] ?? '') . "\n";
+            }
+        }
+
+        $messages = [
+            $system,
+            ['role' => 'user', 'content' => $prompt],
+        ];
+
+        // ... ── Check agent cache ─────────────────────────────────────────────────
+        $cachehash = md5(trim($prompt));
+        $cached = $DB->get_record('local_jedomi_agent_cache', [
+            'agentid' => 0,
+            'context_hash' => $cachehash,
+        ]);
+        if ($cached && !empty($cached->result_json)) {
+            $fromcache = self::answer_from_cache($cached, $userid);
+            if ($fromcache !== null) {
+                return $fromcache;
+            }
+        }
+
+        // ... ── Multi-turn loop (same as agent_runner) ────────────────────────────
+        $finalanswer = '';
+        $profilerentries = [];
+        $plan = [];
+        $toolcallcounts = [];
+        $loopbroken = false;
+        $content = '';
+
+        for ($round = 1; $round <= self::MAX_ROUNDS; $round++) {
+            try {
+                $answer = client::instance()->complete($messages, $userid, $tools, self::AI_TIMEOUT);
+            } catch (\Throwable $e) {
+                $error = error_message::from_exception($e);
+                return ['ok' => false, 'error' => $error['message'], 'error_code' => $error['code']];
+            }
+
+            $nativetoolcalls = $answer['tool_calls'];
+            $content = $answer['content'];
+
+            // ... ── Parse text-based TOOL_CALL ──────────────────────────────────────
+            $texttoolcalls = [];
+            if (!empty($tools)) {
+                $texttoolcalls = self::parse_text_tool_calls($content);
+            }
+            $alltoolcalls = array_merge($nativetoolcalls, $texttoolcalls);
+
+            if (empty($alltoolcalls)) {
+                $finalanswer = $content;
+                break;
+            }
+
+            // The assistant message carries every tool call before the tool results:
+            // strict OpenAI backends reject tool messages without it.
+            $messages[] = [
+                'role' => 'assistant',
+                'content' => $content !== '' ? $content : null,
+                'tool_calls' => $alltoolcalls,
+            ];
+
+            foreach ($alltoolcalls as $tc) {
+                $funcname = $tc['function']['name'] ?? '?';
+                $funcargs = $tc['function']['arguments'] ?? '{}';
+                $tcid = $tc['id'];
+                $toolduration = 0;
+
+                // ... ── Loop detection ──────────────────────────────────────────────
+                $decodedargs = is_string($funcargs) ? json_decode($funcargs, true) : $funcargs;
+                $stableargs = is_array($decodedargs)
+                    ? hash('sha256', json_encode($decodedargs, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_IGNORE))
+                    : md5($funcargs);
+                $callkey = $funcname . '|' . $stableargs;
+                $toolcallcounts[$callkey] = ($toolcallcounts[$callkey] ?? 0) + 1;
+
+                if ($toolcallcounts[$callkey] > 5) {
+                    $toolresult = json_encode([
+                        'error' => 'loop_detected',
+                        'tool' => $funcname,
+                        'detail' => 'Same tool with same arguments called ' . $toolcallcounts[$callkey] . ' times.',
+                    ]);
+                    $loopbroken = true;
+                } else {
+                    $plan[] = [
+                        'tool' => $funcname,
+                        'arguments' => $funcargs,
+                    ];
+
+                    $toolstart = microtime(true);
+                    $toolresult = tool_executor::execute($funcname, $funcargs);
+                    $toolduration = (microtime(true) - $toolstart) * 1000;
+
+                    if (strlen($toolresult) > 64000) {
+                        $toolresult = mb_substr($toolresult, 0, 64000)
+                            . "\n\n[Result truncated at 64000 characters]";
+                    }
+                }
+
+                // Profile every call (including loop_detected for visibility).
+                $resultinfo = json_decode($toolresult, true);
+                $profilerentries[] = [
+                    'tool' => $funcname,
+                    'arguments' => $funcargs,
+                    'result_preview' => mb_substr($toolresult, 0, 5000),
+                    'duration_ms' => round($resultinfo['duration_ms'] ?? $toolduration, 2),
+                    'row_count' => $resultinfo['row_count'] ?? 0,
+                    'error' => $resultinfo['error'] ?? null,
+                ];
+
+                $messages[] = [
+                    'role' => 'tool',
+                    'tool_call_id' => $tcid,
+                    'content' => $toolresult,
+                ];
+            }
+
+            if ($loopbroken) {
+                break;
+            }
+        }
+
+        // ... ── Safety net + cleanup ─────────────────────────────────────────────────
+        if (empty($finalanswer)) {
+            if ($loopbroken) {
+                $finalanswer = 'The agent encountered an issue while fetching data. Please try again later.';
+            } else if (!empty($content)) {
+                $finalanswer = $content;
+            } else {
+                $finalanswer = self::last_tool_result($messages);
+            }
+        }
+
+        // Strip any TOOL_CALL blocks that leaked into final answer.
+        $finalanswer = trim(preg_replace(
+            '/(?:TOOL_CALL|call):\s*\w+\s*\n.*?\nEND_TOOL_CALL[^\n]*/si',
+            '',
+            $finalanswer
+        ));
+
+        if ($finalanswer === '') {
+            return ['ok' => false, 'error' => 'No response from AI'];
+        }
+
+        // ... ── Save to cache ─────────────────────────────────────────────────────────
+        // Strip tool payload from messages before caching (not needed for display).
+        $cachablemessages = $messages;
+        array_walk($cachablemessages, function (&$msg) {
+            unset($msg['tool_calls']);
+        });
+        self::save_cache($cachehash, $finalanswer, $profilerentries, $cachablemessages, $plan);
+
+        return [
+            'ok' => true,
+            'answer' => $finalanswer,
+            'rounds' => min($round, self::MAX_ROUNDS),
+            'profiler' => $profilerentries,
+            'conversation' => $cachablemessages,
+            'total_time_ms' => round(array_sum(array_column($profilerentries, 'duration_ms')), 2),
+        ];
+    }
+
+    /**
+     * Answer a preview from its cache: replay the cached plan and reformulate, or return the cached text.
+     *
+     * @param \stdClass $cached Cache record.
+     * @param int $userid User the preview runs for.
+     * @return array|null Response, or null when the cache cannot be used.
+     */
+    private static function answer_from_cache(\stdClass $cached, int $userid): ?array {
+        // ... ── Try semantic cache plan replay ──────────────────────────────────────
+        $plan = !empty($cached->plan_json) ? json_decode($cached->plan_json, true) : null;
+        if (is_array($plan) && !empty($plan)) {
+            $replayprofiler = [];
+            $replayfailed = false;
+            foreach ($plan as $step) {
+                $toolstart = microtime(true);
+                $toolresult = tool_executor::execute($step['tool'], $step['arguments']);
+                $toolduration = (microtime(true) - $toolstart) * 1000;
+                $resultinfo = json_decode($toolresult, true);
+                if (!empty($resultinfo['error'])) {
+                    $replayfailed = true;
+                    break;
+                }
+                $replayprofiler[] = [
+                    'tool' => $step['tool'],
+                    'arguments' => $step['arguments'],
+                    'result_preview' => mb_substr($toolresult, 0, 5000),
+                    'duration_ms' => round($resultinfo['duration_ms'] ?? $toolduration, 2),
+                    'row_count' => $resultinfo['row_count'] ?? 0,
+                    'error' => $resultinfo['error'] ?? null,
+                ];
+            }
+
+            if (!$replayfailed && !empty($replayprofiler)) {
+                // Build fresh context for reformulation.
+                $freshctx = "Updated tool results:\n";
+                foreach ($replayprofiler as $fr) {
+                    $freshctx .= "\n--- {$fr['tool']} ---\n{$fr['result_preview']}\n";
+                }
+
+                $cachedresult = json_decode($cached->result_json, true);
+                $cachedanswer = $cachedresult['answer'] ?? $cached->result_json;
+
+                $reformmessages = [
+                    ['role' => 'system', 'content' => 'You previously answered a question. Below are updated tool results.'
+                        . ' Reformulate your answer using the new data. Keep the same style and structure.'],
+                    ['role' => 'user', 'content' => "Previous answer:\n{$cachedanswer}\n\n{$freshctx}"],
+                ];
+
+                try {
+                    $reform = client::instance()->complete($reformmessages, $userid, [], self::AI_TIMEOUT);
+                    $reformanswer = $reform['content'];
+                } catch (\Throwable $e) {
+                    // The cached text below is still a valid answer.
+                    $reformanswer = '';
+                }
+                if (trim($reformanswer) !== '') {
+                    return [
+                        'ok' => true,
+                        'answer' => $reformanswer,
+                        'rounds' => 0,
+                        'profiler' => $replayprofiler,
+                        'total_time_ms' => round(array_sum(array_column($replayprofiler, 'duration_ms')), 2),
+                        'cached' => true,
+                        'cached_at' => $cached->timecreated,
+                        'reformulated' => true,
+                    ];
+                }
+            }
+        }
+
+        // ... ── Fallback: plain text cache ──────────────────────────────────────────
+        $cachedplain = json_decode($cached->result_json, true);
+        if ($cachedplain && is_array($cachedplain)) {
+            return [
+                'ok' => true,
+                'answer' => $cachedplain['answer'] ?? $cached->result_json,
+                'rounds' => 0,
+                'profiler' => $cachedplain['profiler'] ?? [],
+                'conversation' => $cachedplain['conversation'] ?? [],
+                'total_time_ms' => 0,
+                'cached' => true,
+                'cached_at' => $cached->timecreated,
+            ];
+        }
+        return null;
+    }
+
+    /**
+     * Content of the last tool result that is not an error.
+     *
+     * @param array $messages Conversation.
+     * @return string
+     */
+    private static function last_tool_result(array $messages): string {
+        foreach (array_reverse($messages) as $msg) {
+            if (($msg['role'] ?? '') === 'tool' && !empty($msg['content'])) {
+                $decoded = json_decode($msg['content'], true);
+                if (!empty($decoded['error'])) {
+                    continue;
+                }
+                return is_string($msg['content'])
+                    ? $msg['content']
+                    : json_encode($msg['content'], JSON_UNESCAPED_UNICODE);
+            }
+        }
+        return '';
+    }
+
+    /**
+     * Save the preview result in the preview cache (agentid 0).
+     *
+     * @param string $cachehash Prompt hash.
+     * @param string $answer Final answer.
+     * @param array $profiler Profiler entries.
+     * @param array $conversation Conversation without tool payloads.
+     * @param array $plan Tool plan.
+     */
+    private static function save_cache(string $cachehash, string $answer, array $profiler, array $conversation, array $plan): void {
+        global $DB;
+
+        $cachedata = json_encode([
+            'answer' => $answer,
+            'profiler' => $profiler,
+            'conversation' => $conversation,
+        ]);
+
+        // Only save semantic plan if all tools are readonly.
+        $allreadonly = true;
+        foreach ($plan as $p) {
+            if (!agent_manager::is_tool_readonly($p['tool'])) {
+                $allreadonly = false;
+                break;
+            }
+        }
+        $planjson = (!empty($plan) && $allreadonly) ? json_encode($plan, JSON_UNESCAPED_UNICODE) : null;
+
+        $existingcache = $DB->get_record('local_jedomi_agent_cache', [
+            'agentid' => 0,
+            'context_hash' => $cachehash,
+        ], 'id');
+        if ($existingcache) {
+            $DB->update_record('local_jedomi_agent_cache', (object) [
+                'id' => $existingcache->id,
+                'result_json' => $cachedata,
+                'plan_json' => $planjson,
+                'timecreated' => time(),
+            ]);
+        } else {
+            $DB->insert_record('local_jedomi_agent_cache', (object) [
+                'agentid' => 0,
+                'context_hash' => $cachehash,
+                'result_json' => $cachedata,
+                'plan_json' => $planjson,
+                'timecreated' => time(),
+            ]);
+        }
+    }
+
+    /**
+     * Parse text-based TOOL_CALL blocks from AI response content.
+     * Supports TOOL_CALL:/call: format AND <|tool_call|> special token format.
+     *
+     * @param  string $content The assistant response text (modified by reference).
+     * @return array            Parsed tool calls in native format.
+     */
+    private static function parse_text_tool_calls(string &$content): array {
+        $calls = [];
+
+        if (empty(trim($content))) {
+            return $calls;
+        }
+
+        // ... ── Pattern 1: TOOL_CALL: tool_name\n{json}\nEND_TOOL_CALL ──────────
+        $pattern1 = '/(?:TOOL_CALL|call):\s*(\w+)\s*\n(.+?)\nEND_TOOL_CALL[^\n]*/si';
+
+        // ... ── Pattern 2: <|tool_call|> or <|python_tag|> special tokens ──────
+        $pattern2 = '/<\|(?:tool_call|python_tag)\|>(.+?)<\|\\/\1\|>/si';
+
+        // Try pattern 1 first.
+        if (preg_match_all($pattern1, $content, $matches, PREG_SET_ORDER)) {
+            $content = trim(preg_replace($pattern1, '', $content));
+            foreach ($matches as $m) {
+                $parsed = self::tool_call_from_match($m[1], $m[2]);
+                if ($parsed) {
+                    $calls[] = $parsed;
+                }
+            }
+            return $calls;
+        }
+
+        // Try the second pattern, the tool_call marker.
+        if (preg_match_all($pattern2, $content, $matches, PREG_SET_ORDER)) {
+            $content = trim(preg_replace($pattern2, '', $content));
+            foreach ($matches as $m) {
+                $inner = trim($m[1]);
+                $decoded = json_decode($inner, true);
+                if (json_last_error() === JSON_ERROR_NONE && isset($decoded['name'])) {
+                    $toolname = $decoded['name'];
+                    $args = $decoded['arguments'] ?? '{}';
+                    if (is_array($args)) {
+                        $args = json_encode($args, JSON_UNESCAPED_UNICODE);
+                    }
+                    $parsed = self::tool_call_from_match($toolname, $args);
+                } else {
+                    $parts = explode("\n", $inner, 2);
+                    $parsed = self::tool_call_from_match(trim($parts[0]), $parts[1] ?? '{}');
+                }
+                if ($parsed) {
+                    $calls[] = $parsed;
+                }
+            }
+            return $calls;
+        }
+
+        return $calls;
+    }
+
+    /**
+     * Build a tool call entry from name + JSON string with validation.
+     *
+     * @param  string $name     The tool name extracted from the match.
+     * @param  string $argsjson The tool arguments as a JSON string.
+     * @return array|null       Tool call entry, or null when the payload is invalid.
+     */
+    private static function tool_call_from_match(string $name, string $argsjson): ?array {
+        json_decode($argsjson);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            if (preg_match('/\{.*\}/s', $argsjson, $jsonmatch)) {
+                $argsjson = $jsonmatch[0];
+                json_decode($argsjson);
+            }
+        }
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            return null;
+        }
+        return [
+            'id' => 'text_' . md5(uniqid('', true)),
+            'type' => 'function',
+            'function' => [
+                'name' => trim($name),
+                'arguments' => $argsjson,
+            ],
+        ];
+    }
+}

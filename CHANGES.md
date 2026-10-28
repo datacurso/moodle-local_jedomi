@@ -1,5 +1,24 @@
 # Changes
 
+## 1.3.0 (2026-10-28)
+
+- Route every AI call (web chat, scheduled agents, agent preview, Telegram and CLI) through the Datacurso AI provider to `POST /jedomi/v1/chat/completions`, using the provider license, rate limits and the pseudonymised user of each call
+- Require `aiprovider_datacurso` 1.7.0 (2026102700)
+- Replace the free-text model setting with a list of priced models; the default is `jedomi/google/gemma-4-26B-A4B-it`
+- Apply the `max_tokens` setting to every channel
+- Remove the `gateway_url` and `api_key` settings; the upgrade deletes them and replaces a model without the `jedomi/` prefix with the default one
+- Ignore the model sent by the browser to the web chat proxy
+- Show clear messages in English and Spanish for no credit, rate limit (with retry time), missing or invalid license, unavailable service and other AI errors in the web chat, agent preview, Telegram, agents and CLI
+- Store answer ratings in Moodle (`local_jedomi_feedback`, web service `local_jedomi_save_feedback`) and add a privacy provider for them
+- Stop sending the gateway URL and API key to the browser; remove the browser calls to the legacy gateway for voice transcription, action confirmation, message sending and feedback
+- Disable the "File" attach option with a notice, since document text extraction is not available
+- Stop sending the SPT to the AI service from Telegram
+- Show a timeout message and stop resending the Telegram request to the AI service when a call times out, so it is not billed again
+- Fix the agent preview and scheduled agents sending tool results without the assistant tool calls that precede them
+- Fix an invalid regular expression in the cleanup of the scheduled agent answer
+- Log status codes and sizes instead of AI request and response contents
+- Remove hardcoded default API keys and gateway URLs
+
 ## 1.2.3 (2026-05-25)
 
 - Add `duration_ms` and `row_count` to search_tables, describe_table, ws_search, ws_describe tools

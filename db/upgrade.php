@@ -296,5 +296,27 @@ function xmldb_local_jedomi_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2026052503, 'local', 'jedomi');
     }
 
+    if ($oldversion < 2026102700) {
+        // AI calls now go through the Datacurso AI provider: drop the legacy gateway URL and key,
+        // and replace a model that the provider route cannot use with the default one.
+        \local_jedomi\ai\model_settings::migrate_legacy_settings();
+
+        // Answer ratings, previously sent to the legacy gateway, are now stored in Moodle.
+        $table = new xmldb_table('local_jedomi_feedback');
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+        $table->add_field('userid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('rating', XMLDB_TYPE_CHAR, '10', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('sessionid', XMLDB_TYPE_CHAR, '64', null, null, null, null);
+        $table->add_field('messagetext', XMLDB_TYPE_TEXT, null, null, null, null, null);
+        $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+        $table->add_key('userid', XMLDB_KEY_FOREIGN, ['userid'], 'user', ['id']);
+        if (!$dbman->table_exists($table)) {
+            $dbman->create_table($table);
+        }
+
+        upgrade_plugin_savepoint(true, 2026102700, 'local', 'jedomi');
+    }
+
     return true;
 }

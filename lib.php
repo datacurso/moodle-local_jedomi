@@ -51,7 +51,9 @@ function local_jedomi_before_footer(): string {
 }
 
 /**
- * Build the full sidebar config array (strings, connection info, SPT, etc.).
+ * Build the full sidebar config array (strings, endpoints, SPT, etc.).
+ *
+ * Never includes AI service URLs or keys: every AI call is made server-side.
  *
  * @return array
  */
@@ -61,10 +63,8 @@ function local_jedomi_get_sidebar_config(): array {
     $context = local_jedomi_get_page_context();
 
     return [
-        'gateway_url'   => get_config('local_jedomi', 'gateway_url') ?: 'http://localhost:8765',
-        'api_key'       => get_config('local_jedomi', 'api_key') ?: 'jedomi-local-key',
-        'model'         => get_config('local_jedomi', 'model') ?: 'jedomi-e4b',
         'chatproxy_url' => $CFG->wwwroot . '/local/jedomi/chatproxy.php',
+        'feedback_url'  => $CFG->wwwroot . '/local/jedomi/ajax/feedback.php',
         'user_name'     => fullname($USER),
         'user_role'     => local_jedomi_get_user_role(),
         'wwwroot'       => $CFG->wwwroot,
@@ -85,6 +85,7 @@ function local_jedomi_get_sidebar_config(): array {
             'attach_file'       => get_string('attach_file', 'local_jedomi'),
             'attach_image'      => get_string('attach_image', 'local_jedomi'),
             'file'              => get_string('file', 'local_jedomi'),
+            'file_attach_disabled' => get_string('file_attach_disabled', 'local_jedomi'),
             'image'             => get_string('image', 'local_jedomi'),
             'message_input'     => get_string('message_input', 'local_jedomi'),
             'placeholder'       => get_string('chat_placeholder', 'local_jedomi'),
@@ -145,8 +146,7 @@ function local_jedomi_get_sidebar_config(): array {
             'ctx_messages'  => get_string('ctx_messages', 'local_jedomi'),
             'ctx_profile'   => get_string('ctx_profile', 'local_jedomi'),
             // Errors.
-            'gateway_error_title'   => get_string('gateway_error_title', 'local_jedomi'),
-            'gateway_error_hint'    => get_string('gateway_error_hint', 'local_jedomi'),
+            'ai_error_connection'   => get_string('ai_error_connection', 'local_jedomi'),
             'listening'             => get_string('listening', 'local_jedomi'),
             'mic_error'             => get_string('mic_error', 'local_jedomi'),
             'silence_detected'      => get_string('silence_detected', 'local_jedomi'),

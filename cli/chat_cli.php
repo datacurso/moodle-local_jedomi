@@ -49,10 +49,9 @@ if ($admin) {
     \core\session\manager::set_user($admin);
 }
 
-// ... ── Config API ────────────────────────────────────────────────────────────
-$apiurl = rtrim(get_config('local_jedomi', 'gateway_url') ?: 'http://192.168.1.28:8080', '/');
-$apikey = get_config('local_jedomi', 'api_key');
-$model   = get_config('local_jedomi', 'model') ?: 'peg-gemma4';
+// ... ── AI settings ───────────────────────────────────────────────────────────
+// Every call goes through the Datacurso AI provider; the model is the site setting.
+$model = \local_jedomi\ai\model_settings::get_model();
 
 // ... ── State ─────────────────────────────────────────────────────────────────
 $debug = true;
@@ -62,7 +61,7 @@ $messages = [];
 echo "\n" . str_repeat("=", 60) . "\n";
 echo "  JEDOMI CLI CHAT — FULL PIPELINE DEBUG\n";
 echo "  User: " . ($USER->id ?? 'none') . " | Model: {$model}\n";
-echo "  Gateway: {$apiurl}/v1/chat/completions\n";
+echo "  AI route: " . \local_jedomi\ai\client::PATH . " (Datacurso AI provider)\n";
 echo str_repeat("=", 60) . "\n";
 echo "  Comandos: help, debug on/off, exit\n\n";
 
@@ -92,61 +91,30 @@ if ($debug) {
     echo "\n";
 }
 
-// ... ── Función: LLamar a la API (sin streaming) ──────────────────────────────
+// ... ── Function: call the AI service (no streaming) ─────────────────────────
 /**
- * Sends the conversation to the AI gateway chat completions endpoint and returns the assistant message.
+ * Sends the conversation to the AI service through the Jedomi AI client and returns the assistant message.
  *
  * @param array $messages full conversation history in OpenAI chat format
  * @param array $tools OpenAI-format tool definitions to offer the model (empty for none)
- * @return array|null the first choice's message array, or null on HTTP or decoding failure
+ * @return array|null the assistant message, or null when the call failed (the error is printed)
  */
 function call_ai(array $messages, array $tools = []): ?array {
-    global $apiurl, $apikey, $model;
+    global $USER;
 
-    $payload = [
-        'model'       => $model,
-        'messages'    => $messages,
-        'stream'      => false,
-        'max_tokens'  => 16384,
-    ];
-    if (!empty($tools)) {
-        $payload['tools']       = $tools;
-        $payload['tool_choice'] = 'auto';
-    }
-
-    $ch = curl_init($apiurl . '/v1/chat/completions');
-    curl_setopt_array($ch, [
-        CURLOPT_POST           => true,
-        CURLOPT_POSTFIELDS     => json_encode($payload, JSON_UNESCAPED_UNICODE),
-        CURLOPT_HTTPHEADER     => [
-            'Content-Type: application/json',
-            'Authorization: Bearer ' . $apikey,
-        ],
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT        => 180,
-        CURLOPT_CONNECTTIMEOUT => 10,
-    ]);
-
-    $buf = curl_exec($ch);
-    $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $error = curl_error($ch);
-    curl_close($ch);
-
-    if ($http !== 200 || empty($buf)) {
-        echo "  ⚠️  API ERROR: HTTP {$http}" . ($error ? " - {$error}" : '') . "\n";
-        if (!empty($buf)) {
-            echo "  Body: " . substr($buf, 0, 500) . "\n";
-        }
+    try {
+        $answer = \local_jedomi\ai\client::instance()->complete($messages, (int) $USER->id, $tools);
+    } catch (\Throwable $e) {
+        $error = \local_jedomi\ai\error_message::from_exception($e);
+        echo "  ⚠️  AI ERROR ({$error['code']}): {$error['message']}\n";
         return null;
     }
 
-    $data = json_decode($buf, true);
-    if (!$data || !isset($data['choices'][0])) {
-        echo "  ⚠️  API respuesta inválida\n";
-        return null;
+    $message = ['role' => 'assistant', 'content' => $answer['content'] !== '' ? $answer['content'] : null];
+    if (!empty($answer['tool_calls'])) {
+        $message['tool_calls'] = $answer['tool_calls'];
     }
-
-    return $data['choices'][0]['message'];
+    return $message;
 }
 
 // ... ── Función: ejecutar tool (EXACTAMENTE como handler.php) ─────────────────

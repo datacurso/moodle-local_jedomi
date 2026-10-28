@@ -25,6 +25,14 @@
 defined('MOODLE_INTERNAL') || die();
 
 $functions = [
+    'local_jedomi_save_feedback' => [
+        'classname'    => 'local_jedomi\external\save_feedback',
+        'methodname'   => 'execute',
+        'description'  => 'Store the current user\'s rating of a Jedomi answer.',
+        'type'         => 'write',
+        'ajax'         => true,
+        'loginrequired' => true,
+    ],
     'jedomi_execute_sql' => [
         'classname'    => 'local_jedomi\external\execute_sql',
         'methodname'   => 'execute',

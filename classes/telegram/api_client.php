@@ -41,6 +41,30 @@ class api_client {
     /** @var int HTTP status code returned by the most recent API call. */
     private int $lasthttpcode = 0;
 
+    /** @var api_client|null Replacement returned by {@see instance()} in PHPUnit tests. */
+    private static ?api_client $testinstance = null;
+
+    /**
+     * Client to use: the test replacement when one is set, otherwise a client with the configured token.
+     *
+     * @return api_client
+     */
+    public static function instance(): api_client {
+        return self::$testinstance ?? new api_client();
+    }
+
+    /**
+     * Replace the client returned by {@see instance()}. Only for PHPUnit tests.
+     *
+     * @param api_client|null $client Replacement, or null to restore the default.
+     */
+    public static function set_instance_for_testing(?api_client $client): void {
+        if (!defined('PHPUNIT_TEST') || !PHPUNIT_TEST) {
+            throw new \coding_exception('api_client::set_instance_for_testing() is only for PHPUnit tests');
+        }
+        self::$testinstance = $client;
+    }
+
     /**
      * Initialise the client with a bot token and build the API base URL.
      *

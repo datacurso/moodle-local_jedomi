@@ -17,7 +17,7 @@
 /**
  * AI Chat Proxy — tool-calling loop and SSE streaming handler.
  *
- * Contains the main tool loop (run), AI API buffered streaming,
+ * Contains the main tool loop (run), the AI client call,
  * tool execution dispatch, all individual tool functions, and SSE
  * helper methods. No in-memory cache, no query history tracking.
  *
@@ -37,20 +37,34 @@ require_once(__DIR__ . '/../../lib.php');
  */
 class handler {
     /**
+     * Run the tool loop for a web chat request, ignoring any model the browser sends.
+     *
+     * @param array  $input  Decoded browser payload (messages, context; any "model" is ignored).
+     * @param string $role   User role (already validated).
+     * @param array  $spt    SPT payload (already validated).
+     * @param int    $userid Moodle user the AI calls are made for.
+     */
+    public static function run_from_request(array $input, string $role, array $spt, int $userid): void {
+        $context = is_array($input['context'] ?? null) ? $input['context'] : [];
+        $messages = is_array($input['messages'] ?? null) ? $input['messages'] : [];
+        $system = system_message::build($role, $spt, $context);
+        self::run(array_merge([$system], array_values($messages)), $role, $userid);
+    }
+
+    /**
      * Run the tool-calling loop using native OpenAI function calling.
      *
      * Passes tool definitions to the model via the API. The model returns structured
      * tool_calls (no text parsing). Tool results are re-injected as role=tool messages
-     * (OpenAI standard). Final text response is streamed to the client via SSE.
+     * (OpenAI standard). The final text is sent to the browser as SSE chunks.
      *
-     * @param string $model    Model name.
-     * @param array  $messages Conversation messages.
+     * @param array  $messages Conversation messages (system message first).
      * @param string $role     User role (already validated).
-     * @param array  $spt      SPT payload.
+     * @param int    $userid   Moodle user the AI calls are made for.
      */
-    public static function run(string $model, array $messages, string $role, array $spt): void {
+    public static function run(array $messages, string $role, int $userid): void {
         require_once(__DIR__ . '/../../lib.php');
-        \local_jedomi_log('RUN_START', ['model' => $model, 'role' => $role, 'user_message_count' => count($messages)]);
+        \local_jedomi_log('RUN_START', ['role' => $role, 'user_message_count' => count($messages)]);
 
         $tools = spt_validator::get_tool_definitions($role);
         $toolrepeatcounts = [];
@@ -62,10 +76,10 @@ class handler {
             }
             flush();
 
-            $response = self::call_ai_api_buffer($model, $messages, $spt, $tools);
+            $response = self::call_ai($messages, $tools, $userid);
 
             if ($response['type'] === 'error') {
-                echo "data: {\"error\":\"ai_api_error\"}\n\n";
+                echo "data: " . json_encode(['error' => $response['error']], JSON_UNESCAPED_UNICODE) . "\n\n";
                 if (ob_get_level()) {
                     ob_flush();
                 }
@@ -74,7 +88,7 @@ class handler {
             }
 
             if ($response['type'] === 'text') {
-                \local_jedomi_log('AI_RESPONSE_TEXT', ['iteration' => $i, 'preview' => mb_substr($response['content'], 0, 200)]);
+                \local_jedomi_log('AI_RESPONSE_TEXT', ['iteration' => $i, 'length' => mb_strlen($response['content'])]);
                 // No tool calls — stream the final response to the client.
                 self::stream_sse_content($response['content']);
                 return;
@@ -225,164 +239,28 @@ class handler {
     }
 
     /**
-     * Call the AI API with streaming (buffered) using native OpenAI function calling.
+     * Call the AI service through the Jedomi AI client.
      *
-     * @param  string $model    Model name.
-     * @param  array  $messages Conversation messages.
-     * @param  array  $spt      SPT payload.
-     * @param  array  $tools    OpenAI-format tool definitions.
-     * @return array            ['type'=>'text', 'content'=>'...']
-     *                          ['type'=>'tool_calls', 'tool_calls'=>[...]]
-     *                          ['type'=>'error', 'error'=>'...']
+     * @param  array $messages Conversation messages.
+     * @param  array $tools    OpenAI-format tool definitions.
+     * @param  int   $userid   Moodle user the call is made for.
+     * @return array           ['type'=>'text', 'content'=>'...']
+     *                         ['type'=>'tool_calls', 'tool_calls'=>[...]]
+     *                         ['type'=>'error', 'error'=>['code'=>'...', 'message'=>'...']]
      */
-    private static function call_ai_api_buffer(string $model, array $messages, array $spt, array $tools = []): array {
-        $apiurl = rtrim(get_config('local_jedomi', 'gateway_url') ?: 'http://192.168.1.28:8080', '/');
-        $apikey = get_config('local_jedomi', 'api_key') ?: 'jedomi-local-key';
-
-        $payload = [
-            'model'      => $model,
-            'messages'   => $messages,
-            'stream'     => true,
-            'max_tokens' => 16384,
-        ];
-        if (!empty($tools)) {
-            $payload['tools']       = $tools;
-            $payload['tool_choice'] = 'auto';
+    private static function call_ai(array $messages, array $tools, int $userid): array {
+        try {
+            $answer = \local_jedomi\ai\client::instance()->complete($messages, $userid, $tools);
+        } catch (\Throwable $e) {
+            return ['type' => 'error', 'error' => \local_jedomi\ai\error_message::from_exception($e)];
         }
 
-        // Log conversation context sent to AI (last 5 messages, truncated).
-        $contextpreview = array_map(static fn(array $msg): array => [
-            'role' => $msg['role'] ?? '?',
-            'content_preview' => isset($msg['content']) && is_string($msg['content'])
-                ? mb_substr($msg['content'], 0, 150)
-                : (isset($msg['tool_calls']) ? 'tool_calls:' . count($msg['tool_calls']) : ''),
-            'tool_call_id' => $msg['tool_call_id'] ?? null,
-        ], array_slice($messages, -5));
-        \local_jedomi_log('AI_API_REQUEST', [
-            'model' => $model,
-            'messages_count' => count($messages),
-            'last_messages' => $contextpreview,
-        ]);
-
-        $buffer = '';
-        $ch = curl_init($apiurl . '/v1/chat/completions');
-        curl_setopt_array($ch, [
-            CURLOPT_POST           => true,
-            CURLOPT_POSTFIELDS     => json_encode($payload, JSON_UNESCAPED_UNICODE),
-            CURLOPT_HTTPHEADER     => [
-                'Content-Type: application/json',
-                'Authorization: Bearer ' . $apikey,
-            ],
-            CURLOPT_RETURNTRANSFER => false,
-            CURLOPT_TIMEOUT        => 180,
-            CURLOPT_CONNECTTIMEOUT => 10,
-            CURLOPT_WRITEFUNCTION  => function ($ch, $data) use (&$buffer) {
-                $buffer .= $data;
-                return strlen($data);
-            },
-        ]);
-
-        curl_exec($ch);
-        $httpcode  = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $curlerror = curl_error($ch);
-        curl_close($ch);
-
-        if ($httpcode !== 200 || empty($buffer)) {
-            $bufpreview = substr($buffer, 0, 500);
-            \local_jedomi_log('AI_API_ERROR', ['http_code' => $httpcode, 'curl_error' => $curlerror, 'preview' => $bufpreview]);
-            \local_jedomi_log("[local_jedomi] AI API error: http=$httpcode curl='$curlerror' preview="
-                . json_encode($bufpreview, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_IGNORE));
-            return ['type' => 'error', 'error' => 'ai_api_error'];
+        if (!empty($answer['tool_calls'])) {
+            return ['type' => 'tool_calls', 'tool_calls' => $answer['tool_calls']];
         }
 
-        $textbuf = '';
-        $reasonbuf = '';
-        $toolcallsacc = [];
-        $finishreason = '';
-
-        $lines = explode("\n", $buffer);
-        foreach ($lines as $line) {
-            $line = trim($line);
-            if (!str_starts_with($line, 'data: ')) {
-                continue;
-            }
-            $raw = trim(substr($line, 6));
-            if ($raw === '[DONE]') {
-                break;
-            }
-            $json = json_decode($raw, true);
-            if (!$json) {
-                continue;
-            }
-
-            $delta = $json['choices'][0]['delta'] ?? [];
-            $finishreason = $json['choices'][0]['finish_reason'] ?? $finishreason;
-
-            // Accumulate text content.
-            if (isset($delta['content']) && $delta['content'] !== null) {
-                $textbuf .= $delta['content'];
-            }
-            // Gemma reasoning_content (thinking tokens — fallback only).
-            if (isset($delta['reasoning_content']) && $delta['reasoning_content'] !== null) {
-                $reasonbuf .= $delta['reasoning_content'];
-            }
-            // Accumulate tool_calls streamed across multiple delta chunks.
-            if (!empty($delta['tool_calls'])) {
-                foreach ($delta['tool_calls'] as $tc) {
-                    $idx = $tc['index'] ?? 0;
-                    if (!isset($toolcallsacc[$idx])) {
-                        $toolcallsacc[$idx] = [
-                            'id'       => $tc['id'] ?? '',
-                            'type'     => $tc['type'] ?? 'function',
-                            'function' => ['name' => '', 'arguments' => ''],
-                        ];
-                    }
-                    if (!empty($tc['id'])) {
-                        $toolcallsacc[$idx]['id'] = $tc['id'];
-                    }
-                    if (!empty($tc['function']['name'])) {
-                        $toolcallsacc[$idx]['function']['name'] = $tc['function']['name'];
-                    }
-                    if (isset($tc['function']['arguments'])) {
-                        $arg = $tc['function']['arguments'];
-                        // Some Ollama versions send arguments as a pre-decoded object.
-                        if (is_array($arg)) {
-                            $toolcallsacc[$idx]['function']['arguments'] = json_encode($arg, JSON_UNESCAPED_UNICODE);
-                        } else {
-                            $toolcallsacc[$idx]['function']['arguments'] .= $arg;
-                        }
-                    }
-                }
-            }
-        }
-
-        // Tool calls detected — ensure every entry has a non-empty id.
-        if (!empty($toolcallsacc) || $finishreason === 'tool_calls') {
-            ksort($toolcallsacc);
-            $toolcalls = array_values($toolcallsacc);
-            foreach ($toolcalls as &$tc) {
-                if (empty($tc['id'])) {
-                    $tc['id'] = 'call_' . substr(md5($tc['function']['name'] . microtime()), 0, 12);
-                }
-            }
-            unset($tc);
-
-            $toolnames = array_map(static fn($tc) => $tc['function']['name'], $toolcalls);
-            \local_jedomi_log('AI_API_RESPONSE_TOOL_CALLS', ['function_count' => count($toolcalls), 'functions' => $toolnames]);
-
-            return ['type' => 'tool_calls', 'tool_calls' => $toolcalls];
-        }
-
-        // Text response: prefer content, fall back to reasoning (Gemma thinking tokens).
-        $text = !empty($textbuf) ? $textbuf : $reasonbuf;
-        if (empty($text) && !empty($buffer)) {
-            \local_jedomi_log('AI_API_RESPONSE_EMPTY', ['buffer_preview' => substr($buffer, 0, 500)]);
-            \local_jedomi_log("[local_jedomi] SSE parse warning: no content or tool_calls extracted. First 2KB: "
-                . json_encode(substr($buffer, 0, 2048), JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_IGNORE));
-        }
-
-        \local_jedomi_log('AI_API_RESPONSE_TEXT', ['length' => mb_strlen($text), 'preview' => mb_substr($text, 0, 200)]);
-
+        // Text response: prefer content, fall back to reasoning (thinking tokens).
+        $text = $answer['content'] !== '' ? $answer['content'] : ($answer['reasoning'] ?? '');
         return ['type' => 'text', 'content' => $text];
     }
 

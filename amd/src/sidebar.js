@@ -14,7 +14,7 @@
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-define(['core/log'], function(Log) {
+define(['core/log', 'core/ajax'], function(Log, Ajax) {
 
     // ── SVG Icons (profesionales, no emojis) ─────────────────────────────────
     const SVG = {
@@ -58,12 +58,8 @@ define(['core/log'], function(Log) {
     let cfg          = {};
     let conversation = [];
     let pendingImage = null;
-    let isRecording  = false;
-    let mediaRecorder = null;
-    let audioChunks  = [];
     let injected     = false;
     let sessionId    = null;
-    let lastMsgId    = null;
 
     // ── Init — entry point ────────────────────────────────────────────────────
     const init = (config) => {
@@ -177,79 +173,6 @@ define(['core/log'], function(Log) {
         });
     };
 
-    // ── Confirmation UI for destructive actions ───────────────────────────────
-    // Called when the gateway returns a JEDOMI_PENDING_ACTION block.
-    // severity: 'critical' (red, require typing) | 'high' (orange) | 'medium' (yellow)
-    const buildActionConfirmUI = (pending) => {
-        const severity   = pending.severity || 'medium';
-        const isCritical = severity === 'critical';
-        const uid        = 'jc-' + Math.random().toString(36).slice(2, 8);
-
-        const div = document.createElement('div');
-        div.className = `jedomi-action-pending jedomi-action-pending--${severity}`;
-        const CS = cfg.strings || {};
-        const confirmKeyword = isCritical ? (CS.confirm_btn_yes || 'Confirm').toUpperCase() : '';
-        div.innerHTML = `
-            <div class="jedomi-action-warning">${escHtml(pending.warning || '')}</div>
-            <div class="jedomi-action-desc">${escHtml(pending.action_desc || pending.tool)}</div>
-            ${isCritical ? `
-            <div class="jedomi-type-confirm-wrap">
-                <label>${CS.confirm_type_to_proceed || 'Type CONFIRM to proceed:'}</label>
-                <input id="${uid}" type="text" class="jedomi-type-confirm"
-                       placeholder="${CS.confirm_btn_yes || 'CONFIRM'}" autocomplete="off" spellcheck="false"/>
-            </div>` : ''}
-            <div class="jedomi-confirm-btns" style="margin-top:12px">
-                <button class="jedomi-confirm-yes">✅ ${CS.confirm_btn_yes || 'Confirm'}</button>
-                <button class="jedomi-confirm-no">❌ ${CS.confirm_btn_no || 'Cancel'}</button>
-            </div>
-            <div class="jedomi-action-result"></div>`;
-
-        const yesBtn    = div.querySelector('.jedomi-confirm-yes');
-        const noBtn     = div.querySelector('.jedomi-confirm-no');
-        const resultDiv = div.querySelector('.jedomi-action-result');
-
-        yesBtn.addEventListener('click', async () => {
-            if (isCritical) {
-                const inp = document.getElementById(uid);
-                if (!inp || inp.value.trim().toUpperCase() !== confirmKeyword) {
-                    if (inp) { inp.style.borderColor = '#ef4444'; inp.focus(); }
-                    resultDiv.innerHTML = `<span style="color:#fca5a5;font-size:12px">⛔ ${CS.confirm_type_to_proceed || 'Type CONFIRM to proceed:'}</span>`;
-                    return;
-                }
-            }
-
-            yesBtn.disabled = noBtn.disabled = true;
-            resultDiv.innerHTML = `<span style="opacity:0.7;font-size:12px">⏳ ${CS.confirm_executing || 'Executing...'}</span>`;
-
-            try {
-                const res = await fetch(`${cfg.gateway_url}/v1/execute_action`, {
-                    method:  'POST',
-                    headers: {'Content-Type': 'application/json',
-                              'X-Jedomi-SPT': JSON.stringify(cfg.spt || {})},
-                    body:    JSON.stringify({
-                        tool:   pending.tool,
-                        params: pending.params,
-                        spt:    cfg.spt ? JSON.stringify(cfg.spt) : null,
-                    }),
-                });
-                const data = await res.json();
-                if (data.error) {
-                    div.innerHTML = `<div class="jedomi-confirm-msg" style="color:#fca5a5">❌ Error: ${escHtml(String(data.error))}</div>`;
-                } else {
-                    div.innerHTML = `<div class="jedomi-confirm-msg">✅ ${CS.confirm_done || 'Action executed successfully.'}</div>`;
-                }
-            } catch (e) {
-                div.innerHTML = `<div class="jedomi-confirm-msg" style="color:#fca5a5">❌ ${CS.connection_error || 'Connection error:'} ${escHtml(e.message)}</div>`;
-            }
-        });
-
-        noBtn.addEventListener('click', () => {
-            div.innerHTML = `<div class="jedomi-confirm-msg" style="opacity:0.7">${CS.confirm_cancelled || 'Action cancelled.'}</div>`;
-        });
-
-        return div;
-    };
-
     // ── Inject HTML ───────────────────────────────────────────────────────────
     // No dependemos del tema para renderizar el HTML.
     // Lo construimos en JS y lo pegamos directo en body.
@@ -314,7 +237,6 @@ define(['core/log'], function(Log) {
                 placeholder="${S.chat_placeholder || 'Ask Jedomi about courses, users, grades...'}"
                 rows="1" aria-label="${S.message_input || 'Message Jedomi'}"></textarea>
             <div class="jedomi-input-actions">
-                <button id="jedomi-voice-btn" class="jedomi-input-icon" title="${S.voice_input || 'Voice input'}" style="display:none">${SVG.mic}</button>
                 <div class="jedomi-attach-wrap">
                     <button id="jedomi-attach-btn" class="jedomi-input-icon" title="${S.attach || 'Attach'}">${SVG.plus}</button>
                     <div id="jedomi-attach-menu" class="jedomi-attach-menu jedomi-hidden">
@@ -326,7 +248,6 @@ define(['core/log'], function(Log) {
             </div>
         </div>
         <input type="file" id="jedomi-image-input" accept="image/*" class="jedomi-hidden" aria-hidden="true">
-        <input type="file" id="jedomi-file-input" accept=".pdf,.csv,.txt,.md" class="jedomi-hidden" aria-hidden="true">
         <div id="jedomi-image-preview" class="jedomi-image-preview jedomi-hidden">
             <img id="jedomi-preview-img" src="" alt="${S.attached_image || 'Attached image'}">
             <span>${S.attached_image || 'Attached image'}</span>
@@ -404,7 +325,6 @@ define(['core/log'], function(Log) {
         on('jedomi-edit-last',    'click',  editLastMessage);
         on('jedomi-send',         'click',  sendMessage);
         on('jedomi-overlay',      'click',  closeSidebar);
-        on('jedomi-voice-btn',    'click',  toggleVoice);
         on('jedomi-remove-image', 'click',  clearImage);
         on('jedomi-edit-last',    'click',  editLastMessage);
         on('jedomi-attach-btn',   'click',  toggleAttachMenu);
@@ -416,12 +336,10 @@ define(['core/log'], function(Log) {
                 const inp = g('jedomi-image-input');
                 if (inp) inp.click();
             } else {
-                const inp = g('jedomi-file-input');
-                if (inp) inp.click();
+                showFileAttachDisabled();
             }
             closeAttachMenu();
         });
-        on('jedomi-file-input',   'change', handleFileSelect);
         on('jedomi-image-input',  'change', handleImageSelect);
 
         const input = g('jedomi-input');
@@ -957,76 +875,13 @@ define(['core/log'], function(Log) {
                 }
             );
 
-            // ── Detectar acción JEDOMI_ACTION en la respuesta ─────────────────
-            const actionMatch = fullText.match(
-                /JEDOMI_ACTION:send_messages\s*\nUSER_IDS:\s*\[([^\]]+)\]\s*\nMESSAGE:\s*([\s\S]*?)\nEND_ACTION/
-            );
-            if (actionMatch) {
-                const userIds = actionMatch[1].split(',').map(s => s.trim()).filter(Boolean);
-                const msgText = actionMatch[2].trim();
-                // Ocultar el bloque técnico — mostrar solo la parte visible
-                const cleanText = fullText.replace(/JEDOMI_ACTION[\s\S]*?END_ACTION/, '').trim();
-                streamBubble.inner.innerHTML = renderMarkdown(cleanText);
-                // Agregar botón de confirmación de envío
-                const confirmDiv = document.createElement('div');
-                confirmDiv.className = 'jedomi-send-confirm';
-                confirmDiv.innerHTML = `
-                    <div class="jedomi-confirm-msg">📬 ${((cfg.strings?.confirm_send_bulk || 'Send this message to {count} student(s)?').replace('{count}', '<strong>' + userIds.length + '</strong>'))}</div>
-                    <div class="jedomi-confirm-preview">${msgText.substring(0, 120)}${msgText.length > 120 ? '...' : ''}</div>
-                    <div class="jedomi-confirm-btns">
-                        <button class="jedomi-confirm-yes">✅ ${(cfg.strings?.yes_send || 'Yes, send')}</button>
-                        <button class="jedomi-confirm-no">❌ ${(cfg.strings?.cancel || 'Cancel')}</button>
-                    </div>`;
-                confirmDiv.querySelector('.jedomi-confirm-yes').addEventListener('click', async () => {
-                    confirmDiv.innerHTML = `<div class="jedomi-confirm-msg">⏳ ${cfg.strings?.sending || 'Sending...'}</div>`;
-                    try {
-                        const res  = await fetch(`${cfg.gateway_url}/v1/messages/send`, {
-                            method: 'POST',
-                            headers: {'Content-Type': 'application/json'},
-                            body: JSON.stringify({user_ids: userIds, message: msgText})
-                        });
-                        const data = await res.json();
-                        if (data.sent > 0) {
-                            const S = cfg.strings || {};
-                            const fails = data.failed > 0 ? ` ${(S.messages_sent_fail || '({failed} failed)').replace('{failed}', data.failed)}` : '';
-                            const sent  = (S.messages_sent || '{sent} message(s) sent as Moodle internal messages.').replace('{sent}', data.sent);
-                            confirmDiv.innerHTML = `<div class="jedomi-confirm-msg">✅ ${sent}${fails}<br><small style="opacity:0.7">${S.messages_recipients_note || 'Recipients will see them in their Moodle message inbox.'}</small></div>`;
-                        } else {
-                            const err = data.error || data.detail || (cfg.strings?.unknown_error || 'Unknown error');
-                            confirmDiv.innerHTML = `<div class="jedomi-confirm-msg">❌ ${cfg.strings?.no_messages_sent || 'No messages sent.'}<br><small style="opacity:0.8">${err}</small></div>`;
-                        }
-                    } catch(e) {
-                        confirmDiv.innerHTML = `<div class="jedomi-confirm-msg">❌ ${cfg.strings?.connection_error || 'Connection error:'} ${e.message}</div>`;
-                    }
-                });
-                confirmDiv.querySelector('.jedomi-confirm-no').addEventListener('click', () => {
-                    confirmDiv.innerHTML = `<div class="jedomi-confirm-msg">${cfg.strings?.cancelled || 'Cancelled.'}</div>`;
-                });
-                streamBubble.inner.appendChild(confirmDiv);
-                fullText = cleanText; // guardar sin el bloque técnico
-            } else {
-                // ── Detectar acción pendiente de confirmación ─────────────────
-                const pendingMatch = fullText.match(
-                    /JEDOMI_PENDING_ACTION:(\{[\s\S]*?\}):END_PENDING/
-                );
-                if (pendingMatch) {
-                    try {
-                        const pending   = JSON.parse(pendingMatch[1]);
-                        const cleanText = fullText
-                            .replace(/JEDOMI_PENDING_ACTION:[\s\S]*?:END_PENDING/, '')
-                            .trim();
-                        streamBubble.inner.innerHTML = renderMarkdown(cleanText);
-                        streamBubble.inner.appendChild(buildActionConfirmUI(pending));
-                        fullText = cleanText;
-                    } catch (parseErr) {
-                        // Si el JSON no parsea bien, mostrar el texto tal cual
-                        streamBubble.inner.innerHTML = renderMarkdown(fullText);
-                    }
-                } else {
-                    // Finalizar: aplicar markdown completo
-                    streamBubble.inner.innerHTML = renderMarkdown(fullText);
-                }
-            }
+            // Technical action blocks (JEDOMI_ACTION / JEDOMI_PENDING_ACTION) were executed by the
+            // legacy gateway; they are not supported any more, so they are removed from the answer.
+            fullText = fullText
+                .replace(/JEDOMI_ACTION[\s\S]*?END_ACTION/g, '')
+                .replace(/JEDOMI_PENDING_ACTION:[\s\S]*?:END_PENDING/g, '')
+                .trim();
+            streamBubble.inner.innerHTML = renderMarkdown(fullText);
             addMessageActions(streamBubble.wrap, fullText);
 
             // Links — abrir en la misma pestaña directamente (sin preventDefault)
@@ -1049,12 +904,10 @@ define(['core/log'], function(Log) {
                     `${cfg.strings?.session_expired_hint || 'Your Moodle session has expired. Please reload the page to continue.'}`
                 );
             } else {
-                streamBubble.inner.innerHTML = renderMarkdown(
-                    `⚠️ **${cfg.strings?.gateway_error_title || 'Could not connect to the Jedomi Gateway.'}**\n\n` +
-                    `URL: \`${cfg.gateway_url}\`\n\n` +
-                    `${cfg.strings?.gateway_error_hint || 'Make sure the service is running:'}\n` +
-                    `\`docker compose up jedomi-api\``
-                );
+                const message = err.jedomiServerError
+                    ? err.message
+                    : (cfg.strings?.ai_error_connection || 'Could not reach Jedomi. Check your connection and try again.');
+                streamBubble.inner.innerHTML = renderMarkdown(`⚠️ ${message}`);
             }
             streamBubble.el.classList.remove('jedomi-hidden');
         } finally {
@@ -1072,7 +925,6 @@ define(['core/log'], function(Log) {
         const truncated = messages.slice(-30);
 
         const payload = {
-            model:    cfg.model || 'jedomi-e4b',
             messages: truncated,
             spt:      cfg.spt,
             sesskey:  cfg.sesskey,
@@ -1133,8 +985,13 @@ define(['core/log'], function(Log) {
                     }
                     // Meta al final
                     if (chunk._meta) continue;
-                    // Error del servidor
-                    if (chunk.error) throw new Error(chunk.error.message || 'Error del Gateway');
+                    // Server error: {"error": {"code", "message"}} with a message ready to show.
+                    if (chunk.error) {
+                        const serverError = new Error(chunk.error.message
+                            || cfg.strings?.ai_error_connection || 'Could not reach Jedomi.');
+                        serverError.jedomiServerError = true;
+                        throw serverError;
+                    }
 
                     // Token de contenido
                     const token = chunk.choices?.[0]?.delta?.content;
@@ -1150,7 +1007,6 @@ define(['core/log'], function(Log) {
     // Fallback sin streaming (para clientes que no soporten SSE)
     const callGateway = async (messages) => {
         const payload = {
-            model:    cfg.model || 'jedomi-e4b',
             messages: messages,
             spt:      cfg.spt,
             sesskey:  cfg.sesskey,
@@ -1283,11 +1139,11 @@ GENERAL INSTRUCTIONS:
         });
         actions.querySelector('[data-action="good"]').addEventListener('click', (e) => {
             e.target.closest('button').style.color = '#10B981';
-            saveFeedback(text, 'positive');
+            saveFeedback(text, 'good');
         });
         actions.querySelector('[data-action="bad"]').addEventListener('click', (e) => {
             e.target.closest('button').style.color = '#EF4444';
-            saveFeedback(text, 'negative');
+            saveFeedback(text, 'bad');
         });
         const editBtn = actions.querySelector('[data-action="edit-from"]');
         if (editBtn) {
@@ -1303,27 +1159,15 @@ GENERAL INSTRUCTIONS:
         }
     };
 
-    const saveFeedback = async (text, type) => {
-        // Envía feedback al Gateway para guardarlo en PostgreSQL (RLHF)
-        if (lastMsgId && sessionId) {
-            try {
-                await fetch(`${cfg.gateway_url}/v1/chat/completions`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${cfg.api_key}`},
-                    body: JSON.stringify({
-                        model: cfg.model,
-                        messages: [{role: 'user', content: '_feedback_only_'}],
-                        session_id: sessionId,
-                        feedback: {message_id: lastMsgId, type},
-                    }),
-                });
-            } catch(e) { Log.debug('Feedback error:', e); }
+    const saveFeedback = async (text, rating) => {
+        try {
+            await Ajax.call([{
+                methodname: 'local_jedomi_save_feedback',
+                args: {rating, sessionid: sessionId || '', messagetext: text.slice(0, 1000)},
+            }])[0];
+        } catch (e) {
+            Log.debug('Jedomi: feedback not saved', e);
         }
-        // Fallback localStorage
-        const key = 'jedomi_feedback';
-        const existing = JSON.parse(localStorage.getItem(key) || '[]');
-        existing.push({text: text.slice(0,200), type, ts: Date.now()});
-        localStorage.setItem(key, JSON.stringify(existing.slice(-50)));
     };
 
     // ── Render Messages ───────────────────────────────────────────────────────
@@ -1463,192 +1307,6 @@ GENERAL INSTRUCTIONS:
         return '<p>' + html + '</p>';
     };
 
-    // ── Voice ─────────────────────────────────────────────────────────────────
-    // ── Variables para visualizador de audio ─────────────────────────────────
-    let audioCtx       = null;
-    let analyser       = null;
-    let vizAnimId      = null;
-    let silenceTimer   = null;
-    let speechDetected = false;
-
-    const toggleVoice = async () => {
-        if (isRecording) {
-            // Clic manual para parar
-            _stopRecording();
-            return;
-        }
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-
-            // ── Audio Context para análisis en tiempo real ─────────────────
-            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            const source = audioCtx.createMediaStreamSource(stream);
-            analyser = audioCtx.createAnalyser();
-            analyser.fftSize = 256;
-            analyser.smoothingTimeConstant = 0.7;
-            source.connect(analyser);
-
-            // ── MediaRecorder ──────────────────────────────────────────────
-            audioChunks  = [];
-            mediaRecorder = new MediaRecorder(stream);
-            mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data); };
-            mediaRecorder.onstop = async () => {
-                stream.getTracks().forEach(t => t.stop());
-                if (audioCtx) { audioCtx.close(); audioCtx = null; }
-                cancelAnimationFrame(vizAnimId);
-                clearTimeout(silenceTimer);
-                _setVizState(false);
-
-                if (audioChunks.length === 0 || !speechDetected) {
-                    setRecordingState(false);
-                    const input = g('jedomi-input');
-                    if (input) input.placeholder = cfg.strings?.chat_placeholder || 'Ask Jedomi...';
-                    return;
-                }
-
-                const blob = new Blob(audioChunks, { type: 'audio/webm' });
-                setRecordingState(false);
-                const input = g('jedomi-input');
-                if (input) input.placeholder = '🎙️ ' + (cfg.strings?.transcribing || 'Transcribing...');
-                await transcribeAudio(blob);
-                if (input) input.placeholder = cfg.strings?.chat_placeholder || 'Ask Jedomi...';
-            };
-            mediaRecorder.start(100); // chunks cada 100ms para respuesta rápida
-            isRecording    = true;
-            speechDetected = false;
-            setRecordingState(true);
-
-            // ── Visualizador + detección de silencio ───────────────────────
-            const data   = new Uint8Array(analyser.frequencyBinCount);
-            const input  = g('jedomi-input');
-            let silentMs = 0;
-            const SILENCE_THRESHOLD = 10;   // nivel mínimo de voz
-            const SILENCE_STOP_MS   = 1800; // 1.8s de silencio → para
-            const TICK_MS           = 80;
-
-            const tick = () => {
-                if (!isRecording) return;
-                analyser.getByteFrequencyData(data);
-
-                // Nivel de audio promedio (frecuencias de voz: 80-3000 Hz)
-                const voiceBins = data.slice(2, Math.floor(data.length * 0.4));
-                const avg = voiceBins.reduce((s, v) => s + v, 0) / voiceBins.length;
-
-                // Actualizar visualizador
-                _updateViz(avg);
-
-                if (avg > SILENCE_THRESHOLD) {
-                    speechDetected = true;
-                    silentMs = 0;
-                    if (input) input.placeholder = '🔴 ' + (cfg.strings?.listening || 'Listening...');
-                } else if (speechDetected) {
-                    silentMs += TICK_MS;
-                    if (input) input.placeholder = `⏹️ ${cfg.strings?.silence_detected || 'Silence...'} (${((SILENCE_STOP_MS - silentMs)/1000).toFixed(1)}s)`;
-                    if (silentMs >= SILENCE_STOP_MS) {
-                        _stopRecording();
-                        return;
-                    }
-                } else {
-                    if (input) input.placeholder = '🎙️ ' + (cfg.strings?.waiting_voice || 'Waiting for voice...');
-                }
-                vizAnimId = setTimeout(tick, TICK_MS);
-            };
-            tick();
-
-            // Safety: auto-stop a los 45 segundos
-            setTimeout(() => { if (isRecording) _stopRecording(); }, 45000);
-
-        } catch (e) {
-            addMessage('assistant', '⚠️ ' + (cfg.strings?.mic_error || 'Could not access the microphone. Please check your browser permissions.'));
-        }
-    };
-
-    const _stopRecording = () => {
-        if (!isRecording) return;
-        isRecording = false;
-        cancelAnimationFrame(vizAnimId);
-        clearTimeout(silenceTimer);
-        mediaRecorder?.stop();
-    };
-
-    // ── Visualizador de barras en el botón ────────────────────────────────────
-    let vizCanvas = null;
-    let vizCtx    = null;
-
-    const _setVizState = (on) => {
-        const btn = g('jedomi-voice-btn');
-        if (!btn) return;
-        if (!on) {
-            // Restaurar icono original
-            btn.innerHTML = SVG.mic;
-            btn.classList.remove('recording');
-            if (vizCanvas) { vizCanvas.remove(); vizCanvas = null; vizCtx = null; }
-        }
-    };
-
-    const _updateViz = (level) => {
-        const btn = g('jedomi-voice-btn');
-        if (!btn) return;
-
-        // Crear canvas la primera vez
-        if (!vizCanvas) {
-            vizCanvas = document.createElement('canvas');
-            vizCanvas.width  = 36;
-            vizCanvas.height = 20;
-            vizCanvas.style.cssText = 'position:absolute;bottom:-8px;left:50%;transform:translateX(-50%);pointer-events:none;';
-            btn.style.position = 'relative';
-            btn.appendChild(vizCanvas);
-            vizCtx = vizCanvas.getContext('2d');
-        }
-
-        // Dibujar barras de audio (5 barras)
-        vizCtx.clearRect(0, 0, 36, 20);
-        const bars    = 5;
-        const barW    = 4;
-        const gap     = 2;
-        const maxH    = 18;
-        const baseH   = 3;
-        const norm    = Math.min(level / 120, 1);
-
-        for (let i = 0; i < bars; i++) {
-            // Cada barra varía con el nivel + algo de aleatoriedad por posición
-            const phase = Math.sin(Date.now() / 150 + i * 1.2) * 0.3 + 0.7;
-            const h = baseH + (maxH - baseH) * norm * phase;
-            const x = i * (barW + gap) + 2;
-            const y = (maxH - h) / 2 + 1;
-
-            const alpha = speechDetected ? 0.9 : 0.4;
-            vizCtx.fillStyle = speechDetected
-                ? `rgba(239,68,68,${alpha})`
-                : `rgba(139,92,246,${alpha})`;
-            vizCtx.beginPath();
-            vizCtx.roundRect(x, y, barW, h, 2);
-            vizCtx.fill();
-        }
-    };
-
-    const transcribeAudio = async (blob) => {
-        const form = new FormData();
-        form.append('file', blob, 'audio.webm');
-        try {
-            const r = await fetch(`${cfg.gateway_url}/v1/audio/transcriptions`, {
-                method:  'POST',
-                headers: { 'Authorization': `Bearer ${cfg.api_key}` },
-                body:    form,
-            });
-            const d = await r.json();
-            if (d.text) {
-                const input = g('jedomi-input');
-                if (input) {
-                    input.value = d.text;
-                    input.dispatchEvent(new Event('input'));
-                }
-            }
-        } catch (e) {
-            Log.error('Transcription error', e);
-        }
-    };
-
     // ── Image ─────────────────────────────────────────────────────────────────
     const handleImageSelect = (e) => {
         const file = e.target.files?.[0];
@@ -1666,55 +1324,10 @@ GENERAL INSTRUCTIONS:
     };
 
     // ── File (PDF/CSV/TXT) ────────────────────────────────────────────────────
-    const handleFileSelect = async (e) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-
-        const statusEl = g('jedomi-input');
-        const origPlaceholder = statusEl?.placeholder;
-        if (statusEl) statusEl.placeholder = (cfg.strings?.processing_file || 'Processing {$a}...').replace('{$a}', file.name);
-
-        try {
-            const formData = new FormData();
-            formData.append('file', file);
-
-            const resp = await fetch(`${cfg.gateway_url}/v1/files/extract`, {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${cfg.api_key}` },
-                body: formData,
-            });
-
-            if (!resp.ok) {
-                const err = await resp.json().catch(() => ({}));
-                throw new Error(err.detail || `Error ${resp.status}`);
-            }
-
-            const data = await resp.json();
-            const text = data.text || '';
-            const info = data.format === 'csv'
-                ? (cfg.strings?.file_csv  || 'CSV: {rows} rows, {columns} columns').replace('{rows}', data.rows).replace('{columns}', data.columns)
-                : data.format === 'pdf'
-                ? (cfg.strings?.file_pdf  || 'PDF: {pages} pages').replace('{pages}', data.pages)
-                : (cfg.strings?.file_text || 'Text: {chars} characters').replace('{chars}', data.chars);
-
-            // Incluir el contenido del archivo en el mensaje
-            const input = g('jedomi-input');
-            if (input) {
-                const prefix = input.value ? input.value + '\n\n' : '';
-                input.value = `${prefix}${(cfg.strings?.attached_file_info || '[Attached file: {$a}]').replace('{$a}', file.name)} — ${info}\n\n${text}`;
-                input.dispatchEvent(new Event('input'));
-                input.focus();
-            }
-
-            addMessage('assistant', `📎 **${file.name}** ${(cfg.strings?.file_loaded || 'loaded')} (${info}). ${cfg.strings?.file_loaded_hint || 'You can ask questions about its content.'}`);
-
-        } catch (err) {
-            addMessage('assistant', `⚠️ ${cfg.strings?.file_process_error || 'Could not process'} **${file.name}**: ${err.message}`);
-        } finally {
-            if (statusEl && origPlaceholder) statusEl.placeholder = origPlaceholder;
-            const fi = g('jedomi-file-input');
-            if (fi) fi.value = '';
-        }
+    // Extracting text from documents is not available: tell the user instead.
+    const showFileAttachDisabled = () => {
+        addMessage('assistant', '⚠️ ' + (cfg.strings?.file_attach_disabled
+            || 'Attaching documents is not available at the moment. You can attach images, or paste the text into your message.'));
     };
 
     const clearImage = () => {
@@ -1729,16 +1342,6 @@ GENERAL INSTRUCTIONS:
     // ── Helpers ───────────────────────────────────────────────────────────────
     const g   = (id) => document.getElementById(id);
     const on  = (id, ev, fn) => g(id)?.addEventListener(ev, fn);
-    const setRecordingState = (recording) => {
-        const btn = g('jedomi-voice-btn');
-        if (btn) {
-            btn.classList.toggle('recording', recording);
-            btn.innerHTML = recording
-                ? '<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="8"/></svg>'
-                : SVG.mic;
-        }
-    };
-
     // ── Thinking colapsable ───────────────────────────────────────────────────
     const setThinking = (show) => {
         const wrapper = g('jedomi-thinking-wrapper');
@@ -1788,10 +1391,7 @@ GENERAL INSTRUCTIONS:
                 const input = g('jedomi-image-input');
                 if (input) { input.files = dt.files; input.dispatchEvent(new Event('change')); }
             } else {
-                const dt = new DataTransfer();
-                dt.items.add(file);
-                const input = g('jedomi-file-input');
-                if (input) { input.files = dt.files; input.dispatchEvent(new Event('change')); }
+                showFileAttachDisabled();
             }
         }
     };

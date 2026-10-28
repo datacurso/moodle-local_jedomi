@@ -53,9 +53,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && confirm_sesskey()) {
     switch ($savetype) {
         case 'general':
             set_config('enabled', optional_param('enabled', 0, PARAM_INT), 'local_jedomi');
-            set_config('gateway_url', required_param('gateway_url', PARAM_URL), 'local_jedomi');
-            set_config('api_key', required_param('api_key', PARAM_TEXT), 'local_jedomi');
-            set_config('model', required_param('model', PARAM_TEXT), 'local_jedomi');
+            // Only a listed model, or the value already stored, can be saved.
+            $model = required_param('model', PARAM_TEXT);
+            $currentmodel = (string) get_config('local_jedomi', 'model');
+            if (array_key_exists($model, \local_jedomi\ai\model_settings::get_available_models()) || $model === $currentmodel) {
+                set_config('model', $model, 'local_jedomi');
+            }
             set_config('max_tokens', optional_param('max_tokens', 16384, PARAM_INT), 'local_jedomi');
             set_config('docservice_url', optional_param('docservice_url', '', PARAM_TEXT), 'local_jedomi');
             set_config('spt_secret', required_param('spt_secret', PARAM_TEXT), 'local_jedomi');
@@ -206,9 +209,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && confirm_sesskey()) {
 $cfg = [
     // General.
     'enabled'               => (int)(get_config('local_jedomi', 'enabled') ?? 1),
-    'gateway_url'           => get_config('local_jedomi', 'gateway_url') ?: 'http://localhost:8765',
-    'api_key'               => get_config('local_jedomi', 'api_key') ?: '',
-    'model'                 => get_config('local_jedomi', 'model') ?: 'jedomi-e4b',
+    'model'                 => \local_jedomi\ai\model_settings::get_model(),
+    'max_tokens'            => \local_jedomi\ai\model_settings::get_max_tokens(),
     'docservice_url'        => get_config('local_jedomi', 'docservice_url') ?: '',
     'spt_secret'            => get_config('local_jedomi', 'spt_secret') ?: '',
     'collect_training_data' => (function () {
@@ -317,13 +319,13 @@ echo '</ul>';
     <input type="hidden" name="sesskey"     value="<?php echo sesskey(); ?>">
     <input type="hidden" name="jedomi_save" value="general">
 
-    <!-- Card: Conexión al Gateway -->
+    <!-- Card: AI service -->
     <div class="card">
         <div class="card-header">
             <div class="card-icon" style="background:#ede9fe"><i class="fa fa-plug" style="color:#7c3aed"></i></div>
             <div>
-                <h5><?php echo get_string('gateway_heading', 'local_jedomi'); ?></h5>
-                <small><?php echo get_string('gateway_heading_help', 'local_jedomi'); ?></small>
+                <h5><?php echo get_string('ai_heading', 'local_jedomi'); ?></h5>
+                <small><?php echo get_string('ai_heading_help', 'local_jedomi'); ?></small>
             </div>
         </div>
         <div class="card-body">
@@ -341,46 +343,26 @@ echo '</ul>';
                 </div>
             </div>
 
-            <!-- Gateway URL -->
-            <div class="mt-3">
-                <label class="form-label-main" for="jedomi-gateway-url">
-                    <?php echo get_string('gateway_url', 'local_jedomi'); ?>
-                </label>
-                <input type="url" id="jedomi-gateway-url" name="gateway_url"
-                       class="form-control" style="max-width:480px"
-                       value="<?php echo s($cfg['gateway_url']); ?>"
-                       placeholder="http://localhost:8765">
-                <p class="form-text"><?php echo get_string('gateway_url_help', 'local_jedomi'); ?></p>
-            </div>
-
-            <!-- API Key -->
-            <div class="mt-3">
-                <label class="form-label-main" for="jedomi-api-key">
-                    <?php echo get_string('api_key', 'local_jedomi'); ?>
-                </label>
-                <div style="position:relative;max-width:480px">
-                    <input type="password" id="jedomi-api-key" name="api_key"
-                           class="form-control"
-                           value="<?php echo s($cfg['api_key']); ?>"
-                           style="padding-right:2.5rem">
-                    <button type="button"
-                            onclick="var i=document.getElementById('jedomi-api-key');i.type=i.type==='password'?'text':'password'"
-                            style="position:absolute;right:.625rem;top:50%;transform:translateY(-50%);
-                                   background:none;border:none;color:#9ca3af;cursor:pointer">
-                        <i class="fa fa-eye"></i>
-                    </button>
-                </div>
-            </div>
-
             <!-- Model -->
             <div class="mt-3">
                 <label class="form-label-main" for="jedomi-model">
                     <?php echo get_string('model', 'local_jedomi'); ?>
                 </label>
-                    <input type="text" id="jedomi-model" name="model"
-                           class="form-control" style="max-width:280px"
-                           value="<?php echo s($cfg['model']); ?>">
-                </div>
+                <select id="jedomi-model" name="model" class="form-select custom-select" style="max-width:480px">
+                    <?php
+                    $modeloptions = \local_jedomi\ai\model_settings::get_available_models();
+                    if (!array_key_exists($cfg['model'], $modeloptions)) {
+                        $modeloptions = [$cfg['model'] => get_string('model_current_unlisted', 'local_jedomi', $cfg['model'])]
+                            + $modeloptions;
+                    }
+                    foreach ($modeloptions as $modelid => $modellabel) {
+                        $selected = ($modelid === $cfg['model']) ? ' selected' : '';
+                        echo '<option value="' . s($modelid) . '"' . $selected . '>' . s($modellabel) . '</option>';
+                    }
+                    ?>
+                </select>
+                <p class="form-text"><?php echo get_string('model_help', 'local_jedomi'); ?></p>
+            </div>
 
                 <div class="mt-3">
                     <label class="form-label-main" for="jedomi-docservice">

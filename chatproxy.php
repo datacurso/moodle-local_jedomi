@@ -29,7 +29,6 @@ require_once('../../config.php');
 require_once(__DIR__ . '/lib.php');
 
 use local_jedomi\proxy\spt_validator;
-use local_jedomi\proxy\system_message;
 use local_jedomi\proxy\handler;
 
 // ... ── Method check ──
@@ -57,10 +56,8 @@ if (!confirm_sesskey($sesskey)) {
     die(json_encode(['error' => 'invalid_sesskey']));
 }
 
-$model    = $input['model'] ?? get_config('local_jedomi', 'model') ?: 'jedomi-e4b';
-$messages = $input['messages'];
-$spt      = $input['spt'] ?? null;
-$context  = $input['context'] ?? [];
+// The model is a site setting: any "model" sent by the browser is ignored.
+$spt = $input['spt'] ?? null;
 
 // ... ── Validate SPT ──
 if (!$spt || !is_array($spt)) {
@@ -77,10 +74,6 @@ try {
     die(json_encode(['error' => $e->getMessage()]));
 }
 
-// ... ── Build system message ──
-$system   = system_message::build($role, $spt, $context);
-$messages = array_merge([$system], $messages);
-
 // ... ── SSE headers ──
 header('Content-Type: text/event-stream');
 header('Cache-Control: no-cache');
@@ -88,4 +81,4 @@ header('X-Accel-Buffering: no');
 ob_implicit_flush(true);
 
 // ... ── Run tool loop ──
-handler::run($model, $messages, $role, $spt);
+handler::run_from_request($input, $role, $spt, (int) $USER->id);

@@ -523,7 +523,7 @@ class webhook_handler {
     }
 
     /**
-     * Main proxy loop: sends messages to the Gateway AI API, handles tool calls,
+     * Main proxy loop: sends messages to the AI service through the AI client, handles tool calls,
      * streams responses, and self-pings when approaching FPM timeout so the
      * process survives across multiple PHP-FPM workers.
      *
@@ -606,26 +606,7 @@ class webhook_handler {
             $spt = self::generate_spt_for_user($userid, $role, $userctx['course_ids_owned'], $userctx['course_ids_enrolled']);
             $tools = $spt['tools'] ?? [];
 
-            // Gateway config (from plugin settings, with safe fallbacks).
-            $gatewayurl = rtrim(get_config('local_jedomi', 'gateway_url'), '/');
-            $apikey = get_config('local_jedomi', 'api_key');
-            $model = get_config('local_jedomi', 'model');
-            $timeout = (int) get_config('local_jedomi', 'telegram_gateway_timeout');
-            if (empty($gatewayurl)) {
-                $gatewayurl = 'http://localhost:8765';
-            }
-            if (empty($apikey)) {
-                $apikey = 'jedomi-local-key';
-            }
-            if (empty($model)) {
-                $model = 'jedomi-e4b';
-            }
-            if ($timeout < 5) {
-                $timeout = 120;
-            }
-            if ($timeout > 300) {
-                $timeout = 300;
-            }
+            $timeout = self::get_ai_timeout();
 
             // ... ── Restore checkpoint if a previous attempt was killed ──
             try {
@@ -708,25 +689,7 @@ class webhook_handler {
                 $tools = $spt['tools'] ?? [];
             }
 
-            $gatewayurl = rtrim(get_config('local_jedomi', 'gateway_url'), '/');
-            $apikey = get_config('local_jedomi', 'api_key');
-            $model = get_config('local_jedomi', 'model');
-            $timeout = (int) get_config('local_jedomi', 'telegram_gateway_timeout');
-            if (empty($gatewayurl)) {
-                $gatewayurl = 'http://localhost:8765';
-            }
-            if (empty($apikey)) {
-                $apikey = 'jedomi-local-key';
-            }
-            if (empty($model)) {
-                $model = 'jedomi-e4b';
-            }
-            if ($timeout < 5) {
-                $timeout = 120;
-            }
-            if ($timeout > 300) {
-                $timeout = 300;
-            }
+            $timeout = self::get_ai_timeout();
 
             // Ensure lock is active.
             $state['is_locked'] = true;
@@ -833,101 +796,33 @@ class webhook_handler {
                 (new api_client())->send_chat_action($chatid, 'typing');
             }
 
-            $payload = [
-                'model'       => $model,
-                'temperature' => 0.2,
-                'max_tokens'  => 16384,
-                'stream'      => false,
-                'messages'    => $messages,
-                'spt'         => $spt,
-            ];
-            if (!empty($tools)) {
-                $payload['tools']       = $tools;
-                $payload['tool_choice'] = 'auto';
-            }
-
-            // ... ── Stream from Gateway (same as web version) ──
-            $payload['stream'] = true;
-            $ssebuffer = '';
-            $httpcode = 0;
-            $curlerrno = 0;
-            $curlerror = '';
-
-            // Adaptive Gateway timeout: shrink as we approach the hard guard
+            // Adaptive AI timeout: shrink as we approach the hard guard
             // so we don't get stuck waiting when FPM is about to kill us.
-            $curltimeout = max(5, min($timeout, $hardguard - (time() - $loopstart) - 5));
-
-            $ch = curl_init($gatewayurl . '/v1/chat/completions');
-            curl_setopt_array($ch, [
-                CURLOPT_POST           => true,
-                CURLOPT_POSTFIELDS     => json_encode($payload, JSON_UNESCAPED_UNICODE),
-                CURLOPT_RETURNTRANSFER => false,
-                CURLOPT_TIMEOUT        => $curltimeout,
-                CURLOPT_HTTPHEADER     => [
-                    'Content-Type: application/json',
-                    'Authorization: Bearer ' . $apikey,
-                ],
-                CURLOPT_WRITEFUNCTION  => function ($ch, $data) use (&$ssebuffer) {
-                    $ssebuffer .= $data;
-                    return strlen($data);
-                },
-            ]);
+            $aitimeout = max(5, min($timeout, $hardguard - (time() - $loopstart) - 5));
 
             \local_jedomi_log(sprintf(
-                '[GATELOOP] calling_gateway chat=%s iter=%d elapsed=%ds curl_timeout=%ds payload_bytes=%d msg_count=%d',
+                '[GATELOOP] calling_ai chat=%s iter=%d elapsed=%ds timeout=%ds msg_count=%d',
                 $chatid,
                 $iteration,
                 time() - $loopstart,
-                $curltimeout,
-                strlen(json_encode($payload, JSON_UNESCAPED_UNICODE)),
+                $aitimeout,
                 count($messages)
             ));
 
-            curl_exec($ch);
-            $httpcode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            $curlerrno = curl_errno($ch);
-            $curlerror = curl_error($ch);
-            curl_close($ch);
-
-            // ... ── Log Gateway response for debugging ──
-            \local_jedomi_log(sprintf(
-                '[GATEWAY] iter=%d http=%d curl_errno=%d curl_err=%s sse_bytes=%d',
-                $iteration,
-                $httpcode,
-                $curlerrno,
-                $curlerror ?: 'none',
-                strlen($ssebuffer)
-            ));
-
-            // ... ── Gateway errors ──
-            if ($curlerrno !== 0) {
-                if ($curlerrno === CURLE_OPERATION_TIMEDOUT) {
-                    \local_jedomi_log('[GATEWAY] Timeout on iter ' . $iteration . ', self-pinging');
-                    // Gateway timed out but there may be more time left for
-                    // FPM. Self-ping to continue with remaining iterations.
-                    $state['iteration'] = $iteration + 1;
-                    $state['messages'] = $messages;
-                    $state['is_locked'] = true;
-                    $state['locked_at'] = time();
-                    session::set_context($statekey, $state);
-                    self::self_ping($chatid);
-                } else {
-                    \local_jedomi_log('[GATEWAY] cURL error on iter ' . $iteration . ': ' . $curlerror);
-                    self::release_lock($statekey, $chatid, get_string('error_telegram_e004', 'local_jedomi'));
-                }
-                return;
-            }
-            if ($httpcode !== 200) {
-                \local_jedomi_log('[GATEWAY] HTTP ' . $httpcode . ' on iter ' . $iteration
-                    . ', body: ' . substr($ssebuffer, 0, 200));
-                self::release_lock($statekey, $chatid, get_string('error_telegram_e005', 'local_jedomi'));
+            try {
+                $answer = \local_jedomi\ai\client::instance()->complete($messages, $userid, $tools, $aitimeout, 0.2);
+            } catch (\Throwable $e) {
+                $error = \local_jedomi\ai\error_message::from_exception($e, $userlang);
+                // Every failure, including a timeout, ends the turn: the request is never resent,
+                // because the AI service may already have processed (and billed) it.
+                \local_jedomi_log('[AI] error on iter ' . $iteration . ': ' . $error['code']);
+                self::release_lock($statekey, $chatid, $error['message']);
                 return;
             }
 
-            // ... ── Parse SSE buffer (same parser as web version) ──
-            $result = self::parse_sse_buffer($ssebuffer);
+            $result = self::parse_answer($answer);
             if ($result === null) {
-                \local_jedomi_log('[GATEWAY] SSE parse failed on iter ' . $iteration . ', buffer: ' . substr($ssebuffer, 0, 200));
+                \local_jedomi_log('[AI] empty answer on iter ' . $iteration);
                 self::release_lock($statekey, $chatid, get_string('error_telegram_e006', 'local_jedomi'));
                 return;
             }
@@ -1429,98 +1324,37 @@ class webhook_handler {
 
 
     /**
-     * Parse SSE streamed buffer from the Gateway AI API.
+     * Turn an AI client answer into the shape the tool loop uses.
      *
-     * Same parser as the web version (handler.php::call_ai_api_buffer).
-     * Extracts text content, finish_reason, and tool_calls from SSE chunks.
-     *
-     * @param  string $buffer Raw SSE buffer from the Gateway.
-     * @return array|null     ['type'=>'text', 'content'=>'...']
-     *                        ['type'=>'tool_calls', 'tool_calls'=>[...]]
-     *                        null on parse failure.
+     * @param  array $answer Answer from \local_jedomi\ai\client::complete().
+     * @return array|null    ['type'=>'text', 'content'=>'...']
+     *                       ['type'=>'tool_calls', 'tool_calls'=>[...]]
+     *                       null when the answer has neither text nor tool calls.
      */
-    private static function parse_sse_buffer(string $buffer): ?array {
-        $textbuf = '';
-        $reasonbuf = '';
-        $toolcallsacc = [];
-        $finishreason = '';
-
-        $lines = explode("\n", $buffer);
-        foreach ($lines as $line) {
-            $line = trim($line);
-            if (!str_starts_with($line, 'data: ')) {
-                continue;
-            }
-            $raw = trim(substr($line, 6));
-            if ($raw === '[DONE]') {
-                break;
-            }
-            $json = json_decode($raw, true);
-            if (!$json) {
-                continue;
-            }
-
-            $delta = $json['choices'][0]['delta'] ?? [];
-            $finishreason = $json['choices'][0]['finish_reason'] ?? $finishreason;
-
-            // Accumulate text content.
-            if (isset($delta['content']) && $delta['content'] !== null) {
-                $textbuf .= $delta['content'];
-            }
-            // Gemma reasoning_content (thinking tokens — fallback only).
-            if (isset($delta['reasoning_content']) && $delta['reasoning_content'] !== null) {
-                $reasonbuf .= $delta['reasoning_content'];
-            }
-            // Accumulate tool_calls streamed across multiple delta chunks.
-            if (!empty($delta['tool_calls'])) {
-                foreach ($delta['tool_calls'] as $tc) {
-                    $idx = $tc['index'] ?? 0;
-                    if (!isset($toolcallsacc[$idx])) {
-                        $toolcallsacc[$idx] = [
-                            'id'       => $tc['id'] ?? '',
-                            'type'     => $tc['type'] ?? 'function',
-                            'function' => ['name' => '', 'arguments' => ''],
-                        ];
-                    }
-                    if (!empty($tc['id'])) {
-                        $toolcallsacc[$idx]['id'] = $tc['id'];
-                    }
-                    if (!empty($tc['function']['name'])) {
-                        $toolcallsacc[$idx]['function']['name'] = $tc['function']['name'];
-                    }
-                    if (isset($tc['function']['arguments'])) {
-                        $arg = $tc['function']['arguments'];
-                        if (is_array($arg)) {
-                            $toolcallsacc[$idx]['function']['arguments'] = json_encode($arg, JSON_UNESCAPED_UNICODE);
-                        } else {
-                            $toolcallsacc[$idx]['function']['arguments'] .= $arg;
-                        }
-                    }
-                }
-            }
+    private static function parse_answer(array $answer): ?array {
+        if (!empty($answer['tool_calls'])) {
+            return ['type' => 'tool_calls', 'tool_calls' => $answer['tool_calls']];
         }
 
-        // Tool calls detected — ensure every entry has a non-empty id.
-        if (!empty($toolcallsacc) || $finishreason === 'tool_calls') {
-            ksort($toolcallsacc);
-            $toolcalls = array_values($toolcallsacc);
-            foreach ($toolcalls as &$tc) {
-                if (empty($tc['id'])) {
-                    $tc['id'] = 'call_' . substr(md5($tc['function']['name'] . microtime()), 0, 12);
-                }
-            }
-            unset($tc);
-
-            return ['type' => 'tool_calls', 'tool_calls' => $toolcalls];
-        }
-
-        // Text response: prefer content, fall back to reasoning (Gemma thinking tokens).
-        $text = !empty($textbuf) ? $textbuf : $reasonbuf;
-        if (empty($text)) {
+        // Text response: prefer content, fall back to reasoning (thinking tokens).
+        $text = ($answer['content'] ?? '') !== '' ? $answer['content'] : ($answer['reasoning'] ?? '');
+        if ($text === '') {
             return null;
         }
-
         return ['type' => 'text', 'content' => $text];
+    }
+
+    /**
+     * Total timeout of each AI call, from the Telegram timeout setting (5–300 s, default 120 s).
+     *
+     * @return int
+     */
+    private static function get_ai_timeout(): int {
+        $timeout = (int) get_config('local_jedomi', 'telegram_gateway_timeout');
+        if ($timeout < 5) {
+            return 120;
+        }
+        return min($timeout, 300);
     }
 
     /**
@@ -2199,7 +2033,7 @@ class webhook_handler {
      */
     private static function release_lock(string $statekey, string $chatid, string $message): void {
         session::set_context($statekey, []);
-        (new api_client())->send_message($chatid, $message);
+        api_client::instance()->send_message($chatid, $message);
     }
 
     /**

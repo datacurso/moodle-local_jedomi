@@ -41,11 +41,14 @@ defined('MOODLE_INTERNAL') || die();
 require_once(__DIR__ . '/../../lib.php');
 
 /**
- * Scheduled task that executes due AI agents through the gateway with tool calling and result caching.
+ * Scheduled task that executes due AI agents through the AI client with tool calling and result caching.
  */
 class agent_runner extends \core\task\scheduled_task {
     /** Max tool call iterations per agent run. */
     const MAX_TOOL_ITERATIONS = 50;
+
+    /** @var int Total timeout of each AI call, in seconds. */
+    const AI_TIMEOUT = 120;
 
     /**
      * Return the localised name of this scheduled task.
@@ -425,47 +428,16 @@ class agent_runner extends \core\task\scheduled_task {
                                 ],
                             ];
 
-                            $gatewayurl = rtrim(get_config('local_jedomi', 'gateway_url'), '/');
-                            $apikey = get_config('local_jedomi', 'api_key') ?: 'jedomi-local-key';
-                            $model = get_config('local_jedomi', 'model') ?: 'jedomi-e4b';
-                            $maxtokens = (int) get_config('local_jedomi', 'max_tokens');
-                            if ($maxtokens < 256) {
-                                $maxtokens = 16384;
-                            }
-                            if (empty($gatewayurl)) {
-                                $gatewayurl = 'http://localhost:8765';
-                            }
-
                             $replaystart = microtime(true);
-                            $ch = curl_init($gatewayurl . '/v1/chat/completions');
-                            curl_setopt_array($ch, [
-                                CURLOPT_POST           => true,
-                                CURLOPT_POSTFIELDS     => json_encode([
-                                    'model' => $model,
-                                    'messages' => $replaymessages,
-                                    'stream' => false,
-                                    'max_tokens' => $maxtokens,
-                                ], JSON_UNESCAPED_UNICODE),
-                                CURLOPT_RETURNTRANSFER => true,
-                                CURLOPT_TIMEOUT        => 120,
-                                CURLOPT_HTTPHEADER     => [
-                                    'Content-Type: application/json',
-                                    'Authorization: Bearer ' . $apikey,
-                                ],
-                            ]);
-                            $replayresponse = curl_exec($ch);
-                            $replayhttp = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-                            $replayerrno = curl_errno($ch);
-                            $replayerror = curl_error($ch);
-                            $replayduration = microtime(true) - $replaystart;
-                            curl_close($ch);
-
-                            if ($replayerrno !== 0) {
-                                mtrace("[AGENT] {$agentlabel} — replay answer curl error ({$replayerror})");
-                                \local_jedomi_log("[AGENT] {$agentlabel} — replay answer curl error ({$replayerror})");
-                            } else if ($replayhttp === 200) {
-                                $replayresult = json_decode($replayresponse, true);
-                                $replaycontent = $replayresult['choices'][0]['message']['content'] ?? '';
+                            try {
+                                $replayanswer = \local_jedomi\ai\client::instance()->complete(
+                                    $replaymessages,
+                                    (int) $agent->userid,
+                                    [],
+                                    self::AI_TIMEOUT
+                                );
+                                $replaycontent = $replayanswer['content'];
+                                $replayduration = microtime(true) - $replaystart;
                                 if (!empty(trim($replaycontent))) {
                                     $finalcontent = $replaycontent;
                                     $logline = "[AGENT] {$agentlabel} — replay answer generated"
@@ -473,6 +445,10 @@ class agent_runner extends \core\task\scheduled_task {
                                     mtrace($logline);
                                     \local_jedomi_log($logline);
                                 }
+                            } catch (\Throwable $e) {
+                                $replayerror = \local_jedomi\ai\error_message::from_exception($e)['code'];
+                                mtrace("[AGENT] {$agentlabel} — replay answer AI error ({$replayerror})");
+                                \local_jedomi_log("[AGENT] {$agentlabel} — replay answer AI error ({$replayerror})");
                             }
                         }
                     }
@@ -505,27 +481,7 @@ class agent_runner extends \core\task\scheduled_task {
                         ['role' => 'user', 'content' => $agent->prompt],
                     ];
 
-                    // ... ── Gateway config ───────────────────────────────────────
-                    $gatewayurl = rtrim(get_config('local_jedomi', 'gateway_url'), '/');
-                    $apikey = get_config('local_jedomi', 'api_key');
-                    $model = get_config('local_jedomi', 'model');
-
-                    if (empty($gatewayurl)) {
-                        $gatewayurl = 'http://localhost:8765';
-                    }
-                    if (empty($apikey)) {
-                        $apikey = 'jedomi-local-key';
-                    }
-                    if (empty($model)) {
-                        $model = 'jedomi-e4b';
-                    }
-
-                    $maxtokens = (int) get_config('local_jedomi', 'max_tokens');
-                    if ($maxtokens < 256) {
-                        $maxtokens = 16384; // Default: 16k tokens.
-                    }
-
-                    // ... ── Multi-turn gateway loop ──────────────────────────────
+                    // ... ── Multi-turn AI loop ───────────────────────────────────
                     $finalcontent = '';
                     $totalduration = 0.0;
                     $totalrounds = 0;
@@ -535,71 +491,35 @@ class agent_runner extends \core\task\scheduled_task {
                     for ($round = 1; $round <= self::MAX_TOOL_ITERATIONS; $round++) {
                         $totalrounds = $round;
 
-                        $payload = [
-                            'model' => $model,
-                            'messages' => $messages,
-                            'stream' => false,
-                            'max_tokens' => $maxtokens,
-                        ];
-                        if (!empty($tools)) {
-                            $payload['tools'] = $tools;
-                            $payload['tool_choice'] = 'auto';
+                        // ... ── AI call ──────────────────────────────────────────
+                        $aistart = microtime(true);
+                        mtrace("[AGENT] {$agentlabel} — round {$round} AI call");
+                        \local_jedomi_log("[AGENT] {$agentlabel} — round {$round} AI call");
+
+                        try {
+                            $answer = \local_jedomi\ai\client::instance()->complete(
+                                $messages,
+                                (int) $agent->userid,
+                                $tools,
+                                self::AI_TIMEOUT
+                            );
+                        } catch (\Throwable $e) {
+                            $roundduration = microtime(true) - $aistart;
+                            $totalduration += $roundduration;
+                            $error = \local_jedomi\ai\error_message::from_exception($e);
+                            $durationfmt = number_format($roundduration, 2);
+                            mtrace("[AGENT] {$agentlabel} — round {$round} FAILED ({$error['code']}, {$durationfmt}s)");
+                            \local_jedomi_log("[AGENT] {$agentlabel} — round {$round} FAILED ({$error['code']}, {$durationfmt}s)");
+                            if ($round === 1) {
+                                throw new \RuntimeException($error['message']);
+                            }
+                            break;
                         }
-
-                        // ... ── Gateway call ─────────────────────────────────────
-                        $gatewaystart = microtime(true);
-                        mtrace("[AGENT] {$agentlabel} — round {$round} gateway call");
-                        \local_jedomi_log("[AGENT] {$agentlabel} — round {$round} gateway call");
-
-                        $ch = curl_init($gatewayurl . '/v1/chat/completions');
-                        curl_setopt_array($ch, [
-                            CURLOPT_POST           => true,
-                            CURLOPT_POSTFIELDS     => json_encode($payload, JSON_UNESCAPED_UNICODE),
-                            CURLOPT_RETURNTRANSFER => true,
-                            CURLOPT_TIMEOUT        => 120,
-                            CURLOPT_HTTPHEADER     => [
-                                'Content-Type: application/json',
-                                'Authorization: Bearer ' . $apikey,
-                            ],
-                        ]);
-
-                        $response = curl_exec($ch);
-                        $httpcode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-                        $curlerrno = curl_errno($ch);
-                        $curlerror = curl_error($ch);
-                        $roundduration = microtime(true) - $gatewaystart;
+                        $roundduration = microtime(true) - $aistart;
                         $totalduration += $roundduration;
-                        curl_close($ch);
 
-                        if ($curlerrno !== 0 || $httpcode !== 200) {
-                            $errmsg = $curlerror ?: "HTTP {$httpcode}";
-                            $durationfmt = number_format($roundduration, 2);
-                            mtrace("[AGENT] {$agentlabel} — round {$round} FAILED ({$errmsg}, {$durationfmt}s)");
-                            \local_jedomi_log("[AGENT] {$agentlabel} — round {$round} FAILED ({$errmsg}, {$durationfmt}s)");
-                            if ($curlerrno === CURLE_OPERATION_TIMEDOUT) {
-                                mtrace("[AGENT] {$agentlabel} — round {$round} TIMEOUT");
-                                \local_jedomi_log("[AGENT] {$agentlabel} — round {$round} TIMEOUT");
-                            }
-                            if ($round === 1) {
-                                throw new \RuntimeException("Gateway failed: {$errmsg}");
-                            }
-                            break;
-                        }
-
-                        $result = json_decode($response, true);
-                        if (json_last_error() !== JSON_ERROR_NONE) {
-                            $durationfmt = number_format($roundduration, 2);
-                            mtrace("[AGENT] {$agentlabel} — round {$round} invalid JSON");
-                            \local_jedomi_log("[AGENT] {$agentlabel} — round {$round} invalid JSON");
-                            if ($round === 1) {
-                                throw new \RuntimeException('Invalid JSON response from gateway');
-                            }
-                            break;
-                        }
-
-                        $message = $result['choices'][0]['message'] ?? [];
-                        $nativetoolcalls = $message['tool_calls'] ?? [];
-                        $content = $message['content'] ?? '';
+                        $nativetoolcalls = $answer['tool_calls'];
+                        $content = $answer['content'];
 
                         // ... ── Parse text-based tool calls (only if tools are available) ──
                         $texttoolcalls = [];
@@ -611,7 +531,7 @@ class agent_runner extends \core\task\scheduled_task {
                         if (empty($alltoolcalls)) {
                             $finalcontent = $content;
                             $durationfmt = number_format($roundduration, 2);
-                            $bytes = strlen($response);
+                            $bytes = strlen($content);
                             $logline = "[AGENT] {$agentlabel} — round {$round} final response"
                                 . " ({$durationfmt}s, {$bytes}B)";
                             mtrace($logline);
@@ -624,16 +544,13 @@ class agent_runner extends \core\task\scheduled_task {
                         mtrace("[AGENT] {$agentlabel} — round {$round} {$toolcount} tool call(s) via {$via}");
                         \local_jedomi_log("[AGENT] {$agentlabel} — round {$round} {$toolcount} tool call(s) via {$via}");
 
-                        $assistantmsg = [
+                        // The assistant message carries every tool call (native or parsed from text)
+                        // before the tool results: strict OpenAI backends reject orphan tool messages.
+                        $messages[] = [
                             'role' => 'assistant',
+                            'content' => $content !== '' ? $content : null,
+                            'tool_calls' => $alltoolcalls,
                         ];
-                        if (!empty($nativetoolcalls)) {
-                            $assistantmsg['content'] = null;
-                            $assistantmsg['tool_calls'] = $nativetoolcalls;
-                        } else {
-                            $assistantmsg['content'] = $content ?: '[Tool call requested]';
-                        }
-                        $messages[] = $assistantmsg;
 
                         foreach ($alltoolcalls as $tc) {
                             $funcname = $tc['function']['name'] ?? '?';
@@ -723,7 +640,7 @@ class agent_runner extends \core\task\scheduled_task {
                     );
                     $stripped = trim(preg_replace([
                         '/(?:TOOL_CALL|call):\s*\w+\s*\n.*?\nEND_TOOL_CALL[^\n]*/si',
-                        '/<\|(?:tool_call|python_tag)\|>.*?<\|\\/\1\|>/si',
+                        '/<\|(tool_call|python_tag)\|>.*?<\|\\/\1\|>/si',
                     ], '', $finalcontent ?? ''));
 
                     if (!empty($stripped)) {

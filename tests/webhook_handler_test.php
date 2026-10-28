@@ -24,6 +24,21 @@
 
 namespace local_jedomi;
 
+use local_jedomi\ai\client;
+use local_jedomi\ai\fake_ai_client;
+use local_jedomi\ai\fake_curl;
+use local_jedomi\ai\provider_api;
+use local_jedomi\ai\testable_provider_api;
+use local_jedomi\telegram\api_client;
+use local_jedomi\telegram\fake_telegram_api_client;
+
+defined('MOODLE_INTERNAL') || die();
+
+global $CFG;
+require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/fake_ai_client.php');
+require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/testable_provider_api.php');
+require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/fake_telegram_api_client.php');
+
 /**
  * Test cases for webhook_handler methods.
  *
@@ -49,6 +64,13 @@ final class webhook_handler_test extends \advanced_testcase {
     protected function setUp(): void {
         parent::setUp();
         $this->resetAfterTest();
+    }
+
+    #[\Override]
+    protected function tearDown(): void {
+        client::set_instance_for_testing(null);
+        api_client::set_instance_for_testing(null);
+        parent::tearDown();
     }
 
     // ... ========================
@@ -794,19 +816,30 @@ final class webhook_handler_test extends \advanced_testcase {
     /**
      * Seed a checkpointed tool-loop state so handle_internal_ping can continue it.
      *
-     * Points the gateway at a closed local port so the continuation reaches the
-     * system-prompt build (the historical fatal point) and then fails fast on
-     * cURL, which releases the lock — an observable, network-free outcome.
+     * Unless a client is given, the AI client fails with a network error, so the
+     * continuation reaches the system-prompt build (the historical fatal point) and
+     * then releases the lock — an observable, network-free outcome.
      *
      * @param string $chatid Telegram chat id for the seeded state
      * @param array $extrastate Extra keys merged into the checkpoint state (e.g. cached spt/tools)
+     * @param client|null $client AI client to use; null for one that fails with a network error
+     * @param int|null $userid Linked user; null to create one
      * @return string The state key used in the session context table
      */
-    private function seed_selfping_state(string $chatid, array $extrastate = []): string {
-        $user = $this->getDataGenerator()->create_user();
-        $this->create_telegram_link((int) $user->id, $chatid);
+    private function seed_selfping_state(
+        string $chatid,
+        array $extrastate = [],
+        ?client $client = null,
+        ?int $userid = null
+    ): string {
+        $userid = $userid ?? (int) $this->getDataGenerator()->create_user()->id;
+        $this->create_telegram_link($userid, $chatid);
 
-        set_config('gateway_url', 'http://127.0.0.1:1', 'local_jedomi');
+        if ($client === null) {
+            $client = new fake_ai_client();
+            $client->enqueue_exception(new \moodle_exception('curlerror', 'aiprovider_datacurso', '', 7));
+        }
+        client::set_instance_for_testing($client);
         set_config('telegram_gateway_timeout', 5, 'local_jedomi');
 
         $statekey = 'tool_loop_' . $chatid;
@@ -819,7 +852,7 @@ final class webhook_handler_test extends \advanced_testcase {
                 ['role' => 'system', 'content' => 'placeholder'],
                 ['role' => 'user', 'content' => 'hola'],
             ],
-            'userid'         => (int) $user->id,
+            'userid'         => $userid,
         ], $extrastate);
         \local_jedomi\telegram\session::set_context($statekey, $state);
         return $statekey;
@@ -880,6 +913,92 @@ final class webhook_handler_test extends \advanced_testcase {
             $after['is_locked'] ?? null,
             'The legacy fallback (no cached SPT) should still complete the continuation and release the lock'
         );
+    }
+
+    /**
+     * M7: Telegram calls the AI client for the linked user, without SPT, with the configured timeout.
+     */
+    public function test_telegram_calls_client_without_spt_and_with_timeout(): void {
+        $chatid = '990000003';
+        $user = $this->getDataGenerator()->create_user();
+        set_config('licensekey', 'test-license', 'aiprovider_datacurso');
+        set_config('model', 'jedomi/mistralai/Mistral-Small-3.2-24B-Instruct-2506', 'local_jedomi');
+        $curl = new fake_curl();
+        $curl->enqueue('{"detail":"upstream down"}', 503);
+        $client = new client(static fn(int $timeout): provider_api => new testable_provider_api($timeout, $curl));
+        $statekey = $this->seed_selfping_state($chatid, [
+            'spt'   => ['token' => 'fake-spt-token', 'role' => 'student', 'tools' => []],
+            'tools' => [],
+        ], $client, (int) $user->id);
+
+        $this->run_internal_ping($chatid);
+        $this->resetDebugging();
+
+        $this->assertCount(1, $curl->calls);
+        $this->assertStringEndsWith('/jedomi/v1/chat/completions', $curl->calls[0]['url']);
+        $body = $curl->last_body();
+        $this->assertArrayNotHasKey('spt', $body);
+        $this->assertSame('jedomi/mistralai/Mistral-Small-3.2-24B-Instruct-2506', $body['model']);
+        $this->assertFalse($body['stream']);
+        $this->assertSame(0.2, $body['temperature']);
+        $this->assertSame(
+            \aiprovider_datacurso\local\outbound_privacy::pseudonymise_userid_value((int) $user->id),
+            $body['userid']
+        );
+        $this->assertSame(5, $curl->setoptions['CURLOPT_TIMEOUT']);
+        $after = \local_jedomi\telegram\session::get_context($statekey);
+        $this->assertEmpty($after['is_locked'] ?? null, 'An AI error must release the lock');
+    }
+
+    /**
+     * M7: the timeout handed to the client never exceeds the configured Telegram timeout.
+     */
+    public function test_telegram_timeout_bounded_by_setting_and_answer_releases_lock(): void {
+        $chatid = '990000004';
+        $fake = new fake_ai_client();
+        $fake->enqueue_text('Hola');
+        $statekey = $this->seed_selfping_state($chatid, [
+            'spt'   => ['token' => 'fake-spt-token', 'role' => 'student', 'tools' => []],
+            'tools' => [],
+        ], $fake);
+        $state = \local_jedomi\telegram\session::get_context($statekey);
+
+        $this->run_internal_ping($chatid);
+
+        $this->assertCount(1, $fake->calls);
+        $this->assertSame($state['userid'], $fake->calls[0]['userid']);
+        $this->assertGreaterThanOrEqual(5, $fake->calls[0]['timeout']);
+        $this->assertLessThanOrEqual(5, $fake->calls[0]['timeout']);
+        $after = \local_jedomi\telegram\session::get_context($statekey);
+        $this->assertEmpty($after['is_locked'] ?? null);
+    }
+
+    /**
+     * RES-001: an AI timeout is not retried, because the provider may already have billed the request.
+     *
+     * The handler must call the AI once, tell the user the answer took too long, clear the saved
+     * conversation state and release the lock, without self-pinging a new worker that would resend
+     * the same request.
+     */
+    public function test_ai_timeout_is_not_resent_and_releases_lock_with_timeout_message(): void {
+        $chatid = '990000005';
+        $fake = new fake_ai_client();
+        $fake->enqueue_exception(new \moodle_exception('curlerror', 'aiprovider_datacurso', '', CURLE_OPERATION_TIMEDOUT));
+        $telegram = new fake_telegram_api_client();
+        api_client::set_instance_for_testing($telegram);
+        $statekey = $this->seed_selfping_state($chatid, [
+            'spt'   => ['token' => 'fake-spt-token', 'role' => 'student', 'tools' => []],
+            'tools' => [],
+        ], $fake);
+
+        $this->run_internal_ping($chatid);
+
+        $this->assertCount(1, $fake->calls, 'A timed-out AI request must not be sent again');
+        $after = \local_jedomi\telegram\session::get_context($statekey);
+        $this->assertEmpty($after, 'The conversation state must be cleared, so no self-ping can resume it');
+        $this->assertEmpty($after['is_locked'] ?? null, 'The lock must be released');
+        $texts = array_column($telegram->sent, 'text');
+        $this->assertContains(get_string('ai_error_timeout', 'local_jedomi'), $texts);
     }
 
     // ... ========================
