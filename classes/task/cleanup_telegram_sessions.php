@@ -40,7 +40,8 @@ class cleanup_telegram_sessions extends \core\task\scheduled_task {
     }
 
     /**
-     * Delete Telegram sessions idle for over 30 minutes and pending actions older than 5 minutes.
+     * Delete Telegram sessions idle for over 30 minutes, Telegram pending actions older than 5 minutes
+     * and web chat pending actions older than 15 minutes.
      */
     public function execute(): void {
         global $DB;
@@ -52,5 +53,9 @@ class cleanup_telegram_sessions extends \core\task\scheduled_task {
         $actioncutoff = time() - (5 * 60);
         $actioncount = $DB->delete_records_select('local_jedomi_telegram_pending_actions', 'timecreated < ?', [$actioncutoff]);
         mtrace("Deleted {$actioncount} expired pending action(s).");
+
+        // Web chat actions that were never confirmed.
+        $chatcount = \local_jedomi\local\service\pending_action_service::purge_expired();
+        mtrace("Deleted {$chatcount} expired web chat pending action(s).");
     }
 }

@@ -58,6 +58,8 @@ define(['core/log', 'core/ajax'], function(Log, Ajax) {
     let cfg          = {};
     let conversation = [];
     let pendingImage = null;
+    // Text of an attached file, sent with the next message: {name, info, text}.
+    let pendingFile = null;
     let injected     = false;
     let sessionId    = null;
 
@@ -248,10 +250,15 @@ define(['core/log', 'core/ajax'], function(Log, Ajax) {
             </div>
         </div>
         <input type="file" id="jedomi-image-input" accept="image/*" class="jedomi-hidden" aria-hidden="true">
+        <input type="file" id="jedomi-file-input" accept=".pdf,.csv,.txt,.md" class="jedomi-hidden" aria-hidden="true">
         <div id="jedomi-image-preview" class="jedomi-image-preview jedomi-hidden">
             <img id="jedomi-preview-img" src="" alt="${S.attached_image || 'Attached image'}">
             <span>${S.attached_image || 'Attached image'}</span>
             <button id="jedomi-remove-image" class="jedomi-input-icon">${SVG.close}</button>
+        </div>
+        <div id="jedomi-file-preview" class="jedomi-image-preview jedomi-hidden">
+            <span id="jedomi-file-preview-name"></span>
+            <button id="jedomi-remove-file" class="jedomi-input-icon">${SVG.close}</button>
         </div>
     </div>
     <div class="jedomi-footer">
@@ -326,6 +333,7 @@ define(['core/log', 'core/ajax'], function(Log, Ajax) {
         on('jedomi-send',         'click',  sendMessage);
         on('jedomi-overlay',      'click',  closeSidebar);
         on('jedomi-remove-image', 'click',  clearImage);
+        on('jedomi-remove-file', 'click',   clearFile);
         on('jedomi-edit-last',    'click',  editLastMessage);
         on('jedomi-attach-btn',   'click',  toggleAttachMenu);
         on('jedomi-attach-menu',   'click',  (e) => {
@@ -336,11 +344,13 @@ define(['core/log', 'core/ajax'], function(Log, Ajax) {
                 const inp = g('jedomi-image-input');
                 if (inp) inp.click();
             } else {
-                showFileAttachDisabled();
+                const inp = g('jedomi-file-input');
+                if (inp) inp.click();
             }
             closeAttachMenu();
         });
         on('jedomi-image-input',  'change', handleImageSelect);
+        on('jedomi-file-input',   'change', handleFileSelect);
 
         const input = g('jedomi-input');
         if (input) {
@@ -794,23 +804,34 @@ define(['core/log', 'core/ajax'], function(Log, Ajax) {
         const sendBtn = g('jedomi-send');
         const text    = input?.value.trim() || '';
 
-        if (!text && !pendingImage) return;
+        if (!text && !pendingImage && !pendingFile) return;
 
         let userContent;
         let displayText = text;
+        let modelText = text;
+
+        // The file text goes with the question in the same message; the chat shows only its name.
+        if (pendingFile) {
+            const S = cfg.strings || {};
+            const question = text || S.analyze_file || 'Summarize this file.';
+            const header = (S.attached_file_info || '[Attached file: {$a}]').replace('{$a}', pendingFile.name);
+            modelText = `${question}\n\n${header} — ${pendingFile.info}\n\n${pendingFile.text}`;
+            displayText = `${text ? text + '\n\n' : ''}📎 ${pendingFile.name} (${pendingFile.info})`;
+        }
 
         if (pendingImage) {
             userContent = [
-                { type: 'text', text: text || (cfg.strings?.analyze_image || 'Analyze this image.') },
+                { type: 'text', text: modelText || (cfg.strings?.analyze_image || 'Analyze this image.') },
                 { type: 'image_url', image_url: { url: `data:${pendingImage.mimeType};base64,${pendingImage.base64}` } }
             ];
         } else {
-            userContent = text;
+            userContent = modelText;
         }
 
         addMessage('user', displayText, pendingImage);
         if (input) { input.value = ''; input.style.height = ''; }
         clearImage();
+        clearFile();
         conversation.push({ role: 'user', content: userContent });
         _saveConversation(); // Guardar inmediatamente
 
@@ -822,6 +843,7 @@ define(['core/log', 'core/ajax'], function(Log, Ajax) {
 
         try {
             let fullText = '';
+            let pendingAction = null;
 
             await callGatewayStream(
                 conversation,
@@ -872,16 +894,25 @@ define(['core/log', 'core/ajax'], function(Log, Ajax) {
                     streamBubble.el.classList.remove('jedomi-hidden');
                     setThinking(false);
                     streamBubble.thinking = false;
+                },
+                // onPendingAction: a tool that changes data waits for the user's confirmation.
+                (pending) => {
+                    pendingAction = pending;
                 }
             );
 
-            // Technical action blocks (JEDOMI_ACTION / JEDOMI_PENDING_ACTION) were executed by the
-            // legacy gateway; they are not supported any more, so they are removed from the answer.
+            // Technical action blocks (JEDOMI_ACTION / JEDOMI_PENDING_ACTION) came from the legacy
+            // gateway; confirmations now arrive as the _jedomi_pending_action event, so any such
+            // block the model still writes is removed from the answer.
             fullText = fullText
                 .replace(/JEDOMI_ACTION[\s\S]*?END_ACTION/g, '')
                 .replace(/JEDOMI_PENDING_ACTION:[\s\S]*?:END_PENDING/g, '')
                 .trim();
             streamBubble.inner.innerHTML = renderMarkdown(fullText);
+            if (pendingAction) {
+                streamBubble.el.classList.remove('jedomi-hidden');
+                streamBubble.inner.appendChild(buildActionConfirmUI(pendingAction));
+            }
             addMessageActions(streamBubble.wrap, fullText);
 
             // Links — abrir en la misma pestaña directamente (sin preventDefault)
@@ -920,7 +951,7 @@ define(['core/log', 'core/ajax'], function(Log, Ajax) {
     // ── Call Chat Proxy (streaming) ─────────────────────────────────────────
     // El proxy recibe los mensajes, agrega tools + system prompt anti-hallucination,
     // ejecuta el tool loop contra la BD real de Moodle y devuelve SSE.
-    const callGatewayStream = async (messages, onToken, onToolEvent) => {
+    const callGatewayStream = async (messages, onToken, onToolEvent, onPendingAction) => {
         // Context truncation: máx 30 mensajes para evitar overflow de contexto
         const truncated = messages.slice(-30);
 
@@ -981,6 +1012,11 @@ define(['core/log', 'core/ajax'], function(Log, Ajax) {
                     // Evento de herramienta ejecutándose
                     if (chunk._jedomi_tool_executing && onToolEvent) {
                         onToolEvent(chunk._jedomi_tool_executing);
+                        continue;
+                    }
+                    // Acción que espera la confirmación del usuario (la guarda el servidor).
+                    if (chunk._jedomi_pending_action) {
+                        if (onPendingAction) onPendingAction(chunk._jedomi_pending_action);
                         continue;
                     }
                     // Meta al final
@@ -1244,6 +1280,7 @@ GENERAL INSTRUCTIONS:
         if (!text) return '';
         let html = text
             .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
             // Code blocks
             .replace(/```[\w]*\n([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
             // Inline code
@@ -1254,6 +1291,10 @@ GENERAL INSTRUCTIONS:
             .replace(/_(.+?)_/g, '<em>$1</em>')
             // Links Moodle enriquecidos [text](url) — genera preview card para URLs de Moodle
             .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, linkText, url) => {
+                // Only web and site-relative links: model output can carry javascript: or data: URLs.
+                if (!/^(https?:\/\/|\/(?!\/))/i.test(url)) {
+                    return linkText;
+                }
                 const pageInfo = getMoodlePageInfo(url);
                 if (pageInfo) {
                     return `<a href="${url}" class="jedomi-moodle-link" data-type="${pageInfo.type}">` +
@@ -1323,11 +1364,165 @@ GENERAL INSTRUCTIONS:
         reader.readAsDataURL(file);
     };
 
-    // ── File (PDF/CSV/TXT) ────────────────────────────────────────────────────
-    // Extracting text from documents is not available: tell the user instead.
-    const showFileAttachDisabled = () => {
-        addMessage('assistant', '⚠️ ' + (cfg.strings?.file_attach_disabled
-            || 'Attaching documents is not available at the moment. You can attach images, or paste the text into your message.'));
+    // ── File (PDF/CSV/TXT/MD) ─────────────────────────────────────────────────
+    // Moodle sends the file to the AI service through the Datacurso provider and returns its
+    // text, which is added to the message with its pages, rows and columns, or characters.
+    const handleFileSelect = (e) => {
+        const file = e.target.files?.[0];
+        if (file) attachFile(file);
+    };
+
+    const attachFile = async (file) => {
+        const S = cfg.strings || {};
+        const input = g('jedomi-input');
+        const origPlaceholder = input?.placeholder;
+        if (input) input.placeholder = (S.processing_file || 'Processing {$a}...').replace('{$a}', file.name);
+
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('sesskey', cfg.sesskey || '');
+
+            const res = await fetch(cfg.extract_file_url, {
+                method: 'POST',
+                body: formData,
+                credentials: 'same-origin',
+            });
+            const data = await res.json().catch(() => ({}));
+            if (data.error) {
+                throw new Error(data.error.message || S.unknown_error || 'Unknown error');
+            }
+            if (!res.ok) {
+                throw new Error(S.ai_error_connection || 'Could not reach Jedomi.');
+            }
+
+            const info = data.format === 'csv'
+                ? (S.file_csv || 'CSV: {rows} rows, {columns} columns').replace('{rows}', data.rows).replace('{columns}', data.columns)
+                : data.format === 'pdf'
+                ? (S.file_pdf || 'PDF: {pages} pages').replace('{pages}', data.pages)
+                : (S.file_text || 'Text: {chars} characters').replace('{chars}', data.chars);
+
+            // The text is kept as a pending attachment, like an image, so the textarea stays free for the question.
+            pendingFile = { name: file.name, info: info, text: data.text || '' };
+            const chipname = g('jedomi-file-preview-name');
+            if (chipname) chipname.textContent = `📎 ${file.name} — ${info}`;
+            g('jedomi-file-preview')?.classList.remove('jedomi-hidden');
+            input?.focus();
+
+            addMessage('assistant', `📎 **${file.name}** ${S.file_loaded || 'loaded'} (${info}). ${S.file_loaded_hint || 'You can ask questions about its content.'}`);
+        } catch (err) {
+            addMessage('assistant', `⚠️ ${S.file_process_error || 'Could not process'} **${file.name}**: ${err.message}`);
+        } finally {
+            if (input && origPlaceholder) input.placeholder = origPlaceholder;
+            const fi = g('jedomi-file-input');
+            if (fi) fi.value = '';
+        }
+    };
+
+    // ── Confirmation of actions that change data ──────────────────────────────
+    // The server holds the action and sends its id; it runs only through
+    // local_jedomi_resolve_action, which checks the owner, the expiry and the role again.
+    // severity: 'critical' (red, the keyword must be typed) | 'high' (orange) | 'medium' (yellow).
+    const resolveAction = async (id, confirm) => {
+        return Ajax.call([{
+            methodname: 'local_jedomi_resolve_action',
+            args: {id, confirm},
+        }])[0];
+    };
+
+    // A short note keeps the outcome in the conversation, so the next answer knows it.
+    const addActionNote = (pending, message) => {
+        conversation.push({ role: 'assistant', content: `${pending.description} — ${message}` });
+        _saveConversation();
+    };
+
+    const buildActionConfirmUI = (pending) => {
+        const CS = cfg.strings || {};
+        const isSend = pending.tool === 'send_messages';
+        const severity = ['critical', 'high', 'medium'].includes(pending.severity) ? pending.severity : 'medium';
+        const isCritical = severity === 'critical';
+        const confirmKeyword = (CS.confirm_btn_yes || 'Confirm').toUpperCase();
+
+        const div = document.createElement('div');
+        if (isSend) {
+            div.className = 'jedomi-send-confirm';
+            const preview = String(pending.preview || '');
+            div.innerHTML = `
+                <div class="jedomi-confirm-msg">📬 ${escHtml(CS.confirm_send_bulk || 'Send this message to {count} student(s)?')
+                    .replace('{count}', '<strong>' + Number(pending.count || 0) + '</strong>')}</div>
+                <div class="jedomi-confirm-preview">${escHtml(preview.substring(0, 120))}${preview.length > 120 ? '...' : ''}</div>
+                <div class="jedomi-confirm-btns">
+                    <button class="jedomi-confirm-yes">✅ ${escHtml(CS.yes_send || 'Yes, send')}</button>
+                    <button class="jedomi-confirm-no">❌ ${escHtml(CS.cancel || 'Cancel')}</button>
+                </div>
+                <div class="jedomi-action-result"></div>`;
+        } else {
+            div.className = `jedomi-action-pending jedomi-action-pending--${severity}`;
+            div.innerHTML = `
+                <div class="jedomi-action-warning">${escHtml(CS.pending_action_needed || 'This action needs your confirmation.')}</div>
+                <div class="jedomi-action-desc">${escHtml(pending.description || pending.tool || '')}</div>
+                ${pending.details ? `<div class="jedomi-confirm-preview">${escHtml(pending.details)}</div>` : ''}
+                ${isCritical ? `
+                <div class="jedomi-type-confirm-wrap">
+                    <label>${escHtml(CS.confirm_type_to_proceed || 'Type CONFIRM to proceed:')}</label>
+                    <input type="text" class="jedomi-type-confirm" placeholder="${escHtml(confirmKeyword)}"
+                           autocomplete="off" spellcheck="false"/>
+                </div>` : ''}
+                <div class="jedomi-confirm-btns">
+                    <button class="jedomi-confirm-yes">✅ ${escHtml(CS.confirm_btn_yes || 'Confirm')}</button>
+                    <button class="jedomi-confirm-no">❌ ${escHtml(CS.confirm_btn_no || 'Cancel')}</button>
+                </div>
+                <div class="jedomi-action-result"></div>`;
+        }
+
+        const yesBtn    = div.querySelector('.jedomi-confirm-yes');
+        const noBtn     = div.querySelector('.jedomi-confirm-no');
+        const resultDiv = div.querySelector('.jedomi-action-result');
+        const showDone  = (text) => {
+            div.innerHTML = `<div class="jedomi-confirm-msg">${escHtml(text)}</div>`;
+        };
+
+        const resolve = async (confirm) => {
+            if (confirm && isCritical) {
+                const inp = div.querySelector('.jedomi-type-confirm');
+                if (!inp || inp.value.trim().toUpperCase() !== confirmKeyword) {
+                    inp?.classList.add('is-invalid');
+                    inp?.focus();
+                    resultDiv.textContent = '⛔ ' + (CS.confirm_type_to_proceed || 'Type CONFIRM to proceed:');
+                    return;
+                }
+            }
+            yesBtn.disabled = noBtn.disabled = true;
+            resultDiv.textContent = confirm
+                ? '⏳ ' + (isSend ? (CS.sending || 'Sending...') : (CS.confirm_executing || 'Executing...'))
+                : '';
+            try {
+                const result = await resolveAction(Number(pending.id), confirm);
+                const icon = result.status === 'executed' ? '✅ ' : (result.status === 'cancelled' ? '' : '❌ ');
+                showDone(icon + result.message);
+                if (isSend && result.status === 'executed') {
+                    const note = document.createElement('small');
+                    note.textContent = CS.messages_recipients_note || 'Recipients will see them in their Moodle message inbox.';
+                    div.appendChild(note);
+                }
+                addActionNote(pending, result.message);
+            } catch (e) {
+                const message = e?.message || CS.unknown_error || 'Unknown error';
+                showDone('❌ ' + message);
+                addActionNote(pending, message);
+            }
+        };
+
+        yesBtn.addEventListener('click', () => resolve(true));
+        noBtn.addEventListener('click', () => resolve(false));
+        return div;
+    };
+
+    const clearFile = () => {
+        pendingFile = null;
+        g('jedomi-file-preview')?.classList.add('jedomi-hidden');
+        const chipname = g('jedomi-file-preview-name');
+        if (chipname) chipname.textContent = '';
     };
 
     const clearImage = () => {
@@ -1391,7 +1586,7 @@ GENERAL INSTRUCTIONS:
                 const input = g('jedomi-image-input');
                 if (input) { input.files = dt.files; input.dispatchEvent(new Event('change')); }
             } else {
-                showFileAttachDisabled();
+                attachFile(file);
             }
         }
     };

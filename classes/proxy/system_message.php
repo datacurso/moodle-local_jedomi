@@ -126,6 +126,18 @@ class system_message {
         $content .= "- document_read returns each page as a base64 image — you SEE the original"
             . " layout, tables, images, and formatting. Analyze them to answer.\n\n";
 
+        $content .= "ACTIONS THAT CHANGE DATA:\n";
+        $content .= "- Only call create_agent, delete_agent, admin_execute, ws_execute with a write function or send_messages"
+            . " when the user explicitly asks for that action. Questions, reports and analysis only read data:"
+            . " answer them with the read tools. If a query fails, fix the query or report it; never try an action instead.\n";
+        $content .= "- Never call send_messages to answer a question or analyse data;"
+            . " use it only when the user asks to send or notify a message.\n";
+        $content .= "- create_agent, delete_agent, admin_execute, ws_execute with a write function and send_messages"
+            . " wait for the user's confirmation in the chat before they run."
+            . " Call the tool once with the final arguments; do not ask for confirmation in text first.\n";
+        $content .= "- send_messages(user_ids, message), when available, sends Moodle internal messages:"
+            . " find the recipients' user ids first.\n\n";
+
         $content .= "GENERAL RULES:\n";
         $content .= "- Never invent data.\n";
         $content .= "- ALWAYS exclude course ID 1 (site home) and guest user from any operation.\n";

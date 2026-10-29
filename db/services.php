@@ -33,6 +33,14 @@ $functions = [
         'ajax'         => true,
         'loginrequired' => true,
     ],
+    'local_jedomi_resolve_action' => [
+        'classname'    => 'local_jedomi\external\resolve_action',
+        'methodname'   => 'execute',
+        'description'  => 'Confirm or cancel an action the Jedomi chat is waiting to run for the current user.',
+        'type'         => 'write',
+        'ajax'         => true,
+        'loginrequired' => true,
+    ],
     'jedomi_execute_sql' => [
         'classname'    => 'local_jedomi\external\execute_sql',
         'methodname'   => 'execute',

@@ -14,12 +14,16 @@
 - Ignore the model sent by the browser to the web chat proxy
 - Show clear messages in English and Spanish for no credit, rate limit (with retry time), missing or invalid license, unavailable service and other AI errors in the web chat, agent preview, Telegram, agents and CLI
 - Store answer ratings in Moodle (`local_jedomi_feedback`, web service `local_jedomi_save_feedback`) and add a privacy provider for them
-- Stop sending the gateway URL and API key to the browser; remove the browser calls to the legacy gateway for voice transcription, action confirmation, message sending and feedback
-- Disable the "File" attach option with a notice, since document text extraction is not available
+- Stop sending the gateway URL and API key to the browser; remove the browser calls to the legacy gateway for voice transcription, action confirmation, message sending and feedback (confirmation, message sending and file reading now go through Moodle, see below)
+- Ask for confirmation in the web chat before a tool that changes data runs: the action waits in the new table `local_jedomi_pending_actions` and the chat shows the confirmation card with its severity: critical (type the confirmation keyword) for `delete_agent` and write web service functions that delete, remove or unenrol; high for `admin_execute` and other write web service functions; medium for `create_agent` and `send_messages`. Reading tools run as before; Telegram and scheduled agents are unchanged
+- Add the web service `local_jedomi_resolve_action`: only the owner can confirm or cancel an action, once and within 15 minutes; it runs with the user's current role and returns a short result that is added to the conversation. Expired actions are deleted by the cleanup task
+- Add the web chat tool `send_messages`, offered to users with `moodle/site:sendmessage`: after confirmation it sends Moodle internal messages only to users the sender can contact and reports sent and failed; the "Notify group" quick action ends in this tool again
+- Restore the "File" attach option and file drag and drop for `.pdf`, `.csv`, `.txt` and `.md`: Moodle sends the file through the Datacurso provider to `POST /jedomi/v1/files/extract` (not billed); the file stays as a pending attachment above the input, like an image, and its text (with its pages, rows and columns, or characters) is sent with the next question, so editing the input does not drop it; clear messages for unsupported, too large or unreadable files and for provider errors
 - Stop sending the SPT to the AI service from Telegram
 - Show a timeout message and stop resending the Telegram request to the AI service when a call times out, so it is not billed again
 - Fix the agent preview and scheduled agents sending tool results without the assistant tool calls that precede them
 - Fix an invalid regular expression in the cleanup of the scheduled agent answer
+- Render only web and site-relative links in chat answers and escape quotes, so model output cannot inject `javascript:` or `data:` links or HTML attributes
 - Log status codes and sizes instead of AI request and response contents
 - Remove hardcoded default API keys and gateway URLs
 

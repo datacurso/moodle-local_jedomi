@@ -191,7 +191,8 @@ final class model_settings_test extends \advanced_testcase {
 
         $this->assertSame(model_settings::DEFAULT_MODEL, get_config('local_jedomi', 'model'));
         $this->assertSame('4096', get_config('local_jedomi', 'max_tokens'));
-        $this->assertSame('2026102801', get_config('local_jedomi', 'version'));
+        // Later upgrade steps run too, so the stored version is at least the one of this step.
+        $this->assertGreaterThanOrEqual(2026102801, (int) get_config('local_jedomi', 'version'));
     }
 
     /**

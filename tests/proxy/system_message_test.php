@@ -1,0 +1,55 @@
+<?php
+// This file is part of Moodle - http://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+
+namespace local_jedomi\proxy;
+
+use local_jedomi\local\service\message_service;
+
+/**
+ * Tests for the rules the system message and tool descriptions give the model about actions that change data.
+ *
+ * @package    local_jedomi
+ * @category   test
+ * @copyright  2026 Jedomi Project
+ * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ * @covers     \local_jedomi\proxy\system_message
+ * @covers     \local_jedomi\local\service\message_service
+ */
+final class system_message_test extends \advanced_testcase {
+    /**
+     * Questions and analysis must never end in an action that changes data, such as sending a message.
+     */
+    public function test_system_message_limits_actions_to_explicit_requests(): void {
+        $this->resetAfterTest();
+
+        $content = system_message::build('admin', [])['content'];
+
+        $this->assertStringContainsString('Only call create_agent, delete_agent, admin_execute', $content);
+        $this->assertStringContainsString('when the user explicitly asks for that action', $content);
+        $this->assertStringContainsString('Never call send_messages to answer a question or analyse data', $content);
+    }
+
+    /**
+     * The send_messages description tells the model it is only for explicit requests to send or notify.
+     */
+    public function test_send_messages_description_limits_it_to_explicit_requests(): void {
+        $this->resetAfterTest();
+
+        $description = message_service::tool_definition()['function']['description'];
+
+        $this->assertStringContainsString('Only when the user explicitly asks to send or notify a message', $description);
+    }
+}

@@ -195,4 +195,127 @@ final class handler_test extends \advanced_testcase {
         $this->assertSame('system', $body['messages'][0]['role']);
         $this->assertSame(['role' => 'user', 'content' => 'hi'], $body['messages'][1]);
     }
+
+    /**
+     * Names of the tools offered to the model in a recorded AI call.
+     *
+     * @param array $call Call recorded by the fake AI client.
+     * @return string[]
+     */
+    private function tool_names(array $call): array {
+        return array_map(static fn(array $tool): string => $tool['function']['name'], $call['tools']);
+    }
+
+    /**
+     * Run the web chat loop with one tool call followed by a final answer.
+     *
+     * @param string $tool Tool the model calls.
+     * @param array $args Tool arguments.
+     * @param fake_ai_client $fake AI client double.
+     * @return array Decoded SSE events.
+     */
+    private function run_with_tool_call(string $tool, array $args, fake_ai_client $fake): array {
+        $fake->enqueue_tool_calls([
+            ['id' => 'call_1', 'type' => 'function', 'function' => ['name' => $tool, 'arguments' => json_encode($args)]],
+        ]);
+        $fake->enqueue_text('Final answer.');
+        client::set_instance_for_testing($fake);
+        global $USER;
+        return $this->events($this->capture(fn() => handler::run(
+            [['role' => 'user', 'content' => 'hi']],
+            'admin',
+            (int) $USER->id
+        )));
+    }
+
+    /**
+     * A1: a writing tool is not run: the action is held, the card event is sent and the turn ends.
+     */
+    public function test_writing_tool_is_held_for_confirmation(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $agentid = \local_jedomi\agent\agent_manager::create_agent((object) [
+            'userid' => (int) get_admin()->id,
+            'prompt' => 'Count the users',
+            'schedule_cron' => '0 8 * * *',
+        ]);
+        $fake = new fake_ai_client();
+
+        $events = $this->run_with_tool_call('delete_agent', ['id' => $agentid], $fake);
+
+        $pendingevents = array_values(array_filter($events, static fn($e) => is_array($e) && isset($e['_jedomi_pending_action'])));
+        $this->assertCount(1, $pendingevents);
+        $pending = $pendingevents[0]['_jedomi_pending_action'];
+        $this->assertSame('delete_agent', $pending['tool']);
+        $this->assertSame('critical', $pending['severity']);
+        $this->assertSame(get_string('pending_desc_delete_agent', 'local_jedomi', $agentid), $pending['description']);
+        $record = $DB->get_record(\local_jedomi\local\service\pending_action_service::TABLE, ['id' => $pending['id']]);
+        $this->assertSame((int) get_admin()->id, (int) $record->userid);
+        $this->assertNotNull(\local_jedomi\agent\agent_manager::get_agent($agentid));
+
+        $executing = array_filter($events, static fn($e) => is_array($e) && isset($e['_jedomi_tool_executing']));
+        $this->assertSame([], $executing);
+        $chunks = array_filter($events, static fn($e) => is_array($e) && isset($e['choices']));
+        $text = implode('', array_map(static fn($e) => $e['choices'][0]['delta']['content'], $chunks));
+        $this->assertSame(get_string('pending_action_needed', 'local_jedomi'), $text);
+        $this->assertSame('[DONE]', end($events));
+        $this->assertCount(1, $fake->calls);
+    }
+
+    /**
+     * A1: a reading tool runs as before and nothing is held.
+     */
+    public function test_reading_tool_runs_without_confirmation(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $fake = new fake_ai_client();
+
+        $events = $this->run_with_tool_call('search_tables', ['query' => 'user'], $fake);
+
+        $this->assertSame('search_tables', $events[0]['_jedomi_tool_executing']['tool']);
+        $this->assertSame('search_tables', $events[1]['_jedomi_tool_result']['tool']);
+        $this->assertSame(0, $DB->count_records(\local_jedomi\local\service\pending_action_service::TABLE));
+        $this->assertCount(2, $fake->calls);
+        $this->assertSame('tool', $fake->calls[1]['messages'][2]['role']);
+    }
+
+    /**
+     * A5: send_messages is offered to a user with moodle/site:sendmessage and goes through confirmation.
+     */
+    public function test_send_messages_is_offered_and_held(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $fake = new fake_ai_client();
+
+        $events = $this->run_with_tool_call('send_messages', ['user_ids' => [3, 4], 'message' => 'Hello class'], $fake);
+
+        $this->assertContains('send_messages', $this->tool_names($fake->calls[0]));
+        $pendingevents = array_values(array_filter($events, static fn($e) => is_array($e) && isset($e['_jedomi_pending_action'])));
+        $pending = $pendingevents[0]['_jedomi_pending_action'];
+        $this->assertSame('send_messages', $pending['tool']);
+        $this->assertSame('medium', $pending['severity']);
+        $this->assertSame(2, $pending['count']);
+        $this->assertSame('Hello class', $pending['preview']);
+    }
+
+    /**
+     * A5: without moodle/site:sendmessage the send_messages tool is not offered.
+     */
+    public function test_send_messages_is_not_offered_without_capability(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $user = $this->getDataGenerator()->create_user();
+        $userroleid = (int) $DB->get_field('role', 'id', ['shortname' => 'user']);
+        assign_capability('moodle/site:sendmessage', CAP_PROHIBIT, $userroleid, \context_system::instance()->id, true);
+        $this->setUser($user);
+        $fake = new fake_ai_client();
+        $fake->enqueue_text('ok');
+        client::set_instance_for_testing($fake);
+
+        $this->capture(fn() => handler::run([['role' => 'user', 'content' => 'hi']], 'student', (int) $user->id));
+
+        $this->assertNotContains('send_messages', $this->tool_names($fake->calls[0]));
+    }
 }

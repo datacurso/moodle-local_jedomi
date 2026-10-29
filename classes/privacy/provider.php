@@ -24,6 +24,7 @@ use core_privacy\local\request\transform;
 use core_privacy\local\request\userlist;
 use core_privacy\local\request\writer;
 use local_jedomi\local\service\feedback_service;
+use local_jedomi\local\service\pending_action_service;
 
 /**
  * Privacy provider for local_jedomi: answer ratings stored in Moodle and conversations sent to the AI service.
@@ -48,6 +49,14 @@ class provider implements
             'timecreated' => 'privacy:metadata:local_jedomi_feedback:timecreated',
         ], 'privacy:metadata:local_jedomi_feedback');
 
+        $collection->add_database_table(pending_action_service::TABLE, [
+            'userid' => 'privacy:metadata:local_jedomi_pending_actions:userid',
+            'tool' => 'privacy:metadata:local_jedomi_pending_actions:tool',
+            'argsjson' => 'privacy:metadata:local_jedomi_pending_actions:argsjson',
+            'severity' => 'privacy:metadata:local_jedomi_pending_actions:severity',
+            'timecreated' => 'privacy:metadata:local_jedomi_pending_actions:timecreated',
+        ], 'privacy:metadata:local_jedomi_pending_actions');
+
         $collection->add_external_location_link('jedomi_ai_service', [
             'userid' => 'privacy:metadata:jedomi_ai_service:userid',
             'messages' => 'privacy:metadata:jedomi_ai_service:messages',
@@ -59,7 +68,7 @@ class provider implements
     #[\Override]
     public static function get_contexts_for_userid(int $userid): contextlist {
         $contextlist = new contextlist();
-        if (feedback_service::user_has_feedback($userid)) {
+        if (feedback_service::user_has_feedback($userid) || pending_action_service::user_has_actions($userid)) {
             $contextlist->add_user_context($userid);
         }
         return $contextlist;
@@ -68,8 +77,9 @@ class provider implements
     #[\Override]
     public static function get_users_in_context(userlist $userlist): void {
         $context = $userlist->get_context();
-        if ($context instanceof \context_user && feedback_service::user_has_feedback((int) $context->instanceid)) {
-            $userlist->add_user((int) $context->instanceid);
+        $userid = $context instanceof \context_user ? (int) $context->instanceid : 0;
+        if ($userid && (feedback_service::user_has_feedback($userid) || pending_action_service::user_has_actions($userid))) {
+            $userlist->add_user($userid);
         }
     }
 
@@ -99,6 +109,7 @@ class provider implements
     public static function delete_data_for_all_users_in_context(\context $context): void {
         if ($context instanceof \context_user) {
             feedback_service::delete_for_users([(int) $context->instanceid]);
+            pending_action_service::delete_for_users([(int) $context->instanceid]);
         }
     }
 
@@ -108,6 +119,7 @@ class provider implements
         foreach ($contextlist->get_contexts() as $context) {
             if ($context instanceof \context_user && (int) $context->instanceid === $userid) {
                 feedback_service::delete_for_users([$userid]);
+                pending_action_service::delete_for_users([$userid]);
             }
         }
     }
@@ -121,6 +133,7 @@ class provider implements
         $userid = (int) $context->instanceid;
         if (in_array($userid, array_map('intval', $userlist->get_userids()), true)) {
             feedback_service::delete_for_users([$userid]);
+            pending_action_service::delete_for_users([$userid]);
         }
     }
 }

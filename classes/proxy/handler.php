@@ -32,6 +32,9 @@ defined('MOODLE_INTERNAL') || die();
 
 require_once(__DIR__ . '/../../lib.php');
 
+use local_jedomi\local\service\message_service;
+use local_jedomi\local\service\pending_action_service;
+
 /**
  * AI chat proxy handler: runs the tool-calling loop, dispatches tool executions and streams SSE.
  */
@@ -67,6 +70,10 @@ class handler {
         \local_jedomi_log('RUN_START', ['role' => $role, 'user_message_count' => count($messages)]);
 
         $tools = spt_validator::get_tool_definitions($role);
+        if (message_service::can_send($userid)) {
+            // Offered only in the web chat, where the user confirms each send.
+            $tools[] = message_service::tool_definition();
+        }
         $toolrepeatcounts = [];
 
         for ($i = 0; $i < 50; $i++) {
@@ -114,6 +121,20 @@ class handler {
                 $tcid = $tc['id'];
                 $argsraw = $tc['function']['arguments'];
                 $args = is_array($argsraw) ? $argsraw : (json_decode($argsraw, true) ?? []);
+
+                // A tool that changes data does not run now: it waits for the user's confirmation
+                // and the turn ends, so the model cannot act on a result that does not exist yet.
+                $pending = pending_action_service::hold($userid, $name, $args);
+                if ($pending !== null) {
+                    \local_jedomi_log('TOOL_HELD', ['tool' => $name, 'severity' => $pending['severity']]);
+                    echo "data: " . json_encode(['_jedomi_pending_action' => $pending], JSON_UNESCAPED_UNICODE) . "\n\n";
+                    if (ob_get_level()) {
+                        ob_flush();
+                    }
+                    flush();
+                    self::stream_sse_content(get_string('pending_action_needed', 'local_jedomi'));
+                    return;
+                }
 
                 $callkey = $name . '|' . self::stable_tool_args_signature($args);
                 $toolrepeatcounts[$callkey] = ($toolrepeatcounts[$callkey] ?? 0) + 1;
@@ -323,6 +344,8 @@ class handler {
 
             case 'document_read':
                 return self::document_read_tool($args, $role);
+            case 'send_messages':
+                return self::send_messages_tool($args);
             default:
                 return json_encode(['error' => get_string('error_unknown_tool', 'local_jedomi', $name)]);
         }
@@ -767,6 +790,20 @@ class handler {
             'success' => true,
             'message' => "Agent #{$id} deleted.",
         ]);
+    }
+
+    /**
+     * Send Moodle internal messages as the current user.
+     *
+     * @param  array $args Tool arguments; expects "user_ids" and "message".
+     * @return string JSON with the sent and failed counts, or a permission_denied error.
+     */
+    private static function send_messages_tool(array $args): string {
+        global $USER;
+        if (!message_service::can_send((int) $USER->id)) {
+            return json_encode(['error' => 'permission_denied']);
+        }
+        return json_encode(message_service::send((int) $USER->id, $args['user_ids'] ?? [], (string) ($args['message'] ?? '')));
     }
 
     /**

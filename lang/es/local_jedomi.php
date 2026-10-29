@@ -117,6 +117,7 @@ $string['ai_error_timeout'] = 'El asistente tardó demasiado en responder. Inté
 $string['ai_error_unavailable'] = 'El servicio de IA no está disponible en este momento. Inténtalo de nuevo en unos minutos.';
 $string['ai_heading'] = 'Servicio de IA';
 $string['ai_heading_help'] = 'Jedomi envía sus solicitudes de IA a través del proveedor de IA de Datacurso, con su clave de licencia y sus límites de uso.';
+$string['analyze_file'] = 'Resume este archivo.';
 $string['analyze_image'] = 'Analizá esta imagen.';
 $string['anon_basic'] = 'Básico (nombres y emails)';
 $string['anon_basic_desc'] = 'Reemplaza nombres y correos. Conserva la mayor parte del contexto.';
@@ -241,8 +242,10 @@ $string['error_wsname_required'] = 'wsname is required';
 $string['execute_sql_error'] = 'Error de base de datos al ejecutar la query.';
 $string['export_conversation'] = 'Exportar conversación';
 $string['file'] = 'Archivo';
-$string['file_attach_disabled'] = 'Adjuntar documentos no está disponible por ahora. Puedes adjuntar imágenes o pegar el texto en tu mensaje.';
 $string['file_csv'] = 'CSV: {rows} filas, {columns} columnas';
+$string['file_error_no_text'] = 'No se pudo leer texto de este archivo. Si es un documento escaneado, adjúntalo como imagen.';
+$string['file_error_too_large'] = 'El archivo es demasiado grande para leerlo.';
+$string['file_error_unsupported'] = 'Solo se pueden adjuntar archivos PDF, CSV, TXT y MD.';
 $string['file_loaded'] = 'cargado';
 $string['file_loaded_hint'] = 'Podés hacer preguntas sobre su contenido.';
 $string['file_not_found'] = 'Archivo no encontrado o no legible.';
@@ -288,6 +291,16 @@ $string['note_ws_not_found'] = 'No se encontraron funciones. Probá con otras pa
 $string['open_admin_settings'] = 'Abrir configuración de Jedomi';
 $string['open_sidebar'] = 'Abrir Jedomi AI';
 $string['path_not_allowed'] = 'Esta ruta no está permitida.';
+$string['pending_action_denied'] = 'La acción no se ejecutó: no tienes permiso para hacerla.';
+$string['pending_action_expired'] = 'Esta acción venció. Vuelve a pedírsela a Jedomi.';
+$string['pending_action_failed'] = 'No se pudo completar la acción.';
+$string['pending_action_needed'] = 'Esta acción necesita tu confirmación.';
+$string['pending_action_not_found'] = 'Esta acción no existe o ya se resolvió.';
+$string['pending_desc_admin_execute'] = 'Ejecutar la operación de administración "{$a}".';
+$string['pending_desc_create_agent'] = 'Crear el agente programado "{$a}".';
+$string['pending_desc_delete_agent'] = 'Eliminar el agente programado #{$a}.';
+$string['pending_desc_send_messages'] = 'Enviar un mensaje de Moodle a {$a} usuario(s).';
+$string['pending_desc_ws_execute'] = 'Ejecutar la función de servicio web "{$a}".';
 $string['pluginname'] = 'Jedomi AI Sidebar';
 $string['privacy:metadata:jedomi_ai_service'] = 'Las conversaciones se envían a través del proveedor de IA de Datacurso a su servicio de IA para generar las respuestas.';
 $string['privacy:metadata:jedomi_ai_service:messages'] = 'Los mensajes de la conversación y los resultados de las herramientas usadas para responderlos.';
@@ -298,6 +311,12 @@ $string['privacy:metadata:local_jedomi_feedback:rating'] = 'Si la respuesta se v
 $string['privacy:metadata:local_jedomi_feedback:sessionid'] = 'La sesión de chat de la respuesta valorada.';
 $string['privacy:metadata:local_jedomi_feedback:timecreated'] = 'Cuándo se dio la valoración.';
 $string['privacy:metadata:local_jedomi_feedback:userid'] = 'El usuario que valoró la respuesta.';
+$string['privacy:metadata:local_jedomi_pending_actions'] = 'Acciones del chat web que esperan la confirmación del usuario durante un máximo de 15 minutos.';
+$string['privacy:metadata:local_jedomi_pending_actions:argsjson'] = 'Argumentos de la acción, como el mensaje a enviar y sus destinatarios.';
+$string['privacy:metadata:local_jedomi_pending_actions:severity'] = 'Nivel de cuidado que exige la confirmación.';
+$string['privacy:metadata:local_jedomi_pending_actions:timecreated'] = 'Cuándo se pidió la acción.';
+$string['privacy:metadata:local_jedomi_pending_actions:tool'] = 'Herramienta que ejecuta la acción.';
+$string['privacy:metadata:local_jedomi_pending_actions:userid'] = 'Usuario que debe confirmar la acción.';
 $string['privacy_access_heading'] = 'Control de acceso';
 $string['privacy_access_heading_help'] = 'Quién puede ver y usar el sidebar de Jedomi.';
 $string['privacy_anon_heading'] = 'Anonimización de datos';
@@ -373,8 +392,8 @@ $string['qa_teacher_my_courses_msg'] = '¿En qué cursos soy profesor actualment
 $string['qa_teacher_never_logged_label'] = 'Nunca accedieron';
 $string['qa_teacher_never_logged_msg'] = '¿Qué estudiantes nunca accedieron al curso {$a}?';
 $string['qa_teacher_notify_group_label'] = 'Notificar grupo';
-$string['qa_teacher_notify_group_msg'] = 'Redactá un mensaje para los estudiantes del curso {$a} recordándoles las actividades '
-    . 'pendientes';
+$string['qa_teacher_notify_group_msg'] = 'Redacta un mensaje para los estudiantes del curso {$a} recordándoles las actividades '
+    . 'pendientes y envíaselo como mensaje de Moodle con send_messages';
 $string['qa_teacher_performance_label'] = 'Rendimiento';
 $string['qa_teacher_performance_msg'] = '¿Cuál es el promedio de notas en el curso {$a}?';
 $string['qa_teacher_top_students_label'] = 'Mejores estudiantes';
@@ -603,6 +622,13 @@ $string['tool_search_tables_desc'] = 'Busca tablas de Moodle por intención o pa
     . 'nombres de campos y comentarios de campos. Usá SIEMPRE search_tables antes de describe_table o execute_sql.';
 $string['tool_search_tables_limit'] = 'Máximo de resultados (default: 8, max: 15)';
 $string['tool_search_tables_query'] = 'Intención o palabras clave en INGLÉS (ej: "user grades", "course enrolment", "student")';
+$string['tool_send_messages_desc'] = 'Envía un mensaje interno de Moodle a uno o más usuarios. '
+    . 'Solo cuando el usuario pide explícitamente enviar o notificar un mensaje; nunca para responder una pregunta '
+    . 'o analizar datos. Primero busca los ids de usuario '
+    . '(ws_search/ws_execute o execute_sql). El usuario confirma antes del envío: llama a esta herramienta una sola vez '
+    . 'y no pidas confirmación en el texto.';
+$string['tool_send_messages_message'] = 'Texto plano del mensaje, en el idioma del usuario.';
+$string['tool_send_messages_user_ids'] = 'Ids de usuario de Moodle de los destinatarios.';
 $string['tool_sql_read'] = 'Consultando base de datos...';
 $string['tool_unknown'] = 'Ejecutando herramienta...';
 $string['tool_webservice_lookup'] = 'Buscando función API...';

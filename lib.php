@@ -64,6 +64,7 @@ function local_jedomi_get_sidebar_config(): array {
 
     return [
         'chatproxy_url' => $CFG->wwwroot . '/local/jedomi/chatproxy.php',
+        'extract_file_url' => $CFG->wwwroot . '/local/jedomi/extract_file.php',
         'feedback_url'  => $CFG->wwwroot . '/local/jedomi/ajax/feedback.php',
         'user_name'     => fullname($USER),
         'user_role'     => local_jedomi_get_user_role(),
@@ -85,7 +86,6 @@ function local_jedomi_get_sidebar_config(): array {
             'attach_file'       => get_string('attach_file', 'local_jedomi'),
             'attach_image'      => get_string('attach_image', 'local_jedomi'),
             'file'              => get_string('file', 'local_jedomi'),
-            'file_attach_disabled' => get_string('file_attach_disabled', 'local_jedomi'),
             'image'             => get_string('image', 'local_jedomi'),
             'message_input'     => get_string('message_input', 'local_jedomi'),
             'placeholder'       => get_string('chat_placeholder', 'local_jedomi'),
@@ -97,6 +97,7 @@ function local_jedomi_get_sidebar_config(): array {
             'thinking'          => get_string('thinking', 'local_jedomi'),
             'new_conversation_msg' => get_string('new_conversation_msg', 'local_jedomi'),
             // Files.
+            'analyze_file'         => get_string('analyze_file', 'local_jedomi'),
             'analyze_image'        => get_string('analyze_image', 'local_jedomi'),
             'attached_file_info'   => get_string('attached_file_info', 'local_jedomi'),
             'attached_image'       => get_string('attached_image', 'local_jedomi'),
@@ -159,6 +160,7 @@ function local_jedomi_get_sidebar_config(): array {
             'confirm_executing'       => get_string('confirm_executing', 'local_jedomi'),
             'confirm_done'            => get_string('confirm_done', 'local_jedomi'),
             'confirm_cancelled'       => get_string('confirm_cancelled', 'local_jedomi'),
+            'pending_action_needed'   => get_string('pending_action_needed', 'local_jedomi'),
             // Quick actions: Admin.
             'qa_admin_active_users_label'    => get_string('qa_admin_active_users_label', 'local_jedomi'),
             'qa_admin_active_users_msg'      => get_string('qa_admin_active_users_msg', 'local_jedomi'),
