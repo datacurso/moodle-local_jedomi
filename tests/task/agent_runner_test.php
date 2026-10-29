@@ -18,11 +18,14 @@ namespace local_jedomi\task;
 
 use local_jedomi\ai\client;
 use local_jedomi\ai\fake_ai_client;
+use local_jedomi\ai\fake_curl;
+use local_jedomi\ai\testable_provider_api;
 
 defined('MOODLE_INTERNAL') || die();
 
 global $CFG;
 require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/fake_ai_client.php');
+require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/testable_provider_api.php');
 
 /**
  * Tests for the scheduled agent runner over the AI client.
@@ -144,6 +147,27 @@ final class agent_runner_test extends \advanced_testcase {
         $output = $this->run_task();
 
         $this->assertStringContainsString(get_string('ai_error_nocredit', 'local_jedomi'), $output);
+        $after = $DB->get_record('local_jedomi_agents', ['id' => $agent->id]);
+        $this->assertSame(1, (int) $after->failcount);
+    }
+
+    /**
+     * I6: with the provider disabled the run fails with the provider's message and nothing is sent.
+     */
+    public function test_agent_with_the_provider_disabled_fails_with_the_provider_message(): void {
+        global $DB;
+        $this->resetAfterTest();
+        set_config('licensekey', 'test-license', 'aiprovider_datacurso');
+        \core\plugininfo\aiprovider::enable_plugin('datacurso', 0);
+        $creator = $this->getDataGenerator()->create_user();
+        $agent = $this->create_due_agent((int) $creator->id);
+        $curl = new fake_curl();
+        client::set_instance_for_testing(testable_provider_api::make_client($curl));
+
+        $output = $this->run_task();
+
+        $this->assertStringContainsString(get_string('providerdisabled', 'aiprovider_datacurso'), $output);
+        $this->assertSame([], $curl->calls);
         $after = $DB->get_record('local_jedomi_agents', ['id' => $agent->id]);
         $this->assertSame(1, (int) $after->failcount);
     }

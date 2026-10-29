@@ -41,6 +41,7 @@ final class client_test extends \advanced_testcase {
      * @return client
      */
     private function make_client(fake_curl $curl): client {
+        \core\plugininfo\aiprovider::enable_plugin('datacurso', 1);
         return new client(static fn(int $timeout): provider_api => new testable_provider_api($timeout, $curl));
     }
 
@@ -184,5 +185,44 @@ final class client_test extends \advanced_testcase {
 
         $this->expectException(\moodle_exception::class);
         $this->make_client($curl)->complete([['role' => 'user', 'content' => 'x']], 2);
+    }
+
+    /**
+     * The provider is told that Jedomi makes the request, with its release and build.
+     */
+    public function test_complete_sends_the_jedomi_plugin_headers(): void {
+        $this->resetAfterTest();
+        set_config('licensekey', 'test-license', 'aiprovider_datacurso');
+        $plugin = \core_plugin_manager::instance()->get_plugin_info('local_jedomi');
+
+        $curl = new fake_curl();
+        $curl->enqueue($this->answer(['role' => 'assistant', 'content' => 'ok']));
+        $this->make_client($curl)->complete([['role' => 'user', 'content' => 'x']], 2);
+
+        $headers = $curl->calls[0]['options']['CURLOPT_HTTPHEADER'];
+        $this->assertContains('X-Plugin-Name: local_jedomi', $headers);
+        $this->assertContains('X-Plugin-Version: ' . $plugin->release, $headers);
+        $this->assertContains('X-Plugin-Build: ' . $plugin->versiondisk, $headers);
+    }
+
+    /**
+     * I6: with the provider disabled the call is refused with the provider exception and nothing is sent.
+     */
+    public function test_complete_with_the_provider_disabled_sends_nothing(): void {
+        $this->resetAfterTest();
+        set_config('licensekey', 'test-license', 'aiprovider_datacurso');
+        $curl = new fake_curl();
+        $curl->enqueue($this->answer(['role' => 'assistant', 'content' => 'ok']));
+        $client = $this->make_client($curl);
+        \core\plugininfo\aiprovider::enable_plugin('datacurso', 0);
+
+        try {
+            $client->complete([['role' => 'user', 'content' => 'x']], 2);
+            $this->fail('Expected the providerdisabled exception');
+        } catch (\moodle_exception $e) {
+            $this->assertSame('providerdisabled', $e->errorcode);
+            $this->assertSame('aiprovider_datacurso', $e->module);
+        }
+        $this->assertSame([], $curl->calls);
     }
 }

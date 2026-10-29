@@ -923,6 +923,7 @@ final class webhook_handler_test extends \advanced_testcase {
         $user = $this->getDataGenerator()->create_user();
         set_config('licensekey', 'test-license', 'aiprovider_datacurso');
         set_config('model', 'jedomi/zai-org/GLM-5.3-Flash', 'local_jedomi');
+        \core\plugininfo\aiprovider::enable_plugin('datacurso', 1);
         $curl = new fake_curl();
         $curl->enqueue('{"detail":"upstream down"}', 503);
         $client = new client(static fn(int $timeout): provider_api => new testable_provider_api($timeout, $curl));
@@ -999,6 +1000,31 @@ final class webhook_handler_test extends \advanced_testcase {
         $this->assertEmpty($after['is_locked'] ?? null, 'The lock must be released');
         $texts = array_column($telegram->sent, 'text');
         $this->assertContains(get_string('ai_error_timeout', 'local_jedomi'), $texts);
+    }
+
+    /**
+     * I6: with the provider disabled Telegram answers with the provider's message and nothing is sent.
+     */
+    public function test_telegram_with_the_provider_disabled_answers_with_the_provider_message(): void {
+        $chatid = '990000006';
+        set_config('licensekey', 'test-license', 'aiprovider_datacurso');
+        \core\plugininfo\aiprovider::enable_plugin('datacurso', 0);
+        $user = $this->getDataGenerator()->create_user(['lang' => 'en']);
+        $curl = new fake_curl();
+        $telegram = new fake_telegram_api_client();
+        api_client::set_instance_for_testing($telegram);
+        $statekey = $this->seed_selfping_state($chatid, [
+            'spt'   => ['token' => 'fake-spt-token', 'role' => 'student', 'tools' => []],
+            'tools' => [],
+        ], testable_provider_api::make_client($curl), (int) $user->id);
+
+        $this->run_internal_ping($chatid);
+
+        $this->assertSame([], $curl->calls);
+        $texts = array_column($telegram->sent, 'text');
+        $this->assertContains(get_string('providerdisabled', 'aiprovider_datacurso'), $texts);
+        $after = \local_jedomi\telegram\session::get_context($statekey);
+        $this->assertEmpty($after['is_locked'] ?? null, 'The lock must be released');
     }
 
     // ... ========================

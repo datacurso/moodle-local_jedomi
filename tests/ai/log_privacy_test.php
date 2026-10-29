@@ -65,6 +65,7 @@ final class log_privacy_test extends \advanced_testcase {
      * @param array $responses List of [body, http code].
      */
     private function install_client(array $responses): void {
+        \core\plugininfo\aiprovider::enable_plugin('datacurso', 1);
         $curl = new fake_curl();
         foreach ($responses as [$body, $code]) {
             $curl->enqueue($body, $code);

@@ -42,6 +42,9 @@ class error_message {
     /** @var string Code: the AI request took longer than the allowed time. */
     public const CODE_TIMEOUT = 'timeout';
 
+    /** @var string Code: the Datacurso AI provider is disabled in Site administration > AI > AI providers. */
+    public const CODE_PROVIDER_DISABLED = 'provider_disabled';
+
     /** @var string Code: any other failure. */
     public const CODE_GENERIC = 'generic';
 
@@ -53,18 +56,32 @@ class error_message {
      * @return array{code: string, message: string}
      */
     public static function from_exception(\Throwable $e, ?string $lang = null): array {
-        [$code, $key, $a] = self::classify($e);
-        $message = get_string_manager()->get_string($key, 'local_jedomi', $a, $lang ?? current_language());
+        [$code, $key, $a, $component] = self::classify($e);
+        $message = get_string_manager()->get_string($key, $component, $a, $lang ?? current_language());
         return ['code' => $code, 'message' => $message];
     }
 
     /**
-     * Map a failure to its code, language string key and string parameter.
+     * Map a failure to its code, language string key, string parameter and string component.
+     *
+     * @param \Throwable $e Failure raised by the AI client.
+     * @return array{0: string, 1: string, 2: mixed, 3: string}
+     */
+    private static function classify(\Throwable $e): array {
+        if ($e instanceof \moodle_exception && $e->module === 'aiprovider_datacurso' && $e->errorcode === 'providerdisabled') {
+            // The provider's own message says where an administrator enables it.
+            return [self::CODE_PROVIDER_DISABLED, 'providerdisabled', null, 'aiprovider_datacurso'];
+        }
+        return array_merge(self::classify_jedomi($e), ['local_jedomi']);
+    }
+
+    /**
+     * Map a failure shown with a Jedomi string to its code, language string key and string parameter.
      *
      * @param \Throwable $e Failure raised by the AI client.
      * @return array{0: string, 1: string, 2: mixed}
      */
-    private static function classify(\Throwable $e): array {
+    private static function classify_jedomi(\Throwable $e): array {
         if (!$e instanceof \moodle_exception || $e->module !== 'aiprovider_datacurso') {
             return [self::CODE_GENERIC, 'ai_error_generic', null];
         }

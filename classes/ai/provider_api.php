@@ -36,7 +36,7 @@ class provider_api extends \aiprovider_datacurso\httpclient\ai_services_api {
      * @param int $timeout Total request timeout, in seconds.
      */
     public function __construct(int $timeout) {
-        parent::__construct();
+        parent::__construct(null, null, null, 'local_jedomi');
         $this->timeout = max(1, $timeout);
     }
 

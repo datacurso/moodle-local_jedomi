@@ -18,11 +18,14 @@ namespace local_jedomi\agent;
 
 use local_jedomi\ai\client;
 use local_jedomi\ai\fake_ai_client;
+use local_jedomi\ai\fake_curl;
+use local_jedomi\ai\testable_provider_api;
 
 defined('MOODLE_INTERNAL') || die();
 
 global $CFG;
 require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/fake_ai_client.php');
+require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/testable_provider_api.php');
 
 /**
  * Tests for the agent preview over the AI client.
@@ -101,5 +104,24 @@ final class preview_runner_test extends \advanced_testcase {
         $this->assertFalse($result['ok']);
         $this->assertSame('unavailable', $result['error_code']);
         $this->assertSame(get_string('ai_error_unavailable', 'local_jedomi'), $result['error']);
+    }
+
+    /**
+     * I6: with the provider disabled the preview shows the provider's message and nothing is sent.
+     */
+    public function test_preview_with_the_provider_disabled_shows_the_provider_message(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        set_config('licensekey', 'test-license', 'aiprovider_datacurso');
+        \core\plugininfo\aiprovider::enable_plugin('datacurso', 0);
+        $curl = new fake_curl();
+        client::set_instance_for_testing(testable_provider_api::make_client($curl));
+
+        $result = preview_runner::run('List the users', (int) get_admin()->id);
+
+        $this->assertFalse($result['ok']);
+        $this->assertSame('provider_disabled', $result['error_code']);
+        $this->assertSame(get_string('providerdisabled', 'aiprovider_datacurso'), $result['error']);
+        $this->assertSame([], $curl->calls);
     }
 }

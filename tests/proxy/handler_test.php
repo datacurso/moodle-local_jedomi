@@ -145,6 +145,30 @@ final class handler_test extends \advanced_testcase {
     }
 
     /**
+     * I6: with the provider disabled the web chat gets an error event with the provider's message.
+     */
+    public function test_run_with_the_provider_disabled_sends_the_provider_message(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        set_config('licensekey', 'test-license', 'aiprovider_datacurso');
+        \core\plugininfo\aiprovider::enable_plugin('datacurso', 0);
+        $curl = new fake_curl();
+        client::set_instance_for_testing(testable_provider_api::make_client($curl));
+
+        $output = $this->capture(fn() => handler::run(
+            [['role' => 'user', 'content' => 'hi']],
+            'admin',
+            (int) get_admin()->id
+        ));
+
+        $events = $this->events($output);
+        $this->assertCount(1, $events);
+        $this->assertSame('provider_disabled', $events[0]['error']['code']);
+        $this->assertSame(get_string('providerdisabled', 'aiprovider_datacurso'), $events[0]['error']['message']);
+        $this->assertSame([], $curl->calls);
+    }
+
+    /**
      * M4: the model sent by the browser is ignored; the configured model is used.
      */
     public function test_run_from_request_ignores_browser_model(): void {
@@ -152,6 +176,7 @@ final class handler_test extends \advanced_testcase {
         $this->setAdminUser();
         set_config('licensekey', 'test-license', 'aiprovider_datacurso');
         set_config('model', 'jedomi/zai-org/GLM-5.3-Flash', 'local_jedomi');
+        \core\plugininfo\aiprovider::enable_plugin('datacurso', 1);
         $curl = new fake_curl();
         $curl->enqueue(json_encode(['choices' => [['message' => ['role' => 'assistant', 'content' => 'ok']]]]));
         client::set_instance_for_testing(

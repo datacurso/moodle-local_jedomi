@@ -51,6 +51,22 @@ class testable_provider_api extends provider_api {
         $this->fakecurl = $fakecurl;
     }
 
+    /**
+     * Jedomi AI client whose provider transport is the given fake.
+     *
+     * @param fake_curl $curl Transport double.
+     * @return client
+     */
+    public static function make_client(fake_curl $curl): client {
+        return new client(static fn(int $timeout): provider_api => new testable_provider_api($timeout, $curl));
+    }
+
+    #[\Override]
+    public function is_for_ue(): bool {
+        // The region is a property of the licence; resolving it would ask the shop.
+        return false;
+    }
+
     #[\Override]
     protected function create_transport(): \curl {
         return $this->fakecurl;

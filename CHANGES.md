@@ -3,7 +3,10 @@
 ## 1.3.0 (2026-10-28)
 
 - Route every AI call (web chat, scheduled agents, agent preview, Telegram and CLI) through the Datacurso AI provider to `POST /jedomi/v1/chat/completions`, using the provider license, rate limits and the pseudonymised user of each call
-- Require `aiprovider_datacurso` 1.7.0 (2026102700)
+- Require `aiprovider_datacurso` 1.7.0 (2026102701)
+- Show the provider's own message, in the user's language, when the Datacurso AI provider is disabled in Site administration > AI > AI providers (code `provider_disabled`), in the web chat, agent preview, Telegram, agents and CLI; nothing is sent to the AI service
+- Send the `X-Plugin-*` headers (`local_jedomi`, release and build) with every AI call
+- Add `cli/e2e_check.php`: one short real conversation with the `search_tables` tool through the provider, plugins-ai, LiteLLM and the model, with the site license, model and region; prints PASS or FAIL for provider enabled, request answered, tool call returned, final answer and model used, and on failure the error code and the layer (provider, plugins-ai, token-manager, network); never prints the license or answer bodies; exit code 0 or 1
 - Replace the free-text model setting with a list of evaluated and priced models: Gemma 4 26B A4B (default, `jedomi/google/gemma-4-26B-A4B-it`), DeepSeek V4.1 Flash, GLM 5.3 Flash and MiMo V2.6 Flash
 - Use the default model when the saved model is not in the list; the upgrade replaces such a saved model with the default one
 - Apply the `max_tokens` setting to every channel

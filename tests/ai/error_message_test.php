@@ -101,6 +101,25 @@ final class error_message_test extends \advanced_testcase {
     }
 
     /**
+     * I6: a disabled provider gives the provider's own message, in the requested language.
+     */
+    public function test_provider_disabled_gives_the_provider_message_in_english_and_spanish(): void {
+        $this->resetAfterTest();
+        $this->install_spanish_language();
+        $e = new \moodle_exception('providerdisabled', 'aiprovider_datacurso');
+        $sm = get_string_manager();
+
+        $en = error_message::from_exception($e, 'en');
+        $es = error_message::from_exception($e, 'es');
+
+        $this->assertSame(error_message::CODE_PROVIDER_DISABLED, $en['code']);
+        $this->assertSame('provider_disabled', $es['code']);
+        $this->assertSame($sm->get_string('providerdisabled', 'aiprovider_datacurso', null, 'en'), $en['message']);
+        $this->assertSame($sm->get_string('providerdisabled', 'aiprovider_datacurso', null, 'es'), $es['message']);
+        $this->assertNotSame($en['message'], $es['message']);
+    }
+
+    /**
      * M2: any other failure (including non-provider exceptions) gives the generic message, never internal details.
      */
     public function test_unknown_exception_gives_generic_message_without_details(): void {
