@@ -3,7 +3,9 @@
 ## 1.3.0 (2026-10-28)
 
 - Route every AI call (web chat, scheduled agents, agent preview, Telegram and CLI) through the Datacurso AI provider to `POST /jedomi/v1/chat/completions`, using the provider license, rate limits and the pseudonymised user of each call
-- Require `aiprovider_datacurso` 1.7.0 (2026102701)
+- Require `aiprovider_datacurso` 1.7.0 (2026102900)
+- Move the AI service settings (model, document-to-image service URL and max tokens) and the "Enabled" switch to the Jedomi settings page of the Datacurso AI provider (Site administration > AI > Datacurso plugins list > Settings); the values are still stored in `local_jedomi`, the max tokens are kept between 256 and 128000, and the General tab of the Jedomi settings links to that page
+- Read the "Enabled" state from the Datacurso AI provider for the sidebar and file reading; the upgrade removes the old `enabled` setting of `local_jedomi` (the provider keeps its value)
 - Show the provider's own message, in the user's language, when the Datacurso AI provider is disabled in Site administration > AI > AI providers (code `provider_disabled`), in the web chat, agent preview, Telegram, agents and CLI; nothing is sent to the AI service
 - Send the `X-Plugin-*` headers (`local_jedomi`, release and build) with every AI call
 - Add `cli/e2e_check.php`: one short real conversation with the `search_tables` tool through the provider, plugins-ai, LiteLLM and the model, with the site license, model and region; prints PASS or FAIL for provider enabled, request answered, tool call returned, final answer and model used, and on failure the error code and the layer (provider, plugins-ai, token-manager, network); never prints the license or answer bodies; exit code 0 or 1

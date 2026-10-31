@@ -50,7 +50,7 @@ class hook_callbacks {
             return;
         }
 
-        if (get_config('local_jedomi', 'enabled') === '0') {
+        if (!\aiprovider_datacurso\local\plugin_settings::is_enabled('local_jedomi')) {
             return;
         }
 

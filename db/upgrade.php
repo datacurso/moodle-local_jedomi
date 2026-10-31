@@ -343,5 +343,11 @@ function xmldb_local_jedomi_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2026102804, 'local', 'jedomi');
     }
 
+    if ($oldversion < 2026102902) {
+        // The "Enabled" switch moved to the Datacurso AI provider, which copied its value before this step.
+        unset_config('enabled', 'local_jedomi');
+        upgrade_plugin_savepoint(true, 2026102902, 'local', 'jedomi');
+    }
+
     return true;
 }

@@ -52,14 +52,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && confirm_sesskey()) {
 
     switch ($savetype) {
         case 'general':
-            set_config('enabled', optional_param('enabled', 0, PARAM_INT), 'local_jedomi');
-            // Only a listed model can be saved.
-            $model = required_param('model', PARAM_TEXT);
-            if (array_key_exists($model, \local_jedomi\ai\model_settings::get_available_models())) {
-                set_config('model', $model, 'local_jedomi');
-            }
-            set_config('max_tokens', optional_param('max_tokens', 16384, PARAM_INT), 'local_jedomi');
-            set_config('docservice_url', optional_param('docservice_url', '', PARAM_TEXT), 'local_jedomi');
             set_config('spt_secret', required_param('spt_secret', PARAM_TEXT), 'local_jedomi');
             set_config('collect_training_data', optional_param('collect_training_data', 0, PARAM_INT), 'local_jedomi');
 
@@ -207,10 +199,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && confirm_sesskey()) {
 // Load values ─────────────────────────────────────────────────────────────────.
 $cfg = [
     // General.
-    'enabled'               => (int)(get_config('local_jedomi', 'enabled') ?? 1),
-    'model'                 => \local_jedomi\ai\model_settings::get_model(),
-    'max_tokens'            => \local_jedomi\ai\model_settings::get_max_tokens(),
-    'docservice_url'        => get_config('local_jedomi', 'docservice_url') ?: '',
     'spt_secret'            => get_config('local_jedomi', 'spt_secret') ?: '',
     'collect_training_data' => (function () {
         $v = get_config('local_jedomi', 'collect_training_data');
@@ -329,61 +317,13 @@ echo '</ul>';
         </div>
         <div class="card-body">
 
-            <!-- Enabled toggle -->
-            <div class="toggle-row">
-                <div class="toggle-info">
-                    <strong><?php echo get_string('enabled', 'local_jedomi'); ?></strong>
-                    <small><?php echo get_string('enabled_help', 'local_jedomi'); ?></small>
-                </div>
-                <div class="form-check form-switch mb-0">
-                    <input class="form-check-input" type="checkbox" name="enabled"
-                           value="1" <?php echo $cfg['enabled'] ? 'checked' : ''; ?>
-                           style="width:2.5rem;height:1.25rem;cursor:pointer">
-                </div>
-            </div>
-
-            <!-- Model -->
-            <div class="mt-3">
-                <label class="form-label-main" for="jedomi-model">
-                    <?php echo get_string('model', 'local_jedomi'); ?>
-                </label>
-                <select id="jedomi-model" name="model" class="form-select custom-select" style="max-width:480px">
-                    <?php
-                    // The model setting is always listed: get_model() falls back to the default one.
-                    $modeloptions = \local_jedomi\ai\model_settings::get_available_models();
-                    foreach ($modeloptions as $modelid => $modellabel) {
-                        $selected = ($modelid === $cfg['model']) ? ' selected' : '';
-                        echo '<option value="' . s($modelid) . '"' . $selected . '>' . s($modellabel) . '</option>';
-                    }
-                    ?>
-                </select>
-                <p class="form-text"><?php echo get_string('model_help', 'local_jedomi'); ?></p>
-            </div>
-
-                <div class="mt-3">
-                    <label class="form-label-main" for="jedomi-docservice">
-                        <?php echo get_string('docservice_url', 'local_jedomi'); ?>
-                    </label>
-                    <input type="url" id="jedomi-docservice" name="docservice_url"
-                           class="form-control" style="max-width:480px"
-                           value="<?php echo s($cfg['docservice_url'] ?? ''); ?>"
-                           placeholder="http://localhost:8000">
-                    <p class="form-text"><?php echo get_string('docservice_url_help', 'local_jedomi'); ?></p>
-                </div>
-
-            <!-- Max Tokens -->
-            <div class="mt-3">
-                <label class="form-label-main" for="jedomi-max-tokens">
-                    <?php echo get_string('max_tokens', 'local_jedomi'); ?>
-                </label>
-                <input type="number" id="jedomi-max-tokens" name="max_tokens"
-                       class="form-control" style="max-width:140px"
-                       value="<?php echo (int)($cfg['max_tokens'] ?? 16384); ?>"
-                       min="256" max="128000" step="1">
-                <small class="form-text text-muted">
-                    <?php echo get_string('max_tokens_help', 'local_jedomi'); ?>
-                </small>
-            </div>
+            <?php
+            echo $OUTPUT->render_from_template('local_jedomi/provider_settings_link', [
+                'url' => (new moodle_url('/ai/provider/datacurso/admin/plugin_settings.php', [
+                    'component' => 'local_jedomi',
+                ]))->out(false),
+            ]);
+            ?>
 
         </div>
     </div>

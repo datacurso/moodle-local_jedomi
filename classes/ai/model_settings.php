@@ -39,6 +39,9 @@ class model_settings {
     /** @var int Smallest accepted answer size limit, in tokens. */
     public const MIN_MAX_TOKENS = 256;
 
+    /** @var int Largest answer size limit accepted by the settings form, in tokens. */
+    public const MAX_MAX_TOKENS = 128000;
+
     /** @var string[] Legacy settings removed when the plugin moved to the provider route. */
     private const LEGACY_SETTINGS = ['gateway_url', 'api_key'];
 

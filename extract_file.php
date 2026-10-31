@@ -49,7 +49,8 @@ function local_jedomi_extract_file_error(int $status, array $error): void {
     die();
 }
 
-if (isguestuser() || get_config('local_jedomi', 'enabled') === '0' || !local_jedomi_is_role_allowed()) {
+if (isguestuser() || !\aiprovider_datacurso\local\plugin_settings::is_enabled('local_jedomi')
+        || !local_jedomi_is_role_allowed()) {
     local_jedomi_extract_file_error(403, ['code' => 'forbidden', 'message' => get_string('nopermissions', 'error', '')]);
 }
 
