@@ -356,6 +356,19 @@ class api_client {
     }
 
     /**
+     * Build a form-encoded request body.
+     *
+     * Moodle sets arg_separator.output to "&amp;", so the separator is passed explicitly;
+     * otherwise Telegram reads only the first field.
+     *
+     * @param array $params Request fields.
+     * @return string Form-encoded body.
+     */
+    public static function build_body(array $params): string {
+        return http_build_query($params, '', '&');
+    }
+
+    /**
      * Send a POST request to the Telegram Bot API.
      *
      * @param string $method  API method name, e.g. "sendMessage"
@@ -371,7 +384,7 @@ class api_client {
         $url = $this->baseurl . '/' . $method;
         $ch = curl_init($url);
         curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($params));
+        curl_setopt($ch, CURLOPT_POSTFIELDS, self::build_body($params));
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_TIMEOUT, 30);
         curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/x-www-form-urlencoded']);

@@ -463,6 +463,7 @@ $string['telegram_connection_status'] = 'Connection status';
 $string['telegram_cooldown'] = 'Cooldown';
 $string['telegram_cooldown_help'] = 'Minutes to block a user after exceeding the rate limit.';
 $string['telegram_enabled'] = 'Enable Telegram integration';
+$string['telegram_enabled_save_failed'] = 'The Telegram integration switch could not be saved. Please try again.';
 $string['telegram_gateway_timeout'] = 'Gateway timeout (seconds)';
 $string['telegram_gateway_timeout_help'] = 'Maximum seconds to wait for the Jedomi Gateway to respond (5-300).';
 $string['telegram_heading'] = 'Telegram';

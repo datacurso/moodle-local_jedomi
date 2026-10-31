@@ -22,12 +22,17 @@
 - Add the web chat tool `send_messages`, offered to users with `moodle/site:sendmessage`: after confirmation it sends Moodle internal messages only to users the sender can contact and reports sent and failed; the "Notify group" quick action ends in this tool again
 - Restore the "File" attach option and file drag and drop for `.pdf`, `.csv`, `.txt` and `.md`: Moodle sends the file through the Datacurso provider to `POST /jedomi/v1/files/extract` (not billed); the file stays as a pending attachment above the input, like an image, and its text (with its pages, rows and columns, or characters) is sent with the next question, so editing the input does not drop it; clear messages for unsupported, too large or unreadable files and for provider errors
 - Stop sending the SPT to the AI service from Telegram
+- Fix Telegram answers never arriving: the request body to the Telegram API now separates fields with `&` instead of Moodle's `&amp;`, which left the message text empty
+- Fix Telegram sending the same message again (and the AI service being called again) when the site is behind a proxy: the early webhook answer now declares its real length
+- Fix the Telegram bot no longer answering after "Drop pending updates": the webhook is registered again after the queue is cleared
 - Show a timeout message and stop resending the Telegram request to the AI service when a call times out, so it is not billed again
 - Fix the agent preview and scheduled agents sending tool results without the assistant tool calls that precede them
 - Fix an invalid regular expression in the cleanup of the scheduled agent answer
 - Render only web and site-relative links in chat answers and escape quotes, so model output cannot inject `javascript:` or `data:` links or HTML attributes
 - Log status codes and sizes instead of AI request and response contents
 - Remove hardcoded default API keys and gateway URLs
+- Render the "Enable Telegram integration" switch of the Integrations tab as a switch on Moodle 4.5 (Bootstrap 4) as well as on Moodle 5.x (Bootstrap 5); it used to show as a plain checkbox on 4.5
+- Save the "Enable Telegram integration" switch as soon as it is toggled, without submitting the form, through the new web service `local_jedomi_set_telegram_enabled` (site administrators only); if the save fails the switch goes back to its previous state and a notification is shown. Saving the form still stores the switch together with the other Telegram settings
 
 ## 1.2.3 (2026-05-25)
 

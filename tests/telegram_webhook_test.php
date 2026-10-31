@@ -192,4 +192,40 @@ final class telegram_webhook_test extends \advanced_testcase {
             'telegram_webhook.php should return JSON response'
         );
     }
+    /**
+     * The early acknowledgement declares the real body length.
+     *
+     * A wrong Content-Length keeps the proxy waiting for missing bytes while the update is processed,
+     * so Telegram gets an error and sends the same update again, which calls the AI service again.
+     */
+    public function test_acknowledgement_declares_the_real_body_length(): void {
+        $ack = \local_jedomi\telegram\webhook_handler::acknowledgement();
+
+        $this->assertSame('{"ok":true}', $ack['body']);
+        $this->assertContains('Content-Length: ' . strlen($ack['body']), $ack['headers']);
+        $this->assertContains('Connection: close', $ack['headers']);
+    }
+
+    /**
+     * telegram_webhook.php sends both early acknowledgements through the shared helper, never a fixed Content-Length.
+     */
+    public function test_webhook_uses_the_acknowledgement_helper(): void {
+        global $CFG;
+        $source = file_get_contents($CFG->dirroot . '/local/jedomi/telegram_webhook.php');
+
+        $this->assertStringNotContainsString('Content-Length: 15', $source);
+        $this->assertSame(2, substr_count($source, 'webhook_handler::acknowledge()'));
+    }
+    /**
+     * Dropping pending updates registers the webhook again, so Telegram keeps delivering new messages.
+     *
+     * deleteWebhook alone clears the queue but also removes the webhook URL, and the bot stops answering.
+     */
+    public function test_drop_pending_registers_the_webhook_again(): void {
+        global $CFG;
+        $source = file_get_contents($CFG->dirroot . '/local/jedomi/ajax/telegram_drop_pending.php');
+
+        $this->assertStringContainsString('manager::register_webhook()', $source);
+        $this->assertStringNotContainsString('->delete_webhook()', $source);
+    }
 }

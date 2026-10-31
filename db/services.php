@@ -41,6 +41,15 @@ $functions = [
         'ajax'         => true,
         'loginrequired' => true,
     ],
+    'local_jedomi_set_telegram_enabled' => [
+        'classname'    => 'local_jedomi\external\set_telegram_enabled',
+        'methodname'   => 'execute',
+        'description'  => 'Enable or disable the Telegram integration from the Jedomi settings page switch.',
+        'type'         => 'write',
+        'capabilities' => 'moodle/site:config',
+        'ajax'         => true,
+        'loginrequired' => true,
+    ],
     'jedomi_execute_sql' => [
         'classname'    => 'local_jedomi\external\execute_sql',
         'methodname'   => 'execute',

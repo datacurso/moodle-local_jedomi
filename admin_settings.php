@@ -719,14 +719,27 @@ echo '</ul>';
             </div>
         </div>
         <div class="jd-int-controls">
-            <!-- Toggle: controls visibility of body -->
-            <div class="form-check form-switch mb-0"
-                 title="<?php echo get_string('telegram_enabled', 'local_jedomi'); ?>">
-                <input class="form-check-input" type="checkbox" id="jd-tg-master"
+            <!-- Toggle: saved at once through local_jedomi_set_telegram_enabled, controls visibility of body -->
+            <?php
+            // Moodle 4.5 (Bootstrap 4) draws the switch with the label pseudo-elements of
+            // "custom-control custom-switch"; Moodle 5.x (Bootstrap 5) draws it on the input of
+            // "form-check form-switch". Each version gets its own markup, as lib/templates/toggle.mustache
+            // does, because the 5.x compat layer hides a BS4-classed input and flags it as deprecated.
+            $tgswitchbs5 = (int) $CFG->branch >= 500;
+            $tgswitchlabel = get_string('telegram_enabled', 'local_jedomi');
+            ?>
+            <div class="<?php echo $tgswitchbs5 ? 'form-check form-switch' : 'custom-control custom-switch'; ?> mb-0"
+                 title="<?php echo s($tgswitchlabel); ?>">
+                <input class="<?php echo $tgswitchbs5 ? 'form-check-input' : 'custom-control-input'; ?>"
+                       type="checkbox" id="jd-tg-master"
                        name="telegram_enabled" value="1"
                        <?php echo $telegramcfg['enabled'] ? 'checked' : ''; ?>
-                       style="width:2.75rem;height:1.375rem;cursor:pointer"
-                       onchange="jdIntToggle('telegram', this.checked)">
+                       aria-label="<?php echo s($tgswitchlabel); ?>"
+                       onchange="jdTelegramEnabledChange(this)">
+                <label class="<?php echo $tgswitchbs5 ? 'form-check-label' : 'custom-control-label'; ?>"
+                       for="jd-tg-master">
+                    <span class="sr-only visually-hidden"><?php echo s($tgswitchlabel); ?></span>
+                </label>
             </div>
             <!-- Expand/collapse arrow (only clickable when enabled) -->
             <i class="fa fa-chevron-down jd-int-arrow<?php echo $telegramcfg['enabled'] ? ' open' : ''; ?>"
@@ -1499,6 +1512,40 @@ function escHtml(s) {
 }
 
 // ── Integrations accordion ─────────────────────────────────────────────────.
+/**
+ * Save the Telegram enable switch at once (no form submit) and expand/collapse the card.
+ *
+ * The body is toggled right away; if the save fails the switch and the body go back
+ * to the previous state and a notification is shown.
+ *
+ * @param {HTMLInputElement} input The switch checkbox.
+ */
+function jdTelegramEnabledChange(input) {
+    var enabled = input.checked;
+    input.disabled = true;
+    jdIntToggle('telegram', enabled);
+    require(['core/ajax', 'core/notification'], function(Ajax, Notification) {
+        Ajax.call([{
+            methodname: 'local_jedomi_set_telegram_enabled',
+            args: {enabled: enabled}
+        }])[0].then(function(result) {
+            input.checked = !!result.enabled;
+            jdIntToggle('telegram', input.checked);
+            input.disabled = false;
+            return result;
+        }).catch(function(err) {
+            input.checked = !enabled;
+            jdIntToggle('telegram', input.checked);
+            input.disabled = false;
+            var message = <?php echo json_encode(get_string('telegram_enabled_save_failed', 'local_jedomi')); ?>;
+            if (err && err.message) {
+                message += ' (' + escHtml(err.message) + ')';
+            }
+            Notification.addNotification({message: message, type: 'error'});
+        });
+    });
+}
+
 function jdIntToggle(platform, enabled) {
     var body  = document.getElementById('jd-body-' + platform);
     var arrow = document.getElementById('jd-arrow-' + platform);

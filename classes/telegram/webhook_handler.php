@@ -61,6 +61,45 @@ class webhook_handler {
     }
 
     /**
+     * Body and headers of the early 200 OK sent before the update is processed.
+     *
+     * Content-Length must match the body: with a larger value the proxy keeps waiting for the
+     * missing bytes, Telegram gets an error and sends the same update again.
+     *
+     * @return array{body: string, headers: string[]}
+     */
+    public static function acknowledgement(): array {
+        $body = json_encode(['ok' => true]);
+        return [
+            'body' => $body,
+            'headers' => [
+                'Content-Type: application/json',
+                'Connection: close',
+                'Content-Length: ' . strlen($body),
+            ],
+        ];
+    }
+
+    /**
+     * Send the early 200 OK and close the connection so processing can continue after it.
+     */
+    public static function acknowledge(): void {
+        $ack = self::acknowledgement();
+        http_response_code(200);
+        foreach ($ack['headers'] as $header) {
+            header($header);
+        }
+        echo $ack['body'];
+        if (ob_get_level()) {
+            ob_flush();
+        }
+        flush();
+        if (function_exists('fastcgi_finish_request')) {
+            fastcgi_finish_request();
+        }
+    }
+
+    /**
      * Main entry point — dispatch based on Telegram update type.
      *
      * @param array $update Decoded JSON from Telegram webhook

@@ -17,9 +17,9 @@
 /**
  * AJAX endpoint — drops pending Telegram updates via deleteWebhook.
  *
- * Calls deleteWebhook with drop_pending_updates=true. This clears the
- * Telegram update queue so stale messages aren't processed when the
- * webhook comes back online.
+ * Re-registers the webhook, which first calls deleteWebhook with
+ * drop_pending_updates=true. This clears the Telegram update queue so stale
+ * messages aren't processed, and keeps the webhook URL registered.
  *
  * Requires admin capability.
  *
@@ -34,7 +34,6 @@ require_capability('moodle/site:config', context_system::instance());
 require_sesskey();
 
 use local_jedomi\telegram\manager;
-use local_jedomi\telegram\api_client;
 
 header('Content-Type: application/json');
 
@@ -47,8 +46,8 @@ if (!$token) {
     exit;
 }
 
-$client = new api_client($token);
-$result = $client->delete_webhook();
+// Deleting the webhook drops the queue but also unregisters the URL, so register it again.
+$result = manager::register_webhook();
 
 if ($result) {
     echo json_encode([

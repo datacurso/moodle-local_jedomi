@@ -63,18 +63,7 @@ if ($pingchatid !== '' && !preg_match('/^-?\d{1,20}$/', $pingchatid)) {
 if ($internalping && !empty($pingchatid)) {
     local_jedomi_log('SELF-PING: continuing for chat ' . $pingchatid);
     // Send 200 OK immediately so the caller cURL returns fast.
-    http_response_code(200);
-    header('Content-Type: application/json');
-    header('Connection: close');
-    header('Content-Length: 15');
-    echo json_encode(['ok' => true]);
-    if (ob_get_level()) {
-        ob_flush();
-    }
-    flush();
-    if (function_exists('fastcgi_finish_request')) {
-        fastcgi_finish_request();
-    }
+    webhook_handler::acknowledge();
 
     ignore_user_abort(true);
     set_time_limit(0);
@@ -112,18 +101,7 @@ set_time_limit(0);
 // then send 200 OK, Telegram will retry before we finish, piling up requests.
 // By sending 200 OK immediately, Telegram considers it delivered and won't
 // retry, while we continue processing in the background.
-http_response_code(200);
-header('Content-Type: application/json');
-header('Connection: close');
-header('Content-Length: 15');
-echo json_encode(['ok' => true]);
-if (ob_get_level()) {
-    ob_flush();
-}
-flush();
-if (function_exists('fastcgi_finish_request')) {
-    fastcgi_finish_request();
-}
+webhook_handler::acknowledge();
 
 // ... ── Shutdown handler catches fatal errors ──
 register_shutdown_function(function () use ($update): void {
