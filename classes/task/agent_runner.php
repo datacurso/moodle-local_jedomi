@@ -383,12 +383,12 @@ class agent_runner extends \core\task\scheduled_task {
                                 ],
                             ];
 
-                            $gateway_url = rtrim(get_config('local_jedomi', 'gateway_url'), '/');
-                            $api_key = get_config('local_jedomi', 'api_key') ?: 'jedomi-local-key';
-                            $model = get_config('local_jedomi', 'model') ?: 'jedomi-e4b';
+                            $gateway = \local_jedomi\gateway_config::require();
+                            $gateway_url = $gateway->url;
+                            $api_key = $gateway->key;
+                            $model = $gateway->model;
                             $maxTokens = (int) get_config('local_jedomi', 'max_tokens');
                             if ($maxTokens < 256) { $maxTokens = 16384; }
-                            if (empty($gateway_url)) { $gateway_url = 'http://localhost:8765'; }
 
                             $replayStart = microtime(true);
                             $ch = curl_init($gateway_url . '/v1/chat/completions');
@@ -402,10 +402,7 @@ class agent_runner extends \core\task\scheduled_task {
                                 ], JSON_UNESCAPED_UNICODE),
                                 CURLOPT_RETURNTRANSFER => true,
                                 CURLOPT_TIMEOUT        => 120,
-                                CURLOPT_HTTPHEADER     => [
-                                    'Content-Type: application/json',
-                                    'Authorization: Bearer ' . $api_key,
-                                ],
+                                CURLOPT_HTTPHEADER     => \local_jedomi\gateway_headers::build($api_key),
                             ]);
                             $replayResponse = curl_exec($ch);
                             $replayHttp = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -458,19 +455,10 @@ class agent_runner extends \core\task\scheduled_task {
                     ];
 
                     // ── Gateway config ───────────────────────────────────────
-                    $gateway_url = rtrim(get_config('local_jedomi', 'gateway_url'), '/');
-                    $api_key = get_config('local_jedomi', 'api_key');
-                    $model = get_config('local_jedomi', 'model');
-
-                    if (empty($gateway_url)) {
-                        $gateway_url = 'http://localhost:8765';
-                    }
-                    if (empty($api_key)) {
-                        $api_key = 'jedomi-local-key';
-                    }
-                    if (empty($model)) {
-                        $model = 'jedomi-e4b';
-                    }
+                    $gateway = \local_jedomi\gateway_config::require();
+                    $gateway_url = $gateway->url;
+                    $api_key = $gateway->key;
+                    $model = $gateway->model;
 
                     $maxTokens = (int) get_config('local_jedomi', 'max_tokens');
                     if ($maxTokens < 256) {
@@ -509,10 +497,7 @@ class agent_runner extends \core\task\scheduled_task {
                             CURLOPT_POSTFIELDS     => json_encode($payload, JSON_UNESCAPED_UNICODE),
                             CURLOPT_RETURNTRANSFER => true,
                             CURLOPT_TIMEOUT        => 120,
-                            CURLOPT_HTTPHEADER     => [
-                                'Content-Type: application/json',
-                                'Authorization: Bearer ' . $api_key,
-                            ],
+                            CURLOPT_HTTPHEADER     => \local_jedomi\gateway_headers::build($api_key),
                         ]);
 
                         $response = curl_exec($ch);

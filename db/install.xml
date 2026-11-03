@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<XMLDB PATH="local/jedomi/db" VERSION="2026052401" COMMENT="XMLDB file for local_jedomi plugin - Telegram + Agent Scheduled Tasks tables">
+<XMLDB PATH="local/jedomi/db" VERSION="2026102202" COMMENT="XMLDB file for local_jedomi plugin - Telegram + Agent Scheduled Tasks tables">
     <TABLES>
         <TABLE NAME="local_jedomi_telegram_links" COMMENT="Links between Moodle users and Telegram chat IDs">
             <FIELDS>
@@ -24,6 +24,7 @@
                 <FIELD NAME="chatid" TYPE="char" LENGTH="32" NOTNULL="true" SEQUENCE="false"/>
                 <FIELD NAME="messages" TYPE="text" NOTNULL="false" SEQUENCE="false"/>
                 <FIELD NAME="usercontext" TYPE="text" NOTNULL="false" SEQUENCE="false"/>
+                <FIELD NAME="iteration" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false"/>
                 <FIELD NAME="lastactivity" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
             </FIELDS>
             <KEYS>
@@ -71,6 +72,7 @@
             <FIELDS>
                 <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
                 <FIELD NAME="userid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+                <FIELD NAME="name" TYPE="char" LENGTH="255" NOTNULL="false" SEQUENCE="false"/>
                 <FIELD NAME="prompt" TYPE="text" NOTNULL="true" SEQUENCE="false"/>
                 <FIELD NAME="schedule_cron" TYPE="char" LENGTH="64" NOTNULL="true" SEQUENCE="false"/>
                 <FIELD NAME="context_type" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="site" SEQUENCE="false"/>
@@ -105,6 +107,43 @@
             </KEYS>
             <INDEXES>
                 <INDEX NAME="agentid_context_hash_idx" UNIQUE="true" FIELDS="agentid, context_hash"/>
+            </INDEXES>
+        </TABLE>
+        <TABLE NAME="local_jedomi_stem_cfg" COMMENT="AI tutor settings per course (cmid = 0) or per activity (cmid > 0)">
+            <FIELDS>
+                <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+                <FIELD NAME="courseid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+                <FIELD NAME="cmid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+                <FIELD NAME="enabled" TYPE="int" LENGTH="2" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+                <FIELD NAME="tutor_mode" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="inherit" SEQUENCE="false"/>
+                <FIELD NAME="max_questions" TYPE="int" LENGTH="4" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+                <FIELD NAME="tutor_prompt" TYPE="text" NOTNULL="false" SEQUENCE="false"/>
+                <FIELD NAME="usermodified" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+                <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+            </FIELDS>
+            <KEYS>
+                <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+                <KEY NAME="courseid_fk" TYPE="foreign" FIELDS="courseid" REFTABLE="course" REFFIELDS="id"/>
+            </KEYS>
+            <INDEXES>
+                <INDEX NAME="courseid_cmid_uq" UNIQUE="true" FIELDS="courseid, cmid"/>
+            </INDEXES>
+        </TABLE>
+        <TABLE NAME="local_jedomi_query_log" COMMENT="Database queries run by agents, with their duration and row count">
+            <FIELDS>
+                <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+                <FIELD NAME="agentid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+                <FIELD NAME="query" TYPE="text" NOTNULL="true" SEQUENCE="false"/>
+                <FIELD NAME="duration_ms" TYPE="number" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" DECIMALS="2"/>
+                <FIELD NAME="rowcount" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+                <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+            </FIELDS>
+            <KEYS>
+                <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+            </KEYS>
+            <INDEXES>
+                <INDEX NAME="duration_idx" UNIQUE="false" FIELDS="duration_ms"/>
+                <INDEX NAME="timecreated_idx" UNIQUE="false" FIELDS="timecreated"/>
             </INDEXES>
         </TABLE>
     </TABLES>

@@ -17,24 +17,34 @@ header('Content-Type: application/json; charset=utf-8');
 
 try {
     require_login();
+    require_sesskey();
 
-    // Set page URL to prevent Moodle debugging notice in lib.php::local_jedomi_get_page_context().
-    $PAGE->set_url('/local/jedomi/ajax/sidebar_config.php');
-
-    // Accept sesskey OR a pre-generated SPT (signed permission token).
-    $spt_raw = optional_param('spt', '', PARAM_RAW);
-    if (empty($spt_raw)) {
-        require_sesskey();
-        $spt = local_jedomi_generate_spt(local_jedomi_get_user_role());
-    } else {
-        $spt = json_decode($spt_raw, true);
-        if (!is_array($spt)) {
-            $spt = local_jedomi_generate_spt(local_jedomi_get_user_role());
+    // Contexto de curso/actividad REAL (QA r7 / diseño 3.3.1): se valida el acceso del usuario al curso y, si
+    // procede, al módulo; así $COURSE y $PAGE->cm quedan correctos para el rol, el contexto y el SPT firmado.
+    $courseid = optional_param('courseid', 0, PARAM_INT);
+    $cmid     = optional_param('cmid', 0, PARAM_INT);
+    $PAGE->set_url('/local/jedomi/ajax/sidebar_config.php', ['courseid' => $courseid, 'cmid' => $cmid]);
+    if ($courseid > 1) {
+        $course = get_course($courseid);
+        $cm = null;
+        if ($cmid > 0) {
+            $cm = get_coursemodule_from_id('', $cmid, $courseid, false, IGNORE_MISSING) ?: null;
+            if (!$cm) {
+                $cmid = 0;
+            }
         }
+        require_login($course, false, $cm);
+    } else {
+        $cmid = 0;
     }
 
+    $role = local_jedomi_get_user_role();
+    $mode = local_jedomi_resolve_mode((int) ($COURSE->id ?? 0), $cmid, $role);
+    $spt  = local_jedomi_generate_spt($role, $cmid, $mode);
+
     $config = local_jedomi_get_sidebar_config();
-    $config['spt'] = $spt;
+    $config['spt']  = $spt;
+    $config['mode'] = $mode;
 
     echo json_encode($config);
 

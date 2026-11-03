@@ -83,6 +83,7 @@ class run_task extends external_api {
         $payload_hash   = $validated['payload_hash'];
 
         // --- HMAC authentication ---
+        self::verify_payload('jedomi_run_task', $payload_hash, ['task_class' => $task_class, 'sync' => $sync]);
         self::verify_hmac('jedomi_run_task', $hmac_timestamp, $payload_hash, $hmac_signature);
 
         $start = microtime(true);

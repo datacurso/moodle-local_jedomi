@@ -1,0 +1,7 @@
+# Gentleman Guardian Angel: per-repository settings for this Moodle plugin (overrides ~/.config/gga/config).
+PROVIDER="claude"
+FILE_PATTERNS="*.php,*.js,*.mjs,*.mustache,*.css,*.xml"
+EXCLUDE_PATTERNS="*.min.js,*.map,vendor/*,amd/build/*,stem/visor/vendor/*,tests/fixtures/*"
+RULES_FILE="AGENTS.md"
+STRICT_MODE="true"
+TIMEOUT="300"

@@ -132,15 +132,22 @@ class read_file extends external_api {
         $hmac_timestamp = $validated['hmac_timestamp'];
         $payload_hash   = $validated['payload_hash'];
 
+        self::verify_payload('jedomi_read_file', $payload_hash, ['path' => $path, 'line_start' => $line_start, 'line_count' => $line_count]);
+
         self::verify_hmac('jedomi_read_file', $hmac_timestamp, $payload_hash, $hmac_signature);
 
         // Normalise path: strip leading slash, resolve .. traversal
         $clean_path = ltrim(str_replace(['../', '..\\', '../'], '', $path), '/\\');
         $clean_path = str_replace('\\', '/', $clean_path);
+        // Case-insensitive comparisons: the code may live on a case-insensitive filesystem (macOS/APFS, Windows),
+        // where lib/SETUP.php resolves to lib/setup.php and "auth/db/Config.php" would bypass a case-sensitive
+        // blocklist (QA r3 #4). All list checks below use the lower-cased path.
+        $cmp_path = strtolower($clean_path);
 
         // Block sensitive files unconditionally
         foreach (self::BLOCKED_PATHS as $blocked) {
-            if ($clean_path === $blocked || str_ends_with($clean_path, '/' . $blocked)) {
+            $blocked = strtolower($blocked);
+            if ($cmp_path === $blocked || str_ends_with($cmp_path, '/' . $blocked)) {
                 error_log(sprintf(
                     '[local_jedomi] read_file BLOCKED sensitive path: %s ip=%s',
                     $clean_path, getremoteaddr()
@@ -152,7 +159,7 @@ class read_file extends external_api {
         // Enforce whitelist
         $allowed = false;
         foreach (self::ALLOWED_PREFIXES as $prefix) {
-            if (str_starts_with($clean_path, $prefix)) {
+            if (str_starts_with($cmp_path, strtolower($prefix))) {
                 $allowed = true;
                 break;
             }
@@ -164,8 +171,18 @@ class read_file extends external_api {
         // Build absolute path and verify it's inside dirroot
         $abs_path = realpath($CFG->dirroot . '/' . $clean_path);
         $dirroot  = realpath($CFG->dirroot);
+        if ($abs_path && $dirroot) {
+            $real_rel = strtolower(ltrim(substr($abs_path, strlen($dirroot)), '/'));
+            foreach (self::BLOCKED_PATHS as $blocked) {
+                $blocked = strtolower($blocked);
+                if ($real_rel === $blocked || str_ends_with($real_rel, '/' . $blocked)) {
+                    error_log(sprintf('[local_jedomi] read_file BLOCKED canonical path: %s ip=%s', $real_rel, getremoteaddr()));
+                    throw new \moodle_exception('read_file_blocked', 'local_jedomi', '', $clean_path);
+                }
+            }
+        }
 
-        if (!$abs_path || !str_starts_with($abs_path, $dirroot)) {
+        if (!$abs_path || !str_starts_with(strtolower($abs_path), strtolower($dirroot))) {
             return [
                 'path'        => $clean_path,
                 'content'     => '',

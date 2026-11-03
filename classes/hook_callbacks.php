@@ -65,8 +65,11 @@ class hook_callbacks {
             return;
         }
 
+        global $COURSE;
         $configUrl = (new \moodle_url('/local/jedomi/ajax/sidebar_config.php', [
-            'sesskey' => sesskey(),
+            'sesskey'  => sesskey(),
+            'courseid' => (int) ($COURSE->id ?? 0),
+            'cmid'     => (int) ($PAGE->cm->id ?? 0),
         ]))->out(false);
 
         $PAGE->requires->js_call_amd('local_jedomi/sidebar', 'init', [[

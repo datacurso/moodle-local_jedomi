@@ -82,6 +82,7 @@ class ws_execute extends external_api {
 
         // ── Gate 2: HMAC authentication ──────────────────────────────────────
         if (!$skip_hmac) {
+            self::verify_payload('jedomi_ws_execute', $payload_hash, ['wsname' => $wsname, 'params' => $params]);
             self::verify_hmac('jedomi_ws_execute', $hmac_timestamp, $payload_hash, $hmac_signature);
         }
 

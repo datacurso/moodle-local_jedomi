@@ -44,12 +44,17 @@ class handler {
      * @param string $role     User role (already validated).
      * @param array  $spt      SPT payload.
      */
+    /** @var array SPT validado de la conversación en curso (curso, cmid, modo). */
+    private static array $spt = [];
+
     public static function run(string $model, array $messages, string $role, array $spt): void {
         require_once(__DIR__ . '/../../lib.php');
-        \local_jedomi_log('RUN_START', ['model' => $model, 'role' => $role, 'user_message_count' => count($messages)]);
+        self::$spt = $spt;
+        \local_jedomi_log('RUN_START', ['model' => $model, 'role' => $role, 'mode' => $spt['mode'] ?? 'assistant', 'user_message_count' => count($messages)]);
 
-        $tools = spt_validator::get_tool_definitions($role);
+        $tools = \local_jedomi_get_tool_definitions($role, $spt['mode'] ?? 'assistant');
         $toolrepeatcounts = [];
+        $runusage = [];
 
         for ($i = 0; $i < 50; $i++) {
             echo ": thinking\n\n";
@@ -57,8 +62,10 @@ class handler {
             flush();
 
             $response = self::call_ai_api_buffer($model, $messages, $spt, $tools);
+            $runusage = usage::add($runusage, $response['usage'] ?? null);
 
             if ($response['type'] === 'error') {
+                \local_jedomi_log('RUN_USAGE', $runusage);
                 echo "data: {\"error\":\"ai_api_error\"}\n\n";
                 if (ob_get_level()) { ob_flush(); }
                 flush();
@@ -68,7 +75,17 @@ class handler {
             if ($response['type'] === 'text') {
                 \local_jedomi_log('AI_RESPONSE_TEXT', ['iteration' => $i, 'preview' => mb_substr($response['content'], 0, 200)]);
                 // No tool calls — stream the final response to the client.
-                self::stream_sse_content($response['content']);
+                $final = $response['content'];
+                if (in_array(self::$spt['mode'] ?? 'assistant', ['socratic', 'guided'], true)) {
+                    // Post-filtro determinista anti-eco (QA r9 V4): el prompt no basta frente a "repite exactamente…".
+                    $filtered = self::tutor_output_filter($final, $messages);
+                    if ($filtered['filtered']) {
+                        \local_jedomi_log('TUTOR_ECHO_FILTERED', ['reason' => $filtered['reason'], 'preview' => mb_substr($final, 0, 120)]);
+                        $final = $filtered['text'];
+                    }
+                }
+                self::stream_sse_content($final);
+                \local_jedomi_log('RUN_USAGE', $runusage);
                 return;
             }
 
@@ -170,6 +187,7 @@ class handler {
             }
         }
 
+        \local_jedomi_log('RUN_USAGE', $runusage);
         \local_jedomi_log('RUN_FALLBACK_ITERATIONS_EXCEEDED', ['iteration_count' => 10]);
         self::stream_sse_content(get_string('error_fallback_iterations', 'local_jedomi'));
     }
@@ -220,13 +238,19 @@ class handler {
      *                          ['type'=>'error', 'error'=>'...']
      */
     private static function call_ai_api_buffer(string $model, array $messages, array $spt, array $tools = []): array {
-        $apiUrl = rtrim(get_config('local_jedomi', 'gateway_url') ?: 'http://192.168.1.28:8080', '/');
-        $apiKey = get_config('local_jedomi', 'api_key') ?: 'jedomi-local-key';
+        $gateway = \local_jedomi\gateway_config::get();
+        if (!$gateway) {
+            \local_jedomi_log('AI_API_ERROR', ['reason' => 'gateway_notconfigured']);
+            return ['type' => 'error', 'error' => 'ai_api_error'];
+        }
+        $apiUrl = $gateway->url;
+        $apiKey = $gateway->key;
 
         $payload = [
             'model'      => $model,
             'messages'   => $messages,
             'stream'     => true,
+            'stream_options' => ['include_usage' => true], // Token counts in the last chunk (usage).
             'max_tokens' => 16384,
         ];
         if (!empty($tools)) {
@@ -248,10 +272,7 @@ class handler {
         curl_setopt_array($ch, [
             CURLOPT_POST           => true,
             CURLOPT_POSTFIELDS     => json_encode($payload, JSON_UNESCAPED_UNICODE),
-            CURLOPT_HTTPHEADER     => [
-                'Content-Type: application/json',
-                'Authorization: Bearer ' . $apiKey,
-            ],
+            CURLOPT_HTTPHEADER     => \local_jedomi\gateway_headers::build($apiKey),
             CURLOPT_RETURNTRANSFER => false,
             CURLOPT_TIMEOUT        => 180,
             CURLOPT_CONNECTTIMEOUT => 10,
@@ -335,6 +356,9 @@ class handler {
             }
         }
 
+        $usage = usage::from_sse($buffer);
+        \local_jedomi_log('AI_API_USAGE', ['model' => $model] + ($usage ?? ['reported' => false]));
+
         // Tool calls detected — ensure every entry has a non-empty id.
         if (!empty($tool_calls_acc) || $finish_reason === 'tool_calls') {
             ksort($tool_calls_acc);
@@ -349,7 +373,7 @@ class handler {
             $toolnames = array_map(static fn($tc) => $tc['function']['name'], $tool_calls);
             \local_jedomi_log('AI_API_RESPONSE_TOOL_CALLS', ['function_count' => count($tool_calls), 'functions' => $toolnames]);
 
-            return ['type' => 'tool_calls', 'tool_calls' => $tool_calls];
+            return ['type' => 'tool_calls', 'tool_calls' => $tool_calls, 'usage' => $usage];
         }
 
         // Text response: prefer content, fall back to reasoning (Gemma thinking tokens).
@@ -362,7 +386,7 @@ class handler {
 
         \local_jedomi_log('AI_API_RESPONSE_TEXT', ['length' => mb_strlen($text), 'preview' => mb_substr($text, 0, 200)]);
 
-        return ['type' => 'text', 'content' => $text];
+        return ['type' => 'text', 'content' => $text, 'usage' => $usage];
     }
 
     /**
@@ -390,7 +414,25 @@ class handler {
         require_once(__DIR__ . '/../../lib.php');
         \local_jedomi_log('TOOL_CALL', ['tool' => $name, 'args' => $args, 'role' => $role]);
 
+        // Allowlist en EJECUCIÓN (QA r7): sólo las herramientas ofrecidas a este rol pueden ejecutarse, aunque el
+        // modelo (o un cliente manipulado) pida otra por nombre.
+        $allowed = array_map(fn($t) => $t['function']['name'] ?? '', \local_jedomi_get_tool_definitions($role, self::$spt['mode'] ?? 'assistant'));
+        if (!in_array($name, $allowed, true)) {
+            \local_jedomi_log('TOOL_DENIED', ['tool' => $name, 'role' => $role]);
+            return json_encode(['error' => 'tool_not_allowed', 'tool' => $name, 'role' => $role]);
+        }
+
         switch ($name) {
+            case 'get_course_outline':
+                return self::tutor_course_outline_tool();
+            case 'get_activity_content':
+                return self::tutor_activity_content_tool($args);
+            case 'get_my_progress':
+                return self::tutor_my_progress_tool();
+            case 'get_hint_state':
+                return self::tutor_hint_tool($args, false);
+            case 'advance_hint_level':
+                return self::tutor_hint_tool($args, true);
             case 'describe_table':
                 return self::describe_table_tool($args);
             case 'search_tables':
@@ -1009,5 +1051,224 @@ class handler {
             'ws_execute' => get_string('summary_ws_executed', 'local_jedomi'),
             default => get_string('summary_done', 'local_jedomi'),
         };
+    }
+
+    // ─────────────────────────── Herramientas de TUTOR (solo lectura, acotadas al curso del SPT) ───────────────────────────
+
+    /** Curso del SPT validado (0 si no hay). */
+    private static function tutor_courseid(): int {
+        return (int) (self::$spt['course_id'] ?? 0);
+    }
+
+    private static function tutor_modinfo() {
+        global $USER;
+        $courseid = self::tutor_courseid();
+        if ($courseid <= 1) {
+            return null;
+        }
+        return get_fast_modinfo($courseid, $USER->id);
+    }
+
+    private static function tutor_course_outline_tool(): string {
+        $modinfo = self::tutor_modinfo();
+        if (!$modinfo) {
+            return json_encode(['error' => 'no_course_context']);
+        }
+        $out = ['course' => format_string($modinfo->get_course()->fullname), 'sections' => []];
+        $count = 0;
+        foreach ($modinfo->get_section_info_all() as $section) {
+            if (!$section->uservisible) {
+                continue;
+            }
+            $sec = ['name' => get_section_name($modinfo->get_course(), $section), 'modules' => []];
+            foreach ($modinfo->sections[$section->section] ?? [] as $cmid) {
+                $cm = $modinfo->get_cm($cmid);
+                if (!$cm->uservisible || $cm->modname === 'label') {
+                    continue;
+                }
+                $sec['modules'][] = ['cmid' => (int) $cm->id, 'type' => $cm->modname, 'name' => format_string($cm->name)];
+                if (++$count >= 200) {
+                    break 2;
+                }
+            }
+            $out['sections'][] = $sec;
+        }
+        return json_encode($out, JSON_UNESCAPED_UNICODE);
+    }
+
+    private static function tutor_activity_content_tool(array $args): string {
+        global $DB;
+        $modinfo = self::tutor_modinfo();
+        $cmid = (int) ($args['cmid'] ?? 0);
+        if (!$modinfo || $cmid <= 0) {
+            return json_encode(['error' => 'cmid_required_in_course_context']);
+        }
+        try {
+            $cm = $modinfo->get_cm($cmid); // lanza si el cmid no pertenece al curso del SPT
+        } catch (\Throwable $e) {
+            return json_encode(['error' => 'activity_not_in_this_course']);
+        }
+        if (!$cm->uservisible) {
+            return json_encode(['error' => 'activity_not_available_to_you']);
+        }
+        $instance = $DB->get_record($cm->modname, ['id' => $cm->instance]);
+        $intro = '';
+        if ($instance && isset($instance->intro)) {
+            $intro = html_to_text(format_text($instance->intro, $instance->introformat ?? FORMAT_HTML, ['context' => $cm->context]), 0, false);
+        }
+        $out = ['cmid' => (int) $cm->id, 'type' => $cm->modname, 'name' => format_string($cm->name),
+                'description' => \core_text::substr(trim($intro), 0, 6000)];
+        if ($cm->modname === 'page' && $instance && isset($instance->content)) {
+            $out['content'] = \core_text::substr(trim(html_to_text(format_text($instance->content, $instance->contentformat ?? FORMAT_HTML, ['context' => $cm->context]), 0, false)), 0, 8000);
+        }
+        if ($cm->modname === 'assign' && $instance) {
+            $out['duedate'] = $instance->duedate ? userdate($instance->duedate) : null;
+            $out['maxgrade'] = isset($instance->grade) ? (float) $instance->grade : null;
+            if (!empty($instance->activity)) {
+                $out['instructions'] = \core_text::substr(trim(html_to_text(format_text($instance->activity, $instance->activityformat ?? FORMAT_HTML, ['context' => $cm->context]), 0, false)), 0, 6000);
+            }
+        }
+        return json_encode($out, JSON_UNESCAPED_UNICODE);
+    }
+
+    private static function tutor_my_progress_tool(): string {
+        global $USER, $CFG;
+        $courseid = self::tutor_courseid();
+        if ($courseid <= 1) {
+            return json_encode(['error' => 'no_course_context']);
+        }
+        require_once($CFG->libdir . '/gradelib.php');
+        $out = ['course_total' => null, 'items' => []];
+        $courseitem = \grade_item::fetch_course_item($courseid);
+        if ($courseitem && !$courseitem->is_hidden()) {
+            $cg = \grade_grade::fetch(['itemid' => $courseitem->id, 'userid' => $USER->id]);
+            if ($cg && $cg->finalgrade !== null && !$cg->is_hidden()) {
+                $out['course_total'] = grade_format_gradevalue($cg->finalgrade, $courseitem);
+            }
+        }
+        $items = \grade_item::fetch_all(['courseid' => $courseid]) ?: [];
+        $n = 0;
+        foreach ($items as $item) {
+            if ($item->itemtype === 'course' || $item->is_hidden()) {
+                continue;
+            }
+            $g = \grade_grade::fetch(['itemid' => $item->id, 'userid' => $USER->id]);
+            if ($g && $g->is_hidden()) {
+                continue;
+            }
+            $out['items'][] = ['name' => $item->get_name(), 'grade' => $g && $g->finalgrade !== null ? grade_format_gradevalue($g->finalgrade, $item) : null,
+                               'max' => grade_format_gradevalue($item->grademax, $item), 'feedback' => $g ? \core_text::substr(html_to_text((string) $g->feedback, 0, false), 0, 500) : ''];
+            if (++$n >= 50) {
+                break;
+            }
+        }
+        return json_encode($out, JSON_UNESCAPED_UNICODE);
+    }
+
+    /** Nivel de pista 0..3 por alumno y actividad (preferencia de usuario). Sólo puede AVANZAR de uno en uno. */
+    private static function tutor_hint_tool(array $args, bool $advance): string {
+        global $USER;
+        $modinfo = self::tutor_modinfo();
+        $cmid = (int) ($args['cmid'] ?? 0);
+        if (!$modinfo || $cmid <= 0) {
+            return json_encode(['error' => 'cmid_required_in_course_context']);
+        }
+        try {
+            $modinfo->get_cm($cmid);
+        } catch (\Throwable $e) {
+            return json_encode(['error' => 'activity_not_in_this_course']);
+        }
+        $key = 'local_jedomi_hint_' . self::tutor_courseid() . '_' . $cmid;
+        $level = (int) get_user_preferences($key, 0, $USER);
+        $max = 3;
+        if ($advance && $level < $max) {
+            $level++;
+            set_user_preference($key, $level, $USER);
+        }
+        $labels = [0 => 'none', 1 => 'conceptual', 2 => 'procedural', 3 => 'worked_analogy'];
+        return json_encode(['cmid' => $cmid, 'level' => $level, 'max' => $max, 'label' => $labels[$level], 'exhausted' => $level >= $max]);
+    }
+
+    // ─────────────────────────── Post-filtro anti-eco del tutor (QA r9 V4) ───────────────────────────
+
+    /**
+     * Impide que el tutor "repita" afirmaciones dictadas por el alumno o declare una respuesta.
+     *
+     * Determinista, independiente del modelo. Se aplica sólo en modos socratic/guided.
+     *  (a) Eco: la salida contiene (normalizada) un fragmento entrecomillado del último mensaje del alumno, y ese
+     *      mensaje contiene una orden de dictado (repite/di que/confirma/escribe…) o la cita es larga (≥ 40 chars).
+     *  (b) Declaración: la salida contiene "la respuesta (correcta|final) es", "el resultado es", "la solución es",
+     *      "the (correct|final) answer is", "the solution is".
+     *
+     * @param string $text     Texto final del modelo.
+     * @param array  $messages Historial (incluye system); se usa el último mensaje role=user.
+     * @return array ['text' => string, 'filtered' => bool, 'reason' => string]
+     */
+    public static function tutor_output_filter(string $text, array $messages): array {
+        $norm = function (string $t): string {
+            $t = mb_strtolower(html_entity_decode(strip_tags($t), ENT_QUOTES, 'UTF-8'));
+            $t = preg_replace('/[\s\p{P}]+/u', ' ', $t);
+            return trim((string) $t);
+        };
+        $flatten = function ($c): string {
+            if (is_array($c)) {
+                $c = implode(' ', array_map(fn($p) => is_array($p) ? ($p['text'] ?? '') : (string) $p, $c));
+            }
+            return (string) $c;
+        };
+        // Ventana reciente de mensajes del alumno (QA E3: la orden de dictado puede venir en un turno anterior).
+        $recent = [];
+        for ($i = count($messages) - 1; $i >= 0 && count($recent) < 6; $i--) {
+            if (($messages[$i]['role'] ?? '') === 'user') {
+                $recent[] = $flatten($messages[$i]['content'] ?? '');
+            }
+        }
+        $window = implode("\n", $recent);
+        $ntext = $norm($text);
+        $refusal = fn(string $reason) => ['text' => get_string('tutor_echo_refusal', 'local_jedomi'), 'filtered' => true, 'reason' => $reason];
+
+        $dictation = (bool) preg_match('/\b(repit[ea]|repet[ií]|repeat|di que|dime que|cont[eé]stal[oa]|resp[oó]ndel[oa]|say that|just say|escribe que|escr[ií]belo|afirma|confirma|confirm|declara|exactamente|verbatim|literal|igual|tal cual|traduc[ei]|translate|entre comillas)/iu', $window);
+        // (a) Eco de cualquier fragmento entrecomillado reciente.
+        if (preg_match_all('/[«"“”\'‘’]([^«»"“”\'‘’]{6,})[»"“”\'‘’]/u', $window, $m)) {
+            foreach ($m[1] as $quoted) {
+                $nq = $norm($quoted);
+                if ($nq === '' || mb_strlen($nq) < 6) {
+                    continue;
+                }
+                if (($dictation || mb_strlen($nq) >= 40) && mb_strpos($ntext, $nq) !== false) {
+                    return $refusal('quoted_echo');
+                }
+            }
+        }
+        // (b) Declaraciones de respuesta/valor (es/en, con sinónimos).
+        $decl = '/\b(la respuesta( correcta| final)?( es|:)|el (resultado|valor)( correcto| final)?( es|:)|la (soluci[oó]n|resistencia|tensi[oó]n|corriente)( correcta| necesaria| adecuada)? es\b|es (lo )?correct[oa]\b|equivale a\b|the (correct |final |right )?(answer|value|result|solution)( is|:)|is (the )?correct\b|should be\b)/iu';
+        if (preg_match($decl, $text)) {
+            return $refusal('answer_statement');
+        }
+        // (c) Invariantes socráticos independientes del idioma (QA v2 bypass: cálculo con premisas del alumno).
+        // Número con unidad: dígitos o números en letras (es/en).
+        $units = '(k?Ω|ohm(?:io)?s?|k(?:ilo)?ohm(?:io)?s?|m?A|amperios?|V|voltios?|volts?|W|vatios?|watts?|Hz|µ?F|nF|pF|mm|cm|m|s|ms)';
+        $numwords = '(?:(?:cero|un[oa]?|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|diecis[eé]is|diecisiete|dieciocho|diecinueve|veint\w*|treinta|cuarenta|cincuenta|sesenta|setenta|ochenta|noventa|cien(?:to)?s?|doscient[oa]s|trescient[oa]s|cuatrocient[oa]s|quinient[oa]s|seiscient[oa]s|setecient[oa]s|ochocient[oa]s|novecient[oa]s|mil|zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand)(?:\s+(?:y|and)?\s*)?){1,6}';
+        $hasnumber = (bool) preg_match('/\b\d+(?:[.,]\d+)?\s?' . $units . '\b/iu', $text)
+                  || (bool) preg_match('/\d+\s?Ω/u', $text)
+                  || (bool) preg_match('/\b' . $numwords . '\s*' . $units . '\b/iu', $text);
+        $hasquestion = (bool) preg_match('/[?¿]/u', $text);
+        if ($hasnumber) {
+            // c1: afirmación numérica sin ninguna pregunta.
+            if (!$hasquestion) {
+                return $refusal('numeric_assertion_without_question');
+            }
+            // c2: portador imperativo/asertivo que ENTREGA el valor ("necesitas/usa/pon/son/te confirmo… 350 Ω"),
+            //     aunque lleve coletilla interrogativa. Las pistas usan datos de referencia ("suele caer unos 2 V").
+            $carrier = '/\b(necesitas?|necesitar[ií]as?|usa|utiliza|pon|coloca|monta|elige|escoge|conecta|debes? (?:usar|poner|colocar|montar)|deber[ií]as (?:usar|poner|colocar|montar)|tienes que (?:usar|poner|colocar)|son|ser[ií]an?|ser[aá]|sale|salen|da|resulta|te confirmo|confirmo|correcto|exacto|eso es|efectivamente|s[ií]|right|yes|correct|you need|you\'ll need|use|put|place|mount|choose|you should (?:use|put)|that\'?s|it\'?s|equals?|comes? (?:out )?to|gives?)\b[,:]?[^.?!\n]{0,40}?(?:\d+(?:[.,]\d+)?\s?' . $units . '|\d+\s?Ω|' . $numwords . '\s*' . $units . ')/iu';
+            if (preg_match($carrier, $text)) {
+                return $refusal('numeric_instruction_with_value');
+            }
+            // c3: fórmula resuelta con cantidades ("7 V ÷ 0,020 A", "= 350 Ω").
+            if (preg_match('/\d[^.?!\n]{0,25}(?:÷|\/|×|\*|−|-|\+)[^.?!\n]{0,25}\d/u', $text) || preg_match('/=\s*\d+(?:[.,]\d+)?\s?' . $units . '/iu', $text)) {
+                return $refusal('solved_formula');
+            }
+        }
+        return ['text' => $text, 'filtered' => false, 'reason' => ''];
     }
 }
