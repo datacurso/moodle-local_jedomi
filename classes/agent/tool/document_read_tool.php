@@ -85,7 +85,7 @@ class document_read_tool implements agent_tool {
 
         $cmid = (int) ($params->cmid ?? 0);
         $dpi  = (int) ($params->dpi ?? 150);
-        $fmt  = in_array($params->fmt ?? 'JPEG', ['JPEG', 'PNG'], true) ? $params->fmt : 'JPEG';
+        $fmt  = in_array($params->fmt ?? '', ['JPEG', 'PNG'], true) ? $params->fmt : 'JPEG';
 
         if ($cmid <= 0) {
             return json_encode(['error' => 'cmid is required']);
@@ -98,7 +98,7 @@ class document_read_tool implements agent_tool {
             return json_encode(['error' => 'permission_denied']);
         }
 
-        $serviceurl = rtrim(get_config('local_jedomi', 'docservice_url') ?: 'http://localhost:8000', '/');
+        $serviceurl = rtrim((string) get_config('local_jedomi', 'docservice_url'), '/');
         if (empty($serviceurl)) {
             return json_encode(['error' => 'document service not configured']);
         }

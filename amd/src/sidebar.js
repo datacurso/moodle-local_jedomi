@@ -2,57 +2,19 @@
 /**
  * Jedomi AI Sidebar — Theme-proof JavaScript
  *
- * ESTRATEGIA DE INYECCIÓN ROBUSTA:
- *  1. Inyecta el HTML directamente en document.body (no depende del tema)
- *  2. Repara overflow:hidden en html/body que rompe position:fixed
- *  3. Escucha MutationObserver para temas con AJAX navigation
- *  4. Funciona aunque el before_footer hook sea omitido por el tema
- *  5. Previene doble inyección
+ * ROBUST INJECTION STRATEGY:
+ *  1. Renders the sidebar template straight into document.body (no theme dependency)
+ *  2. Fixes overflow:hidden on html/body, which breaks position:fixed
+ *  3. Listens to a MutationObserver for themes with AJAX navigation
+ *  4. Works even when the theme skips the before_footer hook
+ *  5. Prevents a double injection
  *
  * @module     local_jedomi/sidebar
  * @copyright  2026 Jedomi Project
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-define(['core/log', 'core/ajax'], function(Log, Ajax) {
-
-    // ── SVG Icons (profesionales, no emojis) ─────────────────────────────────
-    const SVG = {
-        sparkle: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.107 7.107c0 .13 0 .261 0 .393a7.5 7.5 0 0 0-7.107 7.107c-.13 0-.261 0-.393 0a7.5 7.5 0 0 0-7.107-7.107c0-.132 0-.263 0-.393a7.5 7.5 0 0 0 7.107-7.107z"/><path d="M5 5.5v3M6.5 7H3.5M19 15.5v3M20.5 17H17.5"/></svg>',
-        trigger: '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.107 7.107c0 .13 0 .261 0 .393a7.5 7.5 0 0 0-7.107 7.107c-.13 0-.261 0-.393 0a7.5 7.5 0 0 0-7.107-7.107c0-.132 0-.263 0-.393a7.5 7.5 0 0 0 7.107-7.107z"/><path d="M5 5.5v3M6.5 7H3.5M19 15.5v3M20.5 17H17.5"/></svg>',
-        newchat: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>',
-        export:  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
-        close:   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
-        mic:     '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>',
-        camera:  '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>',
-        attach:  '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>',
-        send:    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>',
-        copy:    '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
-        thumbup: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>',
-        thumbdn: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3H10z"/><path d="M17 2h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17"/></svg>',
-        edit:    '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>',
-        // Quick action icons
-        chart:   '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>',
-        alert:   '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
-        ghost:   '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 10h.01M15 10h.01M12 2a8 8 0 0 0-8 8v12l3-3 2.5 2.5L12 19l2.5 2.5L17 19l3 3V10a8 8 0 0 0-8-8z"/></svg>',
-        clip:    '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
-        moon:    '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>',
-        users:   '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
-        shield:  '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
-        task:    '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>',
-        star:    '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>',
-        help:    '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
-        lock:    '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>',
-        cpu:     '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>',
-        plus:    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>',
-        // Tool status icons (SVG profesionales, no emojis)
-        search:  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>',
-        db:      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>',
-        clipboard:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>',
-        gear:    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
-        book:    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>',
-        zap:     '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>',
-    };
+define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Templates) {
 
     // ── State ─────────────────────────────────────────────────────────────────
     let cfg          = {};
@@ -61,6 +23,8 @@ define(['core/log', 'core/ajax'], function(Log, Ajax) {
     // Text of an attached file, sent with the next message: {name, info, text}.
     let pendingFile = null;
     let injected     = false;
+    // True while the sidebar template is being rendered, so a second bootstrap does not inject it twice.
+    let injecting    = false;
     let sessionId    = null;
 
     // ── Init — entry point ────────────────────────────────────────────────────
@@ -93,17 +57,15 @@ define(['core/log', 'core/ajax'], function(Log, Ajax) {
         }
     };
 
-    const bootstrap = () => {
-        // Prevenir doble inyección
-        if (injected || document.getElementById('jedomi-trigger')) {
-            if (!injected) wireUp();
+    const bootstrap = async () => {
+        // Prevent a double injection.
+        if (injected || injecting || document.getElementById('jedomi-trigger')) {
+            if (!injected && !injecting) wireUp();
             return;
         }
+        injecting = true;
 
-        // 0. Inyectar CSS en <head> (el PHP no puede hacerlo tarde)
-        injectCSS();
-
-        // Inicializar session ID persistente
+        // Initialise the persistent session ID.
         sessionId = localStorage.getItem('jedomi_session_id');
         if (!sessionId) {
             sessionId = crypto.randomUUID ? crypto.randomUUID()
@@ -114,55 +76,49 @@ define(['core/log', 'core/ajax'], function(Log, Ajax) {
             localStorage.setItem('jedomi_session_id', sessionId);
         }
 
-        // Cargar conversación desde el cache de sesión de Moodle (servidor)
-        // No sessionStorage — el historial vive en el lado del servidor
+        // 1. Fix overflow:hidden, the most common problem with themes.
+        fixBodyOverflow();
+
+        // 2. Render the sidebar template into body.
+        try {
+            await injectHTML();
+        } catch (error) {
+            injecting = false;
+            Log.error('Jedomi: the sidebar template could not be rendered', error);
+            return;
+        }
+
+        // Load the conversation from the Moodle session cache (server).
+        // No sessionStorage: the history lives on the server.
         _loadConversationFromServer().then(() => {
             if (conversation.length > 0) {
                 setTimeout(() => _restoreConversationUI(), 150);
             }
         });
 
-        // 1. Reparar overflow:hidden — el problema más común con temas
-        fixBodyOverflow();
-
-        // 2. Inyectar HTML directo en body
-        injectHTML();
-
-        // 3. Conectar eventos
+        // 3. Wire the events.
         wireUp();
 
-        // 4. Escuchar cambios de navegación AJAX (temas tipo SPA)
+        // 4. Listen to AJAX navigation changes (SPA-like themes).
         watchNavigation();
 
-        // sessionStorage no necesita evento de guardado — persiste automáticamente
+        // sessionStorage needs no save event: it persists automatically.
 
         injected = true;
+        injecting = false;
         Log.debug('Jedomi sidebar injected successfully');
 
 
 
-        // Reabrir automáticamente si estaba abierto antes de navegar
+        // Reopen automatically if it was open before navigating.
         if (sessionStorage.getItem('jedomi_open') === '1') {
             setTimeout(() => openSidebar(), 120);
         }
     };
 
-    // ── Inject CSS ────────────────────────────────────────────────────────────
-    // Moodle no permite $PAGE->requires->css() en before_footer (demasiado tarde).
-    // El JS inyecta el <link> directamente en el <head> — funciona siempre.
-    const injectCSS = () => {
-        if (document.getElementById('jedomi-styles')) return;
-        const wwwroot = cfg.wwwroot || (window.M?.cfg?.wwwroot) || '';
-        const link    = document.createElement('link');
-        link.id       = 'jedomi-styles';
-        link.rel      = 'stylesheet';
-        link.href     = `${wwwroot}/local/jedomi/styles.css`;
-        document.head.appendChild(link);
-    };
-
     // ── Fix Body Overflow ─────────────────────────────────────────────────────
-    // Algunos temas ponen overflow:hidden en html o body, lo que rompe
-    // position:fixed. Lo detectamos y aplicamos un fix quirúrgico.
+    // Some themes set overflow:hidden on html or body, which breaks
+    // position:fixed. It is detected here and fixed surgically.
     const fixBodyOverflow = () => {
         const els = [document.documentElement, document.body];
         els.forEach(el => {
@@ -176,111 +132,32 @@ define(['core/log', 'core/ajax'], function(Log, Ajax) {
     };
 
     // ── Inject HTML ───────────────────────────────────────────────────────────
-    // No dependemos del tema para renderizar el HTML.
-    // Lo construimos en JS y lo pegamos directo en body.
-    const injectHTML = () => {
-        const name     = cfg.user_name || 'user';
+    // The theme is not involved: the local_jedomi/sidebar template is rendered here and appended to body.
+    const injectHTML = async () => {
         const S        = cfg.strings || {};
-        const greeting = (S.greeting || 'Hi, {name}!').replace('{name}', escHtml(name));
-        const html = `
-<button id="jedomi-trigger" class="jedomi-trigger" aria-label="${S.open_sidebar || 'Open Jedomi AI'}" title="Jedomi AI (Ctrl+Shift+J)">
-    ${SVG.trigger}
-    <span class="jedomi-trigger-label">Jedomi</span>
-</button>
-
-<div id="jedomi-sidebar" class="jedomi-sidebar jedomi-closed"
-     role="dialog" aria-modal="true" aria-label="Jedomi AI">
-    <div class="jedomi-header">
-        <div class="jedomi-header-info">
-            <div class="jedomi-logo">${SVG.sparkle}</div>
-            <div>
-                <span id="jedomi-context-label" class="jedomi-context-badge"></span>
-            </div>
-        </div>
-        <div class="jedomi-header-actions">
-            <button id="jedomi-export" class="jedomi-btn-icon" title="${S.export_conversation || 'Export conversation'}">${SVG.export}</button>
-
-            <button id="jedomi-expand-half" class="jedomi-btn-icon jedomi-expand-btn" title="${S.half_width || 'Half width'}" data-mode="half">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="3" width="8" height="18" rx="1"/><rect x="13" y="3" width="8" height="18" rx="1" opacity=".4"/></svg>
-            </button>
-            <button id="jedomi-expand-full" class="jedomi-btn-icon jedomi-expand-btn" title="${S.full_width || 'Full width'}" data-mode="full">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
-            </button>
-            <button id="jedomi-clear" class="jedomi-btn-icon" title="${S.new_conversation || 'New conversation'}" style="font-size:16px;font-weight:700;line-height:1;color:var(--j-muted)">+</button>
-            <button id="jedomi-close" class="jedomi-btn-icon" title="${S.close || 'Close (Esc)'}">${SVG.close}</button>
-        </div>
-    </div>
-
-    <div id="jedomi-messages" class="jedomi-messages">
-        <div class="jedomi-message jedomi-message-assistant">
-            <div class="jedomi-bubble">
-                ${greeting}<br>
-                ${S.hello || "I'm Jedomi, your Moodle AI assistant. Ask me about courses, users, grades or settings."}
-            </div>
-        </div>
-    </div>
-
-    <div id="jedomi-thinking-wrapper" class="jedomi-thinking-wrapper jedomi-hidden">
-        <button id="jedomi-thinking-toggle-btn" class="jedomi-thinking-bar" aria-label="Toggle thinking">
-            <span class="jedomi-thinking-dot"></span>
-            <span class="jedomi-thinking-lbl">${S.thinking || 'Thinking...'}</span>
-            <svg class="jedomi-thinking-chevron" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
-        </button>
-        <div id="jedomi-thinking" class="jedomi-thinking">
-            <span></span><span></span><span></span>
-        </div>
-    </div>
-
-    <div id="jedomi-quick-actions" class="jedomi-quick-actions"></div>
-
-    <div class="jedomi-input-area">
-        <div class="jedomi-input-row" onclick="document.getElementById('jedomi-input')?.focus()">
-            <textarea id="jedomi-input" class="jedomi-input"
-                placeholder="${S.chat_placeholder || 'Ask Jedomi about courses, users, grades...'}"
-                rows="1" aria-label="${S.message_input || 'Message Jedomi'}"></textarea>
-            <div class="jedomi-input-actions">
-                <div class="jedomi-attach-wrap">
-                    <button id="jedomi-attach-btn" class="jedomi-input-icon" title="${S.attach || 'Attach'}">${SVG.plus}</button>
-                    <div id="jedomi-attach-menu" class="jedomi-attach-menu jedomi-hidden">
-                        <button class="jedomi-attach-option" data-type="image" title="${S.attach_image || 'Attach image'}">${SVG.camera} ${S.image || 'Image'}</button>
-                        <button class="jedomi-attach-option" data-type="file" title="${S.attach_file || 'Attach file'}">${SVG.attach} ${S.file || 'File'}</button>
-                    </div>
-                </div>
-                <button id="jedomi-send" class="jedomi-send-btn" title="${S.send || 'Send'}">${SVG.send}</button>
-            </div>
-        </div>
-        <input type="file" id="jedomi-image-input" accept="image/*" class="jedomi-hidden" aria-hidden="true">
-        <input type="file" id="jedomi-file-input" accept=".pdf,.csv,.txt,.md" class="jedomi-hidden" aria-hidden="true">
-        <div id="jedomi-image-preview" class="jedomi-image-preview jedomi-hidden">
-            <img id="jedomi-preview-img" src="" alt="${S.attached_image || 'Attached image'}">
-            <span>${S.attached_image || 'Attached image'}</span>
-            <button id="jedomi-remove-image" class="jedomi-input-icon">${SVG.close}</button>
-        </div>
-        <div id="jedomi-file-preview" class="jedomi-image-preview jedomi-hidden">
-            <span id="jedomi-file-preview-name"></span>
-            <button id="jedomi-remove-file" class="jedomi-input-icon">${SVG.close}</button>
-        </div>
-    </div>
-    <div class="jedomi-footer">
-        <span class="jedomi-disclaimer">${S.ai_disclaimer || 'Jedomi is an AI and can make mistakes.'}</span>
-    </div>
-</div>
-
-<div id="jedomi-overlay" class="jedomi-overlay jedomi-hidden"></div>
-<div id="jedomi-dropzone" class="jedomi-dropzone jedomi-hidden">
-    <div class="jedomi-dropzone-inner">
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-        <span class="jedomi-dropzone-text">${S.drop_files_here || 'Drop files here'}</span>
-    </div>
-</div>`;
-
-        document.body.insertAdjacentHTML('beforeend', html);
+        const greeting = (S.greeting || '').replace('{name}', cfg.user_name || '');
+        const {html, js} = await Templates.renderForPromise('local_jedomi/sidebar', {greeting, strings: S});
+        Templates.appendNodeContents(document.body, html, js);
         updateContextLabel();
         loadQuickActions();
         startGlowCycle();
     };
 
-    // ── Glow pulse cada 30 segundos ───────────────────────────────────────────
+    // Render a template into a node, replacing its content or appending to it.
+    const renderInto = async (node, template, context, append = false) => {
+        try {
+            const {html, js} = await Templates.renderForPromise(template, context);
+            if (append) {
+                Templates.appendNodeContents(node, html, js);
+            } else {
+                Templates.replaceNodeContents(node, html, js);
+            }
+        } catch (error) {
+            Log.error('Jedomi: template ' + template + ' could not be rendered', error);
+        }
+    };
+
+    // ── Glow pulse every 15 seconds ───────────────────────────────────────────
     const startGlowCycle = () => {
         const trigger = document.getElementById('jedomi-trigger');
         if (!trigger) return;
@@ -295,6 +172,8 @@ define(['core/log', 'core/ajax'], function(Log, Ajax) {
     // ── Wire Events ───────────────────────────────────────────────────────────
     const wireUp = () => {
         on('jedomi-trigger',      'click',  openSidebar);
+        g('jedomi-input')?.closest('[data-action="local_jedomi/sidebar/focus-input"]')
+            ?.addEventListener('click', () => g('jedomi-input')?.focus());
         initDropZone();
         on('jedomi-close',        'click',  closeSidebar);
         on('jedomi-clear',        'click',  clearChat);
@@ -305,7 +184,7 @@ define(['core/log', 'core/ajax'], function(Log, Ajax) {
             g('jedomi-thinking-wrapper')?.classList.toggle('jedomi-thinking-expanded');
         });
 
-        // ── CSV download via event delegation (evita CSP de Moodle) ──────────
+        // ── CSV download through event delegation (avoids Moodle's CSP) ─────────
         const msgs = g('jedomi-messages');
         if (msgs) {
             msgs.addEventListener('click', (e) => {
@@ -368,18 +247,18 @@ define(['core/log', 'core/ajax'], function(Log, Ajax) {
 
         // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
-            // Escape → cerrar sidebar
+            // Escape → close the sidebar.
             if (e.key === 'Escape' && g('jedomi-sidebar')?.classList.contains('jedomi-open')) {
                 closeSidebar();
                 return;
             }
-            // Ctrl+Shift+J → abrir/cerrar Jedomi
+            // Ctrl+Shift+J → open/close Jedomi.
             if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'J') {
                 e.preventDefault();
                 const isOpen = g('jedomi-sidebar')?.classList.contains('jedomi-open');
                 isOpen ? closeSidebar() : openSidebar();
             }
-            // Ctrl+Shift+N → nueva conversación
+            // Ctrl+Shift+N → new conversation.
             if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'N') {
                 e.preventDefault();
                 clearChat();
@@ -389,8 +268,8 @@ define(['core/log', 'core/ajax'], function(Log, Ajax) {
     };
 
     // ── Watch AJAX Navigation ─────────────────────────────────────────────────
-    // Temas que cambian la URL sin recargar (history.pushState) necesitan
-    // que refresquemos el contexto y las quick actions.
+    // Themes that change the URL without reloading (history.pushState) need
+    // the context and the quick actions refreshed.
     const watchNavigation = () => {
         const originalPush = history.pushState.bind(history);
         history.pushState = function(...args) {
@@ -408,8 +287,8 @@ define(['core/log', 'core/ajax'], function(Log, Ajax) {
             }, 300);
         });
 
-        // También vigilamos cambios en el DOM por si el tema usa
-        // content injection dinámica
+        // Also watch DOM changes in case the theme injects
+        // content dynamically.
         const observer = new MutationObserver(() => {
             fixBodyOverflow();
         });
@@ -426,14 +305,14 @@ define(['core/log', 'core/ajax'], function(Log, Ajax) {
         const panel = g('jedomi-sidebar');
         if (!panel) return;
         expandMode = mode;
-        // Solo cambia el ancho del panel — no toca el layout de Moodle
+        // Only the panel width changes; Moodle's layout is not touched.
         panel.classList.remove('jedomi-expand-half', 'jedomi-expand-full');
         if (mode === 'half')  panel.classList.add('jedomi-expand-half');
         if (mode === 'full')  panel.classList.add('jedomi-expand-full');
-        // Highlight botón activo
+        // Highlight the active button.
         ['half','full'].forEach(m => {
             const btn = g(`jedomi-expand-${m}`);
-            if (btn) btn.style.color = (mode === m) ? 'var(--j-accent)' : '';
+            if (btn) btn.classList.toggle('jedomi-expand-active', mode === m);
         });
     };
 
@@ -442,15 +321,15 @@ define(['core/log', 'core/ajax'], function(Log, Ajax) {
         fixBodyOverflow();
         const panel = g('jedomi-sidebar');
         if (!panel) return;
-        sessionStorage.setItem('jedomi_open', '1'); // persistir estado
+        sessionStorage.setItem('jedomi_open', '1'); // Keep the state.
 
-        // Alinear con el navbar de Moodle (fixed-top) — solo posición, sin tocar el layout
+        // Align with Moodle's fixed-top navbar: position only, the layout is not touched.
         const navbar = document.querySelector('nav.navbar.fixed-top, .navbar.fixed-top');
         const navH   = navbar ? navbar.getBoundingClientRect().height : 0;
         panel.style.top    = navH > 0 ? navH + 'px' : '0';
         panel.style.height = navH > 0 ? `calc(100vh - ${navH}px)` : '100vh';
 
-        // Header de Jedomi = misma altura visual que el navbar
+        // The Jedomi header has the same visual height as the navbar.
         const jedomiHeader = panel.querySelector('.jedomi-header');
         if (jedomiHeader && navH > 0) {
             jedomiHeader.style.height    = navH + 'px';
@@ -459,7 +338,7 @@ define(['core/log', 'core/ajax'], function(Log, Ajax) {
         }
 
         panel.classList.replace('jedomi-closed', 'jedomi-open');
-        // NO tocamos el layout de Moodle — solo el overlay
+        // Moodle's layout is NOT touched, only the overlay.
         setExpandMode(expandMode);
         g('jedomi-input')?.focus();
     };
@@ -471,12 +350,12 @@ define(['core/log', 'core/ajax'], function(Log, Ajax) {
         sessionStorage.removeItem('jedomi_open'); // limpiar estado
     };
 
-    // Restaura los mensajes guardados en el DOM al recargar página
+    // Restore the saved messages in the DOM after a page reload.
     const _restoreConversationUI = () => {
         const msgs = g('jedomi-messages');
         if (!msgs || conversation.length === 0) return;
-        // Limpiar saludo inicial
-        msgs.innerHTML = '';
+        // Clear the initial greeting.
+        msgs.replaceChildren();
         conversation.forEach(msg => {
             if (msg.role === 'user') {
                 addMessage('user', typeof msg.content === 'string' ? msg.content : '...');
@@ -486,7 +365,7 @@ define(['core/log', 'core/ajax'], function(Log, Ajax) {
         });
     };
 
-    // ── Cache de sesión Moodle — servidor, no cliente ────────────────────────
+    // ── Moodle session cache: server, not client ─────────────────────────────
     const _convUrl = () => `${cfg.wwwroot}/local/jedomi/conversation.php`;
 
     const _loadConversationFromServer = async () => {
@@ -503,7 +382,7 @@ define(['core/log', 'core/ajax'], function(Log, Ajax) {
     };
 
     const _saveConversation = () => {
-        // Solo guardar el ÚLTIMO mensaje (el que acaba de completarse)
+        // Only save the LAST message (the one just completed).
         if (conversation.length === 0) return;
         const last = conversation[conversation.length - 1];
         const body = new URLSearchParams({
@@ -521,23 +400,22 @@ define(['core/log', 'core/ajax'], function(Log, Ajax) {
 
     const clearChat = () => {
         conversation = [];
-        // Borrar en el servidor (cache de sesión Moodle)
+        // Clear it on the server (Moodle session cache).
         const body = new URLSearchParams({
             action:  'clear',
             sesskey: M?.cfg?.sesskey || '',
         });
         fetch(_convUrl(), { method: 'POST', credentials: 'same-origin', body }).catch(() => {});
-        // Nueva sesión al limpiar
+        // New session after clearing.
         sessionId = crypto.randomUUID ? crypto.randomUUID()
             : Date.now().toString(36) + Math.random().toString(36).slice(2);
         localStorage.setItem('jedomi_session_id', sessionId);
         const msgs = g('jedomi-messages');
-        if (msgs) msgs.innerHTML = `<div class="jedomi-message jedomi-message-assistant">
-            <div class="jedomi-bubble">${(cfg.strings||{}).new_conversation_msg || 'New conversation started. How can I help you?'}</div></div>`;
+        if (msgs) renderInto(msgs, 'local_jedomi/local/sidebar/notice', {text: (cfg.strings || {}).new_conversation_msg || ''});
     };
 
     const editLastMessage = () => {
-        // Encuentra el último mensaje del usuario y lo pone en el input para editar
+        // Find the last user message and put it in the input to edit it.
         const lastUserMsg = [...conversation].reverse().find(m => m.role === 'user');
         if (!lastUserMsg) return;
 
@@ -550,23 +428,23 @@ define(['core/log', 'core/ajax'], function(Log, Ajax) {
             input.value = content;
             input.dispatchEvent(new Event('input'));
             input.focus();
-            // Seleccionar todo el texto para facilitar la edición
+            // Select all the text to make editing easier.
             input.select();
         }
 
-        // Remover el último par user/assistant de la conversación
+        // Remove the last user/assistant pair from the conversation.
         const lastUserIdx = [...conversation].reverse().findIndex(m => m.role === 'user');
         if (lastUserIdx >= 0) {
             const actualIdx = conversation.length - 1 - lastUserIdx;
-            // Remover desde el último mensaje del usuario en adelante
+            // Remove from the last user message onwards.
             conversation.splice(actualIdx);
         }
 
-        // Remover los últimos bubbles del DOM
+        // Remove the last bubbles from the DOM.
         const msgs = g('jedomi-messages');
         if (msgs) {
             const bubbles = msgs.querySelectorAll('.jedomi-message');
-            // Quitar los últimos 2 (user + assistant)
+            // Remove the last 2 (user + assistant).
             const toRemove = Math.min(2, bubbles.length - 1); // dejar al menos el saludo
             for (let i = 0; i < toRemove; i++) {
                 const last = msgs.querySelector('.jedomi-message:last-child');
@@ -595,24 +473,24 @@ define(['core/log', 'core/ajax'], function(Log, Ajax) {
         const name = ctx.course_name || ctx.activity_name || '';
         const S    = cfg.strings || {};
         const labels = {
-            course:    '\uD83D\uDCDA ' + (name || S.ctx_course    || 'Course'),
-            activity:  '\uD83D\uDCDD ' + (name || ctx.activity_type || S.ctx_activity || 'Activity'),
-            grades:    '\uD83D\uDCCA ' + (S.ctx_grades    || 'Grades'),
-            admin:     '\u2699\uFE0F '  + (S.ctx_admin    || 'Administration'),
-            dashboard: '\uD83C\uDFE0 ' + (S.ctx_dashboard || 'Dashboard'),
-            messages:  '\uD83D\uDCAC ' + (S.ctx_messages  || 'Messages'),
-            profile:   '\uD83D\uDC64 ' + (S.ctx_profile   || 'Profile'),
-            calendar:  '\uD83D\uDCC5 ' + (S.ctx_calendar  || 'Calendar'),
-            files:     '\uD83D\uDCC1 ' + (S.ctx_files     || 'Files'),
+            course:    '\uD83D\uDCDA ' + (name || S.ctx_course    || ''),
+            activity:  '\uD83D\uDCDD ' + (name || ctx.activity_type || S.ctx_activity || ''),
+            grades:    '\uD83D\uDCCA ' + (S.ctx_grades    || ''),
+            admin:     '\u2699\uFE0F '  + (S.ctx_admin    || ''),
+            dashboard: '\uD83C\uDFE0 ' + (S.ctx_dashboard || ''),
+            messages:  '\uD83D\uDCAC ' + (S.ctx_messages  || ''),
+            profile:   '\uD83D\uDC64 ' + (S.ctx_profile   || ''),
+            calendar:  '\uD83D\uDCC5 ' + (S.ctx_calendar  || ''),
+            files:     '\uD83D\uDCC1 ' + (S.ctx_files     || ''),
         };
-        // Fallback: título de la página (sin el sufijo "| Moodle")
+        // Fallback: the page title (without the "| Moodle" suffix).
         const rawTitle  = document.title.replace(/\s*[|\-]\s*Moodle.*$/i, '').trim();
         const pageTitle = rawTitle.length > 35 ? rawTitle.substring(0, 33) + '\u2026' : rawTitle;
         const label = labels[loc] || (pageTitle ? '\uD83D\uDCC4 ' + pageTitle : '');
         const el = g('jedomi-context-label');
         if (el) {
             el.textContent     = label;
-            el.style.display   = label ? '' : 'none';
+            el.classList.toggle('jedomi-hidden', !label);
         }
     };
 
@@ -631,7 +509,7 @@ define(['core/log', 'core/ajax'], function(Log, Ajax) {
         return 'unknown';
     };
 
-    const loadQuickActions = () => {
+    const loadQuickActions = async () => {
         const container = g('jedomi-quick-actions');
         if (!container) return;
 
@@ -643,143 +521,143 @@ define(['core/log', 'core/ajax'], function(Log, Ajax) {
         const loc      = ctx.location || getCurrentLocation();
         const cid      = ctx.course_id || getCourseidFromUrl();
         const uid      = spt.userid || ctx.user_id || 0;
-        // Usar nombre del curso si está disponible, no el ID
+        // Use the course name when available, not the ID.
         const courseName = ctx.course_name
             ? `"${ctx.course_name}"`
-            : (cid ? `con ID ${cid}` : 'actual');
+            : (cid ? (S.qa_course_with_id || '').replace('{$a}', cid) : (S.qa_course_current || ''));
 
         let actions = [];
 
-        // ── detectar si estamos en un curso (por contexto PHP o URL) ──────────
+        // ── Detect whether we are in a course (from the PHP context or the URL) ──
         const inCourse = !!(ctx.course_name || cid) && loc !== 'admin' && loc !== 'dashboard';
 
         // ── ADMIN ────────────────────────────────────────────────
         if (role === 'admin') {
             if (inCourse) {
                 actions = [
-                    { icon: '🏆', label: S.qa_admin_top_student_label || 'Top student',
-                      msg: (S.qa_admin_top_student_msg || 'Who is the top student in course {$a}?').replace('{$a}', courseName) },
-                    { icon: '⚠️', label: S.qa_admin_at_risk_label || 'At risk',
-                      msg: (S.qa_admin_at_risk_msg || 'Which students are at risk of failing in course {$a}?').replace('{$a}', courseName) },
-                    { icon: '📊', label: S.qa_admin_performance_label || 'Performance',
-                      msg: (S.qa_admin_performance_msg || 'Show me the grade ranking for course {$a}').replace('{$a}', courseName) },
-                    { icon: '👻', label: S.qa_admin_inactive_label || 'Inactive',
-                      msg: (S.qa_admin_inactive_msg || 'Which students haven\'t accessed course {$a} in the last 30 days?').replace('{$a}', courseName) },
-                    { icon: '📝', label: S.qa_admin_missing_work_label || 'Missing work',
-                      msg: (S.qa_admin_missing_work_msg || 'Which students haven\'t submitted activities in course {$a}?').replace('{$a}', courseName) },
+                    { icon: '🏆', label: S.qa_admin_top_student_label || '',
+                      msg: (S.qa_admin_top_student_msg || '').replace('{$a}', courseName) },
+                    { icon: '⚠️', label: S.qa_admin_at_risk_label || '',
+                      msg: (S.qa_admin_at_risk_msg || '').replace('{$a}', courseName) },
+                    { icon: '📊', label: S.qa_admin_performance_label || '',
+                      msg: (S.qa_admin_performance_msg || '').replace('{$a}', courseName) },
+                    { icon: '👻', label: S.qa_admin_inactive_label || '',
+                      msg: (S.qa_admin_inactive_msg || '').replace('{$a}', courseName) },
+                    { icon: '📝', label: S.qa_admin_missing_work_label || '',
+                      msg: (S.qa_admin_missing_work_msg || '').replace('{$a}', courseName) },
                 ];
             } else if (loc === 'admin') {
                 actions = [
-                    { icon: '👥', label: S.qa_admin_active_users_label || 'Active users',
-                      msg: S.qa_admin_active_users_msg || 'How many active users are there in the system?' },
-                    { icon: '🔐', label: S.qa_admin_external_emails_label || 'External emails',
-                      msg: S.qa_admin_external_emails_msg || 'Are there users with non-institutional emails?' },
-                    { icon: '📋', label: S.qa_admin_empty_cohorts_label || 'Empty cohorts',
-                      msg: S.qa_admin_empty_cohorts_msg || 'Are there cohorts with no members assigned?' },
-                    { icon: '⚠️', label: S.qa_admin_gdpr_pending_label || 'GDPR pending',
-                      msg: S.qa_admin_gdpr_pending_msg || 'Are there pending GDPR deletion requests?' },
-                    { icon: '🔒', label: S.qa_admin_security_label || 'Security',
-                      msg: S.qa_admin_security_msg || 'Are there users with suspicious characters in their names?' },
+                    { icon: '👥', label: S.qa_admin_active_users_label || '',
+                      msg: S.qa_admin_active_users_msg || '' },
+                    { icon: '🔐', label: S.qa_admin_external_emails_label || '',
+                      msg: S.qa_admin_external_emails_msg || '' },
+                    { icon: '📋', label: S.qa_admin_empty_cohorts_label || '',
+                      msg: S.qa_admin_empty_cohorts_msg || '' },
+                    { icon: '⚠️', label: S.qa_admin_gdpr_pending_label || '',
+                      msg: S.qa_admin_gdpr_pending_msg || '' },
+                    { icon: '🔒', label: S.qa_admin_security_label || '',
+                      msg: S.qa_admin_security_msg || '' },
                 ];
             } else {
                 actions = [
-                    { icon: '📊', label: S.qa_admin_overview_label || 'Overview',
-                      msg: S.qa_admin_overview_msg || 'Give me a summary of the overall platform status' },
-                    { icon: '⚠️', label: S.qa_admin_alerts_label || 'Alerts',
-                      msg: S.qa_admin_alerts_msg || 'What requires immediate attention today?' },
-                    { icon: '🏆', label: S.qa_admin_top_courses_label || 'Top courses',
-                      msg: S.qa_admin_top_courses_msg || 'Which courses have the best performance?' },
-                    { icon: '💾', label: S.qa_admin_storage_label || 'Storage',
-                      msg: S.qa_admin_storage_msg || 'Which course has the heaviest files uploaded?' },
+                    { icon: '📊', label: S.qa_admin_overview_label || '',
+                      msg: S.qa_admin_overview_msg || '' },
+                    { icon: '⚠️', label: S.qa_admin_alerts_label || '',
+                      msg: S.qa_admin_alerts_msg || '' },
+                    { icon: '🏆', label: S.qa_admin_top_courses_label || '',
+                      msg: S.qa_admin_top_courses_msg || '' },
+                    { icon: '💾', label: S.qa_admin_storage_label || '',
+                      msg: S.qa_admin_storage_msg || '' },
                 ];
             }
         } else if (role === 'manager') {
             if (inCourse) {
                 actions = [
-                    { icon: SVG.chart, label: S.qa_manager_overview_label || 'Overview',
-                      msg: (S.qa_manager_overview_msg || 'Give me a summary of course {$a}').replace('{$a}', courseName) },
-                    { icon: SVG.alert, label: S.qa_manager_at_risk_label || 'At risk',
-                      msg: (S.qa_manager_at_risk_msg || 'Which students are at risk in course {$a}?').replace('{$a}', courseName) },
-                    { icon: SVG.users, label: S.qa_manager_enrolled_label || 'Enrolled',
-                      msg: (S.qa_manager_enrolled_msg || 'How many students are enrolled in course {$a}?').replace('{$a}', courseName) },
-                    { icon: SVG.ghost, label: S.qa_manager_inactive_label || 'Inactive',
-                      msg: (S.qa_manager_inactive_msg || 'Which students haven\'t accessed course {$a} in the last 14 days?').replace('{$a}', courseName) },
+                    { icon: 'chart', label: S.qa_manager_overview_label || '',
+                      msg: (S.qa_manager_overview_msg || '').replace('{$a}', courseName) },
+                    { icon: 'alert', label: S.qa_manager_at_risk_label || '',
+                      msg: (S.qa_manager_at_risk_msg || '').replace('{$a}', courseName) },
+                    { icon: 'users', label: S.qa_manager_enrolled_label || '',
+                      msg: (S.qa_manager_enrolled_msg || '').replace('{$a}', courseName) },
+                    { icon: 'ghost', label: S.qa_manager_inactive_label || '',
+                      msg: (S.qa_manager_inactive_msg || '').replace('{$a}', courseName) },
                 ];
             } else {
                 actions = [
-                    { icon: SVG.users, label: S.qa_manager_inactive_users_label || 'Inactive users',
-                      msg: S.qa_manager_inactive_users_msg || 'Which users haven\'t accessed the system in the last 30 days?' },
-                    { icon: SVG.chart, label: S.qa_manager_top_courses_label || 'Top courses',
-                      msg: S.qa_manager_top_courses_msg || 'Which courses have the most activity this week?' },
-                    { icon: SVG.alert, label: S.qa_manager_global_risk_label || 'Global risk',
-                      msg: S.qa_manager_global_risk_msg || 'Are there students at risk of failing in any course?' },
-                    { icon: SVG.task,  label: S.qa_manager_no_teacher_label || 'No teacher',
-                      msg: S.qa_manager_no_teacher_msg || 'Are there courses with no teacher assigned?' },
+                    { icon: 'users', label: S.qa_manager_inactive_users_label || '',
+                      msg: S.qa_manager_inactive_users_msg || '' },
+                    { icon: 'chart', label: S.qa_manager_top_courses_label || '',
+                      msg: S.qa_manager_top_courses_msg || '' },
+                    { icon: 'alert', label: S.qa_manager_global_risk_label || '',
+                      msg: S.qa_manager_global_risk_msg || '' },
+                    { icon: 'task',  label: S.qa_manager_no_teacher_label || '',
+                      msg: S.qa_manager_no_teacher_msg || '' },
                 ];
             }
         } else if (role === 'teacher') {
             if ((loc === 'course' || loc === 'activity' || loc === 'grades') && cid) {
                 actions = [
-                    { icon: SVG.chart, label: S.qa_teacher_performance_label || 'Performance',
-                      msg: (S.qa_teacher_performance_msg || 'What is the average grade in course {$a}?').replace('{$a}', courseName) },
-                    { icon: SVG.alert, label: S.qa_teacher_at_risk_label || 'At risk',
-                      msg: (S.qa_teacher_at_risk_msg || 'Which students are at risk in course {$a}?').replace('{$a}', courseName) },
-                    { icon: SVG.ghost, label: S.qa_teacher_never_logged_label || 'Never logged in',
-                      msg: (S.qa_teacher_never_logged_msg || 'Which students never accessed course {$a}?').replace('{$a}', courseName) },
-                    { icon: SVG.task,  label: S.qa_teacher_missing_work_label || 'Missing work',
-                      msg: (S.qa_teacher_missing_work_msg || 'Who hasn\'t submitted the latest assignment in course {$a}?').replace('{$a}', courseName) },
+                    { icon: 'chart', label: S.qa_teacher_performance_label || '',
+                      msg: (S.qa_teacher_performance_msg || '').replace('{$a}', courseName) },
+                    { icon: 'alert', label: S.qa_teacher_at_risk_label || '',
+                      msg: (S.qa_teacher_at_risk_msg || '').replace('{$a}', courseName) },
+                    { icon: 'ghost', label: S.qa_teacher_never_logged_label || '',
+                      msg: (S.qa_teacher_never_logged_msg || '').replace('{$a}', courseName) },
+                    { icon: 'task',  label: S.qa_teacher_missing_work_label || '',
+                      msg: (S.qa_teacher_missing_work_msg || '').replace('{$a}', courseName) },
                 ];
                 if (caps.can_send_messages) {
-                    actions.push({ icon: SVG.mic, label: S.qa_teacher_notify_group_label || 'Notify group',
-                      msg: (S.qa_teacher_notify_group_msg || 'Draft a message for students in course {$a} reminding them of pending activities').replace('{$a}', courseName) });
+                    actions.push({ icon: 'mic', label: S.qa_teacher_notify_group_label || '',
+                      msg: (S.qa_teacher_notify_group_msg || '').replace('{$a}', courseName) });
                 }
                 if (caps.can_view_all_grades) {
-                    actions.push({ icon: SVG.star, label: S.qa_teacher_top_students_label || 'Top students',
-                      msg: (S.qa_teacher_top_students_msg || 'Who has more than 90 points in course {$a}?').replace('{$a}', courseName) });
+                    actions.push({ icon: 'star', label: S.qa_teacher_top_students_label || '',
+                      msg: (S.qa_teacher_top_students_msg || '').replace('{$a}', courseName) });
                 }
             } else {
                 actions = [
-                    { icon: SVG.chart, label: S.qa_teacher_my_courses_label || 'My courses',
-                      msg: S.qa_teacher_my_courses_msg || 'In which courses am I currently a teacher?' },
-                    { icon: SVG.alert, label: S.qa_teacher_my_alerts_label || 'My alerts',
-                      msg: S.qa_teacher_my_alerts_msg || 'Are there students at risk in any of my courses?' },
+                    { icon: 'chart', label: S.qa_teacher_my_courses_label || '',
+                      msg: S.qa_teacher_my_courses_msg || '' },
+                    { icon: 'alert', label: S.qa_teacher_my_alerts_label || '',
+                      msg: S.qa_teacher_my_alerts_msg || '' },
                 ];
             }
         } else { // STUDENT
             if (cid) {
                 actions = [
-                    { icon: SVG.task,  label: S.qa_student_my_tasks_label || 'My tasks',
-                      msg: (S.qa_student_my_tasks_msg || 'What assignments do I have pending in course {$a}?').replace('{$a}', courseName) },
-                    { icon: SVG.chart, label: S.qa_student_my_grade_label || 'My grade',
-                      msg: (S.qa_student_my_grade_msg || 'What is my average in course {$a}?').replace('{$a}', courseName) },
-                    { icon: SVG.task,  label: S.qa_student_my_progress_label || 'My progress',
-                      msg: (S.qa_student_my_progress_msg || 'How many activities have I completed in course {$a}?').replace('{$a}', courseName) },
-                    { icon: SVG.help,  label: S.qa_student_help_label || 'Help',
-                      msg: (S.qa_student_help_msg || 'I don\'t understand the content of course {$a}. Can you explain?').replace('{$a}', courseName) },
+                    { icon: 'task',  label: S.qa_student_my_tasks_label || '',
+                      msg: (S.qa_student_my_tasks_msg || '').replace('{$a}', courseName) },
+                    { icon: 'chart', label: S.qa_student_my_grade_label || '',
+                      msg: (S.qa_student_my_grade_msg || '').replace('{$a}', courseName) },
+                    { icon: 'task',  label: S.qa_student_my_progress_label || '',
+                      msg: (S.qa_student_my_progress_msg || '').replace('{$a}', courseName) },
+                    { icon: 'help',  label: S.qa_student_help_label || '',
+                      msg: (S.qa_student_help_msg || '').replace('{$a}', courseName) },
                 ];
             } else {
                 actions = [
-                    { icon: SVG.chart, label: S.qa_student_my_courses_label || 'My courses',
-                      msg: S.qa_student_my_courses_msg || 'Which courses am I currently enrolled in?' },
-                    { icon: SVG.task,  label: S.qa_student_my_grades_label || 'My grades',
-                      msg: S.qa_student_my_grades_msg || 'What is my overall average across all my courses?' },
-                    { icon: SVG.task,  label: S.qa_student_this_week_label || 'This week',
-                      msg: S.qa_student_this_week_msg || 'What activities and deadlines do I have coming up?' },
+                    { icon: 'chart', label: S.qa_student_my_courses_label || '',
+                      msg: S.qa_student_my_courses_msg || '' },
+                    { icon: 'task',  label: S.qa_student_my_grades_label || '',
+                      msg: S.qa_student_my_grades_msg || '' },
+                    { icon: 'task',  label: S.qa_student_this_week_label || '',
+                      msg: S.qa_student_this_week_msg || '' },
                 ];
             }
         }
 
-        // Mapeo de iconos emoji → SVG tech
+        // Emoji icons of the actions → names of the icons in local_jedomi/local/sidebar/icon.
         const iconMap = {
-            '📊': SVG.chart, '⚠️': SVG.alert, '👻': SVG.ghost, '📝': SVG.task,
-            '🌙': SVG.moon,  '👥': SVG.users, '🔐': SVG.shield,'📋': SVG.lock,
-            '🏆': SVG.star,  '❓': SVG.help,  '💰': SVG.cpu,   '✅': SVG.task,
-            '📚': SVG.chart, '💬': SVG.mic,   '🔒': SVG.shield,'📅': SVG.task,
+            '📊': 'chart', '⚠️': 'alert', '👻': 'ghost', '📝': 'task',
+            '🌙': 'moon',  '👥': 'users', '🔐': 'shield', '📋': 'lock',
+            '🏆': 'star',  '❓': 'help',  '💰': 'cpu',   '✅': 'task',
+            '📚': 'chart', '💬': 'mic',   '🔒': 'shield', '📅': 'task',
         };
-        container.innerHTML = actions.map(a => {
-            const svgIcon = iconMap[a.icon] || SVG.chart;
-            return `<button class="jedomi-quick-btn" data-msg="${escHtml(a.msg)}">${svgIcon} ${a.label}</button>`;
-        }).join('');
+        const iconName = (icon) => iconMap[icon] || (/^[a-z]+$/.test(icon) ? icon : 'chart');
+        await renderInto(container, 'local_jedomi/local/sidebar/quick_actions', {
+            actions: actions.map(a => ({label: a.label, msg: a.msg, icon: {[iconName(a.icon)]: true}})),
+        });
 
         container.querySelectorAll('.jedomi-quick-btn').forEach(btn => {
             btn.addEventListener('click', () => {
@@ -813,15 +691,15 @@ define(['core/log', 'core/ajax'], function(Log, Ajax) {
         // The file text goes with the question in the same message; the chat shows only its name.
         if (pendingFile) {
             const S = cfg.strings || {};
-            const question = text || S.analyze_file || 'Summarize this file.';
-            const header = (S.attached_file_info || '[Attached file: {$a}]').replace('{$a}', pendingFile.name);
+            const question = text || S.analyze_file || '';
+            const header = (S.attached_file_info || '').replace('{$a}', pendingFile.name);
             modelText = `${question}\n\n${header} — ${pendingFile.info}\n\n${pendingFile.text}`;
             displayText = `${text ? text + '\n\n' : ''}📎 ${pendingFile.name} (${pendingFile.info})`;
         }
 
         if (pendingImage) {
             userContent = [
-                { type: 'text', text: modelText || (cfg.strings?.analyze_image || 'Analyze this image.') },
+                { type: 'text', text: modelText || (cfg.strings?.analyze_image || '') },
                 { type: 'image_url', image_url: { url: `data:${pendingImage.mimeType};base64,${pendingImage.base64}` } }
             ];
         } else {
@@ -833,12 +711,12 @@ define(['core/log', 'core/ajax'], function(Log, Ajax) {
         clearImage();
         clearFile();
         conversation.push({ role: 'user', content: userContent });
-        _saveConversation(); // Guardar inmediatamente
+        _saveConversation(); // Save at once.
 
         setThinking(true);
         if (sendBtn) sendBtn.disabled = true;
 
-        // Crear bubble vacío para ir llenando con streaming
+        // Create an empty bubble to fill while streaming.
         const streamBubble = createStreamBubble();
 
         try {
@@ -847,50 +725,59 @@ define(['core/log', 'core/ajax'], function(Log, Ajax) {
 
             await callGatewayStream(
                 conversation,
-                // onToken: agrega cada token al bubble
+                // onToken: add each token to the bubble.
                 (token) => {
                     fullText += token;
                     if (streamBubble.thinking) {
-                        // Primera respuesta — ocultar thinking y mostrar bubble
+                        // First answer: hide thinking and show the bubble.
                         setThinking(false);
                         streamBubble.thinking = false;
                         streamBubble.el.classList.remove('jedomi-hidden');
                     }
                     streamBubble.rawText += token;
+                    streamBubble.version++;
                     streamBubble.inner.innerHTML = renderMarkdown(streamBubble.rawText);
-                    // Scroll suave al fondo
+                    // Smooth scroll to the bottom.
                     const msgs = g('jedomi-messages');
                     if (msgs) msgs.scrollTop = msgs.scrollHeight;
                 },
-                // onToolEvent: muestra qué herramienta se está ejecutando
+                // onToolEvent: show which tool is running.
                 (toolEvent) => {
                     // toolEvent is {tool: "search_tables", args: {...}}
                     const toolName = typeof toolEvent === 'string' ? toolEvent : (toolEvent?.tool || 'unknown');
                     const S2 = cfg.strings || {};
                     const toolIcons = {
-                        search_tables:  SVG.search,
-                        execute_sql:    SVG.db,
-                        describe_table: SVG.clipboard,
-                        get_site_config:SVG.gear,
-                        ws_search:      SVG.search,
-                        ws_describe:    SVG.book,
-                        ws_execute:     SVG.zap,
+                        search_tables:  'search',
+                        execute_sql:    'db',
+                        describe_table: 'clipboard',
+                        get_site_config:'gear',
+                        ws_search:      'search',
+                        ws_describe:    'book',
+                        ws_execute:     'zap',
                     };
                     const toolLabels = {
-                        search_tables:  S2.tool_search_tables || 'Buscando tablas...',
-                        execute_sql:    S2.tool_execute_sql || 'Consultando base de datos...',
-                        describe_table: S2.tool_describe_table || 'Analizando tabla...',
-                        get_site_config:S2.tool_get_site_config || 'Obteniendo configuración...',
-                        ws_search:      S2.tool_ws_search || 'Buscando funciones webservices...',
-                        ws_describe:    S2.tool_ws_describe || 'Analizando función webservice...',
-                        ws_execute:     S2.tool_ws_execute || 'Ejecutando acción...',
+                        search_tables:  S2.tool_search_tables || '',
+                        execute_sql:    S2.tool_execute_sql || '',
+                        describe_table: S2.tool_describe_table || '',
+                        get_site_config:S2.tool_get_site_config || '',
+                        ws_search:      S2.tool_ws_search || '',
+                        ws_describe:    S2.tool_ws_describe || '',
+                        ws_execute:     S2.tool_ws_execute || '',
                     };
 
-                    const label = toolLabels[toolName] || (S2.tool_unknown || 'Ejecutando herramienta...');
-                    const icon  = toolIcons[toolName] || SVG.zap;
+                    const label = toolLabels[toolName] || (S2.tool_unknown || '');
+                    const icon  = toolIcons[toolName] || 'zap';
 
-                    streamBubble.inner.innerHTML =
-                        `<span class="jedomi-tool-status">${icon} ${label}</span>`;
+                    // A token that arrives while the status renders wins: the status only replaces older content.
+                    const version = ++streamBubble.version;
+                    Templates.renderForPromise('local_jedomi/local/sidebar/tool_status', {label, icon: {[icon]: true}})
+                        .then(({html, js}) => {
+                            if (streamBubble.version === version) {
+                                Templates.replaceNodeContents(streamBubble.inner, html, js);
+                            }
+                            return null;
+                        })
+                        .catch(error => Log.error('Jedomi: tool status could not be rendered', error));
                     streamBubble.el.classList.remove('jedomi-hidden');
                     setThinking(false);
                     streamBubble.thinking = false;
@@ -908,6 +795,7 @@ define(['core/log', 'core/ajax'], function(Log, Ajax) {
                 .replace(/JEDOMI_ACTION[\s\S]*?END_ACTION/g, '')
                 .replace(/JEDOMI_PENDING_ACTION:[\s\S]*?:END_PENDING/g, '')
                 .trim();
+            streamBubble.version++;
             streamBubble.inner.innerHTML = renderMarkdown(fullText);
             if (pendingAction) {
                 streamBubble.el.classList.remove('jedomi-hidden');
@@ -915,29 +803,29 @@ define(['core/log', 'core/ajax'], function(Log, Ajax) {
             }
             addMessageActions(streamBubble.wrap, fullText);
 
-            // Links — abrir en la misma pestaña directamente (sin preventDefault)
+            // Links: open in the same tab directly (no preventDefault).
             streamBubble.inner.querySelectorAll('a[href]').forEach(a => {
                 if (!a.getAttribute('target')) {
                     a.setAttribute('target', '_self');
                 }
-                a.style.cursor = 'pointer';
             });
 
             conversation.push({ role: 'assistant', content: fullText });
-            _saveConversation(); // Persistir en localStorage
+            _saveConversation(); // Save it on the server.
 
         } catch (err) {
             Log.error('Jedomi error', err);
             setThinking(false);
+            streamBubble.version++;
             if (err.message === '__SESSION_EXPIRED__') {
                 streamBubble.inner.innerHTML = renderMarkdown(
-                    `⚠️ **${cfg.strings?.session_expired_title || 'Session expired.'}**\n\n` +
-                    `${cfg.strings?.session_expired_hint || 'Your Moodle session has expired. Please reload the page to continue.'}`
+                    `⚠️ **${cfg.strings?.session_expired_title || ''}**\n\n` +
+                    `${cfg.strings?.session_expired_hint || ''}`
                 );
             } else {
                 const message = err.jedomiServerError
                     ? err.message
-                    : (cfg.strings?.ai_error_connection || 'Could not reach Jedomi. Check your connection and try again.');
+                    : (cfg.strings?.ai_error_connection || '');
                 streamBubble.inner.innerHTML = renderMarkdown(`⚠️ ${message}`);
             }
             streamBubble.el.classList.remove('jedomi-hidden');
@@ -949,10 +837,10 @@ define(['core/log', 'core/ajax'], function(Log, Ajax) {
     };
 
     // ── Call Chat Proxy (streaming) ─────────────────────────────────────────
-    // El proxy recibe los mensajes, agrega tools + system prompt anti-hallucination,
-    // ejecuta el tool loop contra la BD real de Moodle y devuelve SSE.
+    // The proxy receives the messages, adds the tools and the anti-hallucination system prompt,
+    // runs the tool loop against the real Moodle DB and returns SSE.
     const callGatewayStream = async (messages, onToken, onToolEvent, onPendingAction) => {
-        // Context truncation: máx 30 mensajes para evitar overflow de contexto
+        // Context truncation: at most 30 messages to avoid a context overflow.
         const truncated = messages.slice(-30);
 
         const payload = {
@@ -975,7 +863,7 @@ define(['core/log', 'core/ajax'], function(Log, Ajax) {
         });
 
         if (!res.ok) {
-            // Detectar sesión expirada (403 de chatproxy.php → sesskey/SPT inválido).
+            // Detect an expired session (403 from chatproxy.php → invalid sesskey/SPT).
             if (res.status === 403) {
                 throw new Error('__SESSION_EXPIRED__');
             }
@@ -983,7 +871,7 @@ define(['core/log', 'core/ajax'], function(Log, Ajax) {
             throw new Error(err.detail || err.error?.message || `HTTP ${res.status}`);
         }
 
-        // Seguridad: si require_login() redirigió a login HTML, detectarlo.
+        // Security: detect when require_login() redirected to the HTML login page.
         const contentType = res.headers.get('content-type') || '';
         if (contentType.includes('text/html')) {
             throw new Error('__SESSION_EXPIRED__');
@@ -1009,27 +897,27 @@ define(['core/log', 'core/ajax'], function(Log, Ajax) {
                 try {
                     const chunk = JSON.parse(raw);
 
-                    // Evento de herramienta ejecutándose
+                    // A tool is running.
                     if (chunk._jedomi_tool_executing && onToolEvent) {
                         onToolEvent(chunk._jedomi_tool_executing);
                         continue;
                     }
-                    // Acción que espera la confirmación del usuario (la guarda el servidor).
+                    // An action waiting for the user's confirmation (the server holds it).
                     if (chunk._jedomi_pending_action) {
                         if (onPendingAction) onPendingAction(chunk._jedomi_pending_action);
                         continue;
                     }
-                    // Meta al final
+                    // Metadata at the end.
                     if (chunk._meta) continue;
                     // Server error: {"error": {"code", "message"}} with a message ready to show.
                     if (chunk.error) {
                         const serverError = new Error(chunk.error.message
-                            || cfg.strings?.ai_error_connection || 'Could not reach Jedomi.');
+                            || cfg.strings?.ai_error_connection || '');
                         serverError.jedomiServerError = true;
                         throw serverError;
                     }
 
-                    // Token de contenido
+                    // Content token.
                     const token = chunk.choices?.[0]?.delta?.content;
                     if (token && onToken) onToken(token);
 
@@ -1040,7 +928,7 @@ define(['core/log', 'core/ajax'], function(Log, Ajax) {
         }
     };
 
-    // Fallback sin streaming (para clientes que no soporten SSE)
+    // Fallback without streaming (for clients without SSE support).
     const callGateway = async (messages) => {
         const payload = {
             messages: messages,
@@ -1139,7 +1027,7 @@ GENERAL INSTRUCTIONS:
     };
 
     // ── Stream Bubble ─────────────────────────────────────────────────────────
-    // Crea un bubble vacío en el DOM y retorna referencias para llenarlo
+    // Create an empty bubble in the DOM and return references to fill it.
     const createStreamBubble = () => {
         const msgs = g('jedomi-messages');
         const wrap = document.createElement('div');
@@ -1154,45 +1042,34 @@ GENERAL INSTRUCTIONS:
         msgs?.appendChild(wrap);
         msgs && (msgs.scrollTop = msgs.scrollHeight);
 
-        return { wrap, el: bubble, inner, rawText: '', thinking: true };
+        return { wrap, el: bubble, inner, rawText: '', thinking: true, version: 0 };
     };
 
-    // Botones de acción bajo cada respuesta del asistente
-    const addMessageActions = (wrap, text) => {
+    // Action buttons under each assistant answer.
+    const addMessageActions = async (wrap, text) => {
         const actions = document.createElement('div');
         actions.className = 'jedomi-msg-actions';
-        actions.innerHTML = `
-            <button class="jedomi-action-btn" data-action="copy" title="${(cfg.strings||{}).action_copy || 'Copy'}">${SVG.copy} ${(cfg.strings||{}).action_copy || 'Copy'}</button>
-            <button class="jedomi-action-btn" data-action="good" title="${(cfg.strings||{}).action_helpful || 'Helpful'}">${SVG.thumbup} ${(cfg.strings||{}).action_helpful || 'Helpful'}</button>
-            <button class="jedomi-action-btn" data-action="bad"  title="${(cfg.strings||{}).action_improve_title || 'Needs work'}">${SVG.thumbdn} ${(cfg.strings||{}).action_improve || 'Improve'}</button>`;
+        // Inside the bubble (inner), not outside (wrap).
+        const bubbleInner = wrap.querySelector('.jedomi-bubble-inner, .jedomi-bubble');
+        (bubbleInner || wrap).appendChild(actions);
+        await renderInto(actions, 'local_jedomi/local/sidebar/message_actions', {strings: cfg.strings || {}});
 
-        actions.querySelector('[data-action="copy"]').addEventListener('click', () => {
+        const copy = actions.querySelector('[data-action="local_jedomi/sidebar/copy"]');
+        copy?.addEventListener('click', () => {
             navigator.clipboard.writeText(text).then(() => {
-                const btn = actions.querySelector('[data-action="copy"]');
-                btn.textContent = '✅';
-                setTimeout(() => { btn.textContent = '📋'; }, 1500);
-            });
+                copy.classList.add('jedomi-action-done');
+                setTimeout(() => copy.classList.remove('jedomi-action-done'), 1500);
+                return null;
+            }).catch(() => null);
         });
-        actions.querySelector('[data-action="good"]').addEventListener('click', (e) => {
-            e.target.closest('button').style.color = '#10B981';
+        actions.querySelector('[data-action="local_jedomi/sidebar/good"]')?.addEventListener('click', (e) => {
+            e.target.closest('button').classList.add('jedomi-feedback-good');
             saveFeedback(text, 'good');
         });
-        actions.querySelector('[data-action="bad"]').addEventListener('click', (e) => {
-            e.target.closest('button').style.color = '#EF4444';
+        actions.querySelector('[data-action="local_jedomi/sidebar/bad"]')?.addEventListener('click', (e) => {
+            e.target.closest('button').classList.add('jedomi-feedback-bad');
             saveFeedback(text, 'bad');
         });
-        const editBtn = actions.querySelector('[data-action="edit-from"]');
-        if (editBtn) {
-            editBtn.addEventListener('click', () => editLastMessage());
-        }
-
-        // ← Dentro del bubble (inner), no fuera (wrap)
-        const bubbleInner = wrap.querySelector('.jedomi-bubble-inner, .jedomi-bubble');
-        if (bubbleInner) {
-            bubbleInner.appendChild(actions);
-        } else {
-            wrap.appendChild(actions);
-        }
     };
 
     const saveFeedback = async (text, rating) => {
@@ -1219,11 +1096,10 @@ GENERAL INSTRUCTIONS:
 
         if (role === 'assistant') {
             bubble.innerHTML = renderMarkdown(content);
-            // Links → navegan el browser principal
+            // Links → navigate the main browser window.
             bubble.querySelectorAll('a[href]').forEach(a => {
                 const href = a.getAttribute('href');
                 if (href && !href.startsWith('http')) return;
-                a.style.cursor = 'pointer';
                 a.addEventListener('click', (e) => {
                     e.preventDefault();
                     if (href) window.location.href = href;
@@ -1239,12 +1115,15 @@ GENERAL INSTRUCTIONS:
                 img.className = 'jedomi-msg-image';
                 bubble.appendChild(img);
             }
-            // Botón de editar en mensajes del usuario
+            // Edit button under user messages.
             const editActions = document.createElement('div');
             editActions.className = 'jedomi-msg-actions jedomi-user-actions';
-            editActions.innerHTML = `<button class="jedomi-action-btn" title="${cfg.strings?.action_edit_title || 'Edit message'}">${SVG.edit} ${cfg.strings?.action_edit || 'Edit'}</button>`;
-            editActions.querySelector('button').addEventListener('click', () => editLastMessage());
             wrap.appendChild(editActions);
+            renderInto(editActions, 'local_jedomi/local/sidebar/user_actions', {strings: cfg.strings || {}}).then(() => {
+                editActions.querySelector('[data-action="local_jedomi/sidebar/edit"]')
+                    ?.addEventListener('click', () => editLastMessage());
+                return null;
+            }).catch(() => null);
         }
 
         wrap.appendChild(bubble);
@@ -1252,7 +1131,7 @@ GENERAL INSTRUCTIONS:
         msgs.scrollTop = msgs.scrollHeight;
     };
 
-    // Detecta tipo de página Moodle desde la URL
+    // Detect the Moodle page type from the URL.
     const getMoodlePageInfo = (url) => {
         const wwwroot = cfg.wwwroot || '';
         if (!url.includes(wwwroot) && !url.startsWith('/')) return null;
@@ -1289,7 +1168,7 @@ GENERAL INSTRUCTIONS:
             .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
             // Italic
             .replace(/_(.+?)_/g, '<em>$1</em>')
-            // Links Moodle enriquecidos [text](url) — genera preview card para URLs de Moodle
+            // Rich Moodle links [text](url): a preview card for Moodle URLs.
             .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, linkText, url) => {
                 // Only web and site-relative links: model output can carry javascript: or data: URLs.
                 if (!/^(https?:\/\/|\/(?!\/))/i.test(url)) {
@@ -1302,39 +1181,39 @@ GENERAL INSTRUCTIONS:
                 }
                 return `<a href="${url}">${linkText} ↗</a>`;
             })
-            // ── Markdown tables — UNA tabla por bloque, con botón CSV correcto ──
-            // Paso 1: marcar filas y separadores
+            // ── Markdown tables: ONE table per block, with a working CSV button ──
+            // Step 1: mark rows and separators.
             .replace(/^\|(.+)\|$/gm, (row) => {
                 if (row.replace(/[\|\s\-:]/g, '') === '') return '§SEP§';
                 const cells = row.slice(1,-1).split('|').map(c => c.trim());
                 return '§ROW§' + cells.join('§CELL§');
             })
-            // Paso 2: eliminar separadores
+            // Step 2: remove separators.
             .replace(/§SEP§\n?/g, '')
-            // Paso 3: agrupar TODOS los §ROW§ consecutivos en UNA sola tabla
+            // Step 3: group ALL consecutive §ROW§ into ONE table.
             .replace(/((?:§ROW§[^\n]*\n?)+)/g, (block) => {
                 const rows = block.trim().split('\n')
                     .filter(r => r.startsWith('§ROW§'))
                     .map(r => r.replace('§ROW§', '').split('§CELL§'));
 
-                // Mínimo 2 filas reales (encabezado + 1 dato) para crear tabla
+                // At least 2 real rows (header + 1 data row) to build a table.
                 if (rows.length < 2) {
-                    // Una sola fila — renderizar como lista simple
+                    // A single row: render it as plain text.
                     return '<p>' + rows[0].join(' | ') + '</p>';
                 }
 
-                // Primera fila = encabezados <th>
+                // First row = <th> headers.
                 const thead = '<thead><tr>' +
                     rows[0].map(c => `<th>${c}</th>`).join('') +
                     '</tr></thead>';
 
-                // Resto = datos <td>
+                // Rest = data <td>.
                 const tbody = '<tbody>' + rows.slice(1).map(r =>
                     '<tr>' + r.map(c => `<td>${c}</td>`).join('') + '</tr>'
                 ).join('') + '</tbody>';
 
-                // Botón CSV via data attribute (event delegation, sin inline onclick)
-                const csvBtn = `<button class="jedomi-csv-btn" data-csv-download="true">${cfg.strings?.csv_download || '📥 Download CSV'}</button>`;
+                // CSV button through a data attribute (event delegation, no inline onclick).
+                const csvBtn = `<button class="jedomi-csv-btn" data-csv-download="true">${cfg.strings?.csv_download || ''}</button>`;
 
                 return `<div class="jedomi-table-wrap">${csvBtn}<div class="jedomi-table-scroll"><table class="jedomi-table">${thead}${tbody}</table></div></div>`;
             })
@@ -1376,7 +1255,7 @@ GENERAL INSTRUCTIONS:
         const S = cfg.strings || {};
         const input = g('jedomi-input');
         const origPlaceholder = input?.placeholder;
-        if (input) input.placeholder = (S.processing_file || 'Processing {$a}...').replace('{$a}', file.name);
+        if (input) input.placeholder = (S.processing_file || '').replace('{$a}', file.name);
 
         try {
             const formData = new FormData();
@@ -1390,17 +1269,17 @@ GENERAL INSTRUCTIONS:
             });
             const data = await res.json().catch(() => ({}));
             if (data.error) {
-                throw new Error(data.error.message || S.unknown_error || 'Unknown error');
+                throw new Error(data.error.message || S.unknown_error || '');
             }
             if (!res.ok) {
-                throw new Error(S.ai_error_connection || 'Could not reach Jedomi.');
+                throw new Error(S.ai_error_connection || '');
             }
 
             const info = data.format === 'csv'
-                ? (S.file_csv || 'CSV: {rows} rows, {columns} columns').replace('{rows}', data.rows).replace('{columns}', data.columns)
+                ? (S.file_csv || '').replace('{rows}', data.rows).replace('{columns}', data.columns)
                 : data.format === 'pdf'
-                ? (S.file_pdf || 'PDF: {pages} pages').replace('{pages}', data.pages)
-                : (S.file_text || 'Text: {chars} characters').replace('{chars}', data.chars);
+                ? (S.file_pdf || '').replace('{pages}', data.pages)
+                : (S.file_text || '').replace('{chars}', data.chars);
 
             // The text is kept as a pending attachment, like an image, so the textarea stays free for the question.
             pendingFile = { name: file.name, info: info, text: data.text || '' };
@@ -1409,9 +1288,9 @@ GENERAL INSTRUCTIONS:
             g('jedomi-file-preview')?.classList.remove('jedomi-hidden');
             input?.focus();
 
-            addMessage('assistant', `📎 **${file.name}** ${S.file_loaded || 'loaded'} (${info}). ${S.file_loaded_hint || 'You can ask questions about its content.'}`);
+            addMessage('assistant', `📎 **${file.name}** ${S.file_loaded || ''} (${info}). ${S.file_loaded_hint || ''}`);
         } catch (err) {
-            addMessage('assistant', `⚠️ ${S.file_process_error || 'Could not process'} **${file.name}**: ${err.message}`);
+            addMessage('assistant', `⚠️ ${S.file_process_error || ''} **${file.name}**: ${err.message}`);
         } finally {
             if (input && origPlaceholder) input.placeholder = origPlaceholder;
             const fi = g('jedomi-file-input');
@@ -1436,85 +1315,70 @@ GENERAL INSTRUCTIONS:
         _saveConversation();
     };
 
+    // Returns the card element at once; its content is rendered from local_jedomi/local/sidebar/action_confirm.
     const buildActionConfirmUI = (pending) => {
         const CS = cfg.strings || {};
         const isSend = pending.tool === 'send_messages';
         const severity = ['critical', 'high', 'medium'].includes(pending.severity) ? pending.severity : 'medium';
         const isCritical = severity === 'critical';
         const confirmKeyword = (CS.confirm_btn_yes || 'Confirm').toUpperCase();
+        const preview = String(pending.preview || '');
+        const [countbefore, countafter] = String(CS.confirm_send_bulk || '').split('{count}');
 
         const div = document.createElement('div');
-        if (isSend) {
-            div.className = 'jedomi-send-confirm';
-            const preview = String(pending.preview || '');
-            div.innerHTML = `
-                <div class="jedomi-confirm-msg">📬 ${escHtml(CS.confirm_send_bulk || 'Send this message to {count} student(s)?')
-                    .replace('{count}', '<strong>' + Number(pending.count || 0) + '</strong>')}</div>
-                <div class="jedomi-confirm-preview">${escHtml(preview.substring(0, 120))}${preview.length > 120 ? '...' : ''}</div>
-                <div class="jedomi-confirm-btns">
-                    <button class="jedomi-confirm-yes">✅ ${escHtml(CS.yes_send || 'Yes, send')}</button>
-                    <button class="jedomi-confirm-no">❌ ${escHtml(CS.cancel || 'Cancel')}</button>
-                </div>
-                <div class="jedomi-action-result"></div>`;
-        } else {
-            div.className = `jedomi-action-pending jedomi-action-pending--${severity}`;
-            div.innerHTML = `
-                <div class="jedomi-action-warning">${escHtml(CS.pending_action_needed || 'This action needs your confirmation.')}</div>
-                <div class="jedomi-action-desc">${escHtml(pending.description || pending.tool || '')}</div>
-                ${pending.details ? `<div class="jedomi-confirm-preview">${escHtml(pending.details)}</div>` : ''}
-                ${isCritical ? `
-                <div class="jedomi-type-confirm-wrap">
-                    <label>${escHtml(CS.confirm_type_to_proceed || 'Type CONFIRM to proceed:')}</label>
-                    <input type="text" class="jedomi-type-confirm" placeholder="${escHtml(confirmKeyword)}"
-                           autocomplete="off" spellcheck="false"/>
-                </div>` : ''}
-                <div class="jedomi-confirm-btns">
-                    <button class="jedomi-confirm-yes">✅ ${escHtml(CS.confirm_btn_yes || 'Confirm')}</button>
-                    <button class="jedomi-confirm-no">❌ ${escHtml(CS.confirm_btn_no || 'Cancel')}</button>
-                </div>
-                <div class="jedomi-action-result"></div>`;
-        }
+        div.className = isSend ? 'jedomi-send-confirm' : `jedomi-action-pending jedomi-action-pending--${severity}`;
 
-        const yesBtn    = div.querySelector('.jedomi-confirm-yes');
-        const noBtn     = div.querySelector('.jedomi-confirm-no');
-        const resultDiv = div.querySelector('.jedomi-action-result');
-        const showDone  = (text) => {
-            div.innerHTML = `<div class="jedomi-confirm-msg">${escHtml(text)}</div>`;
+        const showDone = (text, note = '') => {
+            renderInto(div, 'local_jedomi/local/sidebar/action_done', {text, note});
         };
 
         const resolve = async (confirm) => {
+            const yesBtn    = div.querySelector('[data-action="local_jedomi/sidebar/confirm-yes"]');
+            const noBtn     = div.querySelector('[data-action="local_jedomi/sidebar/confirm-no"]');
+            const resultDiv = div.querySelector('[data-region="local_jedomi/sidebar/confirm-result"]');
             if (confirm && isCritical) {
-                const inp = div.querySelector('.jedomi-type-confirm');
+                const inp = div.querySelector('[data-region="local_jedomi/sidebar/confirm-keyword"]');
                 if (!inp || inp.value.trim().toUpperCase() !== confirmKeyword) {
                     inp?.classList.add('is-invalid');
                     inp?.focus();
-                    resultDiv.textContent = '⛔ ' + (CS.confirm_type_to_proceed || 'Type CONFIRM to proceed:');
+                    resultDiv.textContent = '⛔ ' + (CS.confirm_type_to_proceed || '');
                     return;
                 }
             }
             yesBtn.disabled = noBtn.disabled = true;
             resultDiv.textContent = confirm
-                ? '⏳ ' + (isSend ? (CS.sending || 'Sending...') : (CS.confirm_executing || 'Executing...'))
+                ? '⏳ ' + (isSend ? (CS.sending || '') : (CS.confirm_executing || ''))
                 : '';
             try {
                 const result = await resolveAction(Number(pending.id), confirm);
                 const icon = result.status === 'executed' ? '✅ ' : (result.status === 'cancelled' ? '' : '❌ ');
-                showDone(icon + result.message);
-                if (isSend && result.status === 'executed') {
-                    const note = document.createElement('small');
-                    note.textContent = CS.messages_recipients_note || 'Recipients will see them in their Moodle message inbox.';
-                    div.appendChild(note);
-                }
+                const note = isSend && result.status === 'executed' ? (CS.messages_recipients_note || '') : '';
+                showDone(icon + result.message, note);
                 addActionNote(pending, result.message);
             } catch (e) {
-                const message = e?.message || CS.unknown_error || 'Unknown error';
+                const message = e?.message || CS.unknown_error || '';
                 showDone('❌ ' + message);
                 addActionNote(pending, message);
             }
         };
 
-        yesBtn.addEventListener('click', () => resolve(true));
-        noBtn.addEventListener('click', () => resolve(false));
+        renderInto(div, 'local_jedomi/local/sidebar/action_confirm', {
+            issend: isSend,
+            countbefore: countbefore || '',
+            count: Number(pending.count || 0),
+            countafter: countafter || '',
+            preview: preview.substring(0, 120) + (preview.length > 120 ? '...' : ''),
+            description: pending.description || pending.tool || '',
+            hasdetails: !!pending.details,
+            details: pending.details || '',
+            critical: isCritical,
+            keyword: confirmKeyword,
+            strings: CS,
+        }).then(() => {
+            div.querySelector('[data-action="local_jedomi/sidebar/confirm-yes"]')?.addEventListener('click', () => resolve(true));
+            div.querySelector('[data-action="local_jedomi/sidebar/confirm-no"]')?.addEventListener('click', () => resolve(false));
+            return null;
+        }).catch(() => null);
         return div;
     };
 
@@ -1543,7 +1407,7 @@ GENERAL INSTRUCTIONS:
         if (!wrapper) return;
         wrapper.classList.toggle('jedomi-hidden', !show);
         if (show) {
-            // Empieza colapsado (solo la barra, sin los puntos)
+            // Starts collapsed (only the bar, without the dots).
             wrapper.classList.remove('jedomi-thinking-expanded');
             const msgs = g('jedomi-messages');
             if (msgs) msgs.scrollTop = msgs.scrollHeight;
@@ -1607,9 +1471,6 @@ GENERAL INSTRUCTIONS:
     const closeAttachOutside = (e) => {
         if (!e.target.closest('.jedomi-attach-wrap')) closeAttachMenu();
     };
-
-    const escHtml = (s) => String(s)
-        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
     return { init };
 });

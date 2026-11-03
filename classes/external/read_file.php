@@ -17,18 +17,18 @@
 /**
  * jedomi_read_file — CompanionWS external function.
  *
- * Lee un archivo del código fuente de Moodle para diagnóstico.
- * El 23% de los casos del corpus requieren leer código PHP para
- * entender y resolver el problema.
+ * Reads a Moodle source file for diagnosis.
+ * 23% of the cases in the corpus need PHP code to be read to
+ * understand and solve the problem.
  *
- * Seguridad:
- *  - Solo permite paths dentro de $CFG->dirroot
- *  - Blocklist de paths con credenciales (config.php, .env, etc.)
- *  - Whitelist de prefijos permitidos (lib/, mod/, admin/, etc.)
- *  - HMAC auth obligatorio
- *  - Requiere moodle/site:config
- *  - Máximo 200 líneas por llamada
- *  - Nunca retorna config.php ni archivos con passwords
+ * Security:
+ *  - Only allows paths inside $CFG->dirroot
+ *  - Blocklist of paths with credentials (config.php, .env, etc.)
+ *  - Allowlist of permitted prefixes (lib/, mod/, admin/, etc.)
+ *  - HMAC auth is mandatory
+ *  - Requires moodle/site:config
+ *  - At most 200 lines per call
+ *  - Never returns config.php or files with passwords
  *
  * @package    local_jedomi
  * @copyright  2026 Jedomi Project

@@ -1,0 +1,76 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template local_jedomi/local/sidebar/action_confirm
+
+    Confirmation card of an action that changes data. The server holds the action until the user confirms it.
+    Bulk messages show the recipient count and a preview; critical actions ask to type the confirmation keyword.
+
+    Classes required for JS:
+    * none
+
+    Data attributes required for JS:
+    * data-action="local_jedomi/sidebar/confirm-yes" and "local_jedomi/sidebar/confirm-no" on the buttons
+    * data-region="local_jedomi/sidebar/confirm-keyword" on the keyword input of critical actions
+    * data-region="local_jedomi/sidebar/confirm-result" on the status line
+
+    Context variables required for this template:
+    * issend bool - Whether the action sends messages
+    * countbefore string - Text before the recipient count
+    * count int - Number of recipients
+    * countafter string - Text after the recipient count
+    * preview string - Start of the message
+    * description string - What the action does
+    * hasdetails bool - Whether details are shown
+    * details string - Details of the action
+    * critical bool - Whether the keyword must be typed
+    * keyword string - Keyword to type
+    * strings object - Sidebar strings: yes_send, cancel, pending_action_needed, confirm_type_to_proceed, confirm_btn_yes, confirm_btn_no
+
+    Example context (json):
+    {
+        "issend": false, "countbefore": "", "count": 0, "countafter": "", "preview": "",
+        "description": "Delete agent 3", "hasdetails": true, "details": "Daily report", "critical": true, "keyword": "CONFIRM",
+        "strings": {"pending_action_needed": "This action needs your confirmation.", "confirm_type_to_proceed": "Type CONFIRM to proceed:",
+            "confirm_btn_yes": "Confirm", "confirm_btn_no": "Cancel", "yes_send": "Yes, send", "cancel": "Cancel"}
+    }
+}}
+{{#issend}}
+<div class="jedomi-confirm-msg">📬 {{countbefore}}<strong>{{count}}</strong>{{countafter}}</div>
+<div class="jedomi-confirm-preview">{{preview}}</div>
+<div class="jedomi-confirm-btns">
+    <button class="jedomi-confirm-yes" data-action="local_jedomi/sidebar/confirm-yes">✅ {{strings.yes_send}}</button>
+    <button class="jedomi-confirm-no" data-action="local_jedomi/sidebar/confirm-no">❌ {{strings.cancel}}</button>
+</div>
+{{/issend}}
+{{^issend}}
+<div class="jedomi-action-warning">{{strings.pending_action_needed}}</div>
+<div class="jedomi-action-desc">{{description}}</div>
+{{#hasdetails}}<div class="jedomi-confirm-preview">{{details}}</div>{{/hasdetails}}
+{{#critical}}
+<div class="jedomi-type-confirm-wrap">
+    <label>{{strings.confirm_type_to_proceed}}
+        <input type="text" class="jedomi-type-confirm" data-region="local_jedomi/sidebar/confirm-keyword" placeholder="{{keyword}}" autocomplete="off" spellcheck="false">
+    </label>
+</div>
+{{/critical}}
+<div class="jedomi-confirm-btns">
+    <button class="jedomi-confirm-yes" data-action="local_jedomi/sidebar/confirm-yes">✅ {{strings.confirm_btn_yes}}</button>
+    <button class="jedomi-confirm-no" data-action="local_jedomi/sidebar/confirm-no">❌ {{strings.confirm_btn_no}}</button>
+</div>
+{{/issend}}
+<div class="jedomi-action-result" data-region="local_jedomi/sidebar/confirm-result" aria-live="polite"></div>

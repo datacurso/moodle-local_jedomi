@@ -18,21 +18,17 @@
  * local_jedomi — AI Sidebar for Moodle
  * Theme-proof injection strategy:
  *
- *  1. before_footer() → intenta inyectar via hook estándar
- *  2. El AMD module sidebar.js verifica si el HTML existe y si no lo inyecta él mismo
- *     directo en document.body (bypasea cualquier problema de tema)
- *  3. CSS usa position:fixed !important y z-index:99999 para sobrevivir cualquier tema
- *  4. Arregla body overflow:hidden que rompe fixed positioning
+ *  1. before_footer() → tries to inject through the standard hook
+ *  2. The sidebar.js AMD module checks whether the HTML exists and, if not, injects it itself
+ *     straight into document.body (bypassing any theme problem)
+ *  3. The CSS uses position:fixed !important and z-index:99999 to survive any theme
+ *  4. Fixes body overflow:hidden, which breaks fixed positioning
  *
  * @package    local_jedomi
  * @copyright  2026 Jedomi Project
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-/**
- * Hook principal — antes del </body>.
- * Pasa la config al AMD module. El HTML lo inyecta el JS para mayor robustez.
- */
 /**
  * Legacy before_footer callback — now handled by the hook system.
  *
@@ -117,6 +113,17 @@ function local_jedomi_get_sidebar_config(): array {
             'tool_api_call'          => get_string('tool_api_call', 'local_jedomi'),
             'tool_schema_lookup'     => get_string('tool_schema_lookup', 'local_jedomi'),
             'tool_webservice_lookup' => get_string('tool_webservice_lookup', 'local_jedomi'),
+            'tool_search_tables'     => get_string('tool_search_tables', 'local_jedomi'),
+            'tool_execute_sql'       => get_string('tool_execute_sql', 'local_jedomi'),
+            'tool_describe_table'    => get_string('tool_describe_table', 'local_jedomi'),
+            'tool_get_site_config'   => get_string('tool_get_site_config', 'local_jedomi'),
+            'tool_ws_search'         => get_string('tool_ws_search', 'local_jedomi'),
+            'tool_ws_describe'       => get_string('tool_ws_describe', 'local_jedomi'),
+            'tool_ws_execute'        => get_string('tool_ws_execute', 'local_jedomi'),
+            'tool_unknown'           => get_string('tool_unknown', 'local_jedomi'),
+            // Session.
+            'session_expired_title'  => get_string('session_expired_title', 'local_jedomi'),
+            'session_expired_hint'   => get_string('session_expired_hint', 'local_jedomi'),
             // Message actions.
             'action_copy'          => get_string('action_copy', 'local_jedomi'),
             'action_helpful'       => get_string('action_helpful', 'local_jedomi'),
@@ -188,6 +195,8 @@ function local_jedomi_get_sidebar_config(): array {
             'qa_admin_storage_msg'           => get_string('qa_admin_storage_msg', 'local_jedomi'),
             'qa_admin_top_courses_label'     => get_string('qa_admin_top_courses_label', 'local_jedomi'),
             'qa_admin_top_courses_msg'       => get_string('qa_admin_top_courses_msg', 'local_jedomi'),
+            'qa_course_current'              => get_string('qa_course_current', 'local_jedomi'),
+            'qa_course_with_id'              => get_string('qa_course_with_id', 'local_jedomi'),
             'qa_admin_top_student_label'     => get_string('qa_admin_top_student_label', 'local_jedomi'),
             'qa_admin_top_student_msg'       => get_string('qa_admin_top_student_msg', 'local_jedomi'),
             // Quick actions: Manager.
@@ -250,7 +259,7 @@ function local_jedomi_get_sidebar_config(): array {
  * @param \global_navigation $nav
  */
 function local_jedomi_extend_navigation(\global_navigation $nav): void {
-    // Hook vacío requerido por algunos themes.
+    // Empty hook required by some themes.
 }
 
 /**
@@ -303,7 +312,9 @@ function local_jedomi_myprofile_navigation(\core_user\output\myprofile\tree $tre
 }
 
 /**
- * Detecta el contexto de la página actual.
+ * Detect the context of the current page.
+ *
+ * @return array Page context: location, course and activity details.
  */
 function local_jedomi_get_page_context(): array {
     global $PAGE, $COURSE, $USER;
@@ -365,13 +376,15 @@ function local_jedomi_get_page_context(): array {
 }
 
 /**
- * Genera un Signed Permission Token (SPT) usando has_capability() nativo de Moodle.
- * El Gateway lo valida criptográficamente — sin llamadas de red. Latencia: 0ms.
- * TTL: 5 minutos (300 segundos).
+ * Generate a Signed Permission Token (SPT) with Moodle's native has_capability().
+ * The gateway validates it cryptographically, without network calls. Latency: 0 ms.
+ * TTL: 5 minutes (300 seconds).
  */
 /**
- * Verifica si Jedomi está disponible en el curso actual según la configuración.
- * Soporta modos: all (todos), whitelist (solo listados), blacklist (excepto listados).
+ * Check whether Jedomi is available in the current course according to the settings.
+ * Supports the modes all, whitelist (only the listed courses) and blacklist (all but the listed courses).
+ *
+ * @return bool Whether the chat is available in the course.
  */
 function local_jedomi_is_available_in_course(): bool {
     global $COURSE;
@@ -384,6 +397,8 @@ function local_jedomi_is_available_in_course(): bool {
  *
  * Site admins are always allowed.
  * A user is blocked only if ALL of their active roles are in the hidden list.
+ *
+ * @return bool Whether the role can use the chat.
  */
 function local_jedomi_is_role_allowed(): bool {
     global $USER, $PAGE;
@@ -443,7 +458,7 @@ function local_jedomi_is_role_allowed(): bool {
 function local_jedomi_get_tool_definitions(string $role): array {
     $tools = [];
 
-    // Describe_table — todos los roles.
+    // Describe_table — every role.
     $tools[] = [
         'type' => 'function',
         'function' => [
@@ -462,7 +477,7 @@ function local_jedomi_get_tool_definitions(string $role): array {
         ],
     ];
 
-    // Search_tables — todos los roles.
+    // Search_tables — every role.
     $tools[] = [
         'type' => 'function',
         'function' => [
@@ -533,7 +548,7 @@ function local_jedomi_get_tool_definitions(string $role): array {
         ];
     }
 
-    // Ws_search — todos los roles. Semantic keyword search returning full function docs.
+    // Ws_search — every role. Semantic keyword search returning full function docs.
     $tools[] = [
         'type' => 'function',
         'function' => [
@@ -556,7 +571,7 @@ function local_jedomi_get_tool_definitions(string $role): array {
         ],
     ];
 
-    // Ws_describe — todos los roles. Full docs for a single known WS function.
+    // Ws_describe — every role. Full docs for a single known WS function.
     $tools[] = [
         'type' => 'function',
         'function' => [
@@ -788,7 +803,7 @@ function local_jedomi_generate_spt(string $role): array {
                     ? context_course::instance($COURSE->id)
                     : $sysctx;
 
-    // Capabilities reales de Moodle — heredadas del sistema de roles.
+    // Real Moodle capabilities, inherited from the role system.
     $capabilities = [
         'can_view_all_grades'    => has_capability('moodle/grade:viewall', $coursectx),
         'can_manage_users'       => has_capability('moodle/user:update', $sysctx),
@@ -799,7 +814,7 @@ function local_jedomi_generate_spt(string $role): array {
         'can_access_all_groups'  => has_capability('moodle/site:accessallgroups', $coursectx),
     ];
 
-    // Cursos según rol (para scope de RBAC en el gateway).
+    // Courses by role (RBAC scope in the gateway).
     $courseidsowned   = [];   // Cursos donde el usuario tiene poder (teacher / admin / manager).
     $courseidsenrolled = [];  // Cursos donde el usuario está inscrito (student).
 
@@ -812,10 +827,10 @@ function local_jedomi_generate_spt(string $role): array {
             }
         }
     } else if ($role === 'admin') {
-        // Admin no necesita lista de cursos — tiene acceso total.
+        // An admin needs no course list: they have full access.
         $courseidsowned = [];
     } else if ($role === 'student') {
-        // Para student: lista de cursos inscritos (usada por el gateway para filtrar).
+        // For students: the enrolled courses (used by the gateway to filter).
         $courses = enrol_get_users_courses($USER->id, true);
         foreach ($courses as $c) {
             $courseidsenrolled[] = (int)$c->id;
@@ -837,9 +852,9 @@ function local_jedomi_generate_spt(string $role): array {
         'expires'             => time() + 1800, // 30 minutos (conversaciones con múltiples tool calls)
     ];
 
-    // Firma HMAC con el static secret — el mismo que usa el Gateway Python para verificar.
-    // El sesskey() se incluye en el payload (no como key) para binding de sesión:
-    // si la sesión cambia, el payload cambia y el SPT queda inválido de todas formas.
+    // HMAC signature with the static secret, the same one the Python gateway uses to verify it.
+    // sesskey() is part of the payload (not the key) to bind the token to the session:
+    // if the session changes, the payload changes and the SPT is invalid anyway.
     $staticsecret = get_config('local_jedomi', 'spt_secret') ?: 'jedomi-spt-secret';
     $payload['sesskey_hash'] = substr(hash('sha256', sesskey()), 0, 16); // Binding sin exponer sesskey.
 
@@ -947,15 +962,15 @@ function local_jedomi_get_user_role(): string {
 
     $sysctx = context_system::instance();
 
-    // 2. Manager: tiene moodle/user:update a nivel de sistema pero NO es siteadmin.
-    // Esto cubre el arquetipo 'manager' de Moodle y cualquier rol personalizado
-    // con privilegios equivalentes (gestión de usuarios/cursos sin ser admin).
+    // 2. Manager: has moodle/user:update at system level but is NOT a site admin.
+    // This covers Moodle's 'manager' archetype and any custom role
+    // with equivalent privileges (managing users/courses without being an admin).
     if (has_capability('moodle/user:update', $sysctx)) {
         return 'manager';
     }
 
-    // 3. Teacher: puede gestionar actividades en el curso actual.
-    // Cubre arquetipos 'editingteacher' y cualquier rol personalizado con esa capacidad.
+    // 3. Teacher: can manage activities in the current course.
+    // Covers the 'editingteacher' archetype and any custom role with that capability.
     if (!empty($COURSE->id) && $COURSE->id > 1) {
         $ctx = context_course::instance($COURSE->id);
         if (has_capability('moodle/course:manageactivities', $ctx)) {
@@ -964,8 +979,8 @@ function local_jedomi_get_user_role(): string {
         return 'student';
     }
 
-    // 4. Fuera de un curso específico: student con tools propias (grades, calendar, cursos inscritos).
-    // Un docente que navega fuera de un curso obtiene acceso student — seguro y aceptable.
+    // 4. Outside a specific course: student with their own tools (grades, calendar, enrolled courses).
+    // A teacher browsing outside a course gets student access, which is safe and acceptable.
     return 'student';
 }
 
@@ -1081,19 +1096,6 @@ if (!function_exists('local_jedomi_get_role_allowlist')) {
         $decoded = json_decode($json, true);
         return is_array($decoded) ? $decoded : [];
     }
-}
-
-/**
- * Get ALL registered Moodle web services.
- *
- * @return array Records with name, description, component, type.
- */
-function local_jedomi_get_all_ws(): array {
-    global $DB;
-    $sql = "SELECT DISTINCT ef.name, '' AS description, ef.component
-              FROM {external_functions} ef
-          ORDER BY ef.component, ef.name";
-    return $DB->get_records_sql($sql);
 }
 
 /**

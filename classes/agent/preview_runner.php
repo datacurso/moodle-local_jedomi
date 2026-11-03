@@ -45,7 +45,7 @@ class preview_runner {
      * @param string $prompt Agent prompt.
      * @param int $userid User the preview runs for (the AI calls are made for this user).
      * @return array Response for the preview page: ok, answer, rounds, profiler, conversation, total_time_ms,
-     *               and cached/cached_at/reformulated for cache hits; or ok=false with error and error_code.
+     *               and cached/cached_at/cache_hash/reformulated for cache hits; or ok=false with error and error_code.
      */
     public static function run(string $prompt, int $userid): array {
         global $DB;
@@ -79,7 +79,8 @@ class preview_runner {
         if ($cached && !empty($cached->result_json)) {
             $fromcache = self::answer_from_cache($cached, $userid);
             if ($fromcache !== null) {
-                return $fromcache;
+                // The page needs the cache key to offer "Clear cache" for this prompt.
+                return $fromcache + ['cache_hash' => $cachehash];
             }
         }
 

@@ -1,0 +1,66 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template local_jedomi/admin/agent_details
+
+    Full configuration of an agent, shown in a modal by the local_jedomi/admin/agents module.
+
+    Classes required for JS:
+    * none
+
+    Data attributes required for JS:
+    * none
+
+    Context variables required for this template:
+    * id int - Agent id
+    * name string - Agent name (may be empty)
+    * creator string - Full name of the owner (may be empty)
+    * userid int - Owner user id
+    * enabled bool - Whether the agent is enabled
+    * contexttype string - Context type
+    * contextid int - Context instance id (0 when none)
+    * schedule string - Cron expression
+    * lastrun int - Last run time (0 when never)
+    * nextrun int - Next run time (0 when unknown)
+    * prompt string - Agent prompt
+
+    Example context (json):
+    {
+        "id": 3, "name": "Daily report", "creator": "Admin User", "userid": 2, "enabled": true, "contexttype": "course",
+        "contextid": 4, "schedule": "0 0 * * *", "lastrun": 1700000000, "nextrun": 1700086400, "prompt": "Summarise new enrolments."
+    }
+}}
+<table class="table table-sm mb-0 local_jedomi-admin-agent-details">
+    <tbody>
+        <tr><th scope="row" class="text-nowrap align-top">{{#str}} agent_name, local_jedomi {{/str}}</th>
+            <td><strong>{{#name}}{{name}}{{/name}}{{^name}}{{#str}} agent_unnamed, local_jedomi {{/str}} #{{id}}{{/name}}</strong></td></tr>
+        <tr><th scope="row" class="text-nowrap align-top">{{#str}} agent_creator, local_jedomi {{/str}}</th>
+            <td>{{#creator}}{{creator}}{{/creator}}{{^creator}}{{#str}} agent_user_id, local_jedomi, {{userid}} {{/str}}{{/creator}}</td></tr>
+        <tr><th scope="row" class="text-nowrap align-top">{{#str}} agent_status, local_jedomi {{/str}}</th>
+            <td>{{#enabled}}<span class="badge badge-success bg-success">{{#str}} agent_enabled, local_jedomi {{/str}}</span>{{/enabled}}{{^enabled}}<span class="badge badge-secondary bg-secondary">{{#str}} agent_disabled, local_jedomi {{/str}}</span>{{/enabled}}</td></tr>
+        <tr><th scope="row" class="text-nowrap align-top">{{#str}} agent_context, local_jedomi {{/str}}</th>
+            <td>{{#contexttype}}{{contexttype}}{{/contexttype}}{{^contexttype}}-{{/contexttype}}{{#contextid}} #{{contextid}}{{/contextid}}</td></tr>
+        <tr><th scope="row" class="text-nowrap align-top">{{#str}} agent_schedule, local_jedomi {{/str}}</th>
+            <td><code>{{#schedule}}{{schedule}}{{/schedule}}{{^schedule}}-{{/schedule}}</code></td></tr>
+        <tr><th scope="row" class="text-nowrap align-top">{{#str}} agent_lastrun, local_jedomi {{/str}}</th>
+            <td>{{#lastrun}}{{#userdate}} {{lastrun}}, {{#str}} strftimedatetime, core_langconfig {{/str}} {{/userdate}}{{/lastrun}}{{^lastrun}}-{{/lastrun}}</td></tr>
+        <tr><th scope="row" class="text-nowrap align-top">{{#str}} agent_nextrun, local_jedomi {{/str}}</th>
+            <td>{{#nextrun}}{{#userdate}} {{nextrun}}, {{#str}} strftimedatetime, core_langconfig {{/str}} {{/userdate}}{{/nextrun}}{{^nextrun}}-{{/nextrun}}</td></tr>
+        <tr><th scope="row" class="text-nowrap align-top">{{#str}} agent_prompt, local_jedomi {{/str}}</th>
+            <td><pre class="mb-0 p-2 bg-light border rounded local_jedomi-admin-pre">{{#prompt}}{{prompt}}{{/prompt}}{{^prompt}}-{{/prompt}}</pre></td></tr>
+    </tbody>
+</table>

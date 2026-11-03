@@ -818,7 +818,7 @@ class handler {
 
         $cmid = (int) ($args['cmid'] ?? 0);
         $dpi  = (int) ($args['dpi'] ?? 150);
-        $fmt  = in_array($args['fmt'] ?? 'JPEG', ['JPEG', 'PNG'], true) ? $args['fmt'] : 'JPEG';
+        $fmt  = in_array($args['fmt'] ?? '', ['JPEG', 'PNG'], true) ? $args['fmt'] : 'JPEG';
 
         if ($cmid <= 0) {
             return json_encode(['error' => 'cmid is required']);
@@ -830,7 +830,7 @@ class handler {
             return json_encode(['error' => 'permission_denied']);
         }
 
-        $serviceurl = rtrim(get_config('local_jedomi', 'docservice_url') ?: 'http://localhost:8000', '/');
+        $serviceurl = rtrim((string) get_config('local_jedomi', 'docservice_url'), '/');
         if (empty($serviceurl)) {
             return json_encode(['error' => 'document service not configured']);
         }

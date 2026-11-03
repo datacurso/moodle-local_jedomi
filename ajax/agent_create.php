@@ -41,7 +41,7 @@ header('Content-Type: application/json');
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode([
         'ok'    => false,
-        'error' => 'POST required',
+        'error' => get_string('error_post_required', 'local_jedomi'),
     ]);
     exit;
 }
@@ -75,7 +75,7 @@ try {
             if (count($parts) !== 5) {
                 echo json_encode([
                     'ok'    => false,
-                    'error' => get_string('agent_error_create', 'local_jedomi', 'Invalid cron expression'),
+                    'error' => get_string('agent_error_create', 'local_jedomi', get_string('agent_invalid_cron', 'local_jedomi')),
                 ]);
                 exit;
             }
@@ -86,7 +86,7 @@ try {
             if (!in_array($contexttype, $validcontexts, true)) {
                 echo json_encode([
                     'ok'    => false,
-                    'error' => get_string('agent_error_create', 'local_jedomi', 'Invalid context type'),
+                    'error' => get_string('agent_error_create', 'local_jedomi', get_string('agent_invalid_context_type', 'local_jedomi')),
                 ]);
                 exit;
             }
@@ -244,7 +244,7 @@ try {
         default:
             echo json_encode([
                 'ok'    => false,
-                'error' => 'Unknown action: ' . $action,
+                'error' => get_string('error_unknown_action', 'local_jedomi', $action),
             ]);
             break;
     }

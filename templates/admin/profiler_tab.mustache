@@ -1,0 +1,164 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template local_jedomi/admin/profiler_tab
+
+    Profiler tab of the Jedomi settings: statistics, slowest queries and recent queries run by agents.
+
+    Classes required for JS:
+    * none
+
+    Data attributes required for JS:
+    * none
+
+    Context variables required for this template:
+    * total int - Number of logged queries
+    * slow int - Number of slow queries
+    * avg float - Average duration in milliseconds
+    * max float - Maximum duration in milliseconds
+    * actionurl string - URL of the settings page, for the filter form
+    * minms int|string - Current minimum duration filter; empty for none
+    * sortduration bool - Whether recent queries are sorted by duration
+    * sorttime bool - Whether recent queries are sorted by time
+    * hasslowest bool - Whether there are slow queries
+    * slowest array - Slowest queries: query string, avg float, max float, count int
+    * hasrecent bool - Whether there are recent queries
+    * recent array - Recent queries: agentid int, agenturl string, userfullname string, query string, duration float,
+      slow bool, rowcount int, timecreated int
+
+    Example context (json):
+    {
+        "total": 12, "slow": 2, "avg": 3.5, "max": 1500, "actionurl": "https://example.com/local/jedomi/admin_settings.php",
+        "minms": "", "sortduration": true, "sorttime": false,
+        "hasslowest": true, "slowest": [{"query": "SELECT * FROM {user}", "avg": 12.3, "max": 20.1, "count": 4}],
+        "hasrecent": true,
+        "recent": [{"agentid": 9, "agenturl": "#", "userfullname": "Admin User", "query": "SELECT 1", "duration": 5.2,
+            "slow": false, "rowcount": 1, "timecreated": 1700000000}]
+    }
+}}
+<div class="local_jedomi-admin local_jedomi-admin-profiler_tab">
+    {{< local_jedomi/admin/card }}
+        {{$icon}}fa-tachometer-alt{{/icon}}
+        {{$color}}amber{{/color}}
+        {{$title}}{{#str}} query_profiler_heading, local_jedomi {{/str}}{{/title}}
+        {{$body}}
+            <p class="text-muted small">{{#str}} query_profiler_desc, local_jedomi {{/str}}</p>
+
+            <div class="row text-center mb-3">
+                <div class="col-md-3">
+                    <span class="badge badge-info bg-info local_jedomi-admin-stat">{{total}}</span>
+                    <div class="small text-muted mt-1">{{#str}} query_profiler_total, local_jedomi {{/str}}</div>
+                </div>
+                <div class="col-md-3">
+                    <span class="badge badge-warning bg-warning local_jedomi-admin-stat">{{slow}}</span>
+                    <div class="small text-muted mt-1">{{#str}} query_profiler_slow, local_jedomi {{/str}}</div>
+                </div>
+                <div class="col-md-3">
+                    <span class="badge badge-secondary bg-secondary local_jedomi-admin-stat">{{#str}} query_profiler_ms, local_jedomi, {{avg}} {{/str}}</span>
+                    <div class="small text-muted mt-1">{{#str}} query_profiler_avg, local_jedomi {{/str}}</div>
+                </div>
+                <div class="col-md-3">
+                    <span class="badge badge-danger bg-danger local_jedomi-admin-stat">{{#str}} query_profiler_ms, local_jedomi, {{max}} {{/str}}</span>
+                    <div class="small text-muted mt-1">{{#str}} query_profiler_max, local_jedomi {{/str}}</div>
+                </div>
+            </div>
+
+            <form method="get" action="{{actionurl}}" class="mb-3">
+                <input type="hidden" name="tab" value="profiler">
+                <div class="row">
+                    <div class="col-md-4 mb-2">
+                        <label class="sr-only visually-hidden" for="{{uniqid}}-qp-min">{{#str}} query_profiler_min_ms, local_jedomi {{/str}}</label>
+                        <input type="number" id="{{uniqid}}-qp-min" name="qp_min_ms" class="form-control form-control-sm" min="0"
+                               placeholder="{{#str}} query_profiler_min_ms, local_jedomi {{/str}}" value="{{minms}}">
+                    </div>
+                    <div class="col-md-3 mb-2">
+                        <label class="sr-only visually-hidden" for="{{uniqid}}-qp-sort">{{#str}} sortby, moodle {{/str}}</label>
+                        <select id="{{uniqid}}-qp-sort" name="qp_sort" class="custom-select custom-select-sm form-select form-select-sm w-100">
+                            <option value="duration_ms"{{#sortduration}} selected{{/sortduration}}>{{#str}} query_profiler_sort_duration, local_jedomi {{/str}}</option>
+                            <option value="timecreated"{{#sorttime}} selected{{/sorttime}}>{{#str}} query_profiler_sort_time, local_jedomi {{/str}}</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3 mb-2">
+                        <button type="submit" class="btn btn-sm btn-primary w-100"><i class="fa fa-filter mr-1" aria-hidden="true"></i>{{#str}} agent_apply_filters, local_jedomi {{/str}}</button>
+                    </div>
+                </div>
+            </form>
+
+            <h6 class="mt-3">{{#str}} query_profiler_slowest, local_jedomi {{/str}}</h6>
+            {{#hasslowest}}
+            <div class="table-responsive">
+                <table class="table table-sm table-hover small">
+                    <thead>
+                        <tr>
+                            <th scope="col">{{#str}} query_profiler_sort_query, local_jedomi {{/str}}</th>
+                            <th scope="col">{{#str}} query_profiler_avg, local_jedomi {{/str}}</th>
+                            <th scope="col">{{#str}} query_profiler_max, local_jedomi {{/str}}</th>
+                            <th scope="col">#</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {{#slowest}}
+                        <tr>
+                            <td><code class="local_jedomi-admin-break">{{query}}</code></td>
+                            <td class="text-danger text-nowrap">{{#str}} query_profiler_ms, local_jedomi, {{avg}} {{/str}}</td>
+                            <td class="text-nowrap">{{#str}} query_profiler_ms, local_jedomi, {{max}} {{/str}}</td>
+                            <td>{{count}}</td>
+                        </tr>
+                        {{/slowest}}
+                    </tbody>
+                </table>
+            </div>
+            {{/hasslowest}}
+            {{^hasslowest}}
+            <div class="alert alert-info">{{#str}} query_profiler_empty, local_jedomi {{/str}}</div>
+            {{/hasslowest}}
+
+            <h6 class="mt-4">{{#str}} query_profiler_recent, local_jedomi {{/str}}</h6>
+            {{#hasrecent}}
+            <div class="table-responsive">
+                <table class="table table-sm table-hover small">
+                    <thead>
+                        <tr>
+                            <th scope="col">{{#str}} agent, local_jedomi {{/str}}</th>
+                            <th scope="col">{{#str}} agent_creator, local_jedomi {{/str}}</th>
+                            <th scope="col">{{#str}} query_profiler_sort_query, local_jedomi {{/str}}</th>
+                            <th scope="col">{{#str}} query_profiler_sort_duration, local_jedomi {{/str}}</th>
+                            <th scope="col">{{#str}} query_profiler_rows, local_jedomi {{/str}}</th>
+                            <th scope="col">{{#str}} query_profiler_sort_time, local_jedomi {{/str}}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {{#recent}}
+                        <tr>
+                            <td><a href="{{agenturl}}" class="badge badge-info bg-info">{{#str}} agent_number, local_jedomi, {{agentid}} {{/str}}</a></td>
+                            <td>{{#userfullname}}{{userfullname}}{{/userfullname}}{{^userfullname}}?{{/userfullname}}</td>
+                            <td><code class="local_jedomi-admin-break">{{query}}</code></td>
+                            <td class="text-nowrap{{#slow}} text-danger{{/slow}}">{{#str}} query_profiler_ms, local_jedomi, {{duration}} {{/str}}</td>
+                            <td>{{rowcount}}</td>
+                            <td class="text-nowrap">{{#userdate}} {{timecreated}}, {{#str}} strftimedatetime, core_langconfig {{/str}} {{/userdate}}</td>
+                        </tr>
+                        {{/recent}}
+                    </tbody>
+                </table>
+            </div>
+            {{/hasrecent}}
+            {{^hasrecent}}
+            <div class="alert alert-info mt-3">{{#str}} query_profiler_empty, local_jedomi {{/str}}</div>
+            {{/hasrecent}}
+        {{/body}}
+    {{/ local_jedomi/admin/card }}
+</div>

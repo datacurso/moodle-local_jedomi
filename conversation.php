@@ -17,19 +17,19 @@
 /**
  * Jedomi Conversation Cache API
  *
- * Almacena el contexto de conversación en el cache de sesión de Moodle.
- * Cada usuario solo accede a SU propio cache (MODE_SESSION).
- * El admin no puede ver conversaciones de otros usuarios.
+ * Stores the conversation context in the Moodle session cache.
+ * Each user only reaches their own cache (MODE_SESSION).
+ * An admin cannot see other users' conversations.
  *
- * Acciones:
- *   GET  ?action=get       → retorna el historial de mensajes
- *   POST action=append     → agrega un mensaje al historial
- *   POST action=clear      → borra la conversación (botón "Nueva conversación")
+ * Actions:
+ *   GET  ?action=get       → returns the message history
+ *   POST action=append     → adds a message to the history
+ *   POST action=clear      → clears the conversation ("New conversation" button)
  *
- * Seguridad:
- *   - Requiere sesskey en CADA request (CSRF)
- *   - Solo usuarios logueados
- *   - MODE_SESSION = nadie más puede leer este cache
+ * Security:
+ *   - Requires the sesskey on EVERY request (CSRF)
+ *   - Logged-in users only
+ *   - MODE_SESSION: nobody else can read this cache
  * @package    local_jedomi
  * @copyright  2026 Jedomi Project
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
@@ -49,7 +49,7 @@ header('Content-Type: application/json; charset=utf-8');
 
 switch ($action) {
     case 'get':
-        // Devuelve el historial actual (array de mensajes).
+        // Return the current history (array of messages).
         $data = $cache->get($key);
         echo json_encode([
             'ok'       => true,
@@ -58,7 +58,7 @@ switch ($action) {
         break;
 
     case 'append':
-        // Agrega un mensaje al historial.
+        // Add a message to the history.
         $role    = required_param('role', PARAM_ALPHA);       // Rol permitido: user o assistant.
         $content = required_param('content', PARAM_RAW_TRIMMED);
 
@@ -70,9 +70,9 @@ switch ($action) {
 
         $history = $cache->get($key) ?: [];
 
-        // Límite: máx 40 mensajes (20 intercambios) para no crecer indefinido.
+        // Limit: at most 40 messages (20 exchanges), so the history does not grow forever.
         if (count($history) >= 40) {
-            // Mantener el system prompt (si existe) + los últimos 38 mensajes.
+            // Keep the system prompt (if any) and the last 38 messages.
             $system = array_filter($history, fn($m) => $m['role'] === 'system');
             $rest   = array_filter($history, fn($m) => $m['role'] !== 'system');
             $history = array_merge(array_values($system), array_slice(array_values($rest), -38));
@@ -85,9 +85,9 @@ switch ($action) {
         break;
 
     case 'clear':
-        // El usuario borra su conversación (botón "Nueva conversación").
+        // The user clears their conversation ("New conversation" button).
         $cache->delete($key);
-        echo json_encode(['ok' => true, 'message' => 'Conversación borrada']);
+        echo json_encode(['ok' => true, 'message' => get_string('conversation_cleared', 'local_jedomi')]);
         break;
 
     default:

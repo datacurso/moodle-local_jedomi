@@ -35,7 +35,7 @@ require_sesskey();
 header('Content-Type: application/json');
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    echo json_encode(['ok' => false, 'error' => 'POST required']);
+    echo json_encode(['ok' => false, 'error' => get_string('error_post_required', 'local_jedomi')]);
     exit;
 }
 

@@ -32,13 +32,13 @@ use local_jedomi\agent\agent_manager;
 header('Content-Type: application/json');
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    echo json_encode(['ok' => false, 'error' => 'POST required']);
+    echo json_encode(['ok' => false, 'error' => get_string('error_post_required', 'local_jedomi')]);
     exit;
 }
 
 $hash = required_param('hash', PARAM_ALPHANUM);
 if (strlen($hash) !== 32) {
-    echo json_encode(['ok' => false, 'error' => 'Invalid hash']);
+    echo json_encode(['ok' => false, 'error' => get_string('error_invalid_hash', 'local_jedomi')]);
     exit;
 }
 

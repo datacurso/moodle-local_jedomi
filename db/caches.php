@@ -17,9 +17,9 @@
 /**
  * Jedomi Cache Definitions
  *
- * Usa MODE_SESSION para que el cache viva EXACTAMENTE mientras dure la sesión Moodle.
- * No hay persistencia — cuando el usuario hace logout, los datos desaparecen.
- * El admin nunca puede acceder al cache de otro usuario (es por sesión).
+ * Uses MODE_SESSION so the cache lives exactly as long as the Moodle session.
+ * Nothing is persisted: when the user logs out, the data is gone.
+ * An admin can never read another user's cache (it is per session).
  * @package    local_jedomi
  * @copyright  2026 Jedomi Project
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later

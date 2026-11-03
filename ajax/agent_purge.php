@@ -37,7 +37,7 @@ header('Content-Type: application/json');
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode([
         'ok'    => false,
-        'error' => 'POST required',
+        'error' => get_string('error_post_required', 'local_jedomi'),
     ]);
     exit;
 }
@@ -58,7 +58,7 @@ try {
             if ($id === null) {
                 echo json_encode([
                     'ok'    => false,
-                    'error' => 'id required for course/category purge',
+                    'error' => get_string('agent_purge_id_required', 'local_jedomi'),
                 ]);
                 exit;
             }
@@ -69,7 +69,7 @@ try {
             if ($id === null) {
                 echo json_encode([
                     'ok'    => false,
-                    'error' => 'id required for role purge',
+                    'error' => get_string('agent_purge_id_required', 'local_jedomi'),
                 ]);
                 exit;
             }
@@ -78,7 +78,7 @@ try {
             if (!$role) {
                 echo json_encode([
                     'ok'    => false,
-                    'error' => 'Role not found',
+                    'error' => get_string('agent_purge_role_not_found', 'local_jedomi'),
                 ]);
                 exit;
             }
@@ -88,7 +88,7 @@ try {
         default:
             echo json_encode([
                 'ok'    => false,
-                'error' => 'Invalid type: ' . $type,
+                'error' => get_string('agent_purge_invalid_type', 'local_jedomi', $type),
             ]);
             exit;
     }

@@ -39,7 +39,7 @@ $token = manager::get_bot_token();
 if (!$token) {
     echo json_encode([
         'ok'    => false,
-        'error' => 'Bot token not configured',
+        'error' => get_string('telegram_token_not_configured', 'local_jedomi'),
     ]);
     exit;
 }
@@ -50,7 +50,7 @@ $info = $client->get_webhook_info();
 if ($info === null) {
     echo json_encode([
         'ok'    => false,
-        'error' => 'Failed to call getWebhookInfo — check bot token and outbound HTTPS',
+        'error' => get_string('telegram_webhook_info_failed', 'local_jedomi'),
     ]);
     exit;
 }

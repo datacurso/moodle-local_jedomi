@@ -52,4 +52,22 @@ final class sidebar_config_test extends \advanced_testcase {
         $this->assertStringEndsWith('/local/jedomi/ajax/feedback.php', $config['feedback_url']);
         $this->assertStringEndsWith('/local/jedomi/chatproxy.php', $config['chatproxy_url']);
     }
+    /**
+     * The sidebar gets every string it shows, so it never falls back to hardcoded text.
+     *
+     * @return void
+     */
+    public function test_sidebar_config_has_the_tool_and_session_strings(): void {
+        global $PAGE;
+        $this->resetAfterTest();
+        $this->setUser($this->getDataGenerator()->create_user());
+        $PAGE->set_url('/local/jedomi/ajax/sidebar_config.php');
+
+        $strings = local_jedomi_get_sidebar_config()['strings'];
+
+        foreach (['tool_search_tables', 'tool_execute_sql', 'tool_describe_table', 'tool_get_site_config', 'tool_ws_search',
+                'tool_ws_describe', 'tool_ws_execute', 'tool_unknown', 'session_expired_title', 'session_expired_hint', 'qa_course_current', 'qa_course_with_id'] as $key) {
+            $this->assertSame(get_string($key, 'local_jedomi'), $strings[$key] ?? null, $key);
+        }
+    }
 }

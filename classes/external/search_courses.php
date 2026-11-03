@@ -40,6 +40,8 @@ use external_multiple_structure;
 class search_courses extends external_api {
     /**
      * Declare input parameters.
+     *
+     * @return external_function_parameters
      */
     public static function execute_parameters(): external_function_parameters {
         return new external_function_parameters([
@@ -103,6 +105,8 @@ class search_courses extends external_api {
 
     /**
      * Declare return structure.
+     *
+     * @return external_single_structure
      */
     public static function execute_returns(): external_single_structure {
         return new external_single_structure([

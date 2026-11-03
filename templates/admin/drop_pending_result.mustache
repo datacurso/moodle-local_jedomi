@@ -1,0 +1,44 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template local_jedomi/admin/drop_pending_result
+
+    Result of dropping the pending Telegram updates, rendered by the local_jedomi/admin/integrations module.
+
+    Classes required for JS:
+    * none
+
+    Data attributes required for JS:
+    * none
+
+    Context variables required for this template:
+    * success bool - Whether the pending updates were dropped
+    * error string - Error detail when success is false (optional)
+
+    Example context (json):
+    {
+        "success": false,
+        "error": "Bot token not configured"
+    }
+}}
+{{#success}}
+<span class="local_jedomi-admin-text-ok">{{#str}} drop_pending_success, local_jedomi {{/str}}</span>
+{{/success}}
+{{^success}}
+<span class="local_jedomi-admin-text-warn">{{#str}} drop_pending_fail, local_jedomi {{/str}}</span>
+{{#error}}<br><span class="text-muted">{{error}}</span>{{/error}}
+{{/success}}

@@ -1,0 +1,152 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template local_jedomi/admin/apis_tab
+
+    APIs tab of the Jedomi settings: the web service functions a role may call through the chat, with
+    role and type pills, filters, a paginated table and a save button.
+
+    Classes required for JS:
+    * none
+
+    Data attributes required for JS:
+    * data-region="local_jedomi/admin/apis" on the root, with data-role
+    * data-action="local_jedomi/admin/apis/type" on the type pills, with data-type and aria-pressed
+    * data-region="local_jedomi/admin/apis/count" on the type counters, with data-type
+    * data-action="local_jedomi/admin/apis/search" on the name search
+    * data-action="local_jedomi/admin/apis/filter" on the component and page size selects
+    * data-action="local_jedomi/admin/apis/check-all" on the select-all box
+    * data-region="local_jedomi/admin/apis/rows" on the table body
+    * data-region="local_jedomi/admin/apis/pagination" on the pagination
+
+    Context variables required for this template:
+    * role string - Role key whose allowlist is shown
+    * actionurl string - URL the form posts to
+    * sesskey string - Session key
+    * roles array - Role pills: key string, label string, url string, active bool
+    * types array - Type pills: type string, label string, count int, active bool
+    * search string - Current name search
+    * components array - Component options: value string, selected bool
+    * perpageoptions array - Page size options: value int, selected bool
+    * rows array - Rows, see local_jedomi/admin/ws_table_rows
+    * hasrows bool - Whether there are rows
+    * pagination object - See local_jedomi/admin/ws_pagination
+
+    Example context (json):
+    {
+        "role": "admin", "actionurl": "https://example.com/local/jedomi/admin_settings.php?tab=apis&role=admin",
+        "sesskey": "abc123",
+        "roles": [{"key": "admin", "label": "Administrator", "url": "#", "active": true}],
+        "types": [{"type": "all", "label": "All", "count": 2, "active": true}],
+        "search": "", "components": [{"value": "moodle", "selected": false}],
+        "perpageoptions": [{"value": 25, "selected": true}],
+        "rows": [{"name": "core_course_get_courses", "description": "", "component": "moodle", "iswrite": false, "checked": true}],
+        "hasrows": true,
+        "pagination": {"page": 1, "pages": 1, "total": 1, "pagelinks": [{"page": 1, "active": true}]}
+    }
+}}
+<div class="local_jedomi-admin local_jedomi-admin-apis_tab" data-region="local_jedomi/admin/apis" data-role="{{role}}">
+    <form method="post" action="{{actionurl}}">
+        <input type="hidden" name="sesskey" value="{{sesskey}}">
+        <input type="hidden" name="action" value="saveallowlist">
+        <input type="hidden" name="api_role" value="{{role}}">
+
+        {{< local_jedomi/admin/card }}
+            {{$icon}}fa-cloud{{/icon}}
+            {{$color}}sky{{/color}}
+            {{$title}}{{#str}} tab_apis_heading, local_jedomi {{/str}}{{/title}}
+            {{$subtitle}}{{#str}} tab_apis_heading_help, local_jedomi {{/str}}{{/subtitle}}
+            {{$body}}
+                <div class="mb-3 d-flex align-items-center flex-wrap">
+                    <span class="local_jedomi-admin-filter-label">{{#str}} filter_type, local_jedomi {{/str}}</span>
+                    {{#roles}}
+                    <a href="{{url}}" class="btn btn-sm rounded-pill mr-2 mb-1 {{#active}}btn-primary{{/active}}{{^active}}btn-outline-secondary{{/active}}">{{label}}</a>
+                    {{/roles}}
+                </div>
+
+                <div class="mb-3 d-flex align-items-center flex-wrap">
+                    <span class="local_jedomi-admin-filter-label">{{#str}} ws_type, local_jedomi {{/str}}</span>
+                    {{#types}}
+                    <button type="button" class="btn btn-sm rounded-pill mr-2 mb-1 {{#active}}btn-primary{{/active}}{{^active}}btn-outline-secondary{{/active}}"
+                            data-action="local_jedomi/admin/apis/type" data-type="{{type}}"
+                            aria-pressed="{{#active}}true{{/active}}{{^active}}false{{/active}}">
+                        {{label}}
+                        <span class="badge badge-light bg-light text-dark ml-1" data-region="local_jedomi/admin/apis/count" data-type="{{type}}">{{count}}</span>
+                    </button>
+                    {{/types}}
+                </div>
+
+                <div class="mb-3 d-flex align-items-center flex-wrap">
+                    <div class="local_jedomi-admin-search mr-3 mb-1">
+                        <label class="sr-only visually-hidden" for="{{uniqid}}-ws-search">{{#str}} search_ws_placeholder, local_jedomi {{/str}}</label>
+                        <input type="text" id="{{uniqid}}-ws-search" name="ap_search" class="form-control form-control-sm"
+                               placeholder="{{#str}} search_ws_placeholder, local_jedomi {{/str}}" value="{{search}}"
+                               autocomplete="off" data-action="local_jedomi/admin/apis/search">
+                    </div>
+                    <label class="sr-only visually-hidden" for="{{uniqid}}-ws-component">{{#str}} ws_component, local_jedomi {{/str}}</label>
+                    <select id="{{uniqid}}-ws-component" name="ap_component" class="custom-select custom-select-sm form-select form-select-sm w-auto mr-3 mb-1"
+                            data-action="local_jedomi/admin/apis/filter">
+                        <option value="">{{#str}} component_all, local_jedomi {{/str}}</option>
+                        {{#components}}
+                        <option value="{{value}}"{{#selected}} selected{{/selected}}>{{value}}</option>
+                        {{/components}}
+                    </select>
+                    <label class="sr-only visually-hidden" for="{{uniqid}}-ws-perpage">{{#str}} perpage, moodle {{/str}}</label>
+                    <select id="{{uniqid}}-ws-perpage" name="ap_perpage" class="custom-select custom-select-sm form-select form-select-sm w-auto mb-1"
+                            data-action="local_jedomi/admin/apis/filter">
+                        {{#perpageoptions}}
+                        <option value="{{value}}"{{#selected}} selected{{/selected}}>{{value}}</option>
+                        {{/perpageoptions}}
+                    </select>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover small">
+                        <thead>
+                            <tr>
+                                <th scope="col">
+                                    <input type="checkbox" data-action="local_jedomi/admin/apis/check-all"
+                                           aria-label="{{#str}} selectall, moodle {{/str}}">
+                                </th>
+                                <th scope="col">{{#str}} ws_name, local_jedomi {{/str}}</th>
+                                <th scope="col">{{#str}} ws_description, local_jedomi {{/str}}</th>
+                                <th scope="col">{{#str}} ws_component, local_jedomi {{/str}}</th>
+                                <th scope="col">{{#str}} ws_type, local_jedomi {{/str}}</th>
+                            </tr>
+                        </thead>
+                        <tbody data-region="local_jedomi/admin/apis/rows">
+                            {{> local_jedomi/admin/ws_table_rows }}
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="d-flex align-items-center justify-content-between flex-wrap" data-region="local_jedomi/admin/apis/pagination">
+                    {{#pagination}}{{> local_jedomi/admin/ws_pagination }}{{/pagination}}
+                </div>
+            {{/body}}
+        {{/ local_jedomi/admin/card }}
+
+        <div class="local_jedomi-admin-save-row">
+            <button type="submit" class="btn btn-primary"><i class="fa fa-save mr-1" aria-hidden="true"></i>{{#str}} savechanges, moodle {{/str}}</button>
+        </div>
+    </form>
+</div>
+{{#js}}
+require(['local_jedomi/admin/apis'], function(Apis) {
+    Apis.init();
+});
+{{/js}}

@@ -26,6 +26,8 @@
 
 /**
  * Runs after local_jedomi is installed.
+ *
+ * @return bool True on success.
  */
 function xmldb_local_jedomi_install(): bool {
     global $DB, $CFG;

@@ -15,7 +15,7 @@
 // along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
 
 /**
- * Registers the plugin admin settings page and redirects to the tabbed admin UI.
+ * Registers the Jedomi settings page in the site administration.
  *
  * @package    local_jedomi
  * @copyright  2026 Jedomi Project
@@ -25,17 +25,10 @@
 defined('MOODLE_INTERNAL') || die();
 
 if ($hassiteconfig) {
-    $settings = new admin_settingpage('local_jedomi', get_string('pluginname', 'local_jedomi'));
-    $ADMIN->add('localplugins', $settings);
-
-    // Redirigir instantáneamente a la UI con pestañas.
-    // El script se ejecuta cuando Moodle renderiza la sección de settings.
-    $adminurl = (new moodle_url('/local/jedomi/admin_settings.php'))->out(false);
-    $settings->add(new admin_setting_heading(
-        'local_jedomi/redirect_heading',
-        '',
-        '<script>window.location.replace("' . $adminurl . '?tab=general");</script>'
-        . '<noscript><a href="' . $adminurl . '?tab=general">'
-        . get_string('open_admin_settings', 'local_jedomi') . '</a></noscript>'
+    $ADMIN->add('localplugins', new admin_externalpage(
+        'local_jedomi',
+        new lang_string('pluginname', 'local_jedomi'),
+        new moodle_url('/local/jedomi/admin_settings.php'),
+        'moodle/site:config'
     ));
 }

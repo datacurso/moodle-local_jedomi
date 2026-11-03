@@ -124,4 +124,23 @@ final class preview_runner_test extends \advanced_testcase {
         $this->assertSame(get_string('providerdisabled', 'aiprovider_datacurso'), $result['error']);
         $this->assertSame([], $curl->calls);
     }
+    /**
+     * A cached preview returns the cache key of the prompt, so the page can clear that entry.
+     *
+     * @return void
+     */
+    public function test_cached_preview_returns_the_cache_key(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $DB->insert_record('local_jedomi_agent_cache', (object) ['agentid' => 0, 'context_hash' => md5('List the users'),
+            'result_json' => json_encode(['answer' => 'Cached answer']), 'timecreated' => 1700000000]);
+        client::set_instance_for_testing(new fake_ai_client());
+
+        $result = preview_runner::run('  List the users ', (int) get_admin()->id);
+
+        $this->assertTrue($result['cached']);
+        $this->assertSame('Cached answer', $result['answer']);
+        $this->assertSame(md5('List the users'), $result['cache_hash']);
+    }
 }

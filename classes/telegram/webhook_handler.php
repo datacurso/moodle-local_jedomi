@@ -391,6 +391,7 @@ class webhook_handler {
     /**
      * Build inline keyboard for a linked user (new, help, unlink).
      * @internal Exposed as a testable entry point; not a stable plugin API.
+     * @return array Telegram reply keyboard markup.
      */
     public static function get_linked_keyboard(): array {
         return [
@@ -408,6 +409,7 @@ class webhook_handler {
     /**
      * Build inline keyboard for an unlinked user (howto link, help).
      * @internal Exposed as a testable entry point; not a stable plugin API.
+     * @return array Telegram reply keyboard markup.
      */
     public static function get_unlinked_keyboard(): array {
         return [
@@ -1397,54 +1399,6 @@ class webhook_handler {
     }
 
     /**
-     * Extract pending action from response, store in DB, send inline buttons.
-     *
-     * @param string $chatid Telegram chat id
-     * @param string $content AI response text possibly containing a pending action block
-     */
-    private static function handle_pending_action(string $chatid, string $content): void {
-        // Extract JSON between JEDOMI_PENDING_ACTION: and :END_PENDING.
-        if (!preg_match('/JEDOMI_PENDING_ACTION:(.+?):END_PENDING/s', $content, $matches)) {
-            // No valid action found — send raw text.
-            $client = new api_client();
-            $client->send_message($chatid, $content);
-            return;
-        }
-
-        $actionjson = $matches[1];
-        $action = json_decode($actionjson, true);
-        if (!is_array($action)) {
-            $client = new api_client();
-            $client->send_message($chatid, $content);
-            return;
-        }
-
-        global $DB;
-        $callbackid = bin2hex(random_bytes(16));
-        $DB->insert_record('local_jedomi_telegram_pending_actions', (object)[
-            'callbackid'  => $callbackid,
-            'chatid'      => $chatid,
-            'actionjson'  => $actionjson,
-            'timecreated' => time(),
-        ]);
-
-        // Build inline keyboard.
-        $keyboard = [
-            'inline_keyboard' => [[
-                ['text' => get_string('telegram_msg_confirm', 'local_jedomi'), 'callback_data' => 'confirm:' . $callbackid],
-                ['text' => get_string('telegram_msg_cancel', 'local_jedomi'), 'callback_data' => 'cancel:' . $callbackid],
-            ]],
-        ];
-
-        // Send clean message without the raw JEDOMI_PENDING_ACTION text.
-        $cleantext = preg_replace('/JEDOMI_PENDING_ACTION:.+?:END_PENDING/s', '', $content);
-        $cleantext = trim($cleantext);
-
-        $client = new api_client();
-        $client->send_message($chatid, $cleantext, $keyboard);
-    }
-
-    /**
      * Execute a tool by name with given arguments.
      * Respects role-based access — only safe read operations.
      *
@@ -1755,8 +1709,8 @@ class webhook_handler {
                 // ... ── Gate 1: Role-based allowlist (matching ws_execute::execute) ──
                 require_once(__DIR__ . '/../../lib.php');
                 $allowlist = \local_jedomi_get_role_allowlist($role);
-                // Admin sin allowlist configurada → acceso total.
-                // El resto de roles (o admin con allowlist explícita) → debe matchear.
+                // Admin without a configured allowlist → full access.
+                // Every other role (or an admin with an explicit allowlist) → must match.
                 if ($role !== 'admin' || !empty($allowlist)) {
                     if (!in_array($wsname, $allowlist, true)) {
                         return json_encode(['error' => 'WS not in allowlist for role: ' . $role]);

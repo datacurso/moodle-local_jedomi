@@ -17,11 +17,11 @@
 /**
  * Jedomi CLI Chat — Full pipeline debug tool.
  *
- * Replica EXACTAMENTE el pipeline del chat web (chatproxy.php → handler.php),
- * incluyendo system_message::build(), tool definitions, y native function calling.
+ * Replicates EXACTLY the web chat pipeline (chatproxy.php → handler.php),
+ * including system_message::build(), tool definitions and native function calling.
  *
- * Uso: php cli/chat_cli.php
- * Comandos: help, debug on/off, exit
+ * Usage: php cli/chat_cli.php
+ * Commands: help, debug on/off, exit
  * @package    local_jedomi
  * @copyright  2026 Jedomi Project
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
@@ -29,7 +29,7 @@
 define('CLI_SCRIPT', true);
 define('AJAX_SCRIPT', false);
 
-// ... ── Seguridad: solo CLI ───────────────────────────────────────────────────
+// ... ── Security: CLI only ─────────────────────────────────────────────────────
 // phpcs:ignore moodle.Files.MoodleInternal.MoodleInternalGlobalState -- CLI guard runs before config.php.
 if (isset($_SERVER['REMOTE_ADDR']) || PHP_SAPI !== 'cli') {
     http_response_code(403);
@@ -117,7 +117,7 @@ function call_ai(array $messages, array $tools = []): ?array {
     return $message;
 }
 
-// ... ── Función: ejecutar tool (EXACTAMENTE como handler.php) ─────────────────
+// ... ── Function: run a tool (EXACTLY like handler.php) ───────────────────────
 /**
  * Executes a tool call through the proxy handler using the admin role.
  *
@@ -207,7 +207,7 @@ while (true) {
                 echo "  \e[35m⚡ Ejecutando {$tcname}...\e[0m\n";
                 $result = execute_tool($tcname, $tcargs);
 
-                // Parsear resultado para mostrar resumen.
+                // Parse the result to show a summary.
                 $resultparsed = json_decode($result, true);
                 $iserror = isset($resultparsed['error']);
 
@@ -215,7 +215,7 @@ while (true) {
                 if ($iserror) {
                     echo "  \e[31m❌ Error: " . mb_substr($resultparsed['error'], 0, 200) . "\e[0m\n";
                 } else {
-                    // Intentar mostrar resumen útil.
+                    // Try to show a useful summary.
                     $summary = '';
                     if (isset($resultparsed['result'])) {
                         $inner = json_decode($resultparsed['result'], true);

@@ -249,6 +249,8 @@ class manager {
 
     /**
      * Check if Telegram integration is enabled.
+     *
+     * @return bool Whether the Telegram integration is enabled.
      */
     public static function is_enabled(): bool {
         return (bool) get_config('local_jedomi', 'telegram_enabled');
@@ -256,6 +258,8 @@ class manager {
 
     /**
      * Get the configured rate limit (messages per minute).
+     *
+     * @return int Messages per minute; 0 means no limit.
      */
     public static function get_rate_limit(): int {
         $val = get_config('local_jedomi', 'telegram_rate_limit');
@@ -264,6 +268,8 @@ class manager {
 
     /**
      * Get the configured cooldown in minutes.
+     *
+     * @return int Minutes.
      */
     public static function get_cooldown(): int {
         $val = get_config('local_jedomi', 'telegram_cooldown');
@@ -272,6 +278,8 @@ class manager {
 
     /**
      * Build the full webhook URL for @BotFather.
+     *
+     * @return string Webhook URL with the secret.
      */
     public static function get_webhook_url(): string {
         global $CFG;
@@ -337,6 +345,8 @@ class manager {
 
     /**
      * Generate a random 6-char code.
+     *
+     * @return string Random code.
      */
     private static function generate_random_code(): string {
         $chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // No 0, O, 1, I.

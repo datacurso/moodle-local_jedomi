@@ -17,104 +17,113 @@
 {{!
     @template local_jedomi/sidebar
 
-    Jedomi AI sidebar injected on every Moodle page: trigger button plus a
-    drawer with the message area, thinking indicator and input controls.
+    Jedomi AI sidebar injected on every page by the local_jedomi/sidebar module: trigger button, drawer with
+    header, messages, thinking indicator, quick actions and input area, overlay and file drop zone.
+    The element ids are kept because the sidebar is a single instance per page and styles.css targets them.
+
+    Classes required for JS:
+    * none
+
+    Data attributes required for JS:
+    * the element ids (jedomi-trigger, jedomi-sidebar, jedomi-input, ...) are used by local_jedomi/sidebar
 
     Context variables required for this template:
-    * context - JSON-encoded page context string.
-    * user_name - Display name for the greeting message.
-    * strings - Object with localised UI strings (title, placeholder).
+    * greeting string - Greeting with the user name
+    * strings object - Sidebar strings from local_jedomi_get_sidebar_config(): open_sidebar, export_conversation, half_width,
+      full_width, new_conversation, close, hello, thinking, toggle_thinking, placeholder, message_input, attach,
+      attach_image, image, attach_file, file, send, attached_image, ai_disclaimer, drop_files_here
 
     Example context (json):
     {
-        "context": "{\"location\":\"course\",\"course_id\":2}",
-        "user_name": "Ana",
-        "strings": {
-            "title": "Jedomi AI",
-            "placeholder": "Ask Jedomi..."
-        }
+        "greeting": "Hi, Ana!",
+        "strings": {"open_sidebar": "Open Jedomi AI", "hello": "I am Jedomi.", "placeholder": "Ask Jedomi...",
+            "send": "Send", "thinking": "Thinking...", "ai_disclaimer": "Jedomi is an AI and can make mistakes."}
     }
 }}
-
-<!-- Jedomi Trigger Button -->
-<button
-    id="jedomi-trigger"
-    class="jedomi-trigger"
-    aria-label="Abrir Jedomi AI"
-    title="Jedomi AI"
-    data-context="{{context}}"
->
-    <span class="jedomi-trigger-icon">✨</span>
+<button id="jedomi-trigger" class="jedomi-trigger" aria-label="{{strings.open_sidebar}}" title="Jedomi AI (Ctrl+Shift+J)">
+    <svg aria-hidden="true" focusable="false" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.107 7.107c0 .13 0 .261 0 .393a7.5 7.5 0 0 0-7.107 7.107c-.13 0-.261 0-.393 0a7.5 7.5 0 0 0-7.107-7.107c0-.132 0-.263 0-.393a7.5 7.5 0 0 0 7.107-7.107z"/><path d="M5 5.5v3M6.5 7H3.5M19 15.5v3M20.5 17H17.5"/></svg>
     <span class="jedomi-trigger-label">Jedomi</span>
 </button>
 
-<!-- Jedomi Sidebar Drawer -->
-<div id="jedomi-sidebar" class="jedomi-sidebar jedomi-closed" role="dialog" aria-label="{{#strings}}{{title}}{{/strings}}">
-
-    <!-- Header -->
+<div id="jedomi-sidebar" class="jedomi-sidebar jedomi-closed" role="dialog" aria-modal="true" aria-label="Jedomi AI">
     <div class="jedomi-header">
         <div class="jedomi-header-info">
-            <span class="jedomi-logo">✨</span>
+            <div class="jedomi-logo"><svg aria-hidden="true" focusable="false" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.107 7.107c0 .13 0 .261 0 .393a7.5 7.5 0 0 0-7.107 7.107c-.13 0-.261 0-.393 0a7.5 7.5 0 0 0-7.107-7.107c0-.132 0-.263 0-.393a7.5 7.5 0 0 0 7.107-7.107z"/><path d="M5 5.5v3M6.5 7H3.5M19 15.5v3M20.5 17H17.5"/></svg></div>
             <div>
-                <strong>Jedomi</strong>
-                <small id="jedomi-context-label" class="jedomi-context-badge"></small>
+                <span id="jedomi-context-label" class="jedomi-context-badge jedomi-hidden"></span>
             </div>
         </div>
         <div class="jedomi-header-actions">
-            <button id="jedomi-clear" class="jedomi-btn-icon" title="Nueva conversación">🗑️</button>
-            <button id="jedomi-close" class="jedomi-btn-icon" title="Cerrar">✕</button>
+            <button id="jedomi-export" class="jedomi-btn-icon" title="{{strings.export_conversation}}"><svg aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
+            <button id="jedomi-expand-half" class="jedomi-btn-icon jedomi-expand-btn" title="{{strings.half_width}}" data-mode="half">
+                <svg aria-hidden="true" focusable="false" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="3" width="8" height="18" rx="1"/><rect x="13" y="3" width="8" height="18" rx="1" opacity=".4"/></svg>
+            </button>
+            <button id="jedomi-expand-full" class="jedomi-btn-icon jedomi-expand-btn" title="{{strings.full_width}}" data-mode="full">
+                <svg aria-hidden="true" focusable="false" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+            </button>
+            <button id="jedomi-clear" class="jedomi-btn-icon jedomi-btn-new" title="{{strings.new_conversation}}">+</button>
+            <button id="jedomi-close" class="jedomi-btn-icon" title="{{strings.close}}"><svg aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
         </div>
     </div>
 
-    <!-- Messages area -->
     <div id="jedomi-messages" class="jedomi-messages">
         <div class="jedomi-message jedomi-message-assistant">
             <div class="jedomi-bubble">
-                Hola, <strong>{{user_name}}</strong> 👋<br>
-                Soy Jedomi, tu asistente de Moodle.
-                Preguntame cualquier cosa sobre cursos, notas, alumnos o configuraciones.
+                {{greeting}}<br>
+                {{strings.hello}}
             </div>
         </div>
     </div>
 
-    <!-- Thinking indicator -->
-    <div id="jedomi-thinking" class="jedomi-thinking jedomi-hidden">
-        <span></span><span></span><span></span>
+    <div id="jedomi-thinking-wrapper" class="jedomi-thinking-wrapper jedomi-hidden">
+        <button id="jedomi-thinking-toggle-btn" class="jedomi-thinking-bar" aria-label="{{strings.toggle_thinking}}">
+            <span class="jedomi-thinking-dot"></span>
+            <span class="jedomi-thinking-lbl">{{strings.thinking}}</span>
+            <svg aria-hidden="true" focusable="false" class="jedomi-thinking-chevron" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div id="jedomi-thinking" class="jedomi-thinking">
+            <span></span><span></span><span></span>
+        </div>
     </div>
 
-    <!-- Input area -->
+    <div id="jedomi-quick-actions" class="jedomi-quick-actions"></div>
+
     <div class="jedomi-input-area">
-
-        <!-- Quick actions (contextual, shown según dónde está el usuario) -->
-        <div id="jedomi-quick-actions" class="jedomi-quick-actions"></div>
-
-        <!-- Text input -->
-        <div class="jedomi-input-row">
-            <textarea
-                id="jedomi-input"
-                class="jedomi-input"
-                placeholder="{{#strings}}{{placeholder}}{{/strings}}"
-                rows="1"
-                aria-label="Mensaje a Jedomi"
-            ></textarea>
-            <div class="jedomi-input-buttons">
-                <button id="jedomi-voice-btn" class="jedomi-btn-icon jedomi-btn-voice" title="Hablar">🎤</button>
-                <button id="jedomi-image-btn" class="jedomi-btn-icon" title="Subir imagen">📷</button>
-                <button id="jedomi-send" class="jedomi-btn-send" title="Enviar">→</button>
+        <div class="jedomi-input-row" data-action="local_jedomi/sidebar/focus-input">
+            <textarea id="jedomi-input" class="jedomi-input" placeholder="{{strings.placeholder}}"
+                rows="1" aria-label="{{strings.message_input}}"></textarea>
+            <div class="jedomi-input-actions">
+                <div class="jedomi-attach-wrap">
+                    <button id="jedomi-attach-btn" class="jedomi-input-icon" title="{{strings.attach}}"><svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+                    <div id="jedomi-attach-menu" class="jedomi-attach-menu jedomi-hidden">
+                        <button class="jedomi-attach-option" data-type="image" title="{{strings.attach_image}}"><svg aria-hidden="true" focusable="false" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg> {{strings.image}}</button>
+                        <button class="jedomi-attach-option" data-type="file" title="{{strings.attach_file}}"><svg aria-hidden="true" focusable="false" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg> {{strings.file}}</button>
+                    </div>
+                </div>
+                <button id="jedomi-send" class="jedomi-send-btn" title="{{strings.send}}"><svg aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
             </div>
         </div>
-
-        <!-- Hidden file input for image upload -->
         <input type="file" id="jedomi-image-input" accept="image/*" class="jedomi-hidden" aria-hidden="true">
-        <!-- Image preview -->
+        <input type="file" id="jedomi-file-input" accept=".pdf,.csv,.txt,.md" class="jedomi-hidden" aria-hidden="true">
         <div id="jedomi-image-preview" class="jedomi-image-preview jedomi-hidden">
-            <img id="jedomi-preview-img"
-                src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="
-                alt="Imagen adjunta">
-            <button id="jedomi-remove-image" class="jedomi-btn-icon">✕</button>
+            <img id="jedomi-preview-img" src="" alt="{{strings.attached_image}}">
+            <span>{{strings.attached_image}}</span>
+            <button id="jedomi-remove-image" class="jedomi-input-icon" title="{{strings.close}}"><svg aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
         </div>
+        <div id="jedomi-file-preview" class="jedomi-image-preview jedomi-hidden">
+            <span id="jedomi-file-preview-name"></span>
+            <button id="jedomi-remove-file" class="jedomi-input-icon" title="{{strings.close}}"><svg aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+        </div>
+    </div>
+    <div class="jedomi-footer">
+        <span class="jedomi-disclaimer">{{strings.ai_disclaimer}}</span>
     </div>
 </div>
 
-<!-- Overlay for mobile -->
 <div id="jedomi-overlay" class="jedomi-overlay jedomi-hidden"></div>
+<div id="jedomi-dropzone" class="jedomi-dropzone jedomi-hidden">
+    <div class="jedomi-dropzone-inner">
+        <svg aria-hidden="true" focusable="false" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        <span class="jedomi-dropzone-text">{{strings.drop_files_here}}</span>
+    </div>
+</div>

@@ -1,0 +1,229 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template local_jedomi/telegram_profile
+
+    Telegram profile page: link status, one-time link code with its countdown, and the linking instructions.
+
+    Classes required for JS:
+    * none
+
+    Data attributes required for JS:
+    * data-region="local_jedomi/telegram_profile/countdown" with data-expiry (Unix time) on the code countdown
+    * data-form="local_jedomi/telegram_profile/unlink" on the unlink form, confirmed with a modal
+
+    Context variables required for this template:
+    * notconfigured bool - The bot is not configured (only administrators reach this state)
+    * roleblocked bool - The role of the user cannot use the bot
+    * linked bool - The account is linked
+    * notlinked bool - The account is not linked
+    * settingsurl string - URL of the Integrations tab of the Jedomi settings
+    * actionurl string - URL the forms post to
+    * sesskey string - Session key
+    * botusername string - Bot username, without the @
+    * botfirstname string - Bot display name
+    * botlink string - https://t.me link of the bot
+    * linkedas string - Telegram username (@name) or chat id of the linked account
+    * linkedtime int - Time the account was linked
+    * hascode bool - Whether a link code was just generated
+    * code string - One-time link code
+    * deeplink string - https://t.me link that starts the bot with the code
+    * codeexpiry int - Time the code expires
+
+    Example context (json):
+    {
+        "notconfigured": false, "roleblocked": false, "linked": false, "notlinked": true,
+        "settingsurl": "https://example.com/local/jedomi/admin_settings.php?tab=integrations",
+        "actionurl": "https://example.com/local/jedomi/telegram_profile.php?userid=2", "sesskey": "abc123",
+        "botusername": "jedomibot", "botfirstname": "Jedomi", "botlink": "https://t.me/jedomibot",
+        "linkedas": "", "linkedtime": 0, "hascode": true, "code": "ABC234",
+        "deeplink": "https://t.me/jedomibot?start=ABC234", "codeexpiry": 1700000600
+    }
+}}
+<div class="local_jedomi-telegram_profile">
+    <div class="d-flex align-items-center mb-4">
+        <span class="local_jedomi-tg-logo mr-3"><i class="fa fa-paper-plane" aria-hidden="true"></i></span>
+        <div>
+            <h2 class="h4 mb-0">{{#str}} telegram_link_title, local_jedomi {{/str}}</h2>
+            <p class="text-muted small mb-0">{{#str}} telegram_heading_help, local_jedomi {{/str}}</p>
+        </div>
+    </div>
+
+    {{#notconfigured}}
+    <div class="alert alert-info d-flex align-items-start" role="alert">
+        <i class="fa fa-info-circle fa-lg mr-2 mt-1" aria-hidden="true"></i>
+        <div>
+            <strong>{{#str}} telegram_admin_not_configured_title, local_jedomi {{/str}}</strong><br>
+            <small>{{#str}} telegram_admin_not_configured_desc, local_jedomi {{/str}}
+                <a href="{{settingsurl}}">{{#str}} telegram_admin_settings_link, local_jedomi {{/str}}</a></small>
+        </div>
+    </div>
+    {{/notconfigured}}
+
+    {{#roleblocked}}
+    <div class="alert alert-danger d-flex align-items-center" role="alert">
+        <i class="fa fa-ban fa-lg mr-2" aria-hidden="true"></i>
+        <div>{{#str}} telegram_msg_role_blocked, local_jedomi {{/str}}</div>
+    </div>
+    {{/roleblocked}}
+
+    {{#linked}}
+    <div class="card mb-4 local_jedomi-tg-linked">
+        <div class="card-header d-flex align-items-center">
+            <i class="fa fa-check-circle fa-lg mr-2" aria-hidden="true"></i>
+            <strong>{{#str}} telegram_status_connected, local_jedomi {{/str}}</strong>
+        </div>
+        <div class="card-body">
+            <div class="mb-3">
+                <strong>{{linkedas}}</strong>
+                <p class="text-muted small mb-0">{{#str}} telegram_linked_on, local_jedomi, {{#userdate}} {{linkedtime}}, {{#str}} strftimedatetime, core_langconfig {{/str}} {{/userdate}} {{/str}}</p>
+            </div>
+            <div class="local_jedomi-tg-howto mb-3">
+                <p class="font-weight-bold fw-bold small mb-2"><i class="fa fa-info-circle mr-1" aria-hidden="true"></i>{{#str}} telegram_howto_title, local_jedomi {{/str}}</p>
+                <ul class="small mb-0">
+                    <li>{{#str}} telegram_howto_question, local_jedomi {{/str}}</li>
+                    <li>{{#str}} telegram_howto_screenshot, local_jedomi {{/str}}</li>
+                    <li>{{#str}} telegram_howto_confirm, local_jedomi {{/str}}</li>
+                    <li>{{#str}} telegram_howto_unlink, local_jedomi {{/str}}</li>
+                </ul>
+            </div>
+            <form method="post" action="{{actionurl}}" data-form="local_jedomi/telegram_profile/unlink">
+                <input type="hidden" name="sesskey" value="{{sesskey}}">
+                <input type="hidden" name="action" value="unlink">
+                <button type="submit" class="btn btn-outline-danger btn-sm">
+                    <i class="fa fa-unlink mr-1" aria-hidden="true"></i>{{#str}} unlink, local_jedomi {{/str}}
+                </button>
+            </form>
+        </div>
+    </div>
+    {{/linked}}
+
+    {{#notlinked}}
+    <div class="card mb-4">
+        <div class="card-header d-flex align-items-center">
+            <i class="fa fa-paper-plane mr-2 local_jedomi-tg-icon" aria-hidden="true"></i>
+            <strong>{{#str}} telegram_not_linked, local_jedomi {{/str}}</strong>
+        </div>
+        <div class="card-body">
+            <p class="small mb-3">{{#str}} telegram_link_instructions, local_jedomi {{/str}}</p>
+
+            {{#hascode}}
+            <div class="local_jedomi-tg-code">{{code}}</div>
+            <p class="text-center text-muted small mb-3">
+                {{#str}} telegram_link_code_expiry, local_jedomi {{/str}}
+                <span class="local_jedomi-tg-countdown" data-region="local_jedomi/telegram_profile/countdown" data-expiry="{{codeexpiry}}">10:00</span>
+            </p>
+
+            <div class="mb-4">
+                <a href="{{deeplink}}" target="_blank" rel="noopener" class="btn btn-success btn-lg btn-block w-100">
+                    <i class="fa fa-paper-plane mr-2" aria-hidden="true"></i>{{#str}} telegram_open_auto, local_jedomi {{/str}}
+                </a>
+                <p class="text-center text-muted small mt-2 mb-0">{{#str}} telegram_open_auto_help, local_jedomi, {{botusername}} {{/str}}</p>
+            </div>
+
+            <div class="local_jedomi-tg-box mb-3">
+                <div class="local_jedomi-tg-step">
+                    <span class="local_jedomi-tg-badge">1</span>
+                    <div>
+                        <strong class="small">{{#str}} telegram_link_step1_title, local_jedomi {{/str}}</strong>
+                        <p class="small mb-2">{{#str}} telegram_link_step1_desc, local_jedomi, {{botusername}} {{/str}}</p>
+                        <a href="{{deeplink}}" target="_blank" rel="noopener" class="btn btn-sm btn-info">
+                            <i class="fa fa-paper-plane mr-1" aria-hidden="true"></i>{{#str}} telegram_link_open_bot, local_jedomi, {{botusername}} {{/str}}
+                        </a>
+                    </div>
+                </div>
+                <div class="local_jedomi-tg-step">
+                    <span class="local_jedomi-tg-badge local_jedomi-tg-badge-violet">2</span>
+                    <div>
+                        <strong class="small">{{#str}} telegram_stepU3_title, local_jedomi {{/str}}</strong>
+                        <p class="small mb-2">{{#str}} telegram_link_step2_desc, local_jedomi, {{botusername}} {{/str}}</p>
+                        <div class="local_jedomi-tg-command">
+                            <span id="{{uniqid}}-command">/start {{code}}</span>
+                            <button type="button" class="btn btn-link btn-sm p-0" data-action="copytoclipboard"
+                                    data-clipboard-target="#{{uniqid}}-command" title="{{#str}} copytoclipboard, local_jedomi {{/str}}">
+                                <i class="fa fa-copy" aria-hidden="true"></i>
+                                <span class="sr-only visually-hidden">{{#str}} copytoclipboard, local_jedomi {{/str}}</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="local_jedomi-tg-step mb-0">
+                    <span class="local_jedomi-tg-badge local_jedomi-tg-badge-green">3</span>
+                    <div>
+                        <strong class="small">{{#str}} telegram_link_step3_title, local_jedomi {{/str}}</strong>
+                        <p class="small mb-0">{{#str}} telegram_link_step3_desc, local_jedomi {{/str}}</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="local_jedomi-tg-box mb-3">
+                <p class="small font-weight-bold fw-bold text-muted mb-2"><i class="fa fa-info-circle mr-1" aria-hidden="true"></i>{{#str}} telegram_no_app_title, local_jedomi {{/str}}</p>
+                <p class="small mb-2">{{#str}} telegram_no_app_desc, local_jedomi, {{botusername}} {{/str}}</p>
+                <div class="local_jedomi-tg-command d-flex justify-content-between">
+                    <span id="{{uniqid}}-command-manual">/start {{code}}</span>
+                    <button type="button" class="btn btn-link btn-sm p-0" data-action="copytoclipboard"
+                            data-clipboard-target="#{{uniqid}}-command-manual" title="{{#str}} copytoclipboard, local_jedomi {{/str}}">
+                        <i class="fa fa-copy" aria-hidden="true"></i>
+                        <span class="sr-only visually-hidden">{{#str}} copytoclipboard, local_jedomi {{/str}}</span>
+                    </button>
+                </div>
+            </div>
+
+            <form method="post" action="{{actionurl}}">
+                <input type="hidden" name="sesskey" value="{{sesskey}}">
+                <input type="hidden" name="action" value="generate">
+                <button type="submit" class="btn btn-outline-secondary btn-sm">
+                    <i class="fa fa-refresh mr-1" aria-hidden="true"></i>{{#str}} telegram_link_new_code, local_jedomi {{/str}}
+                </button>
+            </form>
+            {{/hascode}}
+
+            {{^hascode}}
+            <div class="mb-4">
+                <div class="local_jedomi-tg-step">
+                    <span class="local_jedomi-tg-badge">1</span>
+                    <div class="small"><strong>{{#str}} telegram_quick_step1_title, local_jedomi {{/str}}</strong> — {{#str}} telegram_quick_step1_desc, local_jedomi {{/str}}</div>
+                </div>
+                <div class="local_jedomi-tg-step">
+                    <span class="local_jedomi-tg-badge local_jedomi-tg-badge-violet">2</span>
+                    <div class="small">
+                        <strong>{{#str}} telegram_quick_step2_title, local_jedomi {{/str}} <a href="{{botlink}}" target="_blank" rel="noopener">@{{botusername}}</a></strong>
+                        — {{#str}} telegram_quick_step2_desc, local_jedomi {{/str}}
+                    </div>
+                </div>
+                <div class="local_jedomi-tg-step mb-0">
+                    <span class="local_jedomi-tg-badge local_jedomi-tg-badge-green">3</span>
+                    <div class="small"><strong>{{#str}} telegram_quick_step3_title, local_jedomi {{/str}}</strong> — {{#str}} telegram_quick_step3_desc, local_jedomi, {{botfirstname}} {{/str}}</div>
+                </div>
+            </div>
+            <form method="post" action="{{actionurl}}">
+                <input type="hidden" name="sesskey" value="{{sesskey}}">
+                <input type="hidden" name="action" value="generate">
+                <button type="submit" class="btn btn-primary btn-lg btn-block w-100">
+                    <i class="fa fa-paper-plane mr-2" aria-hidden="true"></i>{{#str}} telegram_link_generate, local_jedomi {{/str}}
+                </button>
+            </form>
+            {{/hascode}}
+        </div>
+    </div>
+    {{/notlinked}}
+</div>
+{{#js}}
+require(['local_jedomi/telegram_profile'], function(TelegramProfile) {
+    TelegramProfile.init();
+});
+{{/js}}

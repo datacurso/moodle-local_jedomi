@@ -41,7 +41,7 @@ $token = manager::get_bot_token();
 if (!$token) {
     echo json_encode([
         'ok'    => false,
-        'error' => 'Bot token not configured',
+        'error' => get_string('telegram_token_not_configured', 'local_jedomi'),
     ]);
     exit;
 }
@@ -52,11 +52,11 @@ $result = manager::register_webhook();
 if ($result) {
     echo json_encode([
         'ok'      => true,
-        'message' => 'Pending updates dropped successfully.',
+        'message' => get_string('drop_pending_success', 'local_jedomi'),
     ]);
 } else {
     echo json_encode([
         'ok'    => false,
-        'error' => 'Failed to drop pending updates — check Telegram API response.',
+        'error' => get_string('telegram_drop_pending_failed', 'local_jedomi'),
     ]);
 }

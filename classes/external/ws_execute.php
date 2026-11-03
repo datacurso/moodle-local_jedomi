@@ -120,8 +120,8 @@ class ws_execute extends external_api {
         require_once(__DIR__ . '/../../lib.php');
         $role = \local_jedomi_get_user_role();
         $allowlist = \local_jedomi_get_role_allowlist($role);
-        // Admin sin allowlist configurada explícita → acceso total.
-        // El resto de roles necesitan allowlist o se bloquean.
+        // Admin without an explicit allowlist → full access.
+        // Every other role needs an allowlist or is blocked.
         if ($role !== 'admin' || !empty($allowlist)) {
             if (!in_array($wsname, $allowlist, true)) {
                 throw new \moodle_exception('ws_not_in_allowlist', 'local_jedomi');

@@ -273,12 +273,12 @@ class agent_runner extends \core\task\scheduled_task {
                 \local_jedomi_log("[AGENT] {$agentlabel} (prompt " . strlen($agent->prompt) . "B)");
 
                 // ... ═══════════════════════════════════════════════════════════════
-                // PRE-EXECUTION GATE — verifica que el creador del agente
-                // siga siendo un usuario válido y tenga acceso al contexto.
-                // Si no → deshabilita el agente, notifica y saltea.
+                // PRE-EXECUTION GATE — checks that the creator of the agent
+                // is still a valid user with access to the context.
+                // If not → disables the agent, notifies and skips it.
                 // ═══════════════════════════════════════════════════════════════
 
-                // ... ── 1) ¿El creador existe y no está suspendido/eliminado? ──
+                // ... ── 1) Does the creator exist and is not suspended/deleted? ──
                 $creator = \core_user::get_user($agent->userid);
                 if (!$creator || !empty($creator->deleted)) {
                     mtrace("[AGENT] {$agentlabel} — creator user {$agent->userid} not found — DISABLING");
@@ -298,7 +298,7 @@ class agent_runner extends \core\task\scheduled_task {
                     continue;
                 }
 
-                // ... ── 2) ¿El creador aún tiene acceso al contexto del agente? ──
+                // ... ── 2) Does the creator still have access to the agent context? ──
                 if (
                     !empty($agent->context_type) && $agent->context_type !== 'site'
                     && !empty($agent->context_id)
@@ -307,14 +307,14 @@ class agent_runner extends \core\task\scheduled_task {
                     try {
                         $context = \context::instance_by_id($agent->context_id);
                         if ($context instanceof \context_course) {
-                            // Contexto de curso → verificar matrícula activa.
+                            // Course context → check for an active enrolment.
                             $hasaccess = is_enrolled($context, $creator) || is_viewing($context, $creator);
                         } else {
-                            // Otros contextos → verificar capability básica.
+                            // Other contexts → check a basic capability.
                             $hasaccess = has_capability('moodle/course:view', $context, $creator);
                         }
                     } catch (\Exception $e) {
-                        // Contexto inválido o eliminado.
+                        // Invalid or deleted context.
                         $hasaccess = false;
                     }
                     if (!$hasaccess) {

@@ -32,7 +32,18 @@
 - Log status codes and sizes instead of AI request and response contents
 - Remove hardcoded default API keys and gateway URLs
 - Render the "Enable Telegram integration" switch of the Integrations tab as a switch on Moodle 4.5 (Bootstrap 4) as well as on Moodle 5.x (Bootstrap 5); it used to show as a plain checkbox on 4.5
-- Save the "Enable Telegram integration" switch as soon as it is toggled, without submitting the form, through the new web service `local_jedomi_set_telegram_enabled` (site administrators only); if the save fails the switch goes back to its previous state and a notification is shown. Saving the form still stores the switch together with the other Telegram settings
+- Save the "Enable Telegram integration" switch as soon as it is toggled, without submitting the form, through the new web service `local_jedomi_set_telegram_enabled` (site administrators only); if the save fails the switch goes back to its previous state and a notification is shown
+- Rebuild the Jedomi settings page with Moodle's output API: the page is an `admin_externalpage` (no redirect script in `settings.php`), uses a `tabtree`, and each tab is a renderable with its own Mustache template under `templates/admin/`; the General, Course availability, Privacy and Telegram settings are moodleforms (`classes/form/`); the settings logic lives in `\local_jedomi\local\service\admin_settings_service`; all inline JavaScript moved to AMD modules (`amd/src/admin/`) and all inline CSS to `styles.css`
+- The course selector of the Course availability tab is Moodle's course autocomplete; the Telegram limits are validated on the server (rate limit 0-1000, cooldown 0-1440, max turns 1-100, timeout 5-300)
+- The web service table of the APIs tab is rendered from templates in the browser; `ajax/ws_table.php` returns data instead of HTML
+- Fix the agent purge form, which sent field names the endpoint did not read, and show the id field for role purges
+- The Profiler tab filters (minimum duration and sort) now apply to the recent queries list
+- Rebuild the Telegram profile page with a renderable, a template and an AMD module; all its text comes from the language files
+- Move the sidebar markup from `sidebar.js` to Mustache templates (`templates/sidebar.mustache` and `templates/local/sidebar/`) rendered with `core/templates`; the chat answers are still converted from Markdown by the sidebar
+- Show the tool status and session expired messages of the sidebar in the user's language (they always fell back to Spanish text) and remove the hardcoded fallback texts
+- Remove the `http://localhost:8000` fallback of the document-to-image service: without a URL, reading PDFs answers that the service is not configured; fix a warning when the model omits the image format
+- Fix the Profiler tab failing with "Table local_jedomi_query_log doesn't exist" and the agent name not being saved on sites that had Jedomi installed before 2026-09-02: the upgrade now creates the `local_jedomi_query_log` table and the `name` column of `local_jedomi_agents` when they are missing
+- Remove dead code (`webhook_handler::handle_pending_action()`, `local_jedomi_get_all_ws()`) and unused strings; complete docblocks and translate the remaining Spanish comments to English
 
 ## 1.2.3 (2026-05-25)
 
