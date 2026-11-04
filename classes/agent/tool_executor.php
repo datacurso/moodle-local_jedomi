@@ -45,7 +45,11 @@ class tool_executor {
     public static function get_definitions(int $agentid = 0, int $userid = 0): array {
         $tools = self::get_tools($agentid, $userid);
         $defs = [];
-        foreach ($tools as $tool) {
+        foreach ($tools as $name => $tool) {
+            if ($name === 'document_read' && !\local_jedomi\ai\model_settings::is_files_enabled()) {
+                // Not offered while file and image processing is off; execute() refuses it too.
+                continue;
+            }
             $defs[] = $tool->get_definition();
         }
         return $defs;

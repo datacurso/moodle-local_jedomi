@@ -36,7 +36,6 @@ final class model_settings_test extends \advanced_testcase {
         set_config('api_key', 'legacy-key-value', 'local_jedomi');
         set_config('model', $model, 'local_jedomi');
         set_config('max_tokens', 4096, 'local_jedomi');
-        set_config('docservice_url', 'http://localhost:8000', 'local_jedomi');
         set_config('spt_secret', 'spt-secret-value', 'local_jedomi');
         set_config('enabled', 1, 'local_jedomi');
     }
@@ -55,7 +54,6 @@ final class model_settings_test extends \advanced_testcase {
      */
     private function assert_other_settings_unchanged(): void {
         $this->assertSame('4096', get_config('local_jedomi', 'max_tokens'));
-        $this->assertSame('http://localhost:8000', get_config('local_jedomi', 'docservice_url'));
         $this->assertSame('spt-secret-value', get_config('local_jedomi', 'spt_secret'));
         $this->assertSame('1', get_config('local_jedomi', 'enabled'));
     }
@@ -223,5 +221,135 @@ final class model_settings_test extends \advanced_testcase {
 
         set_config('max_tokens', 8000, 'local_jedomi');
         $this->assertSame(8000, model_settings::get_max_tokens());
+    }
+
+    /**
+     * M7: each selector lists only the models with its capability, with its default model first.
+     */
+    public function test_each_capability_lists_only_its_models_with_default_first(): void {
+        $this->assertSame('jedomi/Qwen/Qwen3-VL-30B-A3B-Instruct', model_settings::DEFAULT_VISION_MODEL);
+        $this->assertSame('jedomi/Qwen/Qwen3-ASR-1.7B', model_settings::DEFAULT_AUDIO_MODEL);
+
+        $this->assertSame([
+            'jedomi/google/gemma-4-26B-A4B-it',
+            'jedomi/deepseek-ai/DeepSeek-V4.1-Flash-1017',
+            'jedomi/zai-org/GLM-5.3-Flash',
+            'jedomi/XiaomiMiMo/MiMo-V2.6-Flash',
+        ], array_keys(model_settings::get_available_models(model_settings::CAPABILITY_CHAT)));
+        $this->assertSame([
+            'jedomi/Qwen/Qwen3-VL-30B-A3B-Instruct',
+            'jedomi/Qwen/Qwen3-VL-235B-A22B-Instruct',
+            'jedomi/google/gemma-4-26B-A4B-it',
+            'jedomi/deepseek-ai/DeepSeek-V4.1-Flash-1017',
+            'jedomi/zai-org/GLM-5.3-Flash',
+            'jedomi/XiaomiMiMo/MiMo-V2.6-Flash',
+        ], array_keys(model_settings::get_available_models(model_settings::CAPABILITY_VISION)));
+        $this->assertSame([
+            'jedomi/Qwen/Qwen3-ASR-1.7B',
+            'jedomi/openai/whisper-large-v3-turbo',
+            'jedomi/mistralai/Voxtral-Mini-3B-2507',
+        ], array_keys(model_settings::get_available_models(model_settings::CAPABILITY_AUDIO)));
+
+        $this->assertSame('Qwen3-VL 30B A3B',
+            model_settings::get_available_models(model_settings::CAPABILITY_VISION)[model_settings::DEFAULT_VISION_MODEL]);
+        $this->assertSame('Qwen3-ASR 1.7B',
+            model_settings::get_available_models(model_settings::CAPABILITY_AUDIO)[model_settings::DEFAULT_AUDIO_MODEL]);
+        foreach (array_keys(model_settings::get_catalogue()) as $model) {
+            $this->assertTrue(model_settings::is_routable($model));
+        }
+    }
+
+    /**
+     * M7: a multimodal model is available for each of its capabilities and not for the others.
+     */
+    public function test_availability_depends_on_the_capability(): void {
+        $gemma = 'jedomi/google/gemma-4-26B-A4B-it';
+        $this->assertTrue(model_settings::is_available($gemma));
+        $this->assertTrue(model_settings::is_available($gemma, model_settings::CAPABILITY_VISION));
+        $this->assertFalse(model_settings::is_available($gemma, model_settings::CAPABILITY_AUDIO));
+        $this->assertFalse(model_settings::is_available(model_settings::DEFAULT_VISION_MODEL));
+        $this->assertFalse(model_settings::is_available(model_settings::DEFAULT_AUDIO_MODEL,
+            model_settings::CAPABILITY_VISION));
+    }
+
+    /**
+     * M6: the vision and audio models fall back to their defaults when empty or not in their list.
+     */
+    public function test_vision_and_audio_models_fall_back_to_their_defaults(): void {
+        $this->resetAfterTest();
+
+        unset_config('vision_model', 'local_jedomi');
+        unset_config('audio_model', 'local_jedomi');
+        $this->assertSame(model_settings::DEFAULT_VISION_MODEL, model_settings::get_vision_model());
+        $this->assertSame(model_settings::DEFAULT_AUDIO_MODEL, model_settings::get_audio_model());
+
+        set_config('vision_model', 'jedomi/Qwen/Qwen3-ASR-1.7B', 'local_jedomi');
+        set_config('audio_model', '', 'local_jedomi');
+        $this->assertSame(model_settings::DEFAULT_VISION_MODEL, model_settings::get_vision_model());
+        $this->assertSame(model_settings::DEFAULT_AUDIO_MODEL, model_settings::get_audio_model());
+
+        set_config('vision_model', 'jedomi/zai-org/GLM-5.3-Flash', 'local_jedomi');
+        set_config('audio_model', 'jedomi/openai/whisper-large-v3-turbo', 'local_jedomi');
+        $this->assertSame('jedomi/zai-org/GLM-5.3-Flash', model_settings::get_vision_model());
+        $this->assertSame('jedomi/openai/whisper-large-v3-turbo', model_settings::get_audio_model());
+    }
+
+    /**
+     * M6: file processing is on and audio processing is off until they are saved.
+     */
+    public function test_feature_switches_have_their_defaults(): void {
+        $this->resetAfterTest();
+
+        unset_config('files_enabled', 'local_jedomi');
+        unset_config('audio_enabled', 'local_jedomi');
+        $this->assertTrue(model_settings::is_files_enabled());
+        $this->assertFalse(model_settings::is_audio_enabled());
+
+        set_config('files_enabled', 0, 'local_jedomi');
+        set_config('audio_enabled', 1, 'local_jedomi');
+        $this->assertFalse(model_settings::is_files_enabled());
+        $this->assertTrue(model_settings::is_audio_enabled());
+    }
+
+    /**
+     * M6: the 2026110301 upgrade step saves the defaults of the new settings and removes docservice_url.
+     */
+    public function test_upgrade_saves_media_defaults_and_removes_docservice_url(): void {
+        $this->resetAfterTest();
+        $this->load_upgrade_script();
+        set_config('version', 2026110300, 'local_jedomi');
+        set_config('docservice_url', 'http://localhost:8000', 'local_jedomi');
+        unset_config('files_enabled', 'local_jedomi');
+        unset_config('audio_enabled', 'local_jedomi');
+        unset_config('vision_model', 'local_jedomi');
+        unset_config('audio_model', 'local_jedomi');
+
+        $this->assertTrue(xmldb_local_jedomi_upgrade(2026110300));
+
+        $this->assertSame('1', get_config('local_jedomi', 'files_enabled'));
+        $this->assertSame('0', get_config('local_jedomi', 'audio_enabled'));
+        $this->assertSame(model_settings::DEFAULT_VISION_MODEL, get_config('local_jedomi', 'vision_model'));
+        $this->assertSame(model_settings::DEFAULT_AUDIO_MODEL, get_config('local_jedomi', 'audio_model'));
+        $this->assertFalse(get_config('local_jedomi', 'docservice_url'));
+    }
+
+    /**
+     * M6: the upgrade step keeps values an administrator already saved.
+     */
+    public function test_upgrade_keeps_saved_media_settings(): void {
+        $this->resetAfterTest();
+        $this->load_upgrade_script();
+        set_config('version', 2026110300, 'local_jedomi');
+        set_config('files_enabled', 0, 'local_jedomi');
+        set_config('audio_enabled', 1, 'local_jedomi');
+        set_config('vision_model', 'jedomi/zai-org/GLM-5.3-Flash', 'local_jedomi');
+        set_config('audio_model', 'jedomi/openai/whisper-large-v3-turbo', 'local_jedomi');
+
+        $this->assertTrue(xmldb_local_jedomi_upgrade(2026110300));
+
+        $this->assertSame('0', get_config('local_jedomi', 'files_enabled'));
+        $this->assertSame('1', get_config('local_jedomi', 'audio_enabled'));
+        $this->assertSame('jedomi/zai-org/GLM-5.3-Flash', get_config('local_jedomi', 'vision_model'));
+        $this->assertSame('jedomi/openai/whisper-large-v3-turbo', get_config('local_jedomi', 'audio_model'));
     }
 }

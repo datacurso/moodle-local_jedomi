@@ -376,5 +376,12 @@ function xmldb_local_jedomi_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2026110300, 'local', 'jedomi');
     }
 
+    if ($oldversion < 2026110301) {
+        // Files and images keep working (now through the vision model), audio stays off until an
+        // administrator turns it on, and the vision model replaces the document-to-image service.
+        \local_jedomi\ai\model_settings::apply_media_defaults();
+        upgrade_plugin_savepoint(true, 2026110301, 'local', 'jedomi');
+    }
+
     return true;
 }

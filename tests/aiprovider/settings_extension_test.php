@@ -42,7 +42,10 @@ final class settings_extension_test extends \advanced_testcase {
             'component' => 'local_jedomi',
             'enabled' => 1,
             'model' => model_settings::DEFAULT_MODEL,
-            'docservice_url' => 'https://docs.example.com/convert',
+            'files_enabled' => 1,
+            'vision_model' => model_settings::DEFAULT_VISION_MODEL,
+            'audio_enabled' => 0,
+            'audio_model' => model_settings::DEFAULT_AUDIO_MODEL,
             'max_tokens' => '8000',
         ], $overrides);
     }
@@ -60,7 +63,7 @@ final class settings_extension_test extends \advanced_testcase {
     }
 
     /**
-     * S5: the provider form shows "Enabled" plus the model, document service URL and max tokens fields.
+     * M6: the provider form shows "Enabled", the chat model, both switches with their models and max tokens.
      *
      * @return void
      */
@@ -73,10 +76,20 @@ final class settings_extension_test extends \advanced_testcase {
 
         $this->assertStringContainsString('name="enabled"', $html);
         $this->assertStringContainsString('name="model"', $html);
-        $this->assertStringContainsString('name="docservice_url"', $html);
-        $this->assertStringContainsString('name="max_tokens"', $html);
-        foreach (array_keys(model_settings::get_available_models()) as $model) {
-            $this->assertStringContainsString('value="' . s($model) . '"', $html);
+        $this->assertStringNotContainsString('docservice_url', $html);
+        $order = [];
+        foreach (['enabled', 'model', 'files_enabled', 'vision_model', 'audio_enabled', 'audio_model', 'max_tokens'] as $name) {
+            $position = strpos($html, 'name="' . $name . '"');
+            $this->assertNotFalse($position, "Field {$name} must be rendered");
+            $order[] = $position;
+        }
+        $sorted = $order;
+        sort($sorted);
+        $this->assertSame($sorted, $order, 'The fields must be in the documented order');
+        foreach (model_settings::CAPABILITIES as $capability) {
+            foreach (array_keys(model_settings::get_available_models($capability)) as $model) {
+                $this->assertStringContainsString('value="' . s($model) . '"', $html);
+            }
         }
     }
 
@@ -91,8 +104,11 @@ final class settings_extension_test extends \advanced_testcase {
         $form = new plugin_settings_form(null, ['component' => 'local_jedomi']);
 
         $this->assertSame([], $form->validation($this->valid_data(), []));
-        $this->assertSame([], $form->validation($this->valid_data(['docservice_url' => '']), []));
-        $this->assertSame([], $form->validation($this->valid_data(['docservice_url' => 'http://localhost:8000']), []));
+        $this->assertSame([], $form->validation($this->valid_data(['audio_enabled' => 1]), []));
+        // A switch that is off does not need a valid model.
+        $this->assertSame([], $form->validation($this->valid_data([
+            'files_enabled' => 0, 'vision_model' => '', 'audio_enabled' => 0, 'audio_model' => 'jedomi/acme/x',
+        ]), []));
     }
 
     /**
@@ -107,35 +123,6 @@ final class settings_extension_test extends \advanced_testcase {
 
         $this->assertArrayHasKey('model', $errors);
         $this->assertSame(get_string('error_invalid_model', 'local_jedomi'), $errors['model']);
-    }
-
-    /**
-     * S5: a document service URL that is not a web URL is rejected.
-     *
-     * @dataProvider bad_url_provider
-     * @param string $url Submitted URL.
-     * @return void
-     */
-    public function test_validation_rejects_bad_docservice_url(string $url): void {
-        $extension = new settings_extension();
-
-        $errors = $extension->validate($this->valid_data(['docservice_url' => $url]));
-
-        $this->assertSame(['docservice_url' => get_string('error_invalid_docservice_url', 'local_jedomi')], $errors);
-    }
-
-    /**
-     * URLs the document service field must reject.
-     *
-     * @return array<string, array{0: string}>
-     */
-    public static function bad_url_provider(): array {
-        return [
-            'not a url' => ['not a url'],
-            'ftp scheme' => ['ftp://docs.example.com'],
-            'javascript' => ['javascript:alert(1)'],
-            'no host' => ['http://'],
-        ];
     }
 
     /**
@@ -210,30 +197,22 @@ final class settings_extension_test extends \advanced_testcase {
         plugin_settings_form::save('local_jedomi', (object) $this->valid_data([
             'enabled' => 0,
             'model' => 'jedomi/zai-org/GLM-5.3-Flash',
-            'docservice_url' => '  https://docs.example.com/convert  ',
+            'files_enabled' => 0,
+            'vision_model' => 'jedomi/Qwen/Qwen3-VL-235B-A22B-Instruct',
+            'audio_enabled' => 1,
+            'audio_model' => '  jedomi/openai/whisper-large-v3-turbo  ',
             'max_tokens' => 4096,
         ]));
 
         $this->assertSame('0', get_config('aiprovider_datacurso', 'plugin_enabled_local_jedomi'));
         $this->assertFalse(plugin_settings::is_enabled('local_jedomi'));
         $this->assertSame('jedomi/zai-org/GLM-5.3-Flash', get_config('local_jedomi', 'model'));
-        $this->assertSame('https://docs.example.com/convert', get_config('local_jedomi', 'docservice_url'));
+        $this->assertSame('0', get_config('local_jedomi', 'files_enabled'));
+        $this->assertSame('jedomi/Qwen/Qwen3-VL-235B-A22B-Instruct', get_config('local_jedomi', 'vision_model'));
+        $this->assertSame('1', get_config('local_jedomi', 'audio_enabled'));
+        $this->assertSame('jedomi/openai/whisper-large-v3-turbo', get_config('local_jedomi', 'audio_model'));
         $this->assertSame('4096', get_config('local_jedomi', 'max_tokens'));
         $this->assertFalse(get_config('local_jedomi', 'enabled'));
-    }
-
-    /**
-     * S5: an empty document service URL is saved empty so the readers keep their fallback.
-     *
-     * @return void
-     */
-    public function test_save_keeps_empty_docservice_url(): void {
-        $this->resetAfterTest();
-        set_config('docservice_url', 'http://old.example.com', 'local_jedomi');
-
-        (new settings_extension())->save((object) $this->valid_data(['docservice_url' => '']));
-
-        $this->assertSame('', get_config('local_jedomi', 'docservice_url'));
     }
 
     /**
@@ -264,13 +243,19 @@ final class settings_extension_test extends \advanced_testcase {
     public function test_get_data_reflects_current_config(): void {
         $this->resetAfterTest();
         set_config('model', 'jedomi/XiaomiMiMo/MiMo-V2.6-Flash', 'local_jedomi');
-        set_config('docservice_url', 'http://docs.local:8000', 'local_jedomi');
+        set_config('files_enabled', 0, 'local_jedomi');
+        set_config('vision_model', 'jedomi/zai-org/GLM-5.3-Flash', 'local_jedomi');
+        set_config('audio_enabled', 1, 'local_jedomi');
+        set_config('audio_model', 'jedomi/mistralai/Voxtral-Mini-3B-2507', 'local_jedomi');
         set_config('max_tokens', 9000, 'local_jedomi');
         set_config('plugin_enabled_local_jedomi', '0', 'aiprovider_datacurso');
 
         $this->assertSame([
             'model' => 'jedomi/XiaomiMiMo/MiMo-V2.6-Flash',
-            'docservice_url' => 'http://docs.local:8000',
+            'files_enabled' => 0,
+            'vision_model' => 'jedomi/zai-org/GLM-5.3-Flash',
+            'audio_enabled' => 1,
+            'audio_model' => 'jedomi/mistralai/Voxtral-Mini-3B-2507',
             'max_tokens' => 9000,
         ], (new settings_extension())->get_data());
 
@@ -288,13 +273,129 @@ final class settings_extension_test extends \advanced_testcase {
     public function test_get_data_uses_effective_defaults(): void {
         $this->resetAfterTest();
         set_config('model', 'jedomi/acme/unknown-model', 'local_jedomi');
-        unset_config('docservice_url', 'local_jedomi');
         unset_config('max_tokens', 'local_jedomi');
+        unset_config('files_enabled', 'local_jedomi');
+        unset_config('audio_enabled', 'local_jedomi');
+        unset_config('vision_model', 'local_jedomi');
+        set_config('audio_model', 'jedomi/acme/unknown-model', 'local_jedomi');
 
         $this->assertSame([
             'model' => model_settings::DEFAULT_MODEL,
-            'docservice_url' => '',
+            'files_enabled' => 1,
+            'vision_model' => model_settings::DEFAULT_VISION_MODEL,
+            'audio_enabled' => 0,
+            'audio_model' => model_settings::DEFAULT_AUDIO_MODEL,
             'max_tokens' => model_settings::DEFAULT_MAX_TOKENS,
         ], (new settings_extension())->get_data());
+    }
+
+    /**
+     * M6: the vision and audio selectors have no empty option and show the default model while their switch is off.
+     *
+     * @return void
+     */
+    public function test_media_selectors_are_never_empty(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        unset_config('vision_model', 'local_jedomi');
+        unset_config('audio_model', 'local_jedomi');
+        set_config('audio_enabled', 0, 'local_jedomi');
+
+        $form = new plugin_settings_form(null, ['component' => 'local_jedomi']);
+        $form->set_data(plugin_settings_form::current_data('local_jedomi'));
+        $html = $form->render();
+
+        foreach (['vision_model' => model_settings::DEFAULT_VISION_MODEL,
+                'audio_model' => model_settings::DEFAULT_AUDIO_MODEL] as $name => $default) {
+            $this->assertSame(1, preg_match('/<select[^>]*name="' . $name . '"[^>]*>(.*?)<\/select>/s', $html, $match));
+            $this->assertStringNotContainsString('value=""', $match[1], "{$name} must not have an empty option");
+            $this->assertMatchesRegularExpression('/value="' . preg_quote(s($default), '/') . '"\s+selected/', $match[1]);
+        }
+    }
+
+    /**
+     * The feature switches show a label in the label column and their action next to the checkbox.
+     *
+     * @return void
+     */
+    public function test_switches_have_a_label_and_a_description(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+
+        $mform = new \MoodleQuickForm('jedomitest', 'post', '');
+        (new settings_extension())->add_fields($mform);
+
+        $files = $mform->getElement('files_enabled');
+        $this->assertSame(get_string('files_processing', 'local_jedomi'), $files->getLabel());
+        $this->assertSame(get_string('files_enabled', 'local_jedomi'), $files->getText());
+
+        $audio = $mform->getElement('audio_enabled');
+        $this->assertSame(get_string('audio_processing', 'local_jedomi'), $audio->getLabel());
+        $this->assertSame(get_string('audio_enabled', 'local_jedomi'), $audio->getText());
+    }
+
+    /**
+     * M6: the vision and audio models are hidden while their switch is off.
+     *
+     * @return void
+     */
+    public function test_media_models_are_hidden_when_their_switch_is_off(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+
+        $mform = new \MoodleQuickForm('jedomitest', 'post', '');
+        (new settings_extension())->add_fields($mform);
+
+        $hideifs = (new \ReflectionProperty(\MoodleQuickForm::class, '_hideifs'))->getValue($mform);
+        $this->assertSame(['vision_model'], $hideifs['files_enabled']['notchecked']['1']);
+        $this->assertSame(['audio_model'], $hideifs['audio_enabled']['notchecked']['1']);
+    }
+
+    /**
+     * M6: with its switch on, an empty or unlisted vision or audio model is rejected.
+     *
+     * @dataProvider bad_media_model_provider
+     * @param string $switch Switch field.
+     * @param string $field Model field.
+     * @param string $model Submitted model.
+     * @return void
+     */
+    public function test_validation_rejects_bad_media_model(string $switch, string $field, string $model): void {
+        $errors = (new settings_extension())->validate($this->valid_data([$switch => 1, $field => $model]));
+
+        $this->assertSame([$field => get_string('error_invalid_model', 'local_jedomi')], $errors);
+    }
+
+    /**
+     * Vision and audio models that must be rejected when their switch is on.
+     *
+     * @return array<string, array{0: string, 1: string, 2: string}>
+     */
+    public static function bad_media_model_provider(): array {
+        return [
+            'empty vision' => ['files_enabled', 'vision_model', ''],
+            'audio model as vision' => ['files_enabled', 'vision_model', 'jedomi/Qwen/Qwen3-ASR-1.7B'],
+            'unknown vision' => ['files_enabled', 'vision_model', 'jedomi/acme/unknown-model'],
+            'empty audio' => ['audio_enabled', 'audio_model', ''],
+            'chat model as audio' => ['audio_enabled', 'audio_model', model_settings::DEFAULT_MODEL],
+        ];
+    }
+
+    /**
+     * M6: a switch that is off keeps a valid model saved, so turning it on later shows a real model.
+     *
+     * @return void
+     */
+    public function test_save_with_switch_off_keeps_a_valid_model(): void {
+        $this->resetAfterTest();
+
+        (new settings_extension())->save((object) $this->valid_data([
+            'files_enabled' => 0, 'vision_model' => '', 'audio_enabled' => 0, 'audio_model' => 'jedomi/acme/x',
+        ]));
+
+        $this->assertSame('0', get_config('local_jedomi', 'files_enabled'));
+        $this->assertSame(model_settings::DEFAULT_VISION_MODEL, get_config('local_jedomi', 'vision_model'));
+        $this->assertSame('0', get_config('local_jedomi', 'audio_enabled'));
+        $this->assertSame(model_settings::DEFAULT_AUDIO_MODEL, get_config('local_jedomi', 'audio_model'));
     }
 }

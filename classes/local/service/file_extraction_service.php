@@ -17,14 +17,16 @@
 namespace local_jedomi\local\service;
 
 use aiprovider_datacurso\httpclient\ai_services_api;
-use local_jedomi\ai\error_message;
-use local_jedomi\ai\provider_api;
+use local_jedomi\ai\model_settings;
 
 /**
  * Text of a file attached in the web chat, read by the AI service through the Datacurso provider.
  *
- * The upload is kept as a temporary draft file of the user only while it is sent, so the
- * provider's upload_file() can read it from the file storage API.
+ * Documents (.pdf, .csv, .txt, .md, and Word and PowerPoint .doc, .docx, .ppt, .pptx) go to
+ * POST /jedomi/v1/files/extract, which reads their text for free; a PDF without text (scanned) is read
+ * again by the vision model through files/read. Audio
+ * files and microphone recordings are transcribed by the audio model. Each kind is refused when its
+ * feature is off in the Jedomi settings.
  *
  * @package    local_jedomi
  * @copyright  2026 Jedomi Project
@@ -34,8 +36,11 @@ class file_extraction_service {
     /** @var string AI service endpoint. */
     public const ENDPOINT = '/jedomi/v1/files/extract';
 
-    /** @var string[] Accepted file extensions. */
-    public const EXTENSIONS = ['pdf', 'csv', 'txt', 'md'];
+    /** @var string[] Word and PowerPoint extensions, read as text by the AI service without a model. */
+    public const OFFICE_EXTENSIONS = ['doc', 'docx', 'ppt', 'pptx'];
+
+    /** @var string[] Accepted document extensions. */
+    public const EXTENSIONS = ['pdf', 'csv', 'txt', 'md', 'doc', 'docx', 'ppt', 'pptx'];
 
     /** @var int Total request timeout, in seconds. */
     private const TIMEOUT = 120;
@@ -47,50 +52,74 @@ class file_extraction_service {
         422 => ['file_no_text', 'file_error_no_text'],
     ];
 
+    /** @var array<string, array{0: string, 1: string}> Code and message string for each local error. */
+    private const LOCAL_ERRORS = [
+        'file_error_unsupported' => ['file_unsupported', 'file_error_unsupported'],
+        'files_error_disabled' => ['files_disabled', 'files_error_disabled'],
+    ];
+
     /**
-     * Read the text of an uploaded file.
+     * Read the text of an uploaded document, or the transcription of an uploaded audio file.
      *
      * @param int $userid User who uploaded the file.
      * @param string $path Path of the uploaded file on disk.
      * @param string $filename Original file name.
      * @param ai_services_api|null $api Provider client; null for Jedomi's own.
-     * @return array{text: string, format: string, pages: int, rows: int, columns: int, chars: int, truncated: bool}
-     * @throws \moodle_exception file_error_unsupported, or any provider error.
+     * @return array{text: string, format: string, pages: int, rows: int, columns: int, chars: int, seconds: int,
+     *     truncated: bool}
+     * @throws \moodle_exception file_error_unsupported, files_error_disabled, audio_error_*, or any provider error.
      */
     public static function extract_upload(int $userid, string $path, string $filename, ?ai_services_api $api = null): array {
         $filename = clean_param($filename, PARAM_FILE);
+        if ($filename !== '' && audio_service::is_supported($filename)) {
+            $audio = audio_service::transcribe_upload($userid, $path, $filename, $api);
+            return self::result(['text' => $audio['text'], 'format' => 'audio',
+                'seconds' => (int) round($audio['duration_seconds'])]);
+        }
+
         $extension = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
         if ($filename === '' || !in_array($extension, self::EXTENSIONS, true) || !is_readable($path)) {
             throw new \moodle_exception('file_error_unsupported', 'local_jedomi');
         }
-
-        $fs = get_file_storage();
-        $file = $fs->create_file_from_pathname([
-            'contextid' => \context_user::instance($userid)->id,
-            'component' => 'user',
-            'filearea' => 'draft',
-            'itemid' => file_get_unused_draft_itemid(),
-            'filepath' => '/',
-            'filename' => $filename,
-            'userid' => $userid,
-        ], $path);
-
-        try {
-            $response = ($api ?? new provider_api(self::TIMEOUT))->upload_file(self::ENDPOINT, $file);
-        } finally {
-            $file->delete();
+        if (!model_settings::is_files_enabled()) {
+            throw new \moodle_exception('files_error_disabled', 'local_jedomi');
         }
 
-        $response = is_array($response) ? $response : [];
-        return [
-            'text' => (string) ($response['text'] ?? ''),
-            'format' => clean_param((string) ($response['format'] ?? 'text'), PARAM_ALPHA),
-            'pages' => (int) ($response['pages'] ?? 0),
-            'rows' => (int) ($response['rows'] ?? 0),
-            'columns' => (int) ($response['columns'] ?? 0),
-            'chars' => (int) ($response['chars'] ?? 0),
-            'truncated' => !empty($response['truncated']),
-        ];
+        try {
+            $response = provider_upload_service::send($userid, $path, $filename, self::ENDPOINT, [], self::TIMEOUT, $api);
+        } catch (\moodle_exception $e) {
+            if ($extension !== 'pdf' || provider_upload_service::http_status($e) !== 422) {
+                throw $e;
+            }
+            // A scanned PDF has no text: its pages are read by the vision model.
+            $read = vision_service::read_upload($userid, $path, $filename, '', $api);
+            return self::result(['text' => $read['text'], 'format' => 'pdf', 'pages' => (int) $read['pages_total']]);
+        }
+
+        return self::result($response);
+    }
+
+    /**
+     * Whether a file is a Word or PowerPoint document.
+     *
+     * @param string $filename File name.
+     * @return bool
+     */
+    public static function is_office_document(string $filename): bool {
+        return in_array(strtolower(pathinfo($filename, PATHINFO_EXTENSION)), self::OFFICE_EXTENSIONS, true);
+    }
+
+    /**
+     * Message for the chat model with the text of an attached file: the question, the file name and its text.
+     *
+     * @param string $question Question of the user; without one, a summary is asked.
+     * @param string $filename Name of the file.
+     * @param string $text Text read from the file.
+     * @return string
+     */
+    public static function compose_message(string $question, string $filename, string $text): string {
+        $question = trim($question) !== '' ? trim($question) : get_string('analyze_file', 'local_jedomi');
+        return $question . "\n\n" . get_string('attached_file_info', 'local_jedomi', $filename) . "\n" . trim($text);
     }
 
     /**
@@ -100,14 +129,32 @@ class file_extraction_service {
      * @return array{code: string, message: string}
      */
     public static function error_for(\Throwable $e): array {
-        if ($e instanceof \moodle_exception && $e->module === 'local_jedomi' && $e->errorcode === 'file_error_unsupported') {
-            return ['code' => 'file_unsupported', 'message' => get_string('file_error_unsupported', 'local_jedomi')];
+        if ($e instanceof \moodle_exception && $e->module === 'local_jedomi' && str_starts_with($e->errorcode, 'audio_error_')) {
+            return audio_service::error_for($e);
         }
-        if ($e instanceof \moodle_exception && $e->module === 'aiprovider_datacurso' && $e->errorcode === 'httperror'
-                && isset(self::SERVICE_ERRORS[(int) $e->a])) {
-            [$code, $key] = self::SERVICE_ERRORS[(int) $e->a];
-            return ['code' => $code, 'message' => get_string($key, 'local_jedomi')];
+        if ($e instanceof \moodle_exception && $e->module === 'local_jedomi' && str_starts_with($e->errorcode, 'image_error_')) {
+            return vision_service::error_for($e);
         }
-        return error_message::from_exception($e);
+        return provider_upload_service::error_for($e, self::SERVICE_ERRORS, self::LOCAL_ERRORS);
+    }
+
+    /**
+     * Result with every field and its type.
+     *
+     * @param array $response Decoded answer of the AI service, or the fields already known.
+     * @return array{text: string, format: string, pages: int, rows: int, columns: int, chars: int, seconds: int,
+     *     truncated: bool}
+     */
+    private static function result(array $response): array {
+        return [
+            'text' => (string) ($response['text'] ?? ''),
+            'format' => clean_param((string) ($response['format'] ?? 'text'), PARAM_ALPHA),
+            'pages' => (int) ($response['pages'] ?? 0),
+            'rows' => (int) ($response['rows'] ?? 0),
+            'columns' => (int) ($response['columns'] ?? 0),
+            'chars' => (int) ($response['chars'] ?? 0),
+            'seconds' => (int) ($response['seconds'] ?? 0),
+            'truncated' => !empty($response['truncated']),
+        ];
     }
 }

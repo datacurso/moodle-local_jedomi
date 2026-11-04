@@ -61,6 +61,10 @@ function local_jedomi_get_sidebar_config(): array {
     return [
         'chatproxy_url' => $CFG->wwwroot . '/local/jedomi/chatproxy.php',
         'extract_file_url' => $CFG->wwwroot . '/local/jedomi/extract_file.php',
+        'read_file_url' => $CFG->wwwroot . '/local/jedomi/read_file.php',
+        // Hidden features are also refused by the server.
+        'files_enabled' => \local_jedomi\ai\model_settings::is_files_enabled(),
+        'audio_enabled' => \local_jedomi\ai\model_settings::is_audio_enabled(),
         'feedback_url'  => $CFG->wwwroot . '/local/jedomi/ajax/feedback.php',
         'user_name'     => fullname($USER),
         'user_role'     => local_jedomi_get_user_role(),
@@ -79,6 +83,8 @@ function local_jedomi_get_sidebar_config(): array {
             'full_width'        => get_string('full_width', 'local_jedomi'),
             // Input.
             'attach'            => get_string('attach', 'local_jedomi'),
+            'attach_audio'      => get_string('attach_audio', 'local_jedomi'),
+            'audio_file'        => get_string('audio_file', 'local_jedomi'),
             'attach_file'       => get_string('attach_file', 'local_jedomi'),
             'attach_image'      => get_string('attach_image', 'local_jedomi'),
             'file'              => get_string('file', 'local_jedomi'),
@@ -98,6 +104,7 @@ function local_jedomi_get_sidebar_config(): array {
             'attached_file_info'   => get_string('attached_file_info', 'local_jedomi'),
             'attached_image'       => get_string('attached_image', 'local_jedomi'),
             'csv_download'         => get_string('csv_download', 'local_jedomi'),
+            'file_audio'           => get_string('file_audio', 'local_jedomi'),
             'file_csv'             => get_string('file_csv', 'local_jedomi'),
             'file_loaded'          => get_string('file_loaded', 'local_jedomi'),
             'file_loaded_hint'     => get_string('file_loaded_hint', 'local_jedomi'),
@@ -105,6 +112,7 @@ function local_jedomi_get_sidebar_config(): array {
             'file_process_error'   => get_string('file_process_error', 'local_jedomi'),
             'file_text'            => get_string('file_text', 'local_jedomi'),
             'processing_file'      => get_string('processing_file', 'local_jedomi'),
+            'reading_image'        => get_string('reading_image', 'local_jedomi'),
             // Footer / disclaimer.
             'ai_disclaimer'     => get_string('ai_disclaimer', 'local_jedomi'),
             'drop_files_here'   => get_string('drop_files_here', 'local_jedomi'),
@@ -159,6 +167,16 @@ function local_jedomi_get_sidebar_config(): array {
             'mic_error'             => get_string('mic_error', 'local_jedomi'),
             'silence_detected'      => get_string('silence_detected', 'local_jedomi'),
             'transcribing'          => get_string('transcribing', 'local_jedomi'),
+            'audio_error_unreadable' => get_string('audio_error_unreadable', 'local_jedomi'),
+            // Voice message bar.
+            'voice_cancel'          => get_string('voice_cancel', 'local_jedomi'),
+            'voice_delete'          => get_string('voice_delete', 'local_jedomi'),
+            'voice_message'         => get_string('voice_message', 'local_jedomi'),
+            'voice_pause'           => get_string('voice_pause', 'local_jedomi'),
+            'voice_play'            => get_string('voice_play', 'local_jedomi'),
+            'voice_recording'       => get_string('voice_recording', 'local_jedomi'),
+            'voice_send'            => get_string('voice_send', 'local_jedomi'),
+            'voice_stop'            => get_string('voice_stop', 'local_jedomi'),
             'waiting_voice'         => get_string('waiting_voice', 'local_jedomi'),
             // Confirmation system.
             'confirm_type_to_proceed' => get_string('confirm_type_to_proceed', 'local_jedomi'),
@@ -752,34 +770,9 @@ function local_jedomi_get_tool_definitions(string $role): array {
         ];
     }
 
-    // Document reader — available for teacher / editingteacher and above.
-    if (in_array($role, ['teacher', 'editingteacher', 'manager', 'admin'], true)) {
-        $tools[] = [
-            'type' => 'function',
-            'function' => [
-                'name'        => 'document_read',
-                'description' => get_string('tool_document_read_desc', 'local_jedomi'),
-                'parameters'  => [
-                    'type'       => 'object',
-                    'properties' => [
-                        'cmid' => [
-                            'type'        => 'integer',
-                            'description' => get_string('tool_document_read_cmid', 'local_jedomi'),
-                        ],
-                        'dpi' => [
-                            'type'        => 'integer',
-                            'description' => get_string('tool_document_read_dpi', 'local_jedomi'),
-                        ],
-                        'fmt' => [
-                            'type'        => 'string',
-                            'enum'        => ['JPEG', 'PNG'],
-                            'description' => get_string('tool_document_read_fmt', 'local_jedomi'),
-                        ],
-                    ],
-                    'required' => ['cmid'],
-                ],
-            ],
-        ];
+    // Document reader — teacher / editingteacher and above, while file and image processing is on.
+    if (\local_jedomi\agent\tool\document_read_tool::is_offered($role)) {
+        $tools[] = \local_jedomi\agent\tool\document_read_tool::definition();
     }
 
     return $tools;

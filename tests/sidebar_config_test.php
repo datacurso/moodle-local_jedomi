@@ -70,4 +70,32 @@ final class sidebar_config_test extends \advanced_testcase {
             $this->assertSame(get_string($key, 'local_jedomi'), $strings[$key] ?? null, $key);
         }
     }
+
+    /**
+     * M8, M9: the sidebar receives the feature switches, the read URL and the strings of images and audio.
+     *
+     * @return void
+     */
+    public function test_sidebar_config_has_the_feature_switches(): void {
+        global $PAGE;
+        $this->resetAfterTest();
+        $this->setUser($this->getDataGenerator()->create_user());
+        $PAGE->set_url('/local/jedomi/ajax/sidebar_config.php');
+
+        $config = local_jedomi_get_sidebar_config();
+        $this->assertTrue($config['files_enabled']);
+        $this->assertFalse($config['audio_enabled']);
+        $this->assertStringEndsWith('/local/jedomi/read_file.php', $config['read_file_url']);
+        foreach (['attach_audio', 'audio_file', 'file_audio', 'reading_image', 'listening', 'transcribing', 'mic_error',
+                'voice_input', 'voice_message', 'voice_recording', 'voice_cancel', 'voice_stop', 'voice_play', 'voice_pause',
+                'voice_delete', 'voice_send', 'audio_error_unreadable'] as $key) {
+            $this->assertSame(get_string($key, 'local_jedomi'), $config['strings'][$key] ?? null, $key);
+        }
+
+        set_config('files_enabled', 0, 'local_jedomi');
+        set_config('audio_enabled', 1, 'local_jedomi');
+        $config = local_jedomi_get_sidebar_config();
+        $this->assertFalse($config['files_enabled']);
+        $this->assertTrue($config['audio_enabled']);
+    }
 }

@@ -15,7 +15,7 @@
 // along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
 
 /**
- * Document Read tool — read PDF files from course activities and convert to images.
+ * Document Read tool — read the PDF file of a course activity as text.
  *
  * @package    local_jedomi
  * @copyright  2026 Jedomi Project
@@ -24,11 +24,19 @@
 
 namespace local_jedomi\agent\tool;
 
+use local_jedomi\ai\model_settings;
+use local_jedomi\local\service\vision_service;
+
 /**
- * Agent tool that extracts the first PDF from a course module and sends
- * it to the external document service to be converted into page images.
+ * Agent tool that reads the first PDF of a course module through POST /jedomi/v1/files/read.
+ *
+ * The AI service returns only text: pages with text are read directly and scanned pages, tables
+ * and diagrams are read by the vision model. Offered only while file and image processing is on.
  */
 class document_read_tool implements agent_tool {
+    /** @var string[] Roles that can read activity documents. */
+    private const ALLOWED_ROLES = ['teacher', 'editingteacher', 'manager', 'admin'];
+
     /**
      * Get the tool name used in AI tool calls.
      *
@@ -41,9 +49,18 @@ class document_read_tool implements agent_tool {
     /**
      * Build the OpenAI-compatible function definition for this tool.
      *
-     * @return array Tool definition with a required cmid and optional dpi and image format.
+     * @return array Tool definition with a required cmid and optional pages.
      */
     public function get_definition(): array {
+        return self::definition();
+    }
+
+    /**
+     * OpenAI-compatible function definition of document_read, shared by every channel.
+     *
+     * @return array
+     */
+    public static function definition(): array {
         return [
             'type' => 'function',
             'function' => [
@@ -56,13 +73,9 @@ class document_read_tool implements agent_tool {
                             'type' => 'integer',
                             'description' => get_string('tool_document_read_cmid', 'local_jedomi'),
                         ],
-                        'dpi' => [
-                            'type' => 'integer',
-                            'description' => get_string('tool_document_read_dpi', 'local_jedomi'),
-                        ],
-                        'fmt' => [
+                        'pages' => [
                             'type' => 'string',
-                            'description' => get_string('tool_document_read_fmt', 'local_jedomi'),
+                            'description' => get_string('tool_document_read_pages', 'local_jedomi'),
                         ],
                     ],
                     'required' => ['cmid'],
@@ -72,104 +85,84 @@ class document_read_tool implements agent_tool {
     }
 
     /**
-     * Locate a PDF in the module context, upload it to the document service, and return the rendered pages.
+     * Whether the tool can be offered to a role.
      *
-     * Requires a teacher-or-above role and course view capability. Fails with a JSON
-     * error when no PDF exists, the service is unreachable, or conversion fails.
+     * @param string $role Jedomi role.
+     * @return bool
+     */
+    public static function is_offered(string $role): bool {
+        return model_settings::is_files_enabled() && in_array($role, self::ALLOWED_ROLES, true);
+    }
+
+    /**
+     * Read the PDF of the module of the current user.
      *
-     * @param \stdClass $params Decoded tool arguments; requires 'cmid', accepts 'dpi' (default 150) and 'fmt' (JPEG|PNG).
-     * @return string JSON-encoded page images with metadata, or an error message.
+     * @param \stdClass $params Decoded tool arguments; requires 'cmid', accepts 'pages' (such as "1,3-5").
+     * @return string JSON-encoded text with its pages, or an error message.
      */
     public function execute(\stdClass $params): string {
-        global $CFG, $DB;
+        return self::read((int) ($params->cmid ?? 0), \local_jedomi_get_user_role(), (string) ($params->pages ?? ''));
+    }
 
-        $cmid = (int) ($params->cmid ?? 0);
-        $dpi  = (int) ($params->dpi ?? 150);
-        $fmt  = in_array($params->fmt ?? '', ['JPEG', 'PNG'], true) ? $params->fmt : 'JPEG';
+    /**
+     * Locate a PDF in the module context and return its text read by the AI service.
+     *
+     * Requires a teacher-or-above role and course view capability.
+     *
+     * @param int $cmid Course module id.
+     * @param string $role Jedomi role of the user.
+     * @param string $pages Pages to read, such as "1,3-5"; empty for the whole document.
+     * @return string JSON-encoded {cmid, filename, pages_total, pages_vision, pages_skipped, text}, or {error}.
+     */
+    public static function read(int $cmid, string $role, string $pages = ''): string {
+        global $DB;
 
+        if (!model_settings::is_files_enabled()) {
+            return json_encode(['error' => get_string('files_error_disabled', 'local_jedomi')]);
+        }
         if ($cmid <= 0) {
             return json_encode(['error' => 'cmid is required']);
         }
-
-        // Role check — teacher+.
-        $role = \local_jedomi_get_user_role();
-        $allowed = ['teacher', 'editingteacher', 'manager', 'admin'];
-        if (!in_array($role, $allowed, true)) {
+        if (!in_array($role, self::ALLOWED_ROLES, true)) {
             return json_encode(['error' => 'permission_denied']);
-        }
-
-        $serviceurl = rtrim((string) get_config('local_jedomi', 'docservice_url'), '/');
-        if (empty($serviceurl)) {
-            return json_encode(['error' => 'document service not configured']);
         }
 
         try {
             $context = \context_module::instance($cmid);
-            $cm      = get_coursemodule_from_id('', $cmid, 0, false, MUST_EXIST);
+            get_coursemodule_from_id('', $cmid, 0, false, MUST_EXIST);
             require_capability('moodle/course:view', $context->get_course_context());
 
-            // Find all PDFs in this module context.
-            $sql = "SELECT id, filename, filepath, mimetype, component, filearea, itemid
+            $sql = "SELECT id
                       FROM {files}
                      WHERE contextid = ?
                        AND filename != '.'
-                       AND mimetype = 'application/pdf'";
-            $rows = $DB->get_records_sql($sql, [$context->id]);
-
-            if (empty($rows)) {
+                       AND mimetype = 'application/pdf'
+                  ORDER BY id";
+            $ids = $DB->get_fieldset_sql($sql, [$context->id]);
+            if (empty($ids)) {
                 return json_encode(['error' => 'no PDF files found in this activity']);
             }
-
-            $row  = reset($rows);
-            $fs   = get_file_storage();
-            $file = $fs->get_file_by_id($row->id);
+            $file = get_file_storage()->get_file_by_id((int) reset($ids));
             if (!$file) {
                 return json_encode(['error' => 'file not found in storage']);
             }
-
-            $filename = $file->get_filename();
-
-            // Send to document-to-image service.
-            $tmpdir  = make_temp_directory('jedomi/docread');
-            $tmppath = $tmpdir . '/' . $filename;
-            $file->copy_content_to($tmppath);
-
-            $ch = curl_init($serviceurl . '/api/v1/pdf/to-images?dpi=' . $dpi . '&fmt=' . $fmt);
-            curl_setopt_array($ch, [
-                CURLOPT_POST           => true,
-                CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_TIMEOUT        => 120,
-                CURLOPT_POSTFIELDS     => ['file' => new \CURLFile($tmppath, 'application/pdf', $filename)],
-            ]);
-            $response = curl_exec($ch);
-            $httpcode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            $curlerr  = curl_error($ch);
-            curl_close($ch);
-
-            unlink($tmppath);
-
-            if ($curlerr) {
-                return json_encode(['error' => 'document service request failed: ' . $curlerr]);
-            }
-
-            if ($httpcode !== 200) {
-                return json_encode(['error' => 'document service returned HTTP ' . $httpcode]);
-            }
-
-            $data = json_decode($response, true);
-            if (!isset($data['pages']) || empty($data['pages'])) {
-                return json_encode(['error' => 'document service returned no pages']);
-            }
-
-            return json_encode([
-                'cmid'        => $cmid,
-                'filename'    => $filename,
-                'total_pages' => $data['total_pages'],
-                'dpi'         => $data['dpi'],
-                'pages'       => $data['pages'],
-            ]);
         } catch (\Throwable $e) {
             return json_encode(['error' => 'document read failed: ' . $e->getMessage()]);
         }
+
+        try {
+            $read = vision_service::read_stored_file($file, trim($pages));
+        } catch (\Throwable $e) {
+            return json_encode(['error' => vision_service::error_for($e)['message']], JSON_UNESCAPED_UNICODE);
+        }
+
+        return json_encode([
+            'cmid' => $cmid,
+            'filename' => $file->get_filename(),
+            'pages_total' => $read['pages_total'],
+            'pages_vision' => $read['pages_vision'],
+            'pages_skipped' => $read['pages_skipped'],
+            'text' => $read['text'],
+        ], JSON_UNESCAPED_UNICODE);
     }
 }

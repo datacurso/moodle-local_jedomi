@@ -17,7 +17,7 @@
 /**
  * Telegram webhook handler — main orchestrator.
  *
- * Routes: message (text/photo), callback_query (inline buttons), /start command.
+ * Routes: message (text, photo, document, voice or audio), callback_query (inline buttons), /start command.
  *
  * @package    local_jedomi
  * @copyright  2026 Jedomi Project
@@ -30,6 +30,10 @@ defined('MOODLE_INTERNAL') || die();
 
 require_once(__DIR__ . '/../../lib.php');
 
+use local_jedomi\ai\model_settings;
+use local_jedomi\local\service\audio_service;
+use local_jedomi\local\service\file_extraction_service;
+use local_jedomi\local\service\vision_service;
 use local_jedomi\schema\table_indexer;
 use local_jedomi\schema\ws_indexer;
 
@@ -122,7 +126,7 @@ class webhook_handler {
     }
 
     /**
-     * Handle an incoming message (text or photo).
+     * Handle an incoming message (text, photo, document, voice or audio).
      *
      * @param array $message Decoded message object from the Telegram update
      */
@@ -131,7 +135,6 @@ class webhook_handler {
 
         $chatid = self::normalise_chat_id((string) ($message['chat']['id'] ?? ''));
         $text = trim($message['text'] ?? '');
-        $photo = $message['photo'] ?? null;
 
         if ($chatid === null) {
             // Attacker-controllable value: never log it raw, never let it reach the DB.
@@ -167,7 +170,7 @@ class webhook_handler {
         // Handle /help command (always responds, even if rate-limited or unlinked).
         // Aliases: /ayuda (Spanish).
         if (in_array(strtolower(trim($text)), ['/help', '/ayuda'], true)) {
-            $client = new api_client();
+            $client = api_client::instance();
             $help = get_string('telegram_help_heading', 'local_jedomi') . "\n\n"
                   . get_string('telegram_help_start', 'local_jedomi') . "\n"
                   . get_string('telegram_help_help', 'local_jedomi') . "\n"
@@ -181,7 +184,7 @@ class webhook_handler {
         // Check and record rate limiting atomically.
         if (self::check_and_record_rate($chatid)) {
             $cooldown = manager::get_cooldown();
-            $client = new api_client();
+            $client = api_client::instance();
             $client->send_message($chatid, get_string('telegram_msg_rate_limited', 'local_jedomi', ['minutes' => $cooldown]));
             return;
         }
@@ -202,7 +205,7 @@ class webhook_handler {
                 return;
             }
             // Otherwise ask them to link first.
-            $client = new api_client();
+            $client = api_client::instance();
             $client->send_message(
                 $chatid,
                 get_string('telegram_msg_link_first', 'local_jedomi'),
@@ -213,7 +216,7 @@ class webhook_handler {
 
         // Check role permission.
         if (!self::is_user_role_allowed($link->userid)) {
-            $client = new api_client();
+            $client = api_client::instance();
             $client->send_message($chatid, get_string('telegram_msg_role_blocked', 'local_jedomi'));
             return;
         }
@@ -242,12 +245,142 @@ class webhook_handler {
             session::set_context('tool_loop_' . $chatid, ['session_gen' => time()]);
             // Get user's name so the model greets them personally.
             $firstname = $DB->get_field('user', 'firstname', ['id' => $link->userid]) ?: 'user';
-            self::proxy_to_gateway($link->userid, $chatid, "Hola, soy {$firstname}", null);
+            self::proxy_to_gateway($link->userid, $chatid, "Hola, soy {$firstname}");
+            return;
+        }
+
+        // Photos, documents and audio become text first; nothing without text reaches the AI.
+        $text = self::message_text($message, $chatid, (int) $link->userid, $text);
+        if ($text === null) {
             return;
         }
 
         // Build and forward to Gateway.
-        self::proxy_to_gateway($link->userid, $chatid, $text, $photo);
+        self::proxy_to_gateway($link->userid, $chatid, $text);
+    }
+
+    /**
+     * Text of a message for the chat model: its own text, the transcription of a voice or audio
+     * message, a photo or PDF read by the vision model, or the text of a Word or PowerPoint document
+     * (read for free), with its caption as the question.
+     *
+     * Answers the user and returns null when the message must not reach the AI: the feature is off,
+     * the file cannot be read, or the message has no text (sticker, location...).
+     *
+     * @param array $message Telegram message.
+     * @param string $chatid Telegram chat id.
+     * @param int $userid Linked Moodle user.
+     * @param string $text Text of the message.
+     * @return string|null
+     */
+    private static function message_text(array $message, string $chatid, int $userid, string $text): ?string {
+        $client = api_client::instance();
+        $caption = trim((string) ($message['caption'] ?? ''));
+        $audio = $message['voice'] ?? $message['audio'] ?? null;
+        $file = !empty($message['photo']) && is_array($message['photo']) ? end($message['photo']) : ($message['document'] ?? null);
+
+        if (is_array($audio)) {
+            if (!model_settings::is_audio_enabled()) {
+                $client->send_message($chatid, get_string('telegram_msg_audio_disabled', 'local_jedomi'));
+                return null;
+            }
+            $client->send_chat_action($chatid, 'typing');
+            $filename = isset($message['voice']) ? 'voice.ogg' : self::audio_filename($audio);
+            try {
+                $transcription = self::with_download($client, (string) ($audio['file_id'] ?? ''),
+                    static fn(string $path): array => audio_service::transcribe_upload($userid, $path, $filename));
+            } catch (\Throwable $e) {
+                $client->send_message($chatid, audio_service::error_for($e)['message']);
+                return null;
+            }
+            // The user sees what was understood before the answer.
+            $client->send_message($chatid, get_string('telegram_msg_heard', 'local_jedomi', $transcription['text']));
+            return $transcription['text'];
+        }
+
+        if (is_array($file)) {
+            if (!model_settings::is_files_enabled()) {
+                $client->send_message($chatid, get_string('telegram_msg_files_disabled', 'local_jedomi'));
+                return null;
+            }
+            $filename = isset($message['document'])
+                ? clean_param((string) ($file['file_name'] ?? 'document'), PARAM_FILE)
+                : 'photo.jpg';
+            if (isset($message['document']) && file_extraction_service::is_office_document($filename)) {
+                // Word and PowerPoint: their text is read without a model, so it is not billed.
+                $client->send_chat_action($chatid, 'typing');
+                try {
+                    $extracted = self::with_download($client, (string) ($file['file_id'] ?? ''),
+                        static fn(string $path): array => file_extraction_service::extract_upload($userid, $path, $filename));
+                } catch (\Throwable $e) {
+                    $client->send_message($chatid, file_extraction_service::error_for($e)['message']);
+                    return null;
+                }
+                return file_extraction_service::compose_message($caption, $filename, $extracted['text']);
+            }
+            if (!vision_service::is_supported($filename)) {
+                $client->send_message($chatid, get_string('telegram_msg_file_unsupported', 'local_jedomi'));
+                return null;
+            }
+            $client->send_chat_action($chatid, 'typing');
+            try {
+                $read = self::with_download($client, (string) ($file['file_id'] ?? ''),
+                    static fn(string $path): array => vision_service::read_upload($userid, $path, $filename, $caption));
+            } catch (\Throwable $e) {
+                $client->send_message($chatid, vision_service::error_for($e)['message']);
+                return null;
+            }
+            return vision_service::compose_message($caption, $filename, $read['text']);
+        }
+
+        if ($text === '') {
+            $client->send_message($chatid, get_string('telegram_msg_text_only', 'local_jedomi'));
+            return null;
+        }
+        return $text;
+    }
+
+    /**
+     * Download a Telegram file, pass its local path to a callback and remove it afterwards.
+     *
+     * @param api_client $client Telegram client.
+     * @param string $fileid Telegram file id.
+     * @param callable $callback Receives the local path and returns the result.
+     * @return array Result of the callback.
+     * @throws \moodle_exception emptyresponse when the file cannot be downloaded.
+     */
+    private static function with_download(api_client $client, string $fileid, callable $callback): array {
+        $path = $fileid !== '' ? $client->download_file($fileid) : null;
+        if ($path === null || !file_exists($path)) {
+            throw new \moodle_exception('emptyresponse', 'aiprovider_datacurso');
+        }
+        try {
+            return $callback($path);
+        } finally {
+            @unlink($path);
+        }
+    }
+
+    /**
+     * File name of a Telegram audio message, with an extension the transcription service knows.
+     *
+     * @param array $audio Telegram audio object.
+     * @return string
+     */
+    private static function audio_filename(array $audio): string {
+        $filename = clean_param((string) ($audio['file_name'] ?? ''), PARAM_FILE);
+        if ($filename !== '' && audio_service::is_supported($filename)) {
+            return $filename;
+        }
+        $extension = match (strtolower((string) ($audio['mime_type'] ?? ''))) {
+            'audio/mpeg', 'audio/mp3' => 'mp3',
+            'audio/mp4', 'audio/x-m4a', 'audio/m4a' => 'm4a',
+            'audio/wav', 'audio/x-wav', 'audio/wave' => 'wav',
+            'audio/webm' => 'webm',
+            'audio/ogg', 'audio/opus' => 'ogg',
+            default => '',
+        };
+        return $extension !== '' ? 'audio.' . $extension : ($filename !== '' ? $filename : 'audio');
     }
 
     /**
@@ -260,7 +393,7 @@ class webhook_handler {
     private static function handle_start_command(string $chatid, string $text, string $tgusername): void {
         $parts = explode(' ', $text, 2);
         $code  = strtoupper(trim($parts[1] ?? ''));
-        $client = new api_client();
+        $client = api_client::instance();
 
         if (empty($code)) {
             $client->send_message($chatid, get_string('telegram_msg_provide_code', 'local_jedomi'));
@@ -329,7 +462,7 @@ class webhook_handler {
         $DB->delete_records('local_jedomi_telegram_rate_limit', ['chatid' => $chatid]);
         $DB->delete_records('local_jedomi_telegram_pending_actions', ['chatid' => $chatid]);
 
-        $client = new api_client();
+        $client = api_client::instance();
         $client->send_message($chatid, get_string('telegram_msg_unlinked', 'local_jedomi'));
     }
 
@@ -437,7 +570,7 @@ class webhook_handler {
             return;
         }
 
-        $client = new api_client();
+        $client = api_client::instance();
         $client->answer_callback_query($callbackid);
 
         // Handle command shortcuts from inline keyboard (/new, /help, /unlink).
@@ -560,7 +693,7 @@ class webhook_handler {
         global $USER;
         $USER = $DB->get_record('user', ['id' => $userid, 'deleted' => 0], '*', MUST_EXIST);
 
-        self::proxy_to_gateway($userid, $chatid, '', null, true);
+        self::proxy_to_gateway($userid, $chatid, '', true);
     }
 
     /**
@@ -570,15 +703,13 @@ class webhook_handler {
      *
      * @param int    $userid        Moodle user ID.
      * @param string $chatid       Telegram chat ID.
-     * @param string $text          Original user message text.
-     * @param array|null $photo     Optional photo data.
+     * @param string $text          User message text (photos and audio are already text).
      * @param bool   $internalping True if called from self-ping (continue checkpoint).
      */
     private static function proxy_to_gateway(
         int $userid,
         string $chatid,
         string $text,
-        ?array $photo,
         bool $internalping = false
     ): void {
         global $CFG, $DB;
@@ -593,7 +724,7 @@ class webhook_handler {
                 $lockage = time() - ($existing['locked_at'] ?? time());
                 if ($lockage < self::LOCK_TTL) {
                     // Lock is still valid (< 2 min) — block.
-                    (new api_client())->send_message(
+                    api_client::instance()->send_message(
                         $chatid,
                         '⏳ Sigo procesando tu solicitud anterior, dame un momento...'
                     );
@@ -606,33 +737,10 @@ class webhook_handler {
             }
 
             // ... ── Send typing indicator so user knows it's processing ──
-            (new api_client())->send_chat_action($chatid, 'typing');
+            api_client::instance()->send_chat_action($chatid, 'typing');
 
             // Build messages for the Gateway.
             $messages = session::build_messages_for_gateway($chatid, $text);
-
-            // If photo, download and encode.
-            $usercontent = $text;
-            if ($photo !== null && !empty($photo)) {
-                $largest = end($photo);
-                $client = new api_client();
-                $tmppath = $client->download_file($largest['file_id'] ?? '');
-                if ($tmppath && file_exists($tmppath)) {
-                    $imagedata = self::resize_and_base64($tmppath, 512);
-                    if ($imagedata) {
-                        $usercontent = [
-                            ['type' => 'text', 'text' => $text],
-                            ['type' => 'image_url', 'image_url' => ['url' => 'data:image/jpeg;base64,' . $imagedata]],
-                        ];
-                    }
-                    @unlink($tmppath);
-                }
-            }
-
-            if (is_array($usercontent)) {
-                array_pop($messages);
-                $messages[] = ['role' => 'user', 'content' => $usercontent];
-            }
 
             // Persist user message.
             session::append($chatid, 'user', $text);
@@ -825,7 +933,7 @@ class webhook_handler {
             // ... ── Soft guard (~30s): send a keepalive so the user knows we're alive ──
             if ($elapsed >= 30 && !$senttimeoutwarning) {
                 $senttimeoutwarning = true;
-                (new api_client())->send_message(
+                api_client::instance()->send_message(
                     $chatid,
                     "🔄 Sigamos, estoy procesando tu solicitud…"
                 );
@@ -834,7 +942,7 @@ class webhook_handler {
             // ... ── Re-send typing indicator each iteration (Telegram auto-expires after ~6s) ──
             // Only on iterations after the first (avoids double-send with the initial one).
             if ($iteration > 0) {
-                (new api_client())->send_chat_action($chatid, 'typing');
+                api_client::instance()->send_chat_action($chatid, 'typing');
             }
 
             // Adaptive AI timeout: shrink as we approach the hard guard
@@ -1081,7 +1189,7 @@ class webhook_handler {
                     $iteration <= 20 => '📊',
                     default          => '⚙️',
                 };
-                (new api_client())->send_message(
+                api_client::instance()->send_message(
                     $chatid,
                     $progressicon . ' ' . implode(', ', $tooldisplay) . '…'
                 );
@@ -1200,7 +1308,7 @@ class webhook_handler {
                 if (trim(strip_tags($display)) === '') {
                     $fallback = (is_string($content) && $content !== '') ? $content : '✅ Listo.';
                     session::set_context($statekey, []);
-                    (new api_client())->send_message($chatid, $fallback);
+                    api_client::instance()->send_message($chatid, $fallback);
                     return;
                 }
 
@@ -1234,10 +1342,10 @@ class webhook_handler {
                     $chatcaption = "📄 {$chatoneliner}";
 
                     file_put_contents($filepath, $plaintext);
-                    (new api_client())->send_document($chatid, $filepath, $chatcaption);
+                    api_client::instance()->send_document($chatid, $filepath, $chatcaption);
                     @unlink($filepath);
                 } else {
-                    (new api_client())->send_message($chatid, $display);
+                    api_client::instance()->send_message($chatid, $display);
                 }
                 return;
             }
@@ -1340,7 +1448,7 @@ class webhook_handler {
                     . ' err=' . $e->getMessage());
                 // Fallback: release lock and inform user, don't crash silently.
                 session::set_context($statekey, []);
-                (new api_client())->send_message(
+                api_client::instance()->send_message(
                     $chatid,
                     '⚠️ Lo siento, tuve un problema al guardar el progreso. '
                     . 'Por favor intentá de nuevo con /new.'
@@ -1352,7 +1460,7 @@ class webhook_handler {
                 \local_jedomi_log('[GATELOOP] loop_exit for chat ' . $chatid . ' at iter ' . $iteration
                     . ', elapsed=' . (time() - $loopstart) . 's');
                 session::set_context($statekey, []);
-                (new api_client())->send_message($chatid, get_string('telegram_msg_max_iterations', 'local_jedomi'));
+                api_client::instance()->send_message($chatid, get_string('telegram_msg_max_iterations', 'local_jedomi'));
                 return;
             }
         }
@@ -1360,7 +1468,7 @@ class webhook_handler {
         // ... ── Max iterations reached ──
         \local_jedomi_log('[GATELOOP] max iterations reached for chat ' . $chatid);
         session::set_context($statekey, []);
-        (new api_client())->send_message($chatid, get_string('telegram_msg_max_iterations', 'local_jedomi'));
+        api_client::instance()->send_message($chatid, get_string('telegram_msg_max_iterations', 'local_jedomi'));
     }
 
 
@@ -2170,70 +2278,6 @@ class webhook_handler {
             $transaction->rollback($e);
             return true; // Block on error to be safe.
         }
-    }
-
-    /**
-     * Resize an image to fit within a maximum dimension and return it base64-encoded.
-     *
-     * Falls back to encoding the raw file when GD is unavailable or the type is unsupported.
-     *
-     * @param  string $path    Path to the local image file.
-     * @param  int    $maxdim Maximum width/height in pixels for the resized image.
-     * @return string|null Base64-encoded image data, or null on failure.
-     */
-    private static function resize_and_base64(string $path, int $maxdim): ?string {
-        if (!function_exists('getimagesize')) {
-            // Fallback: return raw file if no GD.
-            $data = file_get_contents($path);
-            return $data ? base64_encode($data) : null;
-        }
-
-        $info = getimagesize($path);
-        if (!$info) {
-            return null;
-        }
-
-        $srcw = $info[0];
-        $srch = $info[1];
-
-        // Calculate new dimensions.
-        if ($srcw > $maxdim || $srch > $maxdim) {
-            $ratio = min($maxdim / $srcw, $maxdim / $srch);
-            $dstw = (int)($srcw * $ratio);
-            $dsth = (int)($srch * $ratio);
-        } else {
-            $dstw = $srcw;
-            $dsth = $srch;
-        }
-
-        switch ($info[2]) {
-            case IMAGETYPE_JPEG:
-                $src = imagecreatefromjpeg($path);
-                break;
-            case IMAGETYPE_PNG:
-                $src = imagecreatefrompng($path);
-                break;
-            default:
-                // Unsupported type — return raw.
-                $data = file_get_contents($path);
-                return $data ? base64_encode($data) : null;
-        }
-
-        if (!$src) {
-            return null;
-        }
-
-        $dst = imagecreatetruecolor($dstw, $dsth);
-        imagecopyresampled($dst, $src, 0, 0, 0, 0, $dstw, $dsth, $srcw, $srch);
-
-        ob_start();
-        imagejpeg($dst, null, 85);
-        $data = ob_get_clean();
-
-        imagedestroy($src);
-        imagedestroy($dst);
-
-        return $data ? base64_encode($data) : null;
     }
 
     // ... ── User role & SPT helpers (self-contained, no dependency on lib.php) ──

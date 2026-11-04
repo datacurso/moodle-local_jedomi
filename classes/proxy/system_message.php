@@ -116,15 +116,17 @@ class system_message {
             . " → admin_execute(create_mod, {courseid: X, resource_type: 'page', section: 1,"
             . " parameters: {name: '...', content: '...', ...}}).\n\n";
 
-        $content .= "DOCUMENT READ PATH:\n";
-        $content .= "- When the user asks to read, analyze, summarize, or explain a document/file"
-            . " from any course activity → use document_read(cmid).\n";
-        $content .= "- The cmid is available in the context below as \"Activity cmid\" when on an activity page.\n";
-        $content .= "- If you don't know the cmid, first discover it: ws_search for functions like"
-            . " core_course_get_courses_by_field or core_course_get_contents,"
-            . " then ws_execute to find the activity cmid.\n";
-        $content .= "- document_read returns each page as a base64 image — you SEE the original"
-            . " layout, tables, images, and formatting. Analyze them to answer.\n\n";
+        if (\local_jedomi\agent\tool\document_read_tool::is_offered($role)) {
+            $content .= "DOCUMENT READ PATH:\n";
+            $content .= "- When the user asks to read, analyze, summarize, or explain a document/file"
+                . " from any course activity → use document_read(cmid).\n";
+            $content .= "- The cmid is available in the context below as \"Activity cmid\" when on an activity page.\n";
+            $content .= "- If you don't know the cmid, first discover it: ws_search for functions like"
+                . " core_course_get_courses_by_field or core_course_get_contents,"
+                . " then ws_execute to find the activity cmid.\n";
+            $content .= "- document_read returns the text of the document; scanned pages, tables and diagrams"
+                . " are already described in that text. Pass pages (for example \"1,3-5\") to read only some pages.\n\n";
+        }
 
         $content .= "ACTIONS THAT CHANGE DATA:\n";
         $content .= "- Only call create_agent, delete_agent, admin_execute, ws_execute with a write function or send_messages"

@@ -49,9 +49,63 @@ class handler {
      */
     public static function run_from_request(array $input, string $role, array $spt, int $userid): void {
         $context = is_array($input['context'] ?? null) ? $input['context'] : [];
-        $messages = is_array($input['messages'] ?? null) ? $input['messages'] : [];
+        $messages = is_array($input['messages'] ?? null) ? array_values($input['messages']) : [];
+
+        // Images are read by the vision model before they are sent (read_file.php), so the chat model
+        // only gets text. A new image part means the browser skipped that step.
+        $last = end($messages);
+        if (is_array($last) && self::has_image_parts($last) && !\local_jedomi\ai\model_settings::is_files_enabled()) {
+            $error = ['code' => 'files_disabled', 'message' => get_string('files_error_disabled', 'local_jedomi')];
+            echo "data: " . json_encode(['error' => $error], JSON_UNESCAPED_UNICODE) . "\n\n";
+            if (ob_get_level()) {
+                ob_flush();
+            }
+            flush();
+            return;
+        }
+        $messages = array_map([self::class, 'without_image_parts'], $messages);
+
         $system = system_message::build($role, $spt, $context);
-        self::run(array_merge([$system], array_values($messages)), $role, $userid);
+        self::run(array_merge([$system], $messages), $role, $userid);
+    }
+
+    /**
+     * Whether a message has image parts.
+     *
+     * @param array $message Chat message.
+     * @return bool
+     */
+    private static function has_image_parts(array $message): bool {
+        if (!is_array($message['content'] ?? null)) {
+            return false;
+        }
+        foreach ($message['content'] as $part) {
+            if (is_array($part) && ($part['type'] ?? '') !== 'text') {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * The message with only its text: image parts, from conversations started before images were
+     * read by the vision model, are dropped.
+     *
+     * @param mixed $message Chat message.
+     * @return mixed
+     */
+    private static function without_image_parts($message) {
+        if (!is_array($message) || !is_array($message['content'] ?? null)) {
+            return $message;
+        }
+        $texts = [];
+        foreach ($message['content'] as $part) {
+            if (is_array($part) && ($part['type'] ?? '') === 'text') {
+                $texts[] = (string) ($part['text'] ?? '');
+            }
+        }
+        $message['content'] = implode("\n\n", $texts);
+        return $message;
     }
 
     /**
@@ -180,42 +234,11 @@ class handler {
                 flush();
 
                 // Inject tool result as role=tool message (OpenAI standard format).
-                // Special case: document_read returns base64 images — inject as multimodal content.
-                if ($name === 'document_read') {
-                    $decoded = json_decode($result, true);
-                    if ($decoded && !empty($decoded['pages'])) {
-                        $fmt = strtolower($decoded['pages'][0]['format'] ?? 'jpeg');
-                        $contentparts = [
-                            ['type' => 'text', 'text' =>
-                                "Document \"{$decoded['filename']}\" ({$decoded['total_pages']} pages) converted to images:"],
-                        ];
-                        foreach ($decoded['pages'] as $page) {
-                            $contentparts[] = [
-                                'type' => 'image_url',
-                                'image_url' => [
-                                    'url' => "data:image/{$fmt};base64,{$page['image']}",
-                                ],
-                            ];
-                        }
-                        $messages[] = [
-                            'role'    => 'user',
-                            'content' => $contentparts,
-                        ];
-                    } else {
-                        // Fallback: plain text error.
-                        $messages[] = [
-                            'role'         => 'tool',
-                            'tool_call_id' => $tcid,
-                            'content'      => $result,
-                        ];
-                    }
-                } else {
-                    $messages[] = [
-                        'role'         => 'tool',
-                        'tool_call_id' => $tcid,
-                        'content'      => $result,
-                    ];
-                }
+                $messages[] = [
+                    'role'         => 'tool',
+                    'tool_call_id' => $tcid,
+                    'content'      => $result,
+                ];
 
                 \local_jedomi_log('TOOL_RESULT', ['tool' => $name, 'summary' => self::summarize_tool_result($name, $result)]);
             }
@@ -807,102 +830,15 @@ class handler {
     }
 
     /**
-     * Read a PDF document from a course module and convert to images.
+     * Read the PDF of a course module as text.
      *
-     * @param  array  $args Tool arguments; expects "cmid" and optional "dpi"/"fmt" keys.
+     * @param  array  $args Tool arguments; expects "cmid" and an optional "pages".
      * @param  string $role User role forwarded by the tool dispatcher.
-     * @return string JSON-encoded document payload, or an error message.
+     * @return string JSON-encoded text of the document, or an error message.
      */
     private static function document_read_tool(array $args, string $role): string {
-        global $CFG, $DB;
-
-        $cmid = (int) ($args['cmid'] ?? 0);
-        $dpi  = (int) ($args['dpi'] ?? 150);
-        $fmt  = in_array($args['fmt'] ?? '', ['JPEG', 'PNG'], true) ? $args['fmt'] : 'JPEG';
-
-        if ($cmid <= 0) {
-            return json_encode(['error' => 'cmid is required']);
-        }
-
-        // Role check — teacher+.
-        $allowed = ['teacher', 'editingteacher', 'manager', 'admin'];
-        if (!in_array($role, $allowed, true)) {
-            return json_encode(['error' => 'permission_denied']);
-        }
-
-        $serviceurl = rtrim((string) get_config('local_jedomi', 'docservice_url'), '/');
-        if (empty($serviceurl)) {
-            return json_encode(['error' => 'document service not configured']);
-        }
-
-        try {
-            $context = \context_module::instance($cmid);
-            $cm      = get_coursemodule_from_id('', $cmid, 0, false, MUST_EXIST);
-            require_capability('moodle/course:view', $context->get_course_context());
-
-            // Single query: find all PDFs in this module context (any activity type).
-            $sql = "SELECT id, filename, filepath, mimetype, component, filearea, itemid
-                      FROM {files}
-                     WHERE contextid = ?
-                       AND filename != '.'
-                       AND mimetype = 'application/pdf'";
-            $rows = $DB->get_records_sql($sql, [$context->id]);
-
-            if (empty($rows)) {
-                return json_encode(['error' => 'no PDF files found in this activity']);
-            }
-
-            $row  = reset($rows);
-            $fs   = get_file_storage();
-            $file = $fs->get_file_by_id($row->id);
-            if (!$file) {
-                return json_encode(['error' => 'file not found in storage']);
-            }
-
-            $filename = $file->get_filename();
-
-            // Send to document-to-image service.
-            $tmpdir  = make_temp_directory('jedomi/docread');
-            $tmppath = $tmpdir . '/' . $filename;
-            $file->copy_content_to($tmppath);
-
-            $ch = curl_init($serviceurl . '/api/v1/pdf/to-images?dpi=' . $dpi . '&fmt=' . $fmt);
-            curl_setopt_array($ch, [
-                CURLOPT_POST           => true,
-                CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_TIMEOUT        => 120,
-                CURLOPT_POSTFIELDS     => ['file' => new \CURLFile($tmppath, 'application/pdf', $filename)],
-            ]);
-            $response = curl_exec($ch);
-            $httpcode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            $curlerr  = curl_error($ch);
-            curl_close($ch);
-
-            unlink($tmppath);
-
-            if ($curlerr) {
-                return json_encode(['error' => 'document service request failed: ' . $curlerr]);
-            }
-
-            if ($httpcode !== 200) {
-                return json_encode(['error' => 'document service returned HTTP ' . $httpcode]);
-            }
-
-            $data = json_decode($response, true);
-            if (!isset($data['pages']) || empty($data['pages'])) {
-                return json_encode(['error' => 'document service returned no pages']);
-            }
-
-            return json_encode([
-                'cmid'        => $cmid,
-                'filename'    => $filename,
-                'total_pages' => $data['total_pages'],
-                'dpi'         => $data['dpi'],
-                'pages'       => $data['pages'],
-            ]);
-        } catch (\Throwable $e) {
-            return json_encode(['error' => 'document read failed: ' . $e->getMessage()]);
-        }
+        return \local_jedomi\agent\tool\document_read_tool::read((int) ($args['cmid'] ?? 0), $role,
+            (string) ($args['pages'] ?? ''));
     }
 
     /**

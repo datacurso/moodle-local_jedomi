@@ -36,6 +36,12 @@ class fake_telegram_api_client extends api_client {
     /** @var array<int, array{chatid: int|string, text: string}> Messages sent, in order. */
     public array $sent = [];
 
+    /** @var array<string, string> Content of each file id that download_file() can fetch. */
+    public array $files = [];
+
+    /** @var string[] File ids requested through download_file(), in order. */
+    public array $downloads = [];
+
     /**
      * Use a dummy token so no real bot configuration is needed.
      */
@@ -47,5 +53,21 @@ class fake_telegram_api_client extends api_client {
     public function send_message(int|string $chatid, string $text, ?array $replymarkup = null, bool $truncate = false): bool {
         $this->sent[] = ['chatid' => $chatid, 'text' => $text];
         return true;
+    }
+
+    #[\Override]
+    public function send_chat_action(string $chatid, string $action = 'typing'): bool {
+        return true;
+    }
+
+    #[\Override]
+    public function download_file(string $fileid): ?string {
+        $this->downloads[] = $fileid;
+        if (!array_key_exists($fileid, $this->files)) {
+            return null;
+        }
+        $path = make_request_directory() . '/' . clean_param($fileid, PARAM_FILE);
+        file_put_contents($path, $this->files[$fileid]);
+        return $path;
     }
 }

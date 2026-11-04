@@ -1,0 +1,72 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template local_jedomi/local/sidebar/voice_bar
+
+    Voice message bar shown in place of the input row. While recording it has the elapsed time, a cancel
+    and a stop button. After stopping it previews the recording, which stays in the browser: play/pause,
+    progress, duration, delete and send. The recording is uploaded and transcribed only when it is sent.
+
+    Classes required for JS:
+    * jedomi-voice-playing - Added by JS to the play button while the recording plays (shows the pause icon)
+
+    Data attributes required for JS:
+    * data-action="local_jedomi/sidebar/voice-cancel" - Discards the recording in progress
+    * data-action="local_jedomi/sidebar/voice-stop" - Stops the recording and shows its preview
+    * data-action="local_jedomi/sidebar/voice-play" - Plays or pauses the recording
+    * data-action="local_jedomi/sidebar/voice-delete" - Discards the recording
+    * data-action="local_jedomi/sidebar/voice-send" - Transcribes the recording and sends its text
+    * data-region="local_jedomi/sidebar/voice-time" - Elapsed time or duration (m:ss)
+    * data-region="local_jedomi/sidebar/voice-progress" - Playback progress bar
+    * data-region="local_jedomi/sidebar/voice-status" - Transcribing state, hidden until the recording is sent
+
+    Context variables required for this template:
+    * recording bool - True while recording, false for the preview
+    * duration string - Elapsed time or duration, m:ss
+    * strings object - Sidebar strings: voice_cancel, voice_stop, voice_recording, voice_play, voice_delete, voice_send,
+      transcribing
+
+    Example context (json):
+    {
+        "recording": false,
+        "duration": "0:12",
+        "strings": {"voice_play": "Play voice message", "voice_delete": "Delete voice message",
+            "voice_send": "Send voice message", "transcribing": "Transcribing..."}
+    }
+}}
+<div class="jedomi-voice-bar{{#recording}} jedomi-voice-recording{{/recording}}">
+    {{#recording}}
+    <button type="button" class="jedomi-input-icon" data-action="local_jedomi/sidebar/voice-cancel"
+        title="{{strings.voice_cancel}}" aria-label="{{strings.voice_cancel}}"><svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></button>
+    <span class="jedomi-voice-dot" aria-hidden="true"></span>
+    <span class="jedomi-voice-time" data-region="local_jedomi/sidebar/voice-time">{{duration}}</span>
+    <span class="jedomi-voice-label">{{strings.voice_recording}}</span>
+    <button type="button" class="jedomi-voice-stop" data-action="local_jedomi/sidebar/voice-stop"
+        title="{{strings.voice_stop}}" aria-label="{{strings.voice_stop}}"><svg aria-hidden="true" focusable="false" width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg></button>
+    {{/recording}}
+    {{^recording}}
+    <button type="button" class="jedomi-input-icon" data-action="local_jedomi/sidebar/voice-delete"
+        title="{{strings.voice_delete}}" aria-label="{{strings.voice_delete}}"><svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></button>
+    <button type="button" class="jedomi-voice-play" data-action="local_jedomi/sidebar/voice-play"
+        title="{{strings.voice_play}}" aria-label="{{strings.voice_play}}"><svg class="jedomi-voice-icon-play" aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"/></svg><svg class="jedomi-voice-icon-pause" aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="4" width="5" height="16" rx="1"/><rect x="14" y="4" width="5" height="16" rx="1"/></svg></button>
+    <span class="jedomi-voice-track" aria-hidden="true"><span class="jedomi-voice-progress" data-region="local_jedomi/sidebar/voice-progress"></span></span>
+    <span class="jedomi-voice-time" data-region="local_jedomi/sidebar/voice-time">{{duration}}</span>
+    <span class="jedomi-voice-status jedomi-hidden" data-region="local_jedomi/sidebar/voice-status" role="status">{{strings.transcribing}}</span>
+    <button type="button" class="jedomi-send-btn" data-action="local_jedomi/sidebar/voice-send"
+        title="{{strings.voice_send}}" aria-label="{{strings.voice_send}}"><svg aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
+    {{/recording}}
+</div>

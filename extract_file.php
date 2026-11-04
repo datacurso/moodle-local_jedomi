@@ -15,11 +15,13 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Text of a file attached in the Jedomi sidebar (.pdf, .csv, .txt or .md).
+ * Text of a file attached in the Jedomi sidebar (.pdf, .csv, .txt, .md, .doc, .docx, .ppt or .pptx), or
+ * the transcription of an audio file or a microphone recording.
  *
  * POST multipart with the field "file" and the session key. The file is read by the AI service
  * through the Datacurso provider; the answer is JSON with the text and its data, or
- * {"error": {"code", "message"}} with a message ready to show.
+ * {"error": {"code", "message"}} with a message ready to show. Documents are refused when file and
+ * image processing is off, and audio when audio processing is off.
  *
  * @package    local_jedomi
  * @copyright  2026 Jedomi Project

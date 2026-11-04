@@ -93,7 +93,6 @@ final class plugin_state_test extends \advanced_testcase {
         $this->resetAfterTest();
         set_config('enabled', '1', 'local_jedomi');
         set_config('model', 'jedomi/zai-org/GLM-5.3-Flash', 'local_jedomi');
-        set_config('docservice_url', 'http://docs.local:8000', 'local_jedomi');
         set_config('max_tokens', 4096, 'local_jedomi');
         set_config('plugin_enabled_local_jedomi', '0', 'aiprovider_datacurso');
         set_config('version', 2026102901, 'local_jedomi');
@@ -102,10 +101,9 @@ final class plugin_state_test extends \advanced_testcase {
 
         $this->assertFalse(get_config('local_jedomi', 'enabled'));
         $this->assertSame('jedomi/zai-org/GLM-5.3-Flash', get_config('local_jedomi', 'model'));
-        $this->assertSame('http://docs.local:8000', get_config('local_jedomi', 'docservice_url'));
         $this->assertSame('4096', get_config('local_jedomi', 'max_tokens'));
         $this->assertSame('0', get_config('aiprovider_datacurso', 'plugin_enabled_local_jedomi'));
-        $this->assertSame('2026102902', get_config('local_jedomi', 'version'));
+        $this->assertGreaterThanOrEqual(2026102902, (int) get_config('local_jedomi', 'version'));
     }
 
     /**

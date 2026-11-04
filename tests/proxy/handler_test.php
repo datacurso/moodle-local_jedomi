@@ -318,4 +318,63 @@ final class handler_test extends \advanced_testcase {
 
         $this->assertNotContains('send_messages', $this->tool_names($fake->calls[0]));
     }
+
+    /**
+     * Web chat request whose last message has an image part.
+     *
+     * @return array
+     */
+    private function request_with_image(): array {
+        return [
+            'messages' => [
+                ['role' => 'user', 'content' => [
+                    ['type' => 'text', 'text' => 'old question'],
+                    ['type' => 'image_url', 'image_url' => ['url' => 'data:image/png;base64,AAAA']],
+                ]],
+                ['role' => 'assistant', 'content' => 'old answer'],
+                ['role' => 'user', 'content' => [
+                    ['type' => 'text', 'text' => 'What is this?'],
+                    ['type' => 'image_url', 'image_url' => ['url' => 'data:image/png;base64,BBBB']],
+                ]],
+            ],
+            'context' => [],
+        ];
+    }
+
+    /**
+     * M8: with file processing off a message with an image is refused without calling the AI.
+     */
+    public function test_image_parts_are_refused_when_files_are_disabled(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        set_config('files_enabled', 0, 'local_jedomi');
+        $fake = new fake_ai_client();
+        client::set_instance_for_testing($fake);
+
+        $events = $this->events($this->capture(fn() => handler::run_from_request($this->request_with_image(), 'admin',
+            ['course_id' => 0], (int) get_admin()->id)));
+
+        $this->assertSame([], $fake->calls);
+        $this->assertSame(['code' => 'files_disabled', 'message' => get_string('files_error_disabled', 'local_jedomi')],
+            $events[0]['error']);
+    }
+
+    /**
+     * M11: the chat model never receives image parts; their text parts are kept.
+     */
+    public function test_chat_model_receives_only_text(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $fake = new fake_ai_client();
+        $fake->enqueue_text('A photo.');
+        client::set_instance_for_testing($fake);
+
+        $this->capture(fn() => handler::run_from_request($this->request_with_image(), 'admin', ['course_id' => 0],
+            (int) get_admin()->id));
+
+        $messages = $fake->calls[0]['messages'];
+        $this->assertStringNotContainsString('image_url', json_encode($messages));
+        $this->assertSame(['role' => 'user', 'content' => 'old question'], $messages[1]);
+        $this->assertSame(['role' => 'user', 'content' => 'What is this?'], end($messages));
+    }
 }

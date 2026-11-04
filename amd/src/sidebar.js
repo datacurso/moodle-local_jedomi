@@ -19,6 +19,7 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
     // ── State ─────────────────────────────────────────────────────────────────
     let cfg          = {};
     let conversation = [];
+    // Image attached for the next message: {base64, mimeType, file}. It is read by the vision model when sent.
     let pendingImage = null;
     // Text of an attached file, sent with the next message: {name, info, text}.
     let pendingFile = null;
@@ -26,6 +27,15 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
     // True while the sidebar template is being rendered, so a second bootstrap does not inject it twice.
     let injecting    = false;
     let sessionId    = null;
+    // Microphone recording in progress, if any, and whether it was cancelled instead of stopped.
+    let recorder     = null;
+    let recordingCancelled = false;
+    // Recorded voice message waiting in the preview bar: {blob, url, audio, mime, seconds}. It is only uploaded when sent.
+    let voice        = null;
+    // Increases on every voice bar render, so an older render that resolves late is dropped.
+    let voiceBarVersion = 0;
+    // True while a message is being prepared or answered, so it is not sent twice.
+    let sending      = false;
 
     // ── Init — entry point ────────────────────────────────────────────────────
     const init = (config) => {
@@ -136,7 +146,14 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
     const injectHTML = async () => {
         const S        = cfg.strings || {};
         const greeting = (S.greeting || '').replace('{name}', cfg.user_name || '');
-        const {html, js} = await Templates.renderForPromise('local_jedomi/sidebar', {greeting, strings: S});
+        // Features that are off get no button, no attach option and no drop zone; the server refuses them too.
+        const {html, js} = await Templates.renderForPromise('local_jedomi/sidebar', {
+            greeting,
+            strings: S,
+            files_enabled: !!cfg.files_enabled,
+            audio_enabled: !!cfg.audio_enabled,
+            attach_enabled: !!(cfg.files_enabled || cfg.audio_enabled),
+        });
         Templates.appendNodeContents(document.body, html, js);
         updateContextLabel();
         loadQuickActions();
@@ -222,6 +239,9 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
             if (type === 'image') {
                 const inp = g('jedomi-image-input');
                 if (inp) inp.click();
+            } else if (type === 'audio') {
+                const inp = g('jedomi-audio-input');
+                if (inp) inp.click();
             } else {
                 const inp = g('jedomi-file-input');
                 if (inp) inp.click();
@@ -230,6 +250,9 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
         });
         on('jedomi-image-input',  'change', handleImageSelect);
         on('jedomi-file-input',   'change', handleFileSelect);
+        on('jedomi-audio-input',  'change', handleFileSelect);
+        on('jedomi-voice-btn',    'click',  startRecording);
+        on('jedomi-voice-bar',    'click',  handleVoiceAction);
 
         const input = g('jedomi-input');
         if (input) {
@@ -344,6 +367,12 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
     };
 
     const closeSidebar = () => {
+        // A recording in progress is thrown away and a recorded voice message stops playing.
+        if (recorder && recorder.state === 'recording') {
+            recordingCancelled = true;
+            recorder.stop();
+        }
+        voice?.audio.pause();
         g('jedomi-sidebar')?.classList.replace('jedomi-open', 'jedomi-closed');
         g('jedomi-overlay')?.classList.add('jedomi-hidden');
         document.body.classList.remove('jedomi-push-half', 'jedomi-push-full');
@@ -682,38 +711,59 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
         const sendBtn = g('jedomi-send');
         const text    = input?.value.trim() || '';
 
-        if (!text && !pendingImage && !pendingFile) return;
+        if ((!text && !pendingImage && !pendingFile) || sending) return;
 
-        let userContent;
+        const S = cfg.strings || {};
         let displayText = text;
         let modelText = text;
 
+        // The image is read by the vision model first: the chat model only gets the question and that text.
+        if (pendingImage) {
+            sending = true;
+            if (sendBtn) sendBtn.disabled = true;
+            const origPlaceholder = input?.placeholder;
+            if (input) input.placeholder = S.reading_image || '';
+            try {
+                const data = await uploadForText(cfg.read_file_url, pendingImage.file, {question: text});
+                modelText = data.message || '';
+            } catch (err) {
+                // The image stays attached, so the user can try again.
+                addMessage('assistant', `⚠️ ${S.file_process_error || ''} **${pendingImage.file.name}**: ${err.message}`);
+                return;
+            } finally {
+                sending = false;
+                if (sendBtn) sendBtn.disabled = false;
+                if (input && origPlaceholder) input.placeholder = origPlaceholder;
+            }
+        }
+
         // The file text goes with the question in the same message; the chat shows only its name.
         if (pendingFile) {
-            const S = cfg.strings || {};
-            const question = text || S.analyze_file || '';
+            const question = modelText || S.analyze_file || '';
             const header = (S.attached_file_info || '').replace('{$a}', pendingFile.name);
             modelText = `${question}\n\n${header} — ${pendingFile.info}\n\n${pendingFile.text}`;
             displayText = `${text ? text + '\n\n' : ''}📎 ${pendingFile.name} (${pendingFile.info})`;
         }
 
-        if (pendingImage) {
-            userContent = [
-                { type: 'text', text: modelText || (cfg.strings?.analyze_image || '') },
-                { type: 'image_url', image_url: { url: `data:${pendingImage.mimeType};base64,${pendingImage.base64}` } }
-            ];
-        } else {
-            userContent = modelText;
-        }
-
-        addMessage('user', displayText, pendingImage);
+        const image = pendingImage;
         if (input) { input.value = ''; input.style.height = ''; }
         clearImage();
         clearFile();
-        conversation.push({ role: 'user', content: userContent });
+        await runChat(displayText, modelText, image);
+    };
+
+    // Show the user message, add it to the conversation and stream the answer of the chat proxy.
+    // displayText is what the chat shows, modelText what the model receives and image the attached image, if any.
+    const runChat = async (displayText, modelText, image = null) => {
+        const input   = g('jedomi-input');
+        const sendBtn = g('jedomi-send');
+
+        addMessage('user', displayText, image);
+        conversation.push({ role: 'user', content: modelText });
         _saveConversation(); // Save at once.
 
         setThinking(true);
+        sending = true;
         if (sendBtn) sendBtn.disabled = true;
 
         // Create an empty bubble to fill while streaming.
@@ -831,6 +881,7 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
             streamBubble.el.classList.remove('jedomi-hidden');
         } finally {
             setThinking(false);
+            sending = false;
             if (sendBtn) sendBtn.disabled = false;
             input?.focus();
         }
@@ -1234,7 +1285,7 @@ GENERAL INSTRUCTIONS:
         const reader = new FileReader();
         reader.onload = (ev) => {
             const dataUrl = ev.target.result;
-            pendingImage = { base64: dataUrl.split(',')[1], mimeType: file.type || 'image/jpeg' };
+            pendingImage = { base64: dataUrl.split(',')[1], mimeType: file.type || 'image/jpeg', file: file };
             const preview = g('jedomi-image-preview');
             const img     = g('jedomi-preview-img');
             if (img) img.src = dataUrl;
@@ -1243,9 +1294,10 @@ GENERAL INSTRUCTIONS:
         reader.readAsDataURL(file);
     };
 
-    // ── File (PDF/CSV/TXT/MD) ─────────────────────────────────────────────────
+    // ── File (PDF/CSV/TXT/MD/Word/PowerPoint) and audio file ──────────────────
     // Moodle sends the file to the AI service through the Datacurso provider and returns its
-    // text, which is added to the message with its pages, rows and columns, or characters.
+    // text (or the transcription of an audio file), which is added to the message with its pages,
+    // rows and columns, characters or seconds.
     const handleFileSelect = (e) => {
         const file = e.target.files?.[0];
         if (file) attachFile(file);
@@ -1258,25 +1310,12 @@ GENERAL INSTRUCTIONS:
         if (input) input.placeholder = (S.processing_file || '').replace('{$a}', file.name);
 
         try {
-            const formData = new FormData();
-            formData.append('file', file);
-            formData.append('sesskey', cfg.sesskey || '');
-
-            const res = await fetch(cfg.extract_file_url, {
-                method: 'POST',
-                body: formData,
-                credentials: 'same-origin',
-            });
-            const data = await res.json().catch(() => ({}));
-            if (data.error) {
-                throw new Error(data.error.message || S.unknown_error || '');
-            }
-            if (!res.ok) {
-                throw new Error(S.ai_error_connection || '');
-            }
+            const data = await uploadForText(cfg.extract_file_url, file);
 
             const info = data.format === 'csv'
                 ? (S.file_csv || '').replace('{rows}', data.rows).replace('{columns}', data.columns)
+                : data.format === 'audio'
+                ? (S.file_audio || '').replace('{seconds}', data.seconds)
                 : data.format === 'pdf'
                 ? (S.file_pdf || '').replace('{pages}', data.pages)
                 : (S.file_text || '').replace('{chars}', data.chars);
@@ -1295,7 +1334,235 @@ GENERAL INSTRUCTIONS:
             if (input && origPlaceholder) input.placeholder = origPlaceholder;
             const fi = g('jedomi-file-input');
             if (fi) fi.value = '';
+            const ai = g('jedomi-audio-input');
+            if (ai) ai.value = '';
         }
+    };
+
+    // Send a file to a Moodle endpoint that answers JSON, or {"error": {"code", "message"}} with a message to show.
+    const uploadForText = async (url, file, fields = {}) => {
+        const S = cfg.strings || {};
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('sesskey', cfg.sesskey || '');
+        Object.entries(fields).forEach(([name, value]) => formData.append(name, value));
+
+        const res = await fetch(url, {
+            method: 'POST',
+            body: formData,
+            credentials: 'same-origin',
+        });
+        const data = await res.json().catch(() => ({}));
+        if (data.error) {
+            throw new Error(data.error.message || S.unknown_error || '');
+        }
+        if (!res.ok) {
+            throw new Error(S.ai_error_connection || '');
+        }
+        return data;
+    };
+
+    // ── Microphone ──────────────────────────────────────────────────────────
+    // A voice message, like in Telegram: the voice bar replaces the input row while recording, and after
+    // stopping the recording can be played, deleted or sent. It stays in the browser until it is sent: only
+    // then it is uploaded and transcribed by the audio model (billed per second), and its text is sent as
+    // the user message. The text typed in the input box is kept for later.
+    const AUDIO_EXTENSIONS = ['mp3', 'wav', 'm4a', 'ogg', 'webm'];
+    const RECORDING_TYPES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/ogg', 'audio/mp4'];
+    const VOICE_ACTION = 'local_jedomi/sidebar/voice-';
+
+    // A number of seconds as m:ss.
+    const formatDuration = (seconds) => {
+        const total = Math.max(0, Math.round(seconds || 0));
+        return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+    };
+
+    // An element of the voice bar by its data-region.
+    const voiceRegion = (name) => g('jedomi-voice-bar')?.querySelector(`[data-region="local_jedomi/sidebar/${name}"]`);
+
+    // Render the voice bar (recording or preview) in place of the input row and focus its main button.
+    const showVoiceBar = async (recording, seconds) => {
+        const bar = g('jedomi-voice-bar');
+        if (!bar) return;
+        const version = ++voiceBarVersion;
+        try {
+            const {html, js} = await Templates.renderForPromise('local_jedomi/local/sidebar/voice_bar',
+                {recording, duration: formatDuration(seconds), strings: cfg.strings || {}});
+            if (version !== voiceBarVersion) return;
+            Templates.replaceNodeContents(bar, html, js);
+        } catch (error) {
+            Log.error('Jedomi: template local_jedomi/local/sidebar/voice_bar could not be rendered', error);
+            return;
+        }
+        bar.classList.remove('jedomi-hidden');
+        g('jedomi-input')?.closest('.jedomi-input-row')?.classList.add('jedomi-hidden');
+        bar.querySelector(`[data-action="${VOICE_ACTION}${recording ? 'stop' : 'send'}"]`)?.focus();
+    };
+
+    // Hide the voice bar and give the input row back, with the text typed before recording.
+    const hideVoiceBar = () => {
+        voiceBarVersion++;
+        const bar = g('jedomi-voice-bar');
+        if (bar) {
+            bar.classList.add('jedomi-hidden');
+            bar.replaceChildren();
+        }
+        const input = g('jedomi-input');
+        input?.closest('.jedomi-input-row')?.classList.remove('jedomi-hidden');
+        input?.focus();
+    };
+
+    const startRecording = async () => {
+        const S = cfg.strings || {};
+        if (recorder || voice) return;
+        if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+            addMessage('assistant', `⚠️ ${S.mic_error || ''}`);
+            return;
+        }
+
+        let stream;
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({audio: true});
+        } catch (err) {
+            addMessage('assistant', `⚠️ ${S.mic_error || ''}`);
+            return;
+        }
+
+        const type = RECORDING_TYPES.find(t => MediaRecorder.isTypeSupported(t)) || '';
+        const current = new MediaRecorder(stream, type ? {mimeType: type} : undefined);
+        const chunks = [];
+        const started = Date.now();
+        let timer = null;
+
+        current.addEventListener('dataavailable', (e) => {
+            if (e.data && e.data.size) chunks.push(e.data);
+        });
+        current.addEventListener('stop', () => {
+            stream.getTracks().forEach(track => track.stop());
+            clearInterval(timer);
+            recorder = null;
+            const mime = current.mimeType || type || 'audio/webm';
+            const blob = new Blob(chunks, {type: mime});
+            if (recordingCancelled || !blob.size) {
+                hideVoiceBar();
+                return;
+            }
+            // The duration is measured here: a recorded WebM often reports an unknown duration.
+            const url = URL.createObjectURL(blob);
+            const audio = new Audio(url);
+            voice = {blob, url, audio, mime, seconds: (Date.now() - started) / 1000};
+            audio.addEventListener('timeupdate', updateVoiceProgress);
+            audio.addEventListener('pause', () => setVoicePlaying(false));
+            audio.addEventListener('ended', () => {
+                audio.currentTime = 0;
+                setVoicePlaying(false);
+                updateVoiceProgress();
+            });
+            showVoiceBar(false, voice.seconds);
+        });
+
+        recorder = current;
+        recordingCancelled = false;
+        current.start();
+        showVoiceBar(true, 0);
+        timer = setInterval(() => {
+            const time = voiceRegion('voice-time');
+            if (time) time.textContent = formatDuration((Date.now() - started) / 1000);
+        }, 500);
+    };
+
+    // Clicks on the voice bar buttons, through event delegation because the bar is rendered again for each state.
+    const handleVoiceAction = (e) => {
+        const btn = e.target.closest(`[data-action^="${VOICE_ACTION}"]`);
+        if (!btn || btn.disabled) return;
+        const action = btn.getAttribute('data-action').slice(VOICE_ACTION.length);
+        if (action === 'stop' || action === 'cancel') {
+            recordingCancelled = action === 'cancel';
+            if (recorder && recorder.state === 'recording') recorder.stop();
+        } else if (action === 'play') {
+            toggleVoicePlayback();
+        } else if (action === 'delete') {
+            discardVoice();
+        } else if (action === 'send') {
+            sendVoiceMessage();
+        }
+    };
+
+    // Show the play or the pause icon and label on the play button.
+    const setVoicePlaying = (playing) => {
+        const S = cfg.strings || {};
+        const btn = g('jedomi-voice-bar')?.querySelector(`[data-action="${VOICE_ACTION}play"]`);
+        if (!btn) return;
+        const label = (playing ? S.voice_pause : S.voice_play) || '';
+        btn.classList.toggle('jedomi-voice-playing', playing);
+        btn.setAttribute('aria-label', label);
+        btn.setAttribute('title', label);
+    };
+
+    const toggleVoicePlayback = () => {
+        if (!voice) return;
+        if (voice.audio.paused) {
+            voice.audio.play()
+                .then(() => setVoicePlaying(true))
+                .catch(error => Log.error('Jedomi: the voice message could not be played', error));
+        } else {
+            voice.audio.pause();
+        }
+    };
+
+    // Move the progress bar and show the played time, or the duration when stopped.
+    const updateVoiceProgress = () => {
+        if (!voice) return;
+        const {audio, seconds} = voice;
+        const progress = voiceRegion('voice-progress');
+        if (progress) progress.style.width = `${seconds ? Math.min(100, audio.currentTime / seconds * 100) : 0}%`;
+        const time = voiceRegion('voice-time');
+        if (time) time.textContent = formatDuration(audio.currentTime > 0 ? audio.currentTime : seconds);
+    };
+
+    // Delete the recording: nothing is uploaded nor billed, and the input row comes back to record again.
+    const discardVoice = () => {
+        if (voice) {
+            voice.audio.pause();
+            URL.revokeObjectURL(voice.url);
+            voice = null;
+        }
+        hideVoiceBar();
+    };
+
+    // Transcribe the recording and send its text as the user message. On an error the preview stays,
+    // so the user can try again or delete it.
+    const sendVoiceMessage = async () => {
+        if (!voice || sending) return;
+        const S = cfg.strings || {};
+        const current = voice;
+        const setBusy = (busy) => {
+            g('jedomi-voice-bar')?.querySelectorAll('button').forEach(btn => { btn.disabled = busy; });
+            voiceRegion('voice-status')?.classList.toggle('jedomi-hidden', !busy);
+        };
+
+        current.audio.pause();
+        sending = true;
+        setBusy(true);
+        let text = '';
+        try {
+            const extension = current.mime.includes('ogg') ? 'ogg' : (current.mime.includes('mp4') ? 'm4a' : 'webm');
+            const file = new File([current.blob], `recording.${extension}`, {type: current.mime});
+            const data = await uploadForText(cfg.extract_file_url, file);
+            text = (data.text || '').trim();
+            if (!text) {
+                throw new Error(S.audio_error_unreadable || '');
+            }
+        } catch (err) {
+            addMessage('assistant', `⚠️ ${err.message}`);
+            return;
+        } finally {
+            sending = false;
+            if (voice === current) setBusy(false);
+        }
+
+        discardVoice();
+        await runChat((S.voice_message || '{$a}').replace('{$a}', () => text), text);
     };
 
     // ── Confirmation of actions that change data ──────────────────────────────
@@ -1444,6 +1711,12 @@ GENERAL INSTRUCTIONS:
     };
     const handleDroppedFiles = (files) => {
         for (const file of files) {
+            const extension = (file.name.split('.').pop() || '').toLowerCase();
+            const isaudio = AUDIO_EXTENSIONS.includes(extension);
+            // Only the kinds whose feature is on are accepted; the server refuses the others too.
+            if ((isaudio && !cfg.audio_enabled) || (!isaudio && !cfg.files_enabled)) {
+                continue;
+            }
             if (file.type.startsWith('image/')) {
                 const dt = new DataTransfer();
                 dt.items.add(file);

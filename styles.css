@@ -1073,6 +1073,87 @@
     border-radius: 50% !important;
 }
 
+/* ── Voice message bar (recording and preview) ────────────────────────────── */
+.jedomi-voice-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--j-surface);
+    border: 1.5px solid var(--j-border);
+    border-radius: 16px;
+    padding: 8px 10px;
+    min-height: 54px;
+    color: var(--j-text);
+    font-size: 13px;
+}
+.jedomi-voice-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #ef4444;
+    flex-shrink: 0;
+    animation: jedomi-pulse-rec 1s infinite;
+}
+.jedomi-voice-time {
+    font-variant-numeric: tabular-nums;
+    color: var(--j-muted);
+    flex-shrink: 0;
+}
+.jedomi-voice-label {
+    flex: 1;
+    color: var(--j-muted);
+}
+.jedomi-voice-stop,
+.jedomi-voice-play {
+    border: none;
+    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+.jedomi-voice-stop {
+    background: #ef4444;
+    color: white;
+}
+.jedomi-voice-play {
+    background: var(--j-accent);
+    color: white;
+}
+.jedomi-voice-play .jedomi-voice-icon-pause,
+.jedomi-voice-play.jedomi-voice-playing .jedomi-voice-icon-play {
+    display: none;
+}
+.jedomi-voice-play.jedomi-voice-playing .jedomi-voice-icon-pause {
+    display: block;
+}
+.jedomi-voice-stop:disabled,
+.jedomi-voice-play:disabled,
+.jedomi-voice-bar .jedomi-input-icon:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+.jedomi-voice-track {
+    flex: 1;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--j-border);
+    overflow: hidden;
+}
+.jedomi-voice-progress {
+    display: block;
+    width: 0;
+    height: 100%;
+    background: var(--j-accent);
+}
+.jedomi-voice-status {
+    color: var(--j-muted);
+    font-size: 12px;
+}
+
 /* ── Responsive ────────────────────────────────────────────────────────────── */
 @media (max-width: 767px) {
     .jedomi-sidebar {

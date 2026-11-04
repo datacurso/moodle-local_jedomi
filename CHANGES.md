@@ -1,5 +1,22 @@
 # Changes
 
+## 1.4.0 (2026-11-03)
+
+- Add a catalogue of models with what each one can do (chat, vision, audio); each selector of the Jedomi settings page in the Datacurso AI provider lists only the models of its use, so a multimodal model appears in more than one
+- Add to that page, after the chat model: "Enable file and image processing" (on by default) with the file and image model (Qwen3-VL 30B A3B by default; also Qwen3-VL 235B A22B and the four chat models), and "Enable audio processing" (off by default) with the audio model (Qwen3-ASR 1.7B by default; also Whisper large-v3 turbo and Voxtral Mini 3B). Each model is shown only while its switch is on, never has an empty option and already shows the default model, so a switch can be turned on and saved without touching its model; a missing or unlisted model is rejected while its switch is on and replaced with the default one when read
+- Remove the document-to-image service URL setting; the 2026110301 upgrade deletes it and saves the defaults of the new settings that are not set yet (file processing on, audio off, default vision and audio models)
+- Read images, Telegram photos and documents, and the PDF of course activities (`document_read`) with the vision model through the Datacurso provider and `POST /jedomi/v1/files/read`: the question of the user (or the Telegram caption) goes with the file, the text read is added to the message, and the chat model never receives images; `document_read` accepts the pages to read and returns text
+- Read a PDF without text attached in the web chat with the vision model when `POST /jedomi/v1/files/extract` answers that it has no text
+- Add the microphone to the web chat: the recording is transcribed by the audio model through `POST /jedomi/v1/audio/transcriptions`
+- Record voice messages like in Telegram: while recording, a bar with the elapsed time, stop and cancel replaces the input box; after stopping, the recording can be listened to (play/pause, progress and duration), deleted to record again, or sent. It stays in the browser and is uploaded and transcribed (billed) only when sent; its text is then sent as the user message, shown with 🎤. If the transcription fails, the preview stays to retry or delete it. The text typed before recording is kept in the input box; closing the chat while recording throws the recording away
+- Accept Word and PowerPoint files (.doc, .docx, .ppt, .pptx) in the web chat (file picker and drag and drop) and as Telegram documents: their text is read without a model through `POST /jedomi/v1/files/extract`, so it is not billed (the legacy .doc and .ppt are converted by LibreOffice on the AI service); a Telegram document keeps its caption as the question. Still off when file and image processing is off
+- Accept audio files (.mp3, .wav, .m4a, .ogg, .webm) as attachments in the web chat: their transcription is kept as a pending attachment, like a PDF
+- Transcribe Telegram voice and audio messages: the bot first answers with what it understood (🎤) and then processes the text as a message
+- With file and image processing off, the web chat has no image or file attach option and no drag and drop, `extract_file.php` and the new `read_file.php` refuse documents and images, the chat proxy refuses messages with images, `document_read` is not offered nor described to the AI, and Telegram answers that photos and files are not enabled, without calling the AI
+- With audio processing off, the web chat has no microphone and no audio attach option, audio files are refused, and Telegram answers that voice messages are not enabled, without calling the AI
+- Stop sending Telegram messages without text (stickers, locations...) to the AI: the bot asks for a text message
+- Show clear messages for an audio too long or too large, an unsupported audio format, an audio that could not be understood, an unsupported or unreadable image or file, and the existing credit, rate limit and service errors
+
 ## 1.3.0 (2026-10-28)
 
 - Route every AI call (web chat, scheduled agents, agent preview, Telegram and CLI) through the Datacurso AI provider to `POST /jedomi/v1/chat/completions`, using the provider license, rate limits and the pseudonymised user of each call

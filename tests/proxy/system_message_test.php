@@ -52,4 +52,18 @@ final class system_message_test extends \advanced_testcase {
 
         $this->assertStringContainsString('Only when the user explicitly asks to send or notify a message', $description);
     }
+
+    /**
+     * M8: the document reading instructions are given only while file and image processing is on.
+     */
+    public function test_document_read_instructions_follow_the_files_switch(): void {
+        $this->resetAfterTest();
+
+        $content = system_message::build('admin', [])['content'];
+        $this->assertStringContainsString('document_read(cmid)', $content);
+        $this->assertStringNotContainsString('base64', $content);
+
+        set_config('files_enabled', 0, 'local_jedomi');
+        $this->assertStringNotContainsString('document_read', system_message::build('admin', [])['content']);
+    }
 }

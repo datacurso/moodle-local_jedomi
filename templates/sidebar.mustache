@@ -31,13 +31,20 @@
     * greeting string - Greeting with the user name
     * strings object - Sidebar strings from local_jedomi_get_sidebar_config(): open_sidebar, export_conversation, half_width,
       full_width, new_conversation, close, hello, thinking, toggle_thinking, placeholder, message_input, attach,
-      attach_image, image, attach_file, file, send, attached_image, ai_disclaimer, drop_files_here
+      attach_image, image, attach_file, file, attach_audio, audio_file, voice_input, send, attached_image, ai_disclaimer,
+      drop_files_here
+    * files_enabled bool - File and image processing is on: image and file attach options
+    * audio_enabled bool - Audio processing is on: microphone, voice message bar and audio attach option
+    * attach_enabled bool - At least one of the two is on: attach button and drop zone
 
     Example context (json):
     {
         "greeting": "Hi, Ana!",
         "strings": {"open_sidebar": "Open Jedomi AI", "hello": "I am Jedomi.", "placeholder": "Ask Jedomi...",
-            "send": "Send", "thinking": "Thinking...", "ai_disclaimer": "Jedomi is an AI and can make mistakes."}
+            "send": "Send", "thinking": "Thinking...", "ai_disclaimer": "Jedomi is an AI and can make mistakes."},
+        "files_enabled": true,
+        "audio_enabled": false,
+        "attach_enabled": true
     }
 }}
 <button id="jedomi-trigger" class="jedomi-trigger" aria-label="{{strings.open_sidebar}}" title="Jedomi AI (Ctrl+Shift+J)">
@@ -89,22 +96,40 @@
     <div id="jedomi-quick-actions" class="jedomi-quick-actions"></div>
 
     <div class="jedomi-input-area">
+        {{#audio_enabled}}
+        <div id="jedomi-voice-bar" class="jedomi-hidden"></div>
+        {{/audio_enabled}}
         <div class="jedomi-input-row" data-action="local_jedomi/sidebar/focus-input">
             <textarea id="jedomi-input" class="jedomi-input" placeholder="{{strings.placeholder}}"
                 rows="1" aria-label="{{strings.message_input}}"></textarea>
             <div class="jedomi-input-actions">
+                {{#attach_enabled}}
                 <div class="jedomi-attach-wrap">
                     <button id="jedomi-attach-btn" class="jedomi-input-icon" title="{{strings.attach}}"><svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
                     <div id="jedomi-attach-menu" class="jedomi-attach-menu jedomi-hidden">
+                        {{#files_enabled}}
                         <button class="jedomi-attach-option" data-type="image" title="{{strings.attach_image}}"><svg aria-hidden="true" focusable="false" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg> {{strings.image}}</button>
                         <button class="jedomi-attach-option" data-type="file" title="{{strings.attach_file}}"><svg aria-hidden="true" focusable="false" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg> {{strings.file}}</button>
+                        {{/files_enabled}}
+                        {{#audio_enabled}}
+                        <button class="jedomi-attach-option" data-type="audio" title="{{strings.attach_audio}}"><svg aria-hidden="true" focusable="false" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg> {{strings.audio_file}}</button>
+                        {{/audio_enabled}}
                     </div>
                 </div>
+                {{/attach_enabled}}
+                {{#audio_enabled}}
+                <button id="jedomi-voice-btn" class="jedomi-input-icon" title="{{strings.voice_input}}" aria-label="{{strings.voice_input}}"><svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="22"/></svg></button>
+                {{/audio_enabled}}
                 <button id="jedomi-send" class="jedomi-send-btn" title="{{strings.send}}"><svg aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
             </div>
         </div>
-        <input type="file" id="jedomi-image-input" accept="image/*" class="jedomi-hidden" aria-hidden="true">
-        <input type="file" id="jedomi-file-input" accept=".pdf,.csv,.txt,.md" class="jedomi-hidden" aria-hidden="true">
+        {{#files_enabled}}
+        <input type="file" id="jedomi-image-input" accept="image/jpeg,image/png,image/webp" class="jedomi-hidden" aria-hidden="true">
+        <input type="file" id="jedomi-file-input" accept=".pdf,.csv,.txt,.md,.doc,.docx,.ppt,.pptx" class="jedomi-hidden" aria-hidden="true">
+        {{/files_enabled}}
+        {{#audio_enabled}}
+        <input type="file" id="jedomi-audio-input" accept=".mp3,.wav,.m4a,.ogg,.webm" class="jedomi-hidden" aria-hidden="true">
+        {{/audio_enabled}}
         <div id="jedomi-image-preview" class="jedomi-image-preview jedomi-hidden">
             <img id="jedomi-preview-img" src="" alt="{{strings.attached_image}}">
             <span>{{strings.attached_image}}</span>
@@ -121,9 +146,11 @@
 </div>
 
 <div id="jedomi-overlay" class="jedomi-overlay jedomi-hidden"></div>
+{{#attach_enabled}}
 <div id="jedomi-dropzone" class="jedomi-dropzone jedomi-hidden">
     <div class="jedomi-dropzone-inner">
         <svg aria-hidden="true" focusable="false" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
         <span class="jedomi-dropzone-text">{{strings.drop_files_here}}</span>
     </div>
 </div>
+{{/attach_enabled}}
