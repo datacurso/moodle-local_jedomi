@@ -182,11 +182,11 @@ const loadAgents = async(root, filters, page) => {
             throw new Error(data.error || strings.agent_error_load);
         }
         agentRows = (data.rows || []).map(rowContext);
-        const rows = await Templates.renderForPromise('local_jedomi/admin/agent_rows', {
+        const table = await Templates.renderForPromise('local_jedomi/admin/agent_table', {
             hasrows: agentRows.length > 0,
             rows: agentRows,
         });
-        Templates.replaceNodeContents(tbody, rows.html, rows.js);
+        Templates.replaceNodeContents(root.querySelector(Selectors.agents.tableWrap), table.html, table.js);
 
         const total = parseInt(data.total, 10) || 0;
         const current = parseInt(data.page, 10) || 1;

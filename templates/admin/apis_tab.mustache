@@ -29,8 +29,8 @@
     * data-region="local_jedomi/admin/apis/count" on the type counters, with data-type
     * data-action="local_jedomi/admin/apis/search" on the name search
     * data-action="local_jedomi/admin/apis/filter" on the component and page size selects
-    * data-action="local_jedomi/admin/apis/check-all" on the select-all box
-    * data-region="local_jedomi/admin/apis/rows" on the table body
+    * data-region="local_jedomi/admin/apis/table-wrap" on the table wrapper, holding local_jedomi/admin/ws_table
+      (select-all box, table body and row checkboxes)
     * data-region="local_jedomi/admin/apis/pagination" on the pagination
 
     Context variables required for this template:
@@ -42,7 +42,7 @@
     * search string - Current name search
     * components array - Component options: value string, selected bool
     * perpageoptions array - Page size options: value int, selected bool
-    * rows array - Rows, see local_jedomi/admin/ws_table_rows
+    * rows array - Rows, see local_jedomi/admin/ws_table
     * hasrows bool - Whether there are rows
     * pagination object - See local_jedomi/admin/ws_pagination
 
@@ -114,24 +114,8 @@
                     </select>
                 </div>
 
-                <div class="table-responsive">
-                    <table class="table table-sm table-hover small">
-                        <thead>
-                            <tr>
-                                <th scope="col">
-                                    <input type="checkbox" data-action="local_jedomi/admin/apis/check-all"
-                                           aria-label="{{#str}} selectall, moodle {{/str}}">
-                                </th>
-                                <th scope="col">{{#str}} ws_name, local_jedomi {{/str}}</th>
-                                <th scope="col">{{#str}} ws_description, local_jedomi {{/str}}</th>
-                                <th scope="col">{{#str}} ws_component, local_jedomi {{/str}}</th>
-                                <th scope="col">{{#str}} ws_type, local_jedomi {{/str}}</th>
-                            </tr>
-                        </thead>
-                        <tbody data-region="local_jedomi/admin/apis/rows">
-                            {{> local_jedomi/admin/ws_table_rows }}
-                        </tbody>
-                    </table>
+                <div class="table-responsive" data-region="local_jedomi/admin/apis/table-wrap">
+                    {{> local_jedomi/admin/ws_table }}
                 </div>
 
                 <div class="d-flex align-items-center justify-content-between flex-wrap" data-region="local_jedomi/admin/apis/pagination">

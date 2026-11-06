@@ -29,6 +29,7 @@
     * data-region="local_jedomi/admin/agents/filter-*" on the filter fields (role, status, context, search)
     * data-action="local_jedomi/admin/agents/apply-filters" on the filter button
     * data-region="local_jedomi/admin/agents/table-message", "table-wrap", "table-body" and "pagination"
+      (the table wrapper holds local_jedomi/admin/agent_table)
     * data-form="local_jedomi/admin/agents/create" on the agent form and data-form="local_jedomi/admin/agents/purge" on the purge form
     * data-region="local_jedomi/admin/agents/form-heading", "form-message", "edit-id", "submit-label", "custom-cron",
       "context-id-wrap", "preview-panel", "preview-spinner", "preview-body", "purge-id-wrap" and "purge-message"
@@ -117,21 +118,11 @@
         {{$body}}
             <div class="alert d-none" role="alert" data-region="local_jedomi/admin/agents/table-message"></div>
             <div class="table-responsive" data-region="local_jedomi/admin/agents/table-wrap">
-                <table class="table table-sm table-hover small">
-                    <thead>
-                        <tr>
-                            <th scope="col">{{#str}} agent_creator, local_jedomi {{/str}}</th>
-                            <th scope="col">{{#str}} agent_name, local_jedomi {{/str}}</th>
-                            <th scope="col">{{#str}} agent_schedule, local_jedomi {{/str}}</th>
-                            <th scope="col">{{#str}} agent_status, local_jedomi {{/str}}</th>
-                            <th scope="col">{{#str}} agent_lastrun, local_jedomi {{/str}}</th>
-                            <th scope="col">{{#str}} agent_actions, local_jedomi {{/str}}</th>
-                        </tr>
-                    </thead>
-                    <tbody data-region="local_jedomi/admin/agents/table-body">
+                {{< local_jedomi/admin/agent_table }}
+                    {{$tablebody}}
                         <tr><td colspan="6" class="text-center text-muted py-4">{{#str}} loading, admin {{/str}}</td></tr>
-                    </tbody>
-                </table>
+                    {{/tablebody}}
+                {{/ local_jedomi/admin/agent_table }}
             </div>
             <div class="d-flex align-items-center justify-content-between flex-wrap" data-region="local_jedomi/admin/agents/pagination"></div>
         {{/body}}
@@ -150,7 +141,7 @@
                 <div class="form-group mb-3">
                     <label class="font-weight-bold fw-bold" for="{{uniqid}}-agent-prompt">{{#str}} agent_prompt, local_jedomi {{/str}}</label>
                     <textarea id="{{uniqid}}-agent-prompt" name="prompt" class="form-control" rows="3" required
-                              placeholder="{{#str}} agent_prompt_placeholder, local_jedomi {{/str}}"></textarea>
+                              placeholder="{{#cleanstr}} agent_prompt_placeholder, local_jedomi {{/cleanstr}}"></textarea>
                 </div>
 
                 <div class="row">

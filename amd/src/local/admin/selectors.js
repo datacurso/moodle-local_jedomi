@@ -56,6 +56,7 @@ export default {
         checkAll: '[data-action="local_jedomi/admin/apis/check-all"]',
         wsCheck: '[data-region="local_jedomi/admin/apis/ws-check"]',
         rows: '[data-region="local_jedomi/admin/apis/rows"]',
+        tableWrap: '[data-region="local_jedomi/admin/apis/table-wrap"]',
         pagination: '[data-region="local_jedomi/admin/apis/pagination"]',
         pageLink: '[data-action="local_jedomi/admin/apis/page"]',
         activePage: '[data-action="local_jedomi/admin/apis/page"][aria-current="page"]',

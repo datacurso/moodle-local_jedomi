@@ -18,7 +18,7 @@
  * AJAX endpoint: one page of the web service table of the APIs tab, as JSON data.
  *
  * Called by the local_jedomi/admin/apis module when the filters, the type pills or the page change.
- * The rows are rendered in the browser with the local_jedomi/admin/ws_table_rows template.
+ * The rows are rendered in the browser with the local_jedomi/admin/ws_table template.
  *
  * @package    local_jedomi
  * @copyright  2026 Jedomi Project

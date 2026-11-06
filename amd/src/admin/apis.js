@@ -82,12 +82,12 @@ const reload = async(root, state) => {
         if (data.error) {
             throw new Error(data.error);
         }
-        const rows = await Templates.renderForPromise('local_jedomi/admin/ws_table_rows', {
+        const table = await Templates.renderForPromise('local_jedomi/admin/ws_table', {
             role: data.role,
             rows: data.rows,
             hasrows: data.hasrows,
         });
-        Templates.replaceNodeContents(tbody, rows.html, rows.js);
+        Templates.replaceNodeContents(root.querySelector(Selectors.apis.tableWrap), table.html, table.js);
         const pagination = await Templates.renderForPromise('local_jedomi/admin/ws_pagination', data.pagination);
         Templates.replaceNodeContents(root.querySelector(Selectors.apis.pagination), pagination.html, pagination.js);
         root.querySelectorAll(Selectors.apis.count).forEach((counter) => {
