@@ -250,10 +250,14 @@ final class model_settings_test extends \advanced_testcase {
             'jedomi/mistralai/Voxtral-Mini-3B-2507',
         ], array_keys(model_settings::get_available_models(model_settings::CAPABILITY_AUDIO)));
 
-        $this->assertSame('Qwen3-VL 30B A3B',
-            model_settings::get_available_models(model_settings::CAPABILITY_VISION)[model_settings::DEFAULT_VISION_MODEL]);
-        $this->assertSame('Qwen3-ASR 1.7B',
-            model_settings::get_available_models(model_settings::CAPABILITY_AUDIO)[model_settings::DEFAULT_AUDIO_MODEL]);
+        $this->assertSame(
+            'Qwen3-VL 30B A3B',
+            model_settings::get_available_models(model_settings::CAPABILITY_VISION)[model_settings::DEFAULT_VISION_MODEL]
+        );
+        $this->assertSame(
+            'Qwen3-ASR 1.7B',
+            model_settings::get_available_models(model_settings::CAPABILITY_AUDIO)[model_settings::DEFAULT_AUDIO_MODEL]
+        );
         foreach (array_keys(model_settings::get_catalogue()) as $model) {
             $this->assertTrue(model_settings::is_routable($model));
         }
@@ -268,8 +272,10 @@ final class model_settings_test extends \advanced_testcase {
         $this->assertTrue(model_settings::is_available($gemma, model_settings::CAPABILITY_VISION));
         $this->assertFalse(model_settings::is_available($gemma, model_settings::CAPABILITY_AUDIO));
         $this->assertFalse(model_settings::is_available(model_settings::DEFAULT_VISION_MODEL));
-        $this->assertFalse(model_settings::is_available(model_settings::DEFAULT_AUDIO_MODEL,
-            model_settings::CAPABILITY_VISION));
+        $this->assertFalse(model_settings::is_available(
+            model_settings::DEFAULT_AUDIO_MODEL,
+            model_settings::CAPABILITY_VISION
+        ));
     }
 
     /**

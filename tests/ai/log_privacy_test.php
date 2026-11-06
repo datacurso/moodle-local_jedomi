@@ -65,6 +65,9 @@ final class log_privacy_test extends \advanced_testcase {
      * @param array $responses List of [body, http code].
      */
     private function install_client(array $responses): void {
+        if (!class_exists(\aiprovider_datacurso\httpclient\ai_services_api::class)) {
+            $this->markTestSkipped('aiprovider_datacurso is not installed; the provider client cannot be built.');
+        }
         \core\plugininfo\aiprovider::enable_plugin('datacurso', 1);
         $curl = new fake_curl();
         foreach ($responses as [$body, $code]) {

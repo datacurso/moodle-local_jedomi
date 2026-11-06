@@ -23,7 +23,7 @@ namespace local_jedomi\output;
  * @copyright  2026 Jedomi Project
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-class telegram_profile implements \renderable, \templatable, \core\output\named_templatable {
+class telegram_profile implements \core\output\named_templatable, \renderable, \templatable {
     /** @var string The bot is not configured; only administrators see the page. */
     public const STATE_NOT_CONFIGURED = 'notconfigured';
     /** @var string The role of the user cannot use the bot. */

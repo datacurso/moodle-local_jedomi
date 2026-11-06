@@ -104,6 +104,9 @@ final class error_message_test extends \advanced_testcase {
      * I6: a disabled provider gives the provider's own message, in the requested language.
      */
     public function test_provider_disabled_gives_the_provider_message_in_english_and_spanish(): void {
+        if (!class_exists(\aiprovider_datacurso\httpclient\ai_services_api::class)) {
+            $this->markTestSkipped('aiprovider_datacurso is not installed; its language strings are not available.');
+        }
         $this->resetAfterTest();
         $this->install_spanish_language();
         $e = new \moodle_exception('providerdisabled', 'aiprovider_datacurso');

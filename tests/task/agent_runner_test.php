@@ -51,6 +51,10 @@ final class agent_runner_test extends \advanced_testcase {
      */
     private function create_due_agent(int $userid): \stdClass {
         global $DB;
+        // The task checks the plugin state through aiprovider_datacurso before running any agent.
+        if (!class_exists(\aiprovider_datacurso\httpclient\ai_services_api::class)) {
+            $this->markTestSkipped('aiprovider_datacurso is not installed; the agent runner cannot check the plugin state.');
+        }
         $now = time();
         $record = (object) [
             'userid' => $userid,

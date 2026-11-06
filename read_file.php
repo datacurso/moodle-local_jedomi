@@ -14,7 +14,6 @@
 // You should have received a copy of the GNU General Public License
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
-
 /**
  * Content of an image attached in the Jedomi sidebar, read by the vision model.
  *
@@ -63,8 +62,10 @@ if (isguestuser() || !local_jedomi_is_role_allowed()) {
 
 $question = optional_param('question', '', PARAM_TEXT);
 $upload = $_FILES['file'] ?? null;
-if (!is_array($upload) || ($upload['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK
-        || !is_uploaded_file($upload['tmp_name'] ?? '')) {
+if (
+    !is_array($upload) || ($upload['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK
+        || !is_uploaded_file($upload['tmp_name'] ?? '')
+) {
     $toolarge = in_array($upload['error'] ?? null, [UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE], true);
     local_jedomi_read_file_error(400, [
         'code' => $toolarge ? 'file_too_large' : 'file_unsupported',

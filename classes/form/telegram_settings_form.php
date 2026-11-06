@@ -53,8 +53,12 @@ class telegram_settings_form extends \moodleform {
         $placeholder = !empty($this->_customdata['tokenset'])
             ? get_string('telegram_bot_token_placeholder_saved', 'local_jedomi')
             : get_string('telegram_bot_token_placeholder', 'local_jedomi');
-        $mform->addElement('passwordunmask', 'telegram_bot_token', get_string('telegram_bot_token', 'local_jedomi'),
-            ['placeholder' => $placeholder, 'autocomplete' => 'new-password']);
+        $mform->addElement(
+            'passwordunmask',
+            'telegram_bot_token',
+            get_string('telegram_bot_token', 'local_jedomi'),
+            ['placeholder' => $placeholder, 'autocomplete' => 'new-password']
+        );
         $mform->setType('telegram_bot_token', PARAM_TEXT);
         $mform->addElement('static', 'telegram_bot_token_help', '', get_string('telegram_bot_token_help', 'local_jedomi'));
         $mform->addElement('submit', 'regeneratesecret', get_string('regenerate', 'local_jedomi'), [
@@ -71,8 +75,12 @@ class telegram_settings_form extends \moodleform {
         }
 
         $mform->addElement('header', 'accessheader', get_string('privacy_access_heading', 'local_jedomi'));
-        $mform->addElement('static', 'telegram_role_visibility_help', '',
-            get_string('telegram_role_visibility_help', 'local_jedomi'));
+        $mform->addElement(
+            'static',
+            'telegram_role_visibility_help',
+            '',
+            get_string('telegram_role_visibility_help', 'local_jedomi')
+        );
         foreach ($this->_customdata['roles'] ?? [] as $role) {
             $mform->addElement('advcheckbox', 'telegram_role_visible_' . $role['id'], $role['name'], $role['shortname']);
             $mform->setDefault('telegram_role_visible_' . $role['id'], 1);

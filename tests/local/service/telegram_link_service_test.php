@@ -38,13 +38,17 @@ final class telegram_link_service_test extends \advanced_testcase {
         unset_config('telegram_bot_username', 'local_jedomi');
         unset_config('telegram_bot_firstname', 'local_jedomi');
 
-        $this->assertSame(['available' => false, 'username' => '', 'firstname' => 'Jedomi'],
-            telegram_link_service::get_bot_status());
+        $this->assertSame(
+            ['available' => false, 'username' => '', 'firstname' => 'Jedomi'],
+            telegram_link_service::get_bot_status()
+        );
 
         set_config('telegram_bot_username', 'jedomibot', 'local_jedomi');
         set_config('telegram_bot_firstname', 'Bot', 'local_jedomi');
-        $this->assertSame(['available' => true, 'username' => 'jedomibot', 'firstname' => 'Bot'],
-            telegram_link_service::get_bot_status());
+        $this->assertSame(
+            ['available' => true, 'username' => 'jedomibot', 'firstname' => 'Bot'],
+            telegram_link_service::get_bot_status()
+        );
 
         set_config('telegram_enabled', 0, 'local_jedomi');
         $this->assertFalse(telegram_link_service::get_bot_status()['available']);

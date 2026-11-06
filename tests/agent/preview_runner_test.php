@@ -110,6 +110,9 @@ final class preview_runner_test extends \advanced_testcase {
      * I6: with the provider disabled the preview shows the provider's message and nothing is sent.
      */
     public function test_preview_with_the_provider_disabled_shows_the_provider_message(): void {
+        if (!class_exists(\aiprovider_datacurso\httpclient\ai_services_api::class)) {
+            $this->markTestSkipped('aiprovider_datacurso is not installed; the provider client cannot be built.');
+        }
         $this->resetAfterTest();
         $this->setAdminUser();
         set_config('licensekey', 'test-license', 'aiprovider_datacurso');

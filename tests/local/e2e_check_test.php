@@ -46,6 +46,9 @@ final class e2e_check_test extends \advanced_testcase {
     #[\Override]
     protected function setUp(): void {
         parent::setUp();
+        if (!class_exists(\aiprovider_datacurso\httpclient\ai_services_api::class)) {
+            $this->markTestSkipped('aiprovider_datacurso is not installed; the end-to-end check needs its license region.');
+        }
         $this->resetAfterTest();
         $this->lines = [];
         $this->toolruns = [];

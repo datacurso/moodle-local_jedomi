@@ -47,9 +47,19 @@ final class file_extraction_service_test extends \advanced_testcase {
     }
 
     /**
+     * Skip the test when the provider plugin is missing, since its client cannot be built.
+     */
+    private function require_provider(): void {
+        if (!class_exists(\aiprovider_datacurso\httpclient\ai_services_api::class)) {
+            $this->markTestSkipped('aiprovider_datacurso is not installed; the provider client cannot be built.');
+        }
+    }
+
+    /**
      * Enable the provider with a license, as a configured site has it.
      */
     private function enable_provider(): void {
+        $this->require_provider();
         set_config('licensekey', 'test-license', 'aiprovider_datacurso');
         \core\plugininfo\aiprovider::enable_plugin('datacurso', 1);
     }
@@ -89,8 +99,11 @@ final class file_extraction_service_test extends \advanced_testcase {
         $file = $curl->calls[0]['params']['file'];
         $this->assertInstanceOf(\CURLFile::class, $file);
         $this->assertSame('grades.csv', $file->getPostFilename());
-        $this->assertFalse($DB->record_exists_select('files', "component = 'user' AND filearea = 'draft' AND filename = ?",
-            ['grades.csv']));
+        $this->assertFalse($DB->record_exists_select(
+            'files',
+            "component = 'user' AND filearea = 'draft' AND filename = ?",
+            ['grades.csv']
+        ));
     }
 
     /**
@@ -104,12 +117,18 @@ final class file_extraction_service_test extends \advanced_testcase {
         $curl = new fake_curl();
 
         try {
-            file_extraction_service::extract_upload((int) $user->id, $this->upload('x'), 'photo.png',
-                new testable_provider_api(30, $curl));
+            file_extraction_service::extract_upload(
+                (int) $user->id,
+                $this->upload('x'),
+                'photo.png',
+                new testable_provider_api(30, $curl)
+            );
             $this->fail('An unsupported file must be rejected');
         } catch (\moodle_exception $e) {
-            $this->assertSame(['code' => 'file_unsupported', 'message' => get_string('file_error_unsupported', 'local_jedomi')],
-                file_extraction_service::error_for($e));
+            $this->assertSame(
+                ['code' => 'file_unsupported', 'message' => get_string('file_error_unsupported', 'local_jedomi')],
+                file_extraction_service::error_for($e)
+            );
         }
         $this->assertSame([], $curl->calls);
     }
@@ -118,6 +137,7 @@ final class file_extraction_service_test extends \advanced_testcase {
      * A7: with the provider disabled the provider's message is returned and nothing is sent.
      */
     public function test_provider_disabled_returns_its_message(): void {
+        $this->require_provider();
         $this->resetAfterTest();
         $user = $this->getDataGenerator()->create_user();
         $this->setUser($user);
@@ -126,8 +146,12 @@ final class file_extraction_service_test extends \advanced_testcase {
         $curl = new fake_curl();
 
         try {
-            file_extraction_service::extract_upload((int) $user->id, $this->upload('hello'), 'notes.txt',
-                new testable_provider_api(30, $curl));
+            file_extraction_service::extract_upload(
+                (int) $user->id,
+                $this->upload('hello'),
+                'notes.txt',
+                new testable_provider_api(30, $curl)
+            );
             $this->fail('A disabled provider must stop the upload');
         } catch (\moodle_exception $e) {
             $this->assertSame([
@@ -169,12 +193,18 @@ final class file_extraction_service_test extends \advanced_testcase {
         $curl->enqueue($body, $status);
 
         try {
-            file_extraction_service::extract_upload((int) $user->id, $this->upload('hello'), 'notes.txt',
-                new testable_provider_api(30, $curl));
+            file_extraction_service::extract_upload(
+                (int) $user->id,
+                $this->upload('hello'),
+                'notes.txt',
+                new testable_provider_api(30, $curl)
+            );
             $this->fail('A service error must be raised');
         } catch (\moodle_exception $e) {
-            $this->assertSame(['code' => $code, 'message' => get_string($stringkey, 'local_jedomi')],
-                file_extraction_service::error_for($e));
+            $this->assertSame(
+                ['code' => $code, 'message' => get_string($stringkey, 'local_jedomi')],
+                file_extraction_service::error_for($e)
+            );
         }
         // The provider logs the status for developers, never the body.
         $this->assertDebuggingCalled("HTTP error {$status} from Datacurso API (" . strlen($body) . ' bytes)');
@@ -187,8 +217,10 @@ final class file_extraction_service_test extends \advanced_testcase {
         $this->resetAfterTest();
         $error = new \moodle_exception('notenoughtokens', 'aiprovider_datacurso');
 
-        $this->assertSame(['code' => 'no_credit', 'message' => get_string('ai_error_nocredit', 'local_jedomi')],
-            file_extraction_service::error_for($error));
+        $this->assertSame(
+            ['code' => 'no_credit', 'message' => get_string('ai_error_nocredit', 'local_jedomi')],
+            file_extraction_service::error_for($error)
+        );
     }
 
     /**
@@ -203,12 +235,18 @@ final class file_extraction_service_test extends \advanced_testcase {
         $curl = new fake_curl();
 
         try {
-            file_extraction_service::extract_upload((int) $user->id, $this->upload('hello'), 'notes.txt',
-                new testable_provider_api(30, $curl));
+            file_extraction_service::extract_upload(
+                (int) $user->id,
+                $this->upload('hello'),
+                'notes.txt',
+                new testable_provider_api(30, $curl)
+            );
             $this->fail('Disabled file processing must stop the upload');
         } catch (\moodle_exception $e) {
-            $this->assertSame(['code' => 'files_disabled', 'message' => get_string('files_error_disabled', 'local_jedomi')],
-                file_extraction_service::error_for($e));
+            $this->assertSame(
+                ['code' => 'files_disabled', 'message' => get_string('files_error_disabled', 'local_jedomi')],
+                file_extraction_service::error_for($e)
+            );
         }
         $this->assertSame([], $curl->calls);
     }
@@ -227,8 +265,12 @@ final class file_extraction_service_test extends \advanced_testcase {
         $curl->enqueue(json_encode(['text' => 'Scanned page text', 'model' => 'm', 'pages_total' => 3,
             'pages_vision' => [1, 2, 3], 'pages_skipped' => []]));
 
-        $result = file_extraction_service::extract_upload((int) $user->id, $this->upload('%PDF'), 'scan.pdf',
-            new testable_provider_api(30, $curl));
+        $result = file_extraction_service::extract_upload(
+            (int) $user->id,
+            $this->upload('%PDF'),
+            'scan.pdf',
+            new testable_provider_api(30, $curl)
+        );
 
         $this->assertSame('Scanned page text', $result['text']);
         $this->assertSame('pdf', $result['format']);
@@ -252,8 +294,12 @@ final class file_extraction_service_test extends \advanced_testcase {
         $curl = new fake_curl();
         $curl->enqueue(json_encode(['text' => 'Lecture notes', 'model' => 'm', 'duration_seconds' => 61.6]));
 
-        $result = file_extraction_service::extract_upload((int) $user->id, $this->upload('audio'), 'class.mp3',
-            new testable_provider_api(30, $curl));
+        $result = file_extraction_service::extract_upload(
+            (int) $user->id,
+            $this->upload('audio'),
+            'class.mp3',
+            new testable_provider_api(30, $curl)
+        );
 
         $this->assertSame('Lecture notes', $result['text']);
         $this->assertSame('audio', $result['format']);
@@ -273,8 +319,12 @@ final class file_extraction_service_test extends \advanced_testcase {
         $curl = new fake_curl();
 
         try {
-            file_extraction_service::extract_upload((int) $user->id, $this->upload('audio'), 'class.wav',
-                new testable_provider_api(30, $curl));
+            file_extraction_service::extract_upload(
+                (int) $user->id,
+                $this->upload('audio'),
+                'class.wav',
+                new testable_provider_api(30, $curl)
+            );
             $this->fail('Disabled audio processing must stop the upload');
         } catch (\moodle_exception $e) {
             $this->assertSame('audio_disabled', file_extraction_service::error_for($e)['code']);
@@ -313,8 +363,12 @@ final class file_extraction_service_test extends \advanced_testcase {
         $curl = new fake_curl();
         $curl->enqueue(json_encode(['text' => 'Slide text', 'format' => $format, 'chars' => 10, 'truncated' => false]));
 
-        $result = file_extraction_service::extract_upload((int) $user->id, $this->upload('office bytes'), $filename,
-            new testable_provider_api(30, $curl));
+        $result = file_extraction_service::extract_upload(
+            (int) $user->id,
+            $this->upload('office bytes'),
+            $filename,
+            new testable_provider_api(30, $curl)
+        );
 
         $this->assertSame('Slide text', $result['text']);
         $this->assertSame($format, $result['format']);
@@ -339,12 +393,18 @@ final class file_extraction_service_test extends \advanced_testcase {
         $curl->enqueue($body, 422);
 
         try {
-            file_extraction_service::extract_upload((int) $user->id, $this->upload('x'), 'empty.docx',
-                new testable_provider_api(30, $curl));
+            file_extraction_service::extract_upload(
+                (int) $user->id,
+                $this->upload('x'),
+                'empty.docx',
+                new testable_provider_api(30, $curl)
+            );
             $this->fail('A file without text must be rejected');
         } catch (\moodle_exception $e) {
-            $this->assertSame(['code' => 'file_no_text', 'message' => get_string('file_error_no_text', 'local_jedomi')],
-                file_extraction_service::error_for($e));
+            $this->assertSame(
+                ['code' => 'file_no_text', 'message' => get_string('file_error_no_text', 'local_jedomi')],
+                file_extraction_service::error_for($e)
+            );
         }
         $this->assertCount(1, $curl->calls);
         $this->assertDebuggingCalled("HTTP error 422 from Datacurso API (" . strlen($body) . ' bytes)');
@@ -365,8 +425,12 @@ final class file_extraction_service_test extends \advanced_testcase {
         $curl = new fake_curl();
 
         try {
-            file_extraction_service::extract_upload((int) $user->id, $this->upload('x'), $filename,
-                new testable_provider_api(30, $curl));
+            file_extraction_service::extract_upload(
+                (int) $user->id,
+                $this->upload('x'),
+                $filename,
+                new testable_provider_api(30, $curl)
+            );
             $this->fail('Disabled file processing must stop the upload');
         } catch (\moodle_exception $e) {
             $this->assertSame('files_disabled', file_extraction_service::error_for($e)['code']);
@@ -392,7 +456,9 @@ final class file_extraction_service_test extends \advanced_testcase {
     public function test_compose_message(): void {
         $this->assertSame("What is it about?\n\n" . get_string('attached_file_info', 'local_jedomi', 'notes.docx')
             . "\nThe text", file_extraction_service::compose_message(' What is it about? ', 'notes.docx', " The text \n"));
-        $this->assertStringStartsWith(get_string('analyze_file', 'local_jedomi') . "\n\n",
-            file_extraction_service::compose_message('', 'deck.pptx', 'Slides'));
+        $this->assertStringStartsWith(
+            get_string('analyze_file', 'local_jedomi') . "\n\n",
+            file_extraction_service::compose_message('', 'deck.pptx', 'Slides')
+        );
     }
 }

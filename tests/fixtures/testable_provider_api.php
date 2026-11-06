@@ -27,7 +27,14 @@ namespace local_jedomi\ai;
 
 defined('MOODLE_INTERNAL') || die();
 
+// The transport double only needs core, so it stays available to tests that skip without the provider.
 require_once(__DIR__ . '/fake_curl.php');
+
+// The parent class provider_api extends a class from aiprovider_datacurso. Without that plugin the class is left
+// undeclared, so the tests that need it skip themselves instead of the whole suite failing to load.
+if (!class_exists(\aiprovider_datacurso\httpclient\ai_services_api::class)) {
+    return;
+}
 
 /**
  * Real provider client stack with the network replaced by {@see fake_curl}.

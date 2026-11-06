@@ -51,8 +51,12 @@ class privacy_settings_form extends \moodleform {
             get_string('hide_from_guests_help', 'local_jedomi')
         );
 
-        $mform->addElement('static', 'rolevisibility', get_string('role_visibility_label', 'local_jedomi'),
-            get_string('role_visibility_help', 'local_jedomi'));
+        $mform->addElement(
+            'static',
+            'rolevisibility',
+            get_string('role_visibility_label', 'local_jedomi'),
+            get_string('role_visibility_help', 'local_jedomi')
+        );
         foreach ($this->_customdata['roles'] ?? [] as $role) {
             $mform->addElement('advcheckbox', 'role_visible_' . $role['id'], $role['name'], $role['shortname']);
             $mform->setDefault('role_visible_' . $role['id'], 1);
@@ -60,8 +64,12 @@ class privacy_settings_form extends \moodleform {
 
         $mform->addElement('header', 'anonheader', get_string('privacy_anon_heading', 'local_jedomi'));
         $mform->setExpanded('anonheader');
-        $mform->addElement('static', 'anonhelp', get_string('anonymization_level', 'local_jedomi'),
-            get_string('anonymization_level_help', 'local_jedomi'));
+        $mform->addElement(
+            'static',
+            'anonhelp',
+            get_string('anonymization_level', 'local_jedomi'),
+            get_string('anonymization_level_help', 'local_jedomi')
+        );
         $labels = ['basic' => 'anon_basic', 'strict' => 'anon_strict', 'feedback' => 'anon_feedback_only'];
         foreach (admin_settings_service::ANONYMIZATION_LEVELS as $level) {
             $mform->addElement(

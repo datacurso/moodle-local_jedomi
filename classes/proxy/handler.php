@@ -852,8 +852,11 @@ class handler {
      * @return string JSON-encoded text of the document, or an error message.
      */
     private static function document_read_tool(array $args, string $role): string {
-        return \local_jedomi\agent\tool\document_read_tool::read((int) ($args['cmid'] ?? 0), $role,
-            (string) ($args['pages'] ?? ''));
+        return \local_jedomi\agent\tool\document_read_tool::read(
+            (int) ($args['cmid'] ?? 0),
+            $role,
+            (string) ($args['pages'] ?? '')
+        );
     }
 
     /**

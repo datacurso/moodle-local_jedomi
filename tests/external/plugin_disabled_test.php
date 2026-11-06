@@ -57,6 +57,14 @@ final class plugin_disabled_test extends \advanced_testcase {
         ];
     }
 
+    #[\Override]
+    protected function setUp(): void {
+        parent::setUp();
+        if (!class_exists(\aiprovider_datacurso\httpclient\ai_services_api::class)) {
+            $this->markTestSkipped('aiprovider_datacurso is not installed; the plugin state is not available.');
+        }
+    }
+
     /**
      * Run a call and return the error code of the moodle_exception it throws.
      *

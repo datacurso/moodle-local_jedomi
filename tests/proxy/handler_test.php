@@ -46,6 +46,15 @@ final class handler_test extends \advanced_testcase {
     }
 
     /**
+     * Skip the test when aiprovider_datacurso is missing: the code under test asks it whether Jedomi is enabled.
+     */
+    private function require_provider(): void {
+        if (!class_exists(\aiprovider_datacurso\httpclient\ai_services_api::class)) {
+            $this->markTestSkipped('aiprovider_datacurso is not installed; the plugin state and its client are not available.');
+        }
+    }
+
+    /**
      * Run a callable and return everything it echoed, including flushed output.
      *
      * @param callable $fn Code to run.
@@ -148,6 +157,7 @@ final class handler_test extends \advanced_testcase {
      * I6: with the provider disabled the web chat gets an error event with the provider's message.
      */
     public function test_run_with_the_provider_disabled_sends_the_provider_message(): void {
+        $this->require_provider();
         $this->resetAfterTest();
         $this->setAdminUser();
         set_config('licensekey', 'test-license', 'aiprovider_datacurso');
@@ -172,6 +182,7 @@ final class handler_test extends \advanced_testcase {
      * M4: the model sent by the browser is ignored; the configured model is used.
      */
     public function test_run_from_request_ignores_browser_model(): void {
+        $this->require_provider();
         $this->resetAfterTest();
         $this->setAdminUser();
         set_config('licensekey', 'test-license', 'aiprovider_datacurso');
@@ -345,32 +356,44 @@ final class handler_test extends \advanced_testcase {
      * M8: with file processing off a message with an image is refused without calling the AI.
      */
     public function test_image_parts_are_refused_when_files_are_disabled(): void {
+        $this->require_provider();
         $this->resetAfterTest();
         $this->setAdminUser();
         set_config('files_enabled', 0, 'local_jedomi');
         $fake = new fake_ai_client();
         client::set_instance_for_testing($fake);
 
-        $events = $this->events($this->capture(fn() => handler::run_from_request($this->request_with_image(), 'admin',
-            ['course_id' => 0], (int) get_admin()->id)));
+        $events = $this->events($this->capture(fn() => handler::run_from_request(
+            $this->request_with_image(),
+            'admin',
+            ['course_id' => 0],
+            (int) get_admin()->id
+        )));
 
         $this->assertSame([], $fake->calls);
-        $this->assertSame(['code' => 'files_disabled', 'message' => get_string('files_error_disabled', 'local_jedomi')],
-            $events[0]['error']);
+        $this->assertSame(
+            ['code' => 'files_disabled', 'message' => get_string('files_error_disabled', 'local_jedomi')],
+            $events[0]['error']
+        );
     }
 
     /**
      * M11: the chat model never receives image parts; their text parts are kept.
      */
     public function test_chat_model_receives_only_text(): void {
+        $this->require_provider();
         $this->resetAfterTest();
         $this->setAdminUser();
         $fake = new fake_ai_client();
         $fake->enqueue_text('A photo.');
         client::set_instance_for_testing($fake);
 
-        $this->capture(fn() => handler::run_from_request($this->request_with_image(), 'admin', ['course_id' => 0],
-            (int) get_admin()->id));
+        $this->capture(fn() => handler::run_from_request(
+            $this->request_with_image(),
+            'admin',
+            ['course_id' => 0],
+            (int) get_admin()->id
+        ));
 
         $messages = $fake->calls[0]['messages'];
         $this->assertStringNotContainsString('image_url', json_encode($messages));

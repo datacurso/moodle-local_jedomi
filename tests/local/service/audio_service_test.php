@@ -14,7 +14,6 @@
 // You should have received a copy of the GNU General Public License
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
-
 namespace local_jedomi\local\service;
 
 use local_jedomi\ai\fake_curl;
@@ -42,6 +41,9 @@ final class audio_service_test extends \advanced_testcase {
      * @return int
      */
     private function setup_user(): int {
+        if (!class_exists(\aiprovider_datacurso\httpclient\ai_services_api::class)) {
+            $this->markTestSkipped('aiprovider_datacurso is not installed; the provider client cannot be built.');
+        }
         $this->resetAfterTest();
         $user = $this->getDataGenerator()->create_user();
         $this->setUser($user);
@@ -94,8 +96,10 @@ final class audio_service_test extends \advanced_testcase {
             audio_service::transcribe_upload($userid, $this->upload(), 'voice.ogg', new testable_provider_api(30, $curl));
             $this->fail('Disabled audio processing must stop the transcription');
         } catch (\moodle_exception $e) {
-            $this->assertSame(['code' => 'audio_disabled', 'message' => get_string('audio_error_disabled', 'local_jedomi')],
-                audio_service::error_for($e));
+            $this->assertSame(
+                ['code' => 'audio_disabled', 'message' => get_string('audio_error_disabled', 'local_jedomi')],
+                audio_service::error_for($e)
+            );
         }
         $this->assertSame([], $curl->calls);
     }

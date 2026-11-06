@@ -52,12 +52,15 @@ final class sidebar_templates_test extends \advanced_testcase {
         $html = $this->render('sidebar', ['greeting' => 'Hi, <b>Ana</b>!', 'strings' => ['placeholder' => 'Ask Jedomi'],
             'files_enabled' => true, 'audio_enabled' => true, 'attach_enabled' => true]);
 
-        foreach (['jedomi-trigger', 'jedomi-sidebar', 'jedomi-messages', 'jedomi-input', 'jedomi-send', 'jedomi-clear',
+        foreach (
+            ['jedomi-trigger', 'jedomi-sidebar', 'jedomi-messages', 'jedomi-input', 'jedomi-send', 'jedomi-clear',
                 'jedomi-close', 'jedomi-export', 'jedomi-expand-half', 'jedomi-expand-full', 'jedomi-quick-actions',
                 'jedomi-thinking-wrapper', 'jedomi-thinking-toggle-btn', 'jedomi-attach-btn', 'jedomi-attach-menu',
                 'jedomi-image-input', 'jedomi-file-input', 'jedomi-image-preview', 'jedomi-preview-img',
                 'jedomi-remove-image', 'jedomi-file-preview', 'jedomi-file-preview-name', 'jedomi-remove-file',
-                'jedomi-overlay', 'jedomi-dropzone', 'jedomi-context-label', 'jedomi-voice-btn', 'jedomi-audio-input', 'jedomi-voice-bar'] as $id) {
+                'jedomi-overlay', 'jedomi-dropzone', 'jedomi-context-label', 'jedomi-voice-btn', 'jedomi-audio-input',
+                'jedomi-voice-bar'] as $id
+        ) {
             $this->assertStringContainsString('id="' . $id . '"', $html, $id);
         }
         $this->assertStringContainsString('Hi, &lt;b&gt;Ana&lt;/b&gt;!', $html);
@@ -130,8 +133,10 @@ final class sidebar_templates_test extends \advanced_testcase {
         $base = ['greeting' => 'Hi', 'strings' => []];
 
         $html = $this->render('sidebar', $base + ['files_enabled' => false, 'audio_enabled' => false, 'attach_enabled' => false]);
-        foreach (['jedomi-attach-btn', 'jedomi-image-input', 'jedomi-file-input', 'jedomi-dropzone', 'jedomi-voice-btn',
-                'jedomi-audio-input', 'jedomi-voice-bar'] as $id) {
+        foreach (
+            ['jedomi-attach-btn', 'jedomi-image-input', 'jedomi-file-input', 'jedomi-dropzone', 'jedomi-voice-btn',
+                'jedomi-audio-input', 'jedomi-voice-bar'] as $id
+        ) {
             $this->assertStringNotContainsString('id="' . $id . '"', $html, $id);
         }
 

@@ -65,8 +65,11 @@ final class sidebar_config_test extends \advanced_testcase {
 
         $strings = local_jedomi_get_sidebar_config()['strings'];
 
-        foreach (['tool_search_tables', 'tool_execute_sql', 'tool_describe_table', 'tool_get_site_config', 'tool_ws_search',
-                'tool_ws_describe', 'tool_ws_execute', 'tool_unknown', 'session_expired_title', 'session_expired_hint', 'qa_course_current', 'qa_course_with_id'] as $key) {
+        foreach (
+            ['tool_search_tables', 'tool_execute_sql', 'tool_describe_table', 'tool_get_site_config', 'tool_ws_search',
+                'tool_ws_describe', 'tool_ws_execute', 'tool_unknown', 'session_expired_title', 'session_expired_hint',
+                'qa_course_current', 'qa_course_with_id'] as $key
+        ) {
             $this->assertSame(get_string($key, 'local_jedomi'), $strings[$key] ?? null, $key);
         }
     }
@@ -86,9 +89,11 @@ final class sidebar_config_test extends \advanced_testcase {
         $this->assertTrue($config['files_enabled']);
         $this->assertFalse($config['audio_enabled']);
         $this->assertStringEndsWith('/local/jedomi/read_file.php', $config['read_file_url']);
-        foreach (['attach_audio', 'audio_file', 'file_audio', 'reading_image', 'listening', 'transcribing', 'mic_error',
+        foreach (
+            ['attach_audio', 'audio_file', 'file_audio', 'reading_image', 'listening', 'transcribing', 'mic_error',
                 'voice_input', 'voice_message', 'voice_recording', 'voice_cancel', 'voice_stop', 'voice_play', 'voice_pause',
-                'voice_delete', 'voice_send', 'audio_error_unreadable'] as $key) {
+                'voice_delete', 'voice_send', 'audio_error_unreadable'] as $key
+        ) {
             $this->assertSame(get_string($key, 'local_jedomi'), $config['strings'][$key] ?? null, $key);
         }
 

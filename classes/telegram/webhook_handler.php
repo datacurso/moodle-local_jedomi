@@ -318,8 +318,11 @@ class webhook_handler {
             $client->send_chat_action($chatid, 'typing');
             $filename = isset($message['voice']) ? 'voice.ogg' : self::audio_filename($audio);
             try {
-                $transcription = self::with_download($client, (string) ($audio['file_id'] ?? ''),
-                    static fn(string $path): array => audio_service::transcribe_upload($userid, $path, $filename));
+                $transcription = self::with_download(
+                    $client,
+                    (string) ($audio['file_id'] ?? ''),
+                    static fn(string $path): array => audio_service::transcribe_upload($userid, $path, $filename)
+                );
             } catch (\Throwable $e) {
                 $client->send_message($chatid, audio_service::error_for($e)['message']);
                 return null;
@@ -341,8 +344,11 @@ class webhook_handler {
                 // Word and PowerPoint: their text is read without a model, so it is not billed.
                 $client->send_chat_action($chatid, 'typing');
                 try {
-                    $extracted = self::with_download($client, (string) ($file['file_id'] ?? ''),
-                        static fn(string $path): array => file_extraction_service::extract_upload($userid, $path, $filename));
+                    $extracted = self::with_download(
+                        $client,
+                        (string) ($file['file_id'] ?? ''),
+                        static fn(string $path): array => file_extraction_service::extract_upload($userid, $path, $filename)
+                    );
                 } catch (\Throwable $e) {
                     $client->send_message($chatid, file_extraction_service::error_for($e)['message']);
                     return null;
@@ -355,8 +361,11 @@ class webhook_handler {
             }
             $client->send_chat_action($chatid, 'typing');
             try {
-                $read = self::with_download($client, (string) ($file['file_id'] ?? ''),
-                    static fn(string $path): array => vision_service::read_upload($userid, $path, $filename, $caption));
+                $read = self::with_download(
+                    $client,
+                    (string) ($file['file_id'] ?? ''),
+                    static fn(string $path): array => vision_service::read_upload($userid, $path, $filename, $caption)
+                );
             } catch (\Throwable $e) {
                 $client->send_message($chatid, vision_service::error_for($e)['message']);
                 return null;

@@ -35,8 +35,15 @@ final class telegram_profile_test extends \advanced_testcase {
      * @return telegram_profile
      */
     private function profile(string $state, ?\stdClass $link = null, string $code = ''): telegram_profile {
-        return new telegram_profile($state, 'jedomibot', 'Jedomi', $link, $code, $code ? 1700000600 : 0,
-            new \moodle_url('/local/jedomi/telegram_profile.php', ['userid' => 2]));
+        return new telegram_profile(
+            $state,
+            'jedomibot',
+            'Jedomi',
+            $link,
+            $code,
+            $code ? 1700000600 : 0,
+            new \moodle_url('/local/jedomi/telegram_profile.php', ['userid' => 2])
+        );
     }
 
     /**

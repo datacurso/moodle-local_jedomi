@@ -14,7 +14,6 @@
 // You should have received a copy of the GNU General Public License
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
-
 namespace local_jedomi\local\service;
 
 use aiprovider_datacurso\httpclient\ai_services_api;
@@ -71,8 +70,15 @@ class audio_service {
             throw new \moodle_exception('audio_error_unsupported', 'local_jedomi');
         }
 
-        $response = provider_upload_service::send($userid, $path, $filename, self::ENDPOINT,
-            ['model' => model_settings::get_audio_model()], self::TIMEOUT, $api);
+        $response = provider_upload_service::send(
+            $userid,
+            $path,
+            $filename,
+            self::ENDPOINT,
+            ['model' => model_settings::get_audio_model()],
+            self::TIMEOUT,
+            $api
+        );
 
         $text = trim((string) ($response['text'] ?? ''));
         if ($text === '') {

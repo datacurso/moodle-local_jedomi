@@ -25,7 +25,7 @@ namespace local_jedomi\output\admin;
  * @copyright  2026 Jedomi Project
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-class agents_tab implements \renderable, \templatable, \core\output\named_templatable {
+class agents_tab implements \core\output\named_templatable, \renderable, \templatable {
     /** @var array<string, string> Schedules offered in the agent form: cron expression => lang string key. */
     private const SCHEDULES = [
         '*/5 * * * *' => 'agent_every_5min',

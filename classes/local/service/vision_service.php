@@ -14,7 +14,6 @@
 // You should have received a copy of the GNU General Public License
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
-
 namespace local_jedomi\local\service;
 
 use aiprovider_datacurso\httpclient\ai_services_api;
@@ -79,8 +78,15 @@ class vision_service {
         if (!is_readable($path)) {
             throw new \moodle_exception('image_error_unsupported', 'local_jedomi');
         }
-        $response = provider_upload_service::send($userid, $path, $filename, self::ENDPOINT,
-            self::params($question, ''), self::TIMEOUT, $api);
+        $response = provider_upload_service::send(
+            $userid,
+            $path,
+            $filename,
+            self::ENDPOINT,
+            self::params($question, ''),
+            self::TIMEOUT,
+            $api
+        );
         return self::normalise($response);
     }
 
@@ -102,8 +108,13 @@ class vision_service {
     ): array {
         self::require_enabled();
         self::check_filename($file->get_filename());
-        $response = provider_upload_service::send_stored_file($file, self::ENDPOINT,
-            self::params($question, $pages), self::TIMEOUT, $api);
+        $response = provider_upload_service::send_stored_file(
+            $file,
+            self::ENDPOINT,
+            self::params($question, $pages),
+            self::TIMEOUT,
+            $api
+        );
         return self::normalise($response);
     }
 

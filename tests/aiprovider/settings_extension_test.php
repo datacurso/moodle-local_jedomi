@@ -31,6 +31,14 @@ use local_jedomi\ai\model_settings;
  * @covers     \local_jedomi\aiprovider\settings_extension
  */
 final class settings_extension_test extends \advanced_testcase {
+    #[\Override]
+    protected function setUp(): void {
+        parent::setUp();
+        if (!class_exists(\aiprovider_datacurso\httpclient\ai_services_api::class)) {
+            $this->markTestSkipped('aiprovider_datacurso is not installed; there is no settings page to extend.');
+        }
+    }
+
     /**
      * Valid submitted values of the Jedomi fields.
      *
@@ -305,8 +313,10 @@ final class settings_extension_test extends \advanced_testcase {
         $form->set_data(plugin_settings_form::current_data('local_jedomi'));
         $html = $form->render();
 
-        foreach (['vision_model' => model_settings::DEFAULT_VISION_MODEL,
-                'audio_model' => model_settings::DEFAULT_AUDIO_MODEL] as $name => $default) {
+        foreach (
+            ['vision_model' => model_settings::DEFAULT_VISION_MODEL,
+                'audio_model' => model_settings::DEFAULT_AUDIO_MODEL] as $name => $default
+        ) {
             $this->assertSame(1, preg_match('/<select[^>]*name="' . $name . '"[^>]*>(.*?)<\/select>/s', $html, $match));
             $this->assertStringNotContainsString('value=""', $match[1], "{$name} must not have an empty option");
             $this->assertMatchesRegularExpression('/value="' . preg_quote(s($default), '/') . '"\s+selected/', $match[1]);

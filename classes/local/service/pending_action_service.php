@@ -149,8 +149,11 @@ class pending_action_service {
             'tool' => $tool,
             'severity' => $severity,
             'description' => self::describe($tool, $args),
-            'details' => \core_text::substr(json_encode($args, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), 0,
-                self::DETAILS_LENGTH),
+            'details' => \core_text::substr(
+                json_encode($args, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                0,
+                self::DETAILS_LENGTH
+            ),
         ];
         if ($tool === 'send_messages') {
             $card['count'] = count(message_service::recipients($args['user_ids'] ?? []));
@@ -179,11 +182,17 @@ class pending_action_service {
             case 'admin_execute':
                 return get_string('pending_desc_admin_execute', 'local_jedomi', (string) ($args['name'] ?? ''));
             case 'send_messages':
-                return get_string('pending_desc_send_messages', 'local_jedomi',
-                    count(message_service::recipients($args['user_ids'] ?? [])));
+                return get_string(
+                    'pending_desc_send_messages',
+                    'local_jedomi',
+                    count(message_service::recipients($args['user_ids'] ?? []))
+                );
             default:
-                return get_string('pending_desc_ws_execute', 'local_jedomi',
-                    (string) ($args['wsname'] ?? $args['ws_name'] ?? $tool));
+                return get_string(
+                    'pending_desc_ws_execute',
+                    'local_jedomi',
+                    (string) ($args['wsname'] ?? $args['ws_name'] ?? $tool)
+                );
         }
     }
 
@@ -235,8 +244,10 @@ class pending_action_service {
     private static function summarise(string $tool, array $decoded): array {
         if (isset($decoded['error'])) {
             $denied = is_string($decoded['error']) && str_starts_with($decoded['error'], 'permission_denied');
-            return self::result(self::STATUS_FAILED,
-                get_string($denied ? 'pending_action_denied' : 'pending_action_failed', 'local_jedomi'));
+            return self::result(
+                self::STATUS_FAILED,
+                get_string($denied ? 'pending_action_denied' : 'pending_action_failed', 'local_jedomi')
+            );
         }
         if ($tool !== 'send_messages') {
             return self::result(self::STATUS_EXECUTED, get_string('confirm_done', 'local_jedomi'));

@@ -73,6 +73,15 @@ final class webhook_handler_test extends \advanced_testcase {
         parent::tearDown();
     }
 
+    /**
+     * Skip the test when aiprovider_datacurso is missing: the webhook asks it whether Jedomi is enabled.
+     */
+    private function require_provider(): void {
+        if (!class_exists(\aiprovider_datacurso\httpclient\ai_services_api::class)) {
+            $this->markTestSkipped('aiprovider_datacurso is not installed; the plugin state and its client are not available.');
+        }
+    }
+
     // ... ========================
     // Task 2.2: looks_like_link_code — pure function tests
     // ========================
@@ -737,6 +746,7 @@ final class webhook_handler_test extends \advanced_testcase {
      * @param string|null $expected Normalised id, or null when invalid
      */
     public function test_handle_validates_chat_id(string $input, ?string $expected): void {
+        $this->require_provider();
         global $DB;
 
         $before = $DB->count_records('local_jedomi_telegram_rate_limit');
@@ -761,6 +771,7 @@ final class webhook_handler_test extends \advanced_testcase {
      * Test handle() rejects a chat id with SQL metacharacters without touching the DB.
      */
     public function test_handle_message_rejects_non_numeric_chatid(): void {
+        $this->require_provider();
         global $DB;
 
         $before = [
@@ -881,6 +892,7 @@ final class webhook_handler_test extends \advanced_testcase {
      * with a TypeError.
      */
     public function test_handle_internal_ping_with_cached_state(): void {
+        $this->require_provider();
         $chatid = '990000001';
         $statekey = $this->seed_selfping_state($chatid, [
             'spt'   => ['token' => 'fake-spt-token', 'role' => 'student', 'tools' => []],
@@ -903,6 +915,7 @@ final class webhook_handler_test extends \advanced_testcase {
      * recalculate them from the DB and the continuation must still work.
      */
     public function test_handle_internal_ping_legacy_state_without_spt(): void {
+        $this->require_provider();
         $chatid = '990000002';
         $statekey = $this->seed_selfping_state($chatid);
 
@@ -919,6 +932,7 @@ final class webhook_handler_test extends \advanced_testcase {
      * M7: Telegram calls the AI client for the linked user, without SPT, with the configured timeout.
      */
     public function test_telegram_calls_client_without_spt_and_with_timeout(): void {
+        $this->require_provider();
         $chatid = '990000003';
         $user = $this->getDataGenerator()->create_user();
         set_config('licensekey', 'test-license', 'aiprovider_datacurso');
@@ -955,6 +969,7 @@ final class webhook_handler_test extends \advanced_testcase {
      * M7: the timeout handed to the client never exceeds the configured Telegram timeout.
      */
     public function test_telegram_timeout_bounded_by_setting_and_answer_releases_lock(): void {
+        $this->require_provider();
         $chatid = '990000004';
         $fake = new fake_ai_client();
         $fake->enqueue_text('Hola');
@@ -982,6 +997,7 @@ final class webhook_handler_test extends \advanced_testcase {
      * the same request.
      */
     public function test_ai_timeout_is_not_resent_and_releases_lock_with_timeout_message(): void {
+        $this->require_provider();
         $chatid = '990000005';
         $fake = new fake_ai_client();
         $fake->enqueue_exception(new \moodle_exception('curlerror', 'aiprovider_datacurso', '', CURLE_OPERATION_TIMEDOUT));
@@ -1006,6 +1022,7 @@ final class webhook_handler_test extends \advanced_testcase {
      * I6: with the provider disabled Telegram answers with the provider's message and nothing is sent.
      */
     public function test_telegram_with_the_provider_disabled_answers_with_the_provider_message(): void {
+        $this->require_provider();
         $chatid = '990000006';
         set_config('licensekey', 'test-license', 'aiprovider_datacurso');
         \core\plugininfo\aiprovider::enable_plugin('datacurso', 0);

@@ -61,8 +61,10 @@ if (isguestuser() || !local_jedomi_is_role_allowed()) {
 }
 
 $upload = $_FILES['file'] ?? null;
-if (!is_array($upload) || ($upload['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK
-        || !is_uploaded_file($upload['tmp_name'] ?? '')) {
+if (
+    !is_array($upload) || ($upload['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK
+        || !is_uploaded_file($upload['tmp_name'] ?? '')
+) {
     $toolarge = in_array($upload['error'] ?? null, [UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE], true);
     local_jedomi_extract_file_error(400, [
         'code' => $toolarge ? 'file_too_large' : 'file_unsupported',

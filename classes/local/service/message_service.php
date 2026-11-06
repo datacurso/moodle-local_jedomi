@@ -117,8 +117,10 @@ class message_service {
         $sent = 0;
         foreach ($recipients as $recipientid) {
             $recipient = $DB->get_record('user', ['id' => $recipientid, 'deleted' => 0]);
-            if (!$recipient || $recipientid === $senderid
-                    || !\core_message\api::can_send_message($recipientid, $senderid)) {
+            if (
+                !$recipient || $recipientid === $senderid
+                    || !\core_message\api::can_send_message($recipientid, $senderid)
+            ) {
                 continue;
             }
             try {

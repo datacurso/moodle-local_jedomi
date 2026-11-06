@@ -23,7 +23,7 @@ namespace local_jedomi\output\admin;
  * @copyright  2026 Jedomi Project
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-class profiler_tab implements \renderable, \templatable, \core\output\named_templatable {
+class profiler_tab implements \core\output\named_templatable, \renderable, \templatable {
     /** @var int Queries that take longer than this, in milliseconds, are highlighted. */
     private const SLOW_MS = 1000;
 

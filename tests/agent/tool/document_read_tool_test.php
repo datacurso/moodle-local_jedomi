@@ -14,7 +14,6 @@
 // You should have received a copy of the GNU General Public License
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
-
 namespace local_jedomi\agent\tool;
 
 use local_jedomi\ai\fake_curl;
@@ -44,6 +43,9 @@ final class document_read_tool_test extends \advanced_testcase {
     #[\Override]
     protected function setUp(): void {
         parent::setUp();
+        if (!class_exists(\aiprovider_datacurso\httpclient\ai_services_api::class)) {
+            $this->markTestSkipped('aiprovider_datacurso is not installed; the provider client cannot be built.');
+        }
         $this->resetAfterTest();
         $this->setAdminUser();
         set_config('licensekey', 'test-license', 'aiprovider_datacurso');
@@ -156,7 +158,9 @@ final class document_read_tool_test extends \advanced_testcase {
      */
     public function test_tool_is_offered_only_when_files_are_enabled(): void {
         $names = static fn(array $definitions): array => array_map(
-            static fn(array $definition): string => $definition['function']['name'], $definitions);
+            static fn(array $definition): string => $definition['function']['name'],
+            $definitions
+        );
 
         $this->assertContains('document_read', $names(\local_jedomi_get_tool_definitions('admin')));
         $this->assertContains('document_read', $names(\local_jedomi\agent\tool_executor::get_definitions()));

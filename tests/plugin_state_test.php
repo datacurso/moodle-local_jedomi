@@ -35,6 +35,10 @@ final class plugin_state_test extends \advanced_testcase {
      */
     private function sidebar_injected(): bool {
         global $PAGE;
+        // The hook reads the plugin state from aiprovider_datacurso.
+        if (!class_exists(\aiprovider_datacurso\httpclient\ai_services_api::class)) {
+            $this->markTestSkipped('aiprovider_datacurso is not installed; the plugin state is not available.');
+        }
         $this->setAdminUser();
         $PAGE->set_url(new \moodle_url('/my/'));
         $PAGE->set_context(\context_system::instance());

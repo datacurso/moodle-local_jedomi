@@ -14,7 +14,6 @@
 // You should have received a copy of the GNU General Public License
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
-
 namespace local_jedomi\local\service;
 
 use aiprovider_datacurso\httpclient\ai_services_api;
@@ -112,9 +111,9 @@ class provider_upload_service {
      * Code and user message for a failed upload; internal details never reach the message.
      *
      * @param \Throwable $e Failure.
-     * @param array<int, array{0: string, 1: string}> $statuserrors Code and message string for each HTTP status of the route.
-     * @param array<string, array{0: string, 1: string}> $localerrors Code and message string for each local_jedomi error code.
-     * @return array{code: string, message: string}
+     * @param array $statuserrors [code, message string key] for each HTTP status of the route, keyed by status.
+     * @param array $localerrors [code, message string key] for each local_jedomi error code, keyed by error code.
+     * @return array Keys code and message.
      */
     public static function error_for(\Throwable $e, array $statuserrors, array $localerrors): array {
         if ($e instanceof \moodle_exception && $e->module === 'local_jedomi' && isset($localerrors[$e->errorcode])) {

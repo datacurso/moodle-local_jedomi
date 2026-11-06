@@ -14,7 +14,6 @@
 // You should have received a copy of the GNU General Public License
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
-
 namespace local_jedomi\telegram;
 
 use local_jedomi\ai\client;
@@ -59,6 +58,9 @@ final class webhook_media_test extends \advanced_testcase {
     protected function setUp(): void {
         global $DB;
         parent::setUp();
+        if (!class_exists(\aiprovider_datacurso\httpclient\ai_services_api::class)) {
+            $this->markTestSkipped('aiprovider_datacurso is not installed; the provider client cannot be built.');
+        }
         $this->resetAfterTest();
         set_config('licensekey', 'test-license', 'aiprovider_datacurso');
         \core\plugininfo\aiprovider::enable_plugin('datacurso', 1);
@@ -204,8 +206,10 @@ final class webhook_media_test extends \advanced_testcase {
         $this->assertStringEndsWith('/jedomi/v1/files/read', $this->curl->calls[0]['url']);
         $this->assertSame('What is this?', $this->curl->calls[0]['params']['question']);
         $this->assertSame('photo.jpg', $this->curl->calls[0]['params']['file']->getPostFilename());
-        $this->assertSame(vision_service::compose_message('What is this?', 'photo.jpg', 'A grade report for Math 50'),
-            $this->last_user_content());
+        $this->assertSame(
+            vision_service::compose_message('What is this?', 'photo.jpg', 'A grade report for Math 50'),
+            $this->last_user_content()
+        );
         $this->assertStringNotContainsString('image_url', json_encode($this->ai->calls[0]['messages']));
         $this->assertStringContainsString('It is a grade report.', end($texts));
     }
@@ -254,8 +258,10 @@ final class webhook_media_test extends \advanced_testcase {
         $this->assertStringEndsWith('/jedomi/v1/files/extract', $this->curl->calls[0]['url']);
         $this->assertSame('plan.docx', $this->curl->calls[0]['params']['file']->getPostFilename());
         $this->assertArrayNotHasKey('question', $this->curl->calls[0]['params']);
-        $this->assertSame(file_extraction_service::compose_message('What is it about?', 'plan.docx', 'Unit 1 plan'),
-            $this->last_user_content());
+        $this->assertSame(
+            file_extraction_service::compose_message('What is it about?', 'plan.docx', 'Unit 1 plan'),
+            $this->last_user_content()
+        );
         $this->assertStringContainsString('It is a plan.', end($texts));
     }
 

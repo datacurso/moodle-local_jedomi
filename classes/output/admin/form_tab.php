@@ -23,7 +23,7 @@ namespace local_jedomi\output\admin;
  * @copyright  2026 Jedomi Project
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-abstract class form_tab implements \renderable, \templatable, \core\output\named_templatable {
+abstract class form_tab implements \core\output\named_templatable, \renderable, \templatable {
     /** @var string HTML of the settings form, rendered by moodleform. */
     protected string $formhtml;
 

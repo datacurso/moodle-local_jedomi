@@ -31,6 +31,14 @@ use local_jedomi\local\service\pending_action_service;
  * @covers     \local_jedomi\local\service\pending_action_service
  */
 final class resolve_action_test extends \advanced_testcase {
+    #[\Override]
+    protected function setUp(): void {
+        parent::setUp();
+        if (!class_exists(\aiprovider_datacurso\httpclient\ai_services_api::class)) {
+            $this->markTestSkipped('aiprovider_datacurso is not installed; the web service checks the plugin state through it.');
+        }
+    }
+
     /**
      * Create a scheduled agent.
      *

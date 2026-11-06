@@ -25,7 +25,7 @@ use local_jedomi\local\service\admin_settings_service;
  * @copyright  2026 Jedomi Project
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-class apis_tab implements \renderable, \templatable, \core\output\named_templatable {
+class apis_tab implements \core\output\named_templatable, \renderable, \templatable {
     /** @var string Role key whose allowlist is shown. */
     protected string $role;
     /** @var array Page of the table from admin_settings_service::get_ws_table(). */

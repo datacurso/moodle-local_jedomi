@@ -65,6 +65,9 @@ final class plugin_disabled_test extends \advanced_testcase {
     #[\Override]
     protected function setUp(): void {
         parent::setUp();
+        if (!class_exists(\aiprovider_datacurso\httpclient\ai_services_api::class)) {
+            $this->markTestSkipped('aiprovider_datacurso is not installed; the plugin state is not available.');
+        }
         $this->resetAfterTest();
         $this->ai = new fake_ai_client();
         client::set_instance_for_testing($this->ai);
@@ -153,8 +156,10 @@ final class plugin_disabled_test extends \advanced_testcase {
             (int) get_admin()->id
         ));
 
-        $this->assertStringContainsString('data: ' . json_encode(['error' => local_jedomi_plugin_disabled_error()],
-            JSON_UNESCAPED_UNICODE), $output);
+        $this->assertStringContainsString('data: ' . json_encode(
+            ['error' => local_jedomi_plugin_disabled_error()],
+            JSON_UNESCAPED_UNICODE
+        ), $output);
         $this->assertSame([], $this->ai->calls);
     }
 
@@ -185,8 +190,10 @@ final class plugin_disabled_test extends \advanced_testcase {
 
         webhook_handler::handle(['message' => ['chat' => ['id' => self::CHATID], 'text' => 'How many users?']]);
 
-        $this->assertSame([local_jedomi_plugin_disabled_error()['message']],
-            array_column($this->telegram->sent, 'text'));
+        $this->assertSame(
+            [local_jedomi_plugin_disabled_error()['message']],
+            array_column($this->telegram->sent, 'text')
+        );
         $this->assertSame([], $this->ai->calls);
     }
 
@@ -204,8 +211,10 @@ final class plugin_disabled_test extends \advanced_testcase {
         ]]);
 
         $this->assertSame(['cb-1'], $this->telegram->answeredcallbacks);
-        $this->assertSame([local_jedomi_plugin_disabled_error()['message']],
-            array_column($this->telegram->sent, 'text'));
+        $this->assertSame(
+            [local_jedomi_plugin_disabled_error()['message']],
+            array_column($this->telegram->sent, 'text')
+        );
     }
 
     /**

@@ -14,7 +14,6 @@
 // You should have received a copy of the GNU General Public License
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
-
 namespace local_jedomi\local\service;
 
 use local_jedomi\ai\fake_curl;
@@ -43,6 +42,9 @@ final class vision_service_test extends \advanced_testcase {
      * @return int
      */
     private function setup_user(): int {
+        if (!class_exists(\aiprovider_datacurso\httpclient\ai_services_api::class)) {
+            $this->markTestSkipped('aiprovider_datacurso is not installed; the provider client cannot be built.');
+        }
         $this->resetAfterTest();
         $user = $this->getDataGenerator()->create_user();
         $this->setUser($user);
@@ -73,8 +75,13 @@ final class vision_service_test extends \advanced_testcase {
         $curl->enqueue(json_encode(['text' => 'A bar chart of grades', 'model' => 'jedomi/Qwen/Qwen3-VL-235B-A22B-Instruct',
             'pages_total' => null, 'pages_vision' => [], 'pages_skipped' => []]));
 
-        $result = vision_service::read_upload($userid, $this->upload(), 'chart.png', 'What does it show?',
-            new testable_provider_api(30, $curl));
+        $result = vision_service::read_upload(
+            $userid,
+            $this->upload(),
+            'chart.png',
+            'What does it show?',
+            new testable_provider_api(30, $curl)
+        );
 
         $this->assertSame([
             'text' => 'A bar chart of grades',
@@ -130,8 +137,10 @@ final class vision_service_test extends \advanced_testcase {
             vision_service::read_upload($userid, $this->upload(), 'chart.png', '', new testable_provider_api(30, $curl));
             $this->fail('Disabled file processing must stop the read');
         } catch (\moodle_exception $e) {
-            $this->assertSame(['code' => 'files_disabled', 'message' => get_string('files_error_disabled', 'local_jedomi')],
-                vision_service::error_for($e));
+            $this->assertSame(
+                ['code' => 'files_disabled', 'message' => get_string('files_error_disabled', 'local_jedomi')],
+                vision_service::error_for($e)
+            );
         }
         $this->assertSame([], $curl->calls);
     }
@@ -196,9 +205,13 @@ final class vision_service_test extends \advanced_testcase {
      * M11: the message for the chat model is the question followed by the text read from the image.
      */
     public function test_compose_message_puts_the_question_before_the_image_text(): void {
-        $this->assertSame("What is it?\n\n" . get_string('attached_image_content', 'local_jedomi', 'a.png') . "\nA cat",
-            vision_service::compose_message(' What is it? ', 'a.png', "A cat\n"));
-        $this->assertStringStartsWith(get_string('analyze_image', 'local_jedomi'),
-            vision_service::compose_message('', 'a.png', 'A cat'));
+        $this->assertSame(
+            "What is it?\n\n" . get_string('attached_image_content', 'local_jedomi', 'a.png') . "\nA cat",
+            vision_service::compose_message(' What is it? ', 'a.png', "A cat\n")
+        );
+        $this->assertStringStartsWith(
+            get_string('analyze_image', 'local_jedomi'),
+            vision_service::compose_message('', 'a.png', 'A cat')
+        );
     }
 }

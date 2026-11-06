@@ -29,6 +29,14 @@ use core_external\external_api;
  * @covers     \local_jedomi\local\service\feedback_service
  */
 final class save_feedback_test extends \advanced_testcase {
+    #[\Override]
+    protected function setUp(): void {
+        parent::setUp();
+        if (!class_exists(\aiprovider_datacurso\httpclient\ai_services_api::class)) {
+            $this->markTestSkipped('aiprovider_datacurso is not installed; the web service checks the plugin state through it.');
+        }
+    }
+
     /**
      * M10: feedback is stored for the current user only.
      */
