@@ -36,6 +36,8 @@
 
 namespace local_jedomi\task;
 
+use aiprovider_datacurso\local\plugin_settings;
+
 defined('MOODLE_INTERNAL') || die();
 
 require_once(__DIR__ . '/../../lib.php');
@@ -243,6 +245,11 @@ class agent_runner extends \core\task\scheduled_task {
         global $DB;
 
         require_once(__DIR__ . '/../../lib.php');
+
+        if (!plugin_settings::is_enabled('local_jedomi')) {
+            mtrace(get_string('task_skipped_plugin_disabled', 'local_jedomi'));
+            return;
+        }
 
         $start = time();
 

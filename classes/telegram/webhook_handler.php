@@ -109,6 +109,12 @@ class webhook_handler {
      * @param array $update Decoded JSON from Telegram webhook
      */
     public static function handle(array $update): void {
+        $disabled = \local_jedomi_plugin_disabled_error();
+        if ($disabled !== null) {
+            self::reply_plugin_disabled($update, $disabled['message']);
+            return;
+        }
+
         if (isset($update['callback_query'])) {
             self::handle_callback_query($update['callback_query']);
             return;
@@ -122,6 +128,31 @@ class webhook_handler {
         // Unknown update type — silently ignore.
         if (function_exists('\\local_jedomi_log')) {
             \local_jedomi_log('Telegram webhook: unknown update type');
+        }
+    }
+
+    /**
+     * Answer an update with the "not enabled" message while Jedomi is disabled in the Datacurso AI provider.
+     *
+     * Nothing else runs: no AI call, no link code, no inline action.
+     *
+     * @param array $update Decoded JSON from Telegram webhook
+     * @param string $message The provider's "not enabled" message
+     */
+    private static function reply_plugin_disabled(array $update, string $message): void {
+        $client = api_client::instance();
+        if (isset($update['callback_query'])) {
+            $callbackid = (string) ($update['callback_query']['id'] ?? '');
+            if ($callbackid !== '') {
+                $client->answer_callback_query($callbackid);
+            }
+            $rawchatid = $update['callback_query']['message']['chat']['id'] ?? '';
+        } else {
+            $rawchatid = $update['message']['chat']['id'] ?? '';
+        }
+        $chatid = self::normalise_chat_id((string) $rawchatid);
+        if ($chatid !== null) {
+            $client->send_message($chatid, $message);
         }
     }
 
@@ -660,6 +691,13 @@ class webhook_handler {
         if ($chatid === null) {
             // The chat id arrives as a raw HTTP parameter: reject before any DB access.
             \local_jedomi_log('[GATELOOP] rejected non-numeric chat id in internal ping');
+            return;
+        }
+
+        $disabled = \local_jedomi_plugin_disabled_error();
+        if ($disabled !== null) {
+            // Disabled in the Datacurso AI provider: do not continue the tool loop with the AI.
+            api_client::instance()->send_message($chatid, $disabled['message']);
             return;
         }
 

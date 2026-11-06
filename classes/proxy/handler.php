@@ -51,22 +51,37 @@ class handler {
         $context = is_array($input['context'] ?? null) ? $input['context'] : [];
         $messages = is_array($input['messages'] ?? null) ? array_values($input['messages']) : [];
 
+        // Disabled in the Datacurso AI provider: answer its message and make no AI call.
+        $disabled = \local_jedomi_plugin_disabled_error();
+        if ($disabled !== null) {
+            self::send_error($disabled);
+            return;
+        }
+
         // Images are read by the vision model before they are sent (read_file.php), so the chat model
         // only gets text. A new image part means the browser skipped that step.
         $last = end($messages);
         if (is_array($last) && self::has_image_parts($last) && !\local_jedomi\ai\model_settings::is_files_enabled()) {
-            $error = ['code' => 'files_disabled', 'message' => get_string('files_error_disabled', 'local_jedomi')];
-            echo "data: " . json_encode(['error' => $error], JSON_UNESCAPED_UNICODE) . "\n\n";
-            if (ob_get_level()) {
-                ob_flush();
-            }
-            flush();
+            self::send_error(['code' => 'files_disabled', 'message' => get_string('files_error_disabled', 'local_jedomi')]);
             return;
         }
         $messages = array_map([self::class, 'without_image_parts'], $messages);
 
         $system = system_message::build($role, $spt, $context);
         self::run(array_merge([$system], $messages), $role, $userid);
+    }
+
+    /**
+     * Send an error event to the browser: {"error": {"code", "message"}} with a message ready to show.
+     *
+     * @param array $error Error code and message.
+     */
+    private static function send_error(array $error): void {
+        echo "data: " . json_encode(['error' => $error], JSON_UNESCAPED_UNICODE) . "\n\n";
+        if (ob_get_level()) {
+            ob_flush();
+        }
+        flush();
     }
 
     /**

@@ -29,6 +29,9 @@
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
+use aiprovider_datacurso\local\plugin_settings;
+use aiprovider_datacurso\local\suite_plugins;
+
 /**
  * Legacy before_footer callback — now handled by the hook system.
  *
@@ -296,6 +299,10 @@ function local_jedomi_myprofile_navigation(\core_user\output\myprofile\tree $tre
         return;
     }
 
+    if (!plugin_settings::is_enabled('local_jedomi')) {
+        return;
+    }
+
     // Require Telegram enabled AND bot token verified by getMe().
     // If the admin hasn't pasted a valid token yet, don't expose the link.
     if (!\local_jedomi\telegram\manager::is_enabled()) {
@@ -394,10 +401,22 @@ function local_jedomi_get_page_context(): array {
 }
 
 /**
- * Generate a Signed Permission Token (SPT) with Moodle's native has_capability().
- * The gateway validates it cryptographically, without network calls. Latency: 0 ms.
- * TTL: 5 minutes (300 seconds).
+ * Error to answer when Jedomi is disabled in the Datacurso AI provider.
+ *
+ * Shared by the endpoints that answer JSON or SSE ({"error": {"code", "message"}}) and by the Telegram
+ * bot. The message is the provider's plain-text "not enabled" string (plugindisabled), without the
+ * administrator link that plugin_settings::require_enabled() adds for HTML pages.
+ *
+ * @return array|null ['code' => 'plugindisabled', 'message' => ...], or null when Jedomi is enabled.
  */
+function local_jedomi_plugin_disabled_error(): ?array {
+    if (plugin_settings::is_enabled('local_jedomi')) {
+        return null;
+    }
+    $name = suite_plugins::get_display_name('local_jedomi');
+    return ['code' => 'plugindisabled', 'message' => get_string('plugindisabled', 'aiprovider_datacurso', $name)];
+}
+
 /**
  * Check whether Jedomi is available in the current course according to the settings.
  * Supports the modes all, whitelist (only the listed courses) and blacklist (all but the listed courses).

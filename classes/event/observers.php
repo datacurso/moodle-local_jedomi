@@ -24,6 +24,7 @@
 
 namespace local_jedomi\event;
 
+use aiprovider_datacurso\local\plugin_settings;
 use local_jedomi\telegram\api_client;
 use local_jedomi\telegram\manager;
 
@@ -39,7 +40,7 @@ class observers {
     public static function submission_graded(\mod_assign\event\submission_graded $event): void {
         global $DB;
 
-        if (!manager::is_enabled()) {
+        if (!manager::is_enabled() || !plugin_settings::is_enabled('local_jedomi')) {
             return;
         }
 
@@ -66,7 +67,7 @@ class observers {
 
         $text = "📝 Your assignment '<b>" . s($assignname) . "</b>' in <b>" . s($coursename ?? 'Course') . "</b> has been graded.";
 
-        $client = new api_client();
+        $client = api_client::instance();
         $client->send_message((string)$link->chatid, $text);
 
         self::update_cooldown($link);
@@ -80,7 +81,7 @@ class observers {
     public static function user_loggedin(\core\event\user_loggedin $event): void {
         global $DB;
 
-        if (!manager::is_enabled()) {
+        if (!manager::is_enabled() || !plugin_settings::is_enabled('local_jedomi')) {
             return;
         }
 
@@ -114,7 +115,7 @@ class observers {
         }
         $lines[] = "\nReply with 'FIX' to attempt auto-repair.";
 
-        $client = new api_client();
+        $client = api_client::instance();
         $client->send_message((int)$link->chatid, implode("\n", $lines));
 
         self::update_cooldown($link);

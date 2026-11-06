@@ -28,10 +28,13 @@
 require_once(__DIR__ . '/../../../config.php');
 require_once(__DIR__ . '/../lib.php');
 
+use aiprovider_datacurso\local\plugin_settings;
+
 header('Content-Type: application/json; charset=utf-8');
 
 try {
     require_login();
+    plugin_settings::require_enabled('local_jedomi');
 
     // Set page URL to prevent Moodle debugging notice in lib.php::local_jedomi_get_page_context().
     $PAGE->set_url('/local/jedomi/ajax/sidebar_config.php');

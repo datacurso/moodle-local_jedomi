@@ -27,6 +27,7 @@
 
 namespace local_jedomi\task;
 
+use aiprovider_datacurso\local\plugin_settings;
 use core\task\adhoc_task;
 use core\task\manager as task_manager;
 
@@ -38,6 +39,11 @@ class run_scheduled_task_adhoc extends adhoc_task {
      * Resolve the task class from custom data and execute it, logging progress via mtrace.
      */
     public function execute(): void {
+        if (!plugin_settings::is_enabled('local_jedomi')) {
+            mtrace(get_string('task_skipped_plugin_disabled', 'local_jedomi'));
+            return;
+        }
+
         $data      = $this->get_custom_data();
         $classname = $data->classname ?? '';
 

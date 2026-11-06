@@ -512,6 +512,7 @@ $string['tab_profiler'] = 'Perfil de Consultas';
 $string['table_not_found'] = 'Tabla no encontrada: {$a}';
 $string['task_instantiation_failed_msg'] = 'task_instantiation_failed';
 $string['task_not_found_msg'] = 'task_not_found';
+$string['task_skipped_plugin_disabled'] = 'Jedomi está deshabilitado en el proveedor de IA Datacurso; se omite la ejecución.';
 $string['telegram_admin_not_configured_desc'] = 'Configura el bot de Telegram en los ajustes de Jedomi. Cuando esté configurado, los usuarios verán aquí la opción para vincular Telegram.';
 $string['telegram_admin_not_configured_title'] = 'Telegram no está configurado (solo los administradores ven este mensaje)';
 $string['telegram_admin_settings_link'] = 'Ajustes de Jedomi → Integraciones';

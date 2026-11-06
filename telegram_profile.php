@@ -27,10 +27,12 @@
 require_once(__DIR__ . '/../../config.php');
 require_once(__DIR__ . '/lib.php');
 
+use aiprovider_datacurso\local\plugin_settings;
 use local_jedomi\local\service\telegram_link_service;
 use local_jedomi\output\telegram_profile;
 
 require_login();
+plugin_settings::require_enabled('local_jedomi');
 
 $userid = optional_param('userid', $USER->id, PARAM_INT);
 if ($userid != $USER->id && !has_capability('moodle/user:update', context_system::instance())) {

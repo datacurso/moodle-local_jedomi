@@ -16,6 +16,7 @@
 
 namespace local_jedomi\external;
 
+use aiprovider_datacurso\local\plugin_settings;
 use core_external\external_api;
 use core_external\external_function_parameters;
 use core_external\external_single_structure;
@@ -61,6 +62,8 @@ class save_feedback extends external_api {
             'sessionid' => $sessionid,
             'messagetext' => $messagetext,
         ]);
+
+        plugin_settings::require_enabled('local_jedomi');
 
         $context = \context_user::instance($USER->id);
         self::validate_context($context);

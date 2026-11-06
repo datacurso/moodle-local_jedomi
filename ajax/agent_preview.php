@@ -28,11 +28,18 @@
  */
 
 require_once(__DIR__ . '/../../../config.php');
+require_once(__DIR__ . '/../lib.php');
 require_login(null, false);
 require_capability('local/jedomi:manageagents', context_system::instance());
 require_sesskey();
 
 header('Content-Type: application/json');
+
+$disabled = local_jedomi_plugin_disabled_error();
+if ($disabled !== null) {
+    echo json_encode(['ok' => false, 'error' => $disabled['message']], JSON_UNESCAPED_UNICODE);
+    exit;
+}
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode(['ok' => false, 'error' => get_string('error_post_required', 'local_jedomi')]);

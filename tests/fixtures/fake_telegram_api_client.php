@@ -42,6 +42,9 @@ class fake_telegram_api_client extends api_client {
     /** @var string[] File ids requested through download_file(), in order. */
     public array $downloads = [];
 
+    /** @var string[] Callback query ids answered, in order. */
+    public array $answeredcallbacks = [];
+
     /**
      * Use a dummy token so no real bot configuration is needed.
      */
@@ -52,6 +55,12 @@ class fake_telegram_api_client extends api_client {
     #[\Override]
     public function send_message(int|string $chatid, string $text, ?array $replymarkup = null, bool $truncate = false): bool {
         $this->sent[] = ['chatid' => $chatid, 'text' => $text];
+        return true;
+    }
+
+    #[\Override]
+    public function answer_callback_query(string $callbackid, string $text = ''): bool {
+        $this->answeredcallbacks[] = $callbackid;
         return true;
     }
 

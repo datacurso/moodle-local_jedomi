@@ -509,6 +509,7 @@ $string['tab_profiler'] = 'Query Profiler';
 $string['table_not_found'] = 'Table not found: {$a}';
 $string['task_instantiation_failed_msg'] = 'task_instantiation_failed';
 $string['task_not_found_msg'] = 'task_not_found';
+$string['task_skipped_plugin_disabled'] = 'Jedomi is disabled in the Datacurso AI provider; skipping.';
 $string['telegram_admin_not_configured_desc'] = 'Set up the Telegram bot in the Jedomi settings. Once it is configured, users see the Telegram linking option here.';
 $string['telegram_admin_not_configured_title'] = 'Telegram is not configured (only administrators see this message)';
 $string['telegram_admin_settings_link'] = 'Jedomi settings → Integrations';

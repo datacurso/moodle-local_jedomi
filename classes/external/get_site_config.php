@@ -31,6 +31,7 @@
 
 namespace local_jedomi\external;
 
+use aiprovider_datacurso\local\plugin_settings;
 defined('MOODLE_INTERNAL') || die();
 
 require_once(__DIR__ . '/../../lib.php');
@@ -145,6 +146,9 @@ class get_site_config extends external_api {
                 'payload_hash'   => $payloadhash,
             ]
         );
+
+        plugin_settings::require_enabled('local_jedomi');
+
         $keys           = $validated['keys'];
         $hmacsignature = $validated['hmac_signature'];
         $hmactimestamp = $validated['hmac_timestamp'];

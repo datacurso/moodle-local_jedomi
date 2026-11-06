@@ -31,6 +31,7 @@
 
 namespace local_jedomi\external;
 
+use aiprovider_datacurso\local\plugin_settings;
 defined('MOODLE_INTERNAL') || die();
 
 require_once(__DIR__ . '/../../lib.php');
@@ -142,6 +143,9 @@ class execute_sql extends external_api {
                 'payload_hash'   => $payloadhash,
             ]
         );
+
+        plugin_settings::require_enabled('local_jedomi');
+
         $sql             = $validated['sql'];
         $params          = $validated['params'];
         $hmacsignature  = $validated['hmac_signature'];

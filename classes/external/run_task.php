@@ -30,6 +30,7 @@
 
 namespace local_jedomi\external;
 
+use aiprovider_datacurso\local\plugin_settings;
 defined('MOODLE_INTERNAL') || die();
 
 require_once(__DIR__ . '/../../lib.php');
@@ -121,6 +122,9 @@ class run_task extends external_api {
                 'payload_hash'   => $payloadhash,
             ]
         );
+
+        plugin_settings::require_enabled('local_jedomi');
+
         $taskclass     = $validated['task_class'];
         $sync           = $validated['sync'];
         $hmacsignature = $validated['hmac_signature'];

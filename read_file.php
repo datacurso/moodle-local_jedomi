@@ -52,8 +52,12 @@ function local_jedomi_read_file_error(int $status, array $error): void {
     die();
 }
 
-if (isguestuser() || !\aiprovider_datacurso\local\plugin_settings::is_enabled('local_jedomi')
-        || !local_jedomi_is_role_allowed()) {
+$disabled = local_jedomi_plugin_disabled_error();
+if ($disabled !== null) {
+    local_jedomi_read_file_error(403, $disabled);
+}
+
+if (isguestuser() || !local_jedomi_is_role_allowed()) {
     local_jedomi_read_file_error(403, ['code' => 'forbidden', 'message' => get_string('nopermissions', 'error', '')]);
 }
 

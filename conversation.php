@@ -37,9 +37,18 @@
 
 define('AJAX_SCRIPT', true);
 require_once(__DIR__ . '/../../config.php');
+require_once(__DIR__ . '/lib.php');
 
 require_login();
 require_sesskey();  // CSRF: valida que el request viene de una página Moodle real.
+
+$disabled = local_jedomi_plugin_disabled_error();
+if ($disabled !== null) {
+    header('Content-Type: application/json; charset=utf-8');
+    http_response_code(403);
+    echo json_encode(['ok' => false, 'error' => $disabled['message']], JSON_UNESCAPED_UNICODE);
+    exit;
+}
 
 $action = required_param('action', PARAM_ALPHA);
 $cache  = cache::make('local_jedomi', 'conversation');

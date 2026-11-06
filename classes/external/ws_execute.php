@@ -28,6 +28,7 @@
 
 namespace local_jedomi\external;
 
+use aiprovider_datacurso\local\plugin_settings;
 use context_system;
 use core_external\external_api;
 use core_external\external_function_parameters;
@@ -110,6 +111,8 @@ class ws_execute extends external_api {
                 'payload_hash'   => $payloadhash,
             ]
         );
+
+        plugin_settings::require_enabled('local_jedomi');
 
         // ... ── Gate 2: HMAC authentication ──────────────────────────────────────
         if (!$skiphmac) {
