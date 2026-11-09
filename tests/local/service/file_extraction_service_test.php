@@ -66,6 +66,8 @@ final class file_extraction_service_test extends \advanced_testcase {
 
     /**
      * A7: the file goes through the provider to plugins-ai and its text comes back; the temporary file is removed.
+     * MDL-INT-050: a document is read through the provider and its text comes back.
+     * MDL-CTR-010: the upload carries the content and the type of the file and the answer gives the extracted text.
      */
     public function test_upload_is_sent_through_the_provider_and_text_returned(): void {
         global $DB;
@@ -107,7 +109,8 @@ final class file_extraction_service_test extends \advanced_testcase {
     }
 
     /**
-     * A7: a type other than PDF, CSV, TXT or MD is rejected without calling the service.
+     * MDL-UNIT-048: an unsupported type is rejected with the allowed types message, without calling the AI service.
+     * API-INT-002: an unsupported type is refused in Moodle without any request to the service, so nothing can be charged.
      */
     public function test_unsupported_type_is_rejected_without_a_call(): void {
         $this->resetAfterTest();
@@ -134,6 +137,7 @@ final class file_extraction_service_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-003: with the provider disabled file reading returns its message.
      * A7: with the provider disabled the provider's message is returned and nothing is sent.
      */
     public function test_provider_disabled_returns_its_message(): void {
@@ -177,6 +181,10 @@ final class file_extraction_service_test extends \advanced_testcase {
 
     /**
      * A7: errors of plugins-ai about the file get their own message.
+     * MDL-INT-050: service errors (file too large, unreadable) reach the user as a controlled answer.
+     * API-INT-001: the "file too large" answer of the AI service reaches the user with its own message.
+     * MDL-CTR-010: file errors of the service come with an interpretable code that gives their message.
+     * API-INT-002: a request the service rejects reaches the user as a controlled answer with nothing else sent.
      *
      * @dataProvider service_error_provider
      * @param int $status HTTP status from plugins-ai.
@@ -224,6 +232,7 @@ final class file_extraction_service_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-006: with file processing off documents are rejected without calling the AI.
      * M8: with file processing off a document is rejected without calling the service.
      */
     public function test_documents_are_rejected_when_files_are_disabled(): void {
@@ -253,6 +262,8 @@ final class file_extraction_service_test extends \advanced_testcase {
 
     /**
      * M8: a PDF without text is read again by the vision model through files/read.
+     * MDL-INT-050: a PDF without text is read with the image model.
+     * MDL-CTR-010: a PDF without text is sent to the image model.
      */
     public function test_pdf_without_text_falls_back_to_the_vision_model(): void {
         $this->resetAfterTest();
@@ -282,7 +293,7 @@ final class file_extraction_service_test extends \advanced_testcase {
     }
 
     /**
-     * M9: an attached audio file is transcribed and kept as text, also with file processing off.
+     * MDL-UNIT-050: an attached audio file is transcribed and brings its duration in seconds.
      */
     public function test_audio_file_is_transcribed(): void {
         $this->resetAfterTest();
@@ -308,6 +319,7 @@ final class file_extraction_service_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-006: with audio processing off audio files are rejected without calling the AI.
      * M9: with audio processing off an audio file is rejected without calling the service.
      */
     public function test_audio_file_is_rejected_when_audio_is_disabled(): void {
@@ -348,7 +360,8 @@ final class file_extraction_service_test extends \advanced_testcase {
     }
 
     /**
-     * A Word or PowerPoint file goes to files/extract with its media type and its text comes back.
+     * MDL-UNIT-048: a Word or PowerPoint file, old or modern format, goes to files/extract with its media type.
+     * API-INT-002: Word and PowerPoint go to the text extraction route of the service, not to a model.
      *
      * @dataProvider office_file_provider
      * @param string $filename File name.
@@ -382,6 +395,7 @@ final class file_extraction_service_test extends \advanced_testcase {
 
     /**
      * A Word file without text gets the "no text" message; only PDFs are read again by the vision model.
+     * MDL-INT-050: a Word or PowerPoint document without text is not sent to the image model and reports no text.
      */
     public function test_office_file_without_text_is_not_sent_to_the_vision_model(): void {
         $this->resetAfterTest();
@@ -411,6 +425,7 @@ final class file_extraction_service_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-006: with file processing off office documents are rejected without calling the AI.
      * A Word or PowerPoint file is rejected when file processing is off.
      *
      * @dataProvider office_file_provider
@@ -439,7 +454,7 @@ final class file_extraction_service_test extends \advanced_testcase {
     }
 
     /**
-     * Only Word and PowerPoint files are read as office documents.
+     * MDL-UNIT-048: Word and PowerPoint documents are detected in their old and modern formats.
      */
     public function test_is_office_document(): void {
         foreach (['a.doc', 'a.DOCX', 'a.ppt', 'a.pptx'] as $filename) {
@@ -451,7 +466,7 @@ final class file_extraction_service_test extends \advanced_testcase {
     }
 
     /**
-     * The message for the chat model has the question, the file header and the text; without a question, a summary is asked.
+     * MDL-UNIT-049: the question precedes the text of the file; without a question, a summary is asked.
      */
     public function test_compose_message(): void {
         $this->assertSame("What is it about?\n\n" . get_string('attached_file_info', 'local_jedomi', 'notes.docx')
@@ -460,5 +475,139 @@ final class file_extraction_service_test extends \advanced_testcase {
             get_string('analyze_file', 'local_jedomi') . "\n\n",
             file_extraction_service::compose_message('', 'deck.pptx', 'Slides')
         );
+    }
+
+    /**
+     * Document types read by files/extract.
+     *
+     * @return array<string, array{0: string}>
+     */
+    public static function supported_document_provider(): array {
+        return [
+            'pdf' => ['report.pdf'],
+            'csv' => ['grades.csv'],
+            'txt' => ['notes.txt'],
+            'md' => ['README.md'],
+            'old word' => ['old.doc'],
+            'modern word' => ['essay.docx'],
+            'old powerpoint' => ['old.ppt'],
+            'modern powerpoint' => ['deck.pptx'],
+        ];
+    }
+
+    /**
+     * MDL-UNIT-048: PDF, CSV, TXT, MD and the Word and PowerPoint documents are accepted and sent to the service.
+     * MDL-INT-050: Word, PowerPoint, PDF with text, CSV, TXT and MD are read through the provider.
+     *
+     * @dataProvider supported_document_provider
+     * @param string $filename File name.
+     */
+    public function test_supported_document_types_are_accepted(string $filename): void {
+        $this->resetAfterTest();
+        $user = $this->getDataGenerator()->create_user();
+        $this->setUser($user);
+        $this->enable_provider();
+        $curl = new fake_curl();
+        $curl->enqueue(json_encode(['text' => 'Content', 'format' => 'text', 'chars' => 7]));
+
+        $result = file_extraction_service::extract_upload(
+            (int) $user->id,
+            $this->upload('content'),
+            $filename,
+            new testable_provider_api(30, $curl)
+        );
+
+        $this->assertSame('Content', $result['text']);
+        $this->assertCount(1, $curl->calls);
+    }
+
+    /**
+     * What the AI service reports for each kind of attachment, and what must reach the panel.
+     *
+     * @return array<string, array{0: string, 1: array, 2: array}>
+     */
+    public static function attachment_info_provider(): array {
+        return [
+            'pdf with pages' => ['report.pdf', ['text' => 'T', 'format' => 'pdf', 'pages' => 12], ['format' => 'pdf', 'pages' => 12]],
+            'pdf of one page' => ['one.pdf', ['text' => 'T', 'format' => 'pdf', 'pages' => 1], ['format' => 'pdf', 'pages' => 1]],
+            'csv with rows and columns' => ['grades.csv', ['text' => 'a,b', 'format' => 'csv', 'rows' => 30, 'columns' => 4],
+                ['format' => 'csv', 'rows' => 30, 'columns' => 4]],
+            'csv of one row' => ['one.csv', ['text' => 'a', 'format' => 'csv', 'rows' => 1, 'columns' => 1],
+                ['format' => 'csv', 'rows' => 1, 'columns' => 1]],
+            'text with characters' => ['notes.txt', ['text' => 'Hello', 'format' => 'text', 'chars' => 5],
+                ['format' => 'text', 'chars' => 5]],
+            'empty text' => ['empty.md', ['text' => '', 'format' => 'text', 'chars' => 0], ['format' => 'text', 'chars' => 0]],
+        ];
+    }
+
+    /**
+     * MDL-UNIT-050: each attachment brings the information of its type: pages of a PDF, rows and columns of a CSV,
+     * characters of the other documents, including empty files and files of one page or row.
+     *
+     * @dataProvider attachment_info_provider
+     * @param string $filename File name.
+     * @param array $response Answer of the AI service.
+     * @param array $expected Information that must be returned.
+     */
+    public function test_attachment_information_follows_its_type(string $filename, array $response, array $expected): void {
+        $this->resetAfterTest();
+        $user = $this->getDataGenerator()->create_user();
+        $this->setUser($user);
+        $this->enable_provider();
+        $curl = new fake_curl();
+        $curl->enqueue(json_encode($response));
+
+        $result = file_extraction_service::extract_upload(
+            (int) $user->id,
+            $this->upload('content'),
+            $filename,
+            new testable_provider_api(30, $curl)
+        );
+
+        foreach ($expected as $key => $value) {
+            $this->assertSame($value, $result[$key], $key);
+        }
+    }
+
+    /**
+     * MDL-UNIT-050: an audio attachment brings its duration in whole seconds.
+     */
+    public function test_audio_attachment_information_is_its_duration(): void {
+        $this->resetAfterTest();
+        $user = $this->getDataGenerator()->create_user();
+        $this->setUser($user);
+        $this->enable_provider();
+        set_config('audio_enabled', 1, 'local_jedomi');
+        $curl = new fake_curl();
+        $curl->enqueue(json_encode(['text' => 'Hi', 'model' => 'm', 'duration_seconds' => 4.4]));
+
+        $result = file_extraction_service::extract_upload(
+            (int) $user->id,
+            $this->upload('audio'),
+            'note.ogg',
+            new testable_provider_api(30, $curl)
+        );
+
+        $this->assertSame('audio', $result['format']);
+        $this->assertSame(4, $result['seconds']);
+    }
+    /**
+     * MDL-INT-052: several dropped files are all attached, a removed attachment is not charged, a cut text is announced
+     * and unsupported or disabled types show a coherent notice in the browser.
+     * [Pendiente:skip]
+     */
+    public function test_several_files_removed_attachments_and_cut_notices(): void {
+        $this->markTestSkipped('Pending fix: only the last dropped file is kept, removed attachments are read and charged, '
+            . 'cuts are not announced and GIF or disabled types are handled inconsistently.');
+    }
+    /**
+     * API-INT-001: files and images up to the maximum size and resolution are accepted, larger ones get the "file too
+     * large" error, and at most the defined pages and characters are read, with each limit checked exactly at and just
+     * above it. The limits are applied by the AI service, so this case lives in the AI service repository.
+     * [Pendiente:skip]
+     */
+    public function test_ai_service_applies_its_size_and_content_limits(): void {
+        $this->markTestSkipped('Pending fix in the AI service: the limit is measured on the whole request body, so a file '
+            . 'at or just below the announced maximum is rejected as too large.');
     }
 }

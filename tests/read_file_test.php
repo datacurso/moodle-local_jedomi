@@ -44,6 +44,7 @@ final class read_file_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-054: a file inside the authorised paths can be read.
      * Test a legitimate read inside dirroot still works through the full flow.
      *
      * NOTE: the boundary check (resolve_inside_root) is private — it only
@@ -62,6 +63,7 @@ final class read_file_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-054: sensitive paths are blocked.
      * Test execute() blocks a sensitive path via the BLOCKED_PATHS list,
      * even though it never contains a traversal segment and is a real file.
      */
@@ -71,6 +73,7 @@ final class read_file_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-054: paths outside the authorised ones are blocked.
      * Test execute() blocks a real, non-traversal path that is simply
      * outside the ALLOWED_PREFIXES whitelist.
      */
@@ -80,6 +83,7 @@ final class read_file_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-054: paths with directory traversal are rejected.
      * Test a nested traversal path is rejected end to end.
      *
      * PARAM_PATH validation rejects it at the external API layer before it
@@ -92,6 +96,7 @@ final class read_file_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-054: symbolic links that escape the authorised paths are blocked.
      * Test execute() blocks a symlink escaping dirroot (real on-disk fixture).
      *
      * A symlink inside the whitelisted local/ tree pointing outside dirroot
@@ -124,6 +129,7 @@ final class read_file_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-054: sibling paths with a similar prefix are blocked.
      * Test execute() blocks a sibling directory with a colliding name prefix.
      *
      * The fixture is a real sibling of dirroot (e.g. /var/www/html-jedomitest

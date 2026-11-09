@@ -60,7 +60,11 @@ final class client_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-005: every channel uses the configured chat model and maximum tokens.
+     * MDL-INT-001: AI calls go out through the provider, which adds license and user identity.
      * M1: the request goes to the Jedomi route with the configured model, stream off, max_tokens and the given user.
+     * MDL-CTR-001: the request goes to the Jedomi route through the provider with the chat model, the maximum tokens, the
+     * conversation and the pseudonymous identifier of the given user.
      */
     public function test_complete_sends_configured_model_and_given_user_to_jedomi_route(): void {
         $this->resetAfterTest();
@@ -91,6 +95,7 @@ final class client_test extends \advanced_testcase {
 
     /**
      * M1: the user sent is the one given, not the logged-in user (cron and Telegram have no session user).
+     * MDL-CTR-001: the user is identified with the pseudonym of the given user, not of the session user.
      */
     public function test_complete_uses_given_user_instead_of_session_user(): void {
         $this->resetAfterTest();
@@ -109,6 +114,8 @@ final class client_test extends \advanced_testcase {
 
     /**
      * M1: tools are sent with automatic choice, and tool calls come back normalised with ids and string arguments.
+     * MDL-CTR-001: the available tools are sent.
+     * MDL-CTR-002: an answer with tool calls is normalised to a list of calls with name and arguments.
      */
     public function test_complete_sends_tools_and_returns_normalised_tool_calls(): void {
         $this->resetAfterTest();
@@ -139,6 +146,7 @@ final class client_test extends \advanced_testcase {
 
     /**
      * M1: a legacy model without the jedomi/ prefix is never sent; the default model is used instead.
+     * MDL-CTR-001: an unlisted legacy model is replaced by the default model before it is sent.
      */
     public function test_complete_falls_back_to_default_model_for_legacy_value(): void {
         $this->resetAfterTest();
@@ -158,6 +166,7 @@ final class client_test extends \advanced_testcase {
 
     /**
      * M1: a provider error surfaces as the provider exception so callers can translate it.
+     * MDL-CTR-002: provider errors are propagated with their type so they can be translated for the user.
      */
     public function test_complete_propagates_provider_errors(): void {
         $this->resetAfterTest();
@@ -178,6 +187,7 @@ final class client_test extends \advanced_testcase {
 
     /**
      * M1: an answer without choices is an error, not an empty reply.
+     * MDL-CTR-002: an answer without choices is rejected as an invalid answer.
      */
     public function test_complete_rejects_answer_without_choices(): void {
         $this->resetAfterTest();
@@ -191,6 +201,7 @@ final class client_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-003: with the provider disabled no request is sent to the AI service.
      * I6: with the provider disabled the call is refused with the provider exception and nothing is sent.
      */
     public function test_complete_with_the_provider_disabled_sends_nothing(): void {

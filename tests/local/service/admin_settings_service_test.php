@@ -77,7 +77,7 @@ final class admin_settings_service_test extends \advanced_testcase {
     }
 
     /**
-     * General settings default to an empty secret and training data collection on.
+     * MDL-UNIT-012: general settings default to an empty secret and training data collection on.
      *
      * @return void
      */
@@ -90,7 +90,7 @@ final class admin_settings_service_test extends \advanced_testcase {
     }
 
     /**
-     * Saving the general settings stores the secret and the training data flag.
+     * MDL-UNIT-012: saving the general settings stores the secret and an unchecked training data flag as off.
      *
      * @return void
      */
@@ -105,7 +105,7 @@ final class admin_settings_service_test extends \advanced_testcase {
     }
 
     /**
-     * Course availability keeps only valid ids and falls back to "all" for an unknown mode.
+     * MDL-UNIT-007: course availability drops empty and non-numeric ids and never stores an unknown mode.
      *
      * @return void
      */
@@ -121,7 +121,7 @@ final class admin_settings_service_test extends \advanced_testcase {
     }
 
     /**
-     * Privacy settings hide every role that is not marked visible.
+     * MDL-UNIT-010: privacy settings record every role that is not marked visible as hidden.
      *
      * @return void
      */
@@ -140,7 +140,7 @@ final class admin_settings_service_test extends \advanced_testcase {
     }
 
     /**
-     * An unknown anonymization level is stored as "basic".
+     * MDL-UNIT-010: an unknown anonymization level is never stored; "basic" is kept instead.
      *
      * @return void
      */
@@ -174,6 +174,8 @@ final class admin_settings_service_test extends \advanced_testcase {
 
     /**
      * A valid token is stored, the bot details are saved and the webhook is registered.
+     * MDL-INT-014: a valid token is checked with Telegram, stored encrypted with the bot name and the webhook is registered.
+     * MDL-CTR-009: the success answers of the token check and of the webhook registration are interpreted.
      *
      * @return void
      */
@@ -193,6 +195,8 @@ final class admin_settings_service_test extends \advanced_testcase {
 
     /**
      * A failed webhook registration after a valid token keeps the token and records the error.
+     * MDL-INT-014: when the webhook registration fails the token is kept and the error is recorded.
+     * MDL-CTR-009: an error answer of the webhook registration is interpreted.
      *
      * @return void
      */
@@ -208,6 +212,8 @@ final class admin_settings_service_test extends \advanced_testcase {
 
     /**
      * An invalid token is not stored and the bot is marked as not verified.
+     * MDL-INT-014: an invalid token is not stored.
+     * MDL-CTR-009: an error answer of the token check is interpreted.
      *
      * @return void
      */
@@ -265,6 +271,7 @@ final class admin_settings_service_test extends \advanced_testcase {
 
     /**
      * The web service allowlist of a role is replaced by the given names.
+     * MDL-INT-017: the saved list of each role is persisted.
      *
      * @return void
      */
@@ -282,17 +289,38 @@ final class admin_settings_service_test extends \advanced_testcase {
     }
 
     /**
-     * An unknown role name falls back to the admin role.
+     * MDL-UNIT-052: the four roles of the APIs tab are recognised and an unknown role falls back to the admin role.
      *
      * @return void
      */
     public function test_normalise_ws_role(): void {
-        $this->assertSame('student', admin_settings_service::normalise_ws_role('student'));
-        $this->assertSame('admin', admin_settings_service::normalise_ws_role('guest'));
+        foreach (['admin', 'manager', 'teacher', 'student'] as $role) {
+            $this->assertSame($role, admin_settings_service::normalise_ws_role($role));
+        }
+        foreach (['guest', '', 'ADMIN', 'editingteacher', 'unknown'] as $role) {
+            $this->assertSame('admin', admin_settings_service::normalise_ws_role($role));
+        }
+    }
+
+    /**
+     * MDL-UNIT-052: saving a list for an unknown role stores it as the admin list and creates no list for that role.
+     *
+     * @return void
+     */
+    public function test_ws_allowlist_of_unknown_role_is_stored_as_admin_list(): void {
+        global $CFG;
+        require_once($CFG->dirroot . '/local/jedomi/lib.php');
+        $this->resetAfterTest();
+
+        admin_settings_service::save_ws_allowlist('guest', ['core_course_get_courses']);
+
+        $this->assertSame(['core_course_get_courses'], \local_jedomi_get_role_allowlist('admin'));
+        $this->assertFalse(get_config('local_jedomi', 'ws_allowlist_guest'));
     }
 
     /**
      * The web service table filters by name and type, paginates and counts the types.
+     * MDL-INT-019: the table filters by type and name and paginates.
      *
      * @return void
      */
@@ -338,6 +366,7 @@ final class admin_settings_service_test extends \advanced_testcase {
 
     /**
      * A page beyond the last one is capped to the last page.
+     * MDL-INT-019: a page out of range is moved to the last available page.
      *
      * @return void
      */
@@ -349,6 +378,7 @@ final class admin_settings_service_test extends \advanced_testcase {
         $this->assertSame($table['pages'], $table['page']);
     }
     /**
+     * MDL-UNIT-100: a query of an agent that no longer exists is presented without creator.
      * Recent profiled queries come newest first with the name of the agent owner.
      *
      * @return void
@@ -373,5 +403,85 @@ final class admin_settings_service_test extends \advanced_testcase {
 
         $slow = admin_settings_service::get_recent_profiler_entries(1000, 'duration_ms');
         $this->assertSame(['SELECT 2'], array_column($slow, 'query'));
+    }
+
+    /**
+     * MDL-INT-014: the stored token is never kept in clear text.
+     */
+    public function test_verified_token_is_stored_encrypted(): void {
+        $this->resetAfterTest();
+        $client = $this->fake_client(['id' => 1, 'username' => 'jedomibot', 'first_name' => 'Jedomi']);
+
+        admin_settings_service::verify_and_save_telegram_token('123456:secret-bot-token', $client);
+
+        $this->assertStringNotContainsString('secret-bot-token', (string) get_config('local_jedomi', 'telegram_bot_token'));
+        $this->assertSame('123456:secret-bot-token', \local_jedomi\telegram\manager::get_bot_token());
+    }
+
+    /**
+     * MDL-INT-015: the administrator can remove the stored token, the shown state matches the token in use and the other
+     * changes of the form are kept when a token is rejected.
+     * [Pendiente:skip]
+     */
+    public function test_token_can_be_removed_and_state_matches_the_token_in_use(): void {
+        $this->markTestSkipped('Pending fix: there is no way to remove the token, the previous token keeps working after an '
+            . 'invalid one is rejected and the other changes of the form are lost.');
+    }
+
+    /**
+     * MDL-INT-019: the component filter and the rows per page limit the table.
+     */
+    public function test_get_ws_table_filters_by_component_and_rows_per_page(): void {
+        $this->resetAfterTest();
+
+        $table = admin_settings_service::get_ws_table('teacher', '', 'mod_assign', 'all', 1, 10);
+
+        $this->assertNotEmpty($table['rows']);
+        $this->assertCount(min(10, $table['total']), $table['rows']);
+        foreach ($table['rows'] as $row) {
+            $this->assertSame('mod_assign', $row['component']);
+        }
+        $this->assertSame((int) ceil($table['total'] / 10), $table['pages']);
+        $wide = admin_settings_service::get_ws_table('teacher', '', 'mod_assign', 'all', 1, 50);
+        $this->assertCount(min(50, $wide['total']), $wide['rows']);
+        $this->assertSame($table['total'], $wide['total']);
+    }
+
+    /**
+     * MDL-INT-018: before the first save the table shows the real access of the administrator to every function.
+     * [Pendiente:fail] Before the first save only the read functions are shown as allowed, while the administrator can run
+     * every function.
+     */
+    public function test_first_visit_shows_the_real_access_of_the_administrator(): void {
+        $this->resetAfterTest();
+        unset_config('ws_allowlist_admin', 'local_jedomi');
+
+        $table = admin_settings_service::get_ws_table('admin', 'core_course_', '', 'all', 1, 200);
+
+        $this->assertContains(true, array_column($table['rows'], 'iswrite'), 'Precondition: the page has write functions');
+        foreach ($table['rows'] as $row) {
+            $this->assertTrue($row['checked'], "{$row['name']} is allowed to the administrator and must be shown as such");
+        }
+    }
+
+    /**
+     * MDL-INT-018: saving without any function selected does not give full access.
+     * [Pendiente:fail] An empty list of the administrator means full access again.
+     */
+    public function test_saving_without_functions_does_not_give_full_access(): void {
+        global $CFG;
+        require_once($CFG->dirroot . '/local/jedomi/lib.php');
+        if (!class_exists(\aiprovider_datacurso\httpclient\ai_services_api::class)) {
+            $this->markTestSkipped('aiprovider_datacurso is not installed; the web service checks the plugin state through it.');
+        }
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        admin_settings_service::save_ws_allowlist('admin', ['core_course_get_courses']);
+
+        admin_settings_service::save_ws_allowlist('admin', []);
+
+        $result = json_decode(\local_jedomi\proxy\handler::run_tool('ws_execute',
+            ['wsname' => 'core_webservice_get_site_info', 'params' => '{}'], 'admin'), true);
+        $this->assertArrayNotHasKey('result', $result, 'A function that is not selected must not be run');
     }
 }

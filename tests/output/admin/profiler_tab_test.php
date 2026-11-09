@@ -43,6 +43,7 @@ final class profiler_tab_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-100: durations are rounded, slow queries are highlighted and the chosen order is marked.
      * The tab exports the totals, the slowest queries and the recent entries with a link to the agent.
      *
      * @return void
@@ -64,6 +65,7 @@ final class profiler_tab_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-100: the rendered lists show the queries escaped and the creator of the agent.
      * The rendered tab escapes the queries.
      *
      * @return void
@@ -77,5 +79,109 @@ final class profiler_tab_test extends \advanced_testcase {
 
         $this->assertStringContainsString('SELECT &lt;b&gt;1&lt;/b&gt;', $html);
         $this->assertStringContainsString('Ada Lovelace', $html);
+    }
+
+    /**
+     * Export a tab built from the given slowest and recent queries.
+     *
+     * @param array $slowest Slowest queries.
+     * @param array $recent Recent queries.
+     * @param int $minms Minimum duration filter.
+     * @param string $sort Chosen order.
+     * @return array
+     */
+    private function export(array $slowest, array $recent, int $minms = 0, string $sort = 'timecreated'): array {
+        global $PAGE;
+        $PAGE->set_url(new \moodle_url('/local/jedomi/admin_settings.php'));
+        $aggregate = (object) ['total_queries' => count($recent), 'slow_queries' => 0, 'avg_duration_ms' => 0,
+            'max_duration_ms' => 0, 'slowest' => $slowest];
+        return (new profiler_tab($aggregate, $recent, $minms, $sort))->export_for_template($PAGE->get_renderer('local_jedomi'));
+    }
+
+    /**
+     * A recent query entry.
+     *
+     * @param float $duration Duration in milliseconds.
+     * @param string $query Query.
+     * @param string $creator Creator of the agent.
+     * @return array
+     */
+    private function entry(float $duration, string $query = 'SELECT 1', string $creator = 'Ada Lovelace'): array {
+        return ['agentid' => 3, 'userfullname' => $creator, 'query' => $query, 'duration_ms' => $duration, 'rowcount' => 1,
+            'timecreated' => 1700000000];
+    }
+
+    /**
+     * MDL-UNIT-100: long queries are shortened in the slowest and recent lists, and short ones are shown complete.
+     *
+     * @return void
+     */
+    public function test_long_queries_are_shortened_in_both_lists(): void {
+        $this->resetAfterTest();
+        $long = 'SELECT ' . str_repeat('x', 500);
+
+        $data = $this->export(
+            [(object) ['query' => $long, 'avg_duration' => 1, 'max_duration' => 1, 'exec_count' => 1],
+                (object) ['query' => 'SELECT 1', 'avg_duration' => 1, 'max_duration' => 1, 'exec_count' => 1]],
+            [$this->entry(5, $long), $this->entry(5, 'SELECT 2')]
+        );
+
+        $this->assertLessThan(mb_strlen($long), mb_strlen($data['slowest'][0]['query']));
+        $this->assertStringStartsWith('SELECT xxx', $data['slowest'][0]['query']);
+        $this->assertSame('SELECT 1', $data['slowest'][1]['query']);
+        $this->assertLessThan(mb_strlen($long), mb_strlen($data['recent'][0]['query']));
+        $this->assertSame('SELECT 2', $data['recent'][1]['query']);
+    }
+
+    /**
+     * MDL-UNIT-100: the duration is highlighted only above the slow query threshold, not exactly at it.
+     *
+     * @return void
+     */
+    public function test_duration_is_highlighted_only_above_the_threshold(): void {
+        $this->resetAfterTest();
+
+        $data = $this->export([], [$this->entry(999.99), $this->entry(1000), $this->entry(1000.01), $this->entry(25000)]);
+
+        $this->assertSame([false, false, true, true], array_column($data['recent'], 'slow'));
+    }
+
+    /**
+     * MDL-UNIT-100: durations are rounded and a query of an agent that no longer exists is shown without creator.
+     *
+     * @return void
+     */
+    public function test_durations_are_rounded_and_missing_creator_is_empty(): void {
+        global $PAGE;
+        $this->resetAfterTest();
+
+        $data = $this->export([(object) ['query' => 'q', 'avg_duration' => 3.14159, 'max_duration' => 9.999,
+            'exec_count' => 2]], [$this->entry(12.3456, 'SELECT 9', '')]);
+        $html = $PAGE->get_renderer('local_jedomi')->render_from_template('local_jedomi/admin/profiler_tab', $data);
+
+        $this->assertSame(3.14, $data['slowest'][0]['avg']);
+        $this->assertSame(10.0, $data['slowest'][0]['max']);
+        $this->assertSame(12.35, $data['recent'][0]['duration']);
+        $this->assertSame('', $data['recent'][0]['userfullname']);
+        $this->assertStringContainsString('SELECT 9', $html);
+    }
+
+    /**
+     * MDL-UNIT-100: an empty or zero minimum duration is presented as no filter, and the chosen order is marked.
+     *
+     * @return void
+     */
+    public function test_filter_and_order_are_presented(): void {
+        $this->resetAfterTest();
+
+        $nofilter = $this->export([], [], 0, 'duration_ms');
+        $filtered = $this->export([], [], 250, 'timecreated');
+
+        $this->assertSame('', $nofilter['minms']);
+        $this->assertTrue($nofilter['sortduration']);
+        $this->assertFalse($nofilter['sorttime']);
+        $this->assertSame(250, $filtered['minms']);
+        $this->assertTrue($filtered['sorttime']);
+        $this->assertFalse($filtered['sortduration']);
     }
 }

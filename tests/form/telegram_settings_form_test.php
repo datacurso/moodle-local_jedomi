@@ -44,7 +44,7 @@ final class telegram_settings_form_test extends \advanced_testcase {
     }
 
     /**
-     * A valid submission returns the limits and the visible roles.
+     * MDL-UNIT-005: a valid submission returns the limits and the visible roles.
      *
      * @return void
      */
@@ -79,7 +79,7 @@ final class telegram_settings_form_test extends \advanced_testcase {
     }
 
     /**
-     * Values outside the allowed ranges are rejected.
+     * MDL-UNIT-005: values outside the allowed ranges are rejected and the form returns no data to save.
      *
      * @dataProvider out_of_range_provider
      * @param string $field Field name.
@@ -94,5 +94,68 @@ final class telegram_settings_form_test extends \advanced_testcase {
         $form = new telegram_settings_form(null, ['roles' => [], 'tokenset' => true]);
 
         $this->assertNull($form->get_data());
+    }
+
+    /**
+     * Allowed range of each number field, as documented for the administrator.
+     *
+     * @return array<string, array{0: string, 1: int, 2: int}>
+     */
+    public static function range_provider(): array {
+        return [
+            'message limit' => ['telegram_rate_limit', 0, 1000],
+            'block time' => ['telegram_cooldown', 0, 1440],
+            'max turns' => ['telegram_max_turns', 1, 100],
+            'AI response time' => ['telegram_gateway_timeout', 5, 300],
+        ];
+    }
+
+    /**
+     * MDL-UNIT-005: the exact limits of each range are accepted.
+     *
+     * @dataProvider range_provider
+     * @param string $field Field name.
+     * @param int $min Smallest accepted value.
+     * @param int $max Largest accepted value.
+     * @return void
+     */
+    public function test_values_at_the_limits_are_accepted(string $field, int $min, int $max): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+
+        foreach ([$min, $max] as $value) {
+            telegram_settings_form::mock_submit([$field => $value] + $this->valid_submission());
+            $data = (new telegram_settings_form(null, ['roles' => [], 'tokenset' => true]))->get_data();
+
+            $this->assertNotNull($data, "{$field}={$value} must be accepted");
+            $this->assertSame($value, (int) $data->{$field});
+        }
+    }
+
+    /**
+     * MDL-UNIT-005: a value just outside a range gets the message that states the limits, and nothing is returned to save.
+     *
+     * @dataProvider range_provider
+     * @param string $field Field name.
+     * @param int $min Smallest accepted value.
+     * @param int $max Largest accepted value.
+     * @return void
+     */
+    public function test_values_just_outside_the_limits_show_the_range_message(string $field, int $min, int $max): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $expected = get_string('error_value_range', 'local_jedomi', ['min' => $min, 'max' => $max]);
+
+        foreach ([$min - 1, $max + 1] as $value) {
+            $submission = [$field => $value] + $this->valid_submission();
+            telegram_settings_form::mock_submit($submission);
+            $form = new telegram_settings_form(null, ['roles' => [], 'tokenset' => true]);
+
+            $this->assertNull($form->get_data(), "{$field}={$value} must not be returned to save");
+            $errors = $form->validation($submission, []);
+            $this->assertSame([$field => $expected], $errors);
+            $this->assertStringContainsString((string) $min, $errors[$field]);
+            $this->assertStringContainsString((string) $max, $errors[$field]);
+        }
     }
 }

@@ -165,28 +165,47 @@ final class webhook_handler_test extends \advanced_testcase {
     // ========================
 
     /**
-     * Test handle_start_command with no code sends friendly message.
-     *
-     * When /start is sent without a code, the handler should respond with
-     * a friendly "please provide your link code" message instead of
-     * the generic "expired code" message.
+     * MDL-UNIT-035: "/start" without a code asks for the link code instead of reporting an invalid one.
+     * MDL-INT-062: the start command without a code asks for the code.
      */
     public function test_handle_start_command_without_code(): void {
-        // This is an integration test — cannot fully execute without
-        // Moodle PHPUnit DB and Telegram API mock.
-        // The behavior change is in the code path: empty($code) check
-        // returns a different string before reaching the DB lookup.
-        // Verified by code review and php -l syntax check.
-        $this->assertTrue(true, 'See code: handle_start_command now checks empty($code) first');
+        $telegram = $this->use_fake_telegram();
+
+        $this->send_text('700000001', '/start');
+
+        $this->assertSame([get_string('telegram_msg_provide_code', 'local_jedomi')], array_column($telegram->sent, 'text'));
     }
 
     /**
-     * Test handle_start_command with invalid code format.
+     * MDL-UNIT-035: "/start" with a code that does not have the code format gets the invalid code message.
+     * MDL-INT-062: an invalid code gets the corresponding notice.
      */
     public function test_handle_start_command_invalid_code(): void {
-        // Similarly verified by code review — invalid codes (wrong length,
-        // special chars) return the expired_code string.
-        $this->assertTrue(true, 'See code: handle_start_command validates code format');
+        $telegram = $this->use_fake_telegram();
+
+        $this->send_text('700000002', '/start A-1');
+
+        $this->assertSame([get_string('telegram_msg_expired_code', 'local_jedomi')], array_column($telegram->sent, 'text'));
+        $this->assertFalse($this->chat_is_linked('700000002'));
+    }
+
+    /**
+     * MDL-UNIT-035: "/start CODE" and the bare code both link the chat to the Moodle user of the code.
+     */
+    public function test_start_command_and_bare_code_link_the_chat(): void {
+        $telegram = $this->use_fake_telegram();
+        $first = $this->getDataGenerator()->create_user();
+        $second = $this->getDataGenerator()->create_user();
+
+        $this->send_text('700000003', '/start ' . \local_jedomi\telegram\manager::generate_link_code((int) $first->id));
+        $this->send_text('700000004', \local_jedomi\telegram\manager::generate_link_code((int) $second->id));
+
+        $this->assertTrue($this->chat_is_linked('700000003', (int) $first->id));
+        $this->assertTrue($this->chat_is_linked('700000004', (int) $second->id));
+        $this->assertCount(2, $telegram->sent);
+        foreach ($telegram->sent as $sent) {
+            $this->assertStringStartsWith('✅', $sent['text']);
+        }
     }
 
     // ... ========================
@@ -194,6 +213,7 @@ final class webhook_handler_test extends \advanced_testcase {
     // ========================
 
     /**
+     * MDL-UNIT-079: an unknown tool is rejected.
      * Test execute_tool returns error for unsupported tool.
      */
     public function test_execute_tool_unsupported(): void {
@@ -202,6 +222,7 @@ final class webhook_handler_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-079: describing a table without a name gives a controlled error.
      * Test execute_tool describe_table returns error for missing table name.
      */
     public function test_execute_tool_describe_table_no_name(): void {
@@ -210,6 +231,7 @@ final class webhook_handler_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-079: describing an existing table returns its structure.
      * Test execute_tool describe_table returns table info for existing table.
      */
     public function test_execute_tool_describe_table_success(): void {
@@ -222,6 +244,7 @@ final class webhook_handler_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-079: describing a table that does not exist gives a controlled error.
      * Test execute_tool describe_table returns not found for non-existent table.
      */
     public function test_execute_tool_describe_table_not_found(): void {
@@ -230,6 +253,7 @@ final class webhook_handler_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-079: searching tables without a query gives a controlled error.
      * Test execute_tool search_tables returns error for empty query.
      */
     public function test_execute_tool_search_tables_no_query(): void {
@@ -238,6 +262,7 @@ final class webhook_handler_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-079: searching tables with a query returns matching tables.
      * Test execute_tool search_tables finds tables matching query.
      */
     public function test_execute_tool_search_tables_success(): void {
@@ -246,16 +271,30 @@ final class webhook_handler_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-079: searching tables with a limit does not fail.
      * Test execute_tool search_tables respects limit.
      */
     public function test_execute_tool_search_tables_limit(): void {
-        $result = \local_jedomi\telegram\webhook_handler::execute_tool('search_tables', ['query' => 'a', 'limit' => 5]);
+        $result = \local_jedomi\telegram\webhook_handler::execute_tool('search_tables', ['query' => 'course', 'limit' => 5]);
         // Should not error — just returns results.
         $this->assertIsString($result);
     }
 
     /**
-     * Test execute_tool execute_sql returns error for empty SQL.
+     * MDL-UNIT-079: the table search returns at most the requested number of results, capped at the maximum.
+     */
+    public function test_search_tables_results_respect_the_limit(): void {
+        $few = \local_jedomi\telegram\webhook_handler::execute_tool('search_tables', ['query' => 'course', 'limit' => 5]);
+        $many = \local_jedomi\telegram\webhook_handler::execute_tool('search_tables', ['query' => 'course', 'limit' => 500]);
+
+        $this->assertGreaterThan(0, substr_count($few, '•'));
+        $this->assertLessThanOrEqual(5, substr_count($few, '•'));
+        $this->assertLessThanOrEqual(20, substr_count($many, '•'));
+        $this->assertGreaterThan(substr_count($few, '•'), substr_count($many, '•'));
+    }
+
+    /**
+     * MDL-UNIT-019: an empty query is rejected with a clear message.
      */
     public function test_execute_tool_execute_sql_no_query(): void {
         $result = \local_jedomi\telegram\webhook_handler::execute_tool('execute_sql', []);
@@ -263,7 +302,7 @@ final class webhook_handler_test extends \advanced_testcase {
     }
 
     /**
-     * Test execute_tool execute_sql rejects non-SELECT queries.
+     * MDL-UNIT-019: a statement that is not a read query is rejected.
      */
     public function test_execute_tool_execute_sql_rejects_non_select(): void {
         $result = \local_jedomi\telegram\webhook_handler::execute_tool('execute_sql', ['sql' => 'DELETE FROM {user}']);
@@ -271,7 +310,7 @@ final class webhook_handler_test extends \advanced_testcase {
     }
 
     /**
-     * Test execute_tool execute_sql works with SELECT for a linked admin.
+     * MDL-UNIT-019: a valid read query runs for a linked admin and returns rows.
      */
     public function test_execute_tool_execute_sql_success(): void {
         $admin = get_admin();
@@ -289,7 +328,7 @@ final class webhook_handler_test extends \advanced_testcase {
     }
 
     /**
-     * Test execute_tool execute_sql denies users without a privileged role.
+     * MDL-UNIT-019: without the required privilege the query is denied.
      */
     public function test_execute_tool_execute_sql_denied_without_privilege(): void {
         $user = $this->getDataGenerator()->create_user();
@@ -589,64 +628,146 @@ final class webhook_handler_test extends \advanced_testcase {
     // ========================
 
     /**
-     * Test handle_message recognizes /help command and returns help text.
+     * Help aliases in English and Spanish, with any letter case.
      *
-     * Verifies that the /help handler is in place and the lang strings
-     * contain the expected command references.
+     * @return array<string, array{0: string}>
      */
-    public function test_help_command_returns_help_text(): void {
-        // Use reflection to verify the /help handler is in place.
-        // The handle_message method is private and complex (depends on $_POST/input),
-        // but we can verify the static methods it delegates to.
-        $ref = new \ReflectionMethod(\local_jedomi\telegram\webhook_handler::class, 'handle_message');
-        $this->assertTrue($ref->isPrivate(), 'handle_message should be private');
-
-        // Verify the /help lang strings exist with expected content.
-        $helpheading = get_string('telegram_help_heading', 'local_jedomi');
-        $this->assertStringContainsString(
-            'Jedomi',
-            $helpheading,
-            'Help heading should reference Jedomi'
-        );
-
-        $helpstart = get_string('telegram_help_start', 'local_jedomi');
-        $this->assertStringContainsString(
-            '/start',
-            $helpstart,
-            'Help start string should reference /start command'
-        );
-
-        $helphelp = get_string('telegram_help_help', 'local_jedomi');
-        $this->assertStringContainsString(
-            '/help',
-            $helphelp,
-            'Help help string should reference /help command'
-        );
-
-        $helpunlink = get_string('telegram_help_unlink', 'local_jedomi');
-        $this->assertStringContainsString(
-            '/desvincular',
-            $helpunlink,
-            'Help unlink string should reference /desvincular command'
-        );
-
-        // Verify the help footer string exists and is non-empty.
-        $helpfooter = get_string('telegram_help_footer', 'local_jedomi');
-        $this->assertNotEmpty($helpfooter);
+    public static function help_alias_provider(): array {
+        return [
+            'english' => ['/help'],
+            'spanish' => ['/ayuda'],
+            'upper case' => ['/HELP'],
+        ];
     }
 
     /**
-     * Test that handle_message processes /help before rate-limit check.
+     * MDL-UNIT-035: the help command and its alias answer the help text with the New conversation, Help and Unlink buttons.
+     * MDL-INT-062: the help command shows the help.
      *
-     * The /help command should always respond, even if the user is rate-limited.
-     * Verified by code review: the /help check at line 51-60 happens before
-     * the rate-limit check at line 63.
+     * @dataProvider help_alias_provider
+     * @param string $command Command sent by the user.
+     */
+    public function test_help_command_returns_help_text(string $command): void {
+        $telegram = $this->use_fake_telegram();
+
+        $this->send_text('700000010', $command);
+
+        $this->assertCount(1, $telegram->sent);
+        $help = $telegram->sent[0]['text'];
+        $this->assertStringContainsString(get_string('telegram_help_heading', 'local_jedomi'), $help);
+        $this->assertStringContainsString(get_string('telegram_help_start', 'local_jedomi'), $help);
+        $this->assertStringContainsString(get_string('telegram_help_new', 'local_jedomi'), $help);
+        $this->assertStringContainsString(get_string('telegram_help_unlink', 'local_jedomi'), $help);
+        $this->assertSame([
+            get_string('telegram_keyboard_new', 'local_jedomi'),
+            get_string('telegram_keyboard_help', 'local_jedomi'),
+            get_string('telegram_keyboard_unlink', 'local_jedomi'),
+        ], $this->button_labels($telegram->sent[0]));
+    }
+
+    /**
+     * MDL-UNIT-035: the help command always answers, even when the chat is rate limited.
+     * MDL-INT-062: the help is shown even with the chat blocked by the message limit.
      */
     public function test_help_command_before_rate_limit(): void {
-        $this->assertTrue(
-            true,
-            'See code: /help check at line 51-60 runs before check_and_record_rate at line 63'
-        );
+        $telegram = $this->use_fake_telegram();
+        set_config('telegram_rate_limit', 1, 'local_jedomi');
+        set_config('telegram_cooldown', 5, 'local_jedomi');
+        $chatid = '700000011';
+
+        $this->send_text($chatid, 'hello there');
+        $this->send_text($chatid, 'hello there');
+        $this->send_text($chatid, '/help');
+
+        $texts = array_column($telegram->sent, 'text');
+        $this->assertCount(3, $texts);
+        $this->assertStringContainsString(get_string('telegram_help_heading', 'local_jedomi'), $texts[2]);
+        $this->assertNotSame($texts[1], $texts[2], 'The help answer is not the rate limit answer');
+    }
+
+    /**
+     * MDL-UNIT-035: an unlinked chat is asked to link the account, with the How to link and Help buttons.
+     * MDL-INT-062: an unlinked chat gets the notice to link the account with its buttons.
+     */
+    public function test_unlinked_chat_is_asked_to_link_with_its_buttons(): void {
+        $telegram = $this->use_fake_telegram();
+
+        $this->send_text('700000012', 'What are my grades?');
+
+        $this->assertSame([get_string('telegram_msg_link_first', 'local_jedomi')], array_column($telegram->sent, 'text'));
+        $this->assertSame([
+            get_string('telegram_keyboard_howto_link', 'local_jedomi'),
+            get_string('telegram_keyboard_help', 'local_jedomi'),
+        ], $this->button_labels($telegram->sent[0]));
+    }
+
+    /**
+     * Unlink aliases in English and Spanish.
+     *
+     * @return array<string, array{0: string}>
+     */
+    public static function unlink_alias_provider(): array {
+        return [
+            'english' => ['/unlink'],
+            'spanish' => ['/desvincular'],
+            'upper case' => ['/UNLINK'],
+        ];
+    }
+
+    /**
+     * MDL-UNIT-035: the unlink command and its alias remove the link of the chat.
+     * MDL-INT-058: unlinking from the bot removes the link.
+     *
+     * @dataProvider unlink_alias_provider
+     * @param string $command Command sent by the user.
+     */
+    public function test_unlink_aliases_remove_the_link(string $command): void {
+        $telegram = $this->use_fake_telegram();
+        $user = $this->getDataGenerator()->create_user();
+        $this->create_telegram_link((int) $user->id, '700000013');
+
+        $this->send_text('700000013', $command);
+
+        $this->assertFalse($this->chat_is_linked('700000013'));
+        $this->assertSame([get_string('telegram_msg_unlinked', 'local_jedomi')], array_column($telegram->sent, 'text'));
+    }
+
+    /**
+     * New conversation aliases in English and Spanish.
+     *
+     * @return array<string, array{0: string}>
+     */
+    public static function new_conversation_alias_provider(): array {
+        return [
+            'english' => ['/new'],
+            'spanish' => ['/nuevo'],
+            'clear' => ['/clear'],
+        ];
+    }
+
+    /**
+     * MDL-UNIT-035: the new conversation command and its aliases forget the previous messages and greet the user.
+     * MDL-INT-062: new conversation clears the conversation and the assistant greets again.
+     *
+     * @dataProvider new_conversation_alias_provider
+     * @param string $command Command sent by the user.
+     */
+    public function test_new_conversation_aliases_start_from_scratch(string $command): void {
+        $this->use_fake_telegram();
+        $user = $this->getDataGenerator()->create_user(['firstname' => 'Valentina']);
+        $chatid = '700000014';
+        $this->create_telegram_link((int) $user->id, $chatid);
+        \local_jedomi\telegram\session::append($chatid, 'user', 'An old question about grades');
+        $fake = new fake_ai_client();
+        $fake->enqueue_text('Hola Valentina');
+        client::set_instance_for_testing($fake);
+
+        $this->send_text($chatid, $command);
+
+        $this->assertCount(1, $fake->calls);
+        $contents = array_column($fake->calls[0]['messages'], 'content');
+        $this->assertNotContains('An old question about grades', $contents);
+        $this->assertStringContainsString('Valentina', (string) end($contents));
     }
 
     // ... ========================
@@ -654,7 +775,7 @@ final class webhook_handler_test extends \advanced_testcase {
     // ========================
 
     /**
-     * Test that /help output includes /new command.
+     * MDL-UNIT-035: the help text lists the new conversation command and its Spanish alias.
      */
     public function test_help_includes_new_command(): void {
         $help = get_string('telegram_help_heading', 'local_jedomi') . "\n\n"
@@ -681,7 +802,7 @@ final class webhook_handler_test extends \advanced_testcase {
 
 
     /**
-     * Test that get_linked_keyboard returns a valid inline keyboard array.
+     * MDL-UNIT-035: the linked keyboard has the New conversation, Help and Unlink buttons.
      */
     public function test_get_linked_keyboard_structure(): void {
         $keyboard = \local_jedomi\telegram\webhook_handler::get_linked_keyboard();
@@ -697,7 +818,7 @@ final class webhook_handler_test extends \advanced_testcase {
     }
 
     /**
-     * Test that get_unlinked_keyboard returns a valid inline keyboard array.
+     * MDL-UNIT-035: the unlinked keyboard has the How to link and Help buttons.
      */
     public function test_get_unlinked_keyboard_structure(): void {
         $keyboard = \local_jedomi\telegram\webhook_handler::get_unlinked_keyboard();
@@ -735,7 +856,7 @@ final class webhook_handler_test extends \advanced_testcase {
     }
 
     /**
-     * Test chat id validation through the public webhook entry point.
+     * MDL-UNIT-037: chat id validation through the public webhook entry point.
      *
      * A full Telegram update goes through handle(): an accepted (signed
      * numeric) chat id reaches the rate limiter and leaves a rate_limit row;
@@ -768,7 +889,7 @@ final class webhook_handler_test extends \advanced_testcase {
     }
 
     /**
-     * Test handle() rejects a chat id with SQL metacharacters without touching the DB.
+     * MDL-UNIT-037: handle() rejects a chat id with SQL metacharacters without processing the message.
      */
     public function test_handle_message_rejects_non_numeric_chatid(): void {
         $this->require_provider();
@@ -991,6 +1112,7 @@ final class webhook_handler_test extends \advanced_testcase {
 
     /**
      * RES-001: an AI timeout is not retried, because the provider may already have billed the request.
+     * MDL-INT-063: a request that runs out of time is not resent and frees the chat.
      *
      * The handler must call the AI once, tell the user the answer took too long, clear the saved
      * conversation state and release the lock, without self-pinging a new worker that would resend
@@ -1019,6 +1141,7 @@ final class webhook_handler_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-003: with the provider disabled Telegram answers its message and sends nothing.
      * I6: with the provider disabled Telegram answers with the provider's message and nothing is sent.
      */
     public function test_telegram_with_the_provider_disabled_answers_with_the_provider_message(): void {
@@ -1045,6 +1168,218 @@ final class webhook_handler_test extends \advanced_testcase {
     }
 
     // ... ========================
+    // Rate limit, long answers and steps
+    // ========================
+
+    /**
+     * MDL-UNIT-091: with the limit at zero there is no blocking.
+     * MDL-UNIT-005: a message limit of zero means no limit: no message is ever blocked.
+     */
+    public function test_zero_message_limit_means_no_limit(): void {
+        global $DB;
+        $telegram = $this->use_fake_telegram();
+        set_config('telegram_rate_limit', 0, 'local_jedomi');
+        $chatid = '700000020';
+
+        for ($i = 0; $i < 12; $i++) {
+            $this->send_text($chatid, 'hello there');
+        }
+
+        $texts = array_column($telegram->sent, 'text');
+        $this->assertCount(12, $texts);
+        $this->assertSame([get_string('telegram_msg_link_first', 'local_jedomi')], array_values(array_unique($texts)));
+        $this->assertFalse($DB->record_exists('local_jedomi_telegram_rate_limit', ['chatid' => $chatid]));
+    }
+
+    /**
+     * Run one answer of the AI through the Telegram loop and return the fake Telegram client.
+     *
+     * @param string $chatid Chat id.
+     * @param string $answer Text answered by the AI.
+     * @return fake_telegram_api_client
+     */
+    private function answer_in_telegram(string $chatid, string $answer): fake_telegram_api_client {
+        $this->require_provider();
+        $telegram = new fake_telegram_api_client();
+        api_client::set_instance_for_testing($telegram);
+        $fake = new fake_ai_client();
+        $fake->enqueue_text($answer);
+        $this->seed_selfping_state($chatid, [
+            'spt'   => ['token' => 'fake-spt-token', 'role' => 'student', 'tools' => []],
+            'tools' => [],
+        ], $fake);
+        $this->run_internal_ping($chatid);
+        return $telegram;
+    }
+
+    /**
+     * MDL-UNIT-032: an answer exactly at the length threshold is sent as a message.
+     */
+    public function test_answer_at_the_threshold_is_sent_as_a_message(): void {
+        $answer = str_repeat('a', 3800);
+
+        $telegram = $this->answer_in_telegram('700000030', $answer);
+
+        $this->assertSame([], $telegram->documents);
+        $this->assertSame([$answer], array_column($telegram->sent, 'text'));
+    }
+
+    /**
+     * MDL-UNIT-032: an answer one character over the threshold is sent as a text file described by its first line.
+     */
+    public function test_answer_over_the_threshold_is_sent_as_a_file(): void {
+        $answer = "Grades summary of the course\n" . str_repeat('b', 3800 - strlen("Grades summary of the course\n") + 1);
+
+        $telegram = $this->answer_in_telegram('700000031', $answer);
+
+        $this->assertCount(1, $telegram->documents);
+        $this->assertSame('📄 Grades summary of the course', $telegram->documents[0]['caption']);
+        $this->assertSame($answer, $telegram->documents[0]['content']);
+        $this->assertSame([], array_column($telegram->sent, 'text'));
+    }
+
+    /**
+     * Short answers that carry a table or a code block.
+     *
+     * @return array<string, array{0: string, 1: string}>
+     */
+    public static function structured_answer_provider(): array {
+        return [
+            'table' => ["Students at risk\n<table><tr><th>Name</th><th>Grade</th></tr><tr><td>Ana</td><td>3</td></tr></table>",
+                'Students at risk'],
+            'code block' => ["SQL used\n```\nSELECT id FROM {user}\n```", 'SQL used'],
+        ];
+    }
+
+    /**
+     * MDL-UNIT-032: a short answer with a table or a code block is sent as a text file described by its first line.
+     *
+     * @dataProvider structured_answer_provider
+     * @param string $answer Answer of the AI.
+     * @param string $firstline First line of the answer.
+     */
+    public function test_answer_with_table_or_code_is_sent_as_a_file(string $answer, string $firstline): void {
+        $telegram = $this->answer_in_telegram('700000032', $answer);
+
+        $this->assertCount(1, $telegram->documents);
+        $this->assertSame('📄 ' . $firstline, $telegram->documents[0]['caption']);
+        $this->assertStringContainsString($firstline, $telegram->documents[0]['content']);
+    }
+
+    /**
+     * MDL-UNIT-040: when the AI reaches the maximum number of steps, Telegram shows the "too many steps" notice.
+     */
+    public function test_too_many_steps_show_the_simplify_notice(): void {
+        $this->require_provider();
+        $chatid = '700000040';
+        $telegram = new fake_telegram_api_client();
+        api_client::set_instance_for_testing($telegram);
+        $fake = new fake_ai_client();
+        for ($i = 1; $i <= 60; $i++) {
+            $fake->enqueue_tool_calls([
+                ['id' => 'call_' . $i, 'type' => 'function',
+                    'function' => ['name' => 'no_such_tool', 'arguments' => json_encode(['step' => $i])]],
+            ]);
+        }
+        $this->seed_selfping_state($chatid, [
+            'spt'   => ['token' => 'fake-spt-token', 'role' => 'student', 'tools' => []],
+            'tools' => [],
+        ], $fake);
+
+        $this->run_internal_ping($chatid);
+
+        $texts = array_column($telegram->sent, 'text');
+        $this->assertSame(get_string('telegram_msg_max_iterations', 'local_jedomi'), end($texts));
+        $this->assertLessThan(60, count($fake->calls), 'The loop must stop before using every queued step');
+    }
+
+    // ... ========================
+    // Pending fixes
+    // ========================
+
+    /**
+     * MDL-UNIT-033: the file sent for a long agent result keeps every code block and the text between them, in order.
+     * [Pendiente:skip]
+     */
+    public function test_agent_result_file_keeps_every_block(): void {
+        $this->markTestSkipped('Pending fix: the file of a long agent result keeps only the first code or preformatted block.');
+    }
+
+    /**
+     * MDL-UNIT-034: bold, italic, code, links and lists are converted to the Telegram format and special characters escaped.
+     * [Pendiente:skip]
+     */
+    public function test_answer_is_converted_to_the_telegram_format(): void {
+        $this->markTestSkipped('Pending fix: asterisk lists become italics and < > are not escaped, so Telegram rejects the message.');
+    }
+
+    /**
+     * MDL-UNIT-036: only a text with the exact link code format is treated as a code; a greeting asks to link the account.
+     * [Pendiente:skip]
+     */
+    public function test_only_the_exact_code_format_is_treated_as_a_link_code(): void {
+        $this->markTestSkipped('Pending fix: any word of 4 to 8 letters or digits (a greeting) is treated as a link code.');
+    }
+
+    /**
+     * MDL-UNIT-038: bot messages and notifications are complete and in the user's language (English and Spanish).
+     * [Pendiente:skip]
+     */
+    public function test_bot_messages_are_complete_and_in_the_user_language(): void {
+        $this->markTestSkipped('Pending fix: unreplaced placeholders, literal line breaks and messages fixed in one language.');
+    }
+
+    /**
+     * Use a fake Telegram client and require the provider, which tells whether Jedomi is enabled.
+     *
+     * @return fake_telegram_api_client
+     */
+    private function use_fake_telegram(): fake_telegram_api_client {
+        $this->require_provider();
+        $telegram = new fake_telegram_api_client();
+        api_client::set_instance_for_testing($telegram);
+        return $telegram;
+    }
+
+    /**
+     * Send a text message to the webhook, restoring the PHP time limit the AI loop may raise.
+     *
+     * @param string $chatid Chat id.
+     * @param string $text Message text.
+     */
+    private function send_text(string $chatid, string $text): void {
+        $originallimit = (int) ini_get('max_execution_time');
+        \local_jedomi\telegram\webhook_handler::handle(['message' => ['chat' => ['id' => $chatid], 'text' => $text]]);
+        set_time_limit($originallimit);
+    }
+
+    /**
+     * Whether a chat is linked, optionally to a given user.
+     *
+     * @param string $chatid Chat id.
+     * @param int|null $userid Expected user.
+     * @return bool
+     */
+    private function chat_is_linked(string $chatid, ?int $userid = null): bool {
+        global $DB;
+        $conditions = ['chatid' => $chatid, 'confirmed' => 1];
+        if ($userid !== null) {
+            $conditions['userid'] = $userid;
+        }
+        return $DB->record_exists('local_jedomi_telegram_links', $conditions);
+    }
+
+    /**
+     * Labels of the inline buttons of a sent message.
+     *
+     * @param array $sent Message recorded by the fake Telegram client.
+     * @return string[]
+     */
+    private function button_labels(array $sent): array {
+        return array_column($sent['replymarkup']['inline_keyboard'][0] ?? [], 'text');
+    }
+
+    // ... ========================
     // Helpers
     // ========================
 
@@ -1067,5 +1402,195 @@ final class webhook_handler_test extends \advanced_testcase {
             'timecreated'       => time(),
             'lastproactivesent' => 0,
         ]);
+    }
+
+    /**
+     * Send an unsupported message (a sticker) from a chat: it never reaches the AI, so the answer shows the access decision.
+     *
+     * @param string $chatid Chat id.
+     * @return void
+     */
+    private function send_sticker(string $chatid): void {
+        \local_jedomi\telegram\webhook_handler::handle(['message' => ['chat' => ['id' => $chatid],
+            'sticker' => ['file_id' => 'sticker-1']]]);
+    }
+
+    /**
+     * MDL-UNIT-085: in the bot, a user with an allowed role can use it and one whose roles are all disabled cannot.
+     */
+    public function test_bot_access_follows_the_allowed_roles(): void {
+        global $DB;
+        $telegram = $this->use_fake_telegram();
+        $course = $this->getDataGenerator()->create_course();
+        $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
+        $this->create_telegram_link((int) $student->id, '700000085');
+        $studentroleid = (int) $DB->get_field('role', 'id', ['shortname' => 'student']);
+        $teacherroleid = (int) $DB->get_field('role', 'id', ['shortname' => 'editingteacher']);
+
+        set_config('telegram_hidden_roles', (string) $teacherroleid, 'local_jedomi');
+        $this->send_sticker('700000085');
+        set_config('telegram_hidden_roles', $studentroleid . ',' . $teacherroleid, 'local_jedomi');
+        $this->send_sticker('700000085');
+
+        $this->assertSame([
+            get_string('telegram_msg_text_only', 'local_jedomi'),
+            get_string('telegram_msg_role_blocked', 'local_jedomi'),
+        ], array_column($telegram->sent, 'text'));
+    }
+
+    /**
+     * MDL-UNIT-085: in the bot, a site administrator always has access, even with every role disabled.
+     */
+    public function test_bot_access_never_excludes_admins(): void {
+        global $DB;
+        $telegram = $this->use_fake_telegram();
+        $this->create_telegram_link((int) get_admin()->id, '700000086');
+        set_config('telegram_hidden_roles', implode(',', $DB->get_fieldset_select('role', 'id', '1 = 1')), 'local_jedomi');
+
+        $this->send_sticker('700000086');
+
+        $this->assertSame([get_string('telegram_msg_text_only', 'local_jedomi')], array_column($telegram->sent, 'text'));
+    }
+
+    /**
+     * MDL-UNIT-091: the message at the limit is accepted and the next one blocks the chat for the waiting time with
+     * the limit notice; the limit also applies to chats that are not linked.
+     */
+    public function test_message_limit_blocks_the_chat_after_the_limit(): void {
+        global $DB;
+        $telegram = $this->use_fake_telegram();
+        set_config('telegram_rate_limit', 3, 'local_jedomi');
+        set_config('telegram_cooldown', 5, 'local_jedomi');
+        $chatid = '700000091';
+
+        for ($i = 0; $i < 5; $i++) {
+            $this->send_text($chatid, 'hello there');
+        }
+
+        $linkfirst = get_string('telegram_msg_link_first', 'local_jedomi');
+        $limited = get_string('telegram_msg_rate_limited', 'local_jedomi', ['minutes' => 5]);
+        $this->assertSame([$linkfirst, $linkfirst, $linkfirst, $limited, $limited], array_column($telegram->sent, 'text'));
+        $blockeduntil = (int) $DB->get_field('local_jedomi_telegram_rate_limit', 'blockeduntil', ['chatid' => $chatid]);
+        $this->assertGreaterThanOrEqual(time() + 5 * 60 - 5, $blockeduntil);
+        $this->assertLessThanOrEqual(time() + 5 * 60, $blockeduntil);
+    }
+
+    /**
+     * MDL-UNIT-091: once the waiting time is over the chat can write again.
+     */
+    public function test_message_limit_releases_the_chat_after_the_waiting_time(): void {
+        global $DB;
+        $telegram = $this->use_fake_telegram();
+        set_config('telegram_rate_limit', 1, 'local_jedomi');
+        $chatid = '700000092';
+        $this->send_text($chatid, 'hello there');
+        $this->send_text($chatid, 'hello there');
+
+        $DB->set_field('local_jedomi_telegram_rate_limit', 'blockeduntil', time() - 1, ['chatid' => $chatid]);
+        $DB->set_field('local_jedomi_telegram_rate_limit', 'windowstart', time() - 120, ['chatid' => $chatid]);
+        $this->send_text($chatid, 'hello there');
+
+        $linkfirst = get_string('telegram_msg_link_first', 'local_jedomi');
+        $texts = array_column($telegram->sent, 'text');
+        $this->assertSame($linkfirst, $texts[0]);
+        $this->assertNotSame($linkfirst, $texts[1]);
+        $this->assertSame($linkfirst, $texts[2]);
+    }
+
+    /**
+     * MDL-UNIT-074: the courses of the user are grouped by the role held in each one, for the Telegram AI.
+     * [Pendiente:skip]
+     */
+    public function test_telegram_courses_are_grouped_by_the_role_in_each_course(): void {
+        $this->markTestSkipped('Pending fix: courses are grouped by capability instead of by the role held in each course.');
+    }
+
+    /**
+     * MDL-UNIT-093: the Telegram AI instructions limit actions that change data to explicit requests.
+     * [Pendiente:skip]
+     */
+    public function test_telegram_instructions_limit_writing_actions_to_explicit_requests(): void {
+        $this->markTestSkipped('Pending fix: the Telegram instructions do not limit data-changing actions to explicit requests.');
+    }
+
+    /**
+     * Create a user whose id no earlier test of this run is likely to have used.
+     *
+     * The bot keeps the role derived for each user id for the whole PHP process and ids are reused after each reset, so a
+     * fresh id avoids reading the role of a user of another test.
+     *
+     * @return \stdClass
+     */
+    private function user_with_unused_id(): \stdClass {
+        global $DB;
+        $DB->insert_record_raw('user', ['id' => 900000 + random_int(1, 90000), 'username' => 'filler_' . random_string(10),
+            'mnethostid' => 1, 'confirmed' => 1, 'auth' => 'manual', 'deleted' => 1, 'email' => 'filler@example.com'],
+            false, false, true);
+        return $this->getDataGenerator()->create_user();
+    }
+
+    /**
+     * MDL-INT-017: in Telegram a function outside the role list is rejected and a listed one runs as the linked user.
+     * MDL-INT-063: the message is processed with the web service functions of the linked user.
+     */
+    public function test_telegram_applies_the_web_service_list_of_the_role(): void {
+        $student = $this->user_with_unused_id();
+        $this->create_telegram_link((int) $student->id, '700000090');
+        \local_jedomi\local\service\admin_settings_service::save_ws_allowlist('student', ['core_webservice_get_site_info']);
+        $this->setUser($student);
+
+        $listed = \local_jedomi\telegram\webhook_handler::execute_tool('ws_execute',
+            ['wsname' => 'core_webservice_get_site_info', 'params' => '{}'], (int) $student->id);
+        $unlisted = \local_jedomi\telegram\webhook_handler::execute_tool('ws_execute',
+            ['wsname' => 'core_course_get_categories', 'params' => '{}'], (int) $student->id);
+
+        $this->assertStringNotContainsString('not in allowlist', $listed);
+        $this->assertStringContainsString((string) $student->username, $listed);
+        $this->assertStringContainsString('not in allowlist', $unlisted);
+    }
+
+    /**
+     * MDL-INT-042: in Telegram the database query never reveals credentials, keys or configuration.
+     * [Pendiente:fail] Telegram excludes no table.
+     */
+    public function test_telegram_database_query_excludes_sensitive_data(): void {
+        global $DB;
+        $admin = get_admin();
+        $this->create_telegram_link((int) $admin->id, '700000091');
+        $victim = $this->getDataGenerator()->create_user(['username' => 'victim', 'password' => 'Victim-Pass-1']);
+        set_config('jedomi_test_secret', 'SiteSecretMarker42');
+        set_config('licensekey', 'LicenseMarker42', 'aiprovider_datacurso');
+        $queries = [
+            'password hashes' => ["SELECT username, password FROM {user} WHERE id = {$victim->id}",
+                substr((string) $DB->get_field('user', 'password', ['id' => $victim->id]), 0, 30)],
+            'plugin keys' => ["SELECT value FROM {config_plugins} WHERE name = 'licensekey'", 'LicenseMarker42'],
+            'site configuration' => ["SELECT value FROM {config} WHERE name = 'jedomi_test_secret'", 'SiteSecretMarker42'],
+        ];
+
+        foreach ($queries as $label => [$sql, $secret]) {
+            $result = \local_jedomi\telegram\webhook_handler::execute_tool('execute_sql', ['sql' => $sql], (int) $admin->id);
+            $this->assertStringNotContainsString($secret, $result, "Telegram must reject the query on {$label}");
+        }
+    }
+
+    /**
+     * MDL-INT-042: in Telegram a teacher cannot read the data of a course they do not teach.
+     * [Pendiente:fail] The course check only recognises a few ways of naming the course, so it is easily avoided.
+     */
+    public function test_telegram_teacher_cannot_read_a_course_they_do_not_teach(): void {
+        $own = $this->getDataGenerator()->create_course();
+        $other = $this->getDataGenerator()->create_course(['fullname' => 'Foreign Course Marker']);
+        $teacher = $this->user_with_unused_id();
+        $this->getDataGenerator()->enrol_user($teacher->id, $own->id, 'editingteacher');
+        $this->create_telegram_link((int) $teacher->id, '700000092');
+        $owncourse = \local_jedomi\telegram\webhook_handler::execute_tool('execute_sql',
+            ['sql' => "SELECT shortname FROM {course} WHERE id = {$own->id}"], (int) $teacher->id, 'teacher', [(int) $own->id]);
+        $this->assertStringContainsString(s($own->shortname), $owncourse, 'Control: the teacher can read their own course');
+
+        $result = \local_jedomi\telegram\webhook_handler::execute_tool('execute_sql',
+            ['sql' => "SELECT fullname FROM {course} WHERE id IN ({$other->id})"], (int) $teacher->id, 'teacher',
+            [(int) $own->id]);
+
+        $this->assertStringNotContainsString('Foreign Course Marker', $result);
     }
 }

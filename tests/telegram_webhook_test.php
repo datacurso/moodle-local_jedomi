@@ -195,6 +195,8 @@ final class telegram_webhook_test extends \advanced_testcase {
     /**
      * The early acknowledgement declares the real body length.
      *
+     * MDL-CTR-008: the acknowledgement to Telegram declares the real length of its body.
+     *
      * A wrong Content-Length keeps the proxy waiting for missing bytes while the update is processed,
      * so Telegram gets an error and sends the same update again, which calls the AI service again.
      */

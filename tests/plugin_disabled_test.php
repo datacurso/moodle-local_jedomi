@@ -121,6 +121,7 @@ final class plugin_disabled_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-002: enabled again, services answer normally.
      * The JSON endpoints get no error while Jedomi is enabled.
      */
     public function test_disabled_error_is_null_when_enabled(): void {
@@ -130,7 +131,8 @@ final class plugin_disabled_test extends \advanced_testcase {
     }
 
     /**
-     * Disabled, the JSON endpoints get the provider message in their {"code", "message"} format.
+     * MDL-INT-002: services answer the "not enabled" message of the provider.
+     * MDL-UNIT-039: with Jedomi disabled, the provider's message is given in the {"code", "message"} format.
      */
     public function test_disabled_error_has_the_provider_message(): void {
         plugin_settings::set_enabled('local_jedomi', false);
@@ -143,6 +145,7 @@ final class plugin_disabled_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-002: disabled, the web chat answers the provider message without calling the AI.
      * Disabled, the web chat answers the provider message on the stream and does not call the AI.
      */
     public function test_chat_proxy_sends_the_disabled_error_without_calling_the_ai(): void {
@@ -164,6 +167,7 @@ final class plugin_disabled_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-002: enabled again, the web chat calls the AI.
      * Enabled, the web chat calls the AI.
      */
     public function test_chat_proxy_calls_the_ai_when_enabled(): void {
@@ -182,6 +186,7 @@ final class plugin_disabled_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-002: disabled, the bot answers messages with the provider message without calling the AI.
      * Disabled, a Telegram message gets the "not enabled" answer and the AI is not called.
      */
     public function test_telegram_message_gets_the_disabled_answer(): void {
@@ -198,6 +203,7 @@ final class plugin_disabled_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-002: disabled, the bot answers buttons with the provider message without running them.
      * Disabled, an inline button is acknowledged and answered with the "not enabled" message, without running it.
      */
     public function test_telegram_button_gets_the_disabled_answer(): void {
@@ -218,6 +224,7 @@ final class plugin_disabled_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-002: disabled, the bot does not continue a conversation with the AI.
      * Disabled, a self-ping does not continue the tool loop with the AI.
      */
     public function test_telegram_internal_ping_does_not_call_the_ai(): void {
@@ -234,6 +241,7 @@ final class plugin_disabled_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-002: disabled, the agents task runs nothing and records that it was skipped.
      * Disabled, the scheduled agents task skips its work and leaves the agents due.
      */
     public function test_agent_runner_skips_when_disabled(): void {
@@ -257,6 +265,7 @@ final class plugin_disabled_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-002: disabled, the on-demand task runs nothing and records that it was skipped.
      * Disabled, the adhoc task does not run the task it was queued for.
      */
     public function test_adhoc_task_skips_when_disabled(): void {
@@ -271,6 +280,7 @@ final class plugin_disabled_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-002: enabled again, the on-demand task works.
      * Enabled, the adhoc task looks the queued task up.
      */
     public function test_adhoc_task_runs_when_enabled(): void {
@@ -307,6 +317,8 @@ final class plugin_disabled_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-002: disabled, no task alert is sent.
+     * MDL-INT-073: with Jedomi disabled the task alert is not sent.
      * Disabled, the cron health alert is not sent on admin login.
      */
     public function test_login_alert_is_not_sent_when_disabled(): void {
@@ -316,6 +328,8 @@ final class plugin_disabled_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-002: enabled again, task alerts are sent.
+     * MDL-INT-073: with Jedomi enabled the linked administrator gets the alert.
      * Enabled, the cron health alert is sent on admin login.
      */
     public function test_login_alert_is_sent_when_enabled(): void {
@@ -346,6 +360,8 @@ final class plugin_disabled_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-002: disabled, no grade notification is sent.
+     * MDL-INT-071: with Jedomi disabled the grade notification is not sent.
      * Disabled, a graded student is not notified.
      */
     public function test_grade_notification_is_not_sent_when_disabled(): void {
@@ -355,6 +371,8 @@ final class plugin_disabled_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-002: enabled again, grade notifications are sent.
+     * MDL-INT-071: with Jedomi enabled the graded linked student is notified.
      * Enabled, a graded student is notified.
      */
     public function test_grade_notification_is_sent_when_enabled(): void {
@@ -380,6 +398,7 @@ final class plugin_disabled_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-002: disabled, the profile has no Telegram link.
      * Disabled, the profile has no Telegram link.
      */
     public function test_profile_link_is_absent_when_disabled(): void {
@@ -390,6 +409,7 @@ final class plugin_disabled_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-002: enabled again, the profile has the Telegram link.
      * Enabled, the profile has the Telegram link.
      */
     public function test_profile_link_is_present_when_enabled(): void {

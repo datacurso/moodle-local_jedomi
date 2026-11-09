@@ -54,7 +54,8 @@ final class pending_action_service_test extends \advanced_testcase {
     }
 
     /**
-     * A2: severity of each tool.
+     * MDL-UNIT-022: severity of each action that changes data; reading tools get none.
+     * MDL-UNIT-021: search, describe and query tools run without confirmation.
      *
      * @dataProvider tool_severity_provider
      * @param string $tool Tool name.
@@ -82,7 +83,8 @@ final class pending_action_service_test extends \advanced_testcase {
     }
 
     /**
-     * A2: ws_execute takes its severity from the function type and name.
+     * MDL-UNIT-022: ws_execute takes its severity from the function type and name (delete, remove, unenrol are critical).
+     * MDL-UNIT-021: web service execution is classified by the type of the invoked function.
      *
      * @dataProvider ws_severity_provider
      * @param string $wsname Web service function.
@@ -107,7 +109,8 @@ final class pending_action_service_test extends \advanced_testcase {
     }
 
     /**
-     * A2: a web service function without a declared type is held, because Moodle has no default type.
+     * MDL-UNIT-022: a web service function without a declared type is held for confirmation.
+     * MDL-UNIT-021: an existing function without a declared read type is treated as a write.
      *
      * @dataProvider untyped_ws_severity_provider
      * @param string $wsname Web service function registered without a type in db/services.php.
@@ -132,6 +135,7 @@ final class pending_action_service_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-045: the held action carries description, data and level for the card.
      * A1: holding a writing tool stores it for the user and describes it for the confirmation card.
      */
     public function test_hold_stores_the_action_and_returns_the_card_data(): void {
@@ -177,6 +181,7 @@ final class pending_action_service_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-062: actions past their validity are purged and recent ones are kept.
      * Expired actions are purged; recent ones are kept.
      */
     public function test_purge_expired_removes_only_old_actions(): void {
@@ -190,5 +195,77 @@ final class pending_action_service_test extends \advanced_testcase {
 
         $this->assertFalse($DB->record_exists(pending_action_service::TABLE, ['id' => $old['id']]));
         $this->assertTrue($DB->record_exists(pending_action_service::TABLE, ['id' => $new['id']]));
+    }
+
+    /**
+     * MDL-UNIT-023: the send card names recipients by their real role and pending actions are described in readable language.
+     * [Pendiente:skip]
+     */
+    public function test_pending_actions_are_described_in_readable_language(): void {
+        $this->markTestSkipped('Pending fix: the send card always says students and other actions show technical details.');
+    }
+
+    /**
+     * Wait for the start of a new second so a few database operations run within the same second.
+     *
+     * @return int The current time.
+     */
+    private function start_of_a_new_second(): int {
+        $now = time();
+        while (time() === $now) {
+            usleep(10000);
+        }
+        return time();
+    }
+
+    /**
+     * MDL-UNIT-062: an action is still valid exactly at the validity limit and expired one second after.
+     *
+     * @return void
+     */
+    public function test_action_validity_at_the_limit_and_just_after(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $user = $this->getDataGenerator()->create_user();
+        $atlimit = pending_action_service::hold((int) $user->id, 'delete_agent', ['id' => 1]);
+        $justafter = pending_action_service::hold((int) $user->id, 'delete_agent', ['id' => 2]);
+        $inside = pending_action_service::hold((int) $user->id, 'delete_agent', ['id' => 3]);
+
+        $now = $this->start_of_a_new_second();
+        $DB->set_field(pending_action_service::TABLE, 'timecreated', $now - pending_action_service::EXPIRY, ['id' => $atlimit['id']]);
+        $DB->set_field(pending_action_service::TABLE, 'timecreated', $now - pending_action_service::EXPIRY - 1,
+            ['id' => $justafter['id']]);
+        $DB->set_field(pending_action_service::TABLE, 'timecreated', $now - pending_action_service::EXPIRY + 1,
+            ['id' => $inside['id']]);
+
+        $this->assertSame('cancelled', pending_action_service::resolve($atlimit['id'], (int) $user->id, false)['status']);
+        $this->assertSame('cancelled', pending_action_service::resolve($inside['id'], (int) $user->id, false)['status']);
+        try {
+            pending_action_service::resolve($justafter['id'], (int) $user->id, false);
+            $this->fail('An action one second past its validity must be expired');
+        } catch (\moodle_exception $e) {
+            $this->assertSame('pending_action_expired', $e->errorcode);
+        }
+    }
+
+    /**
+     * MDL-UNIT-062: purging keeps an action exactly at the validity limit and removes one a second past it.
+     *
+     * @return void
+     */
+    public function test_purge_keeps_the_action_at_the_limit_and_removes_the_one_just_after(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $atlimit = pending_action_service::hold(2, 'delete_agent', ['id' => 1]);
+        $justafter = pending_action_service::hold(2, 'delete_agent', ['id' => 2]);
+
+        $now = $this->start_of_a_new_second();
+        $DB->set_field(pending_action_service::TABLE, 'timecreated', $now - pending_action_service::EXPIRY, ['id' => $atlimit['id']]);
+        $DB->set_field(pending_action_service::TABLE, 'timecreated', $now - pending_action_service::EXPIRY - 1,
+            ['id' => $justafter['id']]);
+
+        $this->assertSame(1, pending_action_service::purge_expired());
+        $this->assertTrue($DB->record_exists(pending_action_service::TABLE, ['id' => $atlimit['id']]));
+        $this->assertFalse($DB->record_exists(pending_action_service::TABLE, ['id' => $justafter['id']]));
     }
 }

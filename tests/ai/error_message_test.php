@@ -66,7 +66,7 @@ final class error_message_test extends \advanced_testcase {
     }
 
     /**
-     * M2: each provider exception becomes its own message, in English and in Spanish.
+     * MDL-UNIT-039: each AI service failure becomes its own message (with the retry time when known), in English and Spanish.
      *
      * @dataProvider provider_error_provider
      * @param string $errorcode Provider error code.
@@ -101,7 +101,8 @@ final class error_message_test extends \advanced_testcase {
     }
 
     /**
-     * I6: a disabled provider gives the provider's own message, in the requested language.
+     * MDL-INT-003: the provider message is shown in the language of the user.
+     * MDL-UNIT-039: a disabled provider gives the provider's own message, in English and Spanish.
      */
     public function test_provider_disabled_gives_the_provider_message_in_english_and_spanish(): void {
         if (!class_exists(\aiprovider_datacurso\httpclient\ai_services_api::class)) {
@@ -123,7 +124,7 @@ final class error_message_test extends \advanced_testcase {
     }
 
     /**
-     * M2: any other failure (including non-provider exceptions) gives the generic message, never internal details.
+     * MDL-UNIT-039: an unknown failure gives the generic message, never internal details.
      */
     public function test_unknown_exception_gives_generic_message_without_details(): void {
         $result = error_message::from_exception(new \RuntimeException('secret internal detail'), 'en');

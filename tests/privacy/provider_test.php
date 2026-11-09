@@ -23,6 +23,7 @@ use core_privacy\local\request\userlist;
 use core_privacy\local\request\writer;
 use core_privacy\tests\provider_testcase;
 use local_jedomi\local\service\feedback_service;
+use local_jedomi\local\service\pending_action_service;
 
 /**
  * Tests for the privacy provider of local_jedomi (answer feedback).
@@ -50,6 +51,7 @@ final class provider_test extends provider_testcase {
 
     /**
      * M10: the feedback table is declared in the metadata.
+     * MDL-INT-079: the declaration includes the ratings.
      */
     public function test_metadata_declares_feedback_table(): void {
         $collection = provider::get_metadata(new collection('local_jedomi'));
@@ -60,6 +62,7 @@ final class provider_test extends provider_testcase {
 
     /**
      * M10: a user's feedback is found in their user context and exported.
+     * MDL-INT-079: the export gives the ratings of the user.
      */
     public function test_export_user_feedback(): void {
         $this->resetAfterTest();
@@ -78,6 +81,7 @@ final class provider_test extends provider_testcase {
 
     /**
      * M10: deleting one user's data removes only their feedback.
+     * MDL-INT-079: deletion by user removes the ratings of that user only.
      */
     public function test_delete_data_for_user(): void {
         global $DB;
@@ -93,6 +97,7 @@ final class provider_test extends provider_testcase {
 
     /**
      * M10: deleting a user context removes the feedback of that user.
+     * MDL-INT-079: deletion by context removes the ratings of the user of that context.
      */
     public function test_delete_data_for_all_users_in_context(): void {
         global $DB;
@@ -108,6 +113,7 @@ final class provider_test extends provider_testcase {
 
     /**
      * M10: the user list of a user context holds that user, and deleting it removes their feedback.
+     * MDL-INT-079: deletion by list of users removes the ratings.
      */
     public function test_userlist_and_delete_data_for_users(): void {
         global $DB;
@@ -123,5 +129,185 @@ final class provider_test extends provider_testcase {
 
         $this->assertSame(0, $DB->count_records('local_jedomi_feedback', ['userid' => $user1->id]));
         $this->assertSame(1, $DB->count_records('local_jedomi_feedback', ['userid' => $user2->id]));
+    }
+    /**
+     * Fields declared for an item of the metadata.
+     *
+     * @param string $name Item name.
+     * @return array|null Field names, or null when the item is not declared.
+     */
+    private function declared_fields(string $name): ?array {
+        $collection = provider::get_metadata(new collection('local_jedomi'));
+        foreach ($collection->get_collection() as $item) {
+            if ($item->get_name() === $name) {
+                return array_keys($item->get_privacy_fields());
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Hold a web chat action that waits for the confirmation of a user.
+     *
+     * @param int $userid User.
+     * @return void
+     */
+    private function hold_action(int $userid): void {
+        $card = pending_action_service::hold($userid, 'send_messages', ['userids' => [2], 'message' => 'Hello']);
+        $this->assertNotNull($card, 'Sending messages must wait for confirmation');
+    }
+
+    /**
+     * MDL-INT-079: the declaration includes the pending actions and the conversation sent to the AI service, where the
+     * user is identified with a pseudonymous identifier.
+     */
+    public function test_metadata_declares_pending_actions_and_the_ai_service(): void {
+        $this->assertNotNull($this->declared_fields('local_jedomi_pending_actions'));
+        $this->assertContains('userid', $this->declared_fields('local_jedomi_pending_actions'));
+        $aiservice = $this->declared_fields('jedomi_ai_service');
+        $this->assertNotNull($aiservice, 'The data sent to the AI service must be declared');
+        $this->assertContains('userid', $aiservice);
+        $this->assertContains('messages', $aiservice);
+        $this->assertStringContainsStringIgnoringCase(
+            'pseudonym',
+            get_string('privacy:metadata:jedomi_ai_service:userid', 'local_jedomi')
+        );
+    }
+
+    /**
+     * MDL-INT-079: deleting by user, by list of users and by context removes the ratings and the pending actions of the
+     * user and keeps those of the others.
+     */
+    public function test_every_deletion_removes_ratings_and_pending_actions(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $users = [];
+        for ($i = 0; $i < 4; $i++) {
+            $users[$i] = $this->getDataGenerator()->create_user();
+            feedback_service::record((int) $users[$i]->id, 'good', 'sess', 'Answer');
+            $this->hold_action((int) $users[$i]->id);
+        }
+        $this->assertSame(
+            [(int) \context_user::instance($users[0]->id)->id],
+            array_map('intval', provider::get_contexts_for_userid((int) $users[0]->id)->get_contextids())
+        );
+
+        $context0 = \context_user::instance($users[0]->id);
+        provider::delete_data_for_user(new approved_contextlist($users[0], 'local_jedomi', [$context0->id]));
+        $context1 = \context_user::instance($users[1]->id);
+        provider::delete_data_for_users(new approved_userlist($context1, 'local_jedomi', [$users[1]->id]));
+        provider::delete_data_for_all_users_in_context(\context_user::instance($users[2]->id));
+
+        foreach ([0, 1, 2] as $i) {
+            $this->assertSame(0, $DB->count_records('local_jedomi_feedback', ['userid' => $users[$i]->id]));
+            $this->assertSame(0, $DB->count_records('local_jedomi_pending_actions', ['userid' => $users[$i]->id]));
+        }
+        $this->assertSame(1, $DB->count_records('local_jedomi_feedback', ['userid' => $users[3]->id]));
+        $this->assertSame(1, $DB->count_records('local_jedomi_pending_actions', ['userid' => $users[3]->id]));
+    }
+
+    /**
+     * Link a user to Telegram and give them a conversation, a message limit record and an agent.
+     *
+     * @param \stdClass $user User.
+     * @param string $chatid Chat id.
+     * @return void
+     */
+    private function create_telegram_and_agent_data(\stdClass $user, string $chatid): void {
+        global $DB;
+        $now = time();
+        $DB->insert_record('local_jedomi_telegram_links', (object) ['userid' => $user->id, 'chatid' => $chatid,
+            'username' => 'tg_' . $user->username, 'confirmed' => 1, 'timecreated' => $now, 'lastproactivesent' => 0]);
+        $DB->insert_record('local_jedomi_telegram_sessions', (object) ['chatid' => $chatid,
+            'messages' => json_encode([['role' => 'user', 'content' => 'My grades please']]), 'usercontext' => null,
+            'lastactivity' => $now]);
+        $DB->insert_record('local_jedomi_telegram_rate_limit', (object) ['chatid' => $chatid, 'windowstart' => $now,
+            'msgcount' => 1, 'blockeduntil' => 0]);
+        $DB->insert_record('local_jedomi_agents', (object) ['userid' => $user->id, 'name' => 'Weekly report',
+            'prompt' => 'List the students at risk', 'schedule_cron' => '0 8 * * 1', 'context_type' => 'site',
+            'enabled' => 1, 'failcount' => 0, 'nextrun' => $now + 3600, 'timecreated' => $now, 'timemodified' => $now]);
+    }
+
+    /**
+     * MDL-INT-080: the declaration covers the Telegram data, the delivery to Telegram, the agents and their results, the
+     * profiler queries and the technical log.
+     * [Pendiente:fail]
+     */
+    public function test_metadata_declares_telegram_agents_profiler_and_log(): void {
+        $collection = provider::get_metadata(new collection('local_jedomi'));
+        $names = array_map(static fn($item) => $item->get_name(), $collection->get_collection());
+
+        $missing = array_values(array_diff([
+            'local_jedomi_telegram_links',
+            'local_jedomi_telegram_sessions',
+            'local_jedomi_telegram_rate_limit',
+            'local_jedomi_agents',
+            'local_jedomi_agent_cache',
+            'local_jedomi_query_log',
+        ], $names));
+        $this->assertSame([], $missing, 'Personal data tables not declared');
+        $external = array_filter($names, static fn(string $name): bool => stripos($name, 'telegram') !== false
+            && strpos($name, 'local_jedomi_') !== 0);
+        $this->assertNotEmpty($external, 'The delivery of data to Telegram must be declared as an external location');
+    }
+
+    /**
+     * MDL-INT-080: the export of a user includes their pending actions.
+     * [Pendiente:fail]
+     */
+    public function test_export_includes_the_pending_actions(): void {
+        $this->resetAfterTest();
+        $user = $this->getDataGenerator()->create_user();
+        $this->hold_action((int) $user->id);
+        $context = \context_user::instance($user->id);
+
+        $contextlist = provider::get_contexts_for_userid((int) $user->id);
+        $this->assertContains((int) $context->id, array_map('intval', $contextlist->get_contextids()));
+        provider::export_user_data(new approved_contextlist($user, 'local_jedomi', $contextlist->get_contextids()));
+
+        $this->assertTrue(writer::with_context($context)->has_any_data(), 'The pending actions of the user are exported');
+    }
+
+    /**
+     * MDL-INT-080: the export of a user includes their Telegram data and their agents.
+     * [Pendiente:fail]
+     */
+    public function test_export_includes_telegram_and_agent_data(): void {
+        $this->resetAfterTest();
+        $user = $this->getDataGenerator()->create_user();
+        $this->create_telegram_and_agent_data($user, '880000001');
+
+        $contextlist = provider::get_contexts_for_userid((int) $user->id);
+        $this->assertNotEmpty($contextlist->get_contextids(), 'A user with Telegram data and agents has data to export');
+        provider::export_user_data(new approved_contextlist($user, 'local_jedomi', $contextlist->get_contextids()));
+
+        $this->assertTrue(writer::has_any_data_in_any_context(), 'The Telegram data and the agents are exported');
+    }
+
+    /**
+     * MDL-INT-080: deleting the data of a user removes their Telegram link, conversation and limit records and their
+     * agents, and keeps those of other users.
+     * [Pendiente:fail]
+     */
+    public function test_delete_removes_telegram_and_agent_data(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $user = $this->getDataGenerator()->create_user();
+        $other = $this->getDataGenerator()->create_user();
+        $this->create_telegram_and_agent_data($user, '880000002');
+        $this->create_telegram_and_agent_data($other, '880000003');
+        $context = \context_user::instance($user->id);
+
+        provider::delete_data_for_user(new approved_contextlist($user, 'local_jedomi', [$context->id]));
+
+        $this->assertSame([
+            'links' => 0, 'sessions' => 0, 'limits' => 0, 'agents' => 0,
+        ], [
+            'links' => $DB->count_records('local_jedomi_telegram_links', ['userid' => $user->id]),
+            'sessions' => $DB->count_records('local_jedomi_telegram_sessions', ['chatid' => '880000002']),
+            'limits' => $DB->count_records('local_jedomi_telegram_rate_limit', ['chatid' => '880000002']),
+            'agents' => $DB->count_records('local_jedomi_agents', ['userid' => $user->id]),
+        ]);
+        $this->assertSame(1, $DB->count_records('local_jedomi_agents', ['userid' => $other->id]));
     }
 }

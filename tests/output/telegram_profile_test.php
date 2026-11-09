@@ -47,6 +47,7 @@ final class telegram_profile_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-057: a generated code exports the code, the countdown expiry and the direct link to the bot.
      * A generated code exports the deep link and the expiry.
      *
      * @return void
@@ -68,6 +69,7 @@ final class telegram_profile_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-057: the linked state exports the Telegram user and the link date.
      * A linked account shows the Telegram username, or the chat id when there is none.
      *
      * @return void
@@ -90,6 +92,7 @@ final class telegram_profile_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-057: each state (not configured with settings link, role blocked, code, linked) renders its own block.
      * Each state renders its own block.
      *
      * @return void
@@ -114,5 +117,67 @@ final class telegram_profile_test extends \advanced_testcase {
         $this->assertStringContainsString('name="action" value="generate"', $code);
         $this->assertStringContainsString('data-form="local_jedomi/telegram_profile/unlink"', $linked);
         $this->assertStringContainsString('@ada', $linked);
+    }
+
+    /**
+     * MDL-UNIT-057: the not linked state without a code offers to generate one and shows no countdown.
+     *
+     * @return void
+     */
+    public function test_not_linked_without_code_offers_to_generate_one(): void {
+        global $PAGE;
+        $this->resetAfterTest();
+        $PAGE->set_url(new \moodle_url('/local/jedomi/telegram_profile.php'));
+
+        $html = $PAGE->get_renderer('local_jedomi')->render($this->profile(telegram_profile::STATE_NOT_LINKED));
+
+        $this->assertStringContainsString('name="action" value="generate"', $html);
+        $this->assertStringNotContainsString('data-region="local_jedomi/telegram_profile/countdown"', $html);
+        $this->assertStringNotContainsString('data-form="local_jedomi/telegram_profile/unlink"', $html);
+    }
+
+    /**
+     * MDL-UNIT-057: the linked state shows the Telegram user, the link date and the unlink button, and no code.
+     *
+     * @return void
+     */
+    public function test_linked_state_shows_user_date_and_unlink(): void {
+        global $PAGE;
+        $this->resetAfterTest();
+        $PAGE->set_url(new \moodle_url('/local/jedomi/telegram_profile.php'));
+        $time = 1700000000;
+
+        $html = $PAGE->get_renderer('local_jedomi')->render($this->profile(telegram_profile::STATE_LINKED,
+            (object) ['username' => 'ada', 'chatid' => '1', 'timecreated' => $time]));
+
+        $date = userdate($time, get_string('strftimedatetime', 'core_langconfig'));
+        $this->assertStringContainsString('@ada', $html);
+        $this->assertStringContainsString(get_string('telegram_linked_on', 'local_jedomi', $date), $html);
+        $this->assertStringContainsString('data-form="local_jedomi/telegram_profile/unlink"', $html);
+        $this->assertStringNotContainsString('name="action" value="generate"', $html);
+    }
+
+    /**
+     * MDL-UNIT-057: the not configured and role blocked states show neither a code nor the unlink button.
+     *
+     * @return void
+     */
+    public function test_not_configured_and_blocked_states_offer_no_link_actions(): void {
+        global $PAGE;
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $PAGE->set_url(new \moodle_url('/local/jedomi/telegram_profile.php'));
+        $renderer = $PAGE->get_renderer('local_jedomi');
+
+        foreach ([telegram_profile::STATE_NOT_CONFIGURED, telegram_profile::STATE_ROLE_BLOCKED] as $state) {
+            $data = $this->profile($state)->export_for_template($renderer);
+            $html = $renderer->render($this->profile($state));
+            $this->assertFalse($data['linked']);
+            $this->assertFalse($data['notlinked']);
+            $this->assertStringNotContainsString('name="action" value="generate"', $html);
+            $this->assertStringNotContainsString('data-form="local_jedomi/telegram_profile/unlink"', $html);
+        }
+        $blocked = $renderer->render($this->profile(telegram_profile::STATE_ROLE_BLOCKED));
+        $this->assertStringNotContainsString('admin_settings.php?tab=integrations', $blocked);
     }
 }

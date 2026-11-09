@@ -85,4 +85,16 @@ final class apis_tab_test extends \advanced_testcase {
         $this->assertStringContainsString('data-region="local_jedomi/admin/apis/rows"', $html);
         $this->assertStringContainsString('local_jedomi-ws-write', $html);
     }
+
+    /**
+     * MDL-UNIT-053: each function shows its description and declared type, every function appears in its type filter,
+     * and the role row has its own label with translated role buttons.
+     * [Pendiente:skip]
+     *
+     * @return void
+     */
+    public function test_functions_are_described_and_classified_with_translated_labels(): void {
+        $this->markTestSkipped('Pending fix: empty description column, type guessed from the function name, role row '
+            . 'labelled Type and role buttons in English.');
+    }
 }

@@ -43,7 +43,7 @@ final class session_test extends \advanced_testcase {
     // ========================
 
     /**
-     * Test that setting telegram_max_turns affects append behavior.
+     * MDL-UNIT-006: the configured telegram_max_turns reaches the bot conversation.
      *
      * With max_turns=3, appending 5 user messages should trim history to 3,
      * so build_messages_for_gateway returns: system + 3 history + current = 5 total.
@@ -84,7 +84,7 @@ final class session_test extends \advanced_testcase {
     }
 
     /**
-     * Test max_turns defaults to 10 when config is not set.
+     * MDL-UNIT-006: max turns default to 10 when the setting is not saved.
      */
     public function test_max_turns_default(): void {
         // Ensure no config is set.
@@ -112,7 +112,7 @@ final class session_test extends \advanced_testcase {
     }
 
     /**
-     * Test max_turns clamp (0 → 1) instead of crashing.
+     * MDL-UNIT-006: a value below the minimum is clamped to 1 turn instead of crashing.
      */
     public function test_max_turns_clamp_low(): void {
         set_config('telegram_max_turns', 0, 'local_jedomi');
@@ -137,7 +137,7 @@ final class session_test extends \advanced_testcase {
     }
 
     /**
-     * Test max_turns clamp (100) — values above 100 are clamped down.
+     * MDL-UNIT-006: values above the maximum are clamped to 100 turns.
      */
     public function test_max_turns_clamp_high(): void {
         set_config('telegram_max_turns', 999, 'local_jedomi');

@@ -66,7 +66,9 @@ final class resolve_action_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-096: an action run without errors gives the action executed message.
      * A3: confirming runs the action once and removes it.
+     * MDL-INT-046: confirming runs the action and removes it.
      */
     public function test_confirm_runs_the_action_and_removes_it(): void {
         global $DB;
@@ -85,6 +87,7 @@ final class resolve_action_test extends \advanced_testcase {
 
     /**
      * A3: cancelling removes the action without running it.
+     * MDL-INT-046: cancelling removes the action without running it.
      */
     public function test_cancel_removes_the_action_without_running_it(): void {
         global $DB;
@@ -103,6 +106,7 @@ final class resolve_action_test extends \advanced_testcase {
 
     /**
      * A3: an action of another user is rejected and left untouched.
+     * MDL-INT-046: an action of another user is rejected with its message.
      */
     public function test_action_of_another_user_is_rejected(): void {
         global $DB;
@@ -122,7 +126,9 @@ final class resolve_action_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-062: an action past its validity is rejected and not run.
      * A3: an expired action is rejected, removed and not run.
+     * MDL-INT-046: an expired action is rejected with its message.
      */
     public function test_expired_action_is_rejected(): void {
         global $DB;
@@ -144,6 +150,7 @@ final class resolve_action_test extends \advanced_testcase {
 
     /**
      * A3: an action can be resolved only once.
+     * MDL-INT-046: an action already resolved is rejected.
      */
     public function test_action_cannot_be_resolved_twice(): void {
         $this->resetAfterTest();
@@ -164,7 +171,9 @@ final class resolve_action_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-096: a permission failure gives the no permission message.
      * A4: the role is checked again when confirming; without it the action is not run.
+     * MDL-INT-046: the current role is checked again when confirming.
      */
     public function test_confirm_checks_the_role_again(): void {
         global $DB;
@@ -187,7 +196,9 @@ final class resolve_action_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-096: any other failure gives the could not complete message without internal details.
      * A3: a failing action returns a short message, never the internal error.
+     * MDL-INT-046: an action that fails is left resolved and cannot be repeated.
      */
     public function test_failed_action_returns_a_short_message(): void {
         $this->resetAfterTest();
@@ -198,9 +209,18 @@ final class resolve_action_test extends \advanced_testcase {
 
         $this->assertSame('failed', $result['status']);
         $this->assertSame(get_string('pending_action_failed', 'local_jedomi'), $result['message']);
+
+        try {
+            $this->resolve($pending['id'], true);
+            $this->fail('A failed action must not be run again');
+        } catch (\moodle_exception $e) {
+            $this->assertSame('pending_action_not_found', $e->errorcode);
+        }
     }
 
     /**
+     * MDL-UNIT-096: sending messages reports the sent and the failed ones.
+     * MDL-INT-049: confirming the sending delivers to the valid recipient and reports exact sent and failed counts.
      * A5: confirming send_messages sends the messages and reports sent and failed.
      */
     public function test_confirm_send_messages_reports_sent_and_failed(): void {
@@ -225,6 +245,7 @@ final class resolve_action_test extends \advanced_testcase {
 
     /**
      * Guests cannot resolve actions.
+     * MDL-INT-046: a guest cannot resolve actions.
      */
     public function test_guest_cannot_resolve(): void {
         $this->resetAfterTest();
@@ -232,5 +253,96 @@ final class resolve_action_test extends \advanced_testcase {
 
         $this->expectException(\moodle_exception::class);
         resolve_action::execute(1, true);
+    }
+
+    /**
+     * Hold a send_messages action for the admin and confirm it.
+     *
+     * @param int[] $userids Recipients.
+     * @return array Result of the web service.
+     */
+    private function confirm_send(array $userids): array {
+        $pending = pending_action_service::hold((int) get_admin()->id, 'send_messages', [
+            'user_ids' => $userids,
+            'message' => 'Please submit your essay.',
+        ]);
+        return $this->resolve($pending['id'], true);
+    }
+
+    /**
+     * MDL-UNIT-096: when every message is sent the result gives the sent count and no failed part.
+     */
+    public function test_send_messages_all_sent_has_no_failed_part(): void {
+        $this->resetAfterTest();
+        $this->preventResetByRollback();
+        $this->setAdminUser();
+        $one = $this->getDataGenerator()->create_user();
+        $two = $this->getDataGenerator()->create_user();
+        $this->redirectMessages();
+
+        $result = $this->confirm_send([(int) $one->id, (int) $two->id]);
+
+        $this->assertSame('executed', $result['status']);
+        $this->assertSame(2, $result['sent']);
+        $this->assertSame(0, $result['failed']);
+        $this->assertSame(str_replace('{sent}', '2', get_string('messages_sent', 'local_jedomi')), $result['message']);
+    }
+
+    /**
+     * MDL-UNIT-096: when some messages fail the result adds the failed count after the sent count.
+     */
+    public function test_send_messages_some_failed_adds_the_failed_part(): void {
+        $this->resetAfterTest();
+        $this->preventResetByRollback();
+        $this->setAdminUser();
+        $one = $this->getDataGenerator()->create_user();
+        $this->redirectMessages();
+
+        $result = $this->confirm_send([(int) $one->id, 987654, 987655]);
+
+        $expected = str_replace('{sent}', '1', get_string('messages_sent', 'local_jedomi')) . ' '
+            . str_replace('{failed}', '2', get_string('messages_sent_fail', 'local_jedomi'));
+        $this->assertSame('executed', $result['status']);
+        $this->assertSame($expected, $result['message']);
+    }
+
+    /**
+     * MDL-UNIT-096: a send without any delivered message is reported as no messages sent, not as success.
+     */
+    public function test_send_messages_none_sent_is_not_reported_as_success(): void {
+        $this->resetAfterTest();
+        $this->preventResetByRollback();
+        $this->setAdminUser();
+        $sink = $this->redirectMessages();
+
+        $result = $this->confirm_send([987654, 987655]);
+
+        $this->assertSame('failed', $result['status']);
+        $this->assertSame(0, $result['sent']);
+        $this->assertSame(get_string('no_messages_sent', 'local_jedomi'), $result['message']);
+        $this->assertCount(0, $sink->get_messages());
+    }
+
+    /**
+     * MDL-INT-047: a critical action confirmed without the confirmation word is rejected by the server and not run.
+     * [Pendiente:fail] The confirmation word of critical actions is only checked in the browser: a direct request runs the
+     * action without it.
+     */
+    public function test_critical_action_without_the_confirmation_word_is_not_run(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $agentid = $this->create_agent((int) get_admin()->id);
+        $pending = pending_action_service::hold((int) get_admin()->id, 'delete_agent', ['id' => $agentid]);
+        $this->assertSame('critical', $pending['severity'], 'Precondition: deleting an agent is a critical action');
+
+        try {
+            $result = $this->resolve($pending['id'], true);
+        } catch (\moodle_exception $e) {
+            $result = ['status' => 'rejected'];
+        }
+
+        $this->assertNotSame('executed', $result['status'], 'The server must reject the action without the confirmation word');
+        $this->assertNotNull(agent_manager::get_agent($agentid), 'The critical action must not run without the confirmation word');
     }
 }

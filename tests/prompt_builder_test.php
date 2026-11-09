@@ -41,7 +41,7 @@ final class prompt_builder_test extends \advanced_testcase {
     }
 
     /**
-     * Test the built system prompt instructs the model to use Telegram HTML.
+     * MDL-UNIT-046: the Telegram instructions ask for the Telegram format.
      *
      * Asserts the format instruction in a wording-tolerant way: mention of
      * Telegram HTML, the supported tags, and a prohibition on markdown.

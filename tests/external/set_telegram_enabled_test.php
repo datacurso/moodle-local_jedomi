@@ -42,6 +42,7 @@ final class set_telegram_enabled_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-012: an administrator turns the integration on.
      * Enabling the switch stores 1 and returns the enabled state.
      */
     public function test_admin_can_enable_telegram(): void {
@@ -56,6 +57,7 @@ final class set_telegram_enabled_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-012: an administrator turns the integration off.
      * Disabling the switch stores 0 and returns the disabled state.
      */
     public function test_admin_can_disable_telegram(): void {
@@ -70,6 +72,7 @@ final class set_telegram_enabled_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-012: the stored state is returned.
      * The returned state is the stored one, read back after saving.
      */
     public function test_returns_the_stored_state(): void {
@@ -83,6 +86,7 @@ final class set_telegram_enabled_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-012: users without the site configuration permission cannot change it.
      * Users without moodle/site:config cannot change the setting.
      */
     public function test_requires_site_config_capability(): void {
@@ -99,6 +103,7 @@ final class set_telegram_enabled_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-012: the service is available to the browser.
      * The function is declared for AJAX and restricted to site administrators.
      */
     public function test_service_is_declared_for_ajax(): void {

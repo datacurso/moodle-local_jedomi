@@ -71,6 +71,7 @@ final class settings_extension_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-005: the provider form shows the Jedomi fields.
      * M6: the provider form shows "Enabled", the chat model, both switches with their models and max tokens.
      *
      * @return void
@@ -102,7 +103,7 @@ final class settings_extension_test extends \advanced_testcase {
     }
 
     /**
-     * S5: valid values pass the validation of the provider form.
+     * MDL-UNIT-001: valid values pass the validation of the provider form.
      *
      * @return void
      */
@@ -120,7 +121,7 @@ final class settings_extension_test extends \advanced_testcase {
     }
 
     /**
-     * S5: a model outside the list is rejected.
+     * MDL-UNIT-001: a chat model outside the list is always rejected with the "select a model" message.
      *
      * @return void
      */
@@ -134,7 +135,7 @@ final class settings_extension_test extends \advanced_testcase {
     }
 
     /**
-     * S5: max tokens must be a whole number.
+     * MDL-UNIT-002: max tokens must be a whole number.
      *
      * @dataProvider bad_max_tokens_provider
      * @param string $value Submitted value.
@@ -162,7 +163,7 @@ final class settings_extension_test extends \advanced_testcase {
     }
 
     /**
-     * S5: max tokens are clamped to the accepted range when saved.
+     * MDL-UNIT-002: max tokens are clamped to the nearest limit of the accepted range when saved.
      *
      * @dataProvider clamp_provider
      * @param int $submitted Submitted value.
@@ -187,13 +188,17 @@ final class settings_extension_test extends \advanced_testcase {
         return [
             'below minimum' => [10, model_settings::MIN_MAX_TOKENS],
             'negative' => [-5, model_settings::MIN_MAX_TOKENS],
+            'just below minimum' => [model_settings::MIN_MAX_TOKENS - 1, model_settings::MIN_MAX_TOKENS],
+            'at minimum' => [model_settings::MIN_MAX_TOKENS, model_settings::MIN_MAX_TOKENS],
             'in range' => [8000, 8000],
-            'at maximum' => [128000, 128000],
+            'at maximum' => [model_settings::MAX_MAX_TOKENS, model_settings::MAX_MAX_TOKENS],
+            'just above maximum' => [model_settings::MAX_MAX_TOKENS + 1, model_settings::MAX_MAX_TOKENS],
             'above maximum' => [500000, model_settings::MAX_MAX_TOKENS],
         ];
     }
 
     /**
+     * MDL-INT-005: saving writes the provider and the Jedomi values.
      * S5: saving through the provider form stores "Enabled" in the provider and the rest in local_jedomi.
      *
      * @return void
@@ -224,6 +229,7 @@ final class settings_extension_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-005: only real changes are logged.
      * S5: a change is written to the config log; saving the same value again is not logged.
      *
      * @return void
@@ -244,6 +250,7 @@ final class settings_extension_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-005: the form shows the current values.
      * S5: the form is prefilled with the current Jedomi settings and the provider state.
      *
      * @return void
@@ -274,7 +281,8 @@ final class settings_extension_test extends \advanced_testcase {
     }
 
     /**
-     * S5: unset or unlisted values are shown as the values Jedomi actually uses.
+     * MDL-INT-005: the form shows the effective defaults when nothing is saved.
+     * MDL-UNIT-003: unset or unlisted values are shown as the values Jedomi actually uses.
      *
      * @return void
      */
@@ -298,7 +306,7 @@ final class settings_extension_test extends \advanced_testcase {
     }
 
     /**
-     * M6: the vision and audio selectors have no empty option and show the default model while their switch is off.
+     * MDL-UNIT-003: the vision and audio selectors have no empty option and show the default model while their switch is off.
      *
      * @return void
      */
@@ -345,7 +353,10 @@ final class settings_extension_test extends \advanced_testcase {
     }
 
     /**
-     * M6: the vision and audio models are hidden while their switch is off.
+     * MDL-UNIT-001: the vision and audio models are hidden while their switch is off.
+     *
+     * The rules are read from the dependencies the form hands to the browser, the same data the
+     * form JavaScript uses to show and hide the fields.
      *
      * @return void
      */
@@ -356,13 +367,16 @@ final class settings_extension_test extends \advanced_testcase {
         $mform = new \MoodleQuickForm('jedomitest', 'post', '');
         (new settings_extension())->add_fields($mform);
 
-        $hideifs = (new \ReflectionProperty(\MoodleQuickForm::class, '_hideifs'))->getValue($mform);
-        $this->assertSame(['vision_model'], $hideifs['files_enabled']['notchecked']['1']);
-        $this->assertSame(['audio_model'], $hideifs['audio_enabled']['notchecked']['1']);
+        [, $dependencies] = $mform->getLockOptionObject();
+        $hide = \MoodleQuickForm::DEP_HIDE;
+        $this->assertSame(['vision_model'], $dependencies['files_enabled']['notchecked']['1'][$hide]);
+        $this->assertSame(['audio_model'], $dependencies['audio_enabled']['notchecked']['1'][$hide]);
+        $this->assertArrayNotHasKey('model', $dependencies, 'The chat model is never hidden');
+        $this->assertArrayNotHasKey('max_tokens', $dependencies, 'Max tokens is never hidden');
     }
 
     /**
-     * M6: with its switch on, an empty or unlisted vision or audio model is rejected.
+     * MDL-UNIT-001: with its switch on, an empty or unlisted vision or audio model is rejected.
      *
      * @dataProvider bad_media_model_provider
      * @param string $switch Switch field.
@@ -392,7 +406,7 @@ final class settings_extension_test extends \advanced_testcase {
     }
 
     /**
-     * M6: a switch that is off keeps a valid model saved, so turning it on later shows a real model.
+     * MDL-UNIT-001: a switch that is off keeps the default model saved, so turning it on later shows a real model.
      *
      * @return void
      */
@@ -407,5 +421,25 @@ final class settings_extension_test extends \advanced_testcase {
         $this->assertSame(model_settings::DEFAULT_VISION_MODEL, get_config('local_jedomi', 'vision_model'));
         $this->assertSame('0', get_config('local_jedomi', 'audio_enabled'));
         $this->assertSame(model_settings::DEFAULT_AUDIO_MODEL, get_config('local_jedomi', 'audio_model'));
+    }
+
+    /**
+     * MDL-UNIT-004: on a site with nothing saved, the provider form shows Jedomi enabled, files on and audio off.
+     *
+     * @return void
+     */
+    public function test_provider_form_defaults_on_a_new_site(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        unset_config('plugin_enabled_local_jedomi', 'aiprovider_datacurso');
+        unset_config('files_enabled', 'local_jedomi');
+        unset_config('audio_enabled', 'local_jedomi');
+
+        $current = plugin_settings_form::current_data('local_jedomi');
+
+        $this->assertTrue(plugin_settings::is_enabled('local_jedomi'));
+        $this->assertSame(1, $current['enabled']);
+        $this->assertSame(1, $current['files_enabled']);
+        $this->assertSame(0, $current['audio_enabled']);
     }
 }

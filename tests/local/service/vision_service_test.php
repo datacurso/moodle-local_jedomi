@@ -66,6 +66,8 @@ final class vision_service_test extends \advanced_testcase {
 
     /**
      * M11: an image goes to files/read with the vision model and the question; only text comes back.
+     * MDL-INT-050: a supported image is read with the configured vision model.
+     * MDL-CTR-010: the image goes to the service with its content and the question and the read text comes back.
      */
     public function test_image_is_read_by_the_vision_model(): void {
         global $DB;
@@ -104,6 +106,7 @@ final class vision_service_test extends \advanced_testcase {
 
     /**
      * M8: a stored PDF is sent with the requested pages.
+     * MDL-CTR-010: a PDF is sent with its pages to the image model.
      */
     public function test_stored_pdf_is_sent_with_pages(): void {
         $userid = $this->setup_user();
@@ -126,6 +129,7 @@ final class vision_service_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-006: with file processing off images are rejected without calling the AI.
      * M8: with file processing off nothing is sent and the "not enabled" message is returned.
      */
     public function test_disabled_files_are_rejected_without_a_call(): void {
@@ -146,7 +150,7 @@ final class vision_service_test extends \advanced_testcase {
     }
 
     /**
-     * M8: a type the vision service does not read is rejected without a call.
+     * MDL-UNIT-048: a type the vision service does not read is rejected without calling the AI service.
      */
     public function test_unsupported_type_is_rejected_without_a_call(): void {
         $userid = $this->setup_user();
@@ -178,6 +182,8 @@ final class vision_service_test extends \advanced_testcase {
 
     /**
      * M8: errors of files/read get their own message.
+     * MDL-INT-050: errors of the reading service reach the user as a controlled answer.
+     * MDL-CTR-010: errors of the reading service come with an interpretable code.
      *
      * @dataProvider service_error_provider
      * @param int $status HTTP status from plugins-ai.
@@ -202,7 +208,7 @@ final class vision_service_test extends \advanced_testcase {
     }
 
     /**
-     * M11: the message for the chat model is the question followed by the text read from the image.
+     * MDL-UNIT-049: the message for the chat model is the question followed by the text read from the image.
      */
     public function test_compose_message_puts_the_question_before_the_image_text(): void {
         $this->assertSame(
@@ -213,5 +219,17 @@ final class vision_service_test extends \advanced_testcase {
             get_string('analyze_image', 'local_jedomi'),
             vision_service::compose_message('', 'a.png', 'A cat')
         );
+    }
+
+    /**
+     * MDL-UNIT-048: JPG, PNG and WEBP are accepted as images (and PDF as document pages); other image types are not.
+     */
+    public function test_supported_image_types(): void {
+        foreach (['photo.jpg', 'photo.JPEG', 'shot.png', 'picture.webp', 'scan.pdf'] as $filename) {
+            $this->assertTrue(vision_service::is_supported($filename), $filename);
+        }
+        foreach (['anim.gif', 'image.bmp', 'vector.svg', 'photo.heic', 'jpg', ''] as $filename) {
+            $this->assertFalse(vision_service::is_supported($filename), $filename);
+        }
     }
 }

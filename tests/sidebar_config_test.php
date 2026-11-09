@@ -32,6 +32,8 @@ require_once($CFG->dirroot . '/local/jedomi/lib.php');
  */
 final class sidebar_config_test extends \advanced_testcase {
     /**
+     * MDL-INT-001: the browser never receives a service address or an API key.
+     * MDL-UNIT-072: the configuration has no service address and no API keys.
      * M9: the browser never receives a gateway URL or an API key, even on a site with legacy settings.
      */
     public function test_sidebar_config_has_no_gateway_url_or_api_key(): void {
@@ -53,6 +55,8 @@ final class sidebar_config_test extends \advanced_testcase {
         $this->assertStringEndsWith('/local/jedomi/chatproxy.php', $config['chatproxy_url']);
     }
     /**
+     * MDL-UNIT-072: the configuration has the tool and session strings.
+     * MDL-UNIT-075: each tool status text and the generic one are delivered to the panel.
      * The sidebar gets every string it shows, so it never falls back to hardcoded text.
      *
      * @return void
@@ -75,6 +79,8 @@ final class sidebar_config_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-006: the web chat receives the processing switches that show or hide attachments and microphone.
+     * MDL-UNIT-072: the configuration has the state of the file and audio switches.
      * M8, M9: the sidebar receives the feature switches, the read URL and the strings of images and audio.
      *
      * @return void
@@ -102,5 +108,31 @@ final class sidebar_config_test extends \advanced_testcase {
         $config = local_jedomi_get_sidebar_config();
         $this->assertFalse($config['files_enabled']);
         $this->assertTrue($config['audio_enabled']);
+    }
+
+    /**
+     * MDL-UNIT-018: quick actions use the real course of the page and appear in every planned context.
+     * [Pendiente:skip]
+     */
+    public function test_quick_actions_use_the_real_course_of_the_page(): void {
+        $this->markTestSkipped('Pending fix: admin and in-course teacher quick actions never appear and the course id is taken from any page parameter.');
+    }
+
+    /**
+     * SYS-E2E-002: each role sees and uses its quick actions with the course of the page. Behat: chat_system.feature.
+     * [Pendiente:skip] The admin quick actions inside a course depend on the MDL-UNIT-018 defect.
+     */
+    public function test_quick_actions_by_role_use_the_course_of_the_page(): void {
+        $this->markTestSkipped('Pending fix: the admin quick actions inside a course depend on the MDL-UNIT-018 defect.');
+    }
+    /**
+     * MDL-INT-057: the chat permissions are renewed while the Moodle session is active and not after it ends.
+     * [Pendiente:skip]
+     *
+     * @return void
+     */
+    public function test_chat_permissions_are_renewed_while_the_session_is_active(): void {
+        $this->markTestSkipped('Pending fix: the chat permissions expire 30 minutes after loading the page and are never '
+            . 'renewed.');
     }
 }

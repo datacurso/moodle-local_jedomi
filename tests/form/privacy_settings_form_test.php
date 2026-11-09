@@ -27,7 +27,7 @@ namespace local_jedomi\form;
  */
 final class privacy_settings_form_test extends \advanced_testcase {
     /**
-     * The form has one visibility box per role and returns which roles were left visible.
+     * MDL-UNIT-010: the form has one visibility box per role and returns which roles were left visible.
      *
      * @return void
      */
@@ -52,7 +52,7 @@ final class privacy_settings_form_test extends \advanced_testcase {
     }
 
     /**
-     * An unknown anonymization level is rejected.
+     * MDL-UNIT-010: an unknown anonymization level is rejected.
      *
      * @return void
      */

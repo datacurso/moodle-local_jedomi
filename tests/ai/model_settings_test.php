@@ -59,6 +59,8 @@ final class model_settings_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-001: the old connection settings of the plugin are removed.
+     * MDL-INT-086: the update removes the obsolete gateway settings.
      * M8: the gateway URL and key are removed and a legacy model becomes the default model.
      */
     public function test_migration_removes_gateway_settings_and_replaces_legacy_model(): void {
@@ -121,7 +123,7 @@ final class model_settings_test extends \advanced_testcase {
     }
 
     /**
-     * V8: every listed model is used as saved.
+     * MDL-UNIT-003: every listed model is used as saved.
      */
     public function test_get_model_returns_saved_listed_model(): void {
         $this->resetAfterTest();
@@ -133,7 +135,7 @@ final class model_settings_test extends \advanced_testcase {
     }
 
     /**
-     * V8: a saved model outside the list, including a removed one or another case, falls back to the default.
+     * MDL-UNIT-003: a saved model outside the list, including a removed one or another case, falls back to the default.
      *
      * @dataProvider unlisted_model_provider
      * @param string $model Saved model.
@@ -177,6 +179,7 @@ final class model_settings_test extends \advanced_testcase {
 
     /**
      * The 2026102801 upgrade step replaces a saved model outside the list with the default one.
+     * MDL-INT-086: an invalid model is replaced by the default model.
      */
     public function test_upgrade_replaces_unlisted_model_with_default(): void {
         $this->resetAfterTest();
@@ -195,6 +198,7 @@ final class model_settings_test extends \advanced_testcase {
 
     /**
      * The 2026102801 upgrade step keeps a saved model that is in the list.
+     * MDL-INT-086: a valid model is kept.
      */
     public function test_upgrade_keeps_listed_model(): void {
         $this->resetAfterTest();
@@ -224,7 +228,7 @@ final class model_settings_test extends \advanced_testcase {
     }
 
     /**
-     * M7: each selector lists only the models with its capability, with its default model first.
+     * MDL-UNIT-003: each selector lists only the models with its capability, with its default model first.
      */
     public function test_each_capability_lists_only_its_models_with_default_first(): void {
         $this->assertSame('jedomi/Qwen/Qwen3-VL-30B-A3B-Instruct', model_settings::DEFAULT_VISION_MODEL);
@@ -264,7 +268,7 @@ final class model_settings_test extends \advanced_testcase {
     }
 
     /**
-     * M7: a multimodal model is available for each of its capabilities and not for the others.
+     * MDL-UNIT-003: a multimodal model is available for each of its capabilities and not for the others.
      */
     public function test_availability_depends_on_the_capability(): void {
         $gemma = 'jedomi/google/gemma-4-26B-A4B-it';
@@ -279,7 +283,7 @@ final class model_settings_test extends \advanced_testcase {
     }
 
     /**
-     * M6: the vision and audio models fall back to their defaults when empty or not in their list.
+     * MDL-UNIT-003: the vision and audio models fall back to their own defaults when empty or not in their list.
      */
     public function test_vision_and_audio_models_fall_back_to_their_defaults(): void {
         $this->resetAfterTest();
@@ -301,7 +305,7 @@ final class model_settings_test extends \advanced_testcase {
     }
 
     /**
-     * M6: file processing is on and audio processing is off until they are saved.
+     * MDL-UNIT-004: file processing is on and audio processing is off until they are saved.
      */
     public function test_feature_switches_have_their_defaults(): void {
         $this->resetAfterTest();
@@ -319,6 +323,7 @@ final class model_settings_test extends \advanced_testcase {
 
     /**
      * M6: the 2026110301 upgrade step saves the defaults of the new settings and removes docservice_url.
+     * MDL-INT-086: the update stores the missing file and audio defaults and removes the document conversion setting.
      */
     public function test_upgrade_saves_media_defaults_and_removes_docservice_url(): void {
         $this->resetAfterTest();
@@ -341,6 +346,7 @@ final class model_settings_test extends \advanced_testcase {
 
     /**
      * M6: the upgrade step keeps values an administrator already saved.
+     * MDL-INT-086: the update keeps the saved file and audio settings.
      */
     public function test_upgrade_keeps_saved_media_settings(): void {
         $this->resetAfterTest();

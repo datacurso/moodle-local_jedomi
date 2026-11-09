@@ -42,6 +42,7 @@ final class sidebar_templates_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-067: the panel has the export, half width, full width, new conversation and close controls.
      * The sidebar structure has every element the module wires, and escapes the greeting.
      *
      * @return void
@@ -87,6 +88,7 @@ final class sidebar_templates_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-070: critical actions ask for the keyword and sending messages shows the count, the preview and send.
      * The confirmation card has the buttons, the keyword input of critical actions and escapes the details.
      *
      * @return void
@@ -107,6 +109,7 @@ final class sidebar_templates_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-071: assistant answers have copy and rating buttons; user messages have the edit button.
      * Message and user action buttons use the data actions the module listens to.
      *
      * @return void
@@ -124,6 +127,8 @@ final class sidebar_templates_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-006: the panel hides the attach options and the microphone when their processing is off.
+     * MDL-UNIT-068: the panel offers only the options of the processing switches that are on.
      * M8, M9: a feature that is off has no attach option, no drop zone and no microphone.
      *
      * @return void
@@ -158,6 +163,7 @@ final class sidebar_templates_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-069: while recording, the voice bar shows Cancel, the elapsed time, the recording notice and Stop.
      * While recording, the voice bar has the elapsed time and labelled cancel and stop buttons, and no send button.
      *
      * @return void
@@ -182,6 +188,7 @@ final class sidebar_templates_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-069: after stopping, the voice bar offers play or pause with progress and duration, delete and send.
      * The preview of a recording has labelled play, delete and send buttons, the duration and a hidden transcribing state.
      *
      * @return void
@@ -208,5 +215,228 @@ final class sidebar_templates_test extends \advanced_testcase {
         $this->assertStringNotContainsString('voice-cancel', $html);
         $this->assertStringNotContainsString('onclick', $html);
         $this->assertStringNotContainsString('style=', $html);
+    }
+
+    /**
+     * MDL-UNIT-042: names with underscores stay intact and headings and numbered lists are formatted.
+     * [Pendiente:skip]
+     */
+    public function test_answer_keeps_underscores_and_formats_headings_and_lists(): void {
+        $this->markTestSkipped('Pending fix: the italic format alters names with underscores and headings and numbered lists are not supported.');
+    }
+
+    /**
+     * MDL-UNIT-044: link type labels, the CSV file name and the export header and labels are in the user language.
+     * [Pendiente:skip]
+     */
+    public function test_panel_texts_are_in_the_user_language(): void {
+        $this->markTestSkipped('Pending fix: link labels, CSV name and export texts are fixed in one language.');
+    }
+
+    /**
+     * MDL-UNIT-073: the location of the page sent as context is recognised for every kind of page, including the
+     * private files page. Behat: panel_location.feature.
+     * [Pendiente:skip] The private files page is detected as "profile" instead of "files".
+     */
+    public function test_page_location_is_recognised_for_every_kind_of_page(): void {
+        $this->markTestSkipped('Pending fix: the private files page is detected as "profile" instead of "files".');
+    }
+
+    /**
+     * MDL-E2E-004: the panel is hidden from the keyboard while closed, keeps and gives back the focus, announces the
+     * answers, names every button and closes when touching outside on mobile. Behat: panel_navigation.feature.
+     * [Pendiente:skip]
+     */
+    public function test_panel_meets_the_basic_accessibility_criteria(): void {
+        $this->markTestSkipped('Pending fix: the closed panel is reachable with Tab, the focus is not kept nor given back, '
+            . 'answers are not announced, some buttons have no accessible name and the backdrop never appears.');
+    }
+
+    /**
+     * MDL-E2E-005: the shortcuts of the panel do not clash with the browser and the new conversation shortcut asks
+     * for confirmation. Behat: panel_navigation.feature.
+     * [Pendiente:skip]
+     */
+    public function test_shortcuts_do_not_clash_with_the_browser_nor_lose_the_conversation(): void {
+        $this->markTestSkipped('Pending fix: the shortcuts match browser shortcuts and the new conversation shortcut '
+            . 'clears the conversation without confirmation.');
+    }
+
+    /**
+     * MDL-E2E-011: editing acts on the chosen message and the conversation looks the same after reloading.
+     * Behat: panel_conversation.feature.
+     * [Pendiente:skip]
+     */
+    public function test_editing_acts_on_the_chosen_message_and_reloading_keeps_the_conversation(): void {
+        $this->markTestSkipped('Pending fix: Edit only edits the last message, removed messages come back after '
+            . 'reloading and reloaded user messages show the full text sent to the AI without images or buttons.');
+    }
+
+    /**
+     * MDL-E2E-012: an answer in progress can be stopped and a failed answer leaves no orphan message in the history.
+     * Behat: panel_conversation.feature.
+     * [Pendiente:skip]
+     */
+    public function test_an_answer_can_be_stopped_and_failures_leave_no_orphan_message(): void {
+        $this->markTestSkipped('Pending implementation: there is no stop button and a failed answer leaves its question '
+            . 'in the history without an answer.');
+    }
+
+    /**
+     * MDL-E2E-013: the user is told when the panel configuration cannot be loaded. Behat: panel_navigation.feature.
+     * [Pendiente:skip]
+     */
+    public function test_user_is_told_when_the_panel_configuration_cannot_load(): void {
+        $this->markTestSkipped('Pending fix: without its configuration the panel is shown empty and does not work, '
+            . 'without a notice.');
+    }
+
+    /**
+     * MDL-E2E-014: an action waiting for confirmation can still be confirmed or cancelled after reloading the page.
+     * Behat: panel_conversation.feature.
+     * [Pendiente:skip]
+     */
+    public function test_pending_action_survives_a_page_reload(): void {
+        $this->markTestSkipped('Pending fix: after reloading the page the confirmation card disappears and the pending '
+            . 'action cannot be confirmed.');
+    }
+
+    /**
+     * Render the panel the way the sidebar module does, with the strings and the greeting of the current user.
+     *
+     * @param bool $files Whether file processing is on.
+     * @param bool $audio Whether audio processing is on.
+     * @return string
+     */
+    private function render_panel(bool $files, bool $audio): string {
+        global $CFG, $PAGE;
+        require_once($CFG->dirroot . '/local/jedomi/lib.php');
+        $PAGE->set_url(new \moodle_url('/local/jedomi/ajax/sidebar_config.php'));
+        $config = \local_jedomi_get_sidebar_config();
+        return $this->render('sidebar', [
+            'greeting' => str_replace('{name}', $config['user_name'], $config['strings']['greeting']),
+            'strings' => $config['strings'],
+            'files_enabled' => $files,
+            'audio_enabled' => $audio,
+            'attach_enabled' => $files || $audio,
+        ]);
+    }
+
+    /**
+     * MDL-UNIT-067: the panel controls carry their labels, the greeting names the user and presents the assistant,
+     * and the footer warns that the AI can make mistakes.
+     *
+     * @return void
+     */
+    public function test_panel_greets_the_user_and_shows_the_ai_notice(): void {
+        $this->resetAfterTest();
+        $this->setUser($this->getDataGenerator()->create_user(['firstname' => 'Ada', 'lastname' => 'Lovelace']));
+
+        $html = $this->render_panel(true, true);
+
+        foreach (['export_conversation', 'half_width', 'full_width', 'new_conversation', 'close'] as $key) {
+            $this->assertStringContainsString('title="' . s(get_string($key, 'local_jedomi')) . '"', $html, $key);
+        }
+        $greeting = str_replace('{name}', 'Ada Lovelace', get_string('greeting', 'local_jedomi'));
+        $this->assertStringContainsString(s($greeting), $html);
+        $this->assertStringContainsString(s(get_string('hello', 'local_jedomi')), $html);
+        $this->assertMatchesRegularExpression('/class="jedomi-disclaimer">\s*' . preg_quote(s(get_string('ai_disclaimer',
+            'local_jedomi')), '/') . '/', $html);
+    }
+
+    /**
+     * MDL-UNIT-068: each combination of the switches offers exactly the options of the processing that is on.
+     *
+     * @return void
+     */
+    public function test_panel_options_follow_the_processing_switches(): void {
+        $this->resetAfterTest();
+        $this->setUser($this->getDataGenerator()->create_user());
+
+        $audioonly = $this->render_panel(false, true);
+        $this->assertStringNotContainsString('data-type="image"', $audioonly);
+        $this->assertStringNotContainsString('data-type="file"', $audioonly);
+        $this->assertStringContainsString('id="jedomi-dropzone"', $audioonly);
+
+        $filesonly = $this->render_panel(true, false);
+        $this->assertStringNotContainsString('id="jedomi-voice-btn"', $filesonly);
+        $this->assertStringNotContainsString('data-type="audio"', $filesonly);
+        $this->assertStringNotContainsString('id="jedomi-audio-input"', $filesonly);
+
+        $none = $this->render_panel(false, false);
+        $this->assertStringNotContainsString('id="jedomi-dropzone"', $none);
+        $this->assertStringNotContainsString('id="jedomi-attach-btn"', $none);
+
+        $both = $this->render_panel(true, true);
+        foreach (['data-type="image"', 'data-type="file"', 'data-type="audio"', 'id="jedomi-voice-btn"',
+                'id="jedomi-dropzone"', 'id="jedomi-attach-btn"'] as $option) {
+            $this->assertStringContainsString($option, $both, $option);
+        }
+    }
+
+    /**
+     * MDL-UNIT-070: a non critical action shows the notice, the description, the details and Confirm and Cancel,
+     * without the keyword field; a message send shows send and cancel.
+     *
+     * @return void
+     */
+    public function test_confirmation_card_of_each_action_level(): void {
+        $this->resetAfterTest();
+        $strings = ['pending_action_needed' => 'Needs confirmation', 'confirm_btn_yes' => 'Confirm', 'confirm_btn_no' => 'Cancel',
+            'yes_send' => 'Yes, send', 'cancel' => 'Do not send', 'confirm_type_to_proceed' => 'Type the word'];
+
+        $medium = $this->render('local/sidebar/action_confirm', ['issend' => false, 'critical' => false,
+            'description' => 'Create agent', 'hasdetails' => true, 'details' => 'Every day at 8', 'strings' => $strings]);
+        $critical = $this->render('local/sidebar/action_confirm', ['issend' => false, 'critical' => true, 'keyword' => 'DELETE',
+            'description' => 'Delete agent', 'hasdetails' => false, 'strings' => $strings]);
+        $send = $this->render('local/sidebar/action_confirm', ['issend' => true, 'countbefore' => 'Send to ', 'count' => 12,
+            'countafter' => ' users?', 'preview' => 'Remember the exam', 'strings' => $strings]);
+
+        foreach (['Needs confirmation', 'Create agent', 'Every day at 8', 'Confirm', 'Cancel'] as $text) {
+            $this->assertStringContainsString($text, $medium, $text);
+        }
+        $this->assertStringNotContainsString('confirm-keyword', $medium);
+        $this->assertStringContainsString('Type the word', $critical);
+        $this->assertStringContainsString('placeholder="DELETE"', $critical);
+        $this->assertStringContainsString('data-action="local_jedomi/sidebar/confirm-no"', $critical);
+        $this->assertStringContainsString('<strong>12</strong>', $send);
+        $this->assertStringContainsString('Remember the exam', $send);
+        $this->assertStringContainsString('Yes, send', $send);
+        $this->assertStringContainsString('Do not send', $send);
+        $this->assertStringNotContainsString('Needs confirmation', $send);
+    }
+
+    /**
+     * MDL-UNIT-071: assistant answers show Copy, Helpful and Improve; user messages show no rating buttons.
+     *
+     * @return void
+     */
+    public function test_only_assistant_answers_offer_copy_and_rating(): void {
+        $this->resetAfterTest();
+        $strings = ['action_copy' => 'Copy', 'action_helpful' => 'Helpful', 'action_improve' => 'Improve',
+            'action_edit' => 'Edit'];
+
+        $assistant = $this->render('local/sidebar/message_actions', ['strings' => $strings]);
+        $user = $this->render('local/sidebar/user_actions', ['strings' => $strings]);
+
+        foreach (['Copy', 'Helpful', 'Improve'] as $label) {
+            $this->assertStringContainsString($label, $assistant, $label);
+        }
+        foreach (['copy', 'good', 'bad'] as $action) {
+            $this->assertStringNotContainsString('data-action="local_jedomi/sidebar/' . $action . '"', $user, $action);
+        }
+        $this->assertStringNotContainsString('Helpful', $user);
+    }
+
+    /**
+     * MDL-UNIT-051: the audio file selector accepts the same formats as the server and recording stops or warns at the
+     * maximum duration that can be transcribed.
+     * [Pendiente:skip]
+     *
+     * @return void
+     */
+    public function test_audio_selector_formats_and_recording_duration_match_the_server(): void {
+        $this->markTestSkipped('Pending fix: the audio selector accepts fewer formats than the server and recording has no '
+            . 'duration limit in the browser.');
     }
 }

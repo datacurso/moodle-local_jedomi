@@ -27,7 +27,7 @@ namespace local_jedomi\form;
  */
 final class general_settings_form_test extends \advanced_testcase {
     /**
-     * A submitted form returns the secret and the training data flag.
+     * MDL-UNIT-012: a submitted form returns the permission token secret and the training data flag as sent.
      *
      * @return void
      */
@@ -43,7 +43,7 @@ final class general_settings_form_test extends \advanced_testcase {
     }
 
     /**
-     * An unchecked training data box is returned as 0.
+     * MDL-UNIT-012: an unchecked training data box is returned as 0 (off).
      *
      * @return void
      */
@@ -55,5 +55,21 @@ final class general_settings_form_test extends \advanced_testcase {
         $data = (new general_settings_form())->get_data();
 
         $this->assertSame(0, (int) $data->collect_training_data);
+    }
+
+    /**
+     * MDL-UNIT-013: the help of the permission token secret explains its purpose without mentioning retired components.
+     * [Pendiente:skip]
+     */
+    public function test_secret_help_does_not_mention_retired_components(): void {
+        $this->markTestSkipped('Pending fix: the secret help still refers to an external gateway that is no longer used.');
+    }
+
+    /**
+     * MDL-INT-008: the training data option is off on a new site and has a real effect, or it is not shown.
+     * [Pendiente:skip]
+     */
+    public function test_training_data_option_has_effect_and_is_off_by_default(): void {
+        $this->markTestSkipped('Pending fix: the training data option is saved but has no effect, and it is on by default.');
     }
 }

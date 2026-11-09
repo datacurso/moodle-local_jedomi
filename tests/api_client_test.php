@@ -92,7 +92,7 @@ final class api_client_test extends \advanced_testcase {
     // ========================
 
     /**
-     * Test chunk_text returns expected number of chunks.
+     * MDL-UNIT-031: short texts give one message and long ones are split under the Telegram limit.
      *
      * @dataProvider chunk_text_provider
      * @param string $text Input text to chunk
@@ -108,7 +108,7 @@ final class api_client_test extends \advanced_testcase {
     }
 
     /**
-     * Test chunk_text with short text returns the original text unchanged.
+     * MDL-UNIT-031: a short text is sent unchanged in a single message.
      */
     public function test_chunk_text_short_content(): void {
         $text = 'Hello world';
@@ -130,7 +130,7 @@ final class api_client_test extends \advanced_testcase {
     }
 
     /**
-     * Test chunk_text split at newline boundary preserves the \n\n in the first chunk.
+     * MDL-UNIT-031: a long text is split preferably between paragraphs.
      */
     public function test_chunk_text_newline_boundary_split(): void {
         $text = str_repeat('x', 2500) . "\n\n" . str_repeat('y', 2000);
@@ -143,7 +143,7 @@ final class api_client_test extends \advanced_testcase {
     }
 
     /**
-     * Test chunk_text hard cut at 4000 when there's no space or newline.
+     * MDL-UNIT-031: without paragraphs or spaces the text is hard cut at the limit.
      */
     public function test_chunk_text_hard_cut(): void {
         $text = str_repeat('a', 4001);
@@ -157,7 +157,8 @@ final class api_client_test extends \advanced_testcase {
     }
 
     /**
-     * Test chunk_text preserves total content across chunks (no data loss).
+     * MDL-UNIT-031: joining the fragments keeps all the text except the spaces at the split points.
+     * MDL-CTR-009: a long message is split into fragments that keep the whole text.
      */
     public function test_chunk_text_preserves_content(): void {
         $original = str_repeat('a', 2000) . ' ' . str_repeat('b', 2000) . ' ' . str_repeat('c', 2000);
@@ -180,6 +181,7 @@ final class api_client_test extends \advanced_testcase {
 
     /**
      * Test that send_message delegates to chunk_text.
+     * MDL-CTR-009: a long message is sent in several valid calls.
      *
      * We verify this by creating a client with empty token (to avoid real HTTP calls)
      * and checking that send_message returns false (no token) for long text
@@ -191,5 +193,42 @@ final class api_client_test extends \advanced_testcase {
         // Should not throw — chunk_text splits it, then post() fails with E001.
         $result = $client->send_message('12345', $longtext);
         $this->assertFalse($result, 'send_message with empty token should return false');
+    }
+
+    /**
+     * MDL-UNIT-031: a long text without paragraphs is split at a space and every fragment stays within the limit.
+     */
+    public function test_chunk_text_splits_at_a_space_within_the_limit(): void {
+        $text = trim(str_repeat('word ', 1500));
+
+        $result = (new \local_jedomi\telegram\api_client(''))->chunk_text($text, false);
+
+        $this->assertGreaterThan(1, count($result));
+        foreach ($result as $chunk) {
+            $this->assertLessThanOrEqual(4000, mb_strlen(trim($chunk)));
+            $this->assertMatchesRegularExpression('/^word\b/', trim($chunk), 'Words are never cut in half');
+        }
+        $this->assertSame(str_replace(' ', '', $text), str_replace(' ', '', implode('', $result)));
+    }
+
+    /**
+     * MDL-UNIT-031: each fragment closes the format it opens, so Telegram does not reject it.
+     * MDL-CTR-009: each fragment is a valid Telegram message on its own.
+     */
+    public function test_chunk_text_closes_the_format_each_fragment_opens(): void {
+        $text = '<b>' . trim(str_repeat('bold ', 1200)) . '</b> <i>' . trim(str_repeat('italic ', 300)) . '</i>';
+
+        $result = (new \local_jedomi\telegram\api_client(''))->chunk_text($text, false);
+
+        $this->assertGreaterThan(1, count($result));
+        foreach ($result as $index => $chunk) {
+            foreach (['b', 'i'] as $tag) {
+                $this->assertLessThanOrEqual(
+                    substr_count($chunk, '</' . $tag . '>'),
+                    substr_count($chunk, '<' . $tag . '>'),
+                    "Fragment {$index} must close every <{$tag}> it opens"
+                );
+            }
+        }
     }
 }

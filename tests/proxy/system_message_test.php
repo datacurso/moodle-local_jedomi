@@ -30,7 +30,7 @@ use local_jedomi\local\service\message_service;
  */
 final class system_message_test extends \advanced_testcase {
     /**
-     * Questions and analysis must never end in an action that changes data, such as sending a message.
+     * MDL-UNIT-046: questions and analysis must never end in an action that changes data, such as sending a message.
      */
     public function test_system_message_limits_actions_to_explicit_requests(): void {
         $this->resetAfterTest();
@@ -43,7 +43,7 @@ final class system_message_test extends \advanced_testcase {
     }
 
     /**
-     * The send_messages description tells the model it is only for explicit requests to send or notify.
+     * MDL-UNIT-046: the send_messages description limits it to explicit requests to send or notify.
      */
     public function test_send_messages_description_limits_it_to_explicit_requests(): void {
         $this->resetAfterTest();
@@ -54,7 +54,7 @@ final class system_message_test extends \advanced_testcase {
     }
 
     /**
-     * M8: the document reading instructions are given only while file and image processing is on.
+     * MDL-UNIT-046: the document reading instructions are given only while file processing is on.
      */
     public function test_document_read_instructions_follow_the_files_switch(): void {
         $this->resetAfterTest();
@@ -65,5 +65,13 @@ final class system_message_test extends \advanced_testcase {
 
         set_config('files_enabled', 0, 'local_jedomi');
         $this->assertStringNotContainsString('document_read', system_message::build('admin', [])['content']);
+    }
+
+    /**
+     * MDL-UNIT-047: the agent and preview instructions describe how actions that change data are really handled in those channels.
+     * [Pendiente:skip]
+     */
+    public function test_agent_and_preview_instructions_match_their_channel(): void {
+        $this->markTestSkipped('Pending fix: agent and preview instructions say actions wait for a confirmation that does not happen there.');
     }
 }

@@ -33,7 +33,11 @@ require_once($CFG->dirroot . '/local/jedomi/lib.php');
  * Test cases for local_jedomi_get_user_role_for_user and local_jedomi_generate_spt_for_user.
  *
  * @covers \local_jedomi_get_user_role_for_user()
+ * @covers \local_jedomi_get_user_role()
  * @covers \local_jedomi_generate_spt_for_user()
+ * @covers \local_jedomi_is_role_allowed()
+ * @covers \local_jedomi_is_telegram_role_allowed()
+ * @covers \local_jedomi_get_tool_definitions()
  */
 final class lib_test extends \advanced_testcase {
     /**
@@ -49,7 +53,7 @@ final class lib_test extends \advanced_testcase {
     // ========================
 
     /**
-     * Test that an admin user gets 'admin' role.
+     * MDL-UNIT-016: a site administrator gets the 'admin' role.
      */
     public function test_get_user_role_for_user_admin(): void {
         $admin = get_admin();
@@ -60,7 +64,7 @@ final class lib_test extends \advanced_testcase {
     }
 
     /**
-     * Test that a user with manager role at system level gets 'manager'.
+     * MDL-UNIT-016: a user who can update users at site level gets the 'manager' role.
      */
     public function test_get_user_role_for_user_manager(): void {
         global $DB;
@@ -74,7 +78,7 @@ final class lib_test extends \advanced_testcase {
     }
 
     /**
-     * Test that a user enrolled as editingteacher in a course gets 'teacher'.
+     * MDL-UNIT-016: a user who can manage activities in a course gets the 'teacher' role.
      */
     public function test_get_user_role_for_user_teacher(): void {
         $teacher = $this->getDataGenerator()->create_user();
@@ -86,7 +90,7 @@ final class lib_test extends \advanced_testcase {
     }
 
     /**
-     * Test that a user enrolled as student gets 'student'.
+     * MDL-UNIT-016: any other user gets the 'student' role.
      */
     public function test_get_user_role_for_user_student(): void {
         $student = $this->getDataGenerator()->create_user();
@@ -98,7 +102,7 @@ final class lib_test extends \advanced_testcase {
     }
 
     /**
-     * Test that a user with no enrolments falls back to 'student'.
+     * MDL-UNIT-016: a user without enrolments is classified as 'student'.
      */
     public function test_get_user_role_for_user_no_enrolments(): void {
         $user = $this->getDataGenerator()->create_user();
@@ -108,7 +112,7 @@ final class lib_test extends \advanced_testcase {
     }
 
     /**
-     * Test that a user who is both teacher and student gets 'teacher' (higher priority).
+     * MDL-UNIT-016: outside a course (Telegram), a user who is teacher somewhere gets 'teacher' (higher priority).
      */
     public function test_get_user_role_for_user_teacher_over_student(): void {
         $user = $this->getDataGenerator()->create_user();
@@ -127,7 +131,7 @@ final class lib_test extends \advanced_testcase {
     // ========================
 
     /**
-     * Test that generate_spt_for_user returns empty array for non-existent user.
+     * MDL-UNIT-015: no permissions are issued for a user that does not exist.
      */
     public function test_generate_spt_for_user_nonexistent(): void {
         $result = local_jedomi_generate_spt_for_user(999999, 'student');
@@ -135,7 +139,7 @@ final class lib_test extends \advanced_testcase {
     }
 
     /**
-     * Test that generate_spt_for_user returns empty array for deleted user.
+     * MDL-UNIT-015: no permissions are issued for a deleted user.
      */
     public function test_generate_spt_for_user_deleted(): void {
         global $DB;
@@ -151,7 +155,7 @@ final class lib_test extends \advanced_testcase {
     }
 
     /**
-     * Test that generate_spt_for_user returns correct structure for admin user.
+     * MDL-UNIT-015: an administrator gets signed permissions with the 'admin' role.
      */
     public function test_generate_spt_for_user_admin(): void {
         $admin = get_admin();
@@ -180,7 +184,7 @@ final class lib_test extends \advanced_testcase {
     }
 
     /**
-     * Test that generate_spt_for_user returns course_ids_owned for teacher user.
+     * MDL-UNIT-015: a teacher gets signed permissions with the 'teacher' role and their courses.
      */
     public function test_generate_spt_for_user_teacher(): void {
         $teacher = $this->getDataGenerator()->create_user();
@@ -200,7 +204,7 @@ final class lib_test extends \advanced_testcase {
     }
 
     /**
-     * Test that generate_spt_for_user returns course_ids_enrolled for student user.
+     * MDL-UNIT-015: a student gets signed permissions with the 'student' role and their enrolled courses.
      */
     public function test_generate_spt_for_user_student(): void {
         $student = $this->getDataGenerator()->create_user();
@@ -238,6 +242,192 @@ final class lib_test extends \advanced_testcase {
         $this->assertEquals($expectedsig, $signature);
     }
 
+    /**
+     * MDL-UNIT-015: the signature changes when the content of the permissions changes.
+     */
+    public function test_generate_spt_for_user_signature_depends_on_the_content(): void {
+        set_config('spt_secret', 'site-own-secret-for-tests', 'local_jedomi');
+        $student = $this->getDataGenerator()->create_user();
+        $other = $this->getDataGenerator()->create_user();
+
+        $first = local_jedomi_generate_spt_for_user((int) $student->id, 'student');
+        $second = local_jedomi_generate_spt_for_user((int) $other->id, 'student');
+        $asteacher = local_jedomi_generate_spt_for_user((int) $student->id, 'teacher');
+
+        $this->assertNotEmpty($first['signature']);
+        $this->assertNotSame($first['signature'], $second['signature'], 'Another user must get another signature');
+        $this->assertNotSame($first['signature'], $asteacher['signature'], 'Another role must get another signature');
+    }
+
+    /**
+     * MDL-UNIT-016: in the web panel the role follows the permission in the current course.
+     *
+     * A user who is teacher in one course and student in another is 'teacher' only in the first one.
+     */
+    public function test_get_user_role_follows_the_current_course(): void {
+        global $COURSE;
+        $user = $this->getDataGenerator()->create_user();
+        $teaching = $this->getDataGenerator()->create_course();
+        $learning = $this->getDataGenerator()->create_course();
+        $this->getDataGenerator()->enrol_user($user->id, $teaching->id, 'editingteacher');
+        $this->getDataGenerator()->enrol_user($user->id, $learning->id, 'student');
+        $this->setUser($user);
+
+        $COURSE = $teaching;
+        $this->assertSame('teacher', local_jedomi_get_user_role());
+
+        $COURSE = $learning;
+        $this->assertSame('student', local_jedomi_get_user_role());
+
+        $COURSE = get_site();
+        $this->assertSame('student', local_jedomi_get_user_role());
+    }
+
+    /**
+     * MDL-UNIT-016: the admin and manager roles take priority over the course permission.
+     */
+    public function test_get_user_role_gives_priority_to_admin_and_manager(): void {
+        global $COURSE, $DB;
+        $course = $this->getDataGenerator()->create_course();
+        $COURSE = $course;
+
+        $this->setAdminUser();
+        $this->assertSame('admin', local_jedomi_get_user_role());
+
+        $manager = $this->getDataGenerator()->create_user();
+        $managerrole = $DB->get_field('role', 'id', ['shortname' => 'manager'], MUST_EXIST);
+        role_assign($managerrole, $manager->id, \context_system::instance());
+        $this->getDataGenerator()->enrol_user($manager->id, $course->id, 'student');
+        $this->setUser($manager);
+        $this->assertSame('manager', local_jedomi_get_user_role());
+    }
+
+    // ... ========================
+    // local_jedomi_is_role_allowed
+    // ========================
+
+    /**
+     * Give a user a role in a course and make the course the current page.
+     *
+     * @param \stdClass $course Course of the page.
+     * @return void
+     */
+    private function set_course_page(\stdClass $course): void {
+        global $PAGE;
+        $PAGE = new \moodle_page();
+        $PAGE->set_url(new \moodle_url('/course/view.php', ['id' => $course->id]));
+        $PAGE->set_course($course);
+        $PAGE->set_context(\context_course::instance($course->id));
+    }
+
+    /**
+     * Id of a standard role.
+     *
+     * @param string $shortname Role short name.
+     * @return int
+     */
+    private function role_id(string $shortname): int {
+        global $DB;
+        return (int) $DB->get_field('role', 'id', ['shortname' => $shortname], MUST_EXIST);
+    }
+
+    /**
+     * MDL-UNIT-011: a user whose roles are all hidden does not see the panel.
+     *
+     * The roles are site-level assignments, which the rule reads on every page.
+     */
+    public function test_user_with_every_role_hidden_cannot_see_the_panel(): void {
+        $course = $this->getDataGenerator()->create_course();
+        $user = $this->getDataGenerator()->create_user();
+        role_assign($this->role_id('coursecreator'), $user->id, \context_system::instance());
+        set_config('hidden_roles', (string) $this->role_id('coursecreator'), 'local_jedomi');
+        $this->setUser($user);
+        $this->set_course_page($course);
+
+        $this->assertFalse(local_jedomi_is_role_allowed());
+    }
+
+    /**
+     * MDL-UNIT-011: a user with at least one visible role sees the panel even if another of their roles is hidden.
+     */
+    public function test_user_with_one_visible_role_can_see_the_panel(): void {
+        $course = $this->getDataGenerator()->create_course();
+        $user = $this->getDataGenerator()->create_user();
+        role_assign($this->role_id('coursecreator'), $user->id, \context_system::instance());
+        role_assign($this->role_id('manager'), $user->id, \context_system::instance());
+        set_config('hidden_roles', (string) $this->role_id('coursecreator'), 'local_jedomi');
+        $this->setUser($user);
+        $this->set_course_page($course);
+
+        $this->assertTrue(local_jedomi_is_role_allowed());
+    }
+
+    /**
+     * MDL-UNIT-011: a site administrator always sees the panel, even when all their roles are hidden.
+     */
+    public function test_site_admin_always_sees_the_panel(): void {
+        $course = $this->getDataGenerator()->create_course();
+        $admin = get_admin();
+        role_assign($this->role_id('manager'), $admin->id, \context_system::instance());
+        set_config('hidden_roles', (string) $this->role_id('manager'), 'local_jedomi');
+        $this->setAdminUser();
+        $this->set_course_page($course);
+
+        $this->assertTrue(local_jedomi_is_role_allowed());
+    }
+
+    /**
+     * MDL-UNIT-011: with no hidden roles every user sees the panel.
+     */
+    public function test_no_hidden_roles_shows_the_panel_to_everyone(): void {
+        $course = $this->getDataGenerator()->create_course();
+        $user = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user($user->id, $course->id, 'student');
+        unset_config('hidden_roles', 'local_jedomi');
+        $this->setUser($user);
+        $this->set_course_page($course);
+
+        $this->assertTrue(local_jedomi_is_role_allowed());
+    }
+
+    // ... ========================
+    // Permission token secret
+    // ========================
+
+    /**
+     * MDL-UNIT-014: after installation each site has its own generated permission token secret.
+     * [Pendiente:fail] The secret is empty by default and the built-in key is used instead.
+     */
+    public function test_installation_generates_a_site_specific_permission_secret(): void {
+        $secret = (string) get_config('local_jedomi', 'spt_secret');
+
+        $this->assertNotSame('', $secret, 'A permission token secret must be generated when the plugin is installed');
+        $this->assertNotSame('jedomi-spt-secret', $secret, 'The generated secret must not be the built-in key');
+        $this->assertGreaterThanOrEqual(32, strlen($secret), 'The generated secret must be long enough to resist guessing');
+    }
+
+    /**
+     * MDL-UNIT-014: with an empty secret the permissions are never signed with a key known from the code.
+     * [Pendiente:fail] Today they are signed with the built-in key "jedomi-spt-secret".
+     */
+    public function test_empty_secret_never_signs_with_a_known_key(): void {
+        set_config('spt_secret', '', 'local_jedomi');
+        $admin = get_admin();
+
+        $spt = local_jedomi_generate_spt_for_user((int) $admin->id, 'admin');
+
+        // What anyone who reads the plugin code could compute for the same payload.
+        $payload = $spt;
+        unset($payload['signature']);
+        ksort($payload);
+        $forgeable = hash_hmac('sha256', json_encode($payload), 'jedomi-spt-secret');
+        $this->assertNotSame(
+            $forgeable,
+            $spt['signature'] ?? '',
+            'Permissions must not be signed with the built-in key, anyone could forge them'
+        );
+    }
+
     // ... ========================
     // Log rotation
     // ========================
@@ -254,6 +444,8 @@ final class lib_test extends \advanced_testcase {
 
     /**
      * Test the log rotates to a numbered file once it exceeds the size cap.
+     *
+     * MDL-INT-082: the log rotates when it exceeds the maximum size.
      */
     public function test_log_rotates_when_exceeding_max(): void {
         global $CFG;
@@ -274,6 +466,8 @@ final class lib_test extends \advanced_testcase {
 
     /**
      * Test the retention policy: bounded generations, oldest content dropped.
+     *
+     * MDL-INT-082: the rotation keeps the defined number of files.
      *
      * Policy under test: one active jedomi.log capped at
      * LOCAL_JEDOMI_LOG_MAX_BYTES (overridable via $CFG->local_jedomi_logmaxbytes)
@@ -309,6 +503,8 @@ final class lib_test extends \advanced_testcase {
 
     /**
      * Test rotation is skipped, without error, while another process holds the lock.
+     *
+     * MDL-INT-082: no rotation while another process holds the lock.
      *
      * flock() locks are per open file description, so a second fopen+flock in
      * this same process behaves like a concurrent PHP-FPM worker. While the
@@ -348,6 +544,8 @@ final class lib_test extends \advanced_testcase {
 
     /**
      * Test a log write never throws and appends normally with and without the override.
+     *
+     * MDL-INT-082: writing the log never interrupts the operation.
      */
     public function test_log_write_never_throws(): void {
         global $CFG;
@@ -359,5 +557,172 @@ final class lib_test extends \advanced_testcase {
         $CFG->local_jedomi_logmaxbytes = 1024;
         local_jedomi_log('with override');
         $this->assertStringContainsString('with override', file_get_contents($logfile));
+    }
+
+    /**
+     * MDL-UNIT-085: on the profile, a user with an allowed role can link the account and one whose roles are all
+     * disabled cannot.
+     *
+     * The roles are site-level assignments, which the profile reads on every page.
+     *
+     * @return void
+     */
+    public function test_telegram_profile_access_follows_the_allowed_roles(): void {
+        global $PAGE;
+        $this->resetAfterTest();
+        $user = $this->getDataGenerator()->create_user();
+        role_assign($this->role_id('coursecreator'), $user->id, \context_system::instance()->id);
+        $this->setUser($user);
+        $PAGE->set_context(\context_system::instance());
+
+        set_config('telegram_hidden_roles', (string) $this->role_id('manager'), 'local_jedomi');
+        $this->assertTrue(local_jedomi_is_telegram_role_allowed());
+
+        set_config('telegram_hidden_roles', $this->role_id('coursecreator') . ',' . $this->role_id('manager'), 'local_jedomi');
+        $this->assertFalse(local_jedomi_is_telegram_role_allowed());
+
+        unset_config('telegram_hidden_roles', 'local_jedomi');
+        $this->assertTrue(local_jedomi_is_telegram_role_allowed());
+    }
+
+    /**
+     * MDL-UNIT-085: a site administrator always has access to Telegram on the profile, even with every role disabled.
+     *
+     * @return void
+     */
+    public function test_telegram_profile_access_never_excludes_admins(): void {
+        global $DB, $PAGE;
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $PAGE->set_context(\context_system::instance());
+        set_config('telegram_hidden_roles', implode(',', $DB->get_fieldset_select('role', 'id', '1 = 1')), 'local_jedomi');
+
+        $this->assertTrue(local_jedomi_is_telegram_role_allowed());
+    }
+
+    /**
+     * MDL-UNIT-090: the profile link and the bot apply the same Telegram role rule, also for roles given in a course.
+     * [Pendiente:skip]
+     *
+     * @return void
+     */
+    public function test_telegram_role_rule_is_the_same_on_the_profile_and_the_bot(): void {
+        $this->markTestSkipped('Pending fix: the profile only reads system and page roles while the bot also reads course roles.');
+    }
+
+    /**
+     * Roles and the exact tools each one receives, with file processing on.
+     *
+     * @return array
+     */
+    public static function tools_by_role_provider(): array {
+        $common = ['describe_table', 'search_tables', 'ws_describe', 'ws_search'];
+        $teacher = array_merge($common, ['document_read', 'execute_sql', 'ws_execute']);
+        $manager = array_merge($teacher, ['admin_describe', 'admin_execute', 'admin_search', 'create_agent', 'delete_agent',
+            'list_agents']);
+        $admin = array_merge($manager, ['get_site_config']);
+        return [
+            'admin' => ['admin', $admin],
+            'manager' => ['manager', $manager],
+            'teacher' => ['teacher', $teacher],
+            'student' => ['student', $common],
+            'unknown role' => ['guest', $common],
+            'empty role' => ['', $common],
+        ];
+    }
+
+    /**
+     * MDL-UNIT-094: each role receives exactly its tools; an unknown role gets only the tools common to every role.
+     *
+     * @dataProvider tools_by_role_provider
+     * @param string $role Role.
+     * @param string[] $expected Expected tool names.
+     * @return void
+     */
+    public function test_each_role_receives_exactly_its_tools(string $role, array $expected): void {
+        $this->resetAfterTest();
+        set_config('files_enabled', 1, 'local_jedomi');
+
+        $names = array_map(static fn(array $tool): string => $tool['function']['name'], local_jedomi_get_tool_definitions($role));
+        sort($names);
+        sort($expected);
+
+        $this->assertSame($expected, $names);
+    }
+
+    /**
+     * MDL-UNIT-094: without file processing nobody receives the activity PDF reader, and the tools shared with
+     * Telegram and agents never include sending messages.
+     *
+     * @return void
+     */
+    public function test_pdf_reader_needs_file_processing_and_shared_tools_never_send_messages(): void {
+        $this->resetAfterTest();
+        set_config('files_enabled', 0, 'local_jedomi');
+
+        foreach (['admin', 'manager', 'teacher', 'student'] as $role) {
+            $names = array_map(static fn(array $tool): string => $tool['function']['name'],
+                local_jedomi_get_tool_definitions($role));
+            $this->assertNotContains('document_read', $names, $role);
+            $this->assertNotContains('send_messages', $names, $role);
+        }
+    }
+
+    /**
+     * Whether the profile of the current user offers the Telegram page.
+     *
+     * @return bool
+     */
+    private function profile_offers_telegram(): bool {
+        global $USER;
+        $tree = new \core_user\output\myprofile\tree();
+        local_jedomi_myprofile_navigation($tree, $USER, true, null);
+        return array_key_exists('telegram', $tree->nodes);
+    }
+
+    /**
+     * Conditions of the Telegram link of the profile, each one missing in turn.
+     *
+     * @return array<string, array{0: string}>
+     */
+    public static function missing_condition_provider(): array {
+        return [
+            'Jedomi disabled' => ['jedomi'],
+            'integration off' => ['integration'],
+            'bot not verified' => ['verified'],
+            'role not allowed' => ['role'],
+        ];
+    }
+
+    /**
+     * MDL-INT-061: the profile shows the Telegram link only with Jedomi enabled, the integration on, the bot verified and
+     * the role allowed.
+     *
+     * @dataProvider missing_condition_provider
+     * @param string $missing Condition that is not met.
+     */
+    public function test_profile_link_needs_every_condition(string $missing): void {
+        global $DB;
+        if (!class_exists(\aiprovider_datacurso\httpclient\ai_services_api::class)) {
+            $this->markTestSkipped('aiprovider_datacurso is not installed; the plugin state is not available.');
+        }
+        $this->resetAfterTest();
+        $user = $this->getDataGenerator()->create_user();
+        $managerroleid = (int) $DB->get_field('role', 'id', ['shortname' => 'manager']);
+        role_assign($managerroleid, $user->id, \context_system::instance());
+        $this->setUser($user);
+        \aiprovider_datacurso\local\plugin_settings::set_enabled('local_jedomi', true);
+        set_config('telegram_enabled', 1, 'local_jedomi');
+        set_config('telegram_bot_verified', 1, 'local_jedomi');
+        $this->assertTrue($this->profile_offers_telegram(), 'With every condition met the link is shown');
+
+        match ($missing) {
+            'jedomi' => \aiprovider_datacurso\local\plugin_settings::set_enabled('local_jedomi', false),
+            'integration' => set_config('telegram_enabled', 0, 'local_jedomi'),
+            'verified' => set_config('telegram_bot_verified', 0, 'local_jedomi'),
+            'role' => set_config('telegram_hidden_roles', (string) $managerroleid, 'local_jedomi'),
+        };
+
+        $this->assertFalse($this->profile_offers_telegram());
     }
 }

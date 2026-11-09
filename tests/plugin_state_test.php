@@ -49,7 +49,8 @@ final class plugin_state_test extends \advanced_testcase {
     }
 
     /**
-     * S6: with no state saved in the provider, the sidebar is injected as before.
+     * MDL-INT-002: enabled again, the side panel is injected.
+     * MDL-UNIT-004: with no state saved in the provider, Jedomi is enabled and the sidebar is injected.
      *
      * @return void
      */
@@ -61,6 +62,7 @@ final class plugin_state_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-002: with Jedomi disabled the side panel is not injected.
      * S6: disabled in the provider, the sidebar is not injected (as when the old setting was off).
      *
      * @return void
@@ -87,6 +89,7 @@ final class plugin_state_test extends \advanced_testcase {
 
     /**
      * S7: the 2026102902 upgrade step deletes the old setting and keeps the AI service settings.
+     * MDL-INT-086: the update removes the plugin's own enabled switch.
      *
      * @return void
      */
@@ -111,6 +114,7 @@ final class plugin_state_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-020: the AI service card links to the Jedomi settings page of the provider.
      * S7: the General tab links to the Jedomi settings page in the provider instead of the removed fields.
      *
      * @return void
@@ -126,5 +130,55 @@ final class plugin_state_test extends \advanced_testcase {
         $this->assertStringContainsString('href="' . s($url) . '"', $html);
         $this->assertStringContainsString(get_string('provider_settings_link', 'local_jedomi'), $html);
         $this->assertStringContainsString(get_string('provider_settings_info', 'local_jedomi'), $html);
+    }
+
+    /**
+     * MDL-INT-001: the installation requires Moodle 4.5 and the Datacurso AI provider, and the provider version present meets
+     * the required one.
+     */
+    public function test_installation_requires_moodle_and_the_provider(): void {
+        $info = \core_plugin_manager::instance()->get_plugin_info('local_jedomi');
+
+        $this->assertGreaterThanOrEqual(2024100700, (int) $info->versionrequires);
+        $this->assertArrayHasKey('aiprovider_datacurso', $info->dependencies);
+        $provider = \core_plugin_manager::instance()->get_plugin_info('aiprovider_datacurso');
+        $this->assertNotNull($provider, 'The Datacurso AI provider must be installed');
+        $this->assertGreaterThanOrEqual((int) $info->dependencies['aiprovider_datacurso'], (int) $provider->versiondisk);
+        $this->assertTrue($info->is_core_dependency_satisfied((int) $GLOBALS['CFG']->version));
+    }
+
+    /**
+     * MDL-INT-001: Jedomi keeps no connection settings of its own (service address or API key).
+     */
+    public function test_plugin_has_no_connection_settings_of_its_own(): void {
+        $config = (array) get_config('local_jedomi');
+
+        foreach (array_keys($config) as $name) {
+            $this->assertDoesNotMatchRegularExpression('/(gateway|api_?key|api_?url|service_?url|docservice)/i', $name,
+                "Setting {$name} looks like a connection setting; the connection belongs to the provider");
+        }
+    }
+
+    /**
+     * MDL-INT-087: a new installation has the same data structure as an updated one and the protection against
+     * overwrites between processes works in both.
+     * [Pendiente:skip]
+     *
+     * @return void
+     */
+    public function test_new_installation_matches_an_updated_one(): void {
+        $this->markTestSkipped('Pending fix: a new installation lacks a field of the Telegram conversations that only the '
+            . 'update adds.');
+    }
+    /**
+     * MDL-INT-078: the Telegram processing, the task alert, the profiler and the chat and agent queries work the same on
+     * every database supported by Moodle, with their time limits applied.
+     * [Pendiente:skip]
+     *
+     * @return void
+     */
+    public function test_features_work_on_every_supported_database(): void {
+        $this->markTestSkipped('Pending fix: the Telegram lock and the agent query time limit only work on MySQL or '
+            . 'MariaDB, the alert and the profiler use non portable SQL and the chat time limit is never applied.');
     }
 }

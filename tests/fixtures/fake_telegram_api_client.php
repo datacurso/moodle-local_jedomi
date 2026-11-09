@@ -33,7 +33,7 @@ namespace local_jedomi\telegram;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class fake_telegram_api_client extends api_client {
-    /** @var array<int, array{chatid: int|string, text: string}> Messages sent, in order. */
+    /** @var array<int, array{chatid: int|string, text: string, replymarkup: ?array}> Messages sent, in order. */
     public array $sent = [];
 
     /** @var array<string, string> Content of each file id that download_file() can fetch. */
@@ -45,6 +45,12 @@ class fake_telegram_api_client extends api_client {
     /** @var string[] Callback query ids answered, in order. */
     public array $answeredcallbacks = [];
 
+    /** @var string[] Chat actions sent (such as "typing"), in order. */
+    public array $chatactions = [];
+
+    /** @var array<int, array{chatid: int|string, caption: string, content: string}> Documents sent, in order. */
+    public array $documents = [];
+
     /**
      * Use a dummy token so no real bot configuration is needed.
      */
@@ -54,7 +60,13 @@ class fake_telegram_api_client extends api_client {
 
     #[\Override]
     public function send_message(int|string $chatid, string $text, ?array $replymarkup = null, bool $truncate = false): bool {
-        $this->sent[] = ['chatid' => $chatid, 'text' => $text];
+        $this->sent[] = ['chatid' => $chatid, 'text' => $text, 'replymarkup' => $replymarkup];
+        return true;
+    }
+
+    #[\Override]
+    public function send_document(int|string $chatid, string $filepath, string $caption = ''): bool {
+        $this->documents[] = ['chatid' => $chatid, 'caption' => $caption, 'content' => (string) file_get_contents($filepath)];
         return true;
     }
 
@@ -66,6 +78,7 @@ class fake_telegram_api_client extends api_client {
 
     #[\Override]
     public function send_chat_action(string $chatid, string $action = 'typing'): bool {
+        $this->chatactions[] = $action;
         return true;
     }
 

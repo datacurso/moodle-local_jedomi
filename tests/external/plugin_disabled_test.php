@@ -81,6 +81,8 @@ final class plugin_disabled_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-002: disabled, the companion services answer the provider message.
+     * MDL-INT-076: with Jedomi disabled every service of the companion API is refused.
      * Disabled, a companion web service stops with the provider message before anything else.
      *
      * @dataProvider companion_call_provider
@@ -109,6 +111,7 @@ final class plugin_disabled_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-002: disabled, the rating service answers the provider message.
      * Disabled, no feedback is stored and the user gets the provider message.
      */
     public function test_save_feedback_is_refused_when_disabled(): void {
@@ -124,6 +127,7 @@ final class plugin_disabled_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-002: disabled, held actions are neither run nor removed.
      * Disabled, a held action is neither run nor removed.
      */
     public function test_resolve_action_is_refused_when_disabled(): void {
@@ -144,6 +148,7 @@ final class plugin_disabled_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-002: enabled again, held actions can be resolved.
      * Enabled, cancelling a held action still works.
      */
     public function test_resolve_action_works_when_enabled(): void {

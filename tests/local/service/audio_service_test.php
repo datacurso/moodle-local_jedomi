@@ -66,6 +66,7 @@ final class audio_service_test extends \advanced_testcase {
 
     /**
      * M10: the audio goes to audio/transcriptions with the audio model and its text comes back.
+     * MDL-INT-053: the audio is transcribed with the configured audio model.
      */
     public function test_audio_is_transcribed_with_the_audio_model(): void {
         global $DB;
@@ -85,7 +86,9 @@ final class audio_service_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-006: with audio processing off audio is rejected without calling the AI.
      * M9: with audio processing off nothing is sent and the "not enabled" message is returned.
+     * MDL-INT-053: with audio processing off the audio is rejected without calling the AI service.
      */
     public function test_disabled_audio_is_rejected_without_a_call(): void {
         $userid = $this->setup_user();
@@ -106,6 +109,7 @@ final class audio_service_test extends \advanced_testcase {
 
     /**
      * M9: a format the service does not transcribe is rejected without a call.
+     * MDL-INT-053: an unsupported format is rejected without calling the AI service.
      */
     public function test_unsupported_format_is_rejected_without_a_call(): void {
         $userid = $this->setup_user();
@@ -122,6 +126,7 @@ final class audio_service_test extends \advanced_testcase {
 
     /**
      * M10: an empty transcription is reported as an audio that could not be understood.
+     * MDL-INT-053: an empty transcription is treated as audio not understood.
      */
     public function test_empty_transcription_is_unreadable(): void {
         $userid = $this->setup_user();
@@ -152,6 +157,8 @@ final class audio_service_test extends \advanced_testcase {
 
     /**
      * M9: errors of audio/transcriptions get their own message.
+     * MDL-INT-053: rejections of the service (too long, unsupported format) reach the user as a controlled answer.
+     * API-INT-002: a transcription the service rejects reaches the user as a controlled answer.
      *
      * @dataProvider service_error_provider
      * @param int $status HTTP status from plugins-ai.
@@ -177,6 +184,8 @@ final class audio_service_test extends \advanced_testcase {
 
     /**
      * M9: no credit is reported with the shared message.
+     * MDL-INT-053: lack of credits reaches the user as a controlled answer.
+     * API-INT-002: when the service reports no credits left, the user gets the shared message and nothing is retried.
      */
     public function test_no_credit_uses_the_shared_message(): void {
         $error = new \moodle_exception('notenoughtokens', 'aiprovider_datacurso');

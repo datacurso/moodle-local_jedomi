@@ -21,6 +21,8 @@ defined('MOODLE_INTERNAL') || die();
 global $CFG;
 require_once($CFG->dirroot . '/local/jedomi/lib.php');
 require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/testable_provider_api.php');
+require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/fake_ai_client.php');
+require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/fake_telegram_api_client.php');
 
 /**
  * Tests that the Jedomi log never holds the license key nor AI response bodies.
@@ -89,6 +91,7 @@ final class log_privacy_test extends \advanced_testcase {
 
     /**
      * M11: after web chat, agent and error calls, the log has neither the license nor response bodies.
+     * MDL-INT-082: the technical log keeps neither the license nor the text of the AI answers.
      */
     public function test_log_has_no_license_or_response_bodies(): void {
         global $DB;
@@ -128,5 +131,73 @@ final class log_privacy_test extends \advanced_testcase {
         $this->assertStringNotContainsString(self::LICENSE, $log);
         $this->assertStringNotContainsString(self::ANSWER, $log);
         $this->assertStringNotContainsString(self::ERRORBODY, $log);
+    }
+    /**
+     * Run one web chat question as the administrator over the given AI double, discarding the stream.
+     *
+     * @param fake_ai_client $fake AI double.
+     * @param string $question Question of the user.
+     * @return void
+     */
+    private function ask_in_the_web_chat(fake_ai_client $fake, string $question): void {
+        client::set_instance_for_testing($fake);
+        ob_start(static fn(string $buffer): string => '');
+        \local_jedomi\proxy\handler::run([['role' => 'user', 'content' => $question]], 'admin', (int) get_admin()->id);
+        ob_end_flush();
+    }
+
+    /**
+     * MDL-INT-082: the technical log keeps the text of the questions neither from the web chat nor from Telegram.
+     */
+    public function test_log_has_no_question_text(): void {
+        global $DB;
+        if (!class_exists(\aiprovider_datacurso\httpclient\ai_services_api::class)) {
+            $this->markTestSkipped('aiprovider_datacurso is not installed; Telegram asks it whether Jedomi is enabled.');
+        }
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        \core\plugininfo\aiprovider::enable_plugin('datacurso', 1);
+        @unlink($this->log_path());
+        $question = 'QUESTION-TEXT-THAT-MUST-NOT-BE-LOGGED';
+
+        $fake = new fake_ai_client();
+        $fake->enqueue_text('Fine.');
+        $this->ask_in_the_web_chat($fake, $question);
+
+        $DB->insert_record('local_jedomi_telegram_links', (object) ['userid' => get_admin()->id, 'chatid' => '776000001',
+            'username' => 'admin', 'confirmed' => 1, 'timecreated' => time(), 'lastproactivesent' => 0]);
+        \local_jedomi\telegram\api_client::set_instance_for_testing(new \local_jedomi\telegram\fake_telegram_api_client());
+        $fake->enqueue_text('Fine.');
+        $limit = (int) ini_get('max_execution_time');
+        \local_jedomi\telegram\webhook_handler::handle(['message' => ['chat' => ['id' => '776000001'], 'text' => $question]]);
+        set_time_limit($limit);
+        \local_jedomi\telegram\api_client::set_instance_for_testing(null);
+
+        $this->assertCount(2, $fake->calls, 'Both channels asked the AI');
+        $log = (string) file_get_contents($this->log_path());
+        $this->assertNotSame('', $log, 'The requests must be logged');
+        $this->assertStringNotContainsString($question, $log);
+    }
+
+    /**
+     * MDL-INT-083: the technical log does not keep the arguments of the tools, which can hold personal data (database
+     * queries with names or e-mails, parameters of web services).
+     * [Pendiente:fail]
+     */
+    public function test_log_has_no_tool_arguments_with_personal_data(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        @unlink($this->log_path());
+        $email = 'ana.private.person@example.com';
+        $fake = new fake_ai_client();
+        $fake->enqueue_tool_calls([['id' => 'call_1', 'type' => 'function', 'function' => ['name' => 'execute_sql',
+            'arguments' => json_encode(['sql' => "SELECT id FROM {user} WHERE email = '{$email}'"])]]]);
+        $fake->enqueue_text('There is no such user.');
+
+        $this->ask_in_the_web_chat($fake, 'Does Ana have an account?');
+
+        $this->assertCount(2, $fake->calls, 'The tool ran and its result went back to the AI');
+        $log = (string) file_get_contents($this->log_path());
+        $this->assertStringNotContainsString($email, $log, 'The personal data in the tool arguments is not logged');
     }
 }

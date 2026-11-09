@@ -28,6 +28,7 @@ namespace local_jedomi\telegram;
 final class api_client_test extends \advanced_testcase {
     /**
      * The request body separates fields with a plain "&" even though Moodle sets arg_separator.output to "&amp;".
+     * MDL-CTR-009: the body of the Telegram calls separates the fields correctly.
      *
      * Otherwise Telegram reads only the first field and rejects sendMessage with "message text is empty".
      */

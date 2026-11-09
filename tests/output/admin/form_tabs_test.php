@@ -29,6 +29,7 @@ namespace local_jedomi\output\admin;
  */
 final class form_tabs_test extends \advanced_testcase {
     /**
+     * MDL-INT-020: the General tab shows the AI service card with the link to the Jedomi settings in the provider.
      * The General tab exports the provider settings link and the form, and renders both.
      *
      * @return void

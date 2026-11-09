@@ -96,6 +96,7 @@ final class agent_manager_test extends \advanced_testcase {
 
     /**
      * Test create_agent inserts a record and returns its id.
+     * MDL-INT-021: creating an agent saves the prompt, name, schedule, context and roles.
      */
     public function test_create_agent(): void {
         $data = (object) [
@@ -139,6 +140,7 @@ final class agent_manager_test extends \advanced_testcase {
 
     /**
      * Test update_agent changes fields and updates timemodified.
+     * MDL-INT-021: editing updates the agent.
      */
     public function test_update_agent(): void {
         $created = $this->create_agent_record();
@@ -175,6 +177,7 @@ final class agent_manager_test extends \advanced_testcase {
 
     /**
      * Test delete_agent also removes associated cache records.
+     * MDL-INT-021: deleting an agent leaves no saved results behind.
      */
     public function test_delete_agent_cascades_cache(): void {
         global $DB;
@@ -363,7 +366,7 @@ final class agent_manager_test extends \advanced_testcase {
     // ========================
 
     /**
-     * Test is_tool_readonly returns true for known read-only tools.
+     * MDL-UNIT-021: search, describe and query tools are classified as read-only.
      */
     public function test_is_tool_readonly_known_readonly(): void {
         $readonlytools = [
@@ -385,7 +388,7 @@ final class agent_manager_test extends \advanced_testcase {
     }
 
     /**
-     * Test is_tool_readonly returns false for ws_execute (conservative).
+     * MDL-UNIT-021: web service execution is not read-only by its name alone; the invoked function decides.
      */
     public function test_is_tool_readonly_ws_execute(): void {
         $this->assertFalse(agent_manager::is_tool_readonly('ws_execute'));
@@ -393,7 +396,7 @@ final class agent_manager_test extends \advanced_testcase {
     }
 
     /**
-     * Test is_tool_readonly returns false for unknown tools (safe fallback).
+     * MDL-UNIT-021: an unknown tool is never treated as read-only.
      */
     public function test_is_tool_readonly_unknown_tool(): void {
         $this->assertFalse(agent_manager::is_tool_readonly('create_user'));
@@ -407,6 +410,7 @@ final class agent_manager_test extends \advanced_testcase {
 
     /**
      * Test get_due_agents returns enabled agents past nextrun.
+     * MDL-INT-029: only the enabled agents with an elapsed next run are selected.
      */
     public function test_get_due_agents(): void {
         $now = time();
@@ -433,6 +437,7 @@ final class agent_manager_test extends \advanced_testcase {
 
     /**
      * Test get_due_agents results are ordered by nextrun ASC.
+     * MDL-INT-029: the due agents come in order of due time, the most overdue first.
      */
     public function test_get_due_agents_ordering(): void {
         $now = time();
@@ -459,6 +464,7 @@ final class agent_manager_test extends \advanced_testcase {
 
     /**
      * Test mark_run with success: updates lastrun, nextrun, resets failcount.
+     * MDL-INT-029: after a correct run the last run is recorded and the next one calculated.
      */
     public function test_mark_run_success(): void {
         $now = time();
@@ -501,7 +507,7 @@ final class agent_manager_test extends \advanced_testcase {
     // ========================
 
     /**
-     * Test calculate_next_run with every-5-minutes expression.
+     * MDL-UNIT-025: next run of the every-5-minutes schedule.
      */
     public function test_calculate_next_run_every_five_minutes(): void {
         $from = 1000000000;
@@ -511,7 +517,7 @@ final class agent_manager_test extends \advanced_testcase {
     }
 
     /**
-     * Test calculate_next_run with hourly expression.
+     * MDL-UNIT-025: next run of the hourly schedule.
      */
     public function test_calculate_next_run_hourly(): void {
         $from = 1000000000;
@@ -521,7 +527,7 @@ final class agent_manager_test extends \advanced_testcase {
     }
 
     /**
-     * Test calculate_next_run with daily expression (at midnight).
+     * MDL-UNIT-025: next run of the daily schedule (at midnight).
      */
     public function test_calculate_next_run_daily(): void {
         $from = 1000000000;
@@ -531,7 +537,7 @@ final class agent_manager_test extends \advanced_testcase {
     }
 
     /**
-     * Test calculate_next_run returns fallback for invalid cron expression.
+     * MDL-UNIT-025: an unrecognised schedule has a defined, controlled behaviour (run again in 5 minutes).
      */
     public function test_calculate_next_run_fallback(): void {
         $from = 1000000000;
@@ -759,5 +765,221 @@ final class agent_manager_test extends \advanced_testcase {
     public function test_purge_all_empty(): void {
         $deleted = agent_manager::purge_all();
         $this->assertEquals(0, $deleted);
+    }
+
+    // ... ========================
+    // Default agent name
+    // ========================
+
+    /**
+     * Assert that a derived name respects the word and character limits.
+     *
+     * @param string $name Derived name.
+     * @return void
+     */
+    private function assert_name_within_limits(string $name): void {
+        $this->assertNotSame('', trim($name), 'An agent always has a readable name');
+        $this->assertLessThanOrEqual(35, \core_text::strlen($name));
+        $this->assertLessThanOrEqual(5, count(preg_split('/\s+/', trim($name))));
+    }
+
+    /**
+     * MDL-UNIT-024: without a name, the first words of the first sentence of the instruction are used.
+     */
+    public function test_empty_name_takes_the_first_words_of_the_first_sentence(): void {
+        $prompt = 'Count the inactive students. Then send a report to every teacher of the site.';
+
+        $name = agent_manager::generate_name_from_prompt($prompt);
+
+        $this->assert_name_within_limits($name);
+        $this->assertStringStartsWith($name, 'Count the inactive students');
+        $this->assertStringNotContainsString('Then', $name, 'Only the first sentence is used');
+    }
+
+    /**
+     * Instructions of different shapes for the default name.
+     *
+     * @return array<string, array{0: string}>
+     */
+    public static function prompt_shape_provider(): array {
+        return [
+            'very short' => ['Hi'],
+            'without punctuation' => ['list every student who has not logged in during the last thirty days in my courses'],
+            'first sentence longer than the limit' => [
+                'Summarise the participation of every learner enrolled in the advanced mathematics programme! Thanks.',
+            ],
+            'one very long word' => [str_repeat('x', 50) . ' report'],
+            'markup in the instruction' => ['<b>Weekly</b> grades overview? Please.'],
+        ];
+    }
+
+    /**
+     * MDL-UNIT-024: the derived name never exceeds the word and character limits, whatever the instruction.
+     *
+     * @dataProvider prompt_shape_provider
+     * @param string $prompt Agent instruction.
+     */
+    public function test_derived_name_never_exceeds_the_limits(string $prompt): void {
+        $name = agent_manager::generate_name_from_prompt($prompt);
+
+        $this->assert_name_within_limits($name);
+        $this->assertStringNotContainsString('<', $name);
+    }
+
+    /**
+     * MDL-UNIT-024: a short instruction is used whole; an empty one still gives a readable name.
+     */
+    public function test_short_and_empty_instructions_give_a_name(): void {
+        $this->assertSame('Hi', agent_manager::generate_name_from_prompt('Hi'));
+        $this->assertNotSame('', agent_manager::generate_name_from_prompt(''));
+    }
+
+    /**
+     * MDL-UNIT-024: a name written by the user is kept; an empty one is derived from the instruction.
+     */
+    public function test_create_agent_keeps_the_user_name_or_derives_one(): void {
+        $named = agent_manager::create_agent((object) [
+            'userid' => 2,
+            'name' => '  My weekly digest  ',
+            'prompt' => 'Count the inactive students. Then report.',
+            'schedule_cron' => '0 0 * * 0',
+        ]);
+        $unnamed = agent_manager::create_agent((object) [
+            'userid' => 2,
+            'name' => '',
+            'prompt' => 'Count the inactive students. Then report.',
+            'schedule_cron' => '0 0 * * 0',
+        ]);
+
+        $this->assertSame('My weekly digest', agent_manager::get_agent($named)->name);
+        $derived = agent_manager::get_agent($unnamed)->name;
+        $this->assert_name_within_limits($derived);
+        $this->assertStringStartsWith($derived, 'Count the inactive students');
+    }
+
+    // ... ========================
+    // Predefined schedules
+    // ========================
+
+    /**
+     * Predefined schedules of the agent form, a starting instant and the expected next run (UTC).
+     *
+     * @return array<string, array{0: string, 1: string, 2: string}>
+     */
+    public static function predefined_schedule_provider(): array {
+        return [
+            'every 5 min, just before' => ['*/5 * * * *', '2026-03-02 10:04:59', '2026-03-02 10:05:00'],
+            'every 5 min, exactly on it' => ['*/5 * * * *', '2026-03-02 10:05:00', '2026-03-02 10:10:00'],
+            'every 15 min, just before' => ['*/15 * * * *', '2026-03-02 10:14:59', '2026-03-02 10:15:00'],
+            'every 15 min, just after' => ['*/15 * * * *', '2026-03-02 10:15:01', '2026-03-02 10:30:00'],
+            'every 30 min, exactly on it' => ['*/30 * * * *', '2026-03-02 10:30:00', '2026-03-02 11:00:00'],
+            'hourly, just before the hour' => ['0 * * * *', '2026-03-02 10:59:59', '2026-03-02 11:00:00'],
+            'hourly, exactly on the hour' => ['0 * * * *', '2026-03-02 11:00:00', '2026-03-02 12:00:00'],
+            'every 6 hours, just before' => ['0 */6 * * *', '2026-03-02 05:59:59', '2026-03-02 06:00:00'],
+            'every 6 hours, exactly on it' => ['0 */6 * * *', '2026-03-02 06:00:00', '2026-03-02 12:00:00'],
+            'every 6 hours, across the day' => ['0 */6 * * *', '2026-03-02 23:30:00', '2026-03-03 00:00:00'],
+            'daily, just before midnight' => ['0 0 * * *', '2026-03-02 23:59:59', '2026-03-03 00:00:00'],
+            'daily, exactly at midnight' => ['0 0 * * *', '2026-03-03 00:00:00', '2026-03-04 00:00:00'],
+            'weekly, just before Sunday' => ['0 0 * * 0', '2026-02-28 23:59:59', '2026-03-01 00:00:00'],
+            'weekly, exactly on Sunday' => ['0 0 * * 0', '2026-03-01 00:00:00', '2026-03-08 00:00:00'],
+            'weekly, mid week' => ['0 0 * * 0', '2026-03-04 12:00:00', '2026-03-08 00:00:00'],
+        ];
+    }
+
+    /**
+     * MDL-UNIT-025: each predefined schedule gives the right next run, always in the future, around each boundary.
+     *
+     * @dataProvider predefined_schedule_provider
+     * @param string $cron Schedule.
+     * @param string $from Starting instant (UTC).
+     * @param string $expected Expected next run (UTC).
+     */
+    public function test_predefined_schedules_give_the_next_run(string $cron, string $from, string $expected): void {
+        $utc = new \DateTimeZone('UTC');
+        $fromts = (new \DateTimeImmutable($from, $utc))->getTimestamp();
+        $expectedts = (new \DateTimeImmutable($expected, $utc))->getTimestamp();
+
+        $next = agent_manager::calculate_next_run($cron, $fromts);
+
+        $this->assertSame($expected, gmdate('Y-m-d H:i:s', $next));
+        $this->assertSame($expectedts, $next);
+        $this->assertGreaterThan($fromts, $next);
+    }
+
+    /**
+     * MDL-UNIT-025: an unrecognised schedule always gives a controlled next run in the near future.
+     */
+    public function test_unrecognised_schedules_give_a_controlled_next_run(): void {
+        $from = 1000000000;
+        foreach (['', 'every day', '* * * *', '* * * * * *'] as $cron) {
+            $next = agent_manager::calculate_next_run($cron, $from);
+            $this->assertGreaterThan($from, $next, "'{$cron}' must give a future run");
+            $this->assertSame($from + 300, $next, "'{$cron}' must fall back to 5 minutes");
+        }
+    }
+
+    /**
+     * MDL-UNIT-026: a custom schedule with a wrong number of parts or values out of range is rejected with an error message.
+     * [Pendiente:skip]
+     */
+    public function test_invalid_custom_schedule_is_rejected(): void {
+        $this->markTestSkipped('Pending fix: only the five parts are checked; invalid values are accepted and the agent runs every 5 minutes.');
+    }
+
+    /**
+     * MDL-UNIT-027: daily and weekly schedules are calculated in the site timezone, including daylight saving changes.
+     * [Pendiente:skip]
+     */
+    public function test_schedules_follow_the_site_timezone(): void {
+        $this->markTestSkipped('Pending fix: schedules are calculated in UTC instead of the site timezone.');
+    }
+
+    /**
+     * MDL-UNIT-028: the agent context id has one meaning per context type and an unknown or mismatched id is rejected when saving.
+     * [Pendiente:skip]
+     */
+    public function test_context_id_is_validated_when_saving(): void {
+        $this->markTestSkipped('Pending fix: the context id is read as both a context and a course id and is not validated when saving.');
+    }
+
+    /**
+     * MDL-INT-021: enabling and disabling changes the state of the agent, and "Run now" leaves it queued for the next cycle.
+     */
+    public function test_toggle_and_run_now_queue_the_agent_for_the_next_cycle(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $id = agent_manager::create_agent((object) ['userid' => 2, 'prompt' => 'Weekly summary',
+            'schedule_cron' => '0 8 * * 1', 'enabled' => 1]);
+
+        agent_manager::update_agent($id, (object) ['enabled' => 0]);
+        $this->assertSame(0, (int) agent_manager::get_agent($id)->enabled);
+        agent_manager::update_agent($id, (object) ['enabled' => 1]);
+        $this->assertSame(1, (int) agent_manager::get_agent($id)->enabled);
+        $DB->set_field('local_jedomi_agents', 'nextrun', time() + DAYSECS, ['id' => $id]);
+        $this->assertNotContains($id, array_map('intval', array_column(agent_manager::get_due_agents(), 'id')));
+
+        $this->assertTrue(agent_manager::queue_for_run($id));
+
+        $this->assertContains($id, array_map('intval', array_column(agent_manager::get_due_agents(), 'id')));
+        $this->assertFalse(agent_manager::queue_for_run($id + 1000), 'An agent that does not exist cannot be queued');
+    }
+
+    /**
+     * MDL-INT-023: agents can be created active, and enabling them or changing the schedule calculates the next run from the
+     * schedule; "Run now" on a disabled agent runs it or says it will not run.
+     * [Pendiente:skip]
+     */
+    public function test_activation_and_next_run_follow_the_schedule(): void {
+        $this->markTestSkipped('Pending fix: agents are created disabled, run the next minute when enabled, editing the '
+            . 'schedule does not recalculate the next run and "Run now" on a disabled agent reports a queue that never runs.');
+    }
+
+    /**
+     * MDL-INT-024: editing an agent keeps and shows its name, custom schedule and roles.
+     * [Pendiente:skip]
+     */
+    public function test_editing_keeps_name_schedule_and_roles(): void {
+        $this->markTestSkipped('Pending fix: editing ignores the new name, silently drops an invalid custom schedule and '
+            . 'cannot remove every role; the role boxes have no effect on the run.');
     }
 }

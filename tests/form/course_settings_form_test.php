@@ -27,7 +27,7 @@ namespace local_jedomi\form;
  */
 final class course_settings_form_test extends \advanced_testcase {
     /**
-     * A submitted form returns the mode and the selected courses.
+     * MDL-UNIT-007: a submitted form returns the mode and the selected courses.
      *
      * @return void
      */
@@ -45,7 +45,7 @@ final class course_settings_form_test extends \advanced_testcase {
     }
 
     /**
-     * An unknown mode is rejected.
+     * MDL-UNIT-007: an unknown mode is rejected.
      *
      * @return void
      */
@@ -55,5 +55,37 @@ final class course_settings_form_test extends \advanced_testcase {
         course_settings_form::mock_submit(['course_mode' => 'bogus']);
 
         $this->assertNull((new course_settings_form())->get_data());
+    }
+
+    /**
+     * The three availability modes offered to the administrator.
+     *
+     * @return array<string, array{0: string}>
+     */
+    public static function mode_provider(): array {
+        return [
+            'all courses' => ['all'],
+            'only the selected courses' => ['include'],
+            'all but the selected courses' => ['exclude'],
+        ];
+    }
+
+    /**
+     * MDL-UNIT-007: each of the three availability modes is accepted.
+     *
+     * @dataProvider mode_provider
+     * @param string $mode Submitted mode.
+     * @return void
+     */
+    public function test_every_offered_mode_is_accepted(string $mode): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $course = $this->getDataGenerator()->create_course();
+        course_settings_form::mock_submit(['course_mode' => $mode, 'course_ids' => [$course->id]]);
+
+        $data = (new course_settings_form())->get_data();
+
+        $this->assertNotNull($data);
+        $this->assertSame($mode, $data->course_mode);
     }
 }

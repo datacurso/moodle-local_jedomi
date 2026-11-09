@@ -113,6 +113,7 @@ final class e2e_check_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-084: a correct conversation completes every step.
      * I7: a conversation with one tool call and a final answer passes every step.
      */
     public function test_successful_conversation_passes_every_step(): void {
@@ -138,6 +139,8 @@ final class e2e_check_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-003: the diagnostic reports the provider disabled without calling the service.
+     * MDL-UNIT-084: with the provider disabled the first step fails without calling the service.
      * I7: with the provider disabled the first step fails with its code and layer, and nothing is sent.
      */
     public function test_disabled_provider_fails_the_first_step_without_calling_the_service(): void {
@@ -175,6 +178,7 @@ final class e2e_check_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-084: a failed request reports the code and the layer of the failure.
      * I7: a failed AI call reports its code, the provider error and the layer that returned it.
      *
      * @dataProvider failure_provider
@@ -207,6 +211,7 @@ final class e2e_check_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-084: an answer without a tool call fails the tool step.
      * I7: an answer without the expected tool call fails the tool step and stops.
      */
     public function test_answer_without_tool_call_fails_the_tool_step(): void {
@@ -225,6 +230,7 @@ final class e2e_check_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-084: a tool error fails the tool step.
      * I7: a tool that returns an error fails the tool step and stops, without printing the error text.
      */
     public function test_tool_returning_an_error_fails_the_tool_step(): void {
@@ -245,6 +251,7 @@ final class e2e_check_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-084: the output never contains the license or the full answers.
      * I7: through the real provider client, the output has neither the license nor the answer bodies.
      */
     public function test_output_never_contains_the_license_or_full_answers(): void {
@@ -270,5 +277,14 @@ final class e2e_check_test extends \advanced_testcase {
         $this->assertStringNotContainsString($license, $output);
         $this->assertStringNotContainsString($longanswer, $output);
         $this->assertStringNotContainsString(str_repeat('FULLBODY', 20), $output);
+    }
+
+    /**
+     * MDL-INT-004: with Jedomi disabled the command console and the end-to-end diagnostic say it is not enabled and call no AI.
+     * [Pendiente:skip]
+     */
+    public function test_console_and_diagnostic_respect_the_enabled_switch(): void {
+        $this->markTestSkipped('Pending fix: with Jedomi disabled the command console and the end-to-end diagnostic still '
+            . 'send queries to the AI service and use credits.');
     }
 }

@@ -77,6 +77,7 @@ final class document_read_tool_test extends \advanced_testcase {
 
     /**
      * M8: the agent tool sends the PDF of the activity to files/read and returns its text.
+     * MDL-INT-051: the tool returns the text of the activity PDF in the agents.
      */
     public function test_agent_tool_returns_the_text_of_the_pdf(): void {
         $cmid = $this->create_module_with_pdf();
@@ -100,6 +101,7 @@ final class document_read_tool_test extends \advanced_testcase {
 
     /**
      * M8: the web chat tool returns the same text, never images.
+     * MDL-INT-051: the tool returns the text of the activity PDF in the chat.
      */
     public function test_chat_tool_returns_text(): void {
         $cmid = $this->create_module_with_pdf();
@@ -114,7 +116,9 @@ final class document_read_tool_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-006: with file processing off the activity PDF tool is refused if called.
      * M8: with file processing off the tool answers that it is not enabled and sends nothing.
+     * MDL-INT-051: with file processing off the tool is refused.
      */
     public function test_tool_is_refused_when_files_are_disabled(): void {
         $cmid = $this->create_module_with_pdf();
@@ -142,6 +146,7 @@ final class document_read_tool_test extends \advanced_testcase {
 
     /**
      * An activity without a PDF is reported without calling the service.
+     * MDL-INT-051: an activity without a PDF is reported.
      */
     public function test_activity_without_pdf_is_reported(): void {
         $course = $this->getDataGenerator()->create_course();
@@ -154,7 +159,10 @@ final class document_read_tool_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-006: with file processing off the activity PDF tool is not offered.
+     * MDL-UNIT-094: the activity PDF reader is offered only with file processing on.
      * M8: document_read is offered to every channel only while file and image processing is on.
+     * MDL-INT-051: with file processing off the tool is not offered.
      */
     public function test_tool_is_offered_only_when_files_are_enabled(): void {
         $names = static fn(array $definitions): array => array_map(

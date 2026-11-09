@@ -57,6 +57,8 @@ final class telegram_link_service_test extends \advanced_testcase {
     /**
      * Only confirmed links are returned, and unlinking removes every link of the user.
      *
+     * MDL-INT-058: unlinking from the profile removes the link.
+     *
      * @return void
      */
     public function test_get_confirmed_link_and_unlink(): void {
@@ -73,5 +75,67 @@ final class telegram_link_service_test extends \advanced_testcase {
 
         telegram_link_service::unlink((int) $user->id);
         $this->assertFalse($DB->record_exists('local_jedomi_telegram_links', ['userid' => $user->id]));
+    }
+
+    /**
+     * MDL-INT-060: unlinking from the web removes the conversation and the state of the bot too.
+     * [Pendiente:fail]
+     *
+     * @return void
+     */
+    public function test_unlink_removes_the_conversation_and_the_bot_state(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $user = $this->getDataGenerator()->create_user();
+        $now = time();
+        $DB->insert_record('local_jedomi_telegram_links', (object) ['userid' => $user->id, 'chatid' => '782000001',
+            'username' => 'ada', 'confirmed' => 1, 'timecreated' => $now]);
+        $DB->insert_record('local_jedomi_telegram_sessions', (object) ['chatid' => '782000001',
+            'messages' => json_encode([['role' => 'user', 'content' => 'My grades']]), 'lastactivity' => $now]);
+        $DB->insert_record('local_jedomi_telegram_rate_limit', (object) ['chatid' => '782000001', 'windowstart' => $now,
+            'msgcount' => 2, 'blockeduntil' => 0]);
+        $DB->insert_record('local_jedomi_telegram_pending_actions', (object) ['callbackid' => 'cb-782',
+            'chatid' => '782000001', 'actionjson' => '{}', 'timecreated' => $now]);
+
+        telegram_link_service::unlink((int) $user->id);
+
+        $this->assertSame(['sessions' => 0, 'limits' => 0, 'actions' => 0], [
+            'sessions' => $DB->count_records('local_jedomi_telegram_sessions', ['chatid' => '782000001']),
+            'limits' => $DB->count_records('local_jedomi_telegram_rate_limit', ['chatid' => '782000001']),
+            'actions' => $DB->count_records('local_jedomi_telegram_pending_actions', ['chatid' => '782000001']),
+        ]);
+    }
+
+    /**
+     * MDL-INT-060: after unlinking from the web the user receives no more notifications.
+     *
+     * @return void
+     */
+    public function test_no_notification_after_unlinking(): void {
+        global $CFG, $DB;
+        require_once($CFG->dirroot . '/mod/assign/locallib.php');
+        require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/fake_telegram_api_client.php');
+        if (!class_exists(\aiprovider_datacurso\httpclient\ai_services_api::class)) {
+            $this->markTestSkipped('aiprovider_datacurso is not installed; the plugin state is not available.');
+        }
+        $this->resetAfterTest();
+        \aiprovider_datacurso\local\plugin_settings::set_enabled('local_jedomi', true);
+        set_config('telegram_enabled', 1, 'local_jedomi');
+        $telegram = new \local_jedomi\telegram\fake_telegram_api_client();
+        \local_jedomi\telegram\api_client::set_instance_for_testing($telegram);
+        $course = $this->getDataGenerator()->create_course();
+        $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
+        $DB->insert_record('local_jedomi_telegram_links', (object) ['userid' => $student->id, 'chatid' => '782000002',
+            'username' => 'ada', 'confirmed' => 1, 'timecreated' => time(), 'lastproactivesent' => 0]);
+        $instance = $this->getDataGenerator()->create_module('assign', ['course' => $course->id]);
+        $assign = new \assign(\context_module::instance($instance->cmid), get_coursemodule_from_id('assign', $instance->cmid),
+            $course);
+
+        telegram_link_service::unlink((int) $student->id);
+        $grade = $assign->get_user_grade((int) $student->id, true);
+        \local_jedomi\event\observers::submission_graded(\mod_assign\event\submission_graded::create_from_grade($assign, $grade));
+        \local_jedomi\telegram\api_client::set_instance_for_testing(null);
+
+        $this->assertSame([], $telegram->sent);
     }
 }
