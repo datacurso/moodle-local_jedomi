@@ -1637,13 +1637,8 @@ class webhook_handler {
                     return "❌ Only SELECT queries are allowed.";
                 }
 
-                // ... ── File exfiltration check (defense-in-depth, matches web version) ──
-                if (preg_match('/\bINTO\s+(OUTFILE|DUMPFILE)\b/i', $sql)) {
-                    return "❌ INTO OUTFILE/DUMPFILE is not allowed.";
-                }
-
-                // ... ── Role gate matching web version (lib.php:472) — admin/manager/teacher only ──
-                if (!in_array($role, ['admin', 'manager', 'teacher'], true)) {
+                // ... ── Role gate shared with the web chat — admin/manager/teacher only ──
+                if (!\local_jedomi\local\query_runner::role_can_query($role)) {
                     return "❌ Permission denied.";
                 }
 
@@ -1656,31 +1651,20 @@ class webhook_handler {
                     $sql
                 );
 
-                // ... ── Sensitive tables and courses the user does not manage (shared by every channel) ──
                 $params = $args['params'] ?? [];
                 if (!is_array($params)) {
                     $params = [$params];
                 }
-                $rejection = \local_jedomi\local\sql_guard::rejection_reason($sql, $userid, $params);
-                if ($rejection !== null) {
-                    return '❌ ' . get_string($rejection, 'local_jedomi');
-                }
 
-                // ... ── Execute query with restrictions matching web version ─────────
-                // 1. Statement timeout (5000ms, best-effort on MariaDB, silent on MySQL).
+                // ... ── Guard, timeout, row cap and sensitive columns shared with the web chat ──
+                $maxrows = 50;
                 try {
-                    $DB->execute('SET STATEMENT max_statement_time = 5 FOR SELECT 1');
-                    // phpcs:ignore Generic.CodeAnalysis.EmptyStatement.DetectedCatch -- comment-only catch.
-                } catch (\Exception $e) {
-                    // Non-MariaDB — query runs without server-side timeout.
-                }
-
-                // 2. Use recordset (streaming) + PHP row cap instead of LIMIT.
-                // This avoids double-LIMIT conflicts with model-generated SQL.
-                try {
-                    $recordset = $DB->get_recordset_sql($sql, $params);
-                } catch (\Exception $e) {
-                    return "❌ SQL error: " . $e->getMessage();
+                    $result = \local_jedomi\local\query_runner::run($sql, $params, $userid, $maxrows);
+                } catch (\moodle_exception $e) {
+                    if (in_array($e->errorcode, ['execute_sql_error', 'query_timeout'], true)) {
+                        return "❌ SQL error: " . $e->getMessage() . (empty($e->debuginfo) ? '' : ' | ' . $e->debuginfo);
+                    }
+                    return '❌ ' . $e->getMessage();
                 }
 
                 // ... ── Date/time column detection ──
@@ -1700,17 +1684,8 @@ class webhook_handler {
                     $user = \core_user::get_user($userid);
                 }
 
-                $maxrows = 50;
                 $rows = [];
-                $count = 0;
-                foreach ($recordset as $row) {
-                    $count++;
-                    if ($count > $maxrows) {
-                        $recordset->close();
-                        $rows[] = '⚠️ More than ' . $maxrows . ' rows returned. Showing first ' . $maxrows . '.';
-                        break;
-                    }
-
+                foreach ($result['rows'] as $row) {
                     // Detect timestamp-like columns from the first row's keys.
                     if (empty($datekeys)) {
                         foreach ((array)$row as $key => $val) {
@@ -1721,7 +1696,6 @@ class webhook_handler {
                     }
 
                     $fields = [];
-                    $row = \local_jedomi\local\sql_guard::filter_row((array)$row);
                     if ($anonymizer !== null) {
                         $row = $anonymizer->anonymize_row($row);
                     }
@@ -1739,7 +1713,9 @@ class webhook_handler {
                     }
                     $rows[] = "• " . implode(', ', $fields);
                 }
-                $recordset->close();
+                if ($result['truncated']) {
+                    $rows[] = '⚠️ More than ' . $maxrows . ' rows returned. Showing first ' . $maxrows . '.';
+                }
 
                 if (empty($rows)) {
                     return "Query returned no results.";
@@ -1842,97 +1818,50 @@ class webhook_handler {
                     return json_encode(['error' => 'Web service name required.']);
                 }
 
-                // ... ── Gate 1: Role-based allowlist (matching ws_execute::execute) ──
-                require_once(__DIR__ . '/../../lib.php');
-                $allowlist = \local_jedomi_get_role_allowlist($role);
-                // Admin without a saved allowlist → full access.
-                // Every other role (or an admin with a saved allowlist, even empty) → must match.
-                if (!\local_jedomi_role_has_full_ws_access($role)) {
-                    if (!in_array($wsname, $allowlist, true)) {
-                        return json_encode(['error' => 'WS not in allowlist for role: ' . $role]);
-                    }
+                // ... ── Gate 1: role list shared with the web chat and the companion web service ──
+                if (!\local_jedomi\local\ws_runner::role_allows($role, $wsname)) {
+                    return json_encode(['error' => 'WS not in allowlist for role: ' . $role]);
                 }
 
-                // ... ── Gate 2: Resolve target WS class ──────────────────────────────
-                $classname = \local_jedomi_resolve_ws_classname($wsname);
-                if (!$classname || !class_exists($classname)) {
-                    return json_encode(['error' => 'WS class not found: ' . $wsname]);
-                }
-
-                $funcrecord = $DB->get_record(
-                    'external_functions',
-                    ['name' => $wsname],
-                    'classname, classpath, component, methodname'
-                );
-                if (!$funcrecord) {
+                // ... ── Gate 2: Resolve target WS method ──────────────────────────────
+                try {
+                    $method = \local_jedomi\local\ws_runner::resolve($wsname);
+                } catch (\moodle_exception $e) {
                     return json_encode(['error' => 'WS not found: ' . $wsname]);
                 }
-                $methodname = $funcrecord->methodname;
-                if (!method_exists($classname, $methodname)) {
-                    return json_encode(['error' => 'Method ' . $classname . '::' . $methodname . '() not found']);
-                }
-
-                // ... ── Gate 3: Call the WS method via reflection ────────────────────
-                // IMPORTANT: Wrap in a delegated transaction to fix the orphaned
-                // transaction bug. Many external_* methods call
-                // start_delegated_transaction() internally. When called via
-                // ReflectionMethod (not through external_api::call_external_function),
-                // the inner transaction is never committed. By wrapping the call
-                // in our own delegated transaction, the inner call sees an outer
-                // transaction and delegates to it — our transaction does the
-                // actual commit. This fixes the "active database transaction
-                // detected during request shutdown" error.
-                // Do NOT use external_api::call_external_function() — it calls
-                // validate_context() which requires a web page context that
-                // doesn't exist in the webhook handler.
                 $decoded = json_decode($params, true);
                 if (!is_array($decoded)) {
                     $decoded = [];
                 }
-
-                // Build callargs by matching Gateway params to method signature.
-                $ref = new \ReflectionMethod($classname, $methodname);
-                $callargs = [];
-                $expectedparams = [];
-                foreach ($ref->getParameters() as $param) {
-                    $pname = $param->getName();
-                    $expectedparams[] = $pname;
-                    if (array_key_exists($pname, $decoded)) {
-                        $callargs[] = $decoded[$pname];
-                    } else if ($param->isDefaultValueAvailable()) {
-                        $callargs[] = $param->getDefaultValue();
-                    } else {
-                        $got = implode(', ', array_keys($decoded));
-                        return json_encode([
-                            'error' => 'ws_execute_param_mismatch',
-                            'ws' => $wsname,
-                            'expected_params' => $expectedparams,
-                            'provided_params' => array_keys($decoded),
-                            'hint' => "WS expects parameter '{$pname}'. Provided: [{$got}]. "
-                                . "Use ws_describe('{$wsname}') to see the exact structure.",
-                        ]);
-                    }
+                $missing = \local_jedomi\local\ws_runner::missing_parameter($method, $decoded);
+                if ($missing !== null) {
+                    $got = implode(', ', array_keys($decoded));
+                    return json_encode([
+                        'error' => 'ws_execute_param_mismatch',
+                        'ws' => $wsname,
+                        'expected_params' => array_map(
+                            static fn(\ReflectionParameter $parameter): string => $parameter->getName(),
+                            $method->getParameters()
+                        ),
+                        'provided_params' => array_keys($decoded),
+                        'hint' => "WS expects parameter '{$missing}'. Provided: [{$got}]. "
+                            . "Use ws_describe('{$wsname}') to see the exact structure.",
+                    ]);
                 }
 
-                // Wrap in delegated transaction so inner start_delegated_transaction()
-                // calls (from external_* methods) delegate to us and actually commit.
-                $transaction = $DB->start_delegated_transaction();
+                // ... ── Gate 3: call the WS method (native capabilities inside) ──────
+                // The call runs in a delegated transaction, committed only when it succeeds, because the webhook does
+                // not go through external_api::call_external_function() (its validate_context() needs a web page).
                 try {
-                    $result = $ref->invokeArgs(null, $callargs);
-                    $transaction->allow_commit();
-
-                    $json = json_encode($result);
-                    if (mb_strlen($json) > 2048) {
-                        $json = mb_substr($json, 0, 2048) . "\n... (truncated)";
-                    }
-                    return $json;
-                } catch (\moodle_exception $e) {
-                    $transaction->rollback($e);
-                    return json_encode(['error' => 'Error en ' . $wsname . ': ' . $e->getMessage()]);
+                    $result = \local_jedomi\local\ws_runner::call($method, $decoded, true);
                 } catch (\Throwable $e) {
-                    $transaction->rollback($e);
-                    return json_encode(['error' => 'Error ejecutando ' . $wsname . ': ' . $e->getMessage()]);
+                    return json_encode(['error' => 'Error in ' . $wsname . ': ' . $e->getMessage()]);
                 }
+                $json = json_encode($result);
+                if (mb_strlen($json) > 2048) {
+                    $json = mb_substr($json, 0, 2048) . "\n... (truncated)";
+                }
+                return $json;
 
             case 'admin_search':
                 if (!in_array($role, ['admin', 'manager'], true)) {

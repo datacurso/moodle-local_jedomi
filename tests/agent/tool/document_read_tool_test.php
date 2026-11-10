@@ -198,4 +198,70 @@ final class document_read_tool_test extends \advanced_testcase {
         );
         $this->assertSame([], $this->curl->calls);
     }
+
+    /**
+     * An editing teacher reads the document of an activity in their own course from the web chat.
+     */
+    public function test_chat_editing_teacher_of_the_course_can_read(): void {
+        $cmid = $this->create_module_with_pdf();
+        $course = get_course_and_cm_from_cmid($cmid)[0];
+        $teacher = $this->getDataGenerator()->create_and_enrol($course, 'editingteacher');
+        $this->setUser($teacher);
+        $this->curl->enqueue(json_encode(['text' => 'Unit 1', 'model' => 'm', 'pages_total' => 1, 'pages_vision' => [],
+            'pages_skipped' => []]));
+
+        $result = json_decode(\local_jedomi\proxy\handler::run_tool('document_read', ['cmid' => $cmid], 'teacher'), true);
+
+        $this->assertSame('Unit 1', $result['text'] ?? null, 'An editing teacher must read the documents of their course');
+        $this->assertCount(1, $this->curl->calls);
+    }
+
+    /**
+     * A teacher of another course cannot read the document from the web chat.
+     */
+    public function test_chat_teacher_of_another_course_cannot_read(): void {
+        $cmid = $this->create_module_with_pdf();
+        $othercourse = $this->getDataGenerator()->create_course();
+        $teacher = $this->getDataGenerator()->create_and_enrol($othercourse, 'editingteacher');
+        $this->setUser($teacher);
+
+        $result = json_decode(\local_jedomi\proxy\handler::run_tool('document_read', ['cmid' => $cmid], 'teacher'), true);
+
+        $this->assertSame('permission_denied', $result['error'] ?? null);
+        $this->assertSame([], $this->curl->calls);
+    }
+
+    /**
+     * An agent created by an editing teacher reads the document of an activity in the creator's course.
+     */
+    public function test_agent_of_the_course_teacher_can_read(): void {
+        $cmid = $this->create_module_with_pdf();
+        $course = get_course_and_cm_from_cmid($cmid)[0];
+        $teacher = $this->getDataGenerator()->create_and_enrol($course, 'editingteacher');
+        $this->curl->enqueue(json_encode(['text' => 'Unit 1', 'model' => 'm', 'pages_total' => 1, 'pages_vision' => [],
+            'pages_skipped' => []]));
+
+        $result = json_decode((new document_read_tool((int) $teacher->id))->execute((object) ['cmid' => $cmid]), true);
+
+        $this->assertSame('Unit 1', $result['text'] ?? null);
+    }
+
+    /**
+     * A non-editing teacher of the course cannot read the document of a hidden activity.
+     */
+    public function test_chat_teacher_cannot_read_a_hidden_activity(): void {
+        global $DB;
+        $cmid = $this->create_module_with_pdf();
+        $course = get_course_and_cm_from_cmid($cmid)[0];
+        set_coursemodule_visible($cmid, 0);
+        $teacher = $this->getDataGenerator()->create_and_enrol($course, 'teacher');
+        $roleid = (int) $DB->get_field('role', 'id', ['shortname' => 'teacher'], MUST_EXIST);
+        assign_capability('moodle/course:viewhiddenactivities', CAP_PROHIBIT, $roleid, \context_course::instance($course->id)->id);
+        $this->setUser($teacher);
+
+        $result = json_decode(\local_jedomi\proxy\handler::run_tool('document_read', ['cmid' => $cmid], 'teacher'), true);
+
+        $this->assertSame('permission_denied', $result['error'] ?? null);
+        $this->assertSame([], $this->curl->calls);
+    }
 }

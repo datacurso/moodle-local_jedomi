@@ -39,6 +39,19 @@ use local_jedomi\local\service\pending_action_service;
  * AI chat proxy handler: runs the tool-calling loop, dispatches tool executions and streams SSE.
  */
 class handler {
+    /** @var int Maximum rows a database query returns to the web chat. */
+    private const MAX_SQL_ROWS = 100;
+
+    /**
+     * Refuse the database and web service tools when Jedomi is disabled in the Datacurso AI provider (when installed:
+     * without it the chat cannot reach the AI at all).
+     */
+    private static function require_enabled(): void {
+        if (class_exists(\aiprovider_datacurso\local\plugin_settings::class)) {
+            \aiprovider_datacurso\local\plugin_settings::require_enabled('local_jedomi');
+        }
+    }
+
     /**
      * Run the tool loop for a web chat request, ignoring any model the browser sends.
      *
@@ -420,7 +433,9 @@ class handler {
      * @return string       JSON-encoded result.
      */
     private static function execute_sql_tool(array $args, string $role): string {
-        if (!in_array($role, ['admin', 'manager', 'teacher'], true)) {
+        global $USER;
+        // Same gate as Telegram: the chat role, then the shared guard limits teachers to the courses they manage.
+        if (!\local_jedomi\local\query_runner::role_can_query($role)) {
             return json_encode(['error' => 'permission_denied']);
         }
         $sql    = $args['sql'] ?? $args['query'] ?? '';
@@ -433,15 +448,17 @@ class handler {
         \local_jedomi_log('EXECUTE_SQL', ['sql_hash' => hash('sha256', $sql), 'param_count' => count($params)]);
 
         try {
-            $result = \local_jedomi\external\execute_sql::execute(
-                $sql,
-                $params,
-                '',
-                0,
-                '',
-                true
-            );
-            return json_encode($result);
+            self::require_enabled();
+            $result = \local_jedomi\local\query_runner::run($sql, $params, (int) $USER->id, self::MAX_SQL_ROWS);
+            return json_encode([
+                'rows' => array_map(
+                    static fn(array $row): array => ['json_row' => json_encode($row, JSON_UNESCAPED_UNICODE)],
+                    $result['rows']
+                ),
+                'row_count' => count($result['rows']),
+                'truncated' => $result['truncated'],
+                'execution_ms' => $result['execution_ms'],
+            ]);
         } catch (\Exception $e) {
             $realerror = $e->getMessage();
             if ($e instanceof \dml_exception && !empty($e->debuginfo)) {
@@ -661,15 +678,17 @@ class handler {
 
             \local_jedomi_log('WS_EXECUTE', ['wsname' => $wsname]);
 
-            $result = \local_jedomi\external\ws_execute::execute(
-                $wsname,
-                $params,
-                '', // Hmac_signature.
-                0, // Hmac_timestamp.
-                '', // Payload_hash.
-                true    // Skip_hmac.
+            // Same gate as Telegram: the web service list of the chat role, then the real capabilities of the user.
+            self::require_enabled();
+            if (!\local_jedomi\local\ws_runner::role_allows($role, (string) $wsname)) {
+                throw new \moodle_exception('ws_not_in_allowlist', 'local_jedomi');
+            }
+            $decoded = json_decode((string) $params, true);
+            $result = \local_jedomi\local\ws_runner::call(
+                \local_jedomi\local\ws_runner::resolve((string) $wsname),
+                is_array($decoded) ? $decoded : []
             );
-            return json_encode($result);
+            return json_encode(['result' => json_encode($result)]);
         } catch (\moodle_exception $e) {
             $detail = $e->getMessage();
             if (method_exists($e, 'getDebugInfo') && $e->getDebugInfo()) {

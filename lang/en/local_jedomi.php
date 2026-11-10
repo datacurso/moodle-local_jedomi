@@ -542,13 +542,24 @@ $string['settings_redirect_help'] = 'Jedomi settings are managed in a dedicated 
 $string['sidebar_title'] = 'Jedomi AI';
 $string['silence_detected'] = 'Silence...';
 $string['spt_secret'] = 'Permission token secret';
-$string['spt_secret_help'] = 'Shared secret between Moodle and the Jedomi Gateway for signing permission tokens. Must match '
-    . 'JEDOMI_SPT_SECRET in your .env file.';
+$string['spt_secret_help'] = 'Secret used to sign the chat permission tokens. It is generated automatically for this site and '
+    . 'stored in Moodle, so it does not need to be set. Changing it invalidates the tokens already issued: users must reload '
+    . 'the page to keep chatting.';
 $string['sql_course_rejected'] = 'The query names a course you do not manage, so it was not run.';
 $string['sql_course_unfiltered_rejected'] = 'The query reads course data without limiting it to the courses you manage, so it was '
     . 'not run. Limit every course table to the id of one of your courses (for example WHERE c.id = 12 or WHERE e.courseid IN '
     . '(12, 15)), and do not use OR, UNION, BETWEEN or subqueries.';
+$string['sql_function_rejected'] = 'The query uses a function or clause that can read or write server files, pause or lock '
+    . 'the database, reach other databases or reveal server variables (such as LOAD_FILE, SLEEP, BENCHMARK, INTO OUTFILE or '
+    . '@@), so it was not run.';
 $string['sql_sensitive_rejected'] = 'The query reads credentials, keys, tokens, site configuration or sessions, so it was not run.';
+$string['sql_table_not_allowed'] = 'The query reads a table that is not available for the courses you manage (such as messages, '
+    . 'notifications, user preferences or the whole user list), so it was not run. Read course tables limited to your courses, '
+    . 'and read user names only by joining {user} to the enrolments, roles or grades of one of your courses (for example JOIN '
+    . '{user_enrolments} ue ON ue.userid = u.id JOIN {enrol} e ON e.id = ue.enrolid WHERE e.courseid = 12).';
+$string['sql_user_column_rejected'] = 'The query reads user columns other than the id and the names (such as the e-mail, phone, '
+    . 'address or last IP), or every column with *, so it was not run. List only u.id, u.firstname, u.lastname, u.middlename, '
+    . 'u.alternatename, u.firstnamephonetic or u.lastnamephonetic.';
 $string['summary_config_data'] = 'config data retrieved';
 $string['summary_done'] = 'done';
 $string['summary_error_prefix'] = 'error: ';
@@ -586,8 +597,9 @@ $string['telegram_cooldown_help'] = 'Minutes to block a user after exceeding the
 $string['telegram_drop_pending_failed'] = 'The pending updates could not be dropped. Check the Telegram API response.';
 $string['telegram_enabled'] = 'Enable Telegram integration';
 $string['telegram_enabled_save_failed'] = 'The Telegram integration switch could not be saved. Please try again.';
-$string['telegram_gateway_timeout'] = 'Gateway timeout (seconds)';
-$string['telegram_gateway_timeout_help'] = 'Maximum seconds to wait for the Jedomi Gateway to respond (5-300).';
+$string['telegram_gateway_timeout'] = 'AI response timeout (seconds)';
+$string['telegram_gateway_timeout_help'] = 'Maximum seconds to wait for each AI request of the Telegram bot, sent through the '
+    . 'Datacurso AI provider (5-300).';
 $string['telegram_heading'] = 'Telegram';
 $string['telegram_heading_help'] = 'Connect Jedomi to a Telegram bot so users can chat via Telegram.';
 $string['telegram_help_footer'] = 'After linking, send any message and I\'ll forward it to Jedomi AI for a response.';
@@ -674,17 +686,17 @@ $string['telegram_setup_show'] = 'Show setup guide';
 $string['telegram_status_connected'] = 'Connected';
 $string['telegram_status_disconnected'] = 'Disconnected';
 $string['telegram_status_invalid_token'] = 'invalid token, paste it again and save.';
-$string['telegram_status_pending'] = 'Pending — paste webhook URL in @BotFather';
+$string['telegram_status_pending'] = 'Pending — save the bot token to register the webhook';
 $string['telegram_step1_desc'] = 'Open Telegram, search for <strong>@BotFather</strong>, send <code>/newbot</code>, choose a name '
     . 'and username. Copy the token it gives you (format: <code>123456:ABC-DEF...</code>).';
 $string['telegram_step1_title'] = 'Create a bot in @BotFather';
 $string['telegram_step2_desc'] = 'Paste the token in the <strong>Bot token</strong> field below, enable the integration toggle, '
     . 'and click <strong>Save changes</strong>.';
 $string['telegram_step2_title'] = 'Paste the token and save';
-$string['telegram_step3_desc'] = 'Copy the <strong>Webhook URL</strong> shown after saving. Then go to @BotFather and run: '
-    . '<code>/setwebhook</code>. Or use this curl command:';
-$string['telegram_step3_note'] = 'For local development (DDEV), use ngrok to get a public HTTPS URL first: <code>ngrok http '
-    . 'https://moodle2.ddev.site --host-header=moodle2.ddev.site</code>';
+$string['telegram_step3_desc'] = 'Nothing to do: the plugin registers the <strong>Webhook URL</strong> in Telegram '
+    . 'automatically when the bot token is saved. If the site URL changes, save the bot token again to register the new URL.';
+$string['telegram_step3_note'] = 'Telegram only delivers messages to a public HTTPS URL. For local development, expose the site '
+    . 'with a tunnel such as ngrok and use that URL as the site URL.';
 $string['telegram_step3_title'] = 'Register the webhook in Telegram';
 $string['telegram_step4_desc'] = 'Use the role toggles below to control which Moodle roles can use Telegram. Site admins always '
     . 'have access regardless of this setting.';
@@ -715,7 +727,8 @@ $string['telegram_webhook_secret'] = 'Webhook secret';
 $string['telegram_webhook_secret_help'] = 'Random secret appended to the webhook URL for security. Regenerate if compromised.';
 $string['telegram_webhook_status'] = 'Webhook Status';
 $string['telegram_webhook_url'] = 'Webhook URL';
-$string['telegram_webhook_url_help'] = 'Copy this URL into @BotFather with /setwebhook.';
+$string['telegram_webhook_url_help'] = 'Registered in Telegram automatically when the bot token is saved. If the site URL '
+    . 'changes, save the bot token again to register the new URL.';
 $string['thinking'] = 'Thinking...';
 $string['toggle_thinking'] = 'Toggle thinking animation';
 $string['token_expired'] = 'The chat permissions have expired. Reload the page to keep using Jedomi.';

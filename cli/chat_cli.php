@@ -33,7 +33,7 @@ define('AJAX_SCRIPT', false);
 // phpcs:ignore moodle.Files.MoodleInternal.MoodleInternalGlobalState -- CLI guard runs before config.php.
 if (isset($_SERVER['REMOTE_ADDR']) || PHP_SAPI !== 'cli') {
     http_response_code(403);
-    die('Acceso denegado. Este script solo puede ejecutarse desde l&iacute;nea de comandos.');
+    die('Access denied. This script can only be run from the command line.');
 }
 
 require_once(__DIR__ . '/../../../config.php');
@@ -48,7 +48,7 @@ if ($disabled !== null) {
     cli_error($disabled['message']);
 }
 
-// ... ── Loguear como admin ────────────────────────────────────────────────────
+// ... ── Log in as admin ──────────────────────────────────────────────────────
 $admin = get_admin();
 if ($admin) {
     $USER = $admin;
@@ -69,9 +69,9 @@ echo "  JEDOMI CLI CHAT — FULL PIPELINE DEBUG\n";
 echo "  User: " . ($USER->id ?? 'none') . " | Model: {$model}\n";
 echo "  AI route: " . \local_jedomi\ai\client::PATH . " (Datacurso AI provider)\n";
 echo str_repeat("=", 60) . "\n";
-echo "  Comandos: help, debug on/off, exit\n\n";
+echo "  Commands: help, debug on/off, exit\n\n";
 
-// ... ── Build system message + tools (EXACTAMENTE como chatproxy) ─────────────
+// ... ── Build system message + tools (EXACTLY like chatproxy) ─────────────────
 $role = 'admin';
 $spt  = ['user_id' => $USER->id, 'course_id' => 0, 'role' => $role];
 $context = ['location' => 'cli', 'course_name' => '', 'page_url' => '', 'page_title' => ''];
@@ -80,7 +80,7 @@ $systemmsg = \local_jedomi\proxy\system_message::build($role, $spt, $context);
 $messages[] = $systemmsg;
 
 $tools = \local_jedomi_get_tool_definitions($role);
-// Convertir formato tool definition → OpenAI tools array.
+// Convert the tool definitions into an OpenAI tools array.
 $openaitools = [];
 foreach ($tools as $t) {
     $openaitools[] = [
@@ -90,7 +90,7 @@ foreach ($tools as $t) {
 }
 
 if ($debug) {
-    echo "  Tools disponibles: " . count($openaitools) . "\n";
+    echo "  Available tools: " . count($openaitools) . "\n";
     foreach ($openaitools as $t) {
         echo "    - {$t['function']['name']}\n";
     }
@@ -159,21 +159,21 @@ while (true) {
     }
     if ($input === 'help') {
         echo "\n";
-        echo "  ─── COMANDOS ─────────────────────────────────────\n";
-        echo "  help              Mostrá esta ayuda\n";
-        echo "  debug on/off      Mostrá u ocultá los tool calls crudos\n";
-        echo "  exit              Salí\n";
+        echo "  ─── COMMANDS ─────────────────────────────────────\n";
+        echo "  help              Show this help\n";
+        echo "  debug on/off      Show or hide the raw tool calls\n";
+        echo "  exit              Quit\n";
         echo "\n";
-        echo "  Cualquier otra cosa se envía como mensaje al AI.\n";
-        echo "  El AI tiene acceso a " . count($openaitools) . " herramientas:\n";
+        echo "  Anything else is sent as a message to the AI.\n";
+        echo "  The AI has access to " . count($openaitools) . " tools:\n";
         foreach ($openaitools as $t) {
             echo "    - {$t['function']['name']}\n";
         }
         echo "\n";
-        echo "  FLUJO TÍPICO:\n";
-        echo "  El AI primero busca (ws_search), describe (ws_describe) y\n";
-        echo "  luego ejecuta (ws_execute). Si un WS falla por parámetros\n";
-        echo "  opcionales faltantes, reintenta automáticamente con defaults.\n";
+        echo "  TYPICAL FLOW:\n";
+        echo "  The AI first searches (ws_search), describes (ws_describe) and\n";
+        echo "  then executes (ws_execute). If a web service fails because of\n";
+        echo "  missing optional parameters, it retries with default values.\n";
         echo "  ──────────────────────────────────────────────────\n";
         continue;
     }
@@ -183,7 +183,7 @@ while (true) {
     $turn = 0;
     while ($turn < 25) {
         $turn++;
-        echo "\n  \e[2m⏳ Turno {$turn}/25 — AI pensando...\e[0m\n";
+        echo "\n  \e[2m⏳ Turn {$turn}/25 — AI thinking...\e[0m\n";
 
         $response = call_ai($messages, $openaitools);
         if ($response === null) {
@@ -209,15 +209,15 @@ while (true) {
                          json_encode($tcargs, JSON_UNESCAPED_UNICODE) . ")\e[0m\n";
                 }
 
-                // Ejecutar.
-                echo "  \e[35m⚡ Ejecutando {$tcname}...\e[0m\n";
+                // Execute.
+                echo "  \e[35m⚡ Executing {$tcname}...\e[0m\n";
                 $result = execute_tool($tcname, $tcargs);
 
                 // Parse the result to show a summary.
                 $resultparsed = json_decode($result, true);
                 $iserror = isset($resultparsed['error']);
 
-                // Mostrar resultado resumido.
+                // Show a summary of the result.
                 if ($iserror) {
                     echo "  \e[31m❌ Error: " . mb_substr($resultparsed['error'], 0, 200) . "\e[0m\n";
                 } else {
@@ -226,7 +226,7 @@ while (true) {
                     if (isset($resultparsed['result'])) {
                         $inner = json_decode($resultparsed['result'], true);
                         if (is_array($inner)) {
-                            $summary = count($inner) . ' resultado(s)';
+                            $summary = count($inner) . ' result(s)';
                             if (count($inner) > 0 && is_array($inner[0])) {
                                 $summary .= ' (' . implode(', ', array_slice(array_keys($inner[0]), 0, 4)) . ')';
                             }
@@ -236,7 +236,7 @@ while (true) {
                     } else if (isset($resultparsed['success'])) {
                         $summary = 'success: ' . (isset($resultparsed['data']) ? 'data received' : 'true');
                     } else if (isset($resultparsed['rows'])) {
-                        $summary = count($resultparsed['rows']) . ' filas';
+                        $summary = count($resultparsed['rows']) . ' rows';
                     } else {
                         $summary = 'OK (' . mb_substr($result, 0, 80) . ')';
                     }
@@ -247,7 +247,7 @@ while (true) {
                     echo "  \e[2m  Result raw: " . mb_substr($result, 0, 300) . "\e[0m\n";
                 }
 
-                // Agregar resultado a messages.
+                // Add the result to the messages.
                 $messages[] = [
                     'role' => 'tool',
                     'tool_call_id' => $tcid,
@@ -255,14 +255,14 @@ while (true) {
                 ];
             }
         } else {
-            // Sin tool calls → respuesta final.
+            // No tool calls → final answer.
             break;
         }
     }
 
     if ($turn >= 25) {
-        echo "  \e[31m✗ Máximo de 25 turnos alcanzado\e[0m\n";
+        echo "  \e[31m✗ Maximum of 25 turns reached\e[0m\n";
     }
 }
 
-echo "\n¡Chau!\n";
+echo "\nBye!\n";

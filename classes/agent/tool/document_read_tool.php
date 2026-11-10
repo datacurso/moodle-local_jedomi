@@ -109,7 +109,7 @@ class document_read_tool implements agent_tool {
     /**
      * Locate a PDF in the module context and return its text read by the AI service.
      *
-     * Requires a teacher-or-above role and course view capability.
+     * Requires a teacher-or-above role and access to the course module (see {@see self::can_read_module()}).
      *
      * @param int $cmid Course module id.
      * @param string $role Jedomi role of the user.
@@ -118,7 +118,7 @@ class document_read_tool implements agent_tool {
      * @return string JSON-encoded {cmid, filename, pages_total, pages_vision, pages_skipped, text}, or {error}.
      */
     public static function read(int $cmid, string $role, string $pages = '', ?int $userid = null): string {
-        global $DB;
+        global $DB, $USER;
 
         if (!model_settings::is_files_enabled()) {
             return json_encode(['error' => get_string('files_error_disabled', 'local_jedomi')]);
@@ -132,14 +132,7 @@ class document_read_tool implements agent_tool {
 
         try {
             $context = \context_module::instance($cmid);
-            get_coursemodule_from_id('', $cmid, 0, false, MUST_EXIST);
-            if ($userid === null) {
-                require_capability('moodle/course:view', $context->get_course_context());
-            } else if (
-                !has_capability('moodle/course:view', $context->get_course_context(), $userid)
-                    && !has_capability('moodle/course:manageactivities', $context, $userid)
-            ) {
-                // An agent reads only the documents its creator can manage or view as a course manager.
+            if (!self::can_read_module($cmid, $context, $userid ?? (int) ($USER->id ?? 0))) {
                 return json_encode(['error' => 'permission_denied']);
             }
 
@@ -175,5 +168,31 @@ class document_read_tool implements agent_tool {
             'pages_skipped' => $read['pages_skipped'],
             'text' => $read['text'],
         ], JSON_UNESCAPED_UNICODE);
+    }
+
+    /**
+     * Whether a user can see a course module and therefore read its documents.
+     *
+     * The user must be able to manage the activity, or access its course, see the module (visibility and
+     * availability) and hold the view capability of the module when it defines one.
+     *
+     * @param int $cmid Course module id.
+     * @param \context_module $context Context of the module.
+     * @param int $userid User whose permissions are checked; 0 is always denied.
+     * @return bool
+     */
+    private static function can_read_module(int $cmid, \context_module $context, int $userid): bool {
+        if ($userid <= 0) {
+            return false;
+        }
+        [$course, $cm] = get_course_and_cm_from_cmid($cmid, '', 0, $userid);
+        if (has_capability('moodle/course:manageactivities', $context, $userid)) {
+            return true;
+        }
+        if (!can_access_course($course, $userid, '', true) || !$cm->uservisible) {
+            return false;
+        }
+        $viewcapability = 'mod/' . $cm->modname . ':view';
+        return !get_capability_info($viewcapability) || has_capability($viewcapability, $context, $userid);
     }
 }

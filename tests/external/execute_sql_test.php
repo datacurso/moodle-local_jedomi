@@ -58,7 +58,6 @@ final class execute_sql_test extends \advanced_testcase {
             'truncate' => ['TRUNCATE TABLE {course}'],
             'administrative statement' => ['SET GLOBAL max_connections = 1'],
             'show' => ['SHOW TABLES'],
-            'read query writing a file' => ["SELECT fullname FROM {course} INTO OUTFILE '/tmp/jedomi_courses.txt'"],
             'leading spaces before a write' => ["   \n DELETE FROM {course} WHERE id = :id"],
         ];
     }
@@ -84,6 +83,21 @@ final class execute_sql_test extends \advanced_testcase {
             $this->assertSame(get_string('non_select_rejected', 'local_jedomi'), $e->getMessage());
         }
         $this->assertSame('Untouched', $DB->get_field('course', 'fullname', ['id' => $course->id]));
+    }
+
+    /**
+     * MDL-UNIT-019: a read query that writes a server file is rejected without running, for administrators too.
+     */
+    public function test_read_query_writing_a_file_is_rejected(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+
+        try {
+            $this->run_query("SELECT fullname FROM {course} /* x */ InTo   OutFile '/tmp/jedomi_courses.txt'");
+            $this->fail('A query writing a file must be rejected');
+        } catch (\moodle_exception $e) {
+            $this->assertSame('sql_function_rejected', $e->errorcode);
+        }
     }
 
     /**
@@ -134,6 +148,24 @@ final class execute_sql_test extends \advanced_testcase {
             $this->assertSame('nopermissions', $e->errorcode);
         }
         // The capability has no language string yet, which only raises a developer notice.
+        $this->resetDebugging();
+    }
+
+    /**
+     * MDL-UNIT-019: the companion web service still requires the companion API permission: an editing teacher, who
+     * queries their own course from the chat channels, cannot call it.
+     */
+    public function test_editing_teacher_cannot_call_the_companion_web_service(): void {
+        $this->resetAfterTest();
+        $course = $this->getDataGenerator()->create_course();
+        $this->setUser($this->getDataGenerator()->create_and_enrol($course, 'editingteacher'));
+
+        try {
+            $this->run_query('SELECT id FROM {course} WHERE id = ' . (int) $course->id);
+            $this->fail('The companion web service must require its permission');
+        } catch (\required_capability_exception $e) {
+            $this->assertSame('nopermissions', $e->errorcode);
+        }
         $this->resetDebugging();
     }
 

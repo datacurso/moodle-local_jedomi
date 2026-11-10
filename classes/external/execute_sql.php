@@ -53,12 +53,6 @@ class execute_sql extends external_api {
     /** Maximum rows the function will ever return. */
     private const MAX_ROWS = 100;
 
-    /** Hard query timeout in milliseconds (MariaDB max_statement_time). */
-    private const TIMEOUT_MS = 5000;
-
-    /** PII column names that must be redacted from logs. */
-    private const PII_COLUMNS = ['email', 'firstname', 'lastname', 'idnumber', 'password', 'phone1', 'phone2'];
-
     // -------------------------------------------------------------------------
     // Parameter / return definitions
     // -------------------------------------------------------------------------.
@@ -114,7 +108,7 @@ class execute_sql extends external_api {
      * @param  string $hmacsignature HMAC-SHA256 hex signature from the gateway.
      * @param  int    $hmactimestamp Unix timestamp from the request header.
      * @param  string $payloadhash   SHA256 hex of the request body.
-     * @param  bool   $skiphmac      Skip HMAC verification (used by chatproxy — auth via SPT).
+     * @param  bool   $skiphmac      Skip HMAC verification (in-process callers that already authenticated the user).
      * @return array Rows as JSON strings plus row_count, truncated flag and execution_ms.
      */
     public static function execute(
@@ -125,7 +119,7 @@ class execute_sql extends external_api {
         string $payloadhash,
         bool $skiphmac = false
     ): array {
-        global $DB, $USER;
+        global $USER;
 
         // ... --- Capability check ---
         $context = context_system::instance();
@@ -163,140 +157,20 @@ class execute_sql extends external_api {
             );
         }
 
-        // ... --- SELECT-only enforcement (defense-in-depth, QG-01 equivalent) ---
-        $firsttoken = strtoupper(strtok(trim($sql), " \t\n\r"));
-        if ($firsttoken !== 'SELECT') {
-            // CRITICAL security event — log the hash, never the SQL text.
-            $sqlhash = hash('sha256', $sql);
-            \local_jedomi_log(sprintf(
-                '[local_jedomi] CRITICAL security event: non-SELECT rejected ip=%s sql_hash=%s',
-                getremoteaddr(),
-                $sqlhash
-            ));
-            throw new \moodle_exception('non_select_rejected', 'local_jedomi');
-        }
+        // ... --- SELECT only, guard and execution with row cap and timeout (shared with the chat channels) ---
+        $result = \local_jedomi\local\query_runner::run($sql, $params, (int) $USER->id, self::MAX_ROWS);
 
-        // ... --- File exfiltration check (QG-02 equivalent, defense-in-depth) ---
-        if (preg_match('/\bINTO\s+(OUTFILE|DUMPFILE)\b/i', $sql)) {
-            $sqlhash = hash('sha256', $sql);
-            \local_jedomi_log(sprintf(
-                '[local_jedomi] CRITICAL security event: INTO OUTFILE/DUMPFILE rejected ip=%s sql_hash=%s',
-                getremoteaddr(),
-                $sqlhash
-            ));
-            throw new \moodle_exception('non_select_rejected', 'local_jedomi');
-        }
-
-        // ... --- Sensitive tables and courses the user does not manage (shared by every channel) ---
-        $rejection = \local_jedomi\local\sql_guard::rejection_reason($sql, (int) $USER->id, $params);
-        if ($rejection !== null) {
-            \local_jedomi_log(sprintf(
-                '[local_jedomi] security event: %s ip=%s sql_hash=%s',
-                $rejection,
-                getremoteaddr(),
-                hash('sha256', $sql)
-            ));
-            throw new \moodle_exception($rejection, 'local_jedomi');
-        }
-
-        // ... --- Execute with timeout ---
-        $start = microtime(true);
-
-        try {
-            // Set MariaDB statement timeout before running the query.
-            // This is a best-effort; it works on MariaDB 10.1+ and is silently
-            // ignored on MySQL (which uses MAX_EXECUTION_TIME hint instead).
-            try {
-                $DB->execute('SET STATEMENT max_statement_time = ' . (self::TIMEOUT_MS / 1000) . ' FOR SELECT 1');
-                // phpcs:ignore Generic.CodeAnalysis.EmptyStatement.DetectedCatch -- comment-only catch.
-            } catch (\Exception $e) {
-                // Non-MariaDB — ignore, query will run without server-side timeout.
-            }
-
-            // Enforce row cap at the DB layer regardless of LIMIT in the SQL.
-            // We fetch without extra LIMIT (to avoid double-LIMIT conflicts with
-            // model-generated SQL that already contains LIMIT clauses).
-            // Then we cap in PHP.
-            $recordset = $DB->get_recordset_sql($sql, $params);
-
-            $rows      = [];
-            $count     = 0;
-            $truncated = false;
-
-            foreach ($recordset as $record) {
-                $count++;
-                if ($count > self::MAX_ROWS) {
-                    $truncated = true;
-                    break;
-                }
-                // Rows are returned as JSON strings to avoid Moodle's external
-                // API trying to describe every possible column structure.
-                $rows[] = ['json_row' => json_encode(
-                    \local_jedomi\local\sql_guard::filter_row((array) $record),
-                    JSON_UNESCAPED_UNICODE
-                )];
-            }
-            $recordset->close();
-        } catch (\dml_exception $e) {
-            $executionms = (int) ((microtime(true) - $start) * 1000);
-            // Distinguish timeout from other DB errors.
-            $istimeout = stripos($e->getMessage(), 'max_statement_time') !== false
-                       || stripos($e->getMessage(), 'Query execution was interrupted') !== false;
-
-            $sqlhash = hash('sha256', $sql);
-            \local_jedomi_log(sprintf(
-                '[local_jedomi] DB error: %s sql_hash=%s execution_ms=%d',
-                $istimeout ? 'query_timeout' : 'db_error',
-                $sqlhash,
-                $executionms
-            ));
-
-            $code = $istimeout ? 'query_timeout' : 'execute_sql_error';
-            $dbg = $e->getMessage();
-            if (method_exists($e, 'debuginfo') && !empty($e->debuginfo)) {
-                $dbg .= ' | ' . $e->debuginfo;
-            }
-            throw new \moodle_exception($code, 'local_jedomi', '', null, $dbg);
-        } catch (\Exception $e) {
-            // Catch non-DB exceptions too (moodle_exception, coding_exception, etc.)
-            $executionms = (int) ((microtime(true) - $start) * 1000);
-            $sqlhash = hash('sha256', $sql);
-            $extra = '';
-            if ($e instanceof \moodle_exception) {
-                // The message, its parameters and the debug info can quote the query: only the code is logged.
-                $extra = sprintf(' errorcode="%s"', $e->errorcode);
-            }
-            \local_jedomi_log(sprintf(
-                '[local_jedomi] DB error (non-dml): class=%s sql_hash=%s exec_ms=%d%s',
-                get_class($e),
-                $sqlhash,
-                $executionms,
-                $extra
-            ));
-            $dbg = $e->getMessage();
-            if (method_exists($e, 'debuginfo') && !empty($e->debuginfo)) {
-                $dbg .= ' | ' . $e->debuginfo;
-            }
-            throw new \moodle_exception('execute_sql_error', 'local_jedomi', '', null, $dbg);
-        }
-
-        $executionms = (int) ((microtime(true) - $start) * 1000);
-
-        // ... --- Audit log (no raw data, PII column names redacted) ---
-        $sqlhash = hash('sha256', $sql);
-        \local_jedomi_log(sprintf(
-            '[local_jedomi] execute_sql: sql_hash=%s row_count=%d truncated=%s execution_ms=%d',
-            $sqlhash,
-            count($rows),
-            $truncated ? 'true' : 'false',
-            $executionms
-        ));
+        // Rows are returned as JSON strings so the external API does not have to describe every possible column.
+        $rows = array_map(
+            static fn(array $row): array => ['json_row' => json_encode($row, JSON_UNESCAPED_UNICODE)],
+            $result['rows']
+        );
 
         return [
             'rows'         => $rows,
             'row_count'    => count($rows),
-            'truncated'    => $truncated,
-            'execution_ms' => $executionms,
+            'truncated'    => $result['truncated'],
+            'execution_ms' => $result['execution_ms'],
         ];
     }
 }

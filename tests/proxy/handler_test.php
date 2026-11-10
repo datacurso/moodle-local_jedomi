@@ -853,12 +853,84 @@ final class handler_test extends \advanced_testcase {
     }
 
     /**
-     * MDL-INT-041: the tools offered to managers and teachers match the ones they can run, in every channel.
-     * [Pendiente:skip]
+     * An editing teacher of one course, who does not hold the companion API permission, set as the session user.
+     *
+     * @return array{0: \stdClass, 1: \stdClass, 2: \stdClass} Teacher, own course and another course.
      */
-    public function test_tools_offered_to_managers_and_teachers_can_be_run(): void {
-        $this->markTestSkipped('Pending fix: the database and web service tools need a capability prohibited to '
-            . 'authenticated users, so only administrators can run them.');
+    private function editing_teacher(): array {
+        $this->resetAfterTest();
+        $own = $this->getDataGenerator()->create_course();
+        $other = $this->getDataGenerator()->create_course(['fullname' => 'Foreign Course Marker']);
+        $teacher = $this->getDataGenerator()->create_and_enrol($own, 'editingteacher');
+        $this->getDataGenerator()->create_and_enrol($own, 'student', ['firstname' => 'Participant', 'lastname' => 'Marker']);
+        $this->setUser($teacher);
+        $this->assertFalse(has_capability('local/jedomi:companion_api', \context_system::instance()));
+        return [$teacher, $own, $other];
+    }
+
+    /**
+     * MDL-INT-041 / MDL-INT-042: like in Telegram, an editing teacher (not a manager, without the companion API
+     * permission) queries the data of their own course from the web chat, and is refused for another course and for
+     * private data of the site.
+     */
+    public function test_teacher_queries_their_own_course_from_the_web_chat(): void {
+        [, $own, $other] = $this->editing_teacher();
+        $query = static fn(string $sql): array => json_decode(handler::run_tool('execute_sql', ['sql' => $sql], 'teacher'), true);
+
+        $owncourse = $query("SELECT id, fullname FROM {course} WHERE id = {$own->id}");
+        $this->assertSame(1, $owncourse['row_count'] ?? null, json_encode($owncourse));
+
+        $names = $query('SELECT u.firstname, u.lastname FROM {user_enrolments} ue JOIN {enrol} e ON e.id = ue.enrolid '
+            . 'JOIN {user} u ON u.id = ue.userid WHERE e.courseid = ' . $own->id);
+        $this->assertSame(2, $names['row_count'] ?? null, json_encode($names));
+        $this->assertStringContainsString('Marker', implode(' ', array_column($names['rows'], 'json_row')));
+
+        $othercourse = $query("SELECT fullname FROM {course} WHERE id = {$other->id}");
+        $this->assertStringNotContainsString('Foreign Course Marker', json_encode($othercourse));
+        $this->assertStringContainsString(get_string('sql_course_rejected', 'local_jedomi'), $othercourse['error']);
+
+        $messages = $query('SELECT id, fullmessage FROM {messages}');
+        $this->assertStringContainsString(get_string('sql_table_not_allowed', 'local_jedomi'), $messages['error']);
+    }
+
+    /**
+     * MDL-INT-041: a student never runs database queries from the web chat, not even on their own course.
+     */
+    public function test_student_cannot_query_from_the_web_chat(): void {
+        $this->resetAfterTest();
+        $course = $this->getDataGenerator()->create_course();
+        $this->setUser($this->getDataGenerator()->create_and_enrol($course, 'student'));
+
+        $sql = "SELECT id FROM {course} WHERE id = {$course->id}";
+
+        $result = json_decode(handler::run_tool('execute_sql', ['sql' => $sql], 'student'), true);
+
+        $this->assertSame('permission_denied', $result['error'] ?? null);
+        $this->assertArrayNotHasKey('rows', $result);
+    }
+
+    /**
+     * MDL-INT-041 / MDL-INT-017: like in Telegram, a teacher without the companion API permission runs from the web chat
+     * the web service functions of the teacher list, and not the others.
+     */
+    public function test_teacher_runs_the_web_services_of_their_role_list_from_the_web_chat(): void {
+        [$teacher] = $this->editing_teacher();
+        \local_jedomi\local\service\admin_settings_service::save_ws_allowlist('teacher', ['core_webservice_get_site_info']);
+
+        $listed = json_decode(handler::run_tool(
+            'ws_execute',
+            ['wsname' => 'core_webservice_get_site_info', 'params' => '{}'],
+            'teacher'
+        ), true);
+        $this->assertArrayHasKey('result', $listed, json_encode($listed));
+        $this->assertSame((int) $teacher->id, (int) json_decode($listed['result'], true)['userid']);
+
+        $unlisted = json_decode(handler::run_tool(
+            'ws_execute',
+            ['wsname' => 'core_course_get_categories', 'params' => '{}'],
+            'teacher'
+        ), true);
+        $this->assertStringContainsString(get_string('ws_not_in_allowlist', 'local_jedomi'), $unlisted['error']);
     }
 
     /**

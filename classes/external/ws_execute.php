@@ -35,6 +35,7 @@ use core_external\external_function_parameters;
 use core_external\external_single_structure;
 use core_external\external_value;
 use local_jedomi\companion_hmac;
+use local_jedomi\local\ws_runner;
 
 /**
  * External function that proxies a call to another Moodle web service function through a role allowlist.
@@ -82,7 +83,7 @@ class ws_execute extends external_api {
      * @param  string $hmacsignature HMAC hex signature.
      * @param  int    $hmactimestamp Unix timestamp.
      * @param  string $payloadhash   SHA256 hex of the request body.
-     * @param  bool   $skiphmac      Skip HMAC (used by chatproxy — auth via SPT).
+     * @param  bool   $skiphmac      Skip HMAC (in-process callers that already authenticated the user).
      * @return array                  ['result' => json_encode($targetresult)]
      */
     public static function execute(
@@ -93,8 +94,6 @@ class ws_execute extends external_api {
         string $payloadhash,
         bool $skiphmac = false
     ): array {
-        global $DB;
-
         // ... ── Gate 1: validate context + capability ────────────────────────────
         $context = context_system::instance();
         self::validate_context($context);
@@ -125,73 +124,15 @@ class ws_execute extends external_api {
             );
         }
 
-        // ... ── Gate 3: allowlist validation ─────────────────────────────────────
+        // ... ── Gate 3: role list (shared with the chat channels) ────────────────────
         require_once(__DIR__ . '/../../lib.php');
-        $role = \local_jedomi_get_user_role();
-        $allowlist = \local_jedomi_get_role_allowlist($role);
-        // Admin without a saved allowlist → full access.
-        // Every other role (or an admin with a saved allowlist, even empty) needs the function in it.
-        if (!\local_jedomi_role_has_full_ws_access($role)) {
-            if (!in_array($wsname, $allowlist, true)) {
-                throw new \moodle_exception('ws_not_in_allowlist', 'local_jedomi');
-            }
+        if (!ws_runner::role_allows(\local_jedomi_get_user_role(), $wsname)) {
+            throw new \moodle_exception('ws_not_in_allowlist', 'local_jedomi');
         }
 
-        // ... ── Resolve target class + method ──────────────────────────────────────
-        $funcrecord = $DB->get_record('external_functions', ['name' => $wsname], 'classname, classpath, component, methodname');
-        if (!$funcrecord) {
-            throw new \moodle_exception('ws_not_found', 'local_jedomi');
-        }
-        $classname = \local_jedomi_resolve_ws_classname($wsname);
-        // Class_exists check uses the resolved classname (with require_once fallback).
-        if (!$classname || !class_exists($classname)) {
-            throw new \moodle_exception('ws_not_found', 'local_jedomi');
-        }
-        $methodname = $funcrecord->methodname;
-        if (!method_exists($classname, $methodname)) {
-            throw new \moodle_exception(
-                'ws_execute_error',
-                'local_jedomi',
-                '',
-                "Method {$classname}::{$methodname}() does not exist"
-            );
-        }
-
-        // ... ── Decode params ────────────────────────────────────────────────────
+        // ... ── Gate 4: call the target function (native capabilities inside) ─────
         $decoded = json_decode($params, true);
-        if (!is_array($decoded)) {
-            $decoded = [];
-        }
-
-        // ... ── Map params by name via reflection ────────────────────────────────
-        try {
-            $ref = new \ReflectionMethod($classname, $methodname);
-            $callargs = [];
-            foreach ($ref->getParameters() as $param) {
-                $name = $param->getName();
-                if (array_key_exists($name, $decoded)) {
-                    $callargs[] = $decoded[$name];
-                } else if ($param->isDefaultValueAvailable()) {
-                    $callargs[] = $param->getDefaultValue();
-                } else {
-                    throw new \moodle_exception('missingparam', 'error', '', $name);
-                }
-            }
-
-            // ... ── Gate 4: call target WS (native capabilities inside) ──────────
-            $result = $ref->invokeArgs(null, $callargs);
-        } catch (\invalid_parameter_exception $e) {
-            $detail = $e->getMessage();
-            if (method_exists($e, 'getDebugInfo') && $e->getDebugInfo()) {
-                $detail .= ' | debug: ' . $e->getDebugInfo();
-            }
-            throw new \moodle_exception('ws_execute_error', 'local_jedomi', '', $detail);
-        } catch (\moodle_exception $e) {
-            throw $e;
-        } catch (\Exception $e) {
-            // Re-throw with original message preserved for debugging.
-            throw new \moodle_exception('ws_execute_error', 'local_jedomi', '', $e->getMessage() . ' [' . get_class($e) . ']');
-        }
+        $result = ws_runner::call(ws_runner::resolve($wsname), is_array($decoded) ? $decoded : []);
 
         return ['result' => json_encode($result)];
     }
