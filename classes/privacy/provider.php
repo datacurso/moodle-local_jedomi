@@ -105,8 +105,10 @@ class provider implements
             'timecreated' => 'privacy:metadata:local_jedomi_query_log:timecreated',
         ], 'privacy:metadata:local_jedomi_query_log');
 
-        $collection->add_user_preference('local_jedomi_grade_notifications',
-            'privacy:metadata:preference:local_jedomi_grade_notifications');
+        $collection->add_user_preference(
+            'local_jedomi_grade_notifications',
+            'privacy:metadata:preference:local_jedomi_grade_notifications'
+        );
 
         $collection->add_external_location_link('jedomi_ai_service', [
             'userid' => 'privacy:metadata:jedomi_ai_service:userid',
@@ -213,8 +215,12 @@ class provider implements
     public static function export_user_preferences(int $userid) {
         $notified = get_user_preferences('local_jedomi_grade_notifications', null, $userid);
         if ($notified !== null) {
-            writer::export_user_preference('local_jedomi', 'local_jedomi_grade_notifications', $notified,
-                get_string('privacy:metadata:preference:local_jedomi_grade_notifications', 'local_jedomi'));
+            writer::export_user_preference(
+                'local_jedomi',
+                'local_jedomi_grade_notifications',
+                $notified,
+                get_string('privacy:metadata:preference:local_jedomi_grade_notifications', 'local_jedomi')
+            );
         }
     }
 

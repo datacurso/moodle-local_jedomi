@@ -253,20 +253,29 @@ class anonymizer {
      * @return string
      */
     private function anonymize_string(string $text): string {
-        $text = (string) preg_replace_callback('/[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}/iu',
-            fn(array $m): string => $this->placeholder('email', $m[0]), $text);
+        $text = (string) preg_replace_callback(
+            '/[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}/iu',
+            fn(array $m): string => $this->placeholder('email', $m[0]),
+            $text
+        );
 
         $names = $this->user_names_in($text);
         if (!empty($names)) {
-            $text = (string) preg_replace_callback('/(?<![\p{L}\[_])\p{Lu}[\p{L}\'\-]+/u',
+            $text = (string) preg_replace_callback(
+                '/(?<![\p{L}\[_])\p{Lu}[\p{L}\'\-]+/u',
                 fn(array $m): string => isset($names[\core_text::strtolower($m[0])]) ? $this->placeholder('person', $m[0])
-                    : $m[0], $text);
+                : $m[0],
+                $text
+            );
         }
 
         if ($this->level === self::LEVEL_STRICT) {
             // Codes mixing letters and digits (student numbers, document ids...); plain numbers are kept.
-            $text = (string) preg_replace_callback('/(?<![\p{L}\d_\[])(?=[\p{L}\d\-]*\d)(?=[\d\-]*\p{L})[\p{L}\d][\p{L}\d\-]{2,}/u',
-                fn(array $m): string => $this->placeholder('id', $m[0]), $text);
+            $text = (string) preg_replace_callback(
+                '/(?<![\p{L}\d_\[])(?=[\p{L}\d\-]*\d)(?=[\d\-]*\p{L})[\p{L}\d][\p{L}\d\-]{2,}/u',
+                fn(array $m): string => $this->placeholder('id', $m[0]),
+                $text
+            );
         }
         return $text;
     }
@@ -285,10 +294,14 @@ class anonymizer {
         $candidates = array_slice(array_values(array_unique($matches[0])), 0, self::MAX_NAME_CANDIDATES);
         [$firstsql, $firstparams] = $DB->get_in_or_equal($candidates, SQL_PARAMS_NAMED, 'fn');
         [$lastsql, $lastparams] = $DB->get_in_or_equal($candidates, SQL_PARAMS_NAMED, 'ln');
-        $records = $DB->get_records_sql("SELECT id, firstname, lastname
+        $records = $DB->get_records_sql(
+            "SELECT id, firstname, lastname
                                            FROM {user}
                                           WHERE deleted = 0 AND (firstname {$firstsql} OR lastname {$lastsql})",
-            $firstparams + $lastparams, 0, 500);
+            $firstparams + $lastparams,
+            0,
+            500
+        );
         $names = [];
         foreach ($records as $record) {
             foreach ([$record->firstname, $record->lastname] as $name) {

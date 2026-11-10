@@ -28,7 +28,8 @@
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-// phpcs:disable moodle.Files.RequireLogin.Missing
+// phpcs:disable moodle.Files.RequireLogin.Missing,moodle.Files.MoodleInternal.MoodleInternalGlobalState
+// Standalone CLI runner: it bootstraps the PHPUnit site itself, so MOODLE_INTERNAL is not defined yet.
 
 define('PHPUNIT_UTIL', true);
 require(__DIR__ . '/../../../../vendor/autoload.php');

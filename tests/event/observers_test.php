@@ -319,8 +319,10 @@ final class observers_test extends \advanced_testcase {
         $course = $this->getDataGenerator()->create_course(['fullname' => 'Biology 101']);
         $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
         $this->link_chat((int) $student->id);
-        $instance = $this->getDataGenerator()->create_module('assign',
-            ['course' => $course->id, 'name' => 'Cell essay'] + $settings);
+        $instance = $this->getDataGenerator()->create_module(
+            'assign',
+            ['course' => $course->id, 'name' => 'Cell essay'] + $settings
+        );
         $context = \context_module::instance($instance->cmid);
         $assign = new \assign($context, get_coursemodule_from_id('assign', $instance->cmid), $course);
         return [$student, $assign, $instance];
@@ -376,8 +378,11 @@ final class observers_test extends \advanced_testcase {
     public function test_interval_of_one_assignment_does_not_drop_another_assignment(): void {
         [$student, $first, $course] = $this->linked_student_with_assignment();
         $instance = $this->getDataGenerator()->create_module('assign', ['course' => $course->id, 'name' => 'Lab report']);
-        $second = new \assign(\context_module::instance($instance->cmid), get_coursemodule_from_id('assign', $instance->cmid),
-            $course);
+        $second = new \assign(
+            \context_module::instance($instance->cmid),
+            get_coursemodule_from_id('assign', $instance->cmid),
+            $course
+        );
 
         $this->grade($first, $student);
         $this->grade($second, $student);

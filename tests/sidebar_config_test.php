@@ -115,7 +115,8 @@ final class sidebar_config_test extends \advanced_testcase {
      * [Pendiente:skip]
      */
     public function test_quick_actions_use_the_real_course_of_the_page(): void {
-        $this->markTestSkipped('Pending fix: admin and in-course teacher quick actions never appear and the course id is taken from any page parameter.');
+        $this->markTestSkipped('Pending fix: admin and in-course teacher quick actions never appear'
+            . ' and the course id is taken from any page parameter.');
     }
 
     /**

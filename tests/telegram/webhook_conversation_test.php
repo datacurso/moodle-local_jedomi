@@ -80,9 +80,14 @@ final class webhook_conversation_test extends \advanced_testcase {
      */
     private function fresh_user(array $record = []): \stdClass {
         global $DB;
-        $DB->insert_record_raw('user', ['id' => 900000 + random_int(1, 90000), 'username' => 'filler_' . random_string(10),
+        $DB->insert_record_raw(
+            'user',
+            ['id' => 900000 + random_int(1, 90000), 'username' => 'filler_' . random_string(10),
             'mnethostid' => 1, 'confirmed' => 1, 'auth' => 'manual', 'deleted' => 1, 'email' => 'filler@example.com'],
-            false, false, true);
+            false,
+            false,
+            true
+        );
         return $this->getDataGenerator()->create_user($record);
     }
 
@@ -132,8 +137,10 @@ final class webhook_conversation_test extends \advanced_testcase {
      * @return string[]
      */
     private function role_tool_names(string $role): array {
-        $names = array_map(static fn(array $tool): string => $tool['function']['name'],
-            \local_jedomi_get_tool_definitions($role));
+        $names = array_map(
+            static fn(array $tool): string => $tool['function']['name'],
+            \local_jedomi_get_tool_definitions($role)
+        );
         sort($names);
         return $names;
     }
@@ -239,8 +246,10 @@ final class webhook_conversation_test extends \advanced_testcase {
 
         $this->say('779000004', 'Delete the weekly report agent');
 
-        $this->assertTrue($DB->record_exists('local_jedomi_agents', ['id' => $agentid]),
-            'The agent is not deleted before the user confirms');
+        $this->assertTrue(
+            $DB->record_exists('local_jedomi_agents', ['id' => $agentid]),
+            'The agent is not deleted before the user confirms'
+        );
         $withbuttons = array_filter($this->telegram->sent, static fn(array $m): bool =>
             !empty($m['replymarkup']['inline_keyboard']));
         $this->assertNotEmpty($withbuttons, 'The user is asked to confirm with buttons');
@@ -437,8 +446,11 @@ final class webhook_conversation_test extends \advanced_testcase {
 
         $this->assertSame([], $unavailable, 'Tools offered to the AI that cannot be used');
         preg_match_all('/^- ([a-z_]+)\(/m', $this->system_of($this->ai->calls[0]), $described);
-        $this->assertSame([], array_values(array_diff($described[1], $offered)),
-            'The instructions describe only the tools the role really has');
+        $this->assertSame(
+            [],
+            array_values(array_diff($described[1], $offered)),
+            'The instructions describe only the tools the role really has'
+        );
     }
 
     /**
@@ -459,8 +471,10 @@ final class webhook_conversation_test extends \advanced_testcase {
 
         $call = $this->ai->calls[0];
         $this->assertStringContainsString('Role: teacher', $this->system_of($call));
-        $this->assertSame([], array_values(array_intersect(['create_agent', 'delete_agent', 'list_agents'],
-            $this->tool_names($call))), 'No agent management tools for a teacher');
+        $this->assertSame([], array_values(array_intersect(
+            ['create_agent', 'delete_agent', 'list_agents'],
+            $this->tool_names($call)
+        )), 'No agent management tools for a teacher');
         $this->assertTrue($DB->record_exists('local_jedomi_agents', ['id' => $agentid]));
     }
 
@@ -509,8 +523,11 @@ final class webhook_conversation_test extends \advanced_testcase {
         $this->say('779000008', 'And now?');
 
         $this->assertCount(2, $this->ai->calls);
-        $this->assertStringNotContainsString('Quantum Optics 9', $this->system_of($this->ai->calls[1]),
-            'A removed enrolment no longer appears');
+        $this->assertStringNotContainsString(
+            'Quantum Optics 9',
+            $this->system_of($this->ai->calls[1]),
+            'A removed enrolment no longer appears'
+        );
         $this->assertStringContainsString('Role: student', $this->system_of($this->ai->calls[1]));
     }
 
@@ -602,8 +619,10 @@ final class webhook_conversation_test extends \advanced_testcase {
         }
 
         $this->assertSame([], $this->ai->calls, 'The message does not reach the AI');
-        $this->assertSame([get_string('telegram_msg_rate_check_failed', 'local_jedomi')],
-            array_column($this->telegram->sent, 'text'));
+        $this->assertSame(
+            [get_string('telegram_msg_rate_check_failed', 'local_jedomi')],
+            array_column($this->telegram->sent, 'text')
+        );
 
         $this->say('779000021', 'What are my courses?');
         $this->assertCount(1, $this->ai->calls, 'The bot serves the messages once the database recovers');
@@ -666,8 +685,12 @@ final class webhook_conversation_test extends \advanced_testcase {
         $this->assertStringContainsString('Ada Lovelace', $texts[0]);
         $this->assertStringContainsString('ada.l', $texts[0]);
         $this->assertSame(get_string('telegram_msg_expired_code', 'local_jedomi'), $texts[1], 'A used code is not valid');
-        $this->assertSame(['779100003'], array_values($DB->get_fieldset_select('local_jedomi_telegram_links', 'chatid',
-            'userid = ?', [$user->id])));
+        $this->assertSame(['779100003'], array_values($DB->get_fieldset_select(
+            'local_jedomi_telegram_links',
+            'chatid',
+            'userid = ?',
+            [$user->id]
+        )));
     }
 
     /**

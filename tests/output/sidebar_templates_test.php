@@ -222,7 +222,8 @@ final class sidebar_templates_test extends \advanced_testcase {
      * [Pendiente:skip]
      */
     public function test_answer_keeps_underscores_and_formats_headings_and_lists(): void {
-        $this->markTestSkipped('Pending fix: the italic format alters names with underscores and headings and numbered lists are not supported.');
+        $this->markTestSkipped('Pending fix: the italic format alters names with underscores'
+            . ' and headings and numbered lists are not supported.');
     }
 
     /**
@@ -340,8 +341,10 @@ final class sidebar_templates_test extends \advanced_testcase {
         $greeting = str_replace('{name}', 'Ada Lovelace', get_string('greeting', 'local_jedomi'));
         $this->assertStringContainsString(s($greeting), $html);
         $this->assertStringContainsString(s(get_string('hello', 'local_jedomi')), $html);
-        $this->assertMatchesRegularExpression('/class="jedomi-disclaimer">\s*' . preg_quote(s(get_string('ai_disclaimer',
-            'local_jedomi')), '/') . '/', $html);
+        $this->assertMatchesRegularExpression('/class="jedomi-disclaimer">\s*' . preg_quote(s(get_string(
+            'ai_disclaimer',
+            'local_jedomi'
+        )), '/') . '/', $html);
     }
 
     /**
@@ -368,8 +371,10 @@ final class sidebar_templates_test extends \advanced_testcase {
         $this->assertStringNotContainsString('id="jedomi-attach-btn"', $none);
 
         $both = $this->render_panel(true, true);
-        foreach (['data-type="image"', 'data-type="file"', 'data-type="audio"', 'id="jedomi-voice-btn"',
-                'id="jedomi-dropzone"', 'id="jedomi-attach-btn"'] as $option) {
+        foreach (
+            ['data-type="image"', 'data-type="file"', 'data-type="audio"', 'id="jedomi-voice-btn"',
+                'id="jedomi-dropzone"', 'id="jedomi-attach-btn"'] as $option
+        ) {
             $this->assertStringContainsString($option, $both, $option);
         }
     }

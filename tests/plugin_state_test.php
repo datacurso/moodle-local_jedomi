@@ -154,8 +154,11 @@ final class plugin_state_test extends \advanced_testcase {
         $config = (array) get_config('local_jedomi');
 
         foreach (array_keys($config) as $name) {
-            $this->assertDoesNotMatchRegularExpression('/(gateway|api_?key|api_?url|service_?url|docservice)/i', $name,
-                "Setting {$name} looks like a connection setting; the connection belongs to the provider");
+            $this->assertDoesNotMatchRegularExpression(
+                '/(gateway|api_?key|api_?url|service_?url|docservice)/i',
+                $name,
+                "Setting {$name} looks like a connection setting; the connection belongs to the provider"
+            );
         }
     }
 

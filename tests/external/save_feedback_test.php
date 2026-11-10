@@ -123,9 +123,15 @@ final class save_feedback_test extends \advanced_testcase {
         save_feedback::execute('good', 'padded', '   ' . str_repeat('b', $max) . '   ');
 
         $this->assertSame('Short answer', $DB->get_field('local_jedomi_feedback', 'messagetext', ['sessionid' => 'short']));
-        $this->assertSame(str_repeat('ñ', $max), $DB->get_field('local_jedomi_feedback', 'messagetext', ['sessionid' => 'atlimit']));
-        $this->assertSame(str_repeat('é', $max), $DB->get_field('local_jedomi_feedback', 'messagetext',
-            ['sessionid' => 'overlimit']));
+        $this->assertSame(
+            str_repeat('ñ', $max),
+            $DB->get_field('local_jedomi_feedback', 'messagetext', ['sessionid' => 'atlimit'])
+        );
+        $this->assertSame(str_repeat('é', $max), $DB->get_field(
+            'local_jedomi_feedback',
+            'messagetext',
+            ['sessionid' => 'overlimit']
+        ));
         $this->assertSame(str_repeat('b', $max), $DB->get_field('local_jedomi_feedback', 'messagetext', ['sessionid' => 'padded']));
     }
 

@@ -182,8 +182,13 @@ class read_file extends external_api {
         $hmactimestamp = $validated['hmac_timestamp'];
         $payloadhash   = $validated['payload_hash'];
 
-        self::verify_hmac('jedomi_read_file', $hmactimestamp, $payloadhash, $hmacsignature,
-            self::signed_params($validated));
+        self::verify_hmac(
+            'jedomi_read_file',
+            $hmactimestamp,
+            $payloadhash,
+            $hmacsignature,
+            self::signed_params($validated)
+        );
 
         // Normalise separators only. No traversal "cleaning" is attempted:
         // any path with a .. segment is rejected outright further down.

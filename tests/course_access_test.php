@@ -188,8 +188,10 @@ final class course_access_test extends \advanced_testcase {
 
         $this->assertTrue(course_access::is_enabled((int) $original->id));
         $this->assertFalse(course_access::is_enabled((int) $copy['id']), 'The copy is not in the selection');
-        $this->assertSame(0, $DB->count_records('local_jedomi_agents',
-            ['context_id' => \context_course::instance($copy['id'])->id]));
+        $this->assertSame(0, $DB->count_records(
+            'local_jedomi_agents',
+            ['context_id' => \context_course::instance($copy['id'])->id]
+        ));
         $this->assertSame(1, $DB->count_records('local_jedomi_agents'));
     }
 }

@@ -48,6 +48,9 @@ class sql_guard {
         'passwordsaltmain', 'sessionkey', 'linkcode', 'link_code',
     ];
 
+    /** @var string Backquote character MySQL uses to quote identifiers. */
+    private const BACKQUOTE = "\x60";
+
     /** @var string[] Column names that identify a course. */
     private const COURSE_COLUMNS = ['courseid', 'course', 'course_id'];
 
@@ -130,8 +133,11 @@ class sql_guard {
         $code = (string) preg_replace_callback('/\?/', static function () use (&$index, $positional, $value): string {
             return array_key_exists($index, $positional) ? $value($positional[$index++]) : "''";
         }, $code);
-        return (string) preg_replace_callback('/(?<![:\w]):([a-z_][a-z0-9_]*)/',
-            static fn(array $m): string => $named[$m[1]] ?? "''", $code);
+        return (string) preg_replace_callback(
+            '/(?<![:\w]):([a-z_][a-z0-9_]*)/',
+            static fn(array $m): string => $named[$m[1]] ?? "''",
+            $code
+        );
     }
 
     /**
@@ -143,7 +149,7 @@ class sql_guard {
      * @return string|null
      */
     private static function course_filter_rejection(string $code, int $userid): ?string {
-        $code = trim((string) preg_replace('/\s+/', ' ', str_replace('`', '', $code)));
+        $code = trim((string) preg_replace('/\s+/', ' ', str_replace(self::BACKQUOTE, '', $code)));
         $code = rtrim($code, '; ');
         $instances = self::table_instances($code);
         $scoped = array_filter($instances, static fn(array $instance): bool => $instance['scope'] !== null);
@@ -202,8 +208,12 @@ class sql_guard {
         if (!preg_match('/\bfrom\b(.*?)(?:\bwhere\b|\bgroup\s+by\b|\border\s+by\b|\bhaving\b|\blimit\b|$)/', $code, $m)) {
             return [];
         }
-        $pieces = preg_split('/\s*(,|\b(?:(?:left|inner)\s+(?:outer\s+)?)?join\b)\s*/', trim($m[1]), -1,
-            PREG_SPLIT_DELIM_CAPTURE);
+        $pieces = preg_split(
+            '/\s*(,|\b(?:(?:left|inner)\s+(?:outer\s+)?)?join\b)\s*/',
+            trim($m[1]),
+            -1,
+            PREG_SPLIT_DELIM_CAPTURE
+        );
         $instances = [];
         $kind = 'from';
         foreach ($pieces as $piece) {
@@ -220,8 +230,13 @@ class sql_guard {
             if (count($parts) === 2) {
                 [$piece, $on] = $parts;
             }
-            if (!preg_match('/^\s*(?:\{\s*([a-z0-9_]+)\s*\}|([a-z0-9_]+))\s*(?:as\s+)?([a-z_][a-z0-9_]*)?\s*$/',
-                    $piece, $tm)) {
+            if (
+                !preg_match(
+                    '/^\s*(?:\{\s*([a-z0-9_]+)\s*\}|([a-z0-9_]+))\s*(?:as\s+)?([a-z_][a-z0-9_]*)?\s*$/',
+                    $piece,
+                    $tm
+                )
+            ) {
                 // A derived table or anything else that cannot be followed is read as unfiltered course data.
                 $instances[] = ['table' => '', 'ref' => '', 'kind' => $kind, 'on' => [],
                     'scope' => ['type' => 'unknown']];
@@ -314,8 +329,13 @@ class sql_guard {
      * @param bool $single Whether the query reads only this table (unqualified columns then belong to it).
      * @return int[]|null
      */
-    private static function restriction(array $instance, array $conditions, array $instances, array $restricted,
-            bool $single): ?array {
+    private static function restriction(
+        array $instance,
+        array $conditions,
+        array $instances,
+        array $restricted,
+        bool $single
+    ): ?array {
         $scope = $instance['scope'];
         if ($scope['type'] === 'unknown') {
             return null;
@@ -343,16 +363,24 @@ class sql_guard {
             'context' => 'instanceid',
             'child' => $scope['column'],
         };
-        if ($scope['type'] === 'context' && !self::has_condition($instance, 'contextlevel = ' . CONTEXT_COURSE, $conditions,
-                $single)) {
+        if (
+            $scope['type'] === 'context' && !self::has_condition(
+                $instance,
+                'contextlevel = ' . CONTEXT_COURSE,
+                $conditions,
+                $single
+            )
+        ) {
             return null;
         }
         $own = $ref . preg_quote($column, '/');
         $links = $scope['type'] === 'child' ? $parentkeys : $coursekeys;
         foreach ($conditions as $condition) {
             if ($scope['type'] !== 'child') {
-                if (preg_match('/^' . $own . ' (?:=|<=>) (\d+)$/', $condition, $m)
-                        || preg_match('/^(\d+) (?:=|<=>) ' . $own . '$/', $condition, $m)) {
+                if (
+                    preg_match('/^' . $own . ' (?:=|<=>) (\d+)$/', $condition, $m)
+                        || preg_match('/^(\d+) (?:=|<=>) ' . $own . '$/', $condition, $m)
+                ) {
                     return [(int) $m[1]];
                 }
                 if (preg_match('/^' . $own . ' in ?\(([\d,]+)\)$/', $condition, $m)) {
@@ -360,8 +388,10 @@ class sql_guard {
                 }
             }
             foreach ($links as $link) {
-                if (preg_match('/^' . $own . ' (?:=|<=>) ' . $link . '$/', $condition)
-                        || preg_match('/^' . $link . ' (?:=|<=>) ' . $own . '$/', $condition)) {
+                if (
+                    preg_match('/^' . $own . ' (?:=|<=>) ' . $link . '$/', $condition)
+                        || preg_match('/^' . $link . ' (?:=|<=>) ' . $own . '$/', $condition)
+                ) {
                     return [];
                 }
             }
@@ -452,7 +482,7 @@ class sql_guard {
                 $tables[] = substr($identifier, strlen($prefix));
             }
         }
-        if (preg_match_all('/\b(?:from|join)\s+`?([a-z0-9_]+)`?/', $code, $matches)) {
+        if (preg_match_all('/\b(?:from|join)\s+\x60?([a-z0-9_]+)\x60?/', $code, $matches)) {
             $tables = array_merge($tables, $matches[1]);
         }
         return array_unique($tables);
@@ -465,7 +495,7 @@ class sql_guard {
      * @return string[]
      */
     private static function identifiers(string $code): array {
-        preg_match_all('/[a-z_][a-z0-9_]*/', str_replace('`', '', $code), $matches);
+        preg_match_all('/[a-z_][a-z0-9_]*/', str_replace(self::BACKQUOTE, '', $code), $matches);
         return array_unique($matches[0]);
     }
 

@@ -14,38 +14,21 @@
 // You should have received a copy of the GNU General Public License
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
-namespace local_jedomi\telegram;
-
 /**
- * Clock of the cache API, moved by the tests to check when link codes expire.
- *
- * The cache API takes every TTL decision from cache::now(); moving it simulates time passing.
+ * Unit tests for classes/telegram/manager.php in local_jedomi.
  *
  * @package    local_jedomi
  * @category   test
  * @copyright  2026 Jedomi Project
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-final class link_code_test_clock extends \cache {
-    /**
-     * Set the current time seen by the cache API.
-     *
-     * @param float $now Timestamp.
-     * @return void
-     */
-    public static function set_now(float $now): void {
-        self::$now = $now;
-    }
 
-    /**
-     * Restore the real clock.
-     *
-     * @return void
-     */
-    public static function reset(): void {
-        self::$now = null;
-    }
-}
+namespace local_jedomi\telegram;
+
+defined('MOODLE_INTERNAL') || die();
+
+global $CFG;
+require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/link_code_test_clock.php');
 
 /**
  * Tests for the Telegram manager: link codes and bot token encryption.

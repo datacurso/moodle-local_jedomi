@@ -1253,7 +1253,7 @@ final class webhook_handler_test extends \advanced_testcase {
         return [
             'table' => ["Students at risk\n<table><tr><th>Name</th><th>Grade</th></tr><tr><td>Ana</td><td>3</td></tr></table>",
                 'Students at risk'],
-            'code block' => ["SQL used\n```\nSELECT id FROM {user}\n```", 'SQL used'],
+            'code block' => ["SQL used\n\x60\x60\x60\nSELECT id FROM {user}\n\x60\x60\x60", 'SQL used'],
         ];
     }
 
@@ -1318,7 +1318,7 @@ final class webhook_handler_test extends \advanced_testcase {
         $answer = "**Summary** of *this week*\n"
             . "* first item\n"
             . "* second item\n"
-            . "- third item with `x < 5` code\n"
+            . "- third item with \x60x < 5\x60 code\n"
             . "Grades < 50 & > 90 are rare, see [the report](https://example.com/report?a=1&b=2).\n"
             . "<p>Unknown <span>tags</span> go away</p><b>open bold";
 
@@ -1614,11 +1614,17 @@ final class webhook_handler_test extends \advanced_testcase {
         $generator->enrol_user($user->id, $editing->id, 'editingteacher');
         $generator->enrol_user($user->id, $nonediting->id, 'teacher');
         $generator->enrol_user($user->id, $learning->id, 'student');
-        $generator->role_assign((int) $DB->get_field('role', 'id', ['shortname' => 'manager']), $user->id,
-            \context_course::instance($managed->id)->id);
+        $generator->role_assign(
+            (int) $DB->get_field('role', 'id', ['shortname' => 'manager']),
+            $user->id,
+            \context_course::instance($managed->id)->id
+        );
         $generator->enrol_user($user->id, $suspended->id, 'student', 'manual', 0, 0, ENROL_USER_SUSPENDED);
-        role_unassign((int) $DB->get_field('role', 'id', ['shortname' => 'student']), (int) $user->id,
-            \context_course::instance($suspended->id)->id);
+        role_unassign(
+            (int) $DB->get_field('role', 'id', ['shortname' => 'student']),
+            (int) $user->id,
+            \context_course::instance($suspended->id)->id
+        );
 
         $instructions = $this->telegram_instructions_for((int) $user->id, '990000074');
 
@@ -1647,11 +1653,17 @@ final class webhook_handler_test extends \advanced_testcase {
      * MDL-UNIT-093: the Telegram AI instructions limit actions that change data to explicit requests.
      */
     public function test_telegram_instructions_limit_writing_actions_to_explicit_requests(): void {
-        $instructions = \local_jedomi\telegram\prompt_builder::build('admin', 'en',
-            array_column(array_column(\local_jedomi_get_tool_definitions('admin'), 'function'), 'name'), []);
+        $instructions = \local_jedomi\telegram\prompt_builder::build(
+            'admin',
+            'en',
+            array_column(array_column(\local_jedomi_get_tool_definitions('admin'), 'function'), 'name'),
+            []
+        );
 
-        $this->assertMatchesRegularExpression('/only call an action that changes data.*when the user explicitly asks/is',
-            $instructions);
+        $this->assertMatchesRegularExpression(
+            '/only call an action that changes data.*when the user explicitly asks/is',
+            $instructions
+        );
         $this->assertMatchesRegularExpression('/questions, reports and analysis only read data/i', $instructions);
         $this->assertMatchesRegularExpression('/answer them with the read tools/i', $instructions);
         $this->assertStringNotContainsString('Execute what the user asked', $instructions);
@@ -1666,9 +1678,14 @@ final class webhook_handler_test extends \advanced_testcase {
      */
     private function user_with_unused_id(): \stdClass {
         global $DB;
-        $DB->insert_record_raw('user', ['id' => 900000 + random_int(1, 90000), 'username' => 'filler_' . random_string(10),
+        $DB->insert_record_raw(
+            'user',
+            ['id' => 900000 + random_int(1, 90000), 'username' => 'filler_' . random_string(10),
             'mnethostid' => 1, 'confirmed' => 1, 'auth' => 'manual', 'deleted' => 1, 'email' => 'filler@example.com'],
-            false, false, true);
+            false,
+            false,
+            true
+        );
         return $this->getDataGenerator()->create_user();
     }
 
@@ -1682,10 +1699,16 @@ final class webhook_handler_test extends \advanced_testcase {
         \local_jedomi\local\service\admin_settings_service::save_ws_allowlist('student', ['core_webservice_get_site_info']);
         $this->setUser($student);
 
-        $listed = \local_jedomi\telegram\webhook_handler::execute_tool('ws_execute',
-            ['wsname' => 'core_webservice_get_site_info', 'params' => '{}'], (int) $student->id);
-        $unlisted = \local_jedomi\telegram\webhook_handler::execute_tool('ws_execute',
-            ['wsname' => 'core_course_get_categories', 'params' => '{}'], (int) $student->id);
+        $listed = \local_jedomi\telegram\webhook_handler::execute_tool(
+            'ws_execute',
+            ['wsname' => 'core_webservice_get_site_info', 'params' => '{}'],
+            (int) $student->id
+        );
+        $unlisted = \local_jedomi\telegram\webhook_handler::execute_tool(
+            'ws_execute',
+            ['wsname' => 'core_course_get_categories', 'params' => '{}'],
+            (int) $student->id
+        );
 
         $this->assertStringNotContainsString('not in allowlist', $listed);
         $this->assertStringContainsString((string) $student->username, $listed);
@@ -1724,13 +1747,22 @@ final class webhook_handler_test extends \advanced_testcase {
         $teacher = $this->user_with_unused_id();
         $this->getDataGenerator()->enrol_user($teacher->id, $own->id, 'editingteacher');
         $this->create_telegram_link((int) $teacher->id, '700000092');
-        $owncourse = \local_jedomi\telegram\webhook_handler::execute_tool('execute_sql',
-            ['sql' => "SELECT shortname FROM {course} WHERE id = {$own->id}"], (int) $teacher->id, 'teacher', [(int) $own->id]);
+        $owncourse = \local_jedomi\telegram\webhook_handler::execute_tool(
+            'execute_sql',
+            ['sql' => "SELECT shortname FROM {course} WHERE id = {$own->id}"],
+            (int) $teacher->id,
+            'teacher',
+            [(int) $own->id]
+        );
         $this->assertStringContainsString(s($own->shortname), $owncourse, 'Control: the teacher can read their own course');
 
-        $result = \local_jedomi\telegram\webhook_handler::execute_tool('execute_sql',
-            ['sql' => "SELECT fullname FROM {course} WHERE id IN ({$other->id})"], (int) $teacher->id, 'teacher',
-            [(int) $own->id]);
+        $result = \local_jedomi\telegram\webhook_handler::execute_tool(
+            'execute_sql',
+            ['sql' => "SELECT fullname FROM {course} WHERE id IN ({$other->id})"],
+            (int) $teacher->id,
+            'teacher',
+            [(int) $own->id]
+        );
 
         $this->assertStringNotContainsString('Foreign Course Marker', $result);
     }

@@ -127,8 +127,11 @@ final class telegram_link_service_test extends \advanced_testcase {
         $DB->insert_record('local_jedomi_telegram_links', (object) ['userid' => $student->id, 'chatid' => '782000002',
             'username' => 'ada', 'confirmed' => 1, 'timecreated' => time(), 'lastproactivesent' => 0]);
         $instance = $this->getDataGenerator()->create_module('assign', ['course' => $course->id]);
-        $assign = new \assign(\context_module::instance($instance->cmid), get_coursemodule_from_id('assign', $instance->cmid),
-            $course);
+        $assign = new \assign(
+            \context_module::instance($instance->cmid),
+            get_coursemodule_from_id('assign', $instance->cmid),
+            $course
+        );
 
         telegram_link_service::unlink((int) $student->id);
         $grade = $assign->get_user_grade((int) $student->id, true);

@@ -661,8 +661,10 @@ final class lib_test extends \advanced_testcase {
         set_config('files_enabled', 0, 'local_jedomi');
 
         foreach (['admin', 'manager', 'teacher', 'student'] as $role) {
-            $names = array_map(static fn(array $tool): string => $tool['function']['name'],
-                local_jedomi_get_tool_definitions($role));
+            $names = array_map(
+                static fn(array $tool): string => $tool['function']['name'],
+                local_jedomi_get_tool_definitions($role)
+            );
             $this->assertNotContains('document_read', $names, $role);
             $this->assertNotContains('send_messages', $names, $role);
         }

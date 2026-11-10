@@ -63,8 +63,10 @@ final class resolve_action_test extends \advanced_testcase {
      * @return array
      */
     private function resolve(int $id, bool $confirm, string $keyword = ''): array {
-        return external_api::clean_returnvalue(resolve_action::execute_returns(),
-            resolve_action::execute($id, $confirm, $keyword));
+        return external_api::clean_returnvalue(
+            resolve_action::execute_returns(),
+            resolve_action::execute($id, $confirm, $keyword)
+        );
     }
 
     /**
@@ -365,8 +367,11 @@ final class resolve_action_test extends \advanced_testcase {
         $this->assertNotSame('executed', $wrong, 'A wrong word must not confirm the critical action');
         $this->assertNotNull(agent_manager::get_agent($agentid));
 
-        $this->assertSame('executed', $this->resolve($pending['id'], true, $this->keyword())['status'],
-            'With the confirmation word the critical action runs');
+        $this->assertSame(
+            'executed',
+            $this->resolve($pending['id'], true, $this->keyword())['status'],
+            'With the confirmation word the critical action runs'
+        );
         $this->assertNull(agent_manager::get_agent($agentid));
     }
 }

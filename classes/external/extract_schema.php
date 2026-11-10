@@ -144,8 +144,13 @@ class extract_schema extends external_api {
         $payloadhash       = $validated['payload_hash'];
 
         // ... --- HMAC authentication ---
-        self::verify_hmac('jedomi_extract_schema', $hmactimestamp, $payloadhash, $hmacsignature,
-            self::signed_params($validated));
+        self::verify_hmac(
+            'jedomi_extract_schema',
+            $hmactimestamp,
+            $payloadhash,
+            $hmacsignature,
+            self::signed_params($validated)
+        );
 
         // 120-second timeout per spec (515+ tables can be slow).
         @set_time_limit(120);

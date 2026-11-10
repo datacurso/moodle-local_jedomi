@@ -57,8 +57,10 @@ class hook_callbacks {
         }
 
         // Never during a quiz attempt nor in pop-up, embedded or secure windows.
-        if (in_array($PAGE->pagelayout, self::EXCLUDED_LAYOUTS, true)
-                || in_array($PAGE->pagetype, self::EXCLUDED_PAGETYPES, true)) {
+        if (
+            in_array($PAGE->pagelayout, self::EXCLUDED_LAYOUTS, true)
+                || in_array($PAGE->pagetype, self::EXCLUDED_PAGETYPES, true)
+        ) {
             return;
         }
 

@@ -149,8 +149,10 @@ final class preview_runner_test extends \advanced_testcase {
         $this->assertTrue($result['cached']);
         $this->assertSame('Cached answer', $result['answer']);
         $this->assertNotEmpty($result['cache_hash']);
-        $this->assertTrue(\local_jedomi\agent\agent_manager::clear_preview_cache($result['cache_hash']),
-            'The returned key clears that saved preview');
+        $this->assertTrue(
+            \local_jedomi\agent\agent_manager::clear_preview_cache($result['cache_hash']),
+            'The returned key clears that saved preview'
+        );
     }
 
     /**
@@ -233,8 +235,10 @@ final class preview_runner_test extends \advanced_testcase {
 
         preview_runner::run('Delete the daily report agent', (int) get_admin()->id);
 
-        $this->assertNotNull(\local_jedomi\agent\agent_manager::get_agent($agentid),
-            'The preview must not delete an agent without confirmation');
+        $this->assertNotNull(
+            \local_jedomi\agent\agent_manager::get_agent($agentid),
+            'The preview must not delete an agent without confirmation'
+        );
     }
 
     /**
@@ -254,8 +258,11 @@ final class preview_runner_test extends \advanced_testcase {
         $this->setUser($manager);
         $result = preview_runner::run('Summarise my week', (int) $manager->id);
 
-        $this->assertNotSame('Private answer for the administrator.', $result['answer'],
-            'A second user must not receive the saved preview of the first one');
+        $this->assertNotSame(
+            'Private answer for the administrator.',
+            $result['answer'],
+            'A second user must not receive the saved preview of the first one'
+        );
     }
 
     /**

@@ -44,7 +44,8 @@ final class prompt_builder {
         'admin_execute' => 'admin_execute(name, params) — execute admin operation',
         'get_site_config' => 'get_site_config(keys) — read site configuration',
         'list_agents' => 'list_agents(status?) — list the scheduled AI agents',
-        'create_agent' => 'create_agent(prompt, schedule_cron, name?, context_type?, context_id?, enabled?) — create a new AI agent',
+        'create_agent' => 'create_agent(prompt, schedule_cron, name?, context_type?, context_id?, enabled?)'
+            . ' — create a new AI agent',
         'delete_agent' => 'delete_agent(id) — delete an AI agent by ID',
         'my_courses' => 'my_courses() — the courses of the user',
         'my_grades' => 'my_grades(courseid?) — the grades the user can see',

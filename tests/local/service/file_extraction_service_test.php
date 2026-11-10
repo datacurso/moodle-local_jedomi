@@ -528,7 +528,9 @@ final class file_extraction_service_test extends \advanced_testcase {
      */
     public static function attachment_info_provider(): array {
         return [
-            'pdf with pages' => ['report.pdf', ['text' => 'T', 'format' => 'pdf', 'pages' => 12], ['format' => 'pdf', 'pages' => 12]],
+            'pdf with pages' => [
+                'report.pdf', ['text' => 'T', 'format' => 'pdf', 'pages' => 12], ['format' => 'pdf', 'pages' => 12],
+            ],
             'pdf of one page' => ['one.pdf', ['text' => 'T', 'format' => 'pdf', 'pages' => 1], ['format' => 'pdf', 'pages' => 1]],
             'csv with rows and columns' => ['grades.csv', ['text' => 'a,b', 'format' => 'csv', 'rows' => 30, 'columns' => 4],
                 ['format' => 'csv', 'rows' => 30, 'columns' => 4]],

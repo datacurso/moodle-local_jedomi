@@ -189,7 +189,12 @@ final class pending_action_service_test extends \advanced_testcase {
         $this->resetAfterTest();
         $old = pending_action_service::hold(2, 'delete_agent', ['id' => 1]);
         $new = pending_action_service::hold(2, 'delete_agent', ['id' => 2]);
-        $DB->set_field(pending_action_service::TABLE, 'timecreated', time() - pending_action_service::EXPIRY - 1, ['id' => $old['id']]);
+        $DB->set_field(
+            pending_action_service::TABLE,
+            'timecreated',
+            time() - pending_action_service::EXPIRY - 1,
+            ['id' => $old['id']]
+        );
 
         $this->assertSame(1, pending_action_service::purge_expired());
 
@@ -232,11 +237,24 @@ final class pending_action_service_test extends \advanced_testcase {
         $inside = pending_action_service::hold((int) $user->id, 'delete_agent', ['id' => 3]);
 
         $now = $this->start_of_a_new_second();
-        $DB->set_field(pending_action_service::TABLE, 'timecreated', $now - pending_action_service::EXPIRY, ['id' => $atlimit['id']]);
-        $DB->set_field(pending_action_service::TABLE, 'timecreated', $now - pending_action_service::EXPIRY - 1,
-            ['id' => $justafter['id']]);
-        $DB->set_field(pending_action_service::TABLE, 'timecreated', $now - pending_action_service::EXPIRY + 1,
-            ['id' => $inside['id']]);
+        $DB->set_field(
+            pending_action_service::TABLE,
+            'timecreated',
+            $now - pending_action_service::EXPIRY,
+            ['id' => $atlimit['id']]
+        );
+        $DB->set_field(
+            pending_action_service::TABLE,
+            'timecreated',
+            $now - pending_action_service::EXPIRY - 1,
+            ['id' => $justafter['id']]
+        );
+        $DB->set_field(
+            pending_action_service::TABLE,
+            'timecreated',
+            $now - pending_action_service::EXPIRY + 1,
+            ['id' => $inside['id']]
+        );
 
         $this->assertSame('cancelled', pending_action_service::resolve($atlimit['id'], (int) $user->id, false)['status']);
         $this->assertSame('cancelled', pending_action_service::resolve($inside['id'], (int) $user->id, false)['status']);
@@ -260,9 +278,18 @@ final class pending_action_service_test extends \advanced_testcase {
         $justafter = pending_action_service::hold(2, 'delete_agent', ['id' => 2]);
 
         $now = $this->start_of_a_new_second();
-        $DB->set_field(pending_action_service::TABLE, 'timecreated', $now - pending_action_service::EXPIRY, ['id' => $atlimit['id']]);
-        $DB->set_field(pending_action_service::TABLE, 'timecreated', $now - pending_action_service::EXPIRY - 1,
-            ['id' => $justafter['id']]);
+        $DB->set_field(
+            pending_action_service::TABLE,
+            'timecreated',
+            $now - pending_action_service::EXPIRY,
+            ['id' => $atlimit['id']]
+        );
+        $DB->set_field(
+            pending_action_service::TABLE,
+            'timecreated',
+            $now - pending_action_service::EXPIRY - 1,
+            ['id' => $justafter['id']]
+        );
 
         $this->assertSame(1, pending_action_service::purge_expired());
         $this->assertTrue($DB->record_exists(pending_action_service::TABLE, ['id' => $atlimit['id']]));

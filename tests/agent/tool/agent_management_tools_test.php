@@ -57,7 +57,10 @@ final class agent_management_tools_test extends \advanced_testcase {
         $this->assertSame('permission_denied', $deleted['error'] ?? null);
         $this->assertNotNull(agent_manager::get_agent($foreign));
         $this->assertTrue($own['success'] ?? false);
-        $this->assertSame((int) $manager->id, (int) agent_manager::get_agent($own['agent_id'])->userid,
-            'The agent of the manager creates agents owned by the manager');
+        $this->assertSame(
+            (int) $manager->id,
+            (int) agent_manager::get_agent($own['agent_id'])->userid,
+            'The agent of the manager creates agents owned by the manager'
+        );
     }
 }

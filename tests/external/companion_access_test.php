@@ -102,8 +102,11 @@ final class companion_access_test extends \advanced_testcase {
         if ($capability === 'moodle/site:config') {
             // A manager holds the companion permission by default but not the site configuration one.
             $manager = $this->getDataGenerator()->create_user();
-            role_assign((int) $DB->get_field('role', 'id', ['shortname' => 'manager']), $manager->id,
-                \context_system::instance());
+            role_assign(
+                (int) $DB->get_field('role', 'id', ['shortname' => 'manager']),
+                $manager->id,
+                \context_system::instance()
+            );
             $this->setUser($manager);
             $this->assertInstanceOf(\required_capability_exception::class, $this->exception_of($call));
         }
@@ -132,14 +135,19 @@ final class companion_access_test extends \advanced_testcase {
      * MDL-INT-075: the agents, training data and companion service permissions are declared with their default roles.
      */
     public function test_permissions_are_declared_with_their_default_roles(): void {
-        foreach (['local/jedomi:manageagents', 'local/jedomi:viewtrainingdata', 'local/jedomi:managetrainingdata',
-                'local/jedomi:companion_api'] as $capability) {
+        foreach (
+            ['local/jedomi:manageagents', 'local/jedomi:viewtrainingdata', 'local/jedomi:managetrainingdata',
+                'local/jedomi:companion_api'] as $capability
+        ) {
             $this->assertNotEmpty(get_capability_info($capability), $capability);
             $this->assertSame(CAP_ALLOW, get_default_capabilities('manager')[$capability] ?? null, $capability);
         }
         foreach (['student', 'teacher', 'editingteacher', 'user', 'guest'] as $archetype) {
-            $this->assertSame(CAP_PROHIBIT, get_default_capabilities($archetype)['local/jedomi:companion_api'] ?? null,
-                $archetype);
+            $this->assertSame(
+                CAP_PROHIBIT,
+                get_default_capabilities($archetype)['local/jedomi:companion_api'] ?? null,
+                $archetype
+            );
         }
     }
 

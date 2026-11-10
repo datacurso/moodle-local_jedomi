@@ -56,8 +56,12 @@ final class query_profiler_test extends \advanced_testcase {
     private function tab_data(int $minms, string $sort): array {
         global $PAGE;
         $PAGE->set_url(new \moodle_url('/local/jedomi/admin_settings.php'));
-        $tab = new profiler_tab(query_profiler::get_aggregate(), admin_settings_service::get_recent_profiler_entries($minms, $sort),
-            $minms, $sort);
+        $tab = new profiler_tab(
+            query_profiler::get_aggregate(),
+            admin_settings_service::get_recent_profiler_entries($minms, $sort),
+            $minms,
+            $sort
+        );
         return $tab->export_for_template($PAGE->get_renderer('local_jedomi'));
     }
 

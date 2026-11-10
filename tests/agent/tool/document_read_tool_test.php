@@ -191,8 +191,11 @@ final class document_read_tool_test extends \advanced_testcase {
 
         $result = json_decode(\local_jedomi\agent\tool_executor::execute('document_read', json_encode(['cmid' => $cmid])), true);
 
-        $this->assertSame('permission_denied', $result['error'] ?? null,
-            'A teacher agent must not read the documents of a course its creator does not teach');
+        $this->assertSame(
+            'permission_denied',
+            $result['error'] ?? null,
+            'A teacher agent must not read the documents of a course its creator does not teach'
+        );
         $this->assertSame([], $this->curl->calls);
     }
 }

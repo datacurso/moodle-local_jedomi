@@ -68,7 +68,8 @@ final class agents_tab_test extends \advanced_testcase {
      * [Pendiente:skip]
      */
     public function test_agents_tab_shows_readable_names(): void {
-        $this->markTestSkipped('Pending fix: technical cron expressions, internal context and status names and role short names are shown.');
+        $this->markTestSkipped('Pending fix: technical cron expressions, internal context and status names'
+            . ' and role short names are shown.');
     }
 
     /**
@@ -98,8 +99,11 @@ final class agents_tab_test extends \advanced_testcase {
         foreach (['site', 'course', 'category', 'user', 'role'] as $type) {
             $this->assertStringContainsString('<option value="' . $type . '"', $form, "The purge must offer the {$type} context");
         }
-        $this->assertMatchesRegularExpression('~<option value="5"[^>]*>\s*Student\s*</option>~', $form,
-            'The role must be chosen from a list of role names');
+        $this->assertMatchesRegularExpression(
+            '~<option value="5"[^>]*>\s*Student\s*</option>~',
+            $form,
+            'The role must be chosen from a list of role names'
+        );
         $this->assertMatchesRegularExpression('~<option value="3"[^>]*>\s*Teacher\s*</option>~', $form);
     }
 
@@ -130,13 +134,19 @@ final class agents_tab_test extends \advanced_testcase {
             . ' 2>&1');
 
         $agents = $request('agents');
-        $this->assertStringContainsString('data-region="local_jedomi/admin/agents/table-body"', $agents,
-            'A manager with the permission to manage agents opens the Agents tab');
+        $this->assertStringContainsString(
+            'data-region="local_jedomi/admin/agents/table-body"',
+            $agents,
+            'A manager with the permission to manage agents opens the Agents tab'
+        );
         $this->assertStringContainsString('data-form="local_jedomi/admin/agents/create"', $agents);
 
         $general = $request('general');
-        $this->assertStringContainsString('data-region="local_jedomi/admin/agents/table-body"', $general,
-            'A manager who cannot configure the site only gets the Agents tab');
+        $this->assertStringContainsString(
+            'data-region="local_jedomi/admin/agents/table-body"',
+            $general,
+            'A manager who cannot configure the site only gets the Agents tab'
+        );
         $this->assertStringNotContainsString('tab=general', $general, 'The other settings tabs are not offered');
     }
 }

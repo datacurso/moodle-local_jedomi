@@ -593,7 +593,9 @@ class webhook_handler {
 
     /**
      * Build inline keyboard for a linked user (new, help, unlink).
-     * @internal Exposed as a testable entry point; not a stable plugin API.
+     *
+     * Internal: exposed as a testable entry point; not a stable plugin API.
+     *
      * @return array Telegram reply keyboard markup.
      */
     public static function get_linked_keyboard(): array {
@@ -611,7 +613,9 @@ class webhook_handler {
 
     /**
      * Build inline keyboard for an unlinked user (howto link, help).
-     * @internal Exposed as a testable entry point; not a stable plugin API.
+     *
+     * Internal: exposed as a testable entry point; not a stable plugin API.
+     *
      * @return array Telegram reply keyboard markup.
      */
     public static function get_unlinked_keyboard(): array {
@@ -723,8 +727,10 @@ class webhook_handler {
         $action = json_decode($pending->actionjson, true);
         $link = self::get_link_by_chat_id($chatid);
         $user = $link ? self::get_active_user((int) $link->userid) : null;
-        if (!is_array($action) || !$user || (int) ($action['userid'] ?? 0) !== (int) $user->id
-                || !self::is_user_role_allowed((int) $user->id)) {
+        if (
+            !is_array($action) || !$user || (int) ($action['userid'] ?? 0) !== (int) $user->id
+                || !self::is_user_role_allowed((int) $user->id)
+        ) {
             return get_string('pending_action_denied', 'local_jedomi');
         }
 
@@ -1559,6 +1565,8 @@ class webhook_handler {
      * role string cannot bypass role-gated tools. $userid <= 0 always
      * derives to '' (denies every role-gated tool).
      *
+     * Internal: exposed as a testable entry point; not a stable plugin API.
+     *
      * @param string $name Tool name to execute
      * @param array $args Tool arguments
      * @param int $userid Moodle user id executing the tool
@@ -1567,7 +1575,6 @@ class webhook_handler {
      * @param anonymizer|null $anonymizer Anonymiser of the conversation; the rows of a database query are anonymised
      *                                    by column name with it before they are formatted.
      * @return string Tool execution result formatted for Telegram
-     * @internal Exposed as a testable entry point; not a stable plugin API.
      */
     public static function execute_tool(
         string $name,
@@ -1639,7 +1646,6 @@ class webhook_handler {
                 if (!in_array($role, ['admin', 'manager', 'teacher'], true)) {
                     return "❌ Permission denied.";
                 }
-
 
                 // Normalize Moodle table placeholders (FROM course → FROM {course}).
                 $sql = preg_replace_callback(
@@ -2050,10 +2056,11 @@ class webhook_handler {
     /**
      * Execute a pending action directly (bypass LLM).
      *
+     * Internal: exposed as a testable entry point; not a stable plugin API.
+     *
      * @param array $action Pending action payload (action name and params)
      * @param string $chatid Telegram chat id
      * @return string Result message formatted for Telegram
-     * @internal Exposed as a testable entry point; not a stable plugin API.
      */
     public static function execute_pending_action(array $action, string $chatid): string {
         global $DB;
@@ -2145,9 +2152,10 @@ class webhook_handler {
      * Check if text looks like a bare link code (4-8 uppercase alphanumeric chars).
      * This prevents treating random user messages as codes.
      *
+     * Internal: exposed as a testable entry point; not a stable plugin API.
+     *
      * @param string $text Incoming message text
      * @return bool True if the text matches the link code format
-     * @internal Exposed as a testable entry point; not a stable plugin API.
      */
     public static function looks_like_link_code(string $text): bool {
         $text = strtoupper(trim($text));

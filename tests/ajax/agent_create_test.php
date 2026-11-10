@@ -224,9 +224,11 @@ final class agent_create_test extends \advanced_testcase {
         $adminid = (int) get_admin()->id;
         $site = $this->create_agent_of($adminid, 'Site');
         $others = [];
-        foreach (['course' => \context_course::instance($course->id)->id,
+        foreach (
+            ['course' => \context_course::instance($course->id)->id,
                 'category' => \context_coursecat::instance($category->id)->id,
-                'user' => \context_user::instance($user->id)->id] as $type => $contextid) {
+                'user' => \context_user::instance($user->id)->id] as $type => $contextid
+        ) {
             $others[$type] = agent_manager::create_agent((object) ['userid' => $adminid, 'prompt' => $type,
                 'schedule_cron' => '0 8 * * *', 'context_type' => $type, 'context_id' => $contextid]);
         }
@@ -257,8 +259,10 @@ final class agent_create_test extends \advanced_testcase {
         $roleagent = agent_manager::create_agent((object) ['userid' => $adminid, 'prompt' => 'Teachers',
             'schedule_cron' => '0 8 * * *', 'role_filter' => json_encode(['editingteacher'])]);
 
-        foreach (['user' => ['type' => 'user'], 'empty user' => ['type' => 'user', 'id' => ''],
-                'course' => ['type' => 'course', 'id' => '']] as $label => $params) {
+        foreach (
+            ['user' => ['type' => 'user'], 'empty user' => ['type' => 'user', 'id' => ''],
+                'course' => ['type' => 'course', 'id' => '']] as $label => $params
+        ) {
             $missing = $this->post_as('admin', 'ajax/agent_purge.php', $params);
             $this->assertFalse($missing['ok'], "A purge of {$label} without identifier is rejected");
             $this->assertSame(get_string('agent_purge_id_required', 'local_jedomi'), $missing['error']);

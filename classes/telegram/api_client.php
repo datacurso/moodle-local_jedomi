@@ -132,10 +132,11 @@ class api_client {
      * Tries to split on \n\n boundaries first, falls back to last space before 4000.
      * Each chunk (except the last) has open HTML tags closed to prevent 400 errors.
      *
+     * Internal: exposed as a testable entry point; not a stable plugin API.
+     *
      * @param string $text The text to split.
      * @param bool $truncate If true, return single chunk truncated to 4000 + "… (truncated)".
      * @return array Array of text chunks.
-     * @internal Exposed as a testable entry point; not a stable plugin API.
      */
     public function chunk_text(string $text, bool $truncate = false): array {
         $max = 4000;

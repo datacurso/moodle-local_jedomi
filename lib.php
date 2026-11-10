@@ -1466,8 +1466,10 @@ if (!function_exists('local_jedomi_log')) {
         $entry = "[{$timestamp}] {$message}";
 
         if ($data !== null) {
-            $encoded = json_encode(local_jedomi_redact_log_data($data),
-                JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_IGNORE);
+            $encoded = json_encode(
+                local_jedomi_redact_log_data($data),
+                JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_IGNORE
+            );
             $entry .= ' | ' . $encoded;
         }
 

@@ -137,8 +137,13 @@ class validate_password extends external_api {
         // IMPORTANT: payload_hash must match what the gateway sent.
         // The gateway hashes the body BEFORE the password is in plaintext on the wire
         // (TLS handles transport); here we just verify the signature.
-        self::verify_hmac('jedomi_validate_password', $hmactimestamp, $payloadhash, $hmacsignature,
-            self::signed_params($validated));
+        self::verify_hmac(
+            'jedomi_validate_password',
+            $hmactimestamp,
+            $payloadhash,
+            $hmacsignature,
+            self::signed_params($validated)
+        );
 
         // ... --- Validate via Moodle's native policy check ---
         // check_password_policy() fills $errmsg with a human-readable concatenated string.

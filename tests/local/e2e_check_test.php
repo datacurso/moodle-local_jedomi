@@ -165,7 +165,9 @@ final class e2e_check_test extends \advanced_testcase {
     public static function failure_provider(): array {
         return [
             'no credit' => ['notenoughtokens', null, 'no_credit', 'notenoughtokens', e2e_check::LAYER_BILLING],
-            'window limit' => ['error_ratelimit_exceeded', '', 'rate_limited', 'error_ratelimit_exceeded', e2e_check::LAYER_BILLING],
+            'window limit' => [
+                'error_ratelimit_exceeded', '', 'rate_limited', 'error_ratelimit_exceeded', e2e_check::LAYER_BILLING,
+            ],
             'license not allowed' => ['license_not_allowed', null, 'license', 'license_not_allowed', e2e_check::LAYER_BILLING],
             'missing license' => ['invalidlicensekey', null, 'license', 'invalidlicensekey', e2e_check::LAYER_PROVIDER],
             'provider disabled' => ['providerdisabled', null, 'provider_disabled', 'providerdisabled', e2e_check::LAYER_PROVIDER],

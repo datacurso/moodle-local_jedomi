@@ -134,13 +134,20 @@ final class sql_guard_test extends \advanced_testcase {
     public function test_teacher_cannot_name_another_course_in_parameters_or_contexts(): void {
         [$teacher, $own, $other] = $this->teacher();
 
-        $this->assertSame('sql_course_rejected', sql_guard::rejection_reason('SELECT fullname FROM {course} WHERE id = :cid',
-            $teacher, ['cid' => $other]));
-        $this->assertSame('sql_course_rejected', sql_guard::rejection_reason('SELECT ra.userid FROM {role_assignments} ra '
+        $this->assertSame('sql_course_rejected', sql_guard::rejection_reason(
+            'SELECT fullname FROM {course} WHERE id = :cid',
+            $teacher,
+            ['cid' => $other]
+        ));
+        $this->assertSame('sql_course_rejected', sql_guard::rejection_reason(
+            'SELECT ra.userid FROM {role_assignments} ra '
             . 'JOIN {context} ctx ON ctx.id = ra.contextid WHERE ctx.contextlevel = 50 AND ctx.instanceid = ' . $other,
-            $teacher));
-        $this->assertSame('sql_course_unfiltered_rejected', sql_guard::rejection_reason('SELECT fullname FROM {course}',
-            $teacher));
+            $teacher
+        ));
+        $this->assertSame('sql_course_unfiltered_rejected', sql_guard::rejection_reason(
+            'SELECT fullname FROM {course}',
+            $teacher
+        ));
     }
 
     /**

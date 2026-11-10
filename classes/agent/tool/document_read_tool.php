@@ -135,8 +135,10 @@ class document_read_tool implements agent_tool {
             get_coursemodule_from_id('', $cmid, 0, false, MUST_EXIST);
             if ($userid === null) {
                 require_capability('moodle/course:view', $context->get_course_context());
-            } else if (!has_capability('moodle/course:view', $context->get_course_context(), $userid)
-                    && !has_capability('moodle/course:manageactivities', $context, $userid)) {
+            } else if (
+                !has_capability('moodle/course:view', $context->get_course_context(), $userid)
+                    && !has_capability('moodle/course:manageactivities', $context, $userid)
+            ) {
                 // An agent reads only the documents its creator can manage or view as a course manager.
                 return json_encode(['error' => 'permission_denied']);
             }

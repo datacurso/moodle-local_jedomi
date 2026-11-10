@@ -109,10 +109,16 @@ final class cleanup_telegram_sessions_test extends \advanced_testcase {
 
         $this->run_cleanup();
 
-        $this->assertSame(['valid'], array_values($DB->get_fieldset_select('local_jedomi_telegram_pending_actions',
-            'callbackid', '1 = 1')));
-        $this->assertSame([(int) $valid['id']], array_map('intval', $DB->get_fieldset_select('local_jedomi_pending_actions',
-            'id', '1 = 1')));
+        $this->assertSame(['valid'], array_values($DB->get_fieldset_select(
+            'local_jedomi_telegram_pending_actions',
+            'callbackid',
+            '1 = 1'
+        )));
+        $this->assertSame([(int) $valid['id']], array_map('intval', $DB->get_fieldset_select(
+            'local_jedomi_pending_actions',
+            'id',
+            '1 = 1'
+        )));
     }
 
     /**

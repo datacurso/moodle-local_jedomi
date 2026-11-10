@@ -923,7 +923,8 @@ final class agent_manager_test extends \advanced_testcase {
      * [Pendiente:skip]
      */
     public function test_invalid_custom_schedule_is_rejected(): void {
-        $this->markTestSkipped('Pending fix: only the five parts are checked; invalid values are accepted and the agent runs every 5 minutes.');
+        $this->markTestSkipped('Pending fix: only the five parts are checked; invalid values are accepted'
+            . ' and the agent runs every 5 minutes.');
     }
 
     /**
@@ -939,7 +940,8 @@ final class agent_manager_test extends \advanced_testcase {
      * [Pendiente:skip]
      */
     public function test_context_id_is_validated_when_saving(): void {
-        $this->markTestSkipped('Pending fix: the context id is read as both a context and a course id and is not validated when saving.');
+        $this->markTestSkipped('Pending fix: the context id is read as both a context and a course id'
+            . ' and is not validated when saving.');
     }
 
     /**

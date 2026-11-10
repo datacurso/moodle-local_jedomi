@@ -383,14 +383,17 @@ JS;
         $other = mb_strlen($raw) - mb_strlen($current);
         $wanted = $length - $other;
         if ($wanted < 1 || !str_contains($raw, $current)) {
-            throw new ExpectationException('The site name cannot make the title ' . $length . ' characters long.',
-                $this->getSession());
+            throw new ExpectationException(
+                'The site name cannot make the title ' . $length . ' characters long.',
+                $this->getSession()
+            );
         }
         $DB->set_field('course', 'fullname', mb_substr(str_repeat('Jedomi title ', 20), 0, $wanted), ['id' => SITEID]);
         purge_all_caches();
         $this->execute('behat_general::i_am_on_site_homepage');
     }
 
+    // phpcs:disable moodle.Files.LineLength.TooLong -- Behat step patterns must stay on one line.
     /**
      * The context label of the panel shows the page title, cut when it is longer than the maximum.
      *
@@ -412,8 +415,10 @@ JS;
         $title = $result['title'];
         $chars = mb_strlen($label);
         if ($chars > $max) {
-            throw new ExpectationException("The title \"{$label}\" has {$chars} characters, more than {$max}.",
-                $this->getSession());
+            throw new ExpectationException(
+                "The title \"{$label}\" has {$chars} characters, more than {$max}.",
+                $this->getSession()
+            );
         }
         if ($how === 'complete' && $label !== $title) {
             throw new ExpectationException("The title \"{$label}\" is not the complete \"{$title}\".", $this->getSession());
@@ -421,11 +426,14 @@ JS;
         if ($how !== 'complete') {
             $prefix = mb_substr($label, 0, -1);
             if (!str_ends_with($label, "\u{2026}") || !str_starts_with($title, $prefix)) {
-                throw new ExpectationException("The title \"{$label}\" is not \"{$title}\" cut with an ellipsis.",
-                    $this->getSession());
+                throw new ExpectationException(
+                    "The title \"{$label}\" is not \"{$title}\" cut with an ellipsis.",
+                    $this->getSession()
+                );
             }
         }
     }
+    // phpcs:enable moodle.Files.LineLength.TooLong
 
     /**
      * Create Jedomi agents.
@@ -478,8 +486,10 @@ JS;
         global $DB;
         $exists = $DB->record_exists('local_jedomi_agents', ['name' => $name]);
         if ($exists === ($not !== '')) {
-            throw new ExpectationException("The Jedomi agent \"{$name}\" " . ($exists ? 'exists' : 'does not exist') . '.',
-                $this->getSession());
+            throw new ExpectationException(
+                "The Jedomi agent \"{$name}\" " . ($exists ? 'exists' : 'does not exist') . '.',
+                $this->getSession()
+            );
         }
     }
 
@@ -650,11 +660,14 @@ JS;
         $links = $DB->count_records('local_jedomi_telegram_links', ['chatid' => $chatid]);
         $sessions = $DB->count_records('local_jedomi_telegram_sessions', ['chatid' => $chatid]);
         if ($links || $sessions) {
-            throw new ExpectationException("The chat still has {$links} link(s) and {$sessions} conversation(s).",
-                $this->getSession());
+            throw new ExpectationException(
+                "The chat still has {$links} link(s) and {$sessions} conversation(s).",
+                $this->getSession()
+            );
         }
     }
 
+    // phpcs:disable moodle.Files.LineLength.TooLong -- Behat step patterns must stay on one line.
     /**
      * Send a request to the Telegram webhook from the browser and keep its status, body and declared length.
      *
@@ -681,6 +694,7 @@ JS;
             . " })();";
         $this->execute_script($script);
     }
+    // phpcs:enable moodle.Files.LineLength.TooLong
 
     /**
      * Check the status of the last Telegram webhook request.
@@ -705,8 +719,10 @@ JS;
     public function the_jedomi_telegram_webhook_answer_should_declare_the_real_body_length(): void {
         $last = $this->evaluate_script('return window.jedomiLastRequest || null;');
         if (!is_array($last) || (string) $last['length'] !== (string) $last['bytes']) {
-            throw new ExpectationException('The declared length does not match the body: ' . json_encode($last),
-                $this->getSession());
+            throw new ExpectationException(
+                'The declared length does not match the body: ' . json_encode($last),
+                $this->getSession()
+            );
         }
     }
 
@@ -900,8 +916,10 @@ JS;
     public function the_last_jedomi_request_should_carry_messages(int $count): void {
         $messages = $this->last_request_messages();
         if (count($messages) !== $count) {
-            throw new ExpectationException('The last request carried ' . count($messages) . " messages, not {$count}.",
-                $this->getSession());
+            throw new ExpectationException(
+                'The last request carried ' . count($messages) . " messages, not {$count}.",
+                $this->getSession()
+            );
         }
     }
 
@@ -944,8 +962,10 @@ JS;
     public function the_stored_jedomi_conversation_should_have_messages(string $how, int $count): void {
         $stored = count($this->stored_conversation());
         if (($how === 'exactly' && $stored !== $count) || ($how === 'at most' && $stored > $count)) {
-            throw new ExpectationException("The stored conversation has {$stored} messages, not {$how} {$count}.",
-                $this->getSession());
+            throw new ExpectationException(
+                "The stored conversation has {$stored} messages, not {$how} {$count}.",
+                $this->getSession()
+            );
         }
     }
 
@@ -980,8 +1000,10 @@ JS;
             }
         }
         if ($found !== $expected) {
-            throw new ExpectationException("The {$where} " . ($found ? 'includes' : 'does not include') . " \"{$text}\".",
-                $this->getSession());
+            throw new ExpectationException(
+                "The {$where} " . ($found ? 'includes' : 'does not include') . " \"{$text}\".",
+                $this->getSession()
+            );
         }
     }
 
@@ -1077,6 +1099,7 @@ JS;
         $this->send_telegram_text($chatid, '/start ' . $code);
     }
 
+    // phpcs:disable moodle.Files.LineLength.TooLong -- Behat step patterns must stay on one line.
     /**
      * Whether a Telegram chat is linked to a user.
      *
@@ -1092,10 +1115,13 @@ JS;
         $linked = $DB->record_exists('local_jedomi_telegram_links', ['chatid' => $chatid, 'userid' => $userid,
             'confirmed' => 1]);
         if ($linked === ($not !== '')) {
-            throw new ExpectationException("The chat {$chatid} is " . ($linked ? '' : 'not ') . "linked to {$username}.",
-                $this->getSession());
+            throw new ExpectationException(
+                "The chat {$chatid} is " . ($linked ? '' : 'not ') . "linked to {$username}.",
+                $this->getSession()
+            );
         }
     }
+    // phpcs:enable moodle.Files.LineLength.TooLong
 
     /**
      * The last answer of the assistant stored for a Telegram chat contains a text. The bot answers after the webhook
@@ -1111,8 +1137,11 @@ JS;
         $text = $this->escape($text);
         $last = '';
         for ($i = 0; $i < 240; $i++) {
-            $messages = json_decode((string) $DB->get_field('local_jedomi_telegram_sessions', 'messages',
-                ['chatid' => $chatid]), true) ?: [];
+            $messages = json_decode((string) $DB->get_field(
+                'local_jedomi_telegram_sessions',
+                'messages',
+                ['chatid' => $chatid]
+            ), true) ?: [];
             $answers = array_values(array_filter($messages, fn($m) => ($m['role'] ?? '') === 'assistant'
                 && is_string($m['content'] ?? null) && $m['content'] !== ''));
             $last = $answers ? end($answers)['content'] : '';
@@ -1121,8 +1150,10 @@ JS;
             }
             usleep(500000);
         }
-        throw new ExpectationException("The last answer of the chat {$chatid} does not contain \"{$text}\": {$last}",
-            $this->getSession());
+        throw new ExpectationException(
+            "The last answer of the chat {$chatid} does not contain \"{$text}\": {$last}",
+            $this->getSession()
+        );
     }
 
     /**
@@ -1138,8 +1169,12 @@ JS;
         global $DB;
         foreach ($table->getHash() as $row) {
             $agentid = (int) $DB->get_field('local_jedomi_agents', 'id', ['name' => $row['agent']], MUST_EXIST);
-            \local_jedomi\agent\query_profiler::log_query($agentid, $row['query'], (float) $row['duration'],
-                (int) ($row['rows'] ?? 0));
+            \local_jedomi\agent\query_profiler::log_query(
+                $agentid,
+                $row['query'],
+                (float) $row['duration'],
+                (int) ($row['rows'] ?? 0)
+            );
         }
     }
 
@@ -1214,6 +1249,7 @@ JS;
         $this->execute('behat_forms::i_set_the_field_to', [$field, $token]);
     }
 
+    // phpcs:disable moodle.Files.LineLength.MaxExceeded -- Behat step patterns must stay on one line.
     /**
      * Type the id of a course in a field of a container, for the forms that ask for a course id.
      *
@@ -1224,12 +1260,17 @@ JS;
      * @param string $shortname Course short name.
      * @return void
      */
-    public function i_set_the_field_in_the_container_to_the_id_of_the_course(string $field, string $container,
-            string $selector, string $shortname): void {
+    public function i_set_the_field_in_the_container_to_the_id_of_the_course(
+        string $field,
+        string $container,
+        string $selector,
+        string $shortname
+    ): void {
         global $DB;
         $courseid = $DB->get_field('course', 'id', ['shortname' => $shortname], MUST_EXIST);
         $this->execute('behat_forms::i_set_the_field_in_container_to', [$field, $container, $selector, (string) $courseid]);
     }
+    // phpcs:enable moodle.Files.LineLength.MaxExceeded
 
     /**
      * Let the chat requests of the panel reach the chat proxy of the site instead of answering them in the browser,

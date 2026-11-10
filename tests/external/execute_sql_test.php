@@ -171,7 +171,11 @@ final class execute_sql_test extends \advanced_testcase {
             $result = $this->run_query($sql);
         } catch (\moodle_exception $e) {
             // A database error is not a rejection: the query was sent to the database.
-            $this->assertNotContains($e->errorcode, ['execute_sql_error', 'query_timeout'], 'The query must be rejected before running');
+            $this->assertNotContains(
+                $e->errorcode,
+                ['execute_sql_error', 'query_timeout'],
+                'The query must be rejected before running'
+            );
             return;
         }
         $this->fail('A query reading sensitive tables must be rejected; it returned ' . $result['row_count'] . ' row(s)');

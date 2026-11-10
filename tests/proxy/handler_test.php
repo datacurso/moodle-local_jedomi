@@ -457,7 +457,10 @@ final class handler_test extends \advanced_testcase {
         $this->resetAfterTest();
         $this->setAdminUser();
 
-        $result = json_decode(handler::run_tool('ws_execute', ['wsname' => 'core_no_such_function', 'params' => '{}'], 'admin'), true);
+        $result = json_decode(
+            handler::run_tool('ws_execute', ['wsname' => 'core_no_such_function', 'params' => '{}'], 'admin'),
+            true
+        );
 
         $this->assertIsArray($result);
         $this->assertArrayHasKey('error', $result);
@@ -544,8 +547,10 @@ final class handler_test extends \advanced_testcase {
         $messages = $fake->calls[0]['messages'];
         $system = $messages[0]['content'];
         $this->assertSame('system', $messages[0]['role']);
-        foreach (['Quantum Academy', $CFG->wwwroot, $CFG->release, 'teacher', 'Grader report',
-                'https://example.com/grade/report/grader/index.php?id=5', 'grades'] as $expected) {
+        foreach (
+            ['Quantum Academy', $CFG->wwwroot, $CFG->release, 'teacher', 'Grader report',
+                'https://example.com/grade/report/grader/index.php?id=5', 'grades'] as $expected
+        ) {
             $this->assertStringContainsString($expected, $system);
         }
         $this->assertMatchesRegularExpression('/Database: \S+/', $system);
@@ -581,8 +586,12 @@ final class handler_test extends \advanced_testcase {
         client::set_instance_for_testing($fake);
         $input = ['messages' => [['role' => 'user', 'content' => 'Show me the courses']], 'context' => []];
 
-        $events = $this->events($this->capture(fn() => handler::run_from_request($input, \local_jedomi_get_user_role(),
-            [], (int) guest_user()->id)));
+        $events = $this->events($this->capture(fn() => handler::run_from_request(
+            $input,
+            \local_jedomi_get_user_role(),
+            [],
+            (int) guest_user()->id
+        )));
 
         $this->assertSame([], $fake->calls, 'The AI is never called for a guest');
         $this->assertArrayHasKey('error', $events[0] ?? [], 'The guest gets a controlled error');
@@ -739,13 +748,19 @@ final class handler_test extends \advanced_testcase {
         $this->grant_service_capability();
 
         $this->setAdminUser();
-        $admin = json_decode(handler::run_tool('ws_execute', ['wsname' => 'core_webservice_get_site_info', 'params' => '{}'],
-            'admin'), true);
+        $admin = json_decode(handler::run_tool(
+            'ws_execute',
+            ['wsname' => 'core_webservice_get_site_info', 'params' => '{}'],
+            'admin'
+        ), true);
         $this->assertArrayHasKey('result', $admin, 'The administrator has every function without a saved list');
 
         $this->setUser($this->getDataGenerator()->create_user());
-        $student = json_decode(handler::run_tool('ws_execute', ['wsname' => 'core_webservice_get_site_info', 'params' => '{}'],
-            'student'), true);
+        $student = json_decode(handler::run_tool(
+            'ws_execute',
+            ['wsname' => 'core_webservice_get_site_info', 'params' => '{}'],
+            'student'
+        ), true);
         $this->assertArrayHasKey('error', $student);
         $this->assertArrayNotHasKey('result', $student);
         $search = json_decode(handler::run_tool('ws_search', ['query' => 'site info'], 'student'), true);
@@ -762,18 +777,26 @@ final class handler_test extends \advanced_testcase {
         $this->resetAfterTest();
         $this->grant_service_capability();
         $this->getDataGenerator()->create_category(['name' => 'Hidden from the list']);
-        \local_jedomi\local\service\admin_settings_service::save_ws_allowlist('student',
-            ['core_webservice_get_site_info', 'core_user_create_users']);
+        \local_jedomi\local\service\admin_settings_service::save_ws_allowlist(
+            'student',
+            ['core_webservice_get_site_info', 'core_user_create_users']
+        );
         $student = $this->getDataGenerator()->create_user();
         $this->setUser($student);
 
-        $listed = json_decode(handler::run_tool('ws_execute',
-            ['wsname' => 'core_webservice_get_site_info', 'params' => '{}'], 'student'), true);
+        $listed = json_decode(handler::run_tool(
+            'ws_execute',
+            ['wsname' => 'core_webservice_get_site_info', 'params' => '{}'],
+            'student'
+        ), true);
         $this->assertArrayHasKey('result', $listed);
         $this->assertSame((int) $student->id, (int) json_decode($listed['result'], true)['userid']);
 
-        $unlisted = json_decode(handler::run_tool('ws_execute',
-            ['wsname' => 'core_course_get_categories', 'params' => '{}'], 'student'), true);
+        $unlisted = json_decode(handler::run_tool(
+            'ws_execute',
+            ['wsname' => 'core_course_get_categories', 'params' => '{}'],
+            'student'
+        ), true);
         $this->assertArrayHasKey('error', $unlisted);
         $this->assertStringContainsString(get_string('ws_not_in_allowlist', 'local_jedomi'), $unlisted['error']);
 
@@ -911,8 +934,11 @@ final class handler_test extends \advanced_testcase {
         $fake->enqueue_text('Done.');
         client::set_instance_for_testing($fake);
 
-        $this->capture(fn() => handler::run([['role' => 'user', 'content' => 'Who is that user?']], 'admin',
-            (int) get_admin()->id));
+        $this->capture(fn() => handler::run(
+            [['role' => 'user', 'content' => 'Who is that user?']],
+            'admin',
+            (int) get_admin()->id
+        ));
 
         $this->assertCount(2, $fake->calls);
         $tools = array_values(array_filter($fake->calls[1]['messages'], static fn(array $m): bool => $m['role'] === 'tool'));
@@ -949,9 +975,14 @@ final class handler_test extends \advanced_testcase {
         global $DB;
         $this->resetAfterTest();
         // A high id, so the number cannot be confused with other numbers of the instructions.
-        $DB->insert_record_raw('user', ['id' => 800000 + random_int(1, 90000), 'username' => 'filler_' . random_string(10),
+        $DB->insert_record_raw(
+            'user',
+            ['id' => 800000 + random_int(1, 90000), 'username' => 'filler_' . random_string(10),
             'mnethostid' => 1, 'confirmed' => 1, 'auth' => 'manual', 'deleted' => 1, 'email' => 'filler@example.com'],
-            false, false, true);
+            false,
+            false,
+            true
+        );
         $user = $this->getDataGenerator()->create_user();
         $this->setUser($user);
         $fake = new fake_ai_client();
@@ -980,12 +1011,17 @@ final class handler_test extends \advanced_testcase {
         $created = json_decode(handler::run_tool('create_agent', ['prompt' => 'Spy', 'schedule_cron' => '0 8 * * *',
             'userid' => $adminid], 'manager'), true);
         $deleted = json_decode(handler::run_tool('delete_agent', ['id' => $foreign], 'manager'), true);
-        $own = json_decode(handler::run_tool('create_agent', ['prompt' => 'Mine', 'schedule_cron' => '0 8 * * *'], 'manager'),
-            true);
+        $own = json_decode(
+            handler::run_tool('create_agent', ['prompt' => 'Mine', 'schedule_cron' => '0 8 * * *'], 'manager'),
+            true
+        );
 
         $this->assertSame('permission_denied', $created['error'] ?? null);
-        $this->assertSame(1, $DB->count_records('local_jedomi_agents', ['userid' => $adminid]),
-            'No agent is created on behalf of the administrator');
+        $this->assertSame(
+            1,
+            $DB->count_records('local_jedomi_agents', ['userid' => $adminid]),
+            'No agent is created on behalf of the administrator'
+        );
         $this->assertSame('permission_denied', $deleted['error'] ?? null);
         $this->assertNotNull(\local_jedomi\agent\agent_manager::get_agent($foreign));
         $this->assertTrue($own['success'] ?? false, 'The manager still creates their own agents');

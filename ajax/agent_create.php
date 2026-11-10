@@ -86,7 +86,11 @@ try {
             if (!in_array($contexttype, $validcontexts, true)) {
                 echo json_encode([
                     'ok'    => false,
-                    'error' => get_string('agent_error_create', 'local_jedomi', get_string('agent_invalid_context_type', 'local_jedomi')),
+                    'error' => get_string(
+                        'agent_error_create',
+                        'local_jedomi',
+                        get_string('agent_invalid_context_type', 'local_jedomi')
+                    ),
                 ]);
                 exit;
             }

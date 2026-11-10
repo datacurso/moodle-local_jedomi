@@ -147,8 +147,10 @@ final class telegram_profile_test extends \advanced_testcase {
         $PAGE->set_url(new \moodle_url('/local/jedomi/telegram_profile.php'));
         $time = 1700000000;
 
-        $html = $PAGE->get_renderer('local_jedomi')->render($this->profile(telegram_profile::STATE_LINKED,
-            (object) ['username' => 'ada', 'chatid' => '1', 'timecreated' => $time]));
+        $html = $PAGE->get_renderer('local_jedomi')->render($this->profile(
+            telegram_profile::STATE_LINKED,
+            (object) ['username' => 'ada', 'chatid' => '1', 'timecreated' => $time]
+        ));
 
         $date = userdate($time, get_string('strftimedatetime', 'core_langconfig'));
         $this->assertStringContainsString('@ada', $html);

@@ -376,10 +376,19 @@ final class agent_runner_test extends \advanced_testcase {
         $creator = $this->getDataGenerator()->create_user();
         $recent = $this->create_due_agent((int) $creator->id);
         $oldest = $this->create_due_agent((int) $creator->id);
-        $DB->update_record('local_jedomi_agents', (object) ['id' => $recent->id, 'prompt' => 'Recent prompt', 'nextrun' => time() - 60]);
-        $DB->update_record('local_jedomi_agents', (object) ['id' => $oldest->id, 'prompt' => 'Oldest prompt', 'nextrun' => time() - 3600]);
+        $DB->update_record(
+            'local_jedomi_agents',
+            (object) ['id' => $recent->id, 'prompt' => 'Recent prompt', 'nextrun' => time() - 60]
+        );
+        $DB->update_record(
+            'local_jedomi_agents',
+            (object) ['id' => $oldest->id, 'prompt' => 'Oldest prompt', 'nextrun' => time() - 3600]
+        );
         $future = $this->create_due_agent((int) $creator->id);
-        $DB->update_record('local_jedomi_agents', (object) ['id' => $future->id, 'prompt' => 'Future prompt', 'nextrun' => time() + 3600]);
+        $DB->update_record(
+            'local_jedomi_agents',
+            (object) ['id' => $future->id, 'prompt' => 'Future prompt', 'nextrun' => time() + 3600]
+        );
         $disabled = $this->create_due_agent((int) $creator->id);
         $DB->update_record('local_jedomi_agents', (object) ['id' => $disabled->id, 'prompt' => 'Disabled prompt', 'enabled' => 0]);
         $fake = new fake_ai_client();
@@ -468,11 +477,16 @@ final class agent_runner_test extends \advanced_testcase {
 
         $this->assertCount(4, $fake->calls);
         $this->assertSame((int) $admin->id, $fake->calls[1]['userid']);
-        $this->assertTrue($this->last_tool_result($fake->calls[1])['success'] ?? false,
-            'The administrator agent must query the database with its creator permissions on its first run');
+        $this->assertTrue(
+            $this->last_tool_result($fake->calls[1])['success'] ?? false,
+            'The administrator agent must query the database with its creator permissions on its first run'
+        );
         $this->assertSame((int) $student->id, $fake->calls[3]['userid']);
-        $this->assertSame('permission_denied', $this->last_tool_result($fake->calls[3])['error'] ?? null,
-            'The student agent must not use the permissions of the administrator agent of the same cycle');
+        $this->assertSame(
+            'permission_denied',
+            $this->last_tool_result($fake->calls[3])['error'] ?? null,
+            'The student agent must not use the permissions of the administrator agent of the same cycle'
+        );
     }
 
     /**
@@ -492,7 +506,9 @@ final class agent_runner_test extends \advanced_testcase {
             ['id' => 'c2', 'type' => 'function', 'function' => ['name' => 'delete_agent',
                 'arguments' => json_encode(['id' => $foreign])]],
             ['id' => 'c3', 'type' => 'function', 'function' => ['name' => 'create_agent',
-                'arguments' => json_encode(['prompt' => 'Spy', 'schedule_cron' => '0 8 * * *', 'userid' => (int) get_admin()->id])]],
+                'arguments' => json_encode(
+                    ['prompt' => 'Spy', 'schedule_cron' => '0 8 * * *', 'userid' => (int) get_admin()->id]
+                )]],
         ]);
         $fake->enqueue_text('Done.');
         client::set_instance_for_testing($fake);
@@ -500,13 +516,22 @@ final class agent_runner_test extends \advanced_testcase {
         $this->run_task();
 
         $results = array_values(array_filter($fake->calls[1]['messages'], static fn(array $m): bool => $m['role'] === 'tool'));
-        $this->assertSame('permission_denied', json_decode($results[0]['content'], true)['error'] ?? null,
-            'An agent of a student must not run administration operations');
+        $this->assertSame(
+            'permission_denied',
+            json_decode($results[0]['content'], true)['error'] ?? null,
+            'An agent of a student must not run administration operations'
+        );
         $this->assertNotNull(\local_jedomi\agent\agent_manager::get_agent($foreign), 'An agent must not delete agents of others');
-        $spies = $DB->count_records_select('local_jedomi_agents', $DB->sql_compare_text('prompt') . ' = ? AND userid = ?',
-            ['Spy', (int) get_admin()->id]);
-        $this->assertSame(0, $spies,
-            'An agent must not create agents on behalf of another user');
+        $spies = $DB->count_records_select(
+            'local_jedomi_agents',
+            $DB->sql_compare_text('prompt') . ' = ? AND userid = ?',
+            ['Spy', (int) get_admin()->id]
+        );
+        $this->assertSame(
+            0,
+            $spies,
+            'An agent must not create agents on behalf of another user'
+        );
     }
 
     /**
@@ -536,10 +561,16 @@ final class agent_runner_test extends \advanced_testcase {
         $this->assertCount(2, $fake->calls);
         foreach (['scheduled run' => 0, 'preview' => 1] as $label => $index) {
             $instructions = (string) $fake->calls[$index]['messages'][0]['content'];
-            $this->assertStringContainsString(get_string('ctx_loc_course_id', 'local_jedomi', $course->id), $instructions,
-                "The {$label} names the course id");
-            $this->assertStringNotContainsString(get_string('ctx_loc_course_id', 'local_jedomi', $contextid), $instructions,
-                "The {$label} does not use the context id as course id");
+            $this->assertStringContainsString(
+                get_string('ctx_loc_course_id', 'local_jedomi', $course->id),
+                $instructions,
+                "The {$label} names the course id"
+            );
+            $this->assertStringNotContainsString(
+                get_string('ctx_loc_course_id', 'local_jedomi', $contextid),
+                $instructions,
+                "The {$label} does not use the context id as course id"
+            );
             $this->assertStringContainsString('Agent Course Marker', $instructions, "The {$label} names the course");
         }
     }

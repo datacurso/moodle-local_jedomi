@@ -198,8 +198,12 @@ class student_data_service {
      * @param int $userid User.
      * @return bool
      */
-    private static function item_grade_is_visible(\grade_item $item, \grade_grade $grade, \course_modinfo $modinfo,
-            int $userid): bool {
+    private static function item_grade_is_visible(
+        \grade_item $item,
+        \grade_grade $grade,
+        \course_modinfo $modinfo,
+        int $userid
+    ): bool {
         if ($item->is_hidden() || $grade->is_hidden()) {
             return false;
         }
@@ -284,8 +288,11 @@ class student_data_service {
                 if (!$cm->uservisible) {
                     continue;
                 }
-                $instance = $DB->get_record('assign', ['id' => $cm->instance],
-                    'id, duedate, cutoffdate, allowsubmissionsfromdate, teamsubmission');
+                $instance = $DB->get_record(
+                    'assign',
+                    ['id' => $cm->instance],
+                    'id, duedate, cutoffdate, allowsubmissionsfromdate, teamsubmission'
+                );
                 if (!$instance) {
                     continue;
                 }
@@ -323,8 +330,14 @@ class student_data_service {
         }
         $events = [];
         $now = time();
-        $actionevents = \core_calendar\local\api::get_action_events_by_timesort($now,
-            $now + self::UPCOMING_DAYS * DAYSECS, null, self::UPCOMING_LIMIT, true, $user);
+        $actionevents = \core_calendar\local\api::get_action_events_by_timesort(
+            $now,
+            $now + self::UPCOMING_DAYS * DAYSECS,
+            null,
+            self::UPCOMING_LIMIT,
+            true,
+            $user
+        );
         foreach ($actionevents as $event) {
             $course = $event->get_course();
             $eventcourseid = $course ? (int) $course->get('id') : 0;

@@ -154,8 +154,13 @@ class execute_sql extends external_api {
 
         // ... --- HMAC authentication (must happen before any business logic) ---
         if (!$skiphmac) {
-            self::verify_hmac('jedomi_execute_sql', $hmactimestamp, $payloadhash, $hmacsignature,
-                self::signed_params($validated));
+            self::verify_hmac(
+                'jedomi_execute_sql',
+                $hmactimestamp,
+                $payloadhash,
+                $hmacsignature,
+                self::signed_params($validated)
+            );
         }
 
         // ... --- SELECT-only enforcement (defense-in-depth, QG-01 equivalent) ---
@@ -226,8 +231,10 @@ class execute_sql extends external_api {
                 }
                 // Rows are returned as JSON strings to avoid Moodle's external
                 // API trying to describe every possible column structure.
-                $rows[] = ['json_row' => json_encode(\local_jedomi\local\sql_guard::filter_row((array) $record),
-                    JSON_UNESCAPED_UNICODE)];
+                $rows[] = ['json_row' => json_encode(
+                    \local_jedomi\local\sql_guard::filter_row((array) $record),
+                    JSON_UNESCAPED_UNICODE
+                )];
             }
             $recordset->close();
         } catch (\dml_exception $e) {

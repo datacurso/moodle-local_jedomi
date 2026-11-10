@@ -121,8 +121,12 @@ final class handler_eval_test extends \advanced_testcase {
             return '';
         });
         try {
-            handler::run_from_request(['messages' => [['role' => 'user', 'content' => $question]], 'context' => []],
-                $role, $spt, (int) $user->id);
+            handler::run_from_request(
+                ['messages' => [['role' => 'user', 'content' => $question]], 'context' => []],
+                $role,
+                $spt,
+                (int) $user->id
+            );
         } finally {
             ob_end_flush();
         }

@@ -72,6 +72,7 @@ final class system_message_test extends \advanced_testcase {
      * [Pendiente:skip]
      */
     public function test_agent_and_preview_instructions_match_their_channel(): void {
-        $this->markTestSkipped('Pending fix: agent and preview instructions say actions wait for a confirmation that does not happen there.');
+        $this->markTestSkipped('Pending fix: agent and preview instructions say actions wait for a confirmation'
+            . ' that does not happen there.');
     }
 }

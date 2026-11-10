@@ -358,15 +358,23 @@ final class admin_settings_service_test extends \advanced_testcase {
         unset_config('ws_allowlist_teacher', 'local_jedomi');
 
         admin_settings_service::save_ws_allowlist('teacher', ['core_course_get_courses'], ['core_course_get_courses']);
-        admin_settings_service::save_ws_allowlist('teacher', ['core_user_get_users_by_field'],
-            ['core_user_get_users_by_field', 'core_user_get_users']);
+        admin_settings_service::save_ws_allowlist(
+            'teacher',
+            ['core_user_get_users_by_field'],
+            ['core_user_get_users_by_field', 'core_user_get_users']
+        );
 
-        $this->assertEqualsCanonicalizing(['core_course_get_courses', 'core_user_get_users_by_field'],
-            \local_jedomi_get_role_allowlist('teacher'));
+        $this->assertEqualsCanonicalizing(
+            ['core_course_get_courses', 'core_user_get_users_by_field'],
+            \local_jedomi_get_role_allowlist('teacher')
+        );
 
         admin_settings_service::save_ws_allowlist('teacher', [], ['core_user_get_users_by_field']);
-        $this->assertSame(['core_course_get_courses'], \local_jedomi_get_role_allowlist('teacher'),
-            'Unchecking a shown function removes only that function');
+        $this->assertSame(
+            ['core_course_get_courses'],
+            \local_jedomi_get_role_allowlist('teacher'),
+            'Unchecking a shown function removes only that function'
+        );
     }
 
     /**
@@ -378,8 +386,11 @@ final class admin_settings_service_test extends \advanced_testcase {
         $this->resetAfterTest();
         unset_config('ws_allowlist_admin', 'local_jedomi');
 
-        admin_settings_service::save_ws_allowlist('admin', ['core_course_get_courses'],
-            ['core_course_get_courses', 'core_course_delete_courses']);
+        admin_settings_service::save_ws_allowlist(
+            'admin',
+            ['core_course_get_courses'],
+            ['core_course_get_courses', 'core_course_delete_courses']
+        );
 
         $allowed = \local_jedomi_get_role_allowlist('admin');
         $this->assertContains('core_course_get_courses', $allowed);
@@ -500,8 +511,11 @@ final class admin_settings_service_test extends \advanced_testcase {
 
         admin_settings_service::save_ws_allowlist('admin', []);
 
-        $result = json_decode(\local_jedomi\proxy\handler::run_tool('ws_execute',
-            ['wsname' => 'core_webservice_get_site_info', 'params' => '{}'], 'admin'), true);
+        $result = json_decode(\local_jedomi\proxy\handler::run_tool(
+            'ws_execute',
+            ['wsname' => 'core_webservice_get_site_info', 'params' => '{}'],
+            'admin'
+        ), true);
         $this->assertArrayNotHasKey('result', $result, 'A function that is not selected must not be run');
     }
 }

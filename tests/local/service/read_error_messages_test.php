@@ -113,13 +113,21 @@ final class read_error_messages_test extends \advanced_testcase {
      * @param string $key Expected language string.
      * @return void
      */
-    public function test_service_rejection_gives_the_message_of_the_content_type(string $service, int $status, string $code,
-            string $key): void {
+    public function test_service_rejection_gives_the_message_of_the_content_type(
+        string $service,
+        int $status,
+        string $code,
+        string $key
+    ): void {
         $this->resetAfterTest();
         $this->install_spanish_language();
 
-        $this->assert_message_in_both_languages($service, new \moodle_exception('httperror', 'aiprovider_datacurso', '', $status),
-            $code, $key);
+        $this->assert_message_in_both_languages(
+            $service,
+            new \moodle_exception('httperror', 'aiprovider_datacurso', '', $status),
+            $code,
+            $key
+        );
     }
 
     /**

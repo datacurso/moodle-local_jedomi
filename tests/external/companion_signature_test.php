@@ -192,8 +192,11 @@ final class companion_signature_test extends \advanced_testcase {
         $results = [];
         foreach ([-self::MARGIN, -self::MARGIN - 1, self::MARGIN, self::MARGIN + 1] as $offset) {
             $moment = $this->start_of_a_new_second() + $offset;
-            $results[$offset] = $this->outcome(fn() => $this->query(self::sign('jedomi_execute_sql', $moment, $hash), $moment,
-                $hash));
+            $results[$offset] = $this->outcome(fn() => $this->query(
+                self::sign('jedomi_execute_sql', $moment, $hash),
+                $moment,
+                $hash
+            ));
         }
 
         $this->assertSame([
@@ -214,10 +217,12 @@ final class companion_signature_test extends \advanced_testcase {
         $hash = self::payload_hash(['sql' => self::SQL, 'params' => []]);
         $messages = [];
 
-        foreach ([
+        foreach (
+            [
             [self::sign('jedomi_execute_sql', $now, $hash, str_repeat('f', 64)), $now],
             [self::sign('jedomi_execute_sql', $now - 600, $hash), $now - 600],
-        ] as [$signature, $moment]) {
+            ] as [$signature, $moment]
+        ) {
             try {
                 $this->query($signature, $moment, $hash);
                 $this->fail('The request must be rejected');
@@ -300,8 +305,12 @@ final class companion_signature_test extends \advanced_testcase {
      * @param array $signedparams Parameters the signature was made for.
      * @param array $sentparams Parameters actually sent.
      */
-    public function test_signature_reused_with_other_parameters_is_rejected(string $class, string $function,
-            array $signedparams, array $sentparams): void {
+    public function test_signature_reused_with_other_parameters_is_rejected(
+        string $class,
+        string $function,
+        array $signedparams,
+        array $sentparams
+    ): void {
         $now = time();
         $hash = self::payload_hash($signedparams);
         $signature = self::sign($function, $now, $hash);
@@ -309,8 +318,11 @@ final class companion_signature_test extends \advanced_testcase {
 
         $outcome = $this->outcome(fn() => $fqcn::execute(...array_merge(array_values($sentparams), [$signature, $now, $hash])));
 
-        $this->assertSame('unauthorized', $outcome,
-            "{$class}: a signature made for other parameters must be rejected before running the operation");
+        $this->assertSame(
+            'unauthorized',
+            $outcome,
+            "{$class}: a signature made for other parameters must be rejected before running the operation"
+        );
     }
 
     /**
@@ -321,11 +333,20 @@ final class companion_signature_test extends \advanced_testcase {
         $hash = self::payload_hash(['name' => 'jedomi_signature_probe', 'value' => 'signed', 'plugin' => 'local_jedomi']);
         $signature = self::sign('jedomi_set_site_config', $now, $hash);
 
-        $this->outcome(fn() => set_site_config::execute('jedomi_signature_probe', 'tampered', 'local_jedomi', $signature,
-            $now, $hash));
+        $this->outcome(fn() => set_site_config::execute(
+            'jedomi_signature_probe',
+            'tampered',
+            'local_jedomi',
+            $signature,
+            $now,
+            $hash
+        ));
 
-        $this->assertNotSame('tampered', get_config('local_jedomi', 'jedomi_signature_probe'),
-            'A signature made for another value must not change the setting');
+        $this->assertNotSame(
+            'tampered',
+            get_config('local_jedomi', 'jedomi_signature_probe'),
+            'A signature made for another value must not change the setting'
+        );
     }
 
     /**

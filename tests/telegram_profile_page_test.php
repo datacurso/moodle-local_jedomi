@@ -78,7 +78,9 @@ final class telegram_profile_page_test extends \advanced_testcase {
 
         $output = $this->request_page('jedomimanager', ['userid' => get_admin()->id, 'action' => 'generate']);
 
-        $this->assertFalse(str_contains($output, 'local_jedomi-tg-code'),
-            'A manager generated the Telegram link code of the admin account.');
+        $this->assertFalse(
+            str_contains($output, 'local_jedomi-tg-code'),
+            'A manager generated the Telegram link code of the admin account.'
+        );
     }
 }

@@ -60,8 +60,13 @@ final class hook_callbacks_test extends \advanced_testcase {
      * @param \stdClass|null $quiz Quiz of the page, if it is a quiz page.
      * @return bool
      */
-    private function panel_injected(\moodle_url $url, string $pagetype, string $layout, \stdClass $course,
-            ?\stdClass $quiz = null): bool {
+    private function panel_injected(
+        \moodle_url $url,
+        string $pagetype,
+        string $layout,
+        \stdClass $course,
+        ?\stdClass $quiz = null
+    ): bool {
         global $PAGE;
         $PAGE = new \moodle_page();
         $PAGE->set_url($url);
@@ -87,13 +92,19 @@ final class hook_callbacks_test extends \advanced_testcase {
         [$course, $quiz] = $this->student_in_course_with_quiz();
         $url = new \moodle_url('/mod/quiz/attempt.php', ['attempt' => 1, 'cmid' => $quiz->cmid]);
 
-        $this->assertFalse($this->panel_injected($url, 'mod-quiz-attempt', 'incourse', $course, $quiz),
-            'The panel must not be available during a quiz attempt');
-        $this->assertFalse($this->panel_injected($url, 'mod-quiz-attempt', 'secure', $course, $quiz),
-            'The panel must not be available during a quiz attempt in safe browser mode');
+        $this->assertFalse(
+            $this->panel_injected($url, 'mod-quiz-attempt', 'incourse', $course, $quiz),
+            'The panel must not be available during a quiz attempt'
+        );
+        $this->assertFalse(
+            $this->panel_injected($url, 'mod-quiz-attempt', 'secure', $course, $quiz),
+            'The panel must not be available during a quiz attempt in safe browser mode'
+        );
         $summary = new \moodle_url('/mod/quiz/summary.php', ['attempt' => 1, 'cmid' => $quiz->cmid]);
-        $this->assertFalse($this->panel_injected($summary, 'mod-quiz-summary', 'incourse', $course, $quiz),
-            'The panel must not be available on the attempt summary');
+        $this->assertFalse(
+            $this->panel_injected($summary, 'mod-quiz-summary', 'incourse', $course, $quiz),
+            'The panel must not be available on the attempt summary'
+        );
     }
 
     /**
@@ -106,8 +117,10 @@ final class hook_callbacks_test extends \advanced_testcase {
         $url = new \moodle_url('/course/view.php', ['id' => $course->id]);
 
         foreach (['popup', 'embedded', 'secure'] as $layout) {
-            $this->assertFalse($this->panel_injected($url, 'course-view-topics', $layout, $course),
-                "The panel must not be available with the {$layout} layout");
+            $this->assertFalse(
+                $this->panel_injected($url, 'course-view-topics', $layout, $course),
+                "The panel must not be available with the {$layout} layout"
+            );
         }
     }
 
@@ -140,16 +153,23 @@ final class hook_callbacks_test extends \advanced_testcase {
         foreach (['1', '0'] as $hidefromguests) {
             set_config('hide_from_guests', $hidefromguests, 'local_jedomi');
             $this->setGuestUser();
-            $this->assertFalse($this->panel_injected($url, 'course-view-topics', 'course', $course),
-                "A guest never sees the panel (option {$hidefromguests})");
+            $this->assertFalse(
+                $this->panel_injected($url, 'course-view-topics', 'course', $course),
+                "A guest never sees the panel (option {$hidefromguests})"
+            );
             $this->setUser(null);
-            $this->assertFalse($this->panel_injected($url, 'course-view-topics', 'course', $course),
-                "A user not logged in never sees the panel (option {$hidefromguests})");
+            $this->assertFalse(
+                $this->panel_injected($url, 'course-view-topics', 'course', $course),
+                "A user not logged in never sees the panel (option {$hidefromguests})"
+            );
         }
 
         $help = get_string('hide_from_guests_help', 'local_jedomi');
-        $this->assertStringContainsStringIgnoringCase('always', $help,
-            'The help must not promise an effect the option does not have: guests are always excluded');
+        $this->assertStringContainsStringIgnoringCase(
+            'always',
+            $help,
+            'The help must not promise an effect the option does not have: guests are always excluded'
+        );
     }
 
     /**
@@ -213,11 +233,15 @@ final class hook_callbacks_test extends \advanced_testcase {
         set_config('hidden_roles', (string) $this->role_id('student'), 'local_jedomi');
 
         $courseurl = new \moodle_url('/course/view.php', ['id' => $course->id]);
-        $this->assertFalse($this->panel_injected($courseurl, 'course-view-topics', 'course', $course),
-            'A student with the role hidden must not see the panel in the course');
+        $this->assertFalse(
+            $this->panel_injected($courseurl, 'course-view-topics', 'course', $course),
+            'A student with the role hidden must not see the panel in the course'
+        );
         $view = new \moodle_url('/mod/quiz/view.php', ['id' => $quiz->cmid]);
-        $this->assertFalse($this->panel_injected($view, 'mod-quiz-view', 'incourse', $course, $quiz),
-            'A student with the role hidden must not see the panel inside an activity');
+        $this->assertFalse(
+            $this->panel_injected($view, 'mod-quiz-view', 'incourse', $course, $quiz),
+            'A student with the role hidden must not see the panel inside an activity'
+        );
     }
 
     /**
@@ -233,12 +257,16 @@ final class hook_callbacks_test extends \advanced_testcase {
         role_assign($this->role_id('manager'), $categorymanager->id, \context_coursecat::instance($category->id));
         set_config('hidden_roles', implode(',', [$this->role_id('manager'), $this->role_id('user')]), 'local_jedomi');
         $this->setUser($categorymanager);
-        $this->assertFalse($this->panel_injected($url, 'course-view-topics', 'course', $course),
-            'A user whose only roles (category manager and authenticated user) are hidden must not see the panel');
+        $this->assertFalse(
+            $this->panel_injected($url, 'course-view-topics', 'course', $course),
+            'A user whose only roles (category manager and authenticated user) are hidden must not see the panel'
+        );
 
         set_config('hidden_roles', (string) $this->role_id('user'), 'local_jedomi');
         $this->setUser($this->getDataGenerator()->create_user());
-        $this->assertFalse($this->panel_injected($url, 'course-view-topics', 'course', $course),
-            'Hiding the authenticated user role must hide the panel from users without other roles');
+        $this->assertFalse(
+            $this->panel_injected($url, 'course-view-topics', 'course', $course),
+            'Hiding the authenticated user role must hide the panel from users without other roles'
+        );
     }
 }
