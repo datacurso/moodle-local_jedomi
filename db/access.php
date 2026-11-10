@@ -46,21 +46,16 @@ $capabilities = [
             'manager' => CAP_ALLOW,
         ],
     ],
-    // Allows a Moodle service account to call the CompanionWS functions.
-    // Only the jedomi_companion service token should have this capability.
-    // ALL other role archetypes are explicitly prohibited.
+    // Allows calling the companion API functions (database queries, schema, password check and web services), both
+    // from the web chat, which runs them in-process with the user's permissions, and from the companion service.
+    // It is meant for managers and for the jedomi_companion service account, to which an administrator grants it.
+    // Other roles do not have it unless an administrator grants it. There is no CAP_PROHIBIT on any archetype: the
+    // authenticated user role is held by every logged-in user, so a prohibit there would remove it from managers too.
     'local/jedomi:companion_api' => [
         'captype'      => 'read',
         'contextlevel' => CONTEXT_SYSTEM,
         'archetypes'   => [
-            'manager'        => CAP_ALLOW,
-            'coursecreator'  => CAP_PROHIBIT,
-            'editingteacher' => CAP_PROHIBIT,
-            'teacher'        => CAP_PROHIBIT,
-            'student'        => CAP_PROHIBIT,
-            'guest'          => CAP_PROHIBIT,
-            'user'           => CAP_PROHIBIT,
-            'frontpage'      => CAP_PROHIBIT,
+            'manager' => CAP_ALLOW,
         ],
     ],
 ];

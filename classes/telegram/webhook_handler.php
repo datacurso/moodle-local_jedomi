@@ -2471,8 +2471,7 @@ class webhook_handler {
         $staticsecret = \local_jedomi_get_spt_secret();
 
         ksort($payload);
-        $tosign = json_encode($payload);
-        $signature = hash_hmac('sha256', $tosign, $staticsecret);
+        $signature = hash_hmac('sha256', \local_jedomi_spt_signing_string($payload), $staticsecret);
 
         $payload['signature'] = $signature;
         return $payload;

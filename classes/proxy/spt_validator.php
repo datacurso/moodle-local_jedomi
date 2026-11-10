@@ -59,10 +59,7 @@ class spt_validator {
 
         // Reconstruct and verify signature.
         $secret = \local_jedomi_get_spt_secret();
-        $payload = $spt;
-        unset($payload['signature']);
-        ksort($payload);
-        $expected = hash_hmac('sha256', json_encode($payload), $secret);
+        $expected = hash_hmac('sha256', \local_jedomi_spt_signing_string($spt), $secret);
 
         if (!hash_equals($expected, $spt['signature'] ?? '')) {
             throw new \moodle_exception('invalid_signature', 'local_jedomi');

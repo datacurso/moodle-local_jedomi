@@ -236,10 +236,32 @@ final class lib_test extends \advanced_testcase {
         $signature = $result['signature'];
         unset($result['signature']);
 
-        ksort($result);
-        $expectedsig = hash_hmac('sha256', json_encode($result), $staticsecret);
+        $expectedsig = hash_hmac('sha256', local_jedomi_spt_signing_string($result), $staticsecret);
 
         $this->assertEquals($expectedsig, $signature);
+    }
+
+    /**
+     * A student's SPT stays valid after the JSON round trip through the browser.
+     *
+     * The tools without parameters declare "properties" as an empty object, which comes back as an empty array.
+     *
+     * @covers ::local_jedomi_spt_signing_string
+     * @covers \local_jedomi\proxy\spt_validator::validate
+     */
+    public function test_student_spt_survives_the_browser_round_trip(): void {
+        $this->resetAfterTest();
+        $course = $this->getDataGenerator()->create_course();
+        $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
+        $this->setUser($student);
+        $this->set_course_page($course);
+
+        $spt = local_jedomi_generate_spt('student');
+        $this->assertStringContainsString('"properties":{}', json_encode($spt['tools']));
+
+        $returned = json_decode(json_encode($spt), true);
+
+        $this->assertSame('student', \local_jedomi\proxy\spt_validator::validate($returned));
     }
 
     /**

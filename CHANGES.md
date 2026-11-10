@@ -1,5 +1,10 @@
 # Changes
 
+## 1.4.1 (2026-11-10)
+
+- Fix managers (who are not site administrators) being unable to run database queries and web services from the web chat: the `local/jedomi:companion_api` capability no longer prohibits the default roles; only managers have it by default, and administrators can grant it to the `jedomi_companion` service account or other roles
+- The 2026111000 upgrade removes the prohibit on `local/jedomi:companion_api` that older versions left at system level in the course creator, teacher, non-editing teacher, student, guest, authenticated user and authenticated user on frontpage roles; other values set by an administrator are kept
+
 ## 1.4.0 (2026-11-06)
 
 - Route every AI call (web chat, scheduled agents, agent preview, Telegram and CLI) through the Datacurso AI provider to `POST /jedomi/v1/chat/completions`, using the provider license, rate limits and the pseudonymised user of each call

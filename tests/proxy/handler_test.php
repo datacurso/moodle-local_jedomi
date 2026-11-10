@@ -606,7 +606,7 @@ final class handler_test extends \advanced_testcase {
     private function sign_with_site_secret(array $spt): array {
         unset($spt['signature']);
         ksort($spt);
-        $spt['signature'] = hash_hmac('sha256', json_encode($spt), \local_jedomi_get_spt_secret());
+        $spt['signature'] = hash_hmac('sha256', \local_jedomi_spt_signing_string($spt), \local_jedomi_get_spt_secret());
         return $spt;
     }
 

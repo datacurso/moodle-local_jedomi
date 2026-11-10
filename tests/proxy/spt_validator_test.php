@@ -42,7 +42,7 @@ final class spt_validator_test extends \advanced_testcase {
     private function sign_with(array $payload, string $key): array {
         unset($payload['signature']);
         ksort($payload);
-        $payload['signature'] = hash_hmac('sha256', json_encode($payload), $key);
+        $payload['signature'] = hash_hmac('sha256', \local_jedomi_spt_signing_string($payload), $key);
         return $payload;
     }
 

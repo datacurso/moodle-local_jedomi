@@ -392,5 +392,13 @@ function xmldb_local_jedomi_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2026110401, 'local', 'jedomi');
     }
 
+    if ($oldversion < 2026111000) {
+        // Older defaults prohibited the companion API for the authenticated user role, which every logged-in user
+        // holds, so managers could not run database queries or web services from the chat. Remove that prohibit.
+        require_once($CFG->dirroot . '/local/jedomi/db/upgradelib.php');
+        local_jedomi_remove_companion_api_prohibits();
+        upgrade_plugin_savepoint(true, 2026111000, 'local', 'jedomi');
+    }
+
     return true;
 }

@@ -142,13 +142,36 @@ final class companion_access_test extends \advanced_testcase {
             $this->assertNotEmpty(get_capability_info($capability), $capability);
             $this->assertSame(CAP_ALLOW, get_default_capabilities('manager')[$capability] ?? null, $capability);
         }
-        foreach (['student', 'teacher', 'editingteacher', 'user', 'guest'] as $archetype) {
-            $this->assertSame(
-                CAP_PROHIBIT,
-                get_default_capabilities($archetype)['local/jedomi:companion_api'] ?? null,
-                $archetype
-            );
+        // No other archetype has a default for the companion permission: a prohibit on the authenticated user role,
+        // which every logged-in user holds, would remove it from managers too.
+        foreach (['coursecreator', 'editingteacher', 'teacher', 'student', 'guest', 'user', 'frontpage'] as $archetype) {
+            $this->assertNull(get_default_capabilities($archetype)['local/jedomi:companion_api'] ?? null, $archetype);
         }
+    }
+
+    /**
+     * A manager who is not a site administrator holds the companion permission and can run a read query from the chat;
+     * a user with only the authenticated user role does not hold it and is refused.
+     */
+    public function test_manager_can_use_the_companion_api_and_a_plain_user_cannot(): void {
+        global $DB;
+        $systemcontext = \context_system::instance();
+        $manager = $this->getDataGenerator()->create_user();
+        role_assign((int) $DB->get_field('role', 'id', ['shortname' => 'manager']), $manager->id, $systemcontext);
+        $plainuser = $this->getDataGenerator()->create_user();
+
+        $this->assertFalse(is_siteadmin($manager));
+        $this->assertTrue(has_capability('local/jedomi:companion_api', $systemcontext, $manager));
+        $this->assertFalse(has_capability('local/jedomi:companion_api', $systemcontext, $plainuser));
+
+        // The chat runs the query in-process with the user's permissions (no signature).
+        $this->setUser($manager);
+        $result = execute_sql::execute('SELECT id FROM {course} WHERE id = ' . SITEID, [], '', 0, '', true);
+        $this->assertSame(1, $result['row_count']);
+
+        $this->setUser($plainuser);
+        $refused = $this->exception_of(fn() => execute_sql::execute('SELECT id FROM {course}', [], '', 0, '', true));
+        $this->assertInstanceOf(\required_capability_exception::class, $refused);
     }
 
     /**

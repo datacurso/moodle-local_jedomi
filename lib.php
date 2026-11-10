@@ -878,6 +878,23 @@ function local_jedomi_get_spt_secret(): string {
 }
 
 /**
+ * Text an SPT is signed over: the payload without its signature, in the form it has after a JSON round trip.
+ *
+ * The browser sends the SPT back as JSON and the validator decodes it into arrays, so an empty object
+ * (for example the "properties" of a tool without parameters) comes back as an empty array. Signing the
+ * payload after the same round trip keeps the signature valid for every tool definition.
+ *
+ * @param array $payload SPT payload, with or without its signature.
+ * @return string JSON text to sign or verify.
+ */
+function local_jedomi_spt_signing_string(array $payload): string {
+    unset($payload['signature']);
+    $canonical = json_decode(json_encode($payload), true);
+    ksort($canonical);
+    return json_encode($canonical);
+}
+
+/**
  * Generate a signed SPT (Secure Payload Token) for the current user and course.
  *
  * Builds a payload with the user's identity, effective capabilities, role-scoped
@@ -950,9 +967,8 @@ function local_jedomi_generate_spt(string $role): array {
     $staticsecret = local_jedomi_get_spt_secret();
     $payload['sesskey_hash'] = substr(hash('sha256', sesskey()), 0, 16); // Binding sin exponer sesskey.
 
-    ksort($payload);  // Ordenar claves antes de serializar (consistencia con Python sort_keys).
-    $tosign   = json_encode($payload);
-    $signature = hash_hmac('sha256', $tosign, $staticsecret);
+    ksort($payload);
+    $signature = hash_hmac('sha256', local_jedomi_spt_signing_string($payload), $staticsecret);
 
     $payload['signature'] = $signature;
     return $payload;
@@ -1028,8 +1044,7 @@ function local_jedomi_generate_spt_for_user(int $userid, string $role): array {
     $staticsecret = local_jedomi_get_spt_secret();
 
     ksort($payload);
-    $tosign = json_encode($payload);
-    $signature = hash_hmac('sha256', $tosign, $staticsecret);
+    $signature = hash_hmac('sha256', local_jedomi_spt_signing_string($payload), $staticsecret);
 
     $payload['signature'] = $signature;
     return $payload;
