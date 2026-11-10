@@ -325,7 +325,7 @@ class sql_guard {
      * @param array $instance Table instance.
      * @param string[] $conditions Conditions that apply to the instance.
      * @param array[] $instances Every table instance of the query.
-     * @param array<int, true> $restricted Instances already known to be limited.
+     * @param array<int,true> $restricted Instances already known to be limited.
      * @param bool $single Whether the query reads only this table (unqualified columns then belong to it).
      * @return int[]|null
      */
