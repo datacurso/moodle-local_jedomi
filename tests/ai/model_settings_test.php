@@ -114,6 +114,7 @@ final class model_settings_test extends \advanced_testcase {
             'jedomi/deepseek-ai/DeepSeek-V4.1-Flash-1017',
             'jedomi/zai-org/GLM-5.3-Flash',
             'jedomi/XiaomiMiMo/MiMo-V2.6-Flash',
+            'jedomi/moonshotai/Kimi-K3.1-Pro',
         ], array_keys($models));
         $this->assertSame(model_settings::DEFAULT_MODEL, array_key_first($models));
         foreach ($models as $model => $name) {
@@ -239,6 +240,7 @@ final class model_settings_test extends \advanced_testcase {
             'jedomi/deepseek-ai/DeepSeek-V4.1-Flash-1017',
             'jedomi/zai-org/GLM-5.3-Flash',
             'jedomi/XiaomiMiMo/MiMo-V2.6-Flash',
+            'jedomi/moonshotai/Kimi-K3.1-Pro',
         ], array_keys(model_settings::get_available_models(model_settings::CAPABILITY_CHAT)));
         $this->assertSame([
             'jedomi/Qwen/Qwen3-VL-30B-A3B-Instruct',
@@ -247,6 +249,7 @@ final class model_settings_test extends \advanced_testcase {
             'jedomi/deepseek-ai/DeepSeek-V4.1-Flash-1017',
             'jedomi/zai-org/GLM-5.3-Flash',
             'jedomi/XiaomiMiMo/MiMo-V2.6-Flash',
+            'jedomi/moonshotai/Kimi-K3.1-Pro',
         ], array_keys(model_settings::get_available_models(model_settings::CAPABILITY_VISION)));
         $this->assertSame([
             'jedomi/Qwen/Qwen3-ASR-1.7B',

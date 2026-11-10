@@ -91,6 +91,7 @@ class model_settings {
             'jedomi/deepseek-ai/DeepSeek-V4.1-Flash-1017' => ['name' => 'DeepSeek V4.1 Flash', 'capabilities' => $chatvision],
             'jedomi/zai-org/GLM-5.3-Flash' => ['name' => 'GLM 5.3 Flash', 'capabilities' => $chatvision],
             'jedomi/XiaomiMiMo/MiMo-V2.6-Flash' => ['name' => 'MiMo V2.6 Flash', 'capabilities' => $chatvision],
+            'jedomi/moonshotai/Kimi-K3.1-Pro' => ['name' => 'Kimi K3.1 Pro', 'capabilities' => $chatvision],
             self::DEFAULT_AUDIO_MODEL => ['name' => 'Qwen3-ASR 1.7B', 'capabilities' => [self::CAPABILITY_AUDIO]],
             'jedomi/openai/whisper-large-v3-turbo' => [
                 'name' => 'Whisper large-v3 turbo',
