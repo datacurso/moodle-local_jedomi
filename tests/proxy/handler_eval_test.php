@@ -176,7 +176,7 @@ final class handler_eval_test extends \advanced_testcase {
     /**
      * Assert that the share of passed items reaches the threshold of the dataset.
      *
-     * @param array<string,string[]> $failures Problems by item id; an item without problems passed.
+     * @param array $failures Problems (string[]) keyed by item id; an item without problems passed.
      * @return void
      */
     private function assert_threshold(array $failures): void {
