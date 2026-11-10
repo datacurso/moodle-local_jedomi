@@ -80,7 +80,6 @@ final class hook_callbacks_test extends \advanced_testcase {
 
     /**
      * MDL-UNIT-082: the panel is not shown on quiz attempt pages, including the safe browser layout.
-     * [Pendiente:fail] The panel is injected inside quiz attempts.
      *
      * @return void
      */
@@ -99,7 +98,6 @@ final class hook_callbacks_test extends \advanced_testcase {
 
     /**
      * MDL-UNIT-082: the panel is not shown on pop-up, embedded or secure pages.
-     * [Pendiente:fail] The panel is injected in pop-up and embedded windows.
      *
      * @return void
      */
@@ -130,13 +128,28 @@ final class hook_callbacks_test extends \advanced_testcase {
     }
 
     /**
-     * MDL-UNIT-086: guests and users not logged in never see the panel, and the configuration offers no option without effect.
-     * [Pendiente:skip]
+     * MDL-UNIT-086: guests and users not logged in never see the panel, with the "Hide from guest users" option on and off,
+     * and the help of the option says that they are always excluded.
      *
      * @return void
      */
     public function test_guests_never_see_the_panel_and_no_option_without_effect(): void {
-        $this->markTestSkipped('Pending fix: the "Hide from guest users" option has no effect because guests never see the panel.');
+        [$course] = $this->student_in_course_with_quiz();
+        $url = new \moodle_url('/course/view.php', ['id' => $course->id]);
+
+        foreach (['1', '0'] as $hidefromguests) {
+            set_config('hide_from_guests', $hidefromguests, 'local_jedomi');
+            $this->setGuestUser();
+            $this->assertFalse($this->panel_injected($url, 'course-view-topics', 'course', $course),
+                "A guest never sees the panel (option {$hidefromguests})");
+            $this->setUser(null);
+            $this->assertFalse($this->panel_injected($url, 'course-view-topics', 'course', $course),
+                "A user not logged in never sees the panel (option {$hidefromguests})");
+        }
+
+        $help = get_string('hide_from_guests_help', 'local_jedomi');
+        $this->assertStringContainsStringIgnoringCase('always', $help,
+            'The help must not promise an effect the option does not have: guests are always excluded');
     }
 
     /**
@@ -194,7 +207,6 @@ final class hook_callbacks_test extends \advanced_testcase {
 
     /**
      * MDL-INT-010: a student whose role is hidden does not see the panel in the course nor inside its activities.
-     * [Pendiente:fail] Only site-level roles are read, so a student with the role hidden still sees the panel.
      */
     public function test_student_with_the_role_hidden_sees_no_panel_in_course_or_activity(): void {
         [$course, $quiz] = $this->student_in_course_with_quiz();
@@ -210,7 +222,6 @@ final class hook_callbacks_test extends \advanced_testcase {
 
     /**
      * MDL-INT-010: the roles assigned in categories count, and hiding the authenticated user role has effect.
-     * [Pendiente:fail] Category roles and the authenticated user role are ignored.
      */
     public function test_category_roles_and_the_authenticated_user_role_are_considered(): void {
         $this->resetAfterTest();

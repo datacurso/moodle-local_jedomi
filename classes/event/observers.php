@@ -25,6 +25,7 @@
 namespace local_jedomi\event;
 
 use aiprovider_datacurso\local\plugin_settings;
+use local_jedomi\local\service\student_data_service;
 use local_jedomi\telegram\api_client;
 use local_jedomi\telegram\manager;
 
@@ -32,6 +33,12 @@ use local_jedomi\telegram\manager;
  * Event observers that send proactive Telegram notifications to linked users.
  */
 class observers {
+    /** Minimum seconds between two proactive notifications to the same chat. */
+    private const COOLDOWN = 300;
+
+    /** User preference with the assignments whose grade was notified recently. */
+    private const GRADE_PREFERENCE = 'local_jedomi_grade_notifications';
+
     /**
      * Notify student via Telegram when their assignment is graded.
      *
@@ -55,22 +62,72 @@ class observers {
             return;
         }
 
-        if (!self::check_cooldown($link)) {
-            return;
-        }
-
         // Retrieve names via standard DB API (get_assign/get_course are not event methods).
         $cmid    = $event->contextinstanceid;
         $cm       = get_coursemodule_from_id('assign', $cmid, 0, false, IGNORE_MISSING);
-        $assignname = $cm ? $cm->name : 'Assignment';
-        $coursename = $cm ? $DB->get_field('course', 'fullname', ['id' => $cm->course]) : 'Course';
+        if (!$cm || !student_data_service::assign_grade_is_visible((int) $cm->instance, (int) $cm->course, (int) $studentid)) {
+            // The student cannot see the grade yet: it is hidden, not released or anonymous.
+            return;
+        }
 
-        $text = "📝 Your assignment '<b>" . s($assignname) . "</b>' in <b>" . s($coursename ?? 'Course') . "</b> has been graded.";
+        if (!self::check_grade_cooldown($link, (int) $cmid)) {
+            return;
+        }
+
+        $assignname = $cm->name;
+        $coursename = $DB->get_field('course', 'fullname', ['id' => $cm->course]) ?: 'Course';
+
+        $text = "📝 Your assignment '<b>" . s($assignname) . "</b>' in <b>" . s($coursename) . "</b> has been graded.";
 
         $client = api_client::instance();
         $client->send_message((string)$link->chatid, $text);
 
         self::update_cooldown($link);
+        self::record_grade_notification((int) $studentid, (int) $cmid);
+    }
+
+    /**
+     * Whether a grade notification may be sent: after the minimum interval of the chat, or within it when it is
+     * about an assignment not notified during the interval, so the interval never drops another assignment.
+     *
+     * @param \stdClass $link Telegram link record.
+     * @param int $cmid Course module of the graded assignment.
+     * @return bool
+     */
+    private static function check_grade_cooldown(\stdClass $link, int $cmid): bool {
+        if (self::check_cooldown($link)) {
+            return true;
+        }
+        $notified = self::recent_grade_notifications((int) $link->userid);
+        return !empty($notified) && !isset($notified[$cmid]);
+    }
+
+    /**
+     * Assignments notified to a user within the minimum interval, with the time of each notification.
+     *
+     * @param int $userid Student.
+     * @return array<int, int> Time keyed by course module id.
+     */
+    private static function recent_grade_notifications(int $userid): array {
+        $notified = json_decode((string) get_user_preferences(self::GRADE_PREFERENCE, '', $userid), true);
+        if (!is_array($notified)) {
+            return [];
+        }
+        $since = time() - self::COOLDOWN;
+        return array_filter($notified, static fn($time): bool => (int) $time > $since);
+    }
+
+    /**
+     * Remember that the grade of an assignment was notified to a user.
+     *
+     * @param int $userid Student.
+     * @param int $cmid Course module of the assignment.
+     * @return void
+     */
+    private static function record_grade_notification(int $userid, int $cmid): void {
+        $notified = self::recent_grade_notifications($userid);
+        $notified[$cmid] = time();
+        set_user_preference(self::GRADE_PREFERENCE, json_encode($notified), $userid);
     }
 
     /**
@@ -130,8 +187,7 @@ class observers {
      * @return bool True if the 5-minute cooldown has elapsed and a message may be sent.
      */
     private static function check_cooldown(\stdClass $link): bool {
-        $cooldownseconds = 5 * 60; // 5 minutes
-        return ($link->lastproactivesent + $cooldownseconds) <= time();
+        return ($link->lastproactivesent + self::COOLDOWN) <= time();
     }
 
     /**

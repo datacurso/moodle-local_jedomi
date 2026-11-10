@@ -56,7 +56,6 @@ Feature: Telegram link page when the bot is not configured
     Then I should see "Unlinked. Send /start to link again."
     And I should see "Not linked"
 
-  # [Pendiente:fail] A manager with the permission to update users can generate the link code of any user.
   @MDL-INT-059
   Scenario: Nobody but the user can generate the link code of an account
     Given the Jedomi Telegram bot is configured
@@ -75,7 +74,6 @@ Feature: Telegram link page when the bot is not configured
     Then I should see "Not linked"
     And "Generate code" "button" should exist
 
-  # [Pendiente:fail] Unlinking from the web leaves the conversation and the state of the bot.
   @MDL-INT-060 @javascript
   Scenario: Unlinking from the web removes every data of the bot
     Given the Jedomi Telegram bot is configured
@@ -87,7 +85,6 @@ Feature: Telegram link page when the bot is not configured
     Then I should see "Unlinked. Send /start to link again."
     And the Jedomi Telegram chat "781000002" should have no link and no conversation
 
-  # [Pendiente:fail] A linked user whose role is later blocked cannot unlink from the web.
   @MDL-INT-060 @javascript
   Scenario: A linked user whose role is blocked can still unlink from the web
     Given the Jedomi Telegram bot is configured

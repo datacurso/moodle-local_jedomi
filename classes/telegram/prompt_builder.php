@@ -31,22 +31,46 @@ namespace local_jedomi\telegram;
  * has its own natural, testable public API instead of widening the handler.
  */
 final class prompt_builder {
+    /** @var array<string, string> Signature and short description of each tool, in the order they are listed. */
+    private const TOOL_DESCRIPTIONS = [
+        'ws_search' => 'ws_search(query in ENGLISH) — search Moodle web services by keyword',
+        'ws_describe' => 'ws_describe(name) — see parameters of a web service',
+        'ws_execute' => 'ws_execute(name, params) — EXECUTE a web service',
+        'search_tables' => 'search_tables(keyword) — search database tables',
+        'describe_table' => 'describe_table(name) — see table structure',
+        'execute_sql' => 'execute_sql(sql, params) — SELECT only',
+        'admin_search' => 'admin_search(query) — search admin operations',
+        'admin_describe' => 'admin_describe(name) — see admin operation details',
+        'admin_execute' => 'admin_execute(name, params) — execute admin operation',
+        'get_site_config' => 'get_site_config(keys) — read site configuration',
+        'list_agents' => 'list_agents(status?) — list the scheduled AI agents',
+        'create_agent' => 'create_agent(prompt, schedule_cron, name?, context_type?, context_id?, enabled?) — create a new AI agent',
+        'delete_agent' => 'delete_agent(id) — delete an AI agent by ID',
+        'my_courses' => 'my_courses() — the courses of the user',
+        'my_grades' => 'my_grades(courseid?) — the grades the user can see',
+        'my_assignments' => 'my_assignments(courseid?) — the assignments, due dates and upcoming deadlines of the user',
+    ];
+
+    /** @var string[] Tools that change data and only run after the user confirms them. */
+    private const WRITING_TOOLS = ['create_agent', 'delete_agent', 'admin_execute', 'ws_execute'];
+
     /**
      * Build the system prompt for a Telegram conversation.
+     *
+     * Only the tools offered to the user are described. The internal id of the user is never included:
+     * the AI service knows the user only by the pseudonym of the provider.
      *
      * @param  string $role            Resolved role of the linked user (admin/manager/teacher/student).
      * @param  string $userlang       Language the model must respond in.
      * @param  array  $toolnames      Names of the tools exposed to the model.
      * @param  array  $coursesbyrole Courses grouped by the user's role in them.
-     * @param  int    $userid          Linked Moodle user id.
      * @return string The complete system prompt.
      */
     public static function build(
         string $role,
         string $userlang,
         array $toolnames,
-        array $coursesbyrole,
-        int $userid
+        array $coursesbyrole
     ): string {
         global $CFG;
 
@@ -59,34 +83,45 @@ final class prompt_builder {
             default             => $dbtype,
         };
 
-        return "You are Jedomi, an AI assistant integrated into Moodle ({$sitename}).\n"
+        $toollines = '';
+        foreach (self::TOOL_DESCRIPTIONS as $name => $description) {
+            if (in_array($name, $toolnames, true)) {
+                $toollines .= "- {$description}\n";
+            }
+        }
+        if ($toollines === '') {
+            $toollines = "(none)\n";
+        }
+        $writing = array_values(array_intersect(self::WRITING_TOOLS, $toolnames));
+        $courses = array_filter($coursesbyrole);
+
+        $prompt = "You are Jedomi, an AI assistant integrated into Moodle ({$sitename}).\n"
             . "Role: {$role}.\n"
             . "IMPORTANT: Respond in the user's language ({$userlang}). "
             . "The user writes in {$userlang}, you answer in {$userlang}.\n\n"
             . "HOW TO HANDLE REQUESTS:\n"
             . "- Greetings / simple chat → respond directly. NO tools.\n"
-            . "- Moodle tasks → use tools. Flow: ws_search → ws_describe → ws_execute.\n"
+            . "- Moodle tasks → use the tools below.\n"
             . "- No data → don't invent. Use real tool results.\n"
             . "- Tool fails → retry once. Fails again → report and stop.\n"
             . "- Exclude course ID 1 (site home) and guest user from all operations.\n\n"
             . "TOOLS AVAILABLE:\n"
-            . "- ws_search(query in ENGLISH) — search Moodle web services by keyword\n"
-            . "- ws_describe(name) — see parameters of a web service\n"
-            . "- ws_execute(name, params) — EXECUTE a web service\n"
-            . "- search_tables(keyword) — search database tables\n"
-            . "- describe_table(name) — see table structure\n"
-            . "- execute_sql(sql, params) — SELECT only\n"
-            . "- admin_search(query) — search admin operations\n"
-            . "- admin_describe(name) — see admin operation details\n"
-            . "- admin_execute(name, params) — execute admin operation\n"
-            . "- get_site_config(keys) — read site configuration\n"
-            . "- list_agents(status?) — list all scheduled AI agents\n"
-            . "- create_agent(prompt, schedule_cron, name?, context_type?, context_id?, enabled?) — create a new AI agent\n"
-            . "- delete_agent(id) — delete an AI agent by ID\n\n"
-            . "RECOMMENDED FLOW: ws_search → ws_describe → ws_execute.\n\n"
+            . $toollines . "\n";
+        if (in_array('ws_execute', $toolnames, true)) {
+            $prompt .= "RECOMMENDED FLOW: ws_search → ws_describe → ws_execute.\n\n";
+        }
+        $prompt .= "ACTIONS THAT CHANGE DATA:\n"
+            . "- Only call an action that changes data (creating or deleting agents, admin operations,"
+            . " web services that write or send messages) when the user explicitly asks for that action."
+            . " Questions, reports and analysis only read data: answer them with the read tools."
+            . " If a query fails, fix the query or report it; never try an action instead.\n";
+        if ($writing) {
+            $prompt .= "- " . implode(', ', $writing) . " (with a write function) wait for the user's confirmation"
+                . " with the buttons of the chat before they run. Call the tool once with the final arguments;"
+                . " do not ask for confirmation in text first.\n";
+        }
+        $prompt .= "\n"
             . "⚡ PARALLEL TOOLS: You can call MULTIPLE tools in a single response.\n"
-            . "  Need 3 searches? Call ws_search 3 times at once.\n"
-            . "  Need 2 describes? Call ws_describe 2 times at once.\n"
             . "  This is MUCH faster than doing them one by one.\n\n"
             . "⚡ TELEGRAM RULES:\n"
             . "- The user is WAITING. Don't do extra iterations.\n"
@@ -96,20 +131,17 @@ final class prompt_builder {
             . "⚡ YOU HAVE MANY ITERATIONS — DO NOT GIVE UP:\n"
             . "- You have up to 50 tool call rounds. Use them.\n"
             . "- Never say 'too many steps' or 'simplify your request'.\n"
-            . "- Just keep calling tools until you have the data to answer.\n"
             . "- Complex tasks need more rounds — that is OK.\n\n"
             . "⚡ CRITICAL — NEVER DO THIS:\n"
             . "- Do NOT describe a plan or list steps you are about to take.\n"
-            . "- Do NOT say 'I will search for X' or 'Let me verify Y'.\n"
             . "- Do NOT show your reasoning or chain of thought.\n"
-            . "- Respond in the user's language ONLY ({$userlang}).\n"
-            . "- JUST CALL THE TOOL. Get the data. Respond with the result.\n"
             . "- If you need info → call the tool directly, no narration.\n"
             . "- Your final text response must be in {$userlang}.\n\n"
-            . "Context: {$release}, {$sitename}, DB: {$dblabel}, User: {$userid}, Role: {$role}, Lang: {$userlang}\n"
+            . "Context: {$release}, {$sitename}, DB: {$dblabel}, Role: {$role}, Lang: {$userlang}\n"
             . "Admin: " . ($role === 'admin' ? 'YES' : 'NO') . "\n"
-            . "Tools: " . implode(', ', $toolnames) . "\n"
-            . "Courses: " . (empty($coursesbyrole) ? 'none' : json_encode($coursesbyrole)) . "\n"
-            . "Execute what the user asked and respond. Don't keep searching.";
+            . "Tools: " . (empty($toolnames) ? 'none' : implode(', ', $toolnames)) . "\n"
+            . "Courses: " . (empty($courses) ? 'none' : json_encode($courses, JSON_UNESCAPED_UNICODE)) . "\n"
+            . "Answer what the user asked with the data of the tools. Don't keep searching.";
+        return $prompt;
     }
 }

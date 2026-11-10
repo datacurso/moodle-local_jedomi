@@ -38,7 +38,7 @@ require_once(__DIR__ . '/../../lib.php');
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class e2e_check {
-    /** @var string Step: the Datacurso AI provider is enabled. */
+    /** @var string Step: the Datacurso AI provider and Jedomi in it are enabled. */
     public const STEP_PROVIDER = 'provider enabled';
 
     /** @var string Step: the first AI request was answered. */
@@ -115,6 +115,12 @@ class e2e_check {
         if (!\core\plugininfo\aiprovider::is_plugin_enabled('datacurso')) {
             return $this->fail(self::STEP_PROVIDER, 'code=' . error_message::CODE_PROVIDER_DISABLED
                 . ' (aiprovider_datacurso/providerdisabled) layer=' . self::LAYER_PROVIDER);
+        }
+        // Jedomi disabled in the provider: the diagnostic stops here, like every other channel, without calling the AI.
+        $disabled = \local_jedomi_plugin_disabled_error();
+        if ($disabled !== null) {
+            return $this->fail(self::STEP_PROVIDER, 'code=' . $disabled['code'] . ' (' . $disabled['message'] . ') layer='
+                . self::LAYER_PROVIDER);
         }
         $this->pass(self::STEP_PROVIDER, '');
 

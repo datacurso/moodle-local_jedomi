@@ -43,38 +43,32 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 $type = required_param('type', PARAM_ALPHA);
-$id = optional_param('id', null, PARAM_INT);
+$id = optional_param('id', 0, PARAM_INT);
+$actorid = (int) $USER->id;
 
 try {
-    $deleted = 0;
-
+    // Only the agents the user may manage are purged: never those of users with more permissions.
     switch ($type) {
         case 'site':
-            $deleted = agent_manager::purge_all();
+            $deleted = agent_manager::purge_by_context('site', null, $actorid);
             break;
 
         case 'course':
         case 'category':
-            if ($id === null) {
+        case 'user':
+            if ($id <= 0) {
                 echo json_encode([
                     'ok'    => false,
                     'error' => get_string('agent_purge_id_required', 'local_jedomi'),
                 ]);
                 exit;
             }
-            $deleted = agent_manager::purge_by_context($type, $id);
+            $deleted = agent_manager::purge_by_context($type, $id, $actorid);
             break;
 
         case 'role':
-            if ($id === null) {
-                echo json_encode([
-                    'ok'    => false,
-                    'error' => get_string('agent_purge_id_required', 'local_jedomi'),
-                ]);
-                exit;
-            }
-            // Get role shortname from ID to pass to purge_by_role.
-            $role = $DB->get_field('role', 'shortname', ['id' => $id]);
+            // The role is chosen from the list of roles of the site.
+            $role = $DB->get_field('role', 'shortname', ['id' => optional_param('roleid', 0, PARAM_INT)]);
             if (!$role) {
                 echo json_encode([
                     'ok'    => false,
@@ -82,7 +76,7 @@ try {
                 ]);
                 exit;
             }
-            $deleted = agent_manager::purge_by_role($role);
+            $deleted = agent_manager::purge_by_role($role, $actorid);
             break;
 
         default:

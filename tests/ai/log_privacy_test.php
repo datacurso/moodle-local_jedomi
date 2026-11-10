@@ -166,6 +166,7 @@ final class log_privacy_test extends \advanced_testcase {
 
         $DB->insert_record('local_jedomi_telegram_links', (object) ['userid' => get_admin()->id, 'chatid' => '776000001',
             'username' => 'admin', 'confirmed' => 1, 'timecreated' => time(), 'lastproactivesent' => 0]);
+        set_config('telegram_enabled', 1, 'local_jedomi');
         \local_jedomi\telegram\api_client::set_instance_for_testing(new \local_jedomi\telegram\fake_telegram_api_client());
         $fake->enqueue_text('Fine.');
         $limit = (int) ini_get('max_execution_time');
@@ -182,7 +183,6 @@ final class log_privacy_test extends \advanced_testcase {
     /**
      * MDL-INT-083: the technical log does not keep the arguments of the tools, which can hold personal data (database
      * queries with names or e-mails, parameters of web services).
-     * [Pendiente:fail]
      */
     public function test_log_has_no_tool_arguments_with_personal_data(): void {
         $this->resetAfterTest();

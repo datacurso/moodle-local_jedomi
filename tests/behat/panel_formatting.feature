@@ -105,8 +105,6 @@ Feature: Formatting, links and tables of the Jedomi answers
       """
     And the downloaded Jedomi CSV should not contain "Smith"
 
-  # [Pendiente:fail] The CSV does not neutralise values starting with =, +, - or @, which a spreadsheet runs as
-  # formulas, and it copies the icon and the type label of Moodle links into the cells. Must fail until fixed.
   @MDL-UNIT-043
   Scenario: Values that start with a formula character are exported as text and link cells export only their text
     Given the Jedomi AI answers:

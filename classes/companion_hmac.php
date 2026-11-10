@@ -17,7 +17,10 @@
 /**
  * HMAC-SHA256 authentication trait for CompanionWS functions.
  *
- * Design D4: message = "{function_name}:{timestamp}:{sha256(raw_body_bytes)}"
+ * Design D4: message = "{function_name}:{timestamp}:{payload_hash}", where payload_hash is the
+ * SHA256 of the JSON object of the non-auth parameters (keys sorted). The server recomputes
+ * the payload hash from the parameters it actually received, so a captured signature cannot
+ * be reused with other parameters.
  * Secret is stored in mdl_config as local_jedomi / hmac_secret.
  * TTL: 60 seconds — drift > 60s is rejected.
  *
@@ -49,12 +52,14 @@ trait companion_hmac {
      *   X-Jedomi-Timestamp  → $timestamp  (Unix int)
      *
      * The payload hash is SHA256 of the serialised WS function parameters
-     * (everything except the auth fields themselves), hex-encoded.
+     * (everything except the auth fields themselves), hex-encoded. It must match the
+     * hash recomputed from the received parameters: the signature then covers them.
      *
      * @param  string $functionname  WS function name, e.g. "jedomi_execute_sql"
      * @param  int    $timestamp      Unix timestamp from the request header
-     * @param  string $payloadhash   SHA256(raw request body bytes), hex
+     * @param  string $payloadhash   Payload hash sent by the gateway, hex
      * @param  string $signature      HMAC-SHA256 hex digest from the gateway
+     * @param  array  $params         Non-auth parameters actually received, by name
      * @return void   Throws \moodle_exception on failure — never returns false
      *
      * @throws \moodle_exception  with errorcode 'unauthorized' on any failure
@@ -63,7 +68,8 @@ trait companion_hmac {
         string $functionname,
         int $timestamp,
         string $payloadhash,
-        string $signature
+        string $signature,
+        array $params
     ): void {
         // 1. Reject stale / future timestamps (replay protection).
         if (abs(time() - $timestamp) > 60) {
@@ -84,6 +90,12 @@ trait companion_hmac {
             self::log_hmac_failure($functionname, 'invalid_signature');
             throw new \moodle_exception('unauthorized', 'local_jedomi');
         }
+
+        // 5. The signed payload hash must be the one of the parameters actually received.
+        if (!hash_equals(self::build_payload_hash($params), $payloadhash)) {
+            self::log_hmac_failure($functionname, 'payload_mismatch');
+            throw new \moodle_exception('unauthorized', 'local_jedomi');
+        }
     }
 
     /**
@@ -100,6 +112,17 @@ trait companion_hmac {
     protected static function build_payload_hash(array $params): string {
         ksort($params);
         return hash('sha256', json_encode($params, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    }
+
+    /**
+     * The parameters covered by the signature: every validated parameter except the auth fields.
+     *
+     * @param  array $validated Parameters returned by validate_parameters()
+     * @return array            Non-auth parameters, by name
+     */
+    protected static function signed_params(array $validated): array {
+        unset($validated['hmac_signature'], $validated['hmac_timestamp'], $validated['payload_hash']);
+        return $validated;
     }
 
     /**

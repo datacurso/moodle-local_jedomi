@@ -61,7 +61,7 @@
         {{#hasrows}}
         {{#rows}}
         <tr class="{{#iswrite}}local_jedomi-ws-write{{/iswrite}}">
-            <td><input type="checkbox" data-region="local_jedomi/admin/apis/ws-check" name="ws_{{role}}[]" value="{{name}}"{{#checked}} checked{{/checked}} aria-label="{{name}}"></td>
+            <td><input type="hidden" name="ws_{{role}}_shown[]" value="{{name}}"><input type="checkbox" data-region="local_jedomi/admin/apis/ws-check" name="ws_{{role}}[]" value="{{name}}"{{#checked}} checked{{/checked}} aria-label="{{name}}"></td>
             <td><code>{{name}}</code></td>
             <td class="local_jedomi-ws-description">{{description}}</td>
             <td><span class="badge badge-secondary bg-secondary">{{component}}</span></td>

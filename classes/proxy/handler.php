@@ -58,6 +58,18 @@ class handler {
             return;
         }
 
+        // Same access rules as the panel, applied on the server: guests, unavailable courses and hidden roles
+        // are refused without calling the AI.
+        $courseid = (int) ($spt['course_id'] ?? 0);
+        $denied = \local_jedomi_chat_access_error($courseid);
+        if ($denied !== null) {
+            self::send_error($denied);
+            return;
+        }
+
+        // The role is computed from the session user: the presented one can never be above it.
+        $role = \local_jedomi_effective_chat_role($role, $userid, $courseid);
+
         // Images are read by the vision model before they are sent (read_file.php), so the chat model
         // only gets text. A new image part means the browser skipped that step.
         $last = end($messages);
@@ -144,6 +156,9 @@ class handler {
             $tools[] = message_service::tool_definition();
         }
         $toolrepeatcounts = [];
+        // Personal data returned by the tools reaches the AI anonymised with the level of the Privacy tab;
+        // the answer shown to the user gets the real values back.
+        $anonymizer = new \local_jedomi\local\anonymizer();
 
         for ($i = 0; $i < 50; $i++) {
             echo ": thinking\n\n";
@@ -166,7 +181,7 @@ class handler {
             if ($response['type'] === 'text') {
                 \local_jedomi_log('AI_RESPONSE_TEXT', ['iteration' => $i, 'length' => mb_strlen($response['content'])]);
                 // No tool calls — stream the final response to the client.
-                self::stream_sse_content($response['content']);
+                self::stream_sse_content($anonymizer->restore($response['content']));
                 return;
             }
 
@@ -190,6 +205,8 @@ class handler {
                 $tcid = $tc['id'];
                 $argsraw = $tc['function']['arguments'];
                 $args = is_array($argsraw) ? $argsraw : (json_decode($argsraw, true) ?? []);
+                // The AI only knows the placeholders of the anonymised data; the tools need the real values.
+                $args = $anonymizer->restore_value($args);
 
                 // A tool that changes data does not run now: it waits for the user's confirmation
                 // and the turn ends, so the model cannot act on a result that does not exist yet.
@@ -223,7 +240,7 @@ class handler {
                         'tool' => $name,
                         'detail' => get_string('error_tool_loop_detected', 'local_jedomi'),
                     ]);
-                    \local_jedomi_log('LOOP_DETECTED', ['tool' => $name, 'args' => $args, 'count' => $toolrepeatcounts[$callkey]]);
+                    \local_jedomi_log('LOOP_DETECTED', ['tool' => $name, 'count' => $toolrepeatcounts[$callkey]]);
                 } else {
                     try {
                         $result = self::execute_tool_by_name($name, $args, $role);
@@ -252,7 +269,7 @@ class handler {
                 $messages[] = [
                     'role'         => 'tool',
                     'tool_call_id' => $tcid,
-                    'content'      => $result,
+                    'content'      => $anonymizer->anonymize_tool_result($result),
                 ];
 
                 \local_jedomi_log('TOOL_RESULT', ['tool' => $name, 'summary' => self::summarize_tool_result($name, $result)]);
@@ -346,7 +363,8 @@ class handler {
     private static function execute_tool_by_name(string $name, array $args, string $role): string {
         // Log every tool invocation with full args.
         require_once(__DIR__ . '/../../lib.php');
-        \local_jedomi_log('TOOL_CALL', ['tool' => $name, 'args' => $args, 'role' => $role]);
+        // Only the argument names: their values can hold personal data (queries, messages, user data).
+        \local_jedomi_log('TOOL_CALL', ['tool' => $name, 'arg_names' => array_keys($args), 'role' => $role]);
 
         switch ($name) {
             case 'describe_table':
@@ -380,6 +398,11 @@ class handler {
             case 'delete_agent':
                 return self::delete_agent_tool($args, $role);
 
+            case 'my_courses':
+            case 'my_grades':
+            case 'my_assignments':
+                // Always the data of the session user, whatever the arguments say.
+                return \local_jedomi\agent\tool\own_data_tool::run($name, $args);
             case 'document_read':
                 return self::document_read_tool($args, $role);
             case 'send_messages':
@@ -407,7 +430,7 @@ class handler {
             $params = [$params];
         }
 
-        \local_jedomi_log('EXECUTE_SQL', ['sql' => $sql, 'params' => $params]);
+        \local_jedomi_log('EXECUTE_SQL', ['sql_hash' => hash('sha256', $sql), 'param_count' => count($params)]);
 
         try {
             $result = \local_jedomi\external\execute_sql::execute(
@@ -434,9 +457,9 @@ class handler {
             if (strpos($sql, '{') === false) {
                 $realerror .= get_string('hint_sql_braces', 'local_jedomi');
             }
-            \local_jedomi_log('EXECUTE_SQL_ERROR', ['sql' => $sql, 'params' => $params, 'error' => $realerror]);
-            \local_jedomi_log("[local_jedomi] execute_sql_tool error: class=" . get_class($e)
-                . " msg=" . json_encode($realerror, JSON_UNESCAPED_UNICODE));
+            // The error text can quote the query, so only its class and code are logged.
+            \local_jedomi_log('EXECUTE_SQL_ERROR', ['sql_hash' => hash('sha256', $sql), 'class' => get_class($e),
+                'errorcode' => $e instanceof \moodle_exception ? $e->errorcode : '']);
             return json_encode(['error' => $realerror]);
         }
     }
@@ -562,12 +585,13 @@ class handler {
             }
 
             $allowlist = \local_jedomi_get_role_allowlist($role);
+            $fullaccess = \local_jedomi_role_has_full_ws_access($role);
 
-            if (empty($allowlist) && $role !== 'admin') {
+            if (empty($allowlist) && !$fullaccess) {
                 return json_encode(['results' => [], 'note' => get_string('note_ws_none_configured', 'local_jedomi')]);
             }
 
-            $wsnames = $role === 'admin' ? [] : $allowlist;
+            $wsnames = $fullaccess ? [] : $allowlist;
 
             $results = \local_jedomi\schema\ws_indexer::search($query, $wsnames, $limit);
 
@@ -607,7 +631,7 @@ class handler {
                 return json_encode(['error' => 'wsname is required']);
             }
 
-            if ($role !== 'admin') {
+            if (!\local_jedomi_role_has_full_ws_access($role)) {
                 $allowlist = \local_jedomi_get_role_allowlist($role);
                 if (!empty($allowlist) && !in_array($wsname, $allowlist, true)) {
                     return json_encode(['error' => 'permission_denied: function not in allowlist']);
@@ -635,7 +659,7 @@ class handler {
             $raw = $args['params'] ?? '{}';
             $params = is_array($raw) ? json_encode($raw) : $raw;
 
-            \local_jedomi_log('WS_EXECUTE', ['wsname' => $wsname, 'params' => $params]);
+            \local_jedomi_log('WS_EXECUTE', ['wsname' => $wsname]);
 
             $result = \local_jedomi\external\ws_execute::execute(
                 $wsname,
@@ -651,7 +675,7 @@ class handler {
             if (method_exists($e, 'getDebugInfo') && $e->getDebugInfo()) {
                 $detail .= get_string('ws_debug_prefix', 'local_jedomi') . $e->getDebugInfo();
             }
-            \local_jedomi_log('WS_EXECUTE_ERROR', ['wsname' => $wsname ?? '', 'params' => $params ?? '{}', 'error' => $detail]);
+            \local_jedomi_log('WS_EXECUTE_ERROR', ['wsname' => $wsname ?? '']);
             return json_encode([
                 'error'    => get_string('error_ws_execute_failed', 'local_jedomi', $detail),
                 'wsname'   => $wsname ?? '',
@@ -753,6 +777,10 @@ class handler {
         global $USER;
         $data = new \stdClass();
         $data->userid = (int) ($args['userid'] ?? $USER->id);
+        // The agent runs with the permissions of its owner: nobody creates one on behalf of another user without permission.
+        if (!\local_jedomi\agent\agent_manager::can_create_for($data->userid, (int) $USER->id)) {
+            return json_encode(['error' => 'permission_denied']);
+        }
         $data->name = trim($args['name'] ?? '');
         $data->prompt = $prompt;
         $data->schedule_cron = $schedule;
@@ -822,6 +850,10 @@ class handler {
         $agent = \local_jedomi\agent\agent_manager::get_agent($id);
         if (!$agent) {
             return json_encode(['error' => "Agent #{$id} not found."]);
+        }
+        global $USER;
+        if (!\local_jedomi\agent\agent_manager::can_manage_agent($agent, (int) $USER->id)) {
+            return json_encode(['error' => 'permission_denied']);
         }
         \local_jedomi\agent\agent_manager::delete_agent($id);
         return json_encode([

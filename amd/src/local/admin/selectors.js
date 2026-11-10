@@ -60,6 +60,7 @@ export default {
         pagination: '[data-region="local_jedomi/admin/apis/pagination"]',
         pageLink: '[data-action="local_jedomi/admin/apis/page"]',
         activePage: '[data-action="local_jedomi/admin/apis/page"][aria-current="page"]',
+        saveForm: '[data-form="local_jedomi/admin/apis/save"]',
     },
     agents: {
         root: '[data-region="local_jedomi/admin/agents"]',
@@ -95,6 +96,7 @@ export default {
         purgeForm: '[data-form="local_jedomi/admin/agents/purge"]',
         purgeType: '[data-action="local_jedomi/admin/agents/purge-context"]',
         purgeIdWrap: '[data-region="local_jedomi/admin/agents/purge-id-wrap"]',
+        purgeRoleWrap: '[data-region="local_jedomi/admin/agents/purge-role-wrap"]',
         purgeMessage: '[data-region="local_jedomi/admin/agents/purge-message"]',
     },
 };

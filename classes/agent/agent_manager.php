@@ -31,6 +31,73 @@ namespace local_jedomi\agent;
  * Static facade for managing scheduled AI agent definitions.
  */
 class agent_manager {
+    /** @var array<string, int> Privilege rank of each Jedomi role, from the least to the most privileged. */
+    private const ROLE_RANK = ['student' => 0, 'teacher' => 1, 'manager' => 2, 'admin' => 3];
+
+    // ... ── Permissions ──────────────────────────────────────────────────────────
+
+    /**
+     * Whether a user may edit, enable, run, delete or purge an agent.
+     *
+     * The owner and site administrators always may; anyone else only when the owner has no more permissions than
+     * them, so nobody can make an agent run with permissions higher than their own.
+     *
+     * @param \stdClass $agent Agent record (needs ->userid).
+     * @param int $actorid User that acts on the agent.
+     * @return bool
+     */
+    public static function can_manage_agent(\stdClass $agent, int $actorid): bool {
+        if ($actorid <= 0) {
+            return false;
+        }
+        if ((int) $agent->userid === $actorid || is_siteadmin($actorid)) {
+            return true;
+        }
+        return self::role_rank((int) $agent->userid) <= self::role_rank($actorid);
+    }
+
+    /**
+     * Load an agent that a user may manage.
+     *
+     * @param int $id Agent id.
+     * @param int $actorid User that acts on the agent.
+     * @return \stdClass Agent record.
+     * @throws \moodle_exception When the agent does not exist or its owner has more permissions than the user.
+     */
+    public static function require_manageable_agent(int $id, int $actorid): \stdClass {
+        $agent = self::get_agent($id);
+        if (!$agent) {
+            throw new \moodle_exception('agent_not_found', 'local_jedomi');
+        }
+        if (!self::can_manage_agent($agent, $actorid)) {
+            throw new \moodle_exception('agent_error_nopermission', 'local_jedomi');
+        }
+        return $agent;
+    }
+
+    /**
+     * Whether a user may create an agent owned by a given user: only for themselves, or for anyone as site admin.
+     *
+     * @param int $ownerid Owner of the new agent, whose permissions the agent will run with.
+     * @param int $actorid User that creates the agent.
+     * @return bool
+     */
+    public static function can_create_for(int $ownerid, int $actorid): bool {
+        return $actorid > 0 && ($ownerid === $actorid || is_siteadmin($actorid));
+    }
+
+    /**
+     * Privilege rank of the Jedomi role of a user.
+     *
+     * @param int $userid User id.
+     * @return int
+     */
+    private static function role_rank(int $userid): int {
+        global $CFG;
+        require_once($CFG->dirroot . '/local/jedomi/lib.php');
+        return self::ROLE_RANK[\local_jedomi_get_user_role_for_user($userid)] ?? 0;
+    }
+
     // ... ── CRUD: Read ───────────────────────────────────────────────────────────
 
     /**
@@ -142,7 +209,9 @@ class agent_manager {
         $record->role_filter = $data->role_filter ?? null;
         $record->enabled = isset($data->enabled) ? (int) $data->enabled : 1;
         $record->lastrun = null;
-        $record->nextrun = isset($data->nextrun) ? (int) $data->nextrun : 0;
+        // A new agent waits for its scheduled hour, in the time zone of its creator.
+        $record->nextrun = isset($data->nextrun) ? (int) $data->nextrun
+            : self::calculate_next_run($record->schedule_cron, $now, self::creator_timezone($record->userid));
         $record->failcount = 0;
         $record->timecreated = $now;
         $record->timemodified = $now;
@@ -205,6 +274,21 @@ class agent_manager {
         foreach ($allowed as $field) {
             if (property_exists($data, $field)) {
                 $record->$field = $data->$field;
+            }
+        }
+
+        // Enabling an agent or changing its schedule or owner moves its next run to its next scheduled hour.
+        $current = self::get_agent($id);
+        if ($current) {
+            $enabling = property_exists($record, 'enabled') && (int) $record->enabled === 1 && (int) $current->enabled === 0;
+            $rescheduled = property_exists($record, 'schedule_cron') && $record->schedule_cron !== $current->schedule_cron;
+            $newowner = property_exists($record, 'userid') && (int) $record->userid !== (int) $current->userid;
+            if ($enabling || $rescheduled || $newowner) {
+                $record->nextrun = self::calculate_next_run(
+                    $record->schedule_cron ?? $current->schedule_cron,
+                    time(),
+                    self::creator_timezone((int) ($record->userid ?? $current->userid))
+                );
             }
         }
 
@@ -295,13 +379,24 @@ class agent_manager {
 
         if ($success) {
             $update->lastrun = $now;
-            $update->nextrun = self::calculate_next_run($agent->schedule_cron, $now);
+            $update->nextrun = self::calculate_next_run($agent->schedule_cron, $now, self::creator_timezone((int) $agent->userid));
             $update->failcount = 0;
         } else {
             $update->failcount = (int) $agent->failcount + 1;
         }
 
         $DB->update_record('local_jedomi_agents', $update);
+    }
+
+    /**
+     * Time zone of the creator of an agent, in which its schedule is applied.
+     *
+     * @param int $userid Agent creator.
+     * @return string Time zone name; the server time zone when the user does not exist.
+     */
+    public static function creator_timezone(int $userid): string {
+        $user = $userid > 0 ? \core_user::get_user($userid) : false;
+        return $user ? \core_date::get_user_timezone($user) : \core_date::get_server_timezone();
     }
 
     // ... ── Cron parser ──────────────────────────────────────────────────────────
@@ -316,9 +411,10 @@ class agent_manager {
      *
      * @param  string   $cronexpr Five-field cron expression (e.g. every-5-minutes).
      * @param  int|null $from      Base timestamp (defaults to time()).
+     * @param  string|null $timezone Time zone the hours of the expression are in; null for UTC.
      * @return int                 Next run timestamp.
      */
-    public static function calculate_next_run(string $cronexpr, ?int $from = null): int {
+    public static function calculate_next_run(string $cronexpr, ?int $from = null, ?string $timezone = null): int {
         $from = $from ?? time();
         $parts = preg_split('/\s+/', trim($cronexpr));
 
@@ -349,9 +445,10 @@ class agent_manager {
             $ts = $from - ($from % 60) + 60;
             $limit = $from + 366 * 86400; // Search up to ~1 year ahead.
 
+            $tz = new \DateTimeZone($timezone ?? 'UTC');
             while ($ts <= $limit) {
-                // Use UTC-based DateTime so the algorithm is timezone-independent.
-                $utcdate = new \DateTime('@' . $ts);
+                // The fields of the expression are compared in the given time zone.
+                $utcdate = (new \DateTime('@' . $ts))->setTimezone($tz);
                 $date = [
                     'minutes' => (int) $utcdate->format('i'),
                     'hours'   => (int) $utcdate->format('G'),
@@ -498,16 +595,25 @@ class agent_manager {
      *
      * Preview entries have agentid = 0 (they are not attached to any agent).
      *
-     * @param string $contexthash The md5 hash of the preview prompt.
+     * @param string $contexthash The cache key of the preview.
+     * @param int|null $userid When given, the entry is deleted only if it is a preview of this user.
      * @return bool True if a row was deleted.
      */
-    public static function clear_preview_cache(string $contexthash): bool {
+    public static function clear_preview_cache(string $contexthash, ?int $userid = null): bool {
         global $DB;
-        $deleted = $DB->delete_records('local_jedomi_agent_cache', [
-            'agentid' => 0,
-            'context_hash' => $contexthash,
-        ]);
-        return $deleted > 0;
+        $conditions = ['agentid' => 0, 'context_hash' => $contexthash];
+        if ($userid !== null) {
+            $cached = $DB->get_record('local_jedomi_agent_cache', $conditions, 'id, result_json');
+            $owner = $cached ? (json_decode((string) $cached->result_json, true)['userid'] ?? null) : null;
+            if ($owner === null || (int) $owner !== $userid) {
+                return false;
+            }
+        }
+        if (!$DB->record_exists('local_jedomi_agent_cache', $conditions)) {
+            return false;
+        }
+        $DB->delete_records('local_jedomi_agent_cache', $conditions);
+        return true;
     }
 
     // ... ── Cache: Semantic Plan ──────────────────────────────────────────────────
@@ -704,50 +810,60 @@ class agent_manager {
     // ... ── Purge ─────────────────────────────────────────────────────────────────
 
     /**
-     * Delete agents matching a context type and optional context id.
+     * Delete the agents of a context: every agent of the site context, or the agents of one course, category or user.
      *
-     * Associated cache rows are cascade-deleted via the delete_agent() method.
+     * Associated cache rows are deleted via the delete_agent() method.
      *
-     * @param  string   $type Context type (site|course|category|user).
-     * @param  int|null $id   Context instance id (null for site context).
-     * @return int            Number of deleted agents.
+     * @param  string   $type    Context type (site|course|category|user).
+     * @param  int|null $id      Context instance id (ignored for the site context).
+     * @param  int      $actorid User that purges: only the agents they may manage are deleted; 0 deletes every match.
+     * @return int               Number of deleted agents.
      */
-    public static function purge_by_context(string $type, ?int $id): int {
+    public static function purge_by_context(string $type, ?int $id, int $actorid = 0): int {
         global $DB;
 
-        $agents = $DB->get_records('local_jedomi_agents', [
-            'context_type' => $type,
-            'context_id' => $id,
-        ], '', 'id');
-
-        $count = 0;
-        foreach ($agents as $agent) {
-            self::delete_agent($agent->id);
-            $count++;
+        $conditions = ['context_type' => $type];
+        if ($type !== 'site') {
+            $conditions['context_id'] = $id;
         }
+        $agents = $DB->get_records('local_jedomi_agents', $conditions, '', 'id, userid');
 
-        return $count;
+        return self::delete_manageable($agents, $actorid);
     }
 
     /**
      * Delete all agents whose role_filter JSON contains the given role shortname.
      *
-     * @param  string $role Role shortname (e.g. "manager", "teacher").
-     * @return int          Number of deleted agents.
+     * @param  string $role    Role shortname (e.g. "manager", "teacher").
+     * @param  int    $actorid User that purges: only the agents they may manage are deleted; 0 deletes every match.
+     * @return int             Number of deleted agents.
      */
-    public static function purge_by_role(string $role): int {
+    public static function purge_by_role(string $role, int $actorid = 0): int {
         global $DB;
 
         $like = $DB->sql_like('role_filter', ':role');
         $params = ['role' => '%"' . $DB->sql_like_escape($role) . '"%'];
-        $agents = $DB->get_records_select('local_jedomi_agents', $like, $params, '', 'id');
+        $agents = $DB->get_records_select('local_jedomi_agents', $like, $params, '', 'id, userid');
 
+        return self::delete_manageable($agents, $actorid);
+    }
+
+    /**
+     * Delete the given agents that a user may manage.
+     *
+     * @param \stdClass[] $agents Agents (need ->id and ->userid).
+     * @param int $actorid User that deletes; 0 deletes every agent given.
+     * @return int Number of deleted agents.
+     */
+    private static function delete_manageable(array $agents, int $actorid): int {
         $count = 0;
         foreach ($agents as $agent) {
-            self::delete_agent($agent->id);
+            if ($actorid > 0 && !self::can_manage_agent($agent, $actorid)) {
+                continue;
+            }
+            self::delete_agent((int) $agent->id);
             $count++;
         }
-
         return $count;
     }
 

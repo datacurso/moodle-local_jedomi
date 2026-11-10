@@ -52,4 +52,14 @@ if (trim($prompt) === '') {
     exit;
 }
 
-echo json_encode(\local_jedomi\agent\preview_runner::run($prompt, (int) $USER->id), JSON_UNESCAPED_UNICODE);
+// The preview runs in the context chosen for the agent, as its scheduled run will.
+$contexttype = optional_param('context_type', 'site', PARAM_ALPHA);
+if (!in_array($contexttype, ['site', 'course', 'category', 'user'], true)) {
+    $contexttype = 'site';
+}
+$contextid = optional_param('context_id', 0, PARAM_INT);
+
+echo json_encode(
+    \local_jedomi\agent\preview_runner::run($prompt, (int) $USER->id, $contexttype, $contextid > 0 ? $contextid : null),
+    JSON_UNESCAPED_UNICODE
+);

@@ -32,7 +32,8 @@
       (the table wrapper holds local_jedomi/admin/agent_table)
     * data-form="local_jedomi/admin/agents/create" on the agent form and data-form="local_jedomi/admin/agents/purge" on the purge form
     * data-region="local_jedomi/admin/agents/form-heading", "form-message", "edit-id", "submit-label", "custom-cron",
-      "context-id-wrap", "preview-panel", "preview-spinner", "preview-body", "purge-id-wrap" and "purge-message"
+      "context-id-wrap", "preview-panel", "preview-spinner", "preview-body", "purge-id-wrap", "purge-role-wrap" and
+      "purge-message"
     * data-action="local_jedomi/admin/agents/schedule", "context-type", "preview", "cancel-edit" and "purge-context"
 
     Context variables required for this template:
@@ -233,6 +234,7 @@
                                 <option value="site">{{#str}} agent_context_type_site, local_jedomi {{/str}}</option>
                                 <option value="course">{{#str}} agent_context_type_course, local_jedomi {{/str}}</option>
                                 <option value="category">{{#str}} agent_context_type_category, local_jedomi {{/str}}</option>
+                                <option value="user">{{#str}} agent_context_type_user, local_jedomi {{/str}}</option>
                                 <option value="role">{{#str}} agent_filter_role, local_jedomi {{/str}}</option>
                             </select>
                             <p class="form-text text-muted small">{{#str}} agent_purge_context_help, local_jedomi {{/str}}</p>
@@ -243,6 +245,14 @@
                             <label class="font-weight-bold fw-bold" for="{{uniqid}}-purge-id">{{#str}} agent_context_id, local_jedomi {{/str}}</label>
                             <input type="text" id="{{uniqid}}-purge-id" name="id" class="form-control"
                                    placeholder="{{#str}} agent_context_id_placeholder, local_jedomi {{/str}}">
+                        </div>
+                    </div>
+                    <div class="col-md-4 d-none" data-region="local_jedomi/admin/agents/purge-role-wrap">
+                        <div class="form-group mb-3">
+                            <label class="font-weight-bold fw-bold" for="{{uniqid}}-purge-role">{{#str}} agent_filter_role, local_jedomi {{/str}}</label>
+                            <select id="{{uniqid}}-purge-role" name="roleid" class="custom-select form-select w-100">
+                                {{#roles}}<option value="{{id}}">{{name}}</option>{{/roles}}
+                            </select>
                         </div>
                     </div>
                     <div class="col-md-3">

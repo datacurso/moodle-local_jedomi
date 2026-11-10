@@ -79,7 +79,6 @@ final class telegram_link_service_test extends \advanced_testcase {
 
     /**
      * MDL-INT-060: unlinking from the web removes the conversation and the state of the bot too.
-     * [Pendiente:fail]
      *
      * @return void
      */

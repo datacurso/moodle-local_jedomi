@@ -281,10 +281,28 @@ final class e2e_check_test extends \advanced_testcase {
 
     /**
      * MDL-INT-004: with Jedomi disabled the command console and the end-to-end diagnostic say it is not enabled and call no AI.
-     * [Pendiente:skip]
      */
     public function test_console_and_diagnostic_respect_the_enabled_switch(): void {
-        $this->markTestSkipped('Pending fix: with Jedomi disabled the command console and the end-to-end diagnostic still '
-            . 'send queries to the AI service and use credits.');
+        \aiprovider_datacurso\local\plugin_settings::set_enabled('local_jedomi', false);
+        $fake = new fake_ai_client();
+        $fake->enqueue_tool_calls(self::search_tables_call());
+        $fake->enqueue_text('The users are stored in the user table.');
+
+        $ok = $this->make_check($fake)->run((int) get_admin()->id);
+
+        $this->assertFalse($ok);
+        $this->assertSame([], $fake->calls, 'No AI call is made while Jedomi is disabled');
+        $this->assertSame([], $this->toolruns);
+        $line = (string) $this->line_for(e2e_check::STEP_PROVIDER);
+        $this->assertStringStartsWith('FAIL', $line, 'The first step fails');
+        $this->assertStringContainsString('code=plugindisabled', $line);
+        $this->assertStringContainsString(\local_jedomi_plugin_disabled_error()['message'], $line);
+        $this->assertNull($this->line_for(e2e_check::STEP_REQUEST), 'The check stops at the first step');
+
+        // Enabled again, the check works as usual.
+        \aiprovider_datacurso\local\plugin_settings::set_enabled('local_jedomi', true);
+        $this->lines = [];
+        $this->assertTrue($this->make_check($fake)->run((int) get_admin()->id));
+        $this->assertCount(2, $fake->calls);
     }
 }

@@ -39,7 +39,7 @@ class feedback_service {
     /**
      * Store a rating.
      *
-     * The answer excerpt is not stored when the anonymisation level is "feedback only".
+     * The answer excerpt is anonymised with the level of the Privacy tab; with "Feedback only" it is not stored.
      *
      * @param int $userid User who rates.
      * @param string $rating {@see RATING_GOOD} or {@see RATING_BAD}.
@@ -55,12 +55,15 @@ class feedback_service {
             throw new \invalid_parameter_exception('Unknown rating');
         }
 
-        $storetext = get_config('local_jedomi', 'anonymization_level') !== 'feedback_only';
+        // The anonymisation level of the Privacy tab applies to the stored answer: "Feedback only" keeps no text,
+        // Basic replaces names and e-mails, Strict replaces identifiers and free text as well.
+        $text = \core_text::substr(trim($messagetext), 0, self::MAX_TEXT_LENGTH);
+        $text = (new \local_jedomi\local\anonymizer())->anonymize_stored_text($text);
         return (int) $DB->insert_record(self::TABLE, (object) [
             'userid' => $userid,
             'rating' => $rating,
             'sessionid' => \core_text::substr($sessionid, 0, 64),
-            'messagetext' => $storetext ? \core_text::substr(trim($messagetext), 0, self::MAX_TEXT_LENGTH) : '',
+            'messagetext' => \core_text::substr($text, 0, self::MAX_TEXT_LENGTH),
             'timecreated' => time(),
         ]);
     }

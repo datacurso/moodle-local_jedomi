@@ -120,7 +120,7 @@ final class agent_manager_test extends \advanced_testcase {
     }
 
     /**
-     * Test create_agent sets default nextrun to 0.
+     * SYS-E2E-009: a new agent waits for its next scheduled hour instead of being due at once.
      */
     public function test_create_agent_default_nextrun(): void {
         $data = (object) [
@@ -131,7 +131,7 @@ final class agent_manager_test extends \advanced_testcase {
         ];
         $id = agent_manager::create_agent($data);
         $agent = agent_manager::get_agent($id);
-        $this->assertEquals(0, $agent->nextrun);
+        $this->assertGreaterThan(time(), (int) $agent->nextrun);
     }
 
     // ... ========================

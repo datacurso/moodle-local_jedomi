@@ -35,8 +35,9 @@ require_login();
 plugin_settings::require_enabled('local_jedomi');
 
 $userid = optional_param('userid', $USER->id, PARAM_INT);
-if ($userid != $USER->id && !has_capability('moodle/user:update', context_system::instance())) {
-    throw new \moodle_exception('nopermissions', 'error', '', 'view other user Telegram settings');
+if ($userid != $USER->id) {
+    // A link code lets its holder act with the account in Telegram: only the user manages their own link.
+    throw new \moodle_exception('nopermissions', 'error', '', 'manage the Telegram link of another user');
 }
 
 $user = \core_user::get_user($userid);
@@ -52,7 +53,7 @@ $PAGE->set_title(get_string('telegram_link_title', 'local_jedomi'));
 $PAGE->set_heading(fullname($user));
 
 $bot = telegram_link_service::get_bot_status();
-if (!$bot['available'] && !is_siteadmin()) {
+if (!$bot['available'] && !is_siteadmin() && !telegram_link_service::get_confirmed_link($userid)) {
     // Regular users see nothing until the bot is configured.
     redirect(new moodle_url('/user/profile.php', ['id' => $userid]));
 }
@@ -61,24 +62,26 @@ $roleok = local_jedomi_is_telegram_role_allowed();
 $code = '';
 $codeexpiry = 0;
 $action = optional_param('action', '', PARAM_ALPHA);
-if ($bot['available'] && $roleok && $action !== '') {
+if ($action === 'unlink') {
+    // Any user can unlink, even when their role can no longer use the bot.
     require_sesskey();
-    if ($action === 'generate') {
-        $code = \local_jedomi\telegram\manager::generate_link_code($userid);
-        $codeexpiry = time() + 600;
-    } else if ($action === 'unlink') {
-        telegram_link_service::unlink($userid);
-        redirect($pageurl, get_string('telegram_msg_unlinked', 'local_jedomi'), null, \core\output\notification::NOTIFY_SUCCESS);
-    }
+    telegram_link_service::unlink($userid);
+    redirect($pageurl, get_string('telegram_msg_unlinked', 'local_jedomi'), null, \core\output\notification::NOTIFY_SUCCESS);
+}
+if ($bot['available'] && $roleok && $action === 'generate') {
+    require_sesskey();
+    $code = \local_jedomi\telegram\manager::generate_link_code($userid);
+    $codeexpiry = time() + 600;
 }
 
 $link = telegram_link_service::get_confirmed_link($userid);
-if (!$bot['available']) {
+if ($link) {
+    // A linked user always sees the link and can remove it.
+    $state = telegram_profile::STATE_LINKED;
+} else if (!$bot['available']) {
     $state = telegram_profile::STATE_NOT_CONFIGURED;
 } else if (!$roleok) {
     $state = telegram_profile::STATE_ROLE_BLOCKED;
-} else if ($link) {
-    $state = telegram_profile::STATE_LINKED;
 } else {
     $state = telegram_profile::STATE_NOT_LINKED;
 }

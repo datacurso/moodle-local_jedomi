@@ -126,6 +126,7 @@ try {
 
         case 'update':
             $id = required_param('id', PARAM_INT);
+            agent_manager::require_manageable_agent($id, (int) $USER->id);
             $data = new \stdClass();
 
             $prompt = optional_param('prompt', '', PARAM_RAW);
@@ -180,14 +181,7 @@ try {
 
         case 'get':
             $id = required_param('id', PARAM_INT);
-            $agent = $DB->get_record('local_jedomi_agents', ['id' => $id]);
-            if (!$agent) {
-                echo json_encode([
-                    'ok'    => false,
-                    'error' => get_string('agent_not_found', 'local_jedomi'),
-                ]);
-                exit;
-            }
+            $agent = agent_manager::require_manageable_agent($id, (int) $USER->id);
             // Resolve role_filter shortnames back to role IDs for the form.
             $agent->role_ids = [];
             if (!empty($agent->role_filter)) {
@@ -206,14 +200,7 @@ try {
 
         case 'toggle':
             $id = required_param('id', PARAM_INT);
-            $agent = $DB->get_record('local_jedomi_agents', ['id' => $id]);
-            if (!$agent) {
-                echo json_encode([
-                    'ok'    => false,
-                    'error' => get_string('agent_not_found', 'local_jedomi'),
-                ]);
-                exit;
-            }
+            $agent = agent_manager::require_manageable_agent($id, (int) $USER->id);
             $newenabled = $agent->enabled ? 0 : 1;
             agent_manager::update_agent($id, (object)['enabled' => $newenabled]);
             echo json_encode(['ok' => true, 'enabled' => $newenabled]);
@@ -221,6 +208,7 @@ try {
 
         case 'run':
             $id = required_param('id', PARAM_INT);
+            agent_manager::require_manageable_agent($id, (int) $USER->id);
             if (!agent_manager::queue_for_run($id)) {
                 echo json_encode([
                     'ok'    => false,
@@ -233,6 +221,7 @@ try {
 
         case 'delete':
             $id = required_param('id', PARAM_INT);
+            agent_manager::require_manageable_agent($id, (int) $USER->id);
             agent_manager::delete_agent($id);
 
             echo json_encode([

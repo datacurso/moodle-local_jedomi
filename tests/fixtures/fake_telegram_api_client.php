@@ -51,6 +51,9 @@ class fake_telegram_api_client extends api_client {
     /** @var array<int, array{chatid: int|string, caption: string, content: string}> Documents sent, in order. */
     public array $documents = [];
 
+    /** @var array<int, array{chatid: int|string, messageid: int, text: string}> Messages edited, in order. */
+    public array $edited = [];
+
     /**
      * Use a dummy token so no real bot configuration is needed.
      */
@@ -61,6 +64,12 @@ class fake_telegram_api_client extends api_client {
     #[\Override]
     public function send_message(int|string $chatid, string $text, ?array $replymarkup = null, bool $truncate = false): bool {
         $this->sent[] = ['chatid' => $chatid, 'text' => $text, 'replymarkup' => $replymarkup];
+        return true;
+    }
+
+    #[\Override]
+    public function edit_message_text(int|string $chatid, int $messageid, string $text, ?array $replymarkup = null): bool {
+        $this->edited[] = ['chatid' => $chatid, 'messageid' => $messageid, 'text' => $text];
         return true;
     }
 

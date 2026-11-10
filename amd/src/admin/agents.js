@@ -41,7 +41,7 @@ const MESSAGE_DELAY = 4000;
 const STRING_KEYS = [
     'agent_chart_no_data', 'agent_error_load', 'agent_create', 'agent_edit', 'agent_run_queued', 'agent_update_success',
     'agent_created_no_name', 'agent_error_update', 'agent_error_create', 'agent_preview_error', 'agent_preview_prompt_required',
-    'agent_purge_success', 'agent_delete', 'agent_delete_confirm', 'agent_purge', 'agent_purge_confirm', 'agent_unnamed',
+    'agent_delete', 'agent_delete_confirm', 'agent_purge', 'agent_purge_confirm', 'agent_unnamed',
     'agent_preview_role_user', 'agent_preview_role_assistant', 'agent_preview_role_tool', 'agent_preview_role_system',
 ];
 
@@ -231,7 +231,8 @@ const updateOptionalFields = (root) => {
     const contexttype = root.querySelector(Selectors.agents.contextType).value;
     root.querySelector(Selectors.agents.contextIdWrap).classList.toggle('d-none', contexttype === 'site');
     const purgetype = root.querySelector(Selectors.agents.purgeType).value;
-    root.querySelector(Selectors.agents.purgeIdWrap).classList.toggle('d-none', purgetype === 'site');
+    root.querySelector(Selectors.agents.purgeIdWrap).classList.toggle('d-none', purgetype === 'site' || purgetype === 'role');
+    root.querySelector(Selectors.agents.purgeRoleWrap).classList.toggle('d-none', purgetype !== 'role');
 };
 
 /**
@@ -485,7 +486,12 @@ const previewAgent = async(root) => {
     body.textContent = '';
     let context;
     try {
-        context = previewContext(await Repository.previewAgent(prompt.value));
+        const form = root.querySelector(Selectors.agents.createForm);
+        context = previewContext(await Repository.previewAgent(
+            prompt.value,
+            form.querySelector(Selectors.field('context_type')).value,
+            form.querySelector(Selectors.field('context_id')).value
+        ));
     } catch (error) {
         context = {ok: false, error: error.message};
     }
@@ -535,7 +541,7 @@ const purgeAgents = async(root, form) => {
         if (!result.ok) {
             showMessage(message, 'danger', result.error || strings.agent_error_load);
         } else {
-            showMessage(message, 'success', strings.agent_purge_success, true);
+            showMessage(message, 'success', await getString('agent_purge_success', 'local_jedomi', result.deleted), true);
             form.reset();
             updateOptionalFields(root);
             refresh(root);

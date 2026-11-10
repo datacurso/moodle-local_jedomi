@@ -39,7 +39,15 @@ define('AJAX_SCRIPT', true);
 require_once(__DIR__ . '/../../config.php');
 require_once(__DIR__ . '/lib.php');
 
-require_login();
+// Guests and requests without a session are refused before anything else.
+if (!isloggedin() || isguestuser()) {
+    header('Content-Type: application/json; charset=utf-8');
+    http_response_code(403);
+    echo json_encode(['ok' => false, 'error' => get_string('chat_error_guest', 'local_jedomi')], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
+require_login(null, false);
 require_sesskey();  // CSRF: valida que el request viene de una página Moodle real.
 
 $disabled = local_jedomi_plugin_disabled_error();
@@ -47,6 +55,15 @@ if ($disabled !== null) {
     header('Content-Type: application/json; charset=utf-8');
     http_response_code(403);
     echo json_encode(['ok' => false, 'error' => $disabled['message']], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
+// Same access rules as the panel for the course the request comes from.
+$denied = local_jedomi_chat_access_error(optional_param('courseid', 0, PARAM_INT));
+if ($denied !== null) {
+    header('Content-Type: application/json; charset=utf-8');
+    http_response_code(403);
+    echo json_encode(['ok' => false, 'error' => $denied['message']], JSON_UNESCAPED_UNICODE);
     exit;
 }
 

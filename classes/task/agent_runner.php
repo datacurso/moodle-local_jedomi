@@ -62,6 +62,39 @@ class agent_runner extends \core\task\scheduled_task {
     }
 
     /**
+     * Conditions an agent runs with: the role of its creator, the instructions for its context and the tools of that role.
+     *
+     * The scheduled run and the preview use the same conditions, so the preview reproduces the real run.
+     *
+     * @param int $userid Agent creator.
+     * @param string $contexttype Context type of the agent (site, course, category or user).
+     * @param int|null $contextid Id of the Moodle context of the agent (for a course agent, the course context).
+     * @return array{0: string, 1: array, 2: array} Role, system message and tool definitions.
+     */
+    public static function run_conditions(int $userid, string $contexttype, ?int $contextid): array {
+        $role = \local_jedomi_get_user_role_for_user($userid);
+        // The agent stores the id of its Moodle context; the instructions need the course that context belongs to.
+        $course = null;
+        if ($contexttype === 'course' && !empty($contextid)) {
+            $agentcontext = \context::instance_by_id((int) $contextid, IGNORE_MISSING);
+            $coursecontext = $agentcontext ? $agentcontext->get_course_context(false) : false;
+            if ($coursecontext) {
+                $course = get_course((int) $coursecontext->instanceid);
+            }
+        }
+        $spt = [
+            'course_id' => $course ? (int) $course->id : 0,
+        ];
+        $context = [
+            'location' => $contexttype !== '' ? $contexttype : 'site',
+            'course_name' => $course ? format_string($course->fullname, true, ['context' => $coursecontext]) : '',
+            'output' => 'telegram',
+        ];
+        $system = \local_jedomi\proxy\system_message::build($role, $spt, $context);
+        return [$role, $system, \local_jedomi_get_tool_definitions($role)];
+    }
+
+    /**
      * Build tool-calling instructions appended to the system prompt.
      *
      * Lists available tools from lang string descriptions and provides
@@ -291,16 +324,16 @@ class agent_runner extends \core\task\scheduled_task {
                     mtrace("[AGENT] {$agentlabel} — creator user {$agent->userid} not found — DISABLING");
                     \local_jedomi_log("[AGENT] {$agentlabel} — creator user {$agent->userid} not found — DISABLING");
                     $DB->set_field('local_jedomi_agents', 'enabled', 0, ['id' => $agent->id]);
-                    $this->notify_disabled($agent, 'Usuario creador no encontrado.');
+                    $this->notify_disabled($agent, get_string('agent_disabled_reason_creator_missing', 'local_jedomi'));
                     $fail++;
                     continue;
                 }
                 if (!empty($creator->suspended) || !empty($creator->deleted)) {
-                    $reason = !empty($creator->suspended) ? 'suspendido' : 'eliminado';
+                    $reason = !empty($creator->suspended) ? 'suspended' : 'deleted';
                     mtrace("[AGENT] {$agentlabel} — creator user {$agent->userid} {$reason} — DISABLING");
                     \local_jedomi_log("[AGENT] {$agentlabel} — creator user {$agent->userid} {$reason} — DISABLING");
                     $DB->set_field('local_jedomi_agents', 'enabled', 0, ['id' => $agent->id]);
-                    $this->notify_disabled($agent, "Usuario creador {$reason}.");
+                    $this->notify_disabled($agent, get_string('agent_disabled_reason_creator_' . $reason, 'local_jedomi'));
                     $fail++;
                     continue;
                 }
@@ -330,7 +363,7 @@ class agent_runner extends \core\task\scheduled_task {
                         mtrace($logline);
                         \local_jedomi_log($logline);
                         $DB->set_field('local_jedomi_agents', 'enabled', 0, ['id' => $agent->id]);
-                        $this->notify_disabled($agent, 'Ya no tienes acceso al contexto del agente.');
+                        $this->notify_disabled($agent, get_string('agent_disabled_reason_no_access', 'local_jedomi'));
                         $fail++;
                         continue;
                     }
@@ -349,19 +382,15 @@ class agent_runner extends \core\task\scheduled_task {
                 $contexthash = hash('sha256', serialize($contextdata));
 
                 // ... ── Pre-cache init (needed by both cache hit and miss paths) ──
-                $role = \local_jedomi_get_user_role_for_user(
-                    (int) ($agent->userid ?? 0)
+                [, $system, $tools] = self::run_conditions(
+                    (int) ($agent->userid ?? 0),
+                    (string) ($agent->context_type ?? 'site'),
+                    isset($agent->context_id) ? (int) $agent->context_id : null
                 );
-                $spt = [
-                    'course_id' => (!empty($agent->context_type) && $agent->context_type === 'course')
-                        ? (int) $agent->context_id : 0,
-                ];
-                $context = [
-                    'location' => $agent->context_type ?? 'site',
-                    'course_name' => '',
-                    'output' => 'telegram',
-                ];
-                $system = \local_jedomi\proxy\system_message::build($role, $spt, $context);
+
+                // Every tool of this agent runs with the permissions of its creator, from the first run and
+                // whatever agent ran before it in the same cycle.
+                \local_jedomi\agent\tool_executor::get_definitions((int) $agent->id, (int) $agent->userid);
 
                 // ... ── Check cache ──────────────────────────────────────────────
                 $cached = \local_jedomi\agent\agent_manager::get_cached_result(
@@ -383,13 +412,8 @@ class agent_runner extends \core\task\scheduled_task {
                             . count($cachedplan['plan']) . " tools");
                         \local_jedomi_log("[AGENT] {$agentlabel} — cache HIT plan ({$contexthash}) — replaying tools");
 
-                        // Initialize tool instances with correct user context before replay.
-                        \local_jedomi\agent\tool_executor::get_definitions(
-                            $agent->id,
-                            (int) ($agent->userid ?? 0)
-                        );
-
-                        // Re-execute all tools from plan.
+                        // Re-execute all tools from plan; the AI gets their results anonymised.
+                        $replayanonymizer = new \local_jedomi\local\anonymizer();
                         $freshresults = [];
                         $replayfailed = false;
                         foreach ($cachedplan['plan'] as $i => $step) {
@@ -412,7 +436,7 @@ class agent_runner extends \core\task\scheduled_task {
                             }
                             $freshresults[] = [
                                 'tool' => $step['tool'],
-                                'result' => $toolresult,
+                                'result' => $replayanonymizer->anonymize_tool_result($toolresult),
                             ];
                         }
 
@@ -443,7 +467,7 @@ class agent_runner extends \core\task\scheduled_task {
                                     [],
                                     self::AI_TIMEOUT
                                 );
-                                $replaycontent = $replayanswer['content'];
+                                $replaycontent = $replayanonymizer->restore((string) $replayanswer['content']);
                                 $replayduration = microtime(true) - $replaystart;
                                 if (!empty(trim($replaycontent))) {
                                     $finalcontent = $replaycontent;
@@ -479,9 +503,6 @@ class agent_runner extends \core\task\scheduled_task {
                     mtrace("[AGENT] {$agentlabel} — cache MISS ({$contexthash})");
                     \local_jedomi_log("[AGENT] {$agentlabel} — cache MISS ({$contexthash})");
 
-                    // ... ── Tool definitions (reuse web version's lang string descriptions) ──
-                    $tools = \local_jedomi_get_tool_definitions($role);
-
                     // ... ── Build messages (same rich context as web chat) ──────
                     $messages = [
                         $system,
@@ -494,6 +515,9 @@ class agent_runner extends \core\task\scheduled_task {
                     $totalrounds = 0;
                     $plan = [];
                     $toolcallcounts = [];
+                    // Personal data returned by the tools reaches the AI anonymised with the level of the Privacy
+                    // tab; the arguments it proposes and the final answer get the real values back.
+                    $anonymizer = new \local_jedomi\local\anonymizer();
 
                     for ($round = 1; $round <= self::MAX_TOOL_ITERATIONS; $round++) {
                         $totalrounds = $round;
@@ -563,6 +587,10 @@ class agent_runner extends \core\task\scheduled_task {
                             $funcname = $tc['function']['name'] ?? '?';
                             $funcargs = $tc['function']['arguments'] ?? '{}';
                             $tcid = $tc['id'] ?? 'tc_' . uniqid();
+                            $realargs = is_string($funcargs) ? json_decode($funcargs, true) : $funcargs;
+                            if (is_array($realargs) && !empty($realargs)) {
+                                $funcargs = json_encode($anonymizer->restore_value($realargs), JSON_UNESCAPED_UNICODE);
+                            }
 
                             // ... ── Loop detection: hash by tool name + stable args ──
                             $decodedargs = is_string($funcargs) ? json_decode($funcargs, true) : $funcargs;
@@ -602,7 +630,7 @@ class agent_runner extends \core\task\scheduled_task {
                             $messages[] = [
                                 'role' => 'tool',
                                 'tool_call_id' => $tcid,
-                                'content' => $toolresult,
+                                'content' => $anonymizer->anonymize_tool_result($toolresult),
                             ];
                         }
                     }
@@ -669,6 +697,9 @@ class agent_runner extends \core\task\scheduled_task {
                         }
                     }
 
+                    // The answer was written from anonymised data: the creator gets the real values back.
+                    $finalcontent = $anonymizer->restore((string) $finalcontent);
+
                     if (empty($finalcontent)) {
                         $totaldurationfmt = number_format($totalduration, 2);
                         mtrace("[AGENT] {$agentlabel} — empty final ({$totaldurationfmt}s, {$totalrounds}r)");
@@ -722,14 +753,18 @@ class agent_runner extends \core\task\scheduled_task {
                 try {
                     $telegramlink = $DB->get_record(
                         'local_jedomi_telegram_links',
-                        ['userid' => $agent->userid]
+                        ['userid' => $agent->userid, 'confirmed' => 1]
                     );
 
-                    if ($telegramlink && !empty($telegramlink->chatid)) {
+                    if (!self::can_notify_by_telegram((int) $agent->userid)) {
+                        mtrace("[AGENT] {$agentlabel} — Telegram not allowed for user {$agent->userid}");
+                        \local_jedomi_log("[AGENT] {$agentlabel} — Telegram not allowed for user {$agent->userid}");
+                    } else if ($telegramlink && !empty($telegramlink->chatid)) {
                         $sent = \local_jedomi_send_agent_notification(
                             $telegramlink->chatid,
                             $agentlabel,
-                            $finalcontent
+                            $finalcontent,
+                            \local_jedomi\agent\agent_manager::creator_timezone((int) $agent->userid)
                         );
 
                         if ($sent) {
@@ -770,6 +805,18 @@ class agent_runner extends \core\task\scheduled_task {
     }
 
     /**
+     * Whether the results of the agents of a user may be sent to Telegram: the integration is enabled and the roles of
+     * the user are allowed to use it.
+     *
+     * @param int $userid Agent creator.
+     * @return bool
+     */
+    private static function can_notify_by_telegram(int $userid): bool {
+        return \local_jedomi\telegram\manager::is_enabled()
+            && \local_jedomi\telegram\webhook_handler::is_user_role_allowed($userid);
+    }
+
+    /**
      * Send a Telegram notification that an agent was disabled, then log it.
      *
      * @param \stdClass $agent The agent record (needs ->id, ->name, ->userid).
@@ -792,15 +839,15 @@ class agent_runner extends \core\task\scheduled_task {
         try {
             $telegramlink = $DB->get_record(
                 'local_jedomi_telegram_links',
-                ['userid' => $agent->userid]
+                ['userid' => $agent->userid, 'confirmed' => 1]
             );
-            if ($telegramlink && !empty($telegramlink->chatid)) {
+            if ($telegramlink && !empty($telegramlink->chatid) && self::can_notify_by_telegram((int) $agent->userid)) {
                 $msg = "🤖 <b>{$label}</b>\n";
-                $msg .= "⛔ Agent disabled\n";
-                $msg .= "📅 " . userdate(time()) . "\n\n";
+                $msg .= "⛔ " . get_string('agent_disabled_notice', 'local_jedomi') . "\n";
+                $msg .= "📅 " . userdate(time(), '', \local_jedomi\agent\agent_manager::creator_timezone((int) $agent->userid))
+                    . "\n\n";
                 $msg .= "<i>" . htmlspecialchars($reason, ENT_QUOTES, 'UTF-8') . "</i>";
-                $client = new \local_jedomi\telegram\api_client();
-                $client->send_message($telegramlink->chatid, $msg);
+                \local_jedomi\telegram\api_client::instance()->send_message($telegramlink->chatid, $msg);
             }
         } catch (\Exception $e) {
             mtrace("[AGENT] {$label} — Telegram notify disabled error: " . $e->getMessage());

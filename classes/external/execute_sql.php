@@ -125,7 +125,7 @@ class execute_sql extends external_api {
         string $payloadhash,
         bool $skiphmac = false
     ): array {
-        global $DB;
+        global $DB, $USER;
 
         // ... --- Capability check ---
         $context = context_system::instance();
@@ -154,7 +154,8 @@ class execute_sql extends external_api {
 
         // ... --- HMAC authentication (must happen before any business logic) ---
         if (!$skiphmac) {
-            self::verify_hmac('jedomi_execute_sql', $hmactimestamp, $payloadhash, $hmacsignature);
+            self::verify_hmac('jedomi_execute_sql', $hmactimestamp, $payloadhash, $hmacsignature,
+                self::signed_params($validated));
         }
 
         // ... --- SELECT-only enforcement (defense-in-depth, QG-01 equivalent) ---
@@ -179,6 +180,18 @@ class execute_sql extends external_api {
                 $sqlhash
             ));
             throw new \moodle_exception('non_select_rejected', 'local_jedomi');
+        }
+
+        // ... --- Sensitive tables and courses the user does not manage (shared by every channel) ---
+        $rejection = \local_jedomi\local\sql_guard::rejection_reason($sql, (int) $USER->id, $params);
+        if ($rejection !== null) {
+            \local_jedomi_log(sprintf(
+                '[local_jedomi] security event: %s ip=%s sql_hash=%s',
+                $rejection,
+                getremoteaddr(),
+                hash('sha256', $sql)
+            ));
+            throw new \moodle_exception($rejection, 'local_jedomi');
         }
 
         // ... --- Execute with timeout ---
@@ -213,7 +226,8 @@ class execute_sql extends external_api {
                 }
                 // Rows are returned as JSON strings to avoid Moodle's external
                 // API trying to describe every possible column structure.
-                $rows[] = ['json_row' => json_encode((array) $record, JSON_UNESCAPED_UNICODE)];
+                $rows[] = ['json_row' => json_encode(\local_jedomi\local\sql_guard::filter_row((array) $record),
+                    JSON_UNESCAPED_UNICODE)];
             }
             $recordset->close();
         } catch (\dml_exception $e) {
@@ -240,18 +254,16 @@ class execute_sql extends external_api {
             // Catch non-DB exceptions too (moodle_exception, coding_exception, etc.)
             $executionms = (int) ((microtime(true) - $start) * 1000);
             $sqlhash = hash('sha256', $sql);
-            $dbinfo = method_exists($e, 'debuginfo') ? ($e->debuginfo ?? 'null') : 'no_method';
             $extra = '';
             if ($e instanceof \moodle_exception) {
-                $extra = sprintf(' errorcode="%s" a="%s"', $e->errorcode, json_encode($e->a ?? null, JSON_UNESCAPED_UNICODE));
+                // The message, its parameters and the debug info can quote the query: only the code is logged.
+                $extra = sprintf(' errorcode="%s"', $e->errorcode);
             }
             \local_jedomi_log(sprintf(
-                '[local_jedomi] DB error (non-dml): class=%s sql_hash=%s exec_ms=%d msg="%s" debuginfo="%s"%s',
+                '[local_jedomi] DB error (non-dml): class=%s sql_hash=%s exec_ms=%d%s',
                 get_class($e),
                 $sqlhash,
                 $executionms,
-                $e->getMessage(),
-                $dbinfo,
                 $extra
             ));
             $dbg = $e->getMessage();

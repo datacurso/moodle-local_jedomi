@@ -396,7 +396,6 @@ final class lib_test extends \advanced_testcase {
 
     /**
      * MDL-UNIT-014: after installation each site has its own generated permission token secret.
-     * [Pendiente:fail] The secret is empty by default and the built-in key is used instead.
      */
     public function test_installation_generates_a_site_specific_permission_secret(): void {
         $secret = (string) get_config('local_jedomi', 'spt_secret');
@@ -408,7 +407,6 @@ final class lib_test extends \advanced_testcase {
 
     /**
      * MDL-UNIT-014: with an empty secret the permissions are never signed with a key known from the code.
-     * [Pendiente:fail] Today they are signed with the built-in key "jedomi-spt-secret".
      */
     public function test_empty_secret_never_signs_with_a_known_key(): void {
         set_config('spt_secret', '', 'local_jedomi');
@@ -621,11 +619,13 @@ final class lib_test extends \advanced_testcase {
         $manager = array_merge($teacher, ['admin_describe', 'admin_execute', 'admin_search', 'create_agent', 'delete_agent',
             'list_agents']);
         $admin = array_merge($manager, ['get_site_config']);
+        // Students also read their own courses, visible grades and assignments; never other users' data.
+        $student = array_merge($common, ['my_assignments', 'my_courses', 'my_grades']);
         return [
             'admin' => ['admin', $admin],
             'manager' => ['manager', $manager],
             'teacher' => ['teacher', $teacher],
-            'student' => ['student', $common],
+            'student' => ['student', $student],
             'unknown role' => ['guest', $common],
             'empty role' => ['', $common],
         ];

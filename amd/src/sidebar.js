@@ -202,6 +202,20 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
         });
 
         // ── CSV download through event delegation (avoids Moodle's CSP) ─────────
+        // Text of a table cell as shown in the data: links export only their text, without icon or type label.
+        const csvCellText = (cell) => {
+            const copy = cell.cloneNode(true);
+            copy.querySelectorAll('a').forEach(link => {
+                const label = link.querySelector('[data-link-text]');
+                link.replaceWith(document.createTextNode(label ? label.textContent : link.textContent));
+            });
+            return copy.textContent.trim();
+        };
+        // A quoted CSV cell; a value starting with a formula character is exported as text.
+        const csvCell = (value) => {
+            const safe = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+            return '"' + safe.replace(/"/g, '""') + '"';
+        };
         const msgs = g('jedomi-messages');
         if (msgs) {
             msgs.addEventListener('click', (e) => {
@@ -211,9 +225,7 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
                 const tbl = tableWrap && tableWrap.querySelector('table');
                 if (!tbl) return;
                 const rows = [...tbl.querySelectorAll('tr')].map(tr =>
-                    [...tr.querySelectorAll('th,td')]
-                        .map(c => '"' + c.innerText.replace(/"/g, '""') + '"')
-                        .join(',')
+                    [...tr.querySelectorAll('th,td')].map(c => csvCell(csvCellText(c))).join(',')
                 );
                 const blob = new Blob(['\uFEFF' + rows.join('\n')], {type: 'text/csv;charset=utf-8;'});
                 const url  = URL.createObjectURL(blob);
@@ -396,11 +408,13 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
 
     // ── Moodle session cache: server, not client ─────────────────────────────
     const _convUrl = () => `${cfg.wwwroot}/local/jedomi/conversation.php`;
+    // Course the chat permissions are bound to: the server applies the course availability and role visibility to it.
+    const _courseId = () => String(cfg.spt?.course_id || M?.cfg?.courseId || 0);
 
     const _loadConversationFromServer = async () => {
         try {
             const r = await fetch(
-                `${_convUrl()}?action=get&sesskey=${encodeURIComponent(M?.cfg?.sesskey || '')}`,
+                `${_convUrl()}?action=get&sesskey=${encodeURIComponent(M?.cfg?.sesskey || '')}&courseid=${_courseId()}`,
                 { credentials: 'same-origin' }
             );
             const d = await r.json();
@@ -419,6 +433,7 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
             sesskey: M?.cfg?.sesskey || '',
             role:    last.role,
             content: last.content,
+            courseid: _courseId(),
         });
         fetch(_convUrl(), {
             method: 'POST',
@@ -433,6 +448,7 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
         const body = new URLSearchParams({
             action:  'clear',
             sesskey: M?.cfg?.sesskey || '',
+            courseid: _courseId(),
         });
         fetch(_convUrl(), { method: 'POST', credentials: 'same-origin', body }).catch(() => {});
         // New session after clearing.
@@ -1228,9 +1244,10 @@ GENERAL INSTRUCTIONS:
                 const pageInfo = getMoodlePageInfo(url);
                 if (pageInfo) {
                     return `<a href="${url}" class="jedomi-moodle-link" data-type="${pageInfo.type}">` +
-                           `${pageInfo.icon} ${linkText} <span class="jedomi-link-badge">${pageInfo.type} ↗</span></a>`;
+                           `${pageInfo.icon} <span data-link-text>${linkText}</span> ` +
+                           `<span class="jedomi-link-badge">${pageInfo.type} ↗</span></a>`;
                 }
-                return `<a href="${url}">${linkText} ↗</a>`;
+                return `<a href="${url}"><span data-link-text>${linkText}</span> ↗</a>`;
             })
             // ── Markdown tables: ONE table per block, with a working CSV button ──
             // Step 1: mark rows and separators.
@@ -1345,6 +1362,7 @@ GENERAL INSTRUCTIONS:
         const formData = new FormData();
         formData.append('file', file);
         formData.append('sesskey', cfg.sesskey || '');
+        formData.append('courseid', _courseId());
         Object.entries(fields).forEach(([name, value]) => formData.append(name, value));
 
         const res = await fetch(url, {
@@ -1567,12 +1585,12 @@ GENERAL INSTRUCTIONS:
 
     // ── Confirmation of actions that change data ──────────────────────────────
     // The server holds the action and sends its id; it runs only through
-    // local_jedomi_resolve_action, which checks the owner, the expiry and the role again.
+    // local_jedomi_resolve_action, which checks the owner, the expiry, the role and the keyword again.
     // severity: 'critical' (red, the keyword must be typed) | 'high' (orange) | 'medium' (yellow).
-    const resolveAction = async (id, confirm) => {
+    const resolveAction = async (id, confirm, keyword = '') => {
         return Ajax.call([{
             methodname: 'local_jedomi_resolve_action',
-            args: {id, confirm},
+            args: {id, confirm, keyword},
         }])[0];
     };
 
@@ -1603,8 +1621,9 @@ GENERAL INSTRUCTIONS:
             const yesBtn    = div.querySelector('[data-action="local_jedomi/sidebar/confirm-yes"]');
             const noBtn     = div.querySelector('[data-action="local_jedomi/sidebar/confirm-no"]');
             const resultDiv = div.querySelector('[data-region="local_jedomi/sidebar/confirm-result"]');
+            const keywordInput = div.querySelector('[data-region="local_jedomi/sidebar/confirm-keyword"]');
             if (confirm && isCritical) {
-                const inp = div.querySelector('[data-region="local_jedomi/sidebar/confirm-keyword"]');
+                const inp = keywordInput;
                 if (!inp || inp.value.trim().toUpperCase() !== confirmKeyword) {
                     inp?.classList.add('is-invalid');
                     inp?.focus();
@@ -1617,7 +1636,7 @@ GENERAL INSTRUCTIONS:
                 ? '⏳ ' + (isSend ? (CS.sending || '') : (CS.confirm_executing || ''))
                 : '';
             try {
-                const result = await resolveAction(Number(pending.id), confirm);
+                const result = await resolveAction(Number(pending.id), confirm, confirm ? (keywordInput?.value || '') : '');
                 const icon = result.status === 'executed' ? '✅ ' : (result.status === 'cancelled' ? '' : '❌ ');
                 const note = isSend && result.status === 'executed' ? (CS.messages_recipients_note || '') : '';
                 showDone(icon + result.message, note);

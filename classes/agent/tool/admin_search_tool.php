@@ -29,6 +29,8 @@ namespace local_jedomi\agent\tool;
  * matching a keyword query, restricted to admin and manager roles.
  */
 class admin_search_tool implements agent_tool {
+    use acts_for_user;
+
     /**
      * Get the tool name used in AI tool calls.
      *
@@ -74,7 +76,7 @@ class admin_search_tool implements agent_tool {
      * @return string JSON-encoded matches with a result count, or a permission_denied error.
      */
     public function execute(\stdClass $params): string {
-        $role = \local_jedomi_get_user_role();
+        $role = $this->actor_role();
         if (!in_array($role, ['admin', 'manager'], true)) {
             return json_encode(['error' => 'permission_denied']);
         }

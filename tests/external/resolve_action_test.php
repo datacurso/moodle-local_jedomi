@@ -59,16 +59,28 @@ final class resolve_action_test extends \advanced_testcase {
      *
      * @param int $id Pending action id.
      * @param bool $confirm Whether the user confirms.
+     * @param string $keyword Confirmation keyword typed by the user.
      * @return array
      */
-    private function resolve(int $id, bool $confirm): array {
-        return external_api::clean_returnvalue(resolve_action::execute_returns(), resolve_action::execute($id, $confirm));
+    private function resolve(int $id, bool $confirm, string $keyword = ''): array {
+        return external_api::clean_returnvalue(resolve_action::execute_returns(),
+            resolve_action::execute($id, $confirm, $keyword));
+    }
+
+    /**
+     * The confirmation keyword the panel asks the user to type for critical actions.
+     *
+     * @return string
+     */
+    private function keyword(): string {
+        return \core_text::strtoupper(get_string('confirm_btn_yes', 'local_jedomi'));
     }
 
     /**
      * MDL-UNIT-096: an action run without errors gives the action executed message.
      * A3: confirming runs the action once and removes it.
      * MDL-INT-046: confirming runs the action and removes it.
+     * MDL-INT-047: a critical action confirmed with the confirmation word runs.
      */
     public function test_confirm_runs_the_action_and_removes_it(): void {
         global $DB;
@@ -77,7 +89,7 @@ final class resolve_action_test extends \advanced_testcase {
         $agentid = $this->create_agent((int) get_admin()->id);
         $pending = pending_action_service::hold((int) get_admin()->id, 'delete_agent', ['id' => $agentid]);
 
-        $result = $this->resolve($pending['id'], true);
+        $result = $this->resolve($pending['id'], true, $this->keyword());
 
         $this->assertSame('executed', $result['status']);
         $this->assertSame(get_string('confirm_done', 'local_jedomi'), $result['message']);
@@ -188,7 +200,7 @@ final class resolve_action_test extends \advanced_testcase {
         $pending = pending_action_service::hold((int) $user->id, 'delete_agent', ['id' => $agentid]);
 
         role_unassign($managerroleid, $user->id, $sysctx->id);
-        $result = $this->resolve($pending['id'], true);
+        $result = $this->resolve($pending['id'], true, $this->keyword());
 
         $this->assertSame('failed', $result['status']);
         $this->assertSame(get_string('pending_action_denied', 'local_jedomi'), $result['message']);
@@ -205,13 +217,13 @@ final class resolve_action_test extends \advanced_testcase {
         $this->setAdminUser();
         $pending = pending_action_service::hold((int) get_admin()->id, 'delete_agent', ['id' => 999999]);
 
-        $result = $this->resolve($pending['id'], true);
+        $result = $this->resolve($pending['id'], true, $this->keyword());
 
         $this->assertSame('failed', $result['status']);
         $this->assertSame(get_string('pending_action_failed', 'local_jedomi'), $result['message']);
 
         try {
-            $this->resolve($pending['id'], true);
+            $this->resolve($pending['id'], true, $this->keyword());
             $this->fail('A failed action must not be run again');
         } catch (\moodle_exception $e) {
             $this->assertSame('pending_action_not_found', $e->errorcode);
@@ -324,9 +336,8 @@ final class resolve_action_test extends \advanced_testcase {
     }
 
     /**
-     * MDL-INT-047: a critical action confirmed without the confirmation word is rejected by the server and not run.
-     * [Pendiente:fail] The confirmation word of critical actions is only checked in the browser: a direct request runs the
-     * action without it.
+     * MDL-INT-047: a critical action confirmed without the confirmation word is rejected by the server and not run, and it
+     * runs once the word is received.
      */
     public function test_critical_action_without_the_confirmation_word_is_not_run(): void {
         global $DB;
@@ -344,5 +355,18 @@ final class resolve_action_test extends \advanced_testcase {
 
         $this->assertNotSame('executed', $result['status'], 'The server must reject the action without the confirmation word');
         $this->assertNotNull(agent_manager::get_agent($agentid), 'The critical action must not run without the confirmation word');
+
+        $wrong = 'rejected';
+        try {
+            $wrong = $this->resolve($pending['id'], true, 'yes')['status'];
+        } catch (\moodle_exception $e) {
+            $wrong = 'rejected';
+        }
+        $this->assertNotSame('executed', $wrong, 'A wrong word must not confirm the critical action');
+        $this->assertNotNull(agent_manager::get_agent($agentid));
+
+        $this->assertSame('executed', $this->resolve($pending['id'], true, $this->keyword())['status'],
+            'With the confirmation word the critical action runs');
+        $this->assertNull(agent_manager::get_agent($agentid));
     }
 }

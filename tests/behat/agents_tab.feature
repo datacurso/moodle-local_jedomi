@@ -93,8 +93,7 @@ Feature: Scheduled agents and their queries in the Jedomi settings
     And the field "Prompt" matches value "Report for Slow report"
     And I should see "Edit" in the "[data-region='local_jedomi/admin/agents/form-heading']" "css_element"
 
-  # [Pendiente:fail] On activation the agent runs in the next minute instead of at its hour, and the schedules are
-  # computed in UTC instead of the site time zone (Australia/Perth on the Behat site). Asserts the expected next run.
+  # The schedule is computed in the site time zone (Australia/Perth on the Behat site).
   @SYS-E2E-009
   Scenario: An enabled daily agent is scheduled for its hour in the site time zone
     Given I log in as "admin"
@@ -111,8 +110,7 @@ Feature: Scheduled agents and their queries in the Jedomi settings
     And I click on "View details" "link" in the "Daily courses" "table_row"
     Then I should see "12:00 AM" in the ".modal-dialog" "css_element"
 
-  # [Pendiente:skip] The preview cannot query the database nor the site configuration and uses the web service list of
-  # the Student role. Needs the real AI service (JEDOMI_BEHAT_LICENSE); asserts the expected behaviour.
+  # Needs the real AI service (JEDOMI_BEHAT_LICENSE).
   @SYS-E2E-010
   Scenario: The preview of an agent shows its timeline, tools, total time and answer, and uses the cache until cleared
     Given the Jedomi AI service is available for acceptance tests

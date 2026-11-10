@@ -121,7 +121,8 @@ class purge_caches extends external_api {
             'jedomi_purge_caches',
             $validated['hmac_timestamp'],
             $validated['payload_hash'],
-            $validated['hmac_signature']
+            $validated['hmac_signature'],
+            self::signed_params($validated)
         );
 
         $start = microtime(true);

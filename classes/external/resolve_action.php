@@ -43,6 +43,8 @@ class resolve_action extends external_api {
         return new external_function_parameters([
             'id' => new external_value(PARAM_INT, 'Pending action id'),
             'confirm' => new external_value(PARAM_BOOL, 'True to run the action, false to cancel it'),
+            'keyword' => new external_value(PARAM_TEXT, 'Confirmation keyword typed by the user (critical actions)',
+                VALUE_DEFAULT, ''),
         ]);
     }
 
@@ -51,13 +53,15 @@ class resolve_action extends external_api {
      *
      * @param int $id Pending action id.
      * @param bool $confirm True to run it, false to cancel it.
+     * @param string $keyword Confirmation keyword typed by the user, required to run a critical action.
      * @return array
      */
-    public static function execute(int $id, bool $confirm): array {
+    public static function execute(int $id, bool $confirm, string $keyword = ''): array {
         global $CFG, $USER;
         require_once($CFG->dirroot . '/local/jedomi/lib.php');
 
-        $params = self::validate_parameters(self::execute_parameters(), ['id' => $id, 'confirm' => $confirm]);
+        $params = self::validate_parameters(self::execute_parameters(),
+            ['id' => $id, 'confirm' => $confirm, 'keyword' => $keyword]);
 
         plugin_settings::require_enabled('local_jedomi');
 
@@ -67,7 +71,8 @@ class resolve_action extends external_api {
             throw new \require_login_exception('Guests cannot resolve actions');
         }
 
-        return pending_action_service::resolve((int) $params['id'], (int) $USER->id, (bool) $params['confirm']);
+        return pending_action_service::resolve((int) $params['id'], (int) $USER->id, (bool) $params['confirm'],
+            (string) $params['keyword']);
     }
 
     /**

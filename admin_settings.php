@@ -56,9 +56,22 @@ if (!array_key_exists($tab, $tabs)) {
     $tab = 'general';
 }
 
-admin_externalpage_setup('local_jedomi', '', ['tab' => $tab]);
 $context = context_system::instance();
-require_capability('moodle/site:config', $context);
+require_login(null, false);
+// The permission to manage agents gives access to the Agents tab, the same permission its actions require.
+// Users who manage agents but cannot configure the site only get that tab.
+$agentsonly = !has_capability('moodle/site:config', $context) && has_capability('local/jedomi:manageagents', $context);
+if ($agentsonly) {
+    $tabs = ['agents' => $tabs['agents']];
+    $tab = 'agents';
+    $PAGE->set_context($context);
+    $PAGE->set_url(new moodle_url('/local/jedomi/admin_settings.php', ['tab' => $tab]));
+    $PAGE->set_pagelayout('admin');
+    $PAGE->set_title(get_string('tab_agents', 'local_jedomi'));
+} else {
+    admin_externalpage_setup('local_jedomi', '', ['tab' => $tab]);
+    require_capability('moodle/site:config', $context);
+}
 $PAGE->set_heading(get_string('pluginname', 'local_jedomi'));
 
 $pageurl = new moodle_url('/local/jedomi/admin_settings.php', ['tab' => $tab]);
@@ -137,7 +150,12 @@ switch ($tab) {
         if (optional_param('action', '', PARAM_ALPHA) === 'saveallowlist') {
             require_sesskey();
             $role = admin_settings_service::normalise_ws_role(required_param('api_role', PARAM_ALPHA));
-            admin_settings_service::save_ws_allowlist($role, optional_param_array('ws_' . $role, [], PARAM_ALPHANUMEXT));
+            // Only the functions shown when saving change; the ones allowed on other pages or filters are kept.
+            admin_settings_service::save_ws_allowlist(
+                $role,
+                optional_param_array('ws_' . $role, [], PARAM_ALPHANUMEXT),
+                optional_param_array('ws_' . $role . '_shown', [], PARAM_ALPHANUMEXT)
+            );
             redirect(new moodle_url($pageurl, ['role' => $role]), $saved, null, notification::NOTIFY_SUCCESS);
         }
         $role = admin_settings_service::normalise_ws_role(optional_param('role', 'admin', PARAM_ALPHA));

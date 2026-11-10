@@ -62,7 +62,11 @@ final class webhook_media_test extends \advanced_testcase {
             $this->markTestSkipped('aiprovider_datacurso is not installed; the provider client cannot be built.');
         }
         $this->resetAfterTest();
-        set_config('licensekey', 'test-license', 'aiprovider_datacurso');
+        // A forced setting, not set_config(): changing an existing row of config_plugins makes the reset after
+        // the test reload the whole table, which took about ten seconds per test.
+        $GLOBALS['CFG']->forced_plugin_settings['aiprovider_datacurso']['licensekey'] = 'test-license';
+        // Precondition: the Telegram integration is turned on.
+        set_config('telegram_enabled', 1, 'local_jedomi');
         \core\plugininfo\aiprovider::enable_plugin('datacurso', 1);
         $DB->insert_record('local_jedomi_telegram_links', (object) [
             'userid' => (int) get_admin()->id,
@@ -464,7 +468,6 @@ final class webhook_media_test extends \advanced_testcase {
 
     /**
      * MDL-INT-013: with the Telegram integration turned off the bot stops processing the messages of linked chats.
-     * [Pendiente:fail] The webhook stays registered and the bot keeps answering linked users with Moodle data.
      */
     public function test_disabled_integration_stops_the_bot(): void {
         set_config('telegram_enabled', 0, 'local_jedomi');

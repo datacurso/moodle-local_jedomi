@@ -29,6 +29,8 @@ namespace local_jedomi\agent\tool;
  * restricted to admin and manager roles.
  */
 class delete_agent_tool implements agent_tool {
+    use acts_for_user;
+
     /**
      * Get the tool name used in AI tool calls.
      *
@@ -70,7 +72,7 @@ class delete_agent_tool implements agent_tool {
      * @return string JSON-encoded success confirmation, or an error if the ID is invalid or not found.
      */
     public function execute(\stdClass $params): string {
-        $role = \local_jedomi_get_user_role();
+        $role = $this->actor_role();
         if (!in_array($role, ['admin', 'manager'], true)) {
             return json_encode(['error' => 'permission_denied']);
         }
@@ -83,6 +85,9 @@ class delete_agent_tool implements agent_tool {
         $agent = \local_jedomi\agent\agent_manager::get_agent($id);
         if (!$agent) {
             return json_encode(['error' => "Agent #{$id} not found."]);
+        }
+        if (!\local_jedomi\agent\agent_manager::can_manage_agent($agent, $this->actor_id())) {
+            return json_encode(['error' => 'permission_denied']);
         }
 
         \local_jedomi\agent\agent_manager::delete_agent($id);

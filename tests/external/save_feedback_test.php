@@ -153,7 +153,6 @@ final class save_feedback_test extends \advanced_testcase {
     /**
      * MDL-INT-011: with the "Feedback only" level chosen in the Privacy tab no text of the rated answer is stored.
      * MDL-INT-055: with the rating-only privacy level the text is not stored.
-     * [Pendiente:fail] Same root as MDL-INT-011. The level is saved with a value different from the one checked, so the text is always stored.
      */
     public function test_feedback_only_level_stores_no_answer_text(): void {
         [$stored] = $this->rate_answer_with_level('feedback');
@@ -163,7 +162,6 @@ final class save_feedback_test extends \advanced_testcase {
 
     /**
      * MDL-INT-011: with the Basic level names and emails are replaced in the stored data.
-     * [Pendiente:fail] The Basic level is not applied.
      */
     public function test_basic_level_replaces_names_and_emails(): void {
         [$stored] = $this->rate_answer_with_level('basic');
@@ -175,7 +173,6 @@ final class save_feedback_test extends \advanced_testcase {
 
     /**
      * MDL-INT-011: with the Strict level identifiers and free text are also replaced in the stored data.
-     * [Pendiente:fail] The Strict level is not applied.
      */
     public function test_strict_level_also_replaces_identifiers_and_free_text(): void {
         [$stored] = $this->rate_answer_with_level('strict');

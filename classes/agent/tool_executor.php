@@ -97,7 +97,9 @@ class tool_executor {
      * @return tool\agent_tool[]
      */
     private static function get_tools(int $agentid = 0, int $userid = 0): array {
-        if (empty(self::$instances) || $agentid > 0) {
+        // Tools are rebuilt for every run that names its agent or its user, so a run never keeps
+        // the permissions of the user of a previous run.
+        if (empty(self::$instances) || $agentid > 0 || $userid > 0) {
             $wstool = new tool\ws_tool($userid);
             self::$instances = [
                 // Data tools.
@@ -113,17 +115,22 @@ class tool_executor {
                 'ws_describe' => new tool\ws_describe_tool(),
 
                 // Agent management tools.
-                'create_agent' => new tool\create_agent_tool(),
-                'list_agents' => new tool\list_agents_tool(),
-                'delete_agent' => new tool\delete_agent_tool(),
+                'create_agent' => new tool\create_agent_tool($userid),
+                'list_agents' => new tool\list_agents_tool($userid),
+                'delete_agent' => new tool\delete_agent_tool($userid),
 
                 // Admin tools.
-                'admin_search' => new tool\admin_search_tool(),
-                'admin_describe' => new tool\admin_describe_tool(),
-                'admin_execute' => new tool\admin_execute_tool(),
+                'admin_search' => new tool\admin_search_tool($userid),
+                'admin_describe' => new tool\admin_describe_tool($userid),
+                'admin_execute' => new tool\admin_execute_tool($userid),
 
                 // Document reading.
-                'document_read' => new tool\document_read_tool(),
+                'document_read' => new tool\document_read_tool($userid),
+
+                // Own data of the user the tools run for (never another user).
+                'my_courses' => new tool\my_courses_tool($userid),
+                'my_grades' => new tool\my_grades_tool($userid),
+                'my_assignments' => new tool\my_assignments_tool($userid),
             ];
         }
         return self::$instances;

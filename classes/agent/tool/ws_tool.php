@@ -112,9 +112,9 @@ class ws_tool implements agent_tool {
         // ... ── Check role allowlist (matches Telegram webhook_handler behaviour) ──
         $role = \local_jedomi_get_user_role_for_user($this->userid);
         $allowlist = \local_jedomi_get_role_allowlist($role);
-        // Admin without a configured allowlist → full access.
-        // Every other role (or an admin with an explicit allowlist) → must match.
-        if ($role !== 'admin' || !empty($allowlist)) {
+        // Admin without a saved allowlist → full access.
+        // Every other role (or an admin with a saved allowlist, even empty) → must match.
+        if (!\local_jedomi_role_has_full_ws_access($role)) {
             if (!in_array($function, $allowlist, true)) {
                 return json_encode(['error' => 'WS not in allowlist for role: ' . $role]);
             }

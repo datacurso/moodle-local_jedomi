@@ -42,7 +42,8 @@ if (strlen($hash) !== 32) {
     exit;
 }
 
-$deleted = agent_manager::clear_preview_cache($hash);
+// Only the user who ran a preview can clear its saved result.
+$deleted = agent_manager::clear_preview_cache($hash, (int) $USER->id);
 echo json_encode([
     'ok' => true,
     'deleted' => $deleted,

@@ -328,7 +328,6 @@ final class observers_test extends \advanced_testcase {
 
     /**
      * MDL-INT-072: a grade hidden from the student is not notified.
-     * [Pendiente:fail]
      *
      * @return void
      */
@@ -345,7 +344,6 @@ final class observers_test extends \advanced_testcase {
 
     /**
      * MDL-INT-072: with the marking workflow, a grade not yet released is not notified.
-     * [Pendiente:fail]
      *
      * @return void
      */
@@ -359,7 +357,6 @@ final class observers_test extends \advanced_testcase {
 
     /**
      * MDL-INT-072: with anonymous submissions whose identities are not revealed, the grade is not notified.
-     * [Pendiente:fail]
      *
      * @return void
      */
@@ -373,7 +370,6 @@ final class observers_test extends \advanced_testcase {
 
     /**
      * MDL-INT-072: the minimum interval of a notification does not drop the notification of another assignment.
-     * [Pendiente:fail]
      *
      * @return void
      */

@@ -39,5 +39,10 @@ function xmldb_local_jedomi_install(): bool {
         $DB->execute("ALTER TABLE {local_jedomi_telegram_sessions} MODIFY COLUMN usercontext MEDIUMTEXT");
     }
 
+    // Each site signs the chat permissions with its own random secret, never with a known key.
+    if (!get_config('local_jedomi', 'spt_secret')) {
+        set_config('spt_secret', bin2hex(random_bytes(32)), 'local_jedomi');
+    }
+
     return true;
 }

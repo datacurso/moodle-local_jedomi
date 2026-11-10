@@ -119,7 +119,7 @@ final class preview_runner_test extends \advanced_testcase {
         }
         $this->resetAfterTest();
         $this->setAdminUser();
-        set_config('licensekey', 'test-license', 'aiprovider_datacurso');
+        $GLOBALS['CFG']->forced_plugin_settings['aiprovider_datacurso']['licensekey'] = 'test-license';
         \core\plugininfo\aiprovider::enable_plugin('datacurso', 0);
         $curl = new fake_curl();
         client::set_instance_for_testing(testable_provider_api::make_client($curl));
@@ -137,18 +137,20 @@ final class preview_runner_test extends \advanced_testcase {
      * @return void
      */
     public function test_cached_preview_returns_the_cache_key(): void {
-        global $DB;
         $this->resetAfterTest();
         $this->setAdminUser();
-        $DB->insert_record('local_jedomi_agent_cache', (object) ['agentid' => 0, 'context_hash' => md5('List the users'),
-            'result_json' => json_encode(['answer' => 'Cached answer']), 'timecreated' => 1700000000]);
-        client::set_instance_for_testing(new fake_ai_client());
+        $fake = new fake_ai_client();
+        $fake->enqueue_text('Cached answer');
+        client::set_instance_for_testing($fake);
+        preview_runner::run('List the users', (int) get_admin()->id);
 
         $result = preview_runner::run('  List the users ', (int) get_admin()->id);
 
         $this->assertTrue($result['cached']);
         $this->assertSame('Cached answer', $result['answer']);
-        $this->assertSame(md5('List the users'), $result['cache_hash']);
+        $this->assertNotEmpty($result['cache_hash']);
+        $this->assertTrue(\local_jedomi\agent\agent_manager::clear_preview_cache($result['cache_hash']),
+            'The returned key clears that saved preview');
     }
 
     /**
@@ -215,7 +217,6 @@ final class preview_runner_test extends \advanced_testcase {
 
     /**
      * MDL-INT-026: a preview never runs an action that changes data without confirmation.
-     * [Pendiente:fail] The preview really runs writing actions such as deleting an agent.
      */
     public function test_preview_does_not_run_writing_actions_without_confirmation(): void {
         $this->resetAfterTest();
@@ -238,7 +239,6 @@ final class preview_runner_test extends \advanced_testcase {
 
     /**
      * MDL-INT-026: the saved result of a preview is private to the user who ran it.
-     * [Pendiente:fail] Any user who previews the same prompt receives the saved result of the first one.
      */
     public function test_saved_preview_is_not_shared_between_users(): void {
         $this->resetAfterTest();
@@ -261,10 +261,69 @@ final class preview_runner_test extends \advanced_testcase {
     /**
      * SYS-E2E-010: the preview of an agent can query the database and the site configuration with the web service list
      * of its creator, so its result matches the scheduled run. Behat: agents_tab.feature.
-     * [Pendiente:skip]
+     * MDL-INT-026: the preview uses the permissions, the context, the tools and the step limit of the scheduled run.
      */
     public function test_preview_uses_the_same_tools_as_the_scheduled_run(): void {
-        $this->markTestSkipped('Pending fix: the preview cannot query the database nor the site configuration and uses '
-            . 'the web service list of the Student role.');
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $adminid = (int) get_admin()->id;
+        // Another user ran a tool before, as in a previous request: the preview must not keep their permissions.
+        \local_jedomi\agent\tool_executor::get_definitions(1, (int) $this->getDataGenerator()->create_user()->id);
+        $fake = new fake_ai_client();
+        $fake->enqueue_tool_calls([
+            ['id' => 'call_1', 'type' => 'function', 'function' => ['name' => 'execute_sql',
+                'arguments' => json_encode(['query' => 'SELECT COUNT(id) AS total FROM {course}'])]],
+            ['id' => 'call_2', 'type' => 'function', 'function' => ['name' => 'get_site_config',
+                'arguments' => json_encode(['keys' => ['fullname']])]],
+        ]);
+        $fake->enqueue_text('Done.');
+        client::set_instance_for_testing($fake);
+
+        $result = preview_runner::run('How many courses are there?', $adminid);
+
+        $this->assertTrue($result['ok']);
+        foreach ($result['profiler'] as $step) {
+            $this->assertNull($step['error'], "The preview must run {$step['tool']} with the permissions of its user");
+        }
+        [, $system, $tools] = \local_jedomi\task\agent_runner::run_conditions($adminid, 'site', null);
+        $this->assertSame($tools, $fake->calls[0]['tools'], 'The preview offers the tools of the scheduled run');
+        $this->assertSame($system, $fake->calls[0]['messages'][0], 'The preview gives the instructions of the scheduled run');
+    }
+
+    /**
+     * MDL-INT-026: the preview stops at the same maximum number of steps as the scheduled run.
+     */
+    public function test_preview_stops_at_the_step_limit_of_the_scheduled_run(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $fake = new fake_ai_client();
+        for ($i = 1; $i <= \local_jedomi\task\agent_runner::MAX_TOOL_ITERATIONS + 2; $i++) {
+            $fake->enqueue_tool_calls([
+                ['id' => 'call_' . $i, 'type' => 'function', 'function' => ['name' => 'no_such_tool',
+                    'arguments' => json_encode(['step' => $i])]],
+            ]);
+        }
+        client::set_instance_for_testing($fake);
+
+        preview_runner::run('Keep going', (int) get_admin()->id);
+
+        $this->assertCount(\local_jedomi\task\agent_runner::MAX_TOOL_ITERATIONS, $fake->calls);
+    }
+
+    /**
+     * MDL-INT-026: the saved preview of a user cannot be cleared by another user who knows its key.
+     */
+    public function test_saved_preview_can_only_be_cleared_by_its_user(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $fake = new fake_ai_client();
+        $fake->enqueue_text('Saved answer');
+        client::set_instance_for_testing($fake);
+        preview_runner::run('Summarise my week', (int) get_admin()->id);
+        $hash = preview_runner::run('Summarise my week', (int) get_admin()->id)['cache_hash'];
+        $other = $this->getDataGenerator()->create_user();
+
+        $this->assertFalse(\local_jedomi\agent\agent_manager::clear_preview_cache($hash, (int) $other->id));
+        $this->assertTrue(\local_jedomi\agent\agent_manager::clear_preview_cache($hash, (int) get_admin()->id));
     }
 }

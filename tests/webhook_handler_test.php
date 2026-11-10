@@ -64,6 +64,8 @@ final class webhook_handler_test extends \advanced_testcase {
     protected function setUp(): void {
         parent::setUp();
         $this->resetAfterTest();
+        // Precondition: the Telegram integration is turned on.
+        set_config('telegram_enabled', 1, 'local_jedomi');
     }
 
     #[\Override]
@@ -1056,7 +1058,9 @@ final class webhook_handler_test extends \advanced_testcase {
         $this->require_provider();
         $chatid = '990000003';
         $user = $this->getDataGenerator()->create_user();
-        set_config('licensekey', 'test-license', 'aiprovider_datacurso');
+        // A forced setting, not set_config(): changing an existing row of config_plugins makes the reset after
+        // the test reload the whole table, which took about ten seconds per test.
+        $GLOBALS['CFG']->forced_plugin_settings['aiprovider_datacurso']['licensekey'] = 'test-license';
         set_config('model', 'jedomi/zai-org/GLM-5.3-Flash', 'local_jedomi');
         \core\plugininfo\aiprovider::enable_plugin('datacurso', 1);
         $curl = new fake_curl();
@@ -1147,7 +1151,9 @@ final class webhook_handler_test extends \advanced_testcase {
     public function test_telegram_with_the_provider_disabled_answers_with_the_provider_message(): void {
         $this->require_provider();
         $chatid = '990000006';
-        set_config('licensekey', 'test-license', 'aiprovider_datacurso');
+        // A forced setting, not set_config(): changing an existing row of config_plugins makes the reset after
+        // the test reload the whole table, which took about ten seconds per test.
+        $GLOBALS['CFG']->forced_plugin_settings['aiprovider_datacurso']['licensekey'] = 'test-license';
         \core\plugininfo\aiprovider::enable_plugin('datacurso', 0);
         $user = $this->getDataGenerator()->create_user(['lang' => 'en']);
         $curl = new fake_curl();
@@ -1307,10 +1313,39 @@ final class webhook_handler_test extends \advanced_testcase {
 
     /**
      * MDL-UNIT-034: bold, italic, code, links and lists are converted to the Telegram format and special characters escaped.
-     * [Pendiente:skip]
      */
     public function test_answer_is_converted_to_the_telegram_format(): void {
-        $this->markTestSkipped('Pending fix: asterisk lists become italics and < > are not escaped, so Telegram rejects the message.');
+        $answer = "**Summary** of *this week*\n"
+            . "* first item\n"
+            . "* second item\n"
+            . "- third item with `x < 5` code\n"
+            . "Grades < 50 & > 90 are rare, see [the report](https://example.com/report?a=1&b=2).\n"
+            . "<p>Unknown <span>tags</span> go away</p><b>open bold";
+
+        $telegram = $this->answer_in_telegram('990000034', $answer);
+
+        $sent = end($telegram->sent)['text'];
+        $this->assertStringContainsString('<b>Summary</b>', $sent);
+        $this->assertStringContainsString('<i>this week</i>', $sent);
+        $this->assertSame(3, substr_count($sent, '• '), 'List items keep a bullet');
+        $this->assertStringNotContainsString('<i> first', $sent, 'A list is not turned into italics');
+        $this->assertStringContainsString('<code>x &lt; 5</code>', $sent);
+        $this->assertStringContainsString('Grades &lt; 50 &amp; &gt; 90', $sent);
+        $this->assertStringContainsString('<a href="https://example.com/report?a=1&amp;b=2">the report</a>', $sent);
+        $this->assertStringNotContainsString('<p>', $sent);
+        $this->assertStringNotContainsString('<span>', $sent);
+        // Every tag left is a Telegram tag and every opened tag is closed.
+        preg_match_all('/<(\/?)([a-z-]+)[^>]*>/', $sent, $tags, PREG_SET_ORDER);
+        $open = [];
+        foreach ($tags as [, $closing, $name]) {
+            $this->assertContains($name, ['b', 'i', 'u', 's', 'a', 'code', 'pre', 'blockquote', 'tg-spoiler', 'tg-emoji']);
+            if ($closing === '') {
+                $open[] = $name;
+            } else {
+                $this->assertSame(array_pop($open), $name, 'Tags are balanced');
+            }
+        }
+        $this->assertSame([], $open, 'Every tag is closed');
     }
 
     /**
@@ -1322,11 +1357,48 @@ final class webhook_handler_test extends \advanced_testcase {
     }
 
     /**
-     * MDL-UNIT-038: bot messages and notifications are complete and in the user's language (English and Spanish).
+     * MDL-UNIT-038: the limit notice shows the real minutes of waiting and no bot message, in English or Spanish,
+     * holds an unreplaced placeholder or a literal line break.
+     */
+    public function test_bot_messages_are_complete(): void {
+        $telegram = $this->use_fake_telegram();
+        set_config('telegram_rate_limit', 1, 'local_jedomi');
+        set_config('telegram_cooldown', 7, 'local_jedomi');
+        $this->send_text('700000093', 'hello there');
+        $this->send_text('700000093', 'hello there');
+        $this->send_text('700000094', '/start');
+
+        $sent = array_column($telegram->sent, 'text');
+        $this->assertCount(3, $sent);
+        $this->assertMatchesRegularExpression('/\b7\b/', $sent[1], 'The limit notice shows the minutes of waiting');
+        $this->assertStringContainsString("\n", $sent[2], 'The link code request has real line breaks');
+        foreach ($sent as $text) {
+            $this->assertStringNotContainsString('\\n', $text, 'No literal line break');
+            $this->assertDoesNotMatchRegularExpression('/\{\$?[a-z_>-]+\}/i', $text, 'No unreplaced placeholder');
+        }
+
+        $manager = get_string_manager();
+        $a = (object) ['minutes' => 7];
+        foreach (['en', 'es'] as $lang) {
+            foreach (array_keys($manager->load_component_strings('local_jedomi', $lang)) as $key) {
+                if (strpos($key, 'telegram_msg_') !== 0) {
+                    continue;
+                }
+                $text = $manager->get_string($key, 'local_jedomi', $a, $lang);
+                $this->assertStringNotContainsString('\\n', $text, "{$lang}/{$key} has no literal line break");
+                $this->assertDoesNotMatchRegularExpression('/\{[a-z_]+\}/i', $text, "{$lang}/{$key} has no unreplaced placeholder");
+            }
+        }
+    }
+
+    /**
+     * MDL-UNIT-038: the bot messages, the reasons for disabling agents and the notifications are shown in the
+     * language of the user, in English and in Spanish.
      * [Pendiente:skip]
      */
-    public function test_bot_messages_are_complete_and_in_the_user_language(): void {
-        $this->markTestSkipped('Pending fix: unreplaced placeholders, literal line breaks and messages fixed in one language.');
+    public function test_bot_messages_and_notifications_are_in_the_user_language(): void {
+        $this->markTestSkipped('Pending fix: several bot messages are fixed in Spanish or English and the notifications of '
+            . 'agents, grades and assignments are fixed in one language.');
     }
 
     /**
@@ -1498,26 +1570,97 @@ final class webhook_handler_test extends \advanced_testcase {
     }
 
     /**
+     * Send a text from a linked chat to an AI that answers at once, and return the instructions the AI received.
+     *
+     * @param int $userid Linked user.
+     * @param string $chatid Chat id.
+     * @return string System instructions of the AI call.
+     */
+    private function telegram_instructions_for(int $userid, string $chatid): string {
+        $this->use_fake_telegram();
+        $fake = new fake_ai_client();
+        $fake->enqueue_text('Hi.');
+        client::set_instance_for_testing($fake);
+        $this->create_telegram_link($userid, $chatid);
+        $this->send_text($chatid, 'Hello');
+        $this->assertCount(1, $fake->calls);
+        return (string) $fake->calls[0]['messages'][0]['content'];
+    }
+
+    /**
+     * Courses line of the Telegram instructions, decoded.
+     *
+     * @param string $instructions System instructions.
+     * @return array|null Courses grouped by role, or null when the line says none.
+     */
+    private function courses_of(string $instructions): ?array {
+        $this->assertMatchesRegularExpression('/^Courses: (.+)$/m', $instructions);
+        preg_match('/^Courses: (.+)$/m', $instructions, $m);
+        return $m[1] === 'none' ? null : json_decode($m[1], true);
+    }
+
+    /**
      * MDL-UNIT-074: the courses of the user are grouped by the role held in each one, for the Telegram AI.
-     * [Pendiente:skip]
      */
     public function test_telegram_courses_are_grouped_by_the_role_in_each_course(): void {
-        $this->markTestSkipped('Pending fix: courses are grouped by capability instead of by the role held in each course.');
+        global $DB;
+        $generator = $this->getDataGenerator();
+        $editing = $generator->create_course(['fullname' => 'Editing Course']);
+        $nonediting = $generator->create_course(['fullname' => 'Non Editing Course']);
+        $learning = $generator->create_course(['fullname' => 'Learning Course']);
+        $managed = $generator->create_course(['fullname' => 'Managed Course']);
+        $suspended = $generator->create_course(['fullname' => 'Suspended Enrolment Course']);
+        $user = $generator->create_user();
+        $generator->enrol_user($user->id, $editing->id, 'editingteacher');
+        $generator->enrol_user($user->id, $nonediting->id, 'teacher');
+        $generator->enrol_user($user->id, $learning->id, 'student');
+        $generator->role_assign((int) $DB->get_field('role', 'id', ['shortname' => 'manager']), $user->id,
+            \context_course::instance($managed->id)->id);
+        $generator->enrol_user($user->id, $suspended->id, 'student', 'manual', 0, 0, ENROL_USER_SUSPENDED);
+        role_unassign((int) $DB->get_field('role', 'id', ['shortname' => 'student']), (int) $user->id,
+            \context_course::instance($suspended->id)->id);
+
+        $instructions = $this->telegram_instructions_for((int) $user->id, '990000074');
+
+        $courses = $this->courses_of($instructions);
+        $this->assertEqualsCanonicalizing(['Managed Course'], $courses['manager'] ?? []);
+        $this->assertEqualsCanonicalizing(['Editing Course', 'Non Editing Course'], $courses['teacher'] ?? []);
+        $this->assertEqualsCanonicalizing(['Learning Course'], $courses['student'] ?? []);
+        $this->assertStringNotContainsString('Suspended Enrolment Course', $instructions);
+        $this->assertStringNotContainsString((string) format_string(get_site()->fullname), json_encode($courses));
+        $this->assertStringContainsString('Role: teacher', $instructions, 'A role in a course never makes the user a manager');
+    }
+
+    /**
+     * MDL-UNIT-074: a user without courses gets a controlled empty list.
+     */
+    public function test_telegram_user_without_courses_has_an_empty_list(): void {
+        $user = $this->getDataGenerator()->create_user();
+
+        $instructions = $this->telegram_instructions_for((int) $user->id, '990000075');
+
+        $this->assertNull($this->courses_of($instructions));
+        $this->assertStringContainsString('Role: student', $instructions);
     }
 
     /**
      * MDL-UNIT-093: the Telegram AI instructions limit actions that change data to explicit requests.
-     * [Pendiente:skip]
      */
     public function test_telegram_instructions_limit_writing_actions_to_explicit_requests(): void {
-        $this->markTestSkipped('Pending fix: the Telegram instructions do not limit data-changing actions to explicit requests.');
+        $instructions = \local_jedomi\telegram\prompt_builder::build('admin', 'en',
+            array_column(array_column(\local_jedomi_get_tool_definitions('admin'), 'function'), 'name'), []);
+
+        $this->assertMatchesRegularExpression('/only call an action that changes data.*when the user explicitly asks/is',
+            $instructions);
+        $this->assertMatchesRegularExpression('/questions, reports and analysis only read data/i', $instructions);
+        $this->assertMatchesRegularExpression('/answer them with the read tools/i', $instructions);
+        $this->assertStringNotContainsString('Execute what the user asked', $instructions);
     }
 
     /**
      * Create a user whose id no earlier test of this run is likely to have used.
      *
-     * The bot keeps the role derived for each user id for the whole PHP process and ids are reused after each reset, so a
-     * fresh id avoids reading the role of a user of another test.
+     * Ids are reused after each reset; a fresh id keeps each test independent of the users of earlier tests.
      *
      * @return \stdClass
      */
@@ -1551,7 +1694,6 @@ final class webhook_handler_test extends \advanced_testcase {
 
     /**
      * MDL-INT-042: in Telegram the database query never reveals credentials, keys or configuration.
-     * [Pendiente:fail] Telegram excludes no table.
      */
     public function test_telegram_database_query_excludes_sensitive_data(): void {
         global $DB;
@@ -1575,7 +1717,6 @@ final class webhook_handler_test extends \advanced_testcase {
 
     /**
      * MDL-INT-042: in Telegram a teacher cannot read the data of a course they do not teach.
-     * [Pendiente:fail] The course check only recognises a few ways of naming the course, so it is easily avoided.
      */
     public function test_telegram_teacher_cannot_read_a_course_they_do_not_teach(): void {
         $own = $this->getDataGenerator()->create_course();
@@ -1592,5 +1733,21 @@ final class webhook_handler_test extends \advanced_testcase {
             [(int) $own->id]);
 
         $this->assertStringNotContainsString('Foreign Course Marker', $result);
+    }
+
+    /**
+     * MDL-INT-032: from Telegram a manager cannot delete the agent of an administrator.
+     */
+    public function test_telegram_cannot_delete_the_agent_of_a_user_with_more_permissions(): void {
+        $this->resetAfterTest();
+        $manager = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->role_assign('manager', $manager->id);
+        $foreign = \local_jedomi\agent\agent_manager::create_agent((object) ['userid' => (int) get_admin()->id,
+            'prompt' => 'Admin report', 'schedule_cron' => '0 8 * * *']);
+
+        $denied = \local_jedomi\telegram\webhook_handler::execute_tool('delete_agent', ['id' => $foreign], (int) $manager->id);
+
+        $this->assertStringContainsString('permission_denied', $denied);
+        $this->assertNotNull(\local_jedomi\agent\agent_manager::get_agent($foreign));
     }
 }

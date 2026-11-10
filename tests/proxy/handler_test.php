@@ -165,7 +165,9 @@ final class handler_test extends \advanced_testcase {
         $this->require_provider();
         $this->resetAfterTest();
         $this->setAdminUser();
-        set_config('licensekey', 'test-license', 'aiprovider_datacurso');
+        // A forced setting, not set_config(): changing an existing row of config_plugins makes the reset after
+        // the test reload the whole table, which took about ten seconds per test.
+        $GLOBALS['CFG']->forced_plugin_settings['aiprovider_datacurso']['licensekey'] = 'test-license';
         \core\plugininfo\aiprovider::enable_plugin('datacurso', 0);
         $curl = new fake_curl();
         client::set_instance_for_testing(testable_provider_api::make_client($curl));
@@ -191,7 +193,9 @@ final class handler_test extends \advanced_testcase {
         $this->require_provider();
         $this->resetAfterTest();
         $this->setAdminUser();
-        set_config('licensekey', 'test-license', 'aiprovider_datacurso');
+        // A forced setting, not set_config(): changing an existing row of config_plugins makes the reset after
+        // the test reload the whole table, which took about ten seconds per test.
+        $GLOBALS['CFG']->forced_plugin_settings['aiprovider_datacurso']['licensekey'] = 'test-license';
         set_config('model', 'jedomi/zai-org/GLM-5.3-Flash', 'local_jedomi');
         \core\plugininfo\aiprovider::enable_plugin('datacurso', 1);
         $curl = new fake_curl();
@@ -550,7 +554,6 @@ final class handler_test extends \advanced_testcase {
 
     /**
      * MDL-INT-092: the chat permissions the server issues to a guest session are never accepted by the chat.
-     * [Pendiente:fail]
      */
     public function test_permissions_issued_to_a_guest_are_not_accepted(): void {
         $this->resetAfterTest();
@@ -568,7 +571,6 @@ final class handler_test extends \advanced_testcase {
 
     /**
      * MDL-INT-092: a chat query of a guest is refused with a controlled error and never reaches the AI.
-     * [Pendiente:fail]
      */
     public function test_chat_query_of_a_guest_never_reaches_the_ai(): void {
         $this->require_provider();
@@ -587,15 +589,15 @@ final class handler_test extends \advanced_testcase {
     }
 
     /**
-     * Sign some permissions with the key every site uses while no own secret is saved.
+     * Sign some permissions with the secret of the site, as if the signature had been obtained by the browser.
      *
      * @param array $spt Permissions.
      * @return array Permissions with a signature the server accepts.
      */
-    private function sign_with_built_in_key(array $spt): array {
+    private function sign_with_site_secret(array $spt): array {
         unset($spt['signature']);
         ksort($spt);
-        $spt['signature'] = hash_hmac('sha256', json_encode($spt), 'jedomi-spt-secret');
+        $spt['signature'] = hash_hmac('sha256', json_encode($spt), \local_jedomi_get_spt_secret());
         return $spt;
     }
 
@@ -631,16 +633,14 @@ final class handler_test extends \advanced_testcase {
 
     /**
      * MDL-INT-007: the role of a chat query is the role of the session user, whatever the browser presents.
-     * [Pendiente:fail] The server trusts the role carried by the signed permissions: with the built-in key a student
-     * presents administrator permissions and gets the database and administration tools.
+     * Even with validly signed permissions that declare the administrator role, a student only gets the student tools.
      */
     public function test_chat_role_is_computed_from_the_session_user(): void {
         $this->require_provider();
         $this->resetAfterTest();
-        set_config('spt_secret', '', 'local_jedomi');
         $student = $this->getDataGenerator()->create_user();
         $this->setUser($student);
-        $presented = $this->sign_with_built_in_key(array_merge(\local_jedomi_generate_spt('student'), ['role' => 'admin']));
+        $presented = $this->sign_with_site_secret(array_merge(\local_jedomi_generate_spt('student'), ['role' => 'admin']));
         $fake = new fake_ai_client();
         $fake->enqueue_tool_calls([
             ['id' => 'call_1', 'type' => 'function', 'function' => ['name' => 'admin_search', 'arguments' => '{"query":"cache"}']],
@@ -663,7 +663,6 @@ final class handler_test extends \advanced_testcase {
 
     /**
      * MDL-INT-009: a chat query sent from a course where Jedomi is not available is rejected by the server.
-     * [Pendiente:fail] The course availability only hides the button: the server answers queries from an excluded course.
      */
     public function test_chat_query_from_an_excluded_course_is_rejected(): void {
         $this->require_provider();
@@ -692,7 +691,6 @@ final class handler_test extends \advanced_testcase {
 
     /**
      * MDL-INT-010: the server rejects the chat queries of a user whose roles are all hidden.
-     * [Pendiente:fail] The role visibility is only applied by the server to file reading; chat queries are answered.
      */
     public function test_chat_query_of_a_user_with_every_role_hidden_is_rejected(): void {
         global $DB;
@@ -810,7 +808,6 @@ final class handler_test extends \advanced_testcase {
 
     /**
      * MDL-INT-042: in the web chat the database query never reveals credentials, keys or configuration.
-     * [Pendiente:fail] The web chat excludes no table.
      */
     public function test_web_chat_database_query_excludes_sensitive_data(): void {
         $this->require_provider();
@@ -925,7 +922,6 @@ final class handler_test extends \advanced_testcase {
 
     /**
      * MDL-CTR-007: with the Basic level the AI receives names and e-mails returned by the tools replaced.
-     * [Pendiente:fail]
      */
     public function test_basic_level_replaces_names_and_emails_sent_to_the_ai(): void {
         [$result] = $this->tool_result_with_level('basic');
@@ -936,7 +932,6 @@ final class handler_test extends \advanced_testcase {
 
     /**
      * MDL-CTR-007: with the Strict level identifiers are also replaced in what the AI receives.
-     * [Pendiente:fail]
      */
     public function test_strict_level_also_replaces_identifiers_sent_to_the_ai(): void {
         [$result] = $this->tool_result_with_level('strict');
@@ -967,5 +962,32 @@ final class handler_test extends \advanced_testcase {
         $this->capture(fn() => handler::run_from_request($input, 'student', ['course_id' => 0], (int) $user->id));
 
         $this->assertDoesNotMatchRegularExpression('/\b' . (int) $user->id . '\b/', $fake->calls[0]['messages'][0]['content']);
+    }
+
+    /**
+     * MDL-INT-032: from the web chat a manager cannot create an agent on behalf of an administrator nor delete theirs.
+     */
+    public function test_chat_cannot_create_or_delete_agents_of_users_with_more_permissions(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $manager = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->role_assign('manager', $manager->id);
+        $adminid = (int) get_admin()->id;
+        $foreign = \local_jedomi\agent\agent_manager::create_agent((object) ['userid' => $adminid, 'prompt' => 'Admin report',
+            'schedule_cron' => '0 8 * * *']);
+        $this->setUser($manager);
+
+        $created = json_decode(handler::run_tool('create_agent', ['prompt' => 'Spy', 'schedule_cron' => '0 8 * * *',
+            'userid' => $adminid], 'manager'), true);
+        $deleted = json_decode(handler::run_tool('delete_agent', ['id' => $foreign], 'manager'), true);
+        $own = json_decode(handler::run_tool('create_agent', ['prompt' => 'Mine', 'schedule_cron' => '0 8 * * *'], 'manager'),
+            true);
+
+        $this->assertSame('permission_denied', $created['error'] ?? null);
+        $this->assertSame(1, $DB->count_records('local_jedomi_agents', ['userid' => $adminid]),
+            'No agent is created on behalf of the administrator');
+        $this->assertSame('permission_denied', $deleted['error'] ?? null);
+        $this->assertNotNull(\local_jedomi\agent\agent_manager::get_agent($foreign));
+        $this->assertTrue($own['success'] ?? false, 'The manager still creates their own agents');
     }
 }

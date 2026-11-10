@@ -156,7 +156,8 @@ class get_site_config extends external_api {
 
         // ... --- HMAC authentication ---
         if (!$skiphmac) {
-            self::verify_hmac('jedomi_get_site_config', $hmactimestamp, $payloadhash, $hmacsignature);
+            self::verify_hmac('jedomi_get_site_config', $hmactimestamp, $payloadhash, $hmacsignature,
+                self::signed_params($validated));
         }
 
         // ... --- Build response (server-side allowlist enforcement) ---

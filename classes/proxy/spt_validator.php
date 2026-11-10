@@ -39,6 +39,13 @@ class spt_validator {
      * @throws \moodle_exception
      */
     public static function validate(array $spt): string {
+        require_once(__DIR__ . '/../../lib.php');
+
+        // Guests and users not logged in never get usable chat permissions.
+        if (!isloggedin() || isguestuser()) {
+            throw new \moodle_exception('chat_error_guest', 'local_jedomi');
+        }
+
         // Check sesskey binding.
         $expectedhash = substr(hash('sha256', sesskey()), 0, 16);
         if (!hash_equals($expectedhash, $spt['sesskey_hash'] ?? '')) {
@@ -51,7 +58,7 @@ class spt_validator {
         }
 
         // Reconstruct and verify signature.
-        $secret = get_config('local_jedomi', 'spt_secret') ?: 'jedomi-spt-secret';
+        $secret = \local_jedomi_get_spt_secret();
         $payload = $spt;
         unset($payload['signature']);
         ksort($payload);

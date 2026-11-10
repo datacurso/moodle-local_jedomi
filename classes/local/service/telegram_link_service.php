@@ -52,13 +52,22 @@ class telegram_link_service {
     }
 
     /**
-     * Remove every Telegram link of a user.
+     * Remove every Telegram link of a user and all the data of the bot for those chats: the conversation, the task
+     * in progress, the message limit and the actions waiting for confirmation.
      *
      * @param int $userid User id.
      * @return void
      */
     public static function unlink(int $userid): void {
         global $DB;
+        $chatids = $DB->get_fieldset_select('local_jedomi_telegram_links', 'chatid', 'userid = ?', [$userid]);
+        $transaction = $DB->start_delegated_transaction();
+        foreach ($chatids as $chatid) {
+            $DB->delete_records_list('local_jedomi_telegram_sessions', 'chatid', [$chatid, 'tool_loop_' . $chatid]);
+            $DB->delete_records('local_jedomi_telegram_rate_limit', ['chatid' => $chatid]);
+            $DB->delete_records('local_jedomi_telegram_pending_actions', ['chatid' => $chatid]);
+        }
         $DB->delete_records('local_jedomi_telegram_links', ['userid' => $userid]);
+        $transaction->allow_commit();
     }
 }

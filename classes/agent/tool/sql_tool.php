@@ -32,7 +32,7 @@ namespace local_jedomi\agent\tool;
 
 /**
  * Agent tool that runs read-only SQL against the Moodle database with
- * role gating, table blocklisting, row limits, and profiler logging.
+ * role gating, the shared sensitive-data guard, row limits, and profiler logging.
  */
 class sql_tool implements agent_tool {
     /** @var int Agent ID being executed (for profiling). */
@@ -91,7 +91,7 @@ class sql_tool implements agent_tool {
      * Validate and run a read-only query, logging duration and row count to the profiler.
      *
      * Allowed roles: admin, manager, teacher. Only SELECT/SHOW/DESCRIBE/EXPLAIN/WITH
-     * statements pass validation, blocklisted tables are rejected, and results are
+     * statements pass validation, the shared query guard rejects sensitive data, and results are
      * capped at 1000 rows.
      *
      * @param \stdClass $params Decoded tool arguments; expects 'query' (or legacy 'sql') with the SQL text.
@@ -122,16 +122,10 @@ class sql_tool implements agent_tool {
             ]);
         }
 
-        // ... ── Blocklisted tables ────────────────────────────────────────────────
-        $blocklisted = ['config', 'sessions', 'oauth', 'tokens', 'private_key'];
-        $queryupper = strtoupper($query);
-        foreach ($blocklisted as $tbl) {
-            $needle = strtoupper("{{$tbl}}");
-            if (strpos($queryupper, $needle) !== false) {
-                return json_encode([
-                    'error' => "Query references blocked table '{$tbl}'.",
-                ]);
-            }
+        // ... ── Sensitive tables and courses the user does not manage (shared by every channel) ──
+        $rejection = \local_jedomi\local\sql_guard::rejection_reason($query, $this->userid);
+        if ($rejection !== null) {
+            return json_encode(['error' => get_string($rejection, 'local_jedomi')]);
         }
 
         // ... ── Execute with timeout + profiling ──────────────────────────────────
@@ -161,7 +155,7 @@ class sql_tool implements agent_tool {
 
             // ... ── Format result for AI ─────────────────────────────────────────
             $rows = array_map(function (\stdClass $r): array {
-                return (array) $r;
+                return \local_jedomi\local\sql_guard::filter_row((array) $r);
             }, array_values($records));
 
             return json_encode([

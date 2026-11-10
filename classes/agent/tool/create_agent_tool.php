@@ -29,6 +29,8 @@ namespace local_jedomi\agent\tool;
  * and cron schedule, restricted to admin and manager roles.
  */
 class create_agent_tool implements agent_tool {
+    use acts_for_user;
+
     /**
      * Get the tool name used in AI tool calls.
      *
@@ -95,7 +97,7 @@ class create_agent_tool implements agent_tool {
      * @return string JSON-encoded creation result with the new agent id, or an error message.
      */
     public function execute(\stdClass $params): string {
-        $role = \local_jedomi_get_user_role();
+        $role = $this->actor_role();
         if (!in_array($role, ['admin', 'manager'], true)) {
             return json_encode(['error' => 'permission_denied']);
         }
@@ -111,9 +113,11 @@ class create_agent_tool implements agent_tool {
             return json_encode(['error' => 'Invalid cron expression. Use 5 fields.']);
         }
 
-        global $USER;
         $data = new \stdClass();
-        $data->userid       = (int) ($params->userid ?? $USER->id);
+        $data->userid       = (int) ($params->userid ?? $this->actor_id());
+        if (!\local_jedomi\agent\agent_manager::can_create_for($data->userid, $this->actor_id())) {
+            return json_encode(['error' => 'permission_denied']);
+        }
         $data->name         = trim($params->name ?? '');
         $data->prompt       = $prompt;
         $data->schedule_cron = $schedule;

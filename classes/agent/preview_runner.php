@@ -18,6 +18,8 @@ namespace local_jedomi\agent;
 
 use local_jedomi\ai\client;
 use local_jedomi\ai\error_message;
+use local_jedomi\local\service\pending_action_service;
+use local_jedomi\task\agent_runner;
 
 defined('MOODLE_INTERNAL') || die();
 
@@ -33,37 +35,40 @@ require_once(__DIR__ . '/../../lib.php');
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class preview_runner {
-    /** @var int Maximum AI rounds per preview. */
-    private const MAX_ROUNDS = 15;
-
     /** @var int Total timeout of each AI call, in seconds. */
     private const AI_TIMEOUT = 120;
 
     /**
-     * Run a preview.
+     * Cache key of the preview of a prompt: the saved result of a preview is private to the user who ran it.
      *
      * @param string $prompt Agent prompt.
-     * @param int $userid User the preview runs for (the AI calls are made for this user).
+     * @param int $userid User the preview runs for.
+     * @param string $contexttype Context type of the agent.
+     * @param int|null $contextid Context instance of the agent.
+     * @return string
+     */
+    private static function cache_key(string $prompt, int $userid, string $contexttype, ?int $contextid): string {
+        $scope = $contexttype === 'site' && empty($contextid) ? '' : ':' . $contexttype . ':' . (int) $contextid;
+        return md5($userid . $scope . ':' . trim($prompt));
+    }
+
+    /**
+     * Run a preview with the same permissions, context, tools and step limit as the scheduled run of the agent.
+     *
+     * @param string $prompt Agent prompt.
+     * @param int $userid User the preview runs for (the future creator of the agent; the AI calls are made for this user).
+     * @param string $contexttype Context type of the agent (site, course, category or user).
+     * @param int|null $contextid Context instance of the agent.
      * @return array Response for the preview page: ok, answer, rounds, profiler, conversation, total_time_ms,
      *               and cached/cached_at/cache_hash/reformulated for cache hits; or ok=false with error and error_code.
      */
-    public static function run(string $prompt, int $userid): array {
+    public static function run(string $prompt, int $userid, string $contexttype = 'site', ?int $contextid = null): array {
         global $DB;
 
-        $role = \local_jedomi_get_user_role_for_user($userid);
-        $tools = \local_jedomi_get_tool_definitions($role);
-
-        $spt = ['course_id' => 0];
-        $context = ['location' => 'site', 'course_name' => ''];
-        $system = \local_jedomi\proxy\system_message::build($role, $spt, $context);
-
-        if (!empty($tools)) {
-            $system['content'] .= "\n\n=== AVAILABLE TOOLS ===\n";
-            foreach ($tools as $t) {
-                $fn = $t['function'] ?? [];
-                $system['content'] .= '- ' . ($fn['name'] ?? '?') . ': ' . ($fn['description'] ?? '') . "\n";
-            }
-        }
+        [, $system, $tools] = agent_runner::run_conditions($userid, $contexttype, $contextid);
+        // The tools run with the permissions of the user, as in the scheduled run of the agent.
+        tool_executor::get_definitions(0, $userid);
+        $maxrounds = agent_runner::MAX_TOOL_ITERATIONS;
 
         $messages = [
             $system,
@@ -71,7 +76,8 @@ class preview_runner {
         ];
 
         // ... ── Check agent cache ─────────────────────────────────────────────────
-        $cachehash = md5(trim($prompt));
+        // The saved result of a preview is private to the user who ran it.
+        $cachehash = self::cache_key($prompt, $userid, $contexttype, $contextid);
         $cached = $DB->get_record('local_jedomi_agent_cache', [
             'agentid' => 0,
             'context_hash' => $cachehash,
@@ -92,7 +98,7 @@ class preview_runner {
         $loopbroken = false;
         $content = '';
 
-        for ($round = 1; $round <= self::MAX_ROUNDS; $round++) {
+        for ($round = 1; $round <= $maxrounds; $round++) {
             try {
                 $answer = client::instance()->complete($messages, $userid, $tools, self::AI_TIMEOUT);
             } catch (\Throwable $e) {
@@ -144,6 +150,13 @@ class preview_runner {
                         'detail' => 'Same tool with same arguments called ' . $toolcallcounts[$callkey] . ' times.',
                     ]);
                     $loopbroken = true;
+                } else if (pending_action_service::severity($funcname, is_array($decodedargs) ? $decodedargs : []) !== null) {
+                    // A preview never runs an action that changes data: those run only after a confirmation.
+                    $toolresult = json_encode([
+                        'error' => 'confirmation_required',
+                        'tool' => $funcname,
+                        'detail' => 'The preview does not run actions that change data without confirmation.',
+                    ]);
                 } else {
                     $plan[] = [
                         'tool' => $funcname,
@@ -211,12 +224,12 @@ class preview_runner {
         array_walk($cachablemessages, function (&$msg) {
             unset($msg['tool_calls']);
         });
-        self::save_cache($cachehash, $finalanswer, $profilerentries, $cachablemessages, $plan);
+        self::save_cache($cachehash, $userid, $finalanswer, $profilerentries, $cachablemessages, $plan);
 
         return [
             'ok' => true,
             'answer' => $finalanswer,
-            'rounds' => min($round, self::MAX_ROUNDS),
+            'rounds' => min($round, $maxrounds),
             'profiler' => $profilerentries,
             'conversation' => $cachablemessages,
             'total_time_ms' => round(array_sum(array_column($profilerentries, 'duration_ms')), 2),
@@ -237,6 +250,12 @@ class preview_runner {
             $replayprofiler = [];
             $replayfailed = false;
             foreach ($plan as $step) {
+                $stepargs = is_string($step['arguments']) ? json_decode($step['arguments'], true) : $step['arguments'];
+                if (pending_action_service::severity((string) $step['tool'], is_array($stepargs) ? $stepargs : []) !== null) {
+                    // Never replay an action that changes data.
+                    $replayfailed = true;
+                    break;
+                }
                 $toolstart = microtime(true);
                 $toolresult = tool_executor::execute($step['tool'], $step['arguments']);
                 $toolduration = (microtime(true) - $toolstart) * 1000;
@@ -335,15 +354,24 @@ class preview_runner {
      * Save the preview result in the preview cache (agentid 0).
      *
      * @param string $cachehash Prompt hash.
+     * @param int $userid User the preview ran for, the only one who may clear it.
      * @param string $answer Final answer.
      * @param array $profiler Profiler entries.
      * @param array $conversation Conversation without tool payloads.
      * @param array $plan Tool plan.
      */
-    private static function save_cache(string $cachehash, string $answer, array $profiler, array $conversation, array $plan): void {
+    private static function save_cache(
+        string $cachehash,
+        int $userid,
+        string $answer,
+        array $profiler,
+        array $conversation,
+        array $plan
+    ): void {
         global $DB;
 
         $cachedata = json_encode([
+            'userid' => $userid,
             'answer' => $answer,
             'profiler' => $profiler,
             'conversation' => $conversation,

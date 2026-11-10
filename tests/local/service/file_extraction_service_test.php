@@ -60,7 +60,7 @@ final class file_extraction_service_test extends \advanced_testcase {
      */
     private function enable_provider(): void {
         $this->require_provider();
-        set_config('licensekey', 'test-license', 'aiprovider_datacurso');
+        $GLOBALS['CFG']->forced_plugin_settings['aiprovider_datacurso']['licensekey'] = 'test-license';
         \core\plugininfo\aiprovider::enable_plugin('datacurso', 1);
     }
 
@@ -145,7 +145,7 @@ final class file_extraction_service_test extends \advanced_testcase {
         $this->resetAfterTest();
         $user = $this->getDataGenerator()->create_user();
         $this->setUser($user);
-        set_config('licensekey', 'test-license', 'aiprovider_datacurso');
+        $GLOBALS['CFG']->forced_plugin_settings['aiprovider_datacurso']['licensekey'] = 'test-license';
         \core\plugininfo\aiprovider::enable_plugin('datacurso', 0);
         $curl = new fake_curl();
 

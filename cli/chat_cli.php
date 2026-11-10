@@ -42,6 +42,12 @@ require_once(__DIR__ . '/../classes/proxy/system_message.php');
 
 global $DB, $CFG, $USER;
 
+// ... ── Jedomi disabled in the Datacurso AI provider: no AI call is made ──────
+$disabled = \local_jedomi_plugin_disabled_error();
+if ($disabled !== null) {
+    cli_error($disabled['message']);
+}
+
 // ... ── Loguear como admin ────────────────────────────────────────────────────
 $admin = get_admin();
 if ($admin) {

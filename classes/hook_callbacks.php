@@ -33,6 +33,12 @@ use core\hook\output\before_footer_html_generation;
  * Hook callbacks for the Jedomi Moodle plugin.
  */
 class hook_callbacks {
+    /** @var string[] Page layouts where the panel is never shown: pop-up, embedded and secure (exam) windows. */
+    private const EXCLUDED_LAYOUTS = ['popup', 'embedded', 'secure', 'frametop'];
+
+    /** @var string[] Page types of a quiz attempt in progress, where the panel is never shown. */
+    private const EXCLUDED_PAGETYPES = ['mod-quiz-attempt', 'mod-quiz-summary'];
+
     /**
      * Inject the Jedomi sidebar before the footer is rendered.
      *
@@ -50,6 +56,12 @@ class hook_callbacks {
             return;
         }
 
+        // Never during a quiz attempt nor in pop-up, embedded or secure windows.
+        if (in_array($PAGE->pagelayout, self::EXCLUDED_LAYOUTS, true)
+                || in_array($PAGE->pagetype, self::EXCLUDED_PAGETYPES, true)) {
+            return;
+        }
+
         if (!\aiprovider_datacurso\local\plugin_settings::is_enabled('local_jedomi')) {
             return;
         }
@@ -64,6 +76,7 @@ class hook_callbacks {
 
         $configurl = (new \moodle_url('/local/jedomi/ajax/sidebar_config.php', [
             'sesskey' => sesskey(),
+            'courseid' => (int) $PAGE->course->id,
         ]))->out(false);
 
         $PAGE->requires->js_call_amd('local_jedomi/sidebar', 'init', [[

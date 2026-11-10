@@ -32,12 +32,33 @@ use aiprovider_datacurso\local\plugin_settings;
 
 header('Content-Type: application/json; charset=utf-8');
 
+// Guests and requests without a session never get chat permissions.
+if (!isloggedin() || isguestuser()) {
+    http_response_code(403);
+    echo json_encode(['error' => true, 'message' => get_string('chat_error_guest', 'local_jedomi')]);
+    die();
+}
+
 try {
-    require_login();
+    require_login(null, false);
     plugin_settings::require_enabled('local_jedomi');
 
     // Set page URL to prevent Moodle debugging notice in lib.php::local_jedomi_get_page_context().
     $PAGE->set_url('/local/jedomi/ajax/sidebar_config.php');
+
+    // The course of the page the panel is on: the chat permissions are bound to it.
+    $courseid = optional_param('courseid', 0, PARAM_INT);
+    if ($courseid > SITEID) {
+        $PAGE->set_course(get_course($courseid));
+    }
+
+    // Same access rules as the panel: an unavailable course or hidden roles get no chat permissions.
+    $denied = local_jedomi_chat_access_error((int) $COURSE->id);
+    if ($denied !== null) {
+        http_response_code(403);
+        echo json_encode(['error' => true, 'message' => $denied['message']]);
+        die();
+    }
 
     // Accept sesskey OR a pre-generated SPT (signed permission token).
     $sptraw = optional_param('spt', '', PARAM_RAW);

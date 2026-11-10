@@ -242,15 +242,29 @@ class admin_settings_service {
     }
 
     /**
-     * Replace the web service allowlist of a role.
+     * Save the web service allowlist of a role.
+     *
+     * Without $shown the list is replaced. With $shown (the functions the administrator saw, on the
+     * visible page or filter) only those change: the functions allowed elsewhere are kept. While the
+     * administrator has no saved list, every function counts as allowed.
      *
      * @param string $role One of {@see self::WS_ROLES}.
-     * @param string[] $wsnames Web service function names the role may call.
+     * @param string[] $wsnames Web service function names selected (the role may call them).
+     * @param string[]|null $shown Function names the selection was made on; null to replace the whole list.
      * @return void
      */
-    public static function save_ws_allowlist(string $role, array $wsnames): void {
+    public static function save_ws_allowlist(string $role, array $wsnames, ?array $shown = null): void {
+        global $CFG, $DB;
+        require_once($CFG->dirroot . '/local/jedomi/lib.php');
+
         $role = self::normalise_ws_role($role);
-        set_config('ws_allowlist_' . $role, json_encode(array_values($wsnames)), 'local_jedomi');
+        if ($shown !== null) {
+            $current = \local_jedomi_role_has_full_ws_access($role)
+                ? $DB->get_fieldset_select('external_functions', 'name', '1 = 1')
+                : \local_jedomi_get_role_allowlist($role);
+            $wsnames = array_merge(array_diff($current, $shown), $wsnames);
+        }
+        set_config('ws_allowlist_' . $role, json_encode(array_values(array_unique($wsnames))), 'local_jedomi');
     }
 
     /**
@@ -331,7 +345,8 @@ class admin_settings_service {
         $page = min(max(1, $page), $pages);
 
         $allowlist = \local_jedomi_get_role_allowlist($role);
-        $firstvisit = ($role === 'admin' && get_config('local_jedomi', 'ws_allowlist_' . $role) === false);
+        // Before the first save the administrator can run every function: the table shows it.
+        $fullaccess = \local_jedomi_role_has_full_ws_access($role);
         $rows = [];
         foreach (array_slice($filtered, ($page - 1) * $perpage, $perpage) as $function) {
             $rows[] = [
@@ -339,7 +354,7 @@ class admin_settings_service {
                 'description' => '',
                 'component' => $function['component'],
                 'iswrite' => $function['iswrite'],
-                'checked' => in_array($function['name'], $allowlist, true) || ($firstvisit && !$function['iswrite']),
+                'checked' => $fullaccess || in_array($function['name'], $allowlist, true),
             ];
         }
 

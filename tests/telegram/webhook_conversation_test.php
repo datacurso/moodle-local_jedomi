@@ -23,6 +23,7 @@ defined('MOODLE_INTERNAL') || die();
 
 global $CFG;
 require_once($CFG->dirroot . '/local/jedomi/lib.php');
+require_once($CFG->libdir . '/gradelib.php');
 require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/fake_ai_client.php');
 require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/fake_telegram_api_client.php');
 
@@ -30,8 +31,7 @@ require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/fake_telegram_api_cli
  * Tests for the conversation of a linked Telegram chat with the AI: permissions, context and actions.
  *
  * The AI service (fake_ai_client) and the Telegram Bot API (fake_telegram_api_client) are the replaced boundaries.
- * The bot keeps the role derived for each user id for the whole PHP process, so every test creates users with ids no
- * earlier test used.
+ * Users are created with ids no earlier test used, so each test is independent of the users of earlier tests.
  *
  * @package    local_jedomi
  * @category   test
@@ -53,7 +53,11 @@ final class webhook_conversation_test extends \advanced_testcase {
             $this->markTestSkipped('aiprovider_datacurso is not installed; the bot asks it whether Jedomi is enabled.');
         }
         $this->resetAfterTest();
-        set_config('licensekey', 'test-license', 'aiprovider_datacurso');
+        // A forced setting, not set_config(): changing an existing row of config_plugins makes the reset after
+        // the test reload the whole table, which took about ten seconds per test.
+        $GLOBALS['CFG']->forced_plugin_settings['aiprovider_datacurso']['licensekey'] = 'test-license';
+        // Precondition: the Telegram integration is turned on.
+        set_config('telegram_enabled', 1, 'local_jedomi');
         \core\plugininfo\aiprovider::enable_plugin('datacurso', 1);
         $this->ai = new fake_ai_client();
         client::set_instance_for_testing($this->ai);
@@ -224,7 +228,6 @@ final class webhook_conversation_test extends \advanced_testcase {
 
     /**
      * MDL-INT-065: in Telegram an action that changes data does not run until the user confirms it with buttons.
-     * [Pendiente:fail]
      */
     public function test_action_that_changes_data_waits_for_confirmation(): void {
         global $DB;
@@ -244,6 +247,69 @@ final class webhook_conversation_test extends \advanced_testcase {
     }
 
     /**
+     * Press an inline button of a held action.
+     *
+     * @param string $chatid Chat id.
+     * @param string $data Callback data of the button.
+     * @return void
+     */
+    private function press(string $chatid, string $data): void {
+        webhook_handler::handle(['callback_query' => ['id' => 'cb-' . random_string(6), 'data' => $data,
+            'message' => ['message_id' => 77, 'chat' => ['id' => $chatid, 'type' => 'private']]]]);
+    }
+
+    /**
+     * Hold the deletion of a new agent from a linked admin chat and return the agent id and the button data.
+     *
+     * @param string $chatid Chat id.
+     * @return array{0: int, 1: string, 2: string} Agent id, confirm data and cancel data.
+     */
+    private function held_agent_deletion(string $chatid): array {
+        $owner = $this->fresh_user();
+        $agentid = \local_jedomi\agent\agent_manager::create_agent((object) ['userid' => $owner->id, 'name' => 'Report',
+            'prompt' => 'List the students at risk', 'schedule_cron' => '0 8 * * 1', 'context_type' => 'site']);
+        global $DB;
+        if (!$DB->record_exists('local_jedomi_telegram_links', ['chatid' => $chatid])) {
+            $this->link((int) get_admin()->id, $chatid);
+        }
+        $this->telegram->sent = [];
+        $this->ai_uses('delete_agent', ['id' => $agentid], 'It waits for your confirmation.');
+        $this->say($chatid, 'Delete the report agent');
+        $buttons = [];
+        foreach ($this->telegram->sent as $message) {
+            foreach ($message['replymarkup']['inline_keyboard'][0] ?? [] as $button) {
+                $buttons[] = $button['callback_data'];
+            }
+        }
+        $confirm = array_values(array_filter($buttons, static fn(string $d): bool => str_starts_with($d, 'confirm:')));
+        $cancel = array_values(array_filter($buttons, static fn(string $d): bool => str_starts_with($d, 'cancel:')));
+        $this->assertCount(1, $confirm);
+        $this->assertCount(1, $cancel);
+        return [$agentid, $confirm[0], $cancel[0]];
+    }
+
+    /**
+     * MDL-INT-065: confirming with the button runs the held action once; cancelling or letting it expire never runs it.
+     */
+    public function test_held_action_runs_only_when_confirmed_in_time(): void {
+        global $DB;
+        [$agentid, $confirm, $cancel] = $this->held_agent_deletion('779000020');
+        $this->press('779000020', $cancel);
+        $this->press('779000020', $confirm);
+        $this->assertTrue($DB->record_exists('local_jedomi_agents', ['id' => $agentid]), 'A cancelled action never runs');
+
+        [$agentid, $confirm] = $this->held_agent_deletion('779000020');
+        $DB->set_field('local_jedomi_telegram_pending_actions', 'timecreated', time() - 3600, []);
+        $this->press('779000020', $confirm);
+        $this->assertTrue($DB->record_exists('local_jedomi_agents', ['id' => $agentid]), 'An expired action never runs');
+
+        [$agentid, $confirm] = $this->held_agent_deletion('779000020');
+        $this->press('779000020', $confirm);
+        $this->assertFalse($DB->record_exists('local_jedomi_agents', ['id' => $agentid]), 'A confirmed action runs');
+        $this->assertSame(get_string('confirm_done', 'local_jedomi'), end($this->telegram->edited)['text']);
+    }
+
+    /**
      * MDL-INT-066: the history sent to the AI includes the answers of the bot and the maximum turns count both sides.
      * [Pendiente:skip]
      */
@@ -252,29 +318,103 @@ final class webhook_conversation_test extends \advanced_testcase {
     }
 
     /**
-     * MDL-INT-067: a student gets their own Moodle data through Telegram.
-     * [Pendiente:fail]
+     * MDL-INT-067: a student gets their own Moodle data (assignments and grades) through Telegram, with the
+     * read-only tools of their own data, and never the data of another student.
      */
     public function test_student_gets_their_own_data(): void {
         $course = $this->getDataGenerator()->create_course(['fullname' => 'Botany 201']);
         $student = $this->fresh_user();
+        $classmate = $this->fresh_user();
         $this->getDataGenerator()->enrol_user($student->id, $course->id, 'student');
-        $this->getDataGenerator()->create_module('assign', ['course' => $course->id, 'name' => 'Leaf anatomy essay']);
+        $this->getDataGenerator()->enrol_user($classmate->id, $course->id, 'student');
+        $assign = $this->getDataGenerator()->create_module('assign', ['course' => $course->id, 'name' => 'Leaf anatomy essay']);
+        $item = \grade_item::fetch(['itemtype' => 'mod', 'itemmodule' => 'assign', 'iteminstance' => $assign->id,
+            'courseid' => $course->id]);
+        $item->update_final_grade($student->id, 87.45, 'test');
+        $item->update_final_grade($classmate->id, 63.21, 'test');
         $this->link((int) $student->id, '779000005');
-        $this->ai_uses('ws_execute', ['function' => 'mod_assign_get_assignments', 'name' => 'mod_assign_get_assignments',
-            'params' => ['courseids' => [(int) $course->id]]], 'You have one assignment.');
+        $this->ai->enqueue_tool_calls([
+            ['id' => 'call_a', 'type' => 'function', 'function' => ['name' => 'my_assignments', 'arguments' => '{}']],
+            ['id' => 'call_g', 'type' => 'function', 'function' => ['name' => 'my_grades', 'arguments' => '{}']],
+        ]);
+        $this->ai->enqueue_text('You have one assignment.');
 
-        $this->say('779000005', 'What assignments do I have?');
+        $this->say('779000005', 'What assignments and grades do I have?');
 
+        $this->assertContains('my_assignments', $this->tool_names($this->ai->calls[0]));
+        $this->assertContains('my_grades', $this->tool_names($this->ai->calls[0]));
         $this->assertCount(2, $this->ai->calls);
         $results = implode("\n", $this->tool_results($this->ai->calls[1]));
         $this->assertStringContainsString('Leaf anatomy essay', $results, 'The student gets their assignments');
+        $this->assertStringContainsString('87.45', $results, 'The student gets their grade');
+        $this->assertStringNotContainsString('63.21', $results, 'The grade of a classmate is never returned');
+    }
+
+    /**
+     * Ask the bot, as the linked administrator, about a named user with a database query whose results the AI answers
+     * with the placeholders it received.
+     *
+     * @param string $level Anonymisation level of the Privacy tab.
+     * @param string $chatid Chat id.
+     * @return array{0: string, 1: string} Tool result the AI received and the answer sent to the user.
+     */
+    private function telegram_tool_result_with_level(string $level, string $chatid): array {
+        set_config('anonymization_level', $level, 'local_jedomi');
+        $named = $this->fresh_user(['firstname' => 'Ximena', 'lastname' => 'Quintanilla',
+            'email' => 'ximena.quintanilla@example.com', 'idnumber' => 'ID-778899']);
+        $this->link((int) get_admin()->id, $chatid);
+        $this->ai_uses('execute_sql', ['sql' => 'SELECT id, firstname, lastname, email, idnumber FROM {user} WHERE id = '
+            . (int) $named->id], 'The user is [person_1] [person_2].');
+
+        $this->say($chatid, 'Who is that user?');
+
+        $this->assertCount(2, $this->ai->calls);
+        $results = implode("\n", $this->tool_results($this->ai->calls[1]));
+        return [$results, (string) end($this->telegram->sent)['text']];
+    }
+
+    /**
+     * MDL-CTR-007: in Telegram, with the Basic level the AI receives names and e-mails returned by the tools replaced,
+     * and the answer shown to the user has the real values back.
+     */
+    public function test_basic_level_replaces_names_and_emails_sent_to_the_ai(): void {
+        [$result, $answer] = $this->telegram_tool_result_with_level('basic', '779000040');
+
+        $this->assertStringNotContainsString('ximena.quintanilla@example.com', $result);
+        $this->assertStringNotContainsString('Quintanilla', $result);
+        $this->assertStringContainsString('Ximena Quintanilla', $answer);
+    }
+
+    /**
+     * MDL-CTR-007: in Telegram, with the Strict level identifiers are also replaced in what the AI receives.
+     */
+    public function test_strict_level_also_replaces_identifiers_sent_to_the_ai(): void {
+        [$result] = $this->telegram_tool_result_with_level('strict', '779000041');
+
+        $this->assertStringNotContainsString('ximena.quintanilla@example.com', $result);
+        $this->assertStringNotContainsString('ID-778899', $result);
+    }
+
+    /**
+     * MDL-CTR-007: the placeholders of a Telegram conversation survive the hand-over to the next worker, so the
+     * answer is restored after a self-ping.
+     */
+    public function test_placeholders_survive_the_hand_over_between_workers(): void {
+        $first = new \local_jedomi\local\anonymizer('basic');
+        $sent = $first->anonymize_tool_result(json_encode(['firstname' => 'Ximena', 'email' => 'x.q@example.com']));
+
+        $next = \local_jedomi\local\anonymizer::from_map(json_decode(json_encode($first->export_map()), true), 'basic');
+
+        $this->assertStringNotContainsString('Ximena', $sent);
+        $this->assertSame('Ximena x.q@example.com', $next->restore('[person_1] [email_1]'));
+        $again = $next->anonymize_tool_result(json_encode(['firstname' => 'Ximena', 'lastname' => 'Other']));
+        $this->assertStringContainsString('[person_1]', $again, 'A known value keeps its placeholder');
+        $this->assertStringContainsString('[person_2]', $again, 'A new value never reuses a placeholder');
     }
 
     /**
      * MDL-INT-067: the AI receives, and its instructions describe, only tools that are really available in Telegram for
      * the role.
-     * [Pendiente:fail]
      */
     public function test_offered_tools_are_really_available(): void {
         set_config('files_enabled', 1, 'local_jedomi');
@@ -303,7 +443,6 @@ final class webhook_conversation_test extends \advanced_testcase {
 
     /**
      * MDL-INT-067: a teacher who can edit their course is presented as a teacher and gets no agent management tools.
-     * [Pendiente:fail]
      */
     public function test_teacher_is_presented_as_teacher_without_agent_tools(): void {
         global $DB;
@@ -337,7 +476,6 @@ final class webhook_conversation_test extends \advanced_testcase {
 
     /**
      * MDL-INT-069: in a Telegram group another member never acts with the account of the user who linked the group.
-     * [Pendiente:fail]
      */
     public function test_group_member_does_not_act_with_the_account_of_who_linked(): void {
         $owner = $this->fresh_user();
@@ -353,7 +491,6 @@ final class webhook_conversation_test extends \advanced_testcase {
 
     /**
      * MDL-INT-070: the next message uses the current role and courses after a role or an enrolment is removed.
-     * [Pendiente:fail]
      */
     public function test_next_message_uses_the_current_role_and_courses(): void {
         $course = $this->getDataGenerator()->create_course(['fullname' => 'Quantum Optics 9']);
@@ -378,24 +515,33 @@ final class webhook_conversation_test extends \advanced_testcase {
     }
 
     /**
-     * MDL-INT-070: a suspended linked user is no longer served with their account.
-     * [Pendiente:fail]
+     * MDL-INT-070: a suspended linked user, or one who cannot log in, is no longer served with their account and gets a
+     * notice; once the account is active again the bot serves it.
      */
     public function test_suspended_user_is_not_served(): void {
         global $DB;
         $user = $this->fresh_user();
         $this->link((int) $user->id, '779000009');
+        $nologin = $this->fresh_user(['auth' => 'nologin']);
+        $this->link((int) $nologin->id, '779000019');
         $DB->set_field('user', 'suspended', 1, ['id' => $user->id]);
         $this->ai->enqueue_text('Here you are.');
 
         $this->say('779000009', 'Show me my grades');
+        $this->say('779000019', 'Show me my grades');
 
         $this->assertSame([], $this->ai->calls, 'A suspended user does not reach the AI');
+        $notice = get_string('telegram_msg_account_inactive', 'local_jedomi');
+        $this->assertSame([$notice, $notice], array_column($this->telegram->sent, 'text'));
+
+        $DB->set_field('user', 'suspended', 0, ['id' => $user->id]);
+        $this->say('779000009', 'Show me my grades');
+        $this->assertCount(1, $this->ai->calls, 'The reactivated account is served again');
+        $this->assertSame((int) $user->id, $this->ai->calls[0]['userid']);
     }
 
     /**
      * MDL-INT-070: after unlinking during a task in progress, the task stops and sends no result.
-     * [Pendiente:fail]
      */
     public function test_task_in_progress_stops_after_unlinking(): void {
         global $DB;
@@ -436,11 +582,31 @@ final class webhook_conversation_test extends \advanced_testcase {
     }
 
     /**
-     * MDL-INT-091: a failure recording the message limit blocks the message safely and tells the user.
-     * [Pendiente:skip]
+     * MDL-INT-091: a failure recording the message limit blocks the message safely and tells the user; once the
+     * database recovers the next messages are served.
      */
     public function test_message_limit_failure_tells_the_user(): void {
-        $this->markTestSkipped('Pending fix: when recording the message limit fails the message is dropped without notice.');
+        global $CFG, $DB;
+        require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/failing_table_database.php');
+        set_config('telegram_rate_limit', 5, 'local_jedomi');
+        $user = $this->fresh_user();
+        $this->link((int) $user->id, '779000021');
+        $this->ai->enqueue_text('Answer after the recovery.');
+        $realdb = $DB;
+
+        try {
+            $DB = new \local_jedomi\failing_table_database($realdb, 'local_jedomi_telegram_rate_limit');
+            $this->say('779000021', 'What are my courses?');
+        } finally {
+            $DB = $realdb;
+        }
+
+        $this->assertSame([], $this->ai->calls, 'The message does not reach the AI');
+        $this->assertSame([get_string('telegram_msg_rate_check_failed', 'local_jedomi')],
+            array_column($this->telegram->sent, 'text'));
+
+        $this->say('779000021', 'What are my courses?');
+        $this->assertCount(1, $this->ai->calls, 'The bot serves the messages once the database recovers');
     }
 
     /**
@@ -472,7 +638,6 @@ final class webhook_conversation_test extends \advanced_testcase {
 
     /**
      * MDL-CTR-006: the instructions sent to the AI from Telegram do not contain the internal Moodle id of the user.
-     * [Pendiente:fail]
      */
     public function test_telegram_instructions_do_not_contain_the_internal_user_id(): void {
         $user = $this->fresh_user();

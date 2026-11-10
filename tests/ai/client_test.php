@@ -68,7 +68,7 @@ final class client_test extends \advanced_testcase {
      */
     public function test_complete_sends_configured_model_and_given_user_to_jedomi_route(): void {
         $this->resetAfterTest();
-        set_config('licensekey', 'test-license', 'aiprovider_datacurso');
+        $GLOBALS['CFG']->forced_plugin_settings['aiprovider_datacurso']['licensekey'] = 'test-license';
         set_config('model', 'jedomi/zai-org/GLM-5.3-Flash', 'local_jedomi');
         set_config('max_tokens', 2048, 'local_jedomi');
         $user = $this->getDataGenerator()->create_user();
@@ -99,7 +99,7 @@ final class client_test extends \advanced_testcase {
      */
     public function test_complete_uses_given_user_instead_of_session_user(): void {
         $this->resetAfterTest();
-        set_config('licensekey', 'test-license', 'aiprovider_datacurso');
+        $GLOBALS['CFG']->forced_plugin_settings['aiprovider_datacurso']['licensekey'] = 'test-license';
         $owner = $this->getDataGenerator()->create_user();
         $this->setAdminUser();
 
@@ -119,7 +119,7 @@ final class client_test extends \advanced_testcase {
      */
     public function test_complete_sends_tools_and_returns_normalised_tool_calls(): void {
         $this->resetAfterTest();
-        set_config('licensekey', 'test-license', 'aiprovider_datacurso');
+        $GLOBALS['CFG']->forced_plugin_settings['aiprovider_datacurso']['licensekey'] = 'test-license';
         $tools = [['type' => 'function', 'function' => ['name' => 'search_tables', 'parameters' => ['type' => 'object']]]];
 
         $curl = new fake_curl();
@@ -150,7 +150,7 @@ final class client_test extends \advanced_testcase {
      */
     public function test_complete_falls_back_to_default_model_for_legacy_value(): void {
         $this->resetAfterTest();
-        set_config('licensekey', 'test-license', 'aiprovider_datacurso');
+        $GLOBALS['CFG']->forced_plugin_settings['aiprovider_datacurso']['licensekey'] = 'test-license';
         set_config('model', 'jedomi-e4b', 'local_jedomi');
         unset_config('max_tokens', 'local_jedomi');
 
@@ -170,7 +170,7 @@ final class client_test extends \advanced_testcase {
      */
     public function test_complete_propagates_provider_errors(): void {
         $this->resetAfterTest();
-        set_config('licensekey', 'test-license', 'aiprovider_datacurso');
+        $GLOBALS['CFG']->forced_plugin_settings['aiprovider_datacurso']['licensekey'] = 'test-license';
 
         $curl = new fake_curl();
         $curl->enqueue('{"detail":"x"}', 503);
@@ -191,7 +191,7 @@ final class client_test extends \advanced_testcase {
      */
     public function test_complete_rejects_answer_without_choices(): void {
         $this->resetAfterTest();
-        set_config('licensekey', 'test-license', 'aiprovider_datacurso');
+        $GLOBALS['CFG']->forced_plugin_settings['aiprovider_datacurso']['licensekey'] = 'test-license';
 
         $curl = new fake_curl();
         $curl->enqueue('{"object":"chat.completion"}');
@@ -206,7 +206,7 @@ final class client_test extends \advanced_testcase {
      */
     public function test_complete_with_the_provider_disabled_sends_nothing(): void {
         $this->resetAfterTest();
-        set_config('licensekey', 'test-license', 'aiprovider_datacurso');
+        $GLOBALS['CFG']->forced_plugin_settings['aiprovider_datacurso']['licensekey'] = 'test-license';
         $curl = new fake_curl();
         $curl->enqueue($this->answer(['role' => 'assistant', 'content' => 'ok']));
         $client = $this->make_client($curl);

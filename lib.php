@@ -430,59 +430,117 @@ function local_jedomi_is_available_in_course(): bool {
 
 /**
  * Returns true when the sidebar should be shown to the current user
- * based on admin-configured per-role visibility.
- *
- * Site admins are always allowed.
- * A user is blocked only if ALL of their active roles are in the hidden list.
+ * based on admin-configured per-role visibility, in the context of the current page.
  *
  * @return bool Whether the role can use the chat.
  */
 function local_jedomi_is_role_allowed(): bool {
     global $USER, $PAGE;
 
-    // Site admins always see the sidebar.
-    if (is_siteadmin()) {
+    // The page context is a magic property: empty() would always see it as unset and fall back to system.
+    try {
+        $context = $PAGE->context;
+    } catch (\coding_exception $e) {
+        $context = context_system::instance();
+    }
+    return local_jedomi_is_role_allowed_for_user((int) ($USER->id ?? 0), $context);
+}
+
+/**
+ * Whether the per-role visibility lets a user use Jedomi in a context.
+ *
+ * Site admins are always allowed. Every role of the user in the context and in its parent
+ * contexts (course, category, system) counts. A user without any assigned role is judged by
+ * the authenticated user role. A user is blocked only if ALL of those roles are hidden.
+ *
+ * @param int $userid User to check.
+ * @param \context $context Context of the page or request.
+ * @return bool Whether the user can use the chat.
+ */
+function local_jedomi_is_role_allowed_for_user(int $userid, \context $context): bool {
+    global $CFG;
+
+    if (is_siteadmin($userid)) {
         return true;
     }
 
-    $hidden = get_config('local_jedomi', 'hidden_roles') ?: '';
-    if (empty($hidden)) {
-        return true;
-    }
-
-    $hiddenids = array_filter(array_map('intval', explode(',', $hidden)));
+    $hiddenids = array_filter(array_map('intval', explode(',', (string) get_config('local_jedomi', 'hidden_roles'))));
     if (empty($hiddenids)) {
         return true;
     }
 
-    // Collect the user's roles in the current page context + system context.
-    $contextstocheck = [context_system::instance()];
-    if (!empty($PAGE->context)) {
-        $contextstocheck[] = $PAGE->context;
-    }
-
     $userroleids = [];
-    foreach ($contextstocheck as $ctx) {
-        $roles = get_user_roles($ctx, $USER->id, false);
-        foreach ($roles as $r) {
-            $userroleids[] = (int) $r->roleid;
-        }
+    foreach (get_user_roles($context, $userid, true) as $r) {
+        $userroleids[] = (int) $r->roleid;
     }
-    $userroleids = array_unique($userroleids);
+    if (empty($userroleids) && !empty($CFG->defaultuserroleid)) {
+        // No assigned role: the user only has the authenticated user role.
+        $userroleids[] = (int) $CFG->defaultuserroleid;
+    }
 
     if (empty($userroleids)) {
-        return true; // No roles assigned — show sidebar.
+        return true;
     }
 
-    // If EVERY role the user has is in the hidden list → block.
-    // If AT LEAST ONE role is not hidden → allow.
-    foreach ($userroleids as $rid) {
-        if (!in_array($rid, $hiddenids, true)) {
-            return true; // Has at least one non-hidden role → allowed.
+    // If AT LEAST ONE role is not hidden → allow; if EVERY role is hidden → block.
+    return !empty(array_diff(array_unique($userroleids), $hiddenids));
+}
+
+/**
+ * Error to answer a chat request (configuration, query, history or file) the server must refuse.
+ *
+ * Applies the same rules as the panel: guests and users not logged in never use the chat, the
+ * course must be available and the user must have a visible role in it.
+ *
+ * @param int $courseid Course the request comes from (0 or the site course outside a course).
+ * @return array|null ['code' => ..., 'message' => ...], or null when the request is allowed.
+ */
+function local_jedomi_chat_access_error(int $courseid): ?array {
+    global $USER;
+
+    if (!isloggedin() || isguestuser()) {
+        return ['code' => 'guest_not_allowed', 'message' => get_string('chat_error_guest', 'local_jedomi')];
+    }
+    if (!\local_jedomi\course_access::is_enabled($courseid)) {
+        return ['code' => 'course_unavailable', 'message' => get_string('chat_error_course_unavailable', 'local_jedomi')];
+    }
+    $context = $courseid > SITEID ? context_course::instance($courseid, IGNORE_MISSING) : false;
+    if (!local_jedomi_is_role_allowed_for_user((int) $USER->id, $context ?: context_system::instance())) {
+        return ['code' => 'role_hidden', 'message' => get_string('chat_error_role_hidden', 'local_jedomi')];
+    }
+    return null;
+}
+
+/**
+ * The role a chat request runs with: the role presented, but never above the real role of the user.
+ *
+ * The real role is computed on the server from the user in the course of the request, so the
+ * content presented by the browser can never grant tools of a higher role.
+ *
+ * @param string $presented Role presented with the request.
+ * @param int $userid Session user.
+ * @param int $courseid Course of the request (0 or the site course outside a course).
+ * @return string 'admin', 'manager', 'teacher' or 'student'.
+ */
+function local_jedomi_effective_chat_role(string $presented, int $userid, int $courseid): string {
+    $rank = ['student' => 1, 'teacher' => 2, 'manager' => 3, 'admin' => 4];
+
+    if (is_siteadmin($userid)) {
+        $real = 'admin';
+    } else if (has_capability('moodle/user:update', context_system::instance(), $userid)) {
+        $real = 'manager';
+    } else {
+        $real = 'student';
+        $context = $courseid > SITEID ? context_course::instance($courseid, IGNORE_MISSING) : false;
+        if ($context && has_capability('moodle/course:manageactivities', $context, $userid)) {
+            $real = 'teacher';
         }
     }
 
-    return false; // All roles are hidden.
+    if (!isset($rank[$presented]) || $rank[$presented] > $rank[$real]) {
+        return $real;
+    }
+    return $presented;
 }
 
 /**
@@ -789,12 +847,34 @@ function local_jedomi_get_tool_definitions(string $role): array {
         ];
     }
 
+    // Own data (courses, visible grades, assignments and deadlines) — students; the user is never an argument.
+    if (\local_jedomi\agent\tool\own_data_tool::is_offered($role)) {
+        $tools = array_merge($tools, \local_jedomi\agent\tool\own_data_tool::definitions());
+    }
+
     // Document reader — teacher / editingteacher and above, while file and image processing is on.
     if (\local_jedomi\agent\tool\document_read_tool::is_offered($role)) {
         $tools[] = \local_jedomi\agent\tool\document_read_tool::definition();
     }
 
     return $tools;
+}
+
+/**
+ * Secret of this site that signs the chat permissions (SPT).
+ *
+ * There is no built-in key: when no secret is saved (or the legacy built-in key is), a random
+ * one is generated and saved, so permissions can never be signed with a key known from the code.
+ *
+ * @return string The site secret, at least 64 characters when generated.
+ */
+function local_jedomi_get_spt_secret(): string {
+    $secret = (string) get_config('local_jedomi', 'spt_secret');
+    if ($secret === '' || $secret === 'jedomi-spt-secret') {
+        $secret = bin2hex(random_bytes(32));
+        set_config('spt_secret', $secret, 'local_jedomi');
+    }
+    return $secret;
 }
 
 /**
@@ -867,7 +947,7 @@ function local_jedomi_generate_spt(string $role): array {
     // HMAC signature with the static secret, the same one the Python gateway uses to verify it.
     // sesskey() is part of the payload (not the key) to bind the token to the session:
     // if the session changes, the payload changes and the SPT is invalid anyway.
-    $staticsecret = get_config('local_jedomi', 'spt_secret') ?: 'jedomi-spt-secret';
+    $staticsecret = local_jedomi_get_spt_secret();
     $payload['sesskey_hash'] = substr(hash('sha256', sesskey()), 0, 16); // Binding sin exponer sesskey.
 
     ksort($payload);  // Ordenar claves antes de serializar (consistencia con Python sort_keys).
@@ -945,7 +1025,7 @@ function local_jedomi_generate_spt_for_user(int $userid, string $role): array {
     ];
 
     // Same HMAC signing as the existing generate_spt function.
-    $staticsecret = get_config('local_jedomi', 'spt_secret') ?: 'jedomi-spt-secret';
+    $staticsecret = local_jedomi_get_spt_secret();
 
     ksort($payload);
     $tosign = json_encode($payload);
@@ -1108,6 +1188,17 @@ if (!function_exists('local_jedomi_get_role_allowlist')) {
         $decoded = json_decode($json, true);
         return is_array($decoded) ? $decoded : [];
     }
+}
+
+/**
+ * Whether a role may run every web service function: only the administrator, and only while no list
+ * has been saved for it. A saved list (even an empty one) limits the role to the functions in it.
+ *
+ * @param string $role The role shortname (admin|manager|teacher|student).
+ * @return bool
+ */
+function local_jedomi_role_has_full_ws_access(string $role): bool {
+    return $role === 'admin' && get_config('local_jedomi', 'ws_allowlist_admin') === false;
 }
 
 /**
@@ -1307,6 +1398,31 @@ if (!function_exists('local_jedomi_rotate_log')) {
     }
 }
 
+/**
+ * Remove from the data of a log entry the values that can hold personal data.
+ *
+ * Tool arguments, queries, web service parameters, prompts and messages are replaced by their size, so the
+ * technical log never keeps them even if a caller passes them.
+ *
+ * @param mixed $data Data of the log entry.
+ * @return mixed Data with the sensitive values replaced.
+ */
+function local_jedomi_redact_log_data(mixed $data): mixed {
+    if (!is_array($data)) {
+        return $data;
+    }
+    $sensitive = ['args', 'arguments', 'sql', 'query', 'params', 'parameters', 'prompt', 'messages', 'content', 'text'];
+    foreach ($data as $key => $value) {
+        if (is_string($key) && in_array(strtolower($key), $sensitive, true)) {
+            $size = is_string($value) ? strlen($value) : strlen((string) json_encode($value));
+            $data[$key] = '[redacted ' . $size . 'B]';
+        } else if (is_array($value)) {
+            $data[$key] = local_jedomi_redact_log_data($value);
+        }
+    }
+    return $data;
+}
+
 if (!function_exists('local_jedomi_log')) {
     /**
      * Write an entry to the Jedomi debug log.
@@ -1350,7 +1466,8 @@ if (!function_exists('local_jedomi_log')) {
         $entry = "[{$timestamp}] {$message}";
 
         if ($data !== null) {
-            $encoded = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_IGNORE);
+            $encoded = json_encode(local_jedomi_redact_log_data($data),
+                JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_IGNORE);
             $entry .= ' | ' . $encoded;
         }
 
@@ -1472,9 +1589,10 @@ function local_jedomi_sanitize_html_tables(string $html): string {
  * @param  int|string $chatid    Telegram chat ID.
  * @param  string     $agent     Agent label (name or "Agent #N").
  * @param  string     $content   The AI's response text (raw, may contain HTML).
+ * @param  string     $timezone  Time zone of the date shown (the agent creator's); 99 for the current user's.
  * @return bool                  True if sent successfully.
  */
-function local_jedomi_send_agent_notification(int|string $chatid, string $agent, string $content): bool {
+function local_jedomi_send_agent_notification(int|string $chatid, string $agent, string $content, string $timezone = '99'): bool {
     global $CFG;
 
     // Sanitize HTML tables before any strip_tags call.
@@ -1483,7 +1601,7 @@ function local_jedomi_send_agent_notification(int|string $chatid, string $agent,
     // ... ── Build caption (fits within Telegram's 1024-char limit) ─────────
     // Header with agent name + status + date.
     $agentlabel = strip_tags($agent);
-    $datestr = userdate(time());
+    $datestr = userdate(time(), '', $timezone);
     $header = "🤖 {$agentlabel}\n✅ Executed successfully\n📅 {$datestr}\n\n";
 
     // Plain-text summary (no HTML) — truncate so header + wrapper fits ≤ 1024.
@@ -1495,7 +1613,7 @@ function local_jedomi_send_agent_notification(int|string $chatid, string $agent,
     $summary = mb_substr($summary, 0, $maxsummarylen);
 
     // ... ── Decision: message vs file ──────────────────────────────────────
-    $client = new \local_jedomi\telegram\api_client();
+    $client = \local_jedomi\telegram\api_client::instance();
 
     if (mb_strlen($content) < 3800) {
         // Full content fits in a single message — send it inline.

@@ -58,6 +58,42 @@
 - Show clear messages for an audio too long or too large, an unsupported audio format, an audio that could not be understood, an unsupported or unreadable image or file, and the existing credit, rate limit and service errors
 - Stop Jedomi while it is disabled in the Datacurso AI provider: its pages and web services show the provider's "not enabled" message (administrators get a link to the Datacurso plugins list), the web chat, file, conversation and agent preview endpoints answer that message as a JSON or stream error, the Telegram bot replies with it without calling the AI, and the Telegram notifications and the Telegram link in the user profile do nothing; the scheduled agents and the adhoc task runner log *Jedomi is disabled in the Datacurso AI provider; skipping.* (`task_skipped_plugin_disabled`) and stop; require `aiprovider_datacurso` 2026110400
 
+### Security
+
+- Refuse guest and not-logged-in requests to the chat, history and file reading on the server, not only in the UI
+- Decide the role of the user on the server instead of trusting the role carried by the signed permissions
+- Sign with a per-site secret, replacing the built-in signing key
+- Make the companion HMAC cover the received parameters: the payload hash must be the SHA-256 of the sorted-key JSON of the non-auth parameters
+- Check agent ownership and role rank before viewing, editing, running or deleting an agent
+- Block credentials, keys, tokens, site configuration, sessions and other sensitive tables and columns from database queries in the web chat, agents and Telegram
+- Limit teachers to the courses they teach, including queries that pass the course as a bound parameter
+- Neutralise CSV cells starting with `=`, `+`, `-` or `@` and export only the text of link cells
+- Telegram: use the same role as the web chat, refuse suspended and `nologin` users, answer private chats only and ask for confirmation before write actions
+
+### Privacy
+
+- Apply the anonymisation levels to the stored feedback and to the data sent to the AI; **behaviour change for existing sites, which use the Basic level by default**
+- Declare, export and delete the Telegram, agent and profiler data in the privacy provider
+- Redact personal data from the technical log
+
+### Added
+
+- Read-only student tools over their own data: my courses, my grades and my assignments
+
+### Fixed
+
+- Fix a crash in `validate_password`
+- Add missing capability strings
+- Fix the Feedback only level, which still stored the answer text
+- Apply the role visibility with the page context (course and its activities)
+- Show a notice when the rate limit check fails
+- Fix the HTML formatting of Telegram answers
+- Stop grade notifications for hidden, unreleased and anonymous grades
+- Schedule agents at their hour in the creator's time zone
+- Pass the real course id to course agents instead of the context id
+- Make `cli/e2e_check.php` honour the Enabled switch
+- Cache the agent preview per user
+
 ## 1.2.3 (2026-05-25)
 
 - Add `duration_ms` and `row_count` to search_tables, describe_table, ws_search, ws_describe tools

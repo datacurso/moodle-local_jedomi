@@ -101,7 +101,7 @@ class ws_execute extends external_api {
         require_capability('local/jedomi:companion_api', $context);
 
         // ... ── Parameter validation ─────────────────────────────────────────────
-        self::validate_parameters(
+        $validated = self::validate_parameters(
             self::execute_parameters(),
             [
                 'wsname'         => $wsname,
@@ -116,16 +116,17 @@ class ws_execute extends external_api {
 
         // ... ── Gate 2: HMAC authentication ──────────────────────────────────────
         if (!$skiphmac) {
-            self::verify_hmac('jedomi_ws_execute', $hmactimestamp, $payloadhash, $hmacsignature);
+            self::verify_hmac('jedomi_ws_execute', $hmactimestamp, $payloadhash, $hmacsignature,
+                self::signed_params($validated));
         }
 
         // ... ── Gate 3: allowlist validation ─────────────────────────────────────
         require_once(__DIR__ . '/../../lib.php');
         $role = \local_jedomi_get_user_role();
         $allowlist = \local_jedomi_get_role_allowlist($role);
-        // Admin without an explicit allowlist → full access.
-        // Every other role needs an allowlist or is blocked.
-        if ($role !== 'admin' || !empty($allowlist)) {
+        // Admin without a saved allowlist → full access.
+        // Every other role (or an admin with a saved allowlist, even empty) needs the function in it.
+        if (!\local_jedomi_role_has_full_ws_access($role)) {
             if (!in_array($wsname, $allowlist, true)) {
                 throw new \moodle_exception('ws_not_in_allowlist', 'local_jedomi');
             }

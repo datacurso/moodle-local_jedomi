@@ -293,7 +293,6 @@ final class companion_signature_test extends \advanced_testcase {
     /**
      * MDL-UNIT-103: reusing a valid signature and content summary with other parameters is rejected, for every function
      * that requires a signature.
-     * [Pendiente:fail] The server never recomputes the content summary from the parameters it receives.
      *
      * @dataProvider signed_function_provider
      * @param string $class External function class, without namespace.
@@ -316,7 +315,6 @@ final class companion_signature_test extends \advanced_testcase {
 
     /**
      * MDL-UNIT-103: a rejected request does not run the requested operation.
-     * [Pendiente:fail] A captured signature changes a site setting with another value.
      */
     public function test_rejected_request_does_not_change_the_setting(): void {
         $now = time();
@@ -328,5 +326,22 @@ final class companion_signature_test extends \advanced_testcase {
 
         $this->assertNotSame('tampered', get_config('local_jedomi', 'jedomi_signature_probe'),
             'A signature made for another value must not change the setting');
+    }
+
+    /**
+     * MDL-UNIT-103: a password validation signed over its own parameters is accepted and reports the policy violations
+     * of a weak password.
+     */
+    public function test_signed_password_validation_reports_the_violations_of_a_weak_password(): void {
+        global $CFG;
+        $CFG->passwordpolicy = 1;
+        $CFG->minpasswordlength = 8;
+        $now = time();
+        $hash = self::payload_hash(['password' => 'abc', 'username' => 'alice']);
+
+        $result = validate_password::execute('abc', 'alice', self::sign('jedomi_validate_password', $now, $hash), $now, $hash);
+
+        $this->assertFalse($result['valid']);
+        $this->assertNotEmpty($result['violations'], 'A weak password reports at least one policy violation');
     }
 }

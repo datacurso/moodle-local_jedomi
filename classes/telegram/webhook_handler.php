@@ -31,8 +31,11 @@ defined('MOODLE_INTERNAL') || die();
 require_once(__DIR__ . '/../../lib.php');
 
 use local_jedomi\ai\model_settings;
+use local_jedomi\local\anonymizer;
 use local_jedomi\local\service\audio_service;
 use local_jedomi\local\service\file_extraction_service;
+use local_jedomi\local\service\pending_action_service;
+use local_jedomi\local\service\telegram_link_service;
 use local_jedomi\local\service\vision_service;
 use local_jedomi\schema\table_indexer;
 use local_jedomi\schema\ws_indexer;
@@ -44,8 +47,18 @@ class webhook_handler {
     /** Lock TTL in seconds — stale locks older than this are auto-released. */
     private const LOCK_TTL = 120;
 
-    /** @var array<int, string> Per-request cache of re-derived roles, keyed by userid. */
-    private static array $derivedrolecache = [];
+    /** Tools the Telegram channel can run; any other tool is never offered to the AI here. */
+    private const SUPPORTED_TOOLS = [
+        'describe_table', 'search_tables', 'execute_sql', 'get_site_config', 'ws_search', 'ws_describe',
+        'ws_execute', 'admin_search', 'admin_describe', 'admin_execute', 'create_agent', 'list_agents',
+        'delete_agent', 'my_courses', 'my_grades', 'my_assignments',
+    ];
+
+    /** Prefix of the callback data of the confirm button of a held action. */
+    private const CALLBACK_CONFIRM = 'confirm:';
+
+    /** Prefix of the callback data of the cancel button of a held action. */
+    private const CALLBACK_CANCEL = 'cancel:';
 
     /**
      * Validate and normalise a Telegram chat id.
@@ -112,6 +125,12 @@ class webhook_handler {
         $disabled = \local_jedomi_plugin_disabled_error();
         if ($disabled !== null) {
             self::reply_plugin_disabled($update, $disabled['message']);
+            return;
+        }
+
+        if (!manager::is_enabled()) {
+            // The administrator turned the integration off: the bot processes nothing.
+            \local_jedomi_log('Telegram webhook: integration disabled, update ignored');
             return;
         }
 
@@ -213,10 +232,22 @@ class webhook_handler {
         }
 
         // Check and record rate limiting atomically.
-        if (self::check_and_record_rate($chatid)) {
+        $limited = self::check_and_record_rate($chatid);
+        if ($limited === null) {
+            // The limit could not be checked: the message is not processed, and the user knows it must be sent again.
+            api_client::instance()->send_message($chatid, get_string('telegram_msg_rate_check_failed', 'local_jedomi'));
+            return;
+        }
+        if ($limited) {
             $cooldown = manager::get_cooldown();
             $client = api_client::instance();
             $client->send_message($chatid, get_string('telegram_msg_rate_limited', 'local_jedomi', ['minutes' => $cooldown]));
+            return;
+        }
+
+        if (!self::is_private_chat($chatid, (string) ($message['chat']['type'] ?? ''))) {
+            // In a group every member would act with the account that linked it: groups are not served.
+            api_client::instance()->send_message($chatid, get_string('telegram_msg_private_only', 'local_jedomi'));
             return;
         }
 
@@ -245,6 +276,19 @@ class webhook_handler {
             return;
         }
 
+        // Handle /desvincular command: any linked user can unlink, whatever the state of the account.
+        if (strcasecmp($text, '/desvincular') === 0 || strcasecmp($text, '/unlink') === 0) {
+            self::handle_unlink_command($chatid, $link);
+            return;
+        }
+
+        // The account must still be active and able to log in; it is checked on every message.
+        $user = self::get_active_user((int) $link->userid);
+        if ($user === null) {
+            api_client::instance()->send_message($chatid, get_string('telegram_msg_account_inactive', 'local_jedomi'));
+            return;
+        }
+
         // Check role permission.
         if (!self::is_user_role_allowed($link->userid)) {
             $client = api_client::instance();
@@ -259,13 +303,7 @@ class webhook_handler {
         // version for the ENTIRE request — proxy_to_gateway, tool loop,
         // and ALL execute_tool cases.
         global $USER;
-        $USER = $DB->get_record('user', ['id' => $link->userid, 'deleted' => 0], '*', MUST_EXIST);
-
-        // Handle /desvincular command.
-        if (strcasecmp($text, '/desvincular') === 0 || strcasecmp($text, '/unlink') === 0) {
-            self::handle_unlink_command($chatid, $link);
-            return;
-        }
+        $USER = $user;
 
         // Handle /new command to start fresh conversation.
         if (strcasecmp($text, '/new') === 0 || strcasecmp($text, '/nuevo') === 0 || strcasecmp($text, '/clear') === 0) {
@@ -461,7 +499,7 @@ class webhook_handler {
             return;
         }
 
-        $user = $DB->get_record('user', ['id' => $userid, 'deleted' => 0]);
+        $user = self::get_active_user($userid);
         if (!$user) {
             $client->send_message($chatid, get_string('telegram_msg_expired_code', 'local_jedomi'));
             return;
@@ -495,12 +533,8 @@ class webhook_handler {
      * @param \stdClass $link Telegram link record for the user
      */
     private static function handle_unlink_command(string $chatid, \stdClass $link): void {
-        global $DB;
-        $DB->delete_records('local_jedomi_telegram_links', ['id' => $link->id]);
-        // Also clean up session and rate limit data.
-        $DB->delete_records('local_jedomi_telegram_sessions', ['chatid' => $chatid]);
-        $DB->delete_records('local_jedomi_telegram_rate_limit', ['chatid' => $chatid]);
-        $DB->delete_records('local_jedomi_telegram_pending_actions', ['chatid' => $chatid]);
+        // The link, the conversation, the task in progress, the limit and the held actions are removed.
+        telegram_link_service::unlink((int) $link->userid);
 
         $client = api_client::instance();
         $client->send_message($chatid, get_string('telegram_msg_unlinked', 'local_jedomi'));
@@ -534,13 +568,9 @@ class webhook_handler {
                 $client->edit_message_text($chatid, $messageid, $help);
                 break;
             case 'unlink':
-                global $DB;
                 $link = self::get_link_by_chat_id($chatid);
                 if ($link) {
-                    $DB->delete_records('local_jedomi_telegram_links', ['id' => $link->id]);
-                    $DB->delete_records('local_jedomi_telegram_sessions', ['chatid' => $chatid]);
-                    $DB->delete_records('local_jedomi_telegram_rate_limit', ['chatid' => $chatid]);
-                    $DB->delete_records('local_jedomi_telegram_pending_actions', ['chatid' => $chatid]);
+                    telegram_link_service::unlink((int) $link->userid);
                 }
                 $client->edit_message_text(
                     $chatid,
@@ -620,36 +650,96 @@ class webhook_handler {
             return;
         }
 
-        if (strpos($data, 'confirm:') !== 0) {
+        $confirm = strpos($data, self::CALLBACK_CONFIRM) === 0;
+        if (!$confirm && strpos($data, self::CALLBACK_CANCEL) !== 0) {
             // Unknown action — ignore.
             return;
         }
+        $actionid = substr($data, strlen($confirm ? self::CALLBACK_CONFIRM : self::CALLBACK_CANCEL));
+        $client->edit_message_text($chatid, $messageid, self::resolve_held_action($chatid, $actionid, $confirm));
+    }
 
-        $actionid = substr($data, strlen('confirm:'));
-
+    /**
+     * Hold a tool call that changes data until the user confirms it with the buttons of the chat.
+     *
+     * @param string $chatid Telegram chat id.
+     * @param int $userid Linked Moodle user.
+     * @param string $name Tool name.
+     * @param array $args Tool arguments.
+     * @return string|null Result for the AI when the call is held, or null when the tool runs without confirmation.
+     */
+    private static function hold_action(string $chatid, int $userid, string $name, array $args): ?string {
         global $DB;
-        $pending = $DB->get_record('local_jedomi_telegram_pending_actions', ['callbackid' => $actionid]);
+
+        if (pending_action_service::severity($name, $args) === null) {
+            return null;
+        }
+        $callbackid = random_string(16);
+        $DB->insert_record('local_jedomi_telegram_pending_actions', (object) [
+            'callbackid' => $callbackid,
+            'chatid' => $chatid,
+            'actionjson' => json_encode(['name' => $name, 'params' => $args, 'userid' => $userid], JSON_UNESCAPED_UNICODE),
+            'timecreated' => time(),
+        ]);
+
+        $description = s($name) . ': ' . s(\core_text::substr(json_encode($args, JSON_UNESCAPED_UNICODE), 0, 300));
+        api_client::instance()->send_message(
+            $chatid,
+            get_string('telegram_confirm_action', 'local_jedomi', $description),
+            ['inline_keyboard' => [[
+                ['text' => get_string('confirm_btn_yes', 'local_jedomi'), 'callback_data' => self::CALLBACK_CONFIRM . $callbackid],
+                ['text' => get_string('confirm_btn_no', 'local_jedomi'), 'callback_data' => self::CALLBACK_CANCEL . $callbackid],
+            ]]]
+        );
+        return json_encode(['status' => 'awaiting_confirmation',
+            'note' => 'The action waits for the user to confirm it with the buttons of the chat. Do not call it again.']);
+    }
+
+    /**
+     * Confirm or cancel a held action of a chat. The action runs once, only for the user who still has the chat linked
+     * and is active, and never after it expires.
+     *
+     * @param string $chatid Telegram chat id.
+     * @param string $actionid Callback id of the held action.
+     * @param bool $confirm True to run it, false to cancel it.
+     * @return string Message for the user.
+     */
+    private static function resolve_held_action(string $chatid, string $actionid, bool $confirm): string {
+        global $DB, $USER;
+
+        $pending = $DB->get_record('local_jedomi_telegram_pending_actions', ['callbackid' => $actionid, 'chatid' => $chatid]);
         if (!$pending) {
-            $client->edit_message_text($chatid, $messageid, "❌ Action expired. Please request again.");
-            return;
+            return get_string('pending_action_not_found', 'local_jedomi');
+        }
+        // Removed before it runs, so it can run only once.
+        $DB->delete_records('local_jedomi_telegram_pending_actions', ['id' => $pending->id]);
+        if ((int) $pending->timecreated < time() - pending_action_service::EXPIRY) {
+            return get_string('pending_action_expired', 'local_jedomi');
+        }
+        if (!$confirm) {
+            return get_string('confirm_cancelled', 'local_jedomi');
         }
 
         $action = json_decode($pending->actionjson, true);
-        if (!is_array($action)) {
-            $client->edit_message_text($chatid, $messageid, "❌ Invalid action data.");
-            return;
+        $link = self::get_link_by_chat_id($chatid);
+        $user = $link ? self::get_active_user((int) $link->userid) : null;
+        if (!is_array($action) || !$user || (int) ($action['userid'] ?? 0) !== (int) $user->id
+                || !self::is_user_role_allowed((int) $user->id)) {
+            return get_string('pending_action_denied', 'local_jedomi');
         }
 
-        // Execute the tool directly (bypass LLM)
-        // For now, we support only a limited set of safe tools
-        // Full implementation requires mapping action names to PHP functions.
-        $result = self::execute_pending_action($action, $pending->chatid);
-
-        // Delete pending action.
-        $DB->delete_records('local_jedomi_telegram_pending_actions', ['id' => $pending->id]);
-
-        // Edit original message with result.
-        $client->edit_message_text($chatid, $messageid, $result);
+        $USER = $user;
+        try {
+            $result = self::execute_tool((string) ($action['name'] ?? ''), (array) ($action['params'] ?? []), (int) $user->id);
+        } catch (\Throwable $e) {
+            return get_string('pending_action_failed', 'local_jedomi');
+        }
+        $decoded = json_decode($result, true);
+        if (is_array($decoded) && isset($decoded['error'])) {
+            $denied = is_string($decoded['error']) && str_starts_with($decoded['error'], 'permission_denied');
+            return get_string($denied ? 'pending_action_denied' : 'pending_action_failed', 'local_jedomi');
+        }
+        return get_string('confirm_done', 'local_jedomi');
     }
 
     /**
@@ -709,6 +799,9 @@ class webhook_handler {
             api_client::instance()->send_message($chatid, $disabled['message']);
             return;
         }
+        if (!manager::is_enabled()) {
+            return;
+        }
 
         $state = session::get_context('tool_loop_' . $chatid);
         if (empty($state) || empty($state['messages'])) {
@@ -724,21 +817,20 @@ class webhook_handler {
             return;
         }
 
-        // Restore userid from checkpoint (saved in normal flow).
-        // Avoids querying local_jedomi_telegram_links on every self-ping.
-        $userid = (int)($state['userid'] ?? 0);
-        if ($userid <= 0) {
-            // Fallback: legacy state (pre-cache) — query link table.
-            $link = self::get_link_by_chat_id($chatid);
-            if (!$link) {
-                return;
-            }
-            $userid = (int)$link->userid;
+        // The task continues only while the chat is still linked to the same active user with an allowed role.
+        $link = self::get_link_by_chat_id($chatid);
+        $user = $link ? self::get_active_user((int) $link->userid) : null;
+        $stateuserid = (int) ($state['userid'] ?? 0);
+        if (!$user || ($stateuserid > 0 && $stateuserid !== (int) $user->id) || !self::is_user_role_allowed((int) $user->id)) {
+            \local_jedomi_log('[GATELOOP] chat ' . $chatid . ' no longer linked to an active user, task stopped');
+            session::set_context('tool_loop_' . $chatid, []);
+            return;
         }
+        $userid = (int) $user->id;
 
         // Impersonate user so permission checks work.
         global $USER;
-        $USER = $DB->get_record('user', ['id' => $userid, 'deleted' => 0], '*', MUST_EXIST);
+        $USER = $user;
 
         self::proxy_to_gateway($userid, $chatid, '', true);
     }
@@ -792,12 +884,8 @@ class webhook_handler {
             // Persist user message.
             session::append($chatid, 'user', $text);
 
-            // ... ── User context cache ──
-            $userctx = session::get_context($chatid);
-            if ($userctx === null) {
-                $userctx = self::get_user_full_context($userid);
-                session::set_context($chatid, $userctx);
-            }
+            // ... ── Current role and courses: computed on every message, never cached ──
+            $userctx = self::get_user_full_context($userid);
             $role = $userctx['role'];
             $spt = self::generate_spt_for_user($userid, $role, $userctx['course_ids_owned'], $userctx['course_ids_enrolled']);
             $tools = $spt['tools'] ?? [];
@@ -805,6 +893,7 @@ class webhook_handler {
             $timeout = self::get_ai_timeout();
 
             // ... ── Restore checkpoint if a previous attempt was killed ──
+            $anonymizermap = [];
             try {
                 $checkpoint = session::get_context($statekey);
             } catch (\Exception $e) {
@@ -824,6 +913,7 @@ class webhook_handler {
                 }
                 if ($lastusermsg === $text) {
                     $messages = $checkpoint['messages'];
+                    $anonymizermap = (array) ($checkpoint['anonymizer'] ?? []);
                     $cpjson = json_encode($checkpoint, JSON_UNESCAPED_UNICODE);
                     \local_jedomi_log(sprintf(
                         '[GATELOOP] checkpoint restored chat=%s iter=%d state_bytes=%d msg_count=%d',
@@ -839,6 +929,7 @@ class webhook_handler {
 
             // Init state (iteration counter, lock, cached SPT for self-pings).
             $state = [
+                'anonymizer'     => $anonymizermap,
                 'is_locked'      => true,
                 'locked_at'      => time(),
                 'iteration'      => 0,
@@ -866,24 +957,11 @@ class webhook_handler {
                 count($messages)
             ));
 
-            // ... ── Restore SPT + tools from checkpoint (cached, avoids DB re-queries) ──
-            $spt = $state['spt'] ?? null;
-            $tools = $state['tools'] ?? [];
-
-            // The system prompt below always needs $role and $userctx,
-            // whether or not the SPT came cached in the checkpoint.
-            $userctx = session::get_context($chatid);
-            if ($userctx === null) {
-                $userctx = self::get_user_full_context($userid);
-                session::set_context($chatid, $userctx);
-            }
+            // ... ── The role, courses and tools are those the user has now, not those of the checkpoint ──
+            $userctx = self::get_user_full_context($userid);
             $role = $userctx['role'];
-
-            if (empty($spt)) {
-                // Fallback: legacy state (pre-cache) — recalc the SPT from DB.
-                $spt = self::generate_spt_for_user($userid, $role, $userctx['course_ids_owned'], $userctx['course_ids_enrolled']);
-                $tools = $spt['tools'] ?? [];
-            }
+            $spt = self::generate_spt_for_user($userid, $role, $userctx['course_ids_owned'], $userctx['course_ids_enrolled']);
+            $tools = $spt['tools'] ?? [];
 
             $timeout = self::get_ai_timeout();
 
@@ -897,9 +975,14 @@ class webhook_handler {
         $coursesbyrole = $userctx['courses_by_role'];
         $userlang = $DB->get_field('user', 'lang', ['id' => $userid]) ?: current_language();
 
-        $systemcontent = prompt_builder::build($role, $userlang, $toolnames, $coursesbyrole, $userid);
+        $systemcontent = prompt_builder::build($role, $userlang, $toolnames, $coursesbyrole);
 
         $messages[0] = ['role' => 'system', 'content' => $systemcontent];
+
+        // Personal data returned by the tools reaches the AI anonymised with the level of the Privacy tab; the
+        // placeholders are kept in the state of the conversation, so a later worker (self-ping) can still turn the
+        // arguments the AI proposes and its final answer back into real data.
+        $anonymizer = anonymizer::from_map((array) ($state['anonymizer'] ?? []));
 
         // ... ── Tool loop uses state-based iteration ──
         // Each HTTP worker runs until ~55s, then self-pings so a new worker
@@ -953,6 +1036,7 @@ class webhook_handler {
                 $state['messages'] = $messages;
                 $state['is_locked'] = true;
                 $state['locked_at'] = time();
+                $state['anonymizer'] = $anonymizer->export_map();
                 session::set_context($statekey, $state);
                 self::self_ping($chatid);
                 return;
@@ -972,6 +1056,7 @@ class webhook_handler {
                 $state['messages'] = $messages;
                 $state['is_locked'] = true;
                 $state['locked_at'] = time();
+                $state['anonymizer'] = $anonymizer->export_map();
                 session::set_context($statekey, $state);
                 self::self_ping($chatid);
                 return;
@@ -1245,111 +1330,11 @@ class webhook_handler {
             if (!$hastools) {
                 // ... ── Text response: send to Telegram ──
 
-                // 0. Convert HTML tables to pipe-delimited <pre> blocks.
-                // Telegram does NOT support <table>/<tr>/<td> — strip_tags
-                // would leave all data concatenated (unreadable).
-                $content = \local_jedomi_sanitize_html_tables($content);
+                // The answer was written from anonymised data: the user gets the real values back.
+                $content = $anonymizer->restore((string) $content);
 
-                // 1. Replace \[...\] and \(...\) with dollar signs for Moodle-style inline math.
-                // IMPORTANT: Use hex escapes \x5d (]) and \x29 ()) for the closing
-                // chars because \] and \) can trigger "unmatched closing parenthesis"
-                // in some PCRE2 versions when outside a capture group.
-                // Null coalescing: if preg_replace fails, keep original $content.
-                $content = preg_replace('/\\\\\[(.*?)\\\\\x5d/s', '$$$$1$$', $content) ?? $content;
-                $content = preg_replace('/\\\\\((.*?)\\\\\x29/s', '$$$$1$$', $content) ?? $content;
-
-                // 2. Convert markdown links [text](url) to HTML <a href>.
-                $content = preg_replace('/\[([^\]]+)\]\(([^)]+)\)/', '<a href="$2">$1</a>', $content);
-
-                // 3. Convert markdown formatting to Telegram HTML (defense-in-depth,
-                // the model often uses **bold** or *italic* despite instructions).
-                // Order matters: bold before italic, inline code before formatting.
-                // 3a. ``` code blocks → <pre>
-                // phpcs:ignore moodle.Strings.ForbiddenStrings.Found -- literal Markdown fences.
-                $content = preg_replace('/```(\w*)\s*\n?(.*?)```/s', '<pre>$2</pre>', $content) ?? $content;
-                // 3b. ``inline code`` (double) → <pre>
-                // phpcs:ignore moodle.Strings.ForbiddenStrings.Found -- literal Markdown fences.
-                $content = preg_replace('/``([^`]+)``/', '<pre>$1</pre>', $content) ?? $content;
-                // 3c. `inline code` (single) → <code>  (before formatting to avoid ** inside code)
-                // phpcs:ignore moodle.Strings.ForbiddenStrings.Found -- literal Markdown fences.
-                $content = preg_replace('/`([^`]+)`/', '<code>$1</code>', $content) ?? $content;
-
-                // 3c-bis. Protect * inside <code>/<pre> from being consumed by bold/italic steps.
-                // Replace * with &#42; (HTML entity) so "30 * * * *" inside <code> stays intact.
-                $content = preg_replace_callback('/<(code|pre)\b[^>]*>.*?<\/\1>/is', function ($m) {
-                    return str_replace('*', '&#42;', $m[0]);
-                }, $content) ?? $content;
-
-                // 3d. ~~strikethrough~~ → <s>
-                $content = preg_replace('/~~([^~]+)~~/', '<s>$1</s>', $content) ?? $content;
-                // 3e. __underline__ → <u>  (before **bold** to avoid conflict)
-                $content = preg_replace('/__([^_]+)__/', '<u>$1</u>', $content) ?? $content;
-                // 3f. **bold** → <b> (double asterisk first, so single *italic* doesn't consume it)
-                $content = preg_replace('/\*\*([^*]+)\*\*/', '<b>$1</b>', $content) ?? $content;
-                // 3g. *italic* → <i> (single asterisk, only if not already wrapped)
-                $content = preg_replace('/\*([^*]+)\*/', '<i>$1</i>', $content) ?? $content;
-
-                // 4. Normalize Telegram variants: <strong>→<b>, <em>→<i>, <ins>→<u>,
-                // <strike>/<del>→<s>, <span class="tg-spoiler">→<tg-spoiler>.
-                $replacements = [
-                    '/<strong\b[^>]*>/i' => '<b>',
-                    '/<\/strong>/i'      => '</b>',
-                    '/<em\b[^>]*>/i'     => '<i>',
-                    '/<\/em>/i'          => '</i>',
-                    '/<ins\b[^>]*>/i'    => '<u>',
-                    '/<\/ins>/i'         => '</u>',
-                    '/<strike\b[^>]*>/i' => '<s>',
-                    '/<\/strike>/i'      => '</s>',
-                    '/<del\b[^>]*>/i'    => '<s>',
-                    '/<\/del>/i'         => '</s>',
-                ];
-                $display = preg_replace(array_keys($replacements), array_values($replacements), $content);
-
-                // 5. Strip DISALLOWED tags via strip_tags.
-                $display = strip_tags(
-                    $display,
-                    '<b><i><u><s><tg-spoiler><span><blockquote><a><code><pre><tg-emoji>'
-                );
-
-                // 6. Strip attributes per Telegram rules using preg_replace_callback
-                // (handles attributes in ANY order, unlike plain regex).
-                // 6a. <span class="tg-spoiler"> → <tg-spoiler>.
-                $display = preg_replace_callback('/<span\b[^>]*>/i', function ($m) {
-                    if (preg_match('/class="tg-spoiler"/i', $m[0])) {
-                        return '<tg-spoiler>';
-                    }
-                    return '';
-                }, $display);
-                $display = str_replace('</span>', '', $display);
-                // 6b. Strip attributes from <b>, <i>, <u>, <s>, <tg-spoiler>, <blockquote>, <pre>.
-                $display = preg_replace('/<(b|i|u|s|tg-spoiler|blockquote|pre)\b[^>]*>/i', '<$1>', $display);
-                // 6c. <code> → keep class="language-*" if present, else strip all.
-                $display = preg_replace_callback('/<code\b[^>]*>/i', function ($m) {
-                    if (preg_match('/class="language-([^"]*)"/i', $m[0], $cm)) {
-                        return '<code class="language-' . $cm[1] . '">';
-                    }
-                    return '<code>';
-                }, $display);
-                // 6d. <a> → keep href only (double or single quotes).
-                $display = preg_replace_callback('/<a\b[^>]*>/i', function ($m) {
-                    if (preg_match('/href="([^"]*)"/i', $m[0], $hm)) {
-                        return '<a href="' . $hm[1] . '">';
-                    }
-                    if (preg_match("/href='([^']*)'/i", $m[0], $hm)) {
-                        return '<a href="' . $hm[1] . '">';
-                    }
-                    return '';
-                }, $display);
-                // 6e. <tg-emoji> → keep emoji-id only.
-                $display = preg_replace_callback('/<tg-emoji\b[^>]*>/i', function ($m) {
-                    if (preg_match('/emoji-id="([^"]*)"/i', $m[0], $em)) {
-                        return '<tg-emoji emoji-id="' . $em[1] . '">';
-                    }
-                    return '';
-                }, $display);
-
-                // 7. Escape bare & that aren't already entities.
-                $display = preg_replace('/&(?!(?:#[0-9]+|#x[0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]*);)/', '&amp;', $display);
+                // Markdown and HTML of the answer become the Telegram HTML subset, escaped and balanced.
+                $display = formatter::to_html($content);
 
                 // If sanitisation emptied the text, send original as plain text.
                 if (trim(strip_tags($display)) === '') {
@@ -1373,7 +1358,7 @@ class webhook_handler {
                     $filepath = $tmpdir . '/' . $filename;
 
                     // Extract first meaningful line for the caption.
-                    $plaintext = strip_tags($display);
+                    $plaintext = html_entity_decode(strip_tags($display), ENT_QUOTES | ENT_HTML5, 'UTF-8');
                     $chatlines = explode("\n", $plaintext);
                     $chatoneliner = '';
                     foreach ($chatlines as $cline) {
@@ -1416,6 +1401,7 @@ class webhook_handler {
                 ));
                 $iteration = (int)$freshstate['iteration'] - 1; // For loop increments; restore 1 less.
                 $messages = $freshstate['messages'] ?? $messages;
+                $anonymizer = anonymizer::from_map((array) ($freshstate['anonymizer'] ?? []));
                 continue;
             }
 
@@ -1458,8 +1444,17 @@ class webhook_handler {
                     ));
                 }
 
+                // The AI only knows the placeholders of the anonymised data; the tools need the real values.
+                $args = $anonymizer->restore_value($args);
+
                 try {
-                    $toolresult = self::execute_tool($name, $args, $userid, $role, $userctx['course_ids_owned']);
+                    if (!in_array(self::canonical_tool_name($name), $toolnames, true)) {
+                        // Only the tools offered to the AI for the role of the user can run.
+                        $toolresult = json_encode(['error' => 'permission_denied']);
+                    } else {
+                        $toolresult = self::hold_action($chatid, $userid, $name, $args)
+                            ?? self::execute_tool($name, $args, $userid, $role, $userctx['course_ids_owned'], $anonymizer);
+                    }
                     if (mb_strlen($toolresult) > 64000) {
                         $toolresult = mb_substr($toolresult, 0, 64000) . "\n... (truncated)";
                     }
@@ -1469,7 +1464,7 @@ class webhook_handler {
                 $messages[] = [
                     'role'         => 'tool',
                     'tool_call_id' => $tcid,
-                    'content'      => $toolresult,
+                    'content'      => $anonymizer->anonymize_tool_result($toolresult),
                 ];
             }
 
@@ -1488,6 +1483,7 @@ class webhook_handler {
             ));
 
             try {
+                $state['anonymizer'] = $anonymizer->export_map();
                 session::set_context($statekey, $state);
             } catch (\Exception $e) {
                 \local_jedomi_log('[GATELOOP] STATE SAVE FAILED for chat ' . $chatid
@@ -1568,6 +1564,8 @@ class webhook_handler {
      * @param int $userid Moodle user id executing the tool
      * @param string $role Ignored for authorization; kept for signature compatibility.
      * @param array $courseidsowned Course ids the user manages
+     * @param anonymizer|null $anonymizer Anonymiser of the conversation; the rows of a database query are anonymised
+     *                                    by column name with it before they are formatted.
      * @return string Tool execution result formatted for Telegram
      * @internal Exposed as a testable entry point; not a stable plugin API.
      */
@@ -1576,7 +1574,8 @@ class webhook_handler {
         array $args,
         int $userid = 0,
         string $role = '',
-        array $courseidsowned = []
+        array $courseidsowned = [],
+        ?anonymizer $anonymizer = null
     ): string {
         global $DB, $CFG;
 
@@ -1641,39 +1640,6 @@ class webhook_handler {
                     return "❌ Permission denied.";
                 }
 
-                // ... ── Course-level permission check ─────────────────────────────
-                // Extract course IDs from SQL (WHERE courseid = N, course = N).
-                $referencedcourses = [];
-                if (preg_match_all('/\b(?:courseid|course_id|c\.id)\s*[=!]=?\s*(\d+)/i', $sql, $matches)) {
-                    $referencedcourses = array_map('intval', array_unique($matches[1]));
-                }
-
-                if (!empty($referencedcourses) && $userid > 0) {
-                    // Cache admin check — get_admins() called once per request.
-                    static $admincache = [];
-                    if (!array_key_exists($userid, $admincache)) {
-                        $isadm = false;
-                        $admins = get_admins();
-                        foreach ($admins as $admin) {
-                            if ((int) $admin->id === $userid) {
-                                $isadm = true;
-                                break;
-                            }
-                        }
-                        $admincache[$userid] = $isadm;
-                    }
-                    if (!$admincache[$userid]) {
-                        $sysctx = \context_system::instance();
-                        $issystemmanager = has_capability('moodle/course:update', $sysctx, $userid);
-                        foreach ($referencedcourses as $cid) {
-                            $hasperm = $issystemmanager || in_array($cid, $courseidsowned, true);
-                            if (!$hasperm) {
-                                return get_string('error_telegram_e008', 'local_jedomi', $cid);
-                            }
-                        }
-                    }
-                }
-                // ... ── End permission check ──────────────────────────────────────
 
                 // Normalize Moodle table placeholders (FROM course → FROM {course}).
                 $sql = preg_replace_callback(
@@ -1684,9 +1650,14 @@ class webhook_handler {
                     $sql
                 );
 
+                // ... ── Sensitive tables and courses the user does not manage (shared by every channel) ──
                 $params = $args['params'] ?? [];
                 if (!is_array($params)) {
                     $params = [$params];
+                }
+                $rejection = \local_jedomi\local\sql_guard::rejection_reason($sql, $userid, $params);
+                if ($rejection !== null) {
+                    return '❌ ' . get_string($rejection, 'local_jedomi');
                 }
 
                 // ... ── Execute query with restrictions matching web version ─────────
@@ -1744,7 +1715,11 @@ class webhook_handler {
                     }
 
                     $fields = [];
-                    foreach ((array)$row as $key => $val) {
+                    $row = \local_jedomi\local\sql_guard::filter_row((array)$row);
+                    if ($anonymizer !== null) {
+                        $row = $anonymizer->anonymize_row($row);
+                    }
+                    foreach ($row as $key => $val) {
                         // Format timestamp columns as human-readable dates.
                         $istimestamp = in_array($key, $datekeys, true)
                             && (is_int($val) || (is_string($val) && ctype_digit($val)))
@@ -1864,9 +1839,9 @@ class webhook_handler {
                 // ... ── Gate 1: Role-based allowlist (matching ws_execute::execute) ──
                 require_once(__DIR__ . '/../../lib.php');
                 $allowlist = \local_jedomi_get_role_allowlist($role);
-                // Admin without a configured allowlist → full access.
-                // Every other role (or an admin with an explicit allowlist) → must match.
-                if ($role !== 'admin' || !empty($allowlist)) {
+                // Admin without a saved allowlist → full access.
+                // Every other role (or an admin with a saved allowlist, even empty) → must match.
+                if (!\local_jedomi_role_has_full_ws_access($role)) {
                     if (!in_array($wsname, $allowlist, true)) {
                         return json_encode(['error' => 'WS not in allowlist for role: ' . $role]);
                     }
@@ -2054,9 +2029,18 @@ class webhook_handler {
                 if (!$agent) {
                     return "❌ Agent #{$id} not found.";
                 }
+                if (!\local_jedomi\agent\agent_manager::can_manage_agent($agent, (int) $userid)) {
+                    return json_encode(['error' => 'permission_denied']);
+                }
                 $label = !empty($agent->name) ? $agent->name : "Agent #{$id}";
                 \local_jedomi\agent\agent_manager::delete_agent($id);
                 return "🗑️ <b>{$label} deleted</b> — " . s(mb_substr($agent->prompt, 0, 60));
+
+            case 'my_courses':
+            case 'my_grades':
+            case 'my_assignments':
+                // Always the data of the linked user, whatever the arguments say; no linked user reads nothing.
+                return \local_jedomi\agent\tool\own_data_tool::run($name, $args, $userid);
 
             default:
                 return "❌ Tool '" . s($name) . "' is not supported via Telegram. Try the web interface.";
@@ -2079,7 +2063,7 @@ class webhook_handler {
 
         // Resolve user role from chat link for permission checks.
         $link = self::get_link_by_chat_id($chatid);
-        $role = $link ? self::get_user_role_for_user((int)$link->userid) : '';
+        $role = $link ? \local_jedomi_get_user_role_for_user((int) $link->userid) : '';
 
         // Map action names to actual execution.
         switch ($toolname) {
@@ -2205,7 +2189,7 @@ class webhook_handler {
      * @param  int $userid Moodle user id to check.
      * @return bool True if the user is allowed to interact with the bot.
      */
-    private static function is_user_role_allowed(int $userid): bool {
+    public static function is_user_role_allowed(int $userid): bool {
         // Site admins always have access (matching web version).
         $admins = get_admins();
         foreach ($admins as $admin) {
@@ -2261,12 +2245,13 @@ class webhook_handler {
     /**
      * Record one message against the per-chat rate limit window and report if the chat is blocked.
      *
-     * Uses a delegated transaction; on any error the chat is treated as blocked for safety.
+     * Uses a delegated transaction. When the limit cannot be checked or recorded (a database error) the
+     * failure is logged and null is returned, so the message is not processed and the user is told.
      *
      * @param  string $chatid Telegram chat id.
-     * @return bool True if the chat is currently rate-limited (message must be rejected).
+     * @return bool|null True if the chat is currently rate-limited (message must be rejected), null on failure.
      */
-    private static function check_and_record_rate(string $chatid): bool {
+    private static function check_and_record_rate(string $chatid): ?bool {
         global $DB;
         $now = time();
         $window = 60; // 1 minute
@@ -2277,7 +2262,12 @@ class webhook_handler {
             return false; // Unlimited.
         }
 
-        $transaction = $DB->start_delegated_transaction();
+        try {
+            $transaction = $DB->start_delegated_transaction();
+        } catch (\Throwable $e) {
+            \local_jedomi_log('[TELEGRAM RATE] limit check failed for chat ' . $chatid . ': ' . $e->getMessage());
+            return null;
+        }
         try {
             $record = $DB->get_record('local_jedomi_telegram_rate_limit', ['chatid' => $chatid]);
 
@@ -2321,18 +2311,24 @@ class webhook_handler {
             $DB->update_record('local_jedomi_telegram_rate_limit', $record);
             $transaction->allow_commit();
             return false;
-        } catch (\Exception $e) {
-            $transaction->rollback($e);
-            return true; // Block on error to be safe.
+        } catch (\Throwable $e) {
+            \local_jedomi_log('[TELEGRAM RATE] limit check failed for chat ' . $chatid . ': ' . $e->getMessage());
+            try {
+                // The rollback throws the error again; it is already handled here.
+                $transaction->rollback($e);
+            } catch (\Throwable $rethrown) {
+                unset($rethrown);
+            }
+            return null;
         }
     }
 
     // ... ── User role & SPT helpers (self-contained, no dependency on lib.php) ──
 
     /**
-     * Re-derive the authoritative Jedomi role for a userid, bypassing any
-     * caller-supplied role string. Cached per-request (static, keyed by
-     * userid) so the tool loop doesn't re-query permissions on every call.
+     * Re-derive the authoritative Jedomi role for a userid, bypassing any caller-supplied role string.
+     *
+     * It is computed on every call, as in the web chat, so a role removed from the user stops applying at once.
      *
      * @param  int $userid Moodle user id. <= 0 always denies (returns '').
      * @return string The authoritative role ('admin'|'manager'|'teacher'|'student'|'').
@@ -2341,49 +2337,52 @@ class webhook_handler {
         if ($userid <= 0) {
             return '';
         }
-        if (!array_key_exists($userid, self::$derivedrolecache)) {
-            self::$derivedrolecache[$userid] = self::get_user_role_for_user($userid);
-        }
-        return self::$derivedrolecache[$userid];
+        return \local_jedomi_get_user_role_for_user($userid);
     }
 
     /**
-     * Determine a user's Jedomi role WITHOUT depending on $COURSE or $PAGE globals.
+     * Whether a Telegram chat is a private chat with one person. Groups, supergroups and channels have negative
+     * ids, and their messages carry their type.
      *
-     * Used by the Telegram webhook where there is no page context or current course.
-     * Checks admin status via get_admins(), manager via system-level capability,
-     * teacher via manageactivities in any enrolled course, and falls back to student.
-     *
-     * @param  int    $userid The user ID to check.
-     * @return string         'admin', 'manager', 'teacher', or 'student'.
+     * @param string $chatid Normalised chat id.
+     * @param string $type Chat type from the update, empty when absent.
+     * @return bool
      */
-    private static function get_user_role_for_user(int $userid): string {
-
-        // 1. Check if user is site admin via get_admins().
-        $admins = get_admins();
-        foreach ($admins as $admin) {
-            if ((int) $admin->id === $userid) {
-                return 'admin';
-            }
+    private static function is_private_chat(string $chatid, string $type): bool {
+        if ($type !== '' && $type !== 'private') {
+            return false;
         }
+        return strpos($chatid, '-') !== 0;
+    }
 
-        $sysctx = \context_system::instance();
-
-        // 2. Manager: has moodle/user:update at system level.
-        if (has_capability('moodle/user:update', $sysctx, $userid)) {
-            return 'manager';
+    /**
+     * The linked user, when the account still exists, is not suspended and can log in.
+     *
+     * @param int $userid Linked Moodle user.
+     * @return \stdClass|null The user record, or null when the account can no longer be served.
+     */
+    private static function get_active_user(int $userid): ?\stdClass {
+        global $DB;
+        $user = $DB->get_record('user', ['id' => $userid, 'deleted' => 0]);
+        if (!$user || !empty($user->suspended) || $user->auth === 'nologin' || isguestuser($user)) {
+            return null;
         }
+        return $user;
+    }
 
-        // 3. Teacher: has moodle/course:manageactivities in ANY of their enrolled courses.
-        $courses = enrol_get_users_courses($userid, true, ['id']);
-        foreach ($courses as $c) {
-            $ctx = \context_course::instance($c->id);
-            if (has_capability('moodle/course:manageactivities', $ctx, $userid)) {
-                return 'teacher';
-            }
-        }
-
-        return 'student';
+    /**
+     * Canonical name of a tool, mapping the plural or singular forms models sometimes use.
+     *
+     * @param string $name Tool name as the model called it.
+     * @return string
+     */
+    private static function canonical_tool_name(string $name): string {
+        return match ($name) {
+            'create_agents' => 'create_agent',
+            'delete_agents' => 'delete_agent',
+            'list_agent' => 'list_agents',
+            default => $name,
+        };
     }
 
     /**
@@ -2441,7 +2440,11 @@ class webhook_handler {
         }
         // Admin: no course list (full access).
 
-        $tools = \local_jedomi_get_tool_definitions($role);
+        // Only the tools of the role that Telegram can really run are offered.
+        $tools = array_values(array_filter(
+            \local_jedomi_get_tool_definitions($role),
+            static fn(array $tool): bool => in_array($tool['function']['name'] ?? '', self::SUPPORTED_TOOLS, true)
+        ));
 
         $payload = [
             'userid'              => $userid,
@@ -2457,7 +2460,7 @@ class webhook_handler {
         ];
 
         // Same HMAC signing as the existing generate_spt function.
-        $staticsecret = get_config('local_jedomi', 'spt_secret') ?: 'jedomi-spt-secret';
+        $staticsecret = \local_jedomi_get_spt_secret();
 
         ksort($payload);
         $tosign = json_encode($payload);
@@ -2468,105 +2471,70 @@ class webhook_handler {
     }
 
     /**
-     * Get ALL user context (role, course IDs, course names by role) in ONE pass.
+     * Current role of the user and their courses grouped by the role held in each one.
      *
-     * Calls enrol_get_users_courses() exactly once. Used by proxy_to_gateway
-     * to avoid redundant queries between get_user_role_for_user,
-     * generate_spt_for_user, and context injection.
+     * The role is computed as in the web chat: only site administrators and system user managers are
+     * administrators and managers, so a role or permission in a course never makes the user a manager.
+     * The courses are those with an active enrolment or a role assigned in the course, without the site
+     * home, and each one is grouped by the highest role the user holds in it.
      *
      * @param  int   $userid
      * @return array  'role', 'course_ids_owned', 'course_ids_enrolled', 'courses_by_role'
      */
     private static function get_user_full_context(int $userid): array {
-        $sysctx = \context_system::instance();
-
-        $isadmin = false;
-        $admins = get_admins();
-        foreach ($admins as $admin) {
-            if ((int) $admin->id === $userid) {
-                $isadmin = true;
-                break;
-            }
-        }
-
-        // Enumerate courses via enrolments AND role_assignments.
-        // enrol_get_users_courses only returns active enrolments — an admin
-        // or teacher may have role assignments at course context without
-        // being "enrolled" via an enrolment plugin.
-        $courses = enrol_get_users_courses($userid, true, ['id', 'fullname']);
-        $seenids = [];
-        foreach ($courses as $c) {
-            $seenids[(int)$c->id] = true;
-        }
-
-        // Also fetch courses via role_assignments (catches roles without enrolment).
         global $DB;
-        $ras = $DB->get_records_sql(
-            "SELECT DISTINCT ra.contextid, ctx.instanceid AS courseid
+
+        $courses = [];
+        foreach (enrol_get_users_courses($userid, true, ['id', 'fullname']) as $course) {
+            $courses[(int) $course->id] = $course;
+        }
+        // Courses where the user has a role without an enrolment.
+        $rows = $DB->get_records_sql(
+            "SELECT DISTINCT c.id, c.fullname
                FROM {role_assignments} ra
-               JOIN {context} ctx ON ctx.id = ra.contextid AND ctx.contextlevel = ?
-              WHERE ra.userid = ?",
-            [CONTEXT_COURSE, $userid]
+               JOIN {context} ctx ON ctx.id = ra.contextid AND ctx.contextlevel = :level
+               JOIN {course} c ON c.id = ctx.instanceid
+              WHERE ra.userid = :userid",
+            ['level' => CONTEXT_COURSE, 'userid' => $userid]
         );
-        foreach ($ras as $ra) {
-            $cid = (int)$ra->courseid;
-            if (!isset($seenids[$cid])) {
-                $crecord = $DB->get_record('course', ['id' => $cid], 'id, fullname');
-                if ($crecord) {
-                    $courses[] = $crecord;
-                    $seenids[$cid] = true;
-                }
-            }
+        foreach ($rows as $row) {
+            $courses[(int) $row->id] = $courses[(int) $row->id] ?? $row;
         }
+        unset($courses[SITEID]);
 
-        $courseidsowned  = [];
+        $rank = ['student' => 1, 'teacher' => 2, 'manager' => 3];
+        $courseidsowned = [];
         $courseidsenrolled = [];
-        $coursesbyrole = ['manager' => [], 'teacher' => [], 'student' => []];
-        $primaryrole = $isadmin ? 'admin' : 'student';
-
-        foreach ($courses as $c) {
-            $ctx = \context_course::instance($c->id);
-
-            if ($isadmin) {
-                // Admin: use ACTUAL role assignments, not capabilities.
-                // has_capability() always returns true for admins — wrong.
-                $assigned = get_user_roles($ctx, $userid, false);
-                $shortnames = array_map(fn(\stdClass $r): string => $r->shortname, $assigned);
-                if (in_array('manager', $shortnames, true)) {
-                    $coursesbyrole['manager'][] = $c->fullname;
-                    $courseidsowned[] = (int)$c->id;
-                } else if (in_array('editingteacher', $shortnames, true)) {
-                    $coursesbyrole['teacher'][] = $c->fullname;
-                    $courseidsowned[] = (int)$c->id;
-                } else if (in_array('student', $shortnames, true)) {
-                    $coursesbyrole['student'][] = $c->fullname;
-                    $courseidsenrolled[] = (int)$c->id;
-                }
-                // No explicit role → skip (admin has access but no role assignment).
-            } else {
-                if (has_capability('moodle/course:update', $ctx, $userid)) {
-                    $coursesbyrole['manager'][] = $c->fullname;
-                    $courseidsowned[] = (int)$c->id;
-                    $primaryrole = 'manager';
-                } else if (has_capability('moodle/course:manageactivities', $ctx, $userid)) {
-                    $coursesbyrole['teacher'][] = $c->fullname;
-                    $courseidsowned[] = (int)$c->id;
-                    if ($primaryrole !== 'manager') {
-                        $primaryrole = 'teacher';
-                    }
-                } else {
-                    $coursesbyrole['student'][] = $c->fullname;
-                    $courseidsenrolled[] = (int)$c->id;
+        $coursesbyrole = [];
+        foreach ($courses as $courseid => $course) {
+            $context = \context_course::instance($courseid);
+            $group = null;
+            foreach (get_user_roles($context, $userid, false) as $assignment) {
+                $archetype = $DB->get_field('role', 'archetype', ['id' => $assignment->roleid]) ?: $assignment->shortname;
+                $candidate = match ($archetype) {
+                    'manager' => 'manager',
+                    'editingteacher', 'teacher' => 'teacher',
+                    'student' => 'student',
+                    default => null,
+                };
+                if ($candidate !== null && ($group === null || $rank[$candidate] > $rank[$group])) {
+                    $group = $candidate;
                 }
             }
-        }
-
-        if (!$isadmin && $primaryrole === 'student' && has_capability('moodle/user:update', $sysctx, $userid)) {
-            $primaryrole = 'manager';
+            if ($group === null) {
+                // No role of a known kind in this course: it gives no access to report.
+                continue;
+            }
+            $coursesbyrole[$group][] = $course->fullname;
+            if (has_capability('moodle/course:manageactivities', $context, $userid)) {
+                $courseidsowned[] = $courseid;
+            } else {
+                $courseidsenrolled[] = $courseid;
+            }
         }
 
         return [
-            'role'              => $primaryrole,
+            'role'              => \local_jedomi_get_user_role_for_user($userid),
             'course_ids_owned'  => $courseidsowned,
             'course_ids_enrolled' => $courseidsenrolled,
             'courses_by_role'   => $coursesbyrole,

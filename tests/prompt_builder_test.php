@@ -51,8 +51,7 @@ final class prompt_builder_test extends \advanced_testcase {
             'admin',
             'es',
             ['ws_search', 'execute_sql'],
-            [],
-            (int) get_admin()->id
+            []
         );
 
         $this->assertIsString($prompt);
@@ -84,19 +83,20 @@ final class prompt_builder_test extends \advanced_testcase {
     }
 
     /**
-     * Test the prompt embeds the caller context (role, user, language, tools).
+     * Test the prompt embeds the caller context (role, language, tools, courses) and never the internal user id.
+     *
+     * MDL-CTR-006: the internal Moodle id of the user is not part of the instructions.
      */
     public function test_prompt_embeds_context(): void {
         $prompt = prompt_builder::build(
             'student',
             'en',
             ['ws_search'],
-            ['student' => ['Course X']],
-            42
+            ['student' => ['Course X']]
         );
 
         $this->assertStringContainsString('Role: student', $prompt);
-        $this->assertStringContainsString('User: 42', $prompt);
+        $this->assertStringNotContainsString('User:', $prompt);
         $this->assertStringContainsString('Lang: en', $prompt);
         $this->assertStringContainsString('ws_search', $prompt);
         $this->assertStringContainsString('Course X', $prompt);

@@ -108,7 +108,6 @@ final class spt_validator_test extends \advanced_testcase {
 
     /**
      * MDL-UNIT-014: with the default (empty) secret no fixed key produces permissions the server accepts.
-     * [Pendiente:fail] Today the built-in key "jedomi-spt-secret" is used, so anyone can forge admin permissions.
      */
     public function test_permissions_forged_with_the_built_in_key_are_rejected(): void {
         $this->resetAfterTest();

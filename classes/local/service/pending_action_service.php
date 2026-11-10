@@ -202,24 +202,32 @@ class pending_action_service {
      * The action is removed before it runs, so it can run only once. It runs with the role
      * the user has now: a user who lost the permission gets a "denied" result.
      *
+     * A critical action runs only when the confirmation keyword is received; without it the action
+     * is rejected and kept, so the user can still confirm it with the keyword.
+     *
      * @param int $id Pending action id.
      * @param int $userid User resolving it (must be its owner).
      * @param bool $confirm True to run it, false to cancel it.
+     * @param string $keyword Confirmation keyword typed by the user (critical actions).
      * @return array{status: string, message: string, sent: int, failed: int}
-     * @throws \moodle_exception pending_action_not_found or pending_action_expired.
+     * @throws \moodle_exception pending_action_not_found, pending_action_expired or confirm_keyword_required.
      */
-    public static function resolve(int $id, int $userid, bool $confirm): array {
+    public static function resolve(int $id, int $userid, bool $confirm, string $keyword = ''): array {
         global $DB;
 
         $record = $DB->get_record(self::TABLE, ['id' => $id, 'userid' => $userid]);
         if (!$record) {
             throw new \moodle_exception('pending_action_not_found', 'local_jedomi');
         }
-        $DB->delete_records(self::TABLE, ['id' => $record->id]);
 
         if ((int) $record->timecreated < time() - self::EXPIRY) {
+            $DB->delete_records(self::TABLE, ['id' => $record->id]);
             throw new \moodle_exception('pending_action_expired', 'local_jedomi');
         }
+        if ($confirm && $record->severity === self::SEVERITY_CRITICAL && !self::is_confirm_keyword($keyword)) {
+            throw new \moodle_exception('confirm_keyword_required', 'local_jedomi');
+        }
+        $DB->delete_records(self::TABLE, ['id' => $record->id]);
         if (!$confirm) {
             return self::result(self::STATUS_CANCELLED, get_string('confirm_cancelled', 'local_jedomi'));
         }
@@ -232,6 +240,17 @@ class pending_action_service {
             $decoded = ['error' => 'tool_failed'];
         }
         return self::summarise($record->tool, is_array($decoded) ? $decoded : ['error' => 'invalid_result']);
+    }
+
+    /**
+     * Whether a typed text is the confirmation keyword of critical actions (the confirm button label, in capitals).
+     *
+     * @param string $keyword Text typed by the user.
+     * @return bool
+     */
+    public static function is_confirm_keyword(string $keyword): bool {
+        $expected = \core_text::strtoupper(get_string('confirm_btn_yes', 'local_jedomi'));
+        return $expected !== '' && \core_text::strtoupper(trim($keyword)) === $expected;
     }
 
     /**
@@ -301,6 +320,17 @@ class pending_action_service {
     public static function user_has_actions(int $userid): bool {
         global $DB;
         return $DB->record_exists(self::TABLE, ['userid' => $userid]);
+    }
+
+    /**
+     * Held actions of a user, oldest first.
+     *
+     * @param int $userid User id.
+     * @return \stdClass[]
+     */
+    public static function get_for_user(int $userid): array {
+        global $DB;
+        return array_values($DB->get_records(self::TABLE, ['userid' => $userid], 'timecreated ASC, id ASC'));
     }
 
     /**

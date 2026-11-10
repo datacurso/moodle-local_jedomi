@@ -184,7 +184,9 @@ final class read_file_test extends \advanced_testcase {
         set_config('hmac_secret', $secret, 'local_jedomi');
 
         $timestamp = time();
-        $payloadhash = hash('sha256', 'test-payload');
+        // The payload hash covers the parameters actually sent (JSON, keys sorted).
+        $params = ['line_count' => 5, 'line_start' => 1, 'path' => $path];
+        $payloadhash = hash('sha256', json_encode($params, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
         $signature = hash_hmac('sha256', "jedomi_read_file:{$timestamp}:{$payloadhash}", $secret);
 
         return read_file::execute($path, 1, 5, $signature, $timestamp, $payloadhash);

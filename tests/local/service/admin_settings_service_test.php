@@ -349,19 +349,42 @@ final class admin_settings_service_test extends \advanced_testcase {
     }
 
     /**
-     * On the first visit the admin role has every read function preselected.
+     * MDL-INT-018: saving the list from one page or filter keeps the functions allowed on the others.
      *
      * @return void
      */
-    public function test_get_ws_table_preselects_read_functions_for_admin_first_visit(): void {
+    public function test_saving_from_one_page_keeps_the_functions_allowed_on_other_pages(): void {
+        $this->resetAfterTest();
+        unset_config('ws_allowlist_teacher', 'local_jedomi');
+
+        admin_settings_service::save_ws_allowlist('teacher', ['core_course_get_courses'], ['core_course_get_courses']);
+        admin_settings_service::save_ws_allowlist('teacher', ['core_user_get_users_by_field'],
+            ['core_user_get_users_by_field', 'core_user_get_users']);
+
+        $this->assertEqualsCanonicalizing(['core_course_get_courses', 'core_user_get_users_by_field'],
+            \local_jedomi_get_role_allowlist('teacher'));
+
+        admin_settings_service::save_ws_allowlist('teacher', [], ['core_user_get_users_by_field']);
+        $this->assertSame(['core_course_get_courses'], \local_jedomi_get_role_allowlist('teacher'),
+            'Unchecking a shown function removes only that function');
+    }
+
+    /**
+     * MDL-INT-018: the first save of the administrator from one page only removes what was unchecked there.
+     *
+     * @return void
+     */
+    public function test_first_save_of_the_administrator_only_changes_what_was_unchecked(): void {
         $this->resetAfterTest();
         unset_config('ws_allowlist_admin', 'local_jedomi');
 
-        $table = admin_settings_service::get_ws_table('admin', 'core_course_get_course', '', 'all', 1, 10);
+        admin_settings_service::save_ws_allowlist('admin', ['core_course_get_courses'],
+            ['core_course_get_courses', 'core_course_delete_courses']);
 
-        foreach ($table['rows'] as $row) {
-            $this->assertSame(!$row['iswrite'], $row['checked']);
-        }
+        $allowed = \local_jedomi_get_role_allowlist('admin');
+        $this->assertContains('core_course_get_courses', $allowed);
+        $this->assertContains('core_user_get_users_by_field', $allowed, 'Functions on other pages keep their access');
+        $this->assertNotContains('core_course_delete_courses', $allowed);
     }
 
     /**
@@ -449,8 +472,6 @@ final class admin_settings_service_test extends \advanced_testcase {
 
     /**
      * MDL-INT-018: before the first save the table shows the real access of the administrator to every function.
-     * [Pendiente:fail] Before the first save only the read functions are shown as allowed, while the administrator can run
-     * every function.
      */
     public function test_first_visit_shows_the_real_access_of_the_administrator(): void {
         $this->resetAfterTest();
@@ -466,7 +487,6 @@ final class admin_settings_service_test extends \advanced_testcase {
 
     /**
      * MDL-INT-018: saving without any function selected does not give full access.
-     * [Pendiente:fail] An empty list of the administrator means full access again.
      */
     public function test_saving_without_functions_does_not_give_full_access(): void {
         global $CFG;

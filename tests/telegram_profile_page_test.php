@@ -69,7 +69,6 @@ final class telegram_profile_page_test extends \advanced_testcase {
 
     /**
      * MDL-INT-059: a manager cannot generate the link code of another account, such as an admin.
-     * [Pendiente:fail]
      */
     public function test_manager_cannot_generate_link_code_of_another_user(): void {
         $this->resetAfterTest();

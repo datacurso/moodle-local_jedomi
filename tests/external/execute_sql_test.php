@@ -158,7 +158,6 @@ final class execute_sql_test extends \advanced_testcase {
 
     /**
      * MDL-UNIT-020: no query can read credentials, keys, tokens, site configuration or sessions, however it is written.
-     * [Pendiente:fail] Today these queries run and return the sensitive rows.
      *
      * @dataProvider sensitive_query_provider
      * @param string $sql Query.

@@ -48,7 +48,7 @@ final class document_read_tool_test extends \advanced_testcase {
         }
         $this->resetAfterTest();
         $this->setAdminUser();
-        set_config('licensekey', 'test-license', 'aiprovider_datacurso');
+        $GLOBALS['CFG']->forced_plugin_settings['aiprovider_datacurso']['licensekey'] = 'test-license';
         \core\plugininfo\aiprovider::enable_plugin('datacurso', 1);
         $this->curl = new fake_curl();
         provider_upload_service::set_api_for_testing(new testable_provider_api(30, $this->curl));
@@ -177,5 +177,22 @@ final class document_read_tool_test extends \advanced_testcase {
         set_config('files_enabled', 0, 'local_jedomi');
         $this->assertNotContains('document_read', $names(\local_jedomi_get_tool_definitions('admin')));
         $this->assertNotContains('document_read', $names(\local_jedomi\agent\tool_executor::get_definitions()));
+    }
+
+    /**
+     * MDL-INT-032: in the agents the document reading checks the permissions of the agent creator, not of the user the
+     * task runs as.
+     */
+    public function test_agent_reads_only_the_documents_its_creator_can_access(): void {
+        $cmid = $this->create_module_with_pdf();
+        $othercourse = $this->getDataGenerator()->create_course();
+        $teacher = $this->getDataGenerator()->create_and_enrol($othercourse, 'editingteacher');
+        \local_jedomi\agent\tool_executor::get_definitions(1, (int) $teacher->id);
+
+        $result = json_decode(\local_jedomi\agent\tool_executor::execute('document_read', json_encode(['cmid' => $cmid])), true);
+
+        $this->assertSame('permission_denied', $result['error'] ?? null,
+            'A teacher agent must not read the documents of a course its creator does not teach');
+        $this->assertSame([], $this->curl->calls);
     }
 }

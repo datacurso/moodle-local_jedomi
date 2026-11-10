@@ -131,9 +131,12 @@ export const agentAction = (data) => postJson('agent_create.php', data);
  * Preview a prompt against the AI service and the tools.
  *
  * @param {string} prompt Agent prompt.
+ * @param {string} contexttype Context type of the agent.
+ * @param {string} contextid Context instance of the agent.
  * @returns {Promise<Object>}
  */
-export const previewAgent = (prompt) => postJson('agent_preview.php', {prompt});
+export const previewAgent = (prompt, contexttype, contextid) =>
+    postJson('agent_preview.php', {prompt, context_type: contexttype, context_id: contextid});
 
 /**
  * Delete a cached preview.

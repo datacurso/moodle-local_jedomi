@@ -39,7 +39,13 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 // ... ── Auth ──
-require_login();
+// Guests and requests without a session never use the chat: a controlled refusal, not a redirect to the login page.
+if (!isloggedin() || isguestuser()) {
+    http_response_code(403);
+    header('Content-Type: application/json');
+    die(json_encode(['error' => ['code' => 'guest_not_allowed', 'message' => get_string('chat_error_guest', 'local_jedomi')]]));
+}
+require_login(null, false);
 
 // ... ── Parse input ──
 $input = json_decode(file_get_contents('php://input'), true);

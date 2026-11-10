@@ -54,7 +54,6 @@ Feature: Jedomi settings page
       | /local/jedomi/ajax/telegram_webhook_status.php |
       | /local/jedomi/ajax/telegram_drop_pending.php   |
 
-  # [Pendiente:fail] Saving replaces the list with the boxes of the visible page or filter only.
   @MDL-INT-018
   Scenario: Saving the web service list from another filter keeps the functions allowed in the first one
     Given I log in as "admin"
@@ -92,7 +91,6 @@ Feature: Jedomi settings page
     When I click on "[data-action='local_jedomi/admin/agents/preview']" "css_element"
     Then I should see "Write a prompt first."
 
-  # [Pendiente:fail] Purging by Site deletes every agent and the final message keeps an unreplaced placeholder.
   @MDL-INT-027 @javascript
   Scenario: Purging by Site deletes only the site agents and says how many were deleted
     Given the following "courses" exist:

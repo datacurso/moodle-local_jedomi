@@ -231,7 +231,6 @@ final class provider_test extends provider_testcase {
     /**
      * MDL-INT-080: the declaration covers the Telegram data, the delivery to Telegram, the agents and their results, the
      * profiler queries and the technical log.
-     * [Pendiente:fail]
      */
     public function test_metadata_declares_telegram_agents_profiler_and_log(): void {
         $collection = provider::get_metadata(new collection('local_jedomi'));
@@ -253,7 +252,6 @@ final class provider_test extends provider_testcase {
 
     /**
      * MDL-INT-080: the export of a user includes their pending actions.
-     * [Pendiente:fail]
      */
     public function test_export_includes_the_pending_actions(): void {
         $this->resetAfterTest();
@@ -270,7 +268,6 @@ final class provider_test extends provider_testcase {
 
     /**
      * MDL-INT-080: the export of a user includes their Telegram data and their agents.
-     * [Pendiente:fail]
      */
     public function test_export_includes_telegram_and_agent_data(): void {
         $this->resetAfterTest();
@@ -281,13 +278,15 @@ final class provider_test extends provider_testcase {
         $this->assertNotEmpty($contextlist->get_contextids(), 'A user with Telegram data and agents has data to export');
         provider::export_user_data(new approved_contextlist($user, 'local_jedomi', $contextlist->get_contextids()));
 
-        $this->assertTrue(writer::has_any_data_in_any_context(), 'The Telegram data and the agents are exported');
+        $writer = writer::with_context(\context_user::instance($user->id));
+        $this->assertTrue($writer->has_any_data(), 'The Telegram data and the agents are exported');
+        $this->assertNotEmpty($writer->get_data([get_string('privacy_telegram', 'local_jedomi')]), 'Telegram data exported');
+        $this->assertNotEmpty($writer->get_data([get_string('privacy_agents', 'local_jedomi')]), 'Agents exported');
     }
 
     /**
      * MDL-INT-080: deleting the data of a user removes their Telegram link, conversation and limit records and their
      * agents, and keeps those of other users.
-     * [Pendiente:fail]
      */
     public function test_delete_removes_telegram_and_agent_data(): void {
         global $DB;

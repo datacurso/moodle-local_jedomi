@@ -56,8 +56,10 @@ if ($disabled !== null) {
     local_jedomi_extract_file_error(403, $disabled);
 }
 
-if (isguestuser() || !local_jedomi_is_role_allowed()) {
-    local_jedomi_extract_file_error(403, ['code' => 'forbidden', 'message' => get_string('nopermissions', 'error', '')]);
+// Same access rules as the panel: guests, an unavailable course or hidden roles are refused.
+$denied = local_jedomi_chat_access_error(optional_param('courseid', 0, PARAM_INT));
+if ($denied !== null) {
+    local_jedomi_extract_file_error(403, $denied);
 }
 
 $upload = $_FILES['file'] ?? null;

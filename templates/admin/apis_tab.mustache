@@ -32,6 +32,7 @@
     * data-region="local_jedomi/admin/apis/table-wrap" on the table wrapper, holding local_jedomi/admin/ws_table
       (select-all box, table body and row checkboxes)
     * data-region="local_jedomi/admin/apis/pagination" on the pagination
+    * data-form="local_jedomi/admin/apis/save" on the form that saves the list
 
     Context variables required for this template:
     * role string - Role key whose allowlist is shown
@@ -60,7 +61,7 @@
     }
 }}
 <div class="local_jedomi-admin local_jedomi-admin-apis_tab" data-region="local_jedomi/admin/apis" data-role="{{role}}">
-    <form method="post" action="{{actionurl}}">
+    <form method="post" action="{{actionurl}}" data-form="local_jedomi/admin/apis/save">
         <input type="hidden" name="sesskey" value="{{sesskey}}">
         <input type="hidden" name="action" value="saveallowlist">
         <input type="hidden" name="api_role" value="{{role}}">

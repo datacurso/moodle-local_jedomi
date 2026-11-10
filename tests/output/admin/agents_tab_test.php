@@ -87,7 +87,6 @@ final class agents_tab_test extends \advanced_testcase {
 
     /**
      * MDL-INT-027: the purge lets the administrator choose the role from a list and also purge the agents of a user.
-     * [Pendiente:fail] The role purge asks for the numeric identifier and the agents of a user cannot be purged.
      */
     public function test_purge_offers_every_context_and_a_list_of_roles(): void {
         $this->resetAfterTest();
@@ -116,10 +115,28 @@ final class agents_tab_test extends \advanced_testcase {
 
     /**
      * MDL-INT-028: the permission to manage agents gives real access to the Agents tab, or it is not granted.
-     * [Pendiente:skip]
      */
     public function test_agent_managers_can_open_the_agents_tab(): void {
-        $this->markTestSkipped('Pending fix: managers have the permission to manage agents but the tab requires the site '
-            . 'configuration permission.');
+        global $CFG;
+        $this->resetAfterTest();
+        $manager = $this->getDataGenerator()->create_user(['username' => 'agentmanager']);
+        $this->getDataGenerator()->role_assign('manager', $manager->id);
+        $this->assertTrue(has_capability('local/jedomi:manageagents', \context_system::instance(), $manager));
+        $this->assertFalse(has_capability('moodle/site:config', \context_system::instance(), $manager));
+
+        $runner = $CFG->dirroot . '/local/jedomi/tests/fixtures/page_runner.php';
+        $request = static fn(string $tab): string => (string) shell_exec(escapeshellarg(PHP_BINARY) . ' '
+            . escapeshellarg($runner) . ' agentmanager admin_settings.php ' . escapeshellarg(json_encode(['tab' => $tab]))
+            . ' 2>&1');
+
+        $agents = $request('agents');
+        $this->assertStringContainsString('data-region="local_jedomi/admin/agents/table-body"', $agents,
+            'A manager with the permission to manage agents opens the Agents tab');
+        $this->assertStringContainsString('data-form="local_jedomi/admin/agents/create"', $agents);
+
+        $general = $request('general');
+        $this->assertStringContainsString('data-region="local_jedomi/admin/agents/table-body"', $general,
+            'A manager who cannot configure the site only gets the Agents tab');
+        $this->assertStringNotContainsString('tab=general', $general, 'The other settings tabs are not offered');
     }
 }

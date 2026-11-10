@@ -20,12 +20,15 @@ use local_jedomi\ai\client;
 use local_jedomi\ai\fake_ai_client;
 use local_jedomi\ai\fake_curl;
 use local_jedomi\ai\testable_provider_api;
+use local_jedomi\telegram\api_client;
+use local_jedomi\telegram\fake_telegram_api_client;
 
 defined('MOODLE_INTERNAL') || die();
 
 global $CFG;
 require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/fake_ai_client.php');
 require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/testable_provider_api.php');
+require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/fake_telegram_api_client.php');
 
 /**
  * Tests for the scheduled agent runner over the AI client.
@@ -40,6 +43,7 @@ final class agent_runner_test extends \advanced_testcase {
     #[\Override]
     protected function tearDown(): void {
         client::set_instance_for_testing(null);
+        api_client::set_instance_for_testing(null);
         parent::tearDown();
     }
 
@@ -166,7 +170,9 @@ final class agent_runner_test extends \advanced_testcase {
     public function test_agent_with_the_provider_disabled_fails_with_the_provider_message(): void {
         global $DB;
         $this->resetAfterTest();
-        set_config('licensekey', 'test-license', 'aiprovider_datacurso');
+        // A forced setting, not set_config(): changing an existing row of config_plugins makes the reset after
+        // the test reload the whole table, which took about ten seconds per test.
+        $GLOBALS['CFG']->forced_plugin_settings['aiprovider_datacurso']['licensekey'] = 'test-license';
         \core\plugininfo\aiprovider::enable_plugin('datacurso', 0);
         $creator = $this->getDataGenerator()->create_user();
         $agent = $this->create_due_agent((int) $creator->id);
@@ -295,16 +301,44 @@ final class agent_runner_test extends \advanced_testcase {
     /**
      * MDL-UNIT-063: the Telegram message of an agent names the agent, the run mark and the date, and the deactivation
      * message names the agent and the reason.
-     * [Pendiente:skip]
-     *
-     * Not verifiable: the agent notifications create their own Telegram client instead of using
-     * api_client::instance(), so the Bot API cannot be replaced by the test double and nothing sent is observable.
      *
      * @return void
      */
     public function test_agent_telegram_messages_name_the_agent_the_result_and_the_date(): void {
-        $this->markTestSkipped('Pending fix: agent notifications bypass api_client::instance(), so the Telegram '
-            . 'messages cannot be captured without calling the real Bot API.');
+        global $DB;
+        $this->resetAfterTest();
+        set_config('telegram_enabled', 1, 'local_jedomi');
+        $telegram = new fake_telegram_api_client();
+        api_client::set_instance_for_testing($telegram);
+        $creator = $this->getDataGenerator()->create_user();
+        $suspended = $this->getDataGenerator()->create_user();
+        foreach ([$creator, $suspended] as $i => $user) {
+            $DB->insert_record('local_jedomi_telegram_links', (object) ['userid' => $user->id, 'chatid' => '77400010' . $i,
+                'username' => 'user' . $i, 'confirmed' => 1, 'timecreated' => time(), 'lastproactivesent' => 0]);
+        }
+        $this->create_due_agent((int) $creator->id);
+        $disabled = $this->create_due_agent((int) $suspended->id);
+        $DB->update_record('local_jedomi_agents', (object) ['id' => $disabled->id, 'name' => 'Risk watch']);
+        $DB->set_field('user', 'suspended', 1, ['id' => $suspended->id]);
+        $fake = new fake_ai_client();
+        $fake->enqueue_text('There are 3 users.');
+        client::set_instance_for_testing($fake);
+
+        $this->run_task();
+
+        $bychat = array_column($telegram->sent, 'text', 'chatid');
+        $this->assertArrayHasKey('774000100', $bychat, 'The result is delivered to the creator');
+        $result = $bychat['774000100'];
+        $this->assertStringContainsString('Daily report', $result);
+        $this->assertStringContainsString('✅', $result, 'The message marks a successful run');
+        $this->assertStringContainsString('There are 3 users.', $result);
+        $this->assertStringContainsString(userdate(time(), get_string('strftimedaydate', 'langconfig')), $result);
+
+        $this->assertArrayHasKey('774000101', $bychat, 'The deactivation is notified to the creator');
+        $notice = $bychat['774000101'];
+        $this->assertStringContainsString('Risk watch', $notice);
+        $this->assertStringContainsString(get_string('agent_disabled_notice', 'local_jedomi'), $notice);
+        $this->assertStringContainsString(get_string('agent_disabled_reason_creator_suspended', 'local_jedomi'), $notice);
     }
 
     /**
@@ -415,8 +449,6 @@ final class agent_runner_test extends \advanced_testcase {
 
     /**
      * MDL-INT-031: in one cycle each agent runs its tools with the permissions of its own creator, from the first run.
-     * [Pendiente:fail] On the first run the tools run without the creator (the database is denied) or with the permissions
-     * of the creator of another agent of the same cycle.
      */
     public function test_each_agent_runs_its_tools_with_the_permissions_of_its_creator(): void {
         global $DB;
@@ -445,7 +477,6 @@ final class agent_runner_test extends \advanced_testcase {
 
     /**
      * MDL-INT-032: the tools of an agent check the permissions of its creator, not of the user the task runs as.
-     * [Pendiente:fail] The administration and agent management tools check the user the task runs as (the administrator).
      */
     public function test_agent_tools_check_the_permissions_of_the_creator(): void {
         global $DB;
@@ -472,13 +503,49 @@ final class agent_runner_test extends \advanced_testcase {
         $this->assertSame('permission_denied', json_decode($results[0]['content'], true)['error'] ?? null,
             'An agent of a student must not run administration operations');
         $this->assertNotNull(\local_jedomi\agent\agent_manager::get_agent($foreign), 'An agent must not delete agents of others');
-        $this->assertSame(0, $DB->count_records('local_jedomi_agents', ['prompt' => 'Spy', 'userid' => (int) get_admin()->id]),
+        $spies = $DB->count_records_select('local_jedomi_agents', $DB->sql_compare_text('prompt') . ' = ? AND userid = ?',
+            ['Spy', (int) get_admin()->id]);
+        $this->assertSame(0, $spies,
             'An agent must not create agents on behalf of another user');
     }
 
     /**
+     * The instructions of a course agent, in the scheduled run and in the preview, name the real course (its id and
+     * name), not the id of the course context.
+     */
+    public function test_course_agent_instructions_name_the_real_course(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $teacher = $this->getDataGenerator()->create_user();
+        $course = $this->getDataGenerator()->create_course(['fullname' => 'Agent Course Marker']);
+        $this->getDataGenerator()->enrol_user($teacher->id, $course->id, 'editingteacher');
+        $contextid = (int) \context_course::instance($course->id)->id;
+        $this->assertNotSame((int) $course->id, $contextid, 'Control: the context id differs from the course id');
+        $agent = $this->create_due_agent((int) $teacher->id);
+        $DB->update_record('local_jedomi_agents', (object) ['id' => $agent->id, 'context_type' => 'course',
+            'context_id' => $contextid]);
+        $fake = new fake_ai_client();
+        $fake->enqueue_text('Report.');
+        $fake->enqueue_text('Preview.');
+        client::set_instance_for_testing($fake);
+
+        $this->run_task();
+        \local_jedomi\agent\preview_runner::run('Course report', (int) $teacher->id, 'course', $contextid);
+
+        $this->assertCount(2, $fake->calls);
+        foreach (['scheduled run' => 0, 'preview' => 1] as $label => $index) {
+            $instructions = (string) $fake->calls[$index]['messages'][0]['content'];
+            $this->assertStringContainsString(get_string('ctx_loc_course_id', 'local_jedomi', $course->id), $instructions,
+                "The {$label} names the course id");
+            $this->assertStringNotContainsString(get_string('ctx_loc_course_id', 'local_jedomi', $contextid), $instructions,
+                "The {$label} does not use the context id as course id");
+            $this->assertStringContainsString('Agent Course Marker', $instructions, "The {$label} names the course");
+        }
+    }
+
+    /**
      * MDL-INT-042: in the agents the database query never reveals credentials, keys or configuration.
-     * [Pendiente:fail] The agents only exclude the general configuration and the sessions.
      */
     public function test_agent_database_query_excludes_sensitive_data(): void {
         global $DB;
@@ -497,6 +564,63 @@ final class agent_runner_test extends \advanced_testcase {
             $result = \local_jedomi\agent\tool_executor::execute('execute_sql', json_encode(['query' => $sql]));
             $this->assertStringNotContainsString($secret, $result, "An agent must reject the query on {$label}");
         }
+    }
+
+    /**
+     * Run an agent of the administrator whose AI queries a named user and answers with the placeholders it received.
+     *
+     * @param string $level Anonymisation level of the Privacy tab.
+     * @return array{0: string, 1: string} Tool result the AI received and the result delivered by Telegram.
+     */
+    private function agent_tool_result_with_level(string $level): array {
+        global $DB;
+        $this->resetAfterTest();
+        set_config('anonymization_level', $level, 'local_jedomi');
+        set_config('telegram_enabled', 1, 'local_jedomi');
+        $telegram = new fake_telegram_api_client();
+        api_client::set_instance_for_testing($telegram);
+        $admin = get_admin();
+        $DB->insert_record('local_jedomi_telegram_links', (object) ['userid' => $admin->id, 'chatid' => '774000300',
+            'username' => 'admin', 'confirmed' => 1, 'timecreated' => time(), 'lastproactivesent' => 0]);
+        $named = $this->getDataGenerator()->create_user(['firstname' => 'Ximena', 'lastname' => 'Quintanilla',
+            'email' => 'ximena.quintanilla@example.com', 'idnumber' => 'ID-778899']);
+        $this->create_due_agent((int) $admin->id);
+        $fake = new fake_ai_client();
+        $fake->enqueue_tool_calls([['id' => 'call_1', 'type' => 'function', 'function' => ['name' => 'execute_sql',
+            'arguments' => json_encode(['query' => 'SELECT id, firstname, lastname, email, idnumber FROM {user} WHERE id = '
+                . (int) $named->id])]]]);
+        $fake->enqueue_text('The user is [person_1] [person_2].');
+        client::set_instance_for_testing($fake);
+
+        $this->run_task();
+
+        $this->assertCount(2, $fake->calls);
+        $tools = array_values(array_filter($fake->calls[1]['messages'], static fn(array $m): bool => $m['role'] === 'tool'));
+        $this->assertNotEmpty($tools);
+        $bychat = array_column($telegram->sent, 'text', 'chatid');
+        return [(string) end($tools)['content'], (string) ($bychat['774000300'] ?? '')];
+    }
+
+    /**
+     * MDL-CTR-007: in the agents, with the Basic level the AI receives names and e-mails returned by the tools
+     * replaced, and the result delivered to the creator has the real values back.
+     */
+    public function test_agent_basic_level_replaces_names_and_emails_sent_to_the_ai(): void {
+        [$result, $delivered] = $this->agent_tool_result_with_level('basic');
+
+        $this->assertStringNotContainsString('ximena.quintanilla@example.com', $result);
+        $this->assertStringNotContainsString('Quintanilla', $result);
+        $this->assertStringContainsString('Ximena Quintanilla', $delivered);
+    }
+
+    /**
+     * MDL-CTR-007: in the agents, with the Strict level identifiers are also replaced in what the AI receives.
+     */
+    public function test_agent_strict_level_also_replaces_identifiers_sent_to_the_ai(): void {
+        [$result] = $this->agent_tool_result_with_level('strict');
+
+        $this->assertStringNotContainsString('ximena.quintanilla@example.com', $result);
+        $this->assertStringNotContainsString('ID-778899', $result);
     }
 
     /**
@@ -544,9 +668,8 @@ final class agent_runner_test extends \advanced_testcase {
     /**
      * Run the due agent of a creator linked to Telegram and return what the technical log says about its delivery.
      *
-     * The agent notifications build their own Telegram client (see MDL-UNIT-063), so the Bot API cannot be replaced; with
-     * no bot token configured every delivery attempt ends in the log as "Telegram sent" or "Telegram send FAILED". The
-     * log lines are the only observable trace of an attempt to send to Telegram.
+     * No Telegram client is replaced here: with no bot token configured every delivery attempt ends in the log as
+     * "Telegram sent" or "Telegram send FAILED", so the log lines are the trace of an attempt to send to Telegram.
      *
      * @param \stdClass $creator Agent creator.
      * @return string[] Log lines about a Telegram delivery of the agent result.
@@ -572,7 +695,6 @@ final class agent_runner_test extends \advanced_testcase {
 
     /**
      * MDL-INT-074: with the Telegram integration disabled the result of an agent is not sent to its linked creator.
-     * [Pendiente:fail]
      */
     public function test_agent_result_is_not_sent_to_telegram_with_the_integration_disabled(): void {
         $this->resetAfterTest();
@@ -585,7 +707,6 @@ final class agent_runner_test extends \advanced_testcase {
 
     /**
      * MDL-INT-074: with the role of the creator blocked for Telegram the result of an agent is not sent to Telegram.
-     * [Pendiente:fail]
      */
     public function test_agent_result_is_not_sent_to_telegram_when_the_role_is_blocked(): void {
         global $DB;
@@ -624,7 +745,6 @@ final class agent_runner_test extends \advanced_testcase {
     /**
      * SYS-E2E-009: an agent enabled from the Agents tab waits for its scheduled hour, and its hour is the one of the time
      * zone of its creator. Behat: agents_tab.feature.
-     * [Pendiente:fail] On activation the agent is due at once (next minute) and the schedule is computed in UTC.
      */
     public function test_enabled_agent_runs_at_its_hour_in_the_creator_time_zone(): void {
         $this->resetAfterTest();

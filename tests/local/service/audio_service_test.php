@@ -47,7 +47,7 @@ final class audio_service_test extends \advanced_testcase {
         $this->resetAfterTest();
         $user = $this->getDataGenerator()->create_user();
         $this->setUser($user);
-        set_config('licensekey', 'test-license', 'aiprovider_datacurso');
+        $GLOBALS['CFG']->forced_plugin_settings['aiprovider_datacurso']['licensekey'] = 'test-license';
         \core\plugininfo\aiprovider::enable_plugin('datacurso', 1);
         set_config('audio_enabled', 1, 'local_jedomi');
         return (int) $user->id;

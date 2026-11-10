@@ -30,6 +30,57 @@ import * as Repository from 'local_jedomi/local/admin/repository';
 /** @type {number} Milliseconds to wait after typing before searching. */
 const SEARCH_DELAY = 350;
 
+/** @type {Map<string, boolean>} Unsaved marks by function name, kept while the page or the filter changes. */
+const changes = new Map();
+
+/**
+ * Remember the marks of some row checkboxes until the list is saved.
+ *
+ * @param {HTMLInputElement[]} boxes Row checkboxes.
+ */
+const rememberMarks = (boxes) => {
+    boxes.forEach((box) => changes.set(box.value, box.checked));
+};
+
+/**
+ * Show the unsaved marks on the rows of the table.
+ *
+ * @param {HTMLElement} root Tab root.
+ */
+const restoreMarks = (root) => {
+    root.querySelectorAll(Selectors.apis.wsCheck).forEach((box) => {
+        if (changes.has(box.value)) {
+            box.checked = changes.get(box.value);
+        }
+    });
+};
+
+/**
+ * Add to the form the unsaved marks of the functions that are not on the visible page, so saving keeps them.
+ *
+ * @param {HTMLElement} root Tab root.
+ * @param {HTMLFormElement} form Form that saves the list.
+ */
+const appendHiddenMarks = (root, form) => {
+    const visible = new Set([...root.querySelectorAll(Selectors.apis.wsCheck)].map((box) => box.value));
+    const addField = (name, value) => {
+        const field = document.createElement('input');
+        field.type = 'hidden';
+        field.name = name;
+        field.value = value;
+        form.appendChild(field);
+    };
+    changes.forEach((checked, name) => {
+        if (visible.has(name)) {
+            return;
+        }
+        addField(`ws_${root.dataset.role}_shown[]`, name);
+        if (checked) {
+            addField(`ws_${root.dataset.role}[]`, name);
+        }
+    });
+};
+
 /**
  * Current state of the table, read from the page.
  *
@@ -88,6 +139,7 @@ const reload = async(root, state) => {
             hasrows: data.hasrows,
         });
         Templates.replaceNodeContents(root.querySelector(Selectors.apis.tableWrap), table.html, table.js);
+        restoreMarks(root);
         const pagination = await Templates.renderForPromise('local_jedomi/admin/ws_pagination', data.pagination);
         Templates.replaceNodeContents(root.querySelector(Selectors.apis.pagination), pagination.html, pagination.js);
         root.querySelectorAll(Selectors.apis.count).forEach((counter) => {
@@ -146,9 +198,23 @@ const registerEventListeners = (root) => {
         }
         const checkall = e.target.closest(Selectors.apis.checkAll);
         if (checkall) {
-            root.querySelectorAll(Selectors.apis.wsCheck).forEach((box) => {
+            const boxes = [...root.querySelectorAll(Selectors.apis.wsCheck)];
+            boxes.forEach((box) => {
                 box.checked = checkall.checked;
             });
+            rememberMarks(boxes);
+            return;
+        }
+        const box = e.target.closest(Selectors.apis.wsCheck);
+        if (box) {
+            rememberMarks([box]);
+        }
+    });
+
+    root.addEventListener('submit', (e) => {
+        const form = e.target.closest(Selectors.apis.saveForm);
+        if (form) {
+            appendHiddenMarks(root, form);
         }
     });
 

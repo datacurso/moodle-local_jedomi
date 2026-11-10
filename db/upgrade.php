@@ -383,5 +383,14 @@ function xmldb_local_jedomi_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2026110301, 'local', 'jedomi');
     }
 
+    if ($oldversion < 2026110401) {
+        // Sites without an own permission token secret (or with the former built-in key) get a random one.
+        $sptsecret = (string) get_config('local_jedomi', 'spt_secret');
+        if ($sptsecret === '' || $sptsecret === 'jedomi-spt-secret') {
+            set_config('spt_secret', bin2hex(random_bytes(32)), 'local_jedomi');
+        }
+        upgrade_plugin_savepoint(true, 2026110401, 'local', 'jedomi');
+    }
+
     return true;
 }

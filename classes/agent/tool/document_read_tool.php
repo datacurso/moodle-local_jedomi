@@ -34,6 +34,8 @@ use local_jedomi\local\service\vision_service;
  * and diagrams are read by the vision model. Offered only while file and image processing is on.
  */
 class document_read_tool implements agent_tool {
+    use acts_for_user;
+
     /** @var string[] Roles that can read activity documents. */
     private const ALLOWED_ROLES = ['teacher', 'editingteacher', 'manager', 'admin'];
 
@@ -101,7 +103,7 @@ class document_read_tool implements agent_tool {
      * @return string JSON-encoded text with its pages, or an error message.
      */
     public function execute(\stdClass $params): string {
-        return self::read((int) ($params->cmid ?? 0), \local_jedomi_get_user_role(), (string) ($params->pages ?? ''));
+        return self::read((int) ($params->cmid ?? 0), $this->actor_role(), (string) ($params->pages ?? ''), $this->userid);
     }
 
     /**
@@ -112,9 +114,10 @@ class document_read_tool implements agent_tool {
      * @param int $cmid Course module id.
      * @param string $role Jedomi role of the user.
      * @param string $pages Pages to read, such as "1,3-5"; empty for the whole document.
+     * @param int|null $userid User whose permissions are checked (the agent creator); null for the session user.
      * @return string JSON-encoded {cmid, filename, pages_total, pages_vision, pages_skipped, text}, or {error}.
      */
-    public static function read(int $cmid, string $role, string $pages = ''): string {
+    public static function read(int $cmid, string $role, string $pages = '', ?int $userid = null): string {
         global $DB;
 
         if (!model_settings::is_files_enabled()) {
@@ -130,7 +133,13 @@ class document_read_tool implements agent_tool {
         try {
             $context = \context_module::instance($cmid);
             get_coursemodule_from_id('', $cmid, 0, false, MUST_EXIST);
-            require_capability('moodle/course:view', $context->get_course_context());
+            if ($userid === null) {
+                require_capability('moodle/course:view', $context->get_course_context());
+            } else if (!has_capability('moodle/course:view', $context->get_course_context(), $userid)
+                    && !has_capability('moodle/course:manageactivities', $context, $userid)) {
+                // An agent reads only the documents its creator can manage or view as a course manager.
+                return json_encode(['error' => 'permission_denied']);
+            }
 
             $sql = "SELECT id
                       FROM {files}

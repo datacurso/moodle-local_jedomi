@@ -29,6 +29,8 @@ namespace local_jedomi\agent\tool;
  * CLI registry, restricted to admin and manager roles.
  */
 class admin_execute_tool implements agent_tool {
+    use acts_for_user;
+
     /**
      * Get the tool name used in AI tool calls.
      *
@@ -74,17 +76,15 @@ class admin_execute_tool implements agent_tool {
      * @return string JSON-encoded execution result, or a permission_denied error.
      */
     public function execute(\stdClass $params): string {
-        global $USER;
-
-        $role = \local_jedomi_get_user_role();
+        $role = $this->actor_role();
         if (!in_array($role, ['admin', 'manager'], true)) {
             return json_encode(['error' => 'permission_denied']);
         }
 
         $name   = trim($params->name ?? '');
-        $params = $params->params ?? [];
+        $params = (array) ($params->params ?? []);
 
-        $result = \local_jedomi\schema\cli_registry::execute($name, $params, (int) ($USER->id ?? 0));
+        $result = \local_jedomi\schema\cli_registry::execute($name, $params, $this->actor_id());
         return json_encode($result);
     }
 }
