@@ -325,9 +325,12 @@ class student_data_service {
      * @return array
      */
     private static function upcoming_events(\stdClass $user, array $courseids): array {
+        global $CFG;
         if (empty($courseids)) {
             return [];
         }
+        // The calendar API uses CALENDAR_EVENT_TYPE_ACTION, which is defined in calendar/lib.php.
+        require_once($CFG->dirroot . '/calendar/lib.php');
         $events = [];
         $now = time();
         $actionevents = \core_calendar\local\api::get_action_events_by_timesort(
