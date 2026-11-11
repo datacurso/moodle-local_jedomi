@@ -31,6 +31,9 @@ use local_jedomi\ai\model_settings;
  * @covers     \local_jedomi\aiprovider\settings_extension
  */
 final class settings_extension_test extends \advanced_testcase {
+    /** @var string Second text-to-speech model of the catalogue. */
+    private const INWORLD = 'jedomi/inworld-ai/inworld-tts-1.5-mini';
+
     #[\Override]
     protected function setUp(): void {
         parent::setUp();
@@ -54,6 +57,10 @@ final class settings_extension_test extends \advanced_testcase {
             'vision_model' => model_settings::DEFAULT_VISION_MODEL,
             'audio_enabled' => 0,
             'audio_model' => model_settings::DEFAULT_AUDIO_MODEL,
+            'voice_enabled' => 0,
+            'speech_model' => model_settings::DEFAULT_SPEECH_MODEL,
+            model_settings::voice_field(model_settings::DEFAULT_SPEECH_MODEL) => 'Vivian',
+            model_settings::voice_field(self::INWORLD) => 'Diego',
             'max_tokens' => '8000',
         ], $overrides);
     }
@@ -73,6 +80,7 @@ final class settings_extension_test extends \advanced_testcase {
     /**
      * MDL-INT-005: the provider form shows the Jedomi fields.
      * M6: the provider form shows "Enabled", the chat model, both switches with their models and max tokens.
+     * V5: the voice conversation switch, its model and the voice of each model come after the audio model.
      *
      * @return void
      */
@@ -87,7 +95,10 @@ final class settings_extension_test extends \advanced_testcase {
         $this->assertStringContainsString('name="model"', $html);
         $this->assertStringNotContainsString('docservice_url', $html);
         $order = [];
-        foreach (['enabled', 'model', 'files_enabled', 'vision_model', 'audio_enabled', 'audio_model', 'max_tokens'] as $name) {
+        $fields = ['enabled', 'model', 'files_enabled', 'vision_model', 'audio_enabled', 'audio_model', 'voice_enabled',
+            'speech_model', model_settings::voice_field(model_settings::DEFAULT_SPEECH_MODEL),
+            model_settings::voice_field(self::INWORLD), 'max_tokens'];
+        foreach ($fields as $name) {
             $position = strpos($html, 'name="' . $name . '"');
             $this->assertNotFalse($position, "Field {$name} must be rendered");
             $order[] = $position;
@@ -262,6 +273,9 @@ final class settings_extension_test extends \advanced_testcase {
         set_config('vision_model', 'jedomi/zai-org/GLM-5.3-Flash', 'local_jedomi');
         set_config('audio_enabled', 1, 'local_jedomi');
         set_config('audio_model', 'jedomi/mistralai/Voxtral-Mini-3B-2507', 'local_jedomi');
+        set_config('voice_enabled', 1, 'local_jedomi');
+        set_config('speech_model', self::INWORLD, 'local_jedomi');
+        set_config('speech_voice', 'Rafael', 'local_jedomi');
         set_config('max_tokens', 9000, 'local_jedomi');
         set_config('plugin_enabled_local_jedomi', '0', 'aiprovider_datacurso');
 
@@ -271,6 +285,10 @@ final class settings_extension_test extends \advanced_testcase {
             'vision_model' => 'jedomi/zai-org/GLM-5.3-Flash',
             'audio_enabled' => 1,
             'audio_model' => 'jedomi/mistralai/Voxtral-Mini-3B-2507',
+            'voice_enabled' => 1,
+            'speech_model' => self::INWORLD,
+            model_settings::voice_field(model_settings::DEFAULT_SPEECH_MODEL) => 'Vivian',
+            model_settings::voice_field(self::INWORLD) => 'Rafael',
             'max_tokens' => 9000,
         ], (new settings_extension())->get_data());
 
@@ -294,6 +312,9 @@ final class settings_extension_test extends \advanced_testcase {
         unset_config('audio_enabled', 'local_jedomi');
         unset_config('vision_model', 'local_jedomi');
         set_config('audio_model', 'jedomi/acme/unknown-model', 'local_jedomi');
+        unset_config('voice_enabled', 'local_jedomi');
+        set_config('speech_model', 'jedomi/acme/unknown-model', 'local_jedomi');
+        set_config('speech_voice', 'Nobody', 'local_jedomi');
 
         $this->assertSame([
             'model' => model_settings::DEFAULT_MODEL,
@@ -301,6 +322,10 @@ final class settings_extension_test extends \advanced_testcase {
             'vision_model' => model_settings::DEFAULT_VISION_MODEL,
             'audio_enabled' => 0,
             'audio_model' => model_settings::DEFAULT_AUDIO_MODEL,
+            'voice_enabled' => 0,
+            'speech_model' => model_settings::DEFAULT_SPEECH_MODEL,
+            model_settings::voice_field(model_settings::DEFAULT_SPEECH_MODEL) => 'Vivian',
+            model_settings::voice_field(self::INWORLD) => 'Diego',
             'max_tokens' => model_settings::DEFAULT_MAX_TOKENS,
         ], (new settings_extension())->get_data());
     }
@@ -371,6 +396,11 @@ final class settings_extension_test extends \advanced_testcase {
         $hide = \MoodleQuickForm::DEP_HIDE;
         $this->assertSame(['vision_model'], $dependencies['files_enabled']['notchecked']['1'][$hide]);
         $this->assertSame(['audio_model'], $dependencies['audio_enabled']['notchecked']['1'][$hide]);
+        $this->assertSame(
+            ['speech_model', model_settings::voice_field(model_settings::DEFAULT_SPEECH_MODEL),
+                model_settings::voice_field(self::INWORLD)],
+            $dependencies['voice_enabled']['notchecked']['1'][$hide]
+        );
         $this->assertArrayNotHasKey('model', $dependencies, 'The chat model is never hidden');
         $this->assertArrayNotHasKey('max_tokens', $dependencies, 'Max tokens is never hidden');
     }
@@ -434,6 +464,7 @@ final class settings_extension_test extends \advanced_testcase {
         unset_config('plugin_enabled_local_jedomi', 'aiprovider_datacurso');
         unset_config('files_enabled', 'local_jedomi');
         unset_config('audio_enabled', 'local_jedomi');
+        unset_config('voice_enabled', 'local_jedomi');
 
         $current = plugin_settings_form::current_data('local_jedomi');
 
@@ -441,5 +472,175 @@ final class settings_extension_test extends \advanced_testcase {
         $this->assertSame(1, $current['enabled']);
         $this->assertSame(1, $current['files_enabled']);
         $this->assertSame(0, $current['audio_enabled']);
+        $this->assertSame(0, $current['voice_enabled']);
+    }
+
+    /**
+     * V5: the voice conversation switch shows its label and its action, and each voice selector lists only the voices of
+     * its model, without an empty option, and is shown only while that model is chosen.
+     *
+     * @return void
+     */
+    public function test_voice_fields_list_the_voices_of_each_model(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+
+        $mform = new \MoodleQuickForm('jedomitest', 'post', '');
+        (new settings_extension())->add_fields($mform);
+
+        $switch = $mform->getElement('voice_enabled');
+        $this->assertSame(get_string('voice_conversation', 'local_jedomi'), $switch->getLabel());
+        $this->assertSame(get_string('voice_enabled', 'local_jedomi'), $switch->getText());
+
+        $speech = $mform->getElement('speech_model');
+        $this->assertSame(
+            array_keys(model_settings::get_available_models(model_settings::CAPABILITY_SPEECH)),
+            array_map(static fn(array $option): string => $option['attr']['value'], $speech->_options)
+        );
+
+        [, $dependencies] = $mform->getLockOptionObject();
+        $hide = \MoodleQuickForm::DEP_HIDE;
+        foreach ([model_settings::DEFAULT_SPEECH_MODEL, self::INWORLD] as $model) {
+            $field = model_settings::voice_field($model);
+            $this->assertMatchesRegularExpression('/^speech_voice_[a-z0-9_]+$/', $field);
+            $select = $mform->getElement($field);
+            $values = array_map(static fn(array $option): string => $option['attr']['value'], $select->_options);
+            $this->assertSame(model_settings::get_voices($model), $values, "{$field} lists the voices of its model");
+            $this->assertSame(model_settings::get_default_voice($model), $mform->_defaultValues[$field] ?? null);
+            // Hidden while another model is chosen.
+            $others = array_diff(array_keys(model_settings::get_available_models(model_settings::CAPABILITY_SPEECH)), [$model]);
+            foreach ($others as $other) {
+                $this->assertNotContains($field, $dependencies['speech_model']['neq'][$other][$hide] ?? []);
+            }
+            $this->assertContains($field, $dependencies['speech_model']['neq'][$model][$hide]);
+        }
+    }
+
+    /**
+     * V5: the voice selector of the chosen model shows the saved voice, and the one of the other model its default voice.
+     *
+     * @return void
+     */
+    public function test_voice_selectors_show_the_saved_and_the_default_voices(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        set_config('speech_model', self::INWORLD, 'local_jedomi');
+        set_config('speech_voice', 'Miguel', 'local_jedomi');
+
+        $form = new plugin_settings_form(null, ['component' => 'local_jedomi']);
+        $form->set_data(plugin_settings_form::current_data('local_jedomi'));
+        $html = $form->render();
+
+        foreach ([self::INWORLD => 'Miguel', model_settings::DEFAULT_SPEECH_MODEL => 'Vivian'] as $model => $voice) {
+            $name = model_settings::voice_field($model);
+            $this->assertSame(1, preg_match('/<select[^>]*name="' . $name . '"[^>]*>(.*?)<\/select>/s', $html, $match));
+            $this->assertStringNotContainsString('value=""', $match[1], "{$name} must not have an empty option");
+            $this->assertMatchesRegularExpression('/value="' . $voice . '"\s+selected/', $match[1]);
+        }
+    }
+
+    /**
+     * V5: valid voice values pass, also with the second model and its voices.
+     *
+     * @return void
+     */
+    public function test_validation_accepts_a_voice_of_the_chosen_model(): void {
+        $extension = new settings_extension();
+
+        $this->assertSame([], $extension->validate($this->valid_data(['audio_enabled' => 1, 'voice_enabled' => 1])));
+        $this->assertSame([], $extension->validate($this->valid_data([
+            'audio_enabled' => 1, 'voice_enabled' => 1, 'speech_model' => self::INWORLD,
+            model_settings::voice_field(self::INWORLD) => 'Rafael',
+        ])));
+        // A switch that is off does not need a valid model or voice.
+        $this->assertSame([], $extension->validate($this->valid_data([
+            'voice_enabled' => 0, 'speech_model' => '', model_settings::voice_field(self::INWORLD) => 'Nobody',
+        ])));
+    }
+
+    /**
+     * V5: the voice conversation cannot be turned on while audio processing is off.
+     *
+     * @return void
+     */
+    public function test_validation_rejects_voice_without_audio(): void {
+        $errors = (new settings_extension())->validate($this->valid_data(['audio_enabled' => 0, 'voice_enabled' => 1]));
+
+        $this->assertSame(['voice_enabled' => get_string('error_voice_requires_audio', 'local_jedomi')], $errors);
+    }
+
+    /**
+     * V5: with the voice conversation on, a model outside the speech list or a voice outside the list of the chosen
+     * model is rejected.
+     *
+     * @dataProvider bad_voice_provider
+     * @param array $overrides Submitted values.
+     * @param string $field Field with the error.
+     * @param string $error String of the error.
+     * @return void
+     */
+    public function test_validation_rejects_bad_speech_model_or_voice(array $overrides, string $field, string $error): void {
+        $data = $this->valid_data(array_merge(['audio_enabled' => 1, 'voice_enabled' => 1], $overrides));
+
+        $errors = (new settings_extension())->validate($data);
+
+        $this->assertSame([$field => get_string($error, 'local_jedomi')], $errors);
+    }
+
+    /**
+     * Speech models and voices that must be rejected when the voice conversation is on.
+     *
+     * @return array
+     */
+    public static function bad_voice_provider(): array {
+        $qwen = model_settings::voice_field(model_settings::DEFAULT_SPEECH_MODEL);
+        $inworld = model_settings::voice_field(self::INWORLD);
+        return [
+            'empty model' => [['speech_model' => ''], 'speech_model', 'error_invalid_model'],
+            'chat model' => [['speech_model' => model_settings::DEFAULT_MODEL], 'speech_model', 'error_invalid_model'],
+            'audio model' => [['speech_model' => model_settings::DEFAULT_AUDIO_MODEL], 'speech_model', 'error_invalid_model'],
+            'voice of another model' => [[$qwen => 'Diego'], $qwen, 'error_invalid_voice'],
+            'unknown voice' => [['speech_model' => self::INWORLD, $inworld => 'Valentina'], $inworld, 'error_invalid_voice'],
+            'empty voice' => [[$qwen => ''], $qwen, 'error_invalid_voice'],
+            'voice in another case' => [[$qwen => 'vivian'], $qwen, 'error_invalid_voice'],
+        ];
+    }
+
+    /**
+     * V5: saving stores the switch, the model and the voice chosen for that model in a single setting.
+     *
+     * @return void
+     */
+    public function test_save_stores_the_voice_of_the_chosen_model(): void {
+        $this->resetAfterTest();
+
+        (new settings_extension())->save((object) $this->valid_data([
+            'audio_enabled' => 1, 'voice_enabled' => 1, 'speech_model' => self::INWORLD,
+            model_settings::voice_field(model_settings::DEFAULT_SPEECH_MODEL) => 'Serena',
+            model_settings::voice_field(self::INWORLD) => 'Lupita',
+        ]));
+
+        $this->assertSame('1', get_config('local_jedomi', 'voice_enabled'));
+        $this->assertSame(self::INWORLD, get_config('local_jedomi', 'speech_model'));
+        $this->assertSame('Lupita', get_config('local_jedomi', 'speech_voice'));
+        $this->assertTrue(model_settings::is_voice_enabled());
+    }
+
+    /**
+     * V5: with the switch off, an unlisted model or voice is saved as the default one (unlisted → default).
+     *
+     * @return void
+     */
+    public function test_save_with_voice_off_keeps_a_valid_model_and_voice(): void {
+        $this->resetAfterTest();
+
+        (new settings_extension())->save((object) $this->valid_data([
+            'voice_enabled' => 0, 'speech_model' => 'jedomi/acme/x',
+            model_settings::voice_field(model_settings::DEFAULT_SPEECH_MODEL) => 'Diego',
+        ]));
+
+        $this->assertSame('0', get_config('local_jedomi', 'voice_enabled'));
+        $this->assertSame(model_settings::DEFAULT_SPEECH_MODEL, get_config('local_jedomi', 'speech_model'));
+        $this->assertSame('Vivian', get_config('local_jedomi', 'speech_voice'));
     }
 }

@@ -111,6 +111,44 @@ final class sidebar_config_test extends \advanced_testcase {
     }
 
     /**
+     * V9: the sidebar receives the voice conversation, its endpoint and its strings only while it is enabled, and never
+     * while audio processing is off.
+     *
+     * @return void
+     */
+    public function test_sidebar_config_has_the_voice_conversation_only_when_enabled(): void {
+        global $PAGE;
+        $this->resetAfterTest();
+        $this->setUser($this->getDataGenerator()->create_user());
+        $PAGE->set_url('/local/jedomi/ajax/sidebar_config.php');
+        unset_config('voice_enabled', 'local_jedomi');
+
+        $config = local_jedomi_get_sidebar_config();
+        $this->assertFalse($config['voice_enabled']);
+        $this->assertArrayNotHasKey('speech_url', $config);
+
+        set_config('audio_enabled', 1, 'local_jedomi');
+        set_config('voice_enabled', 1, 'local_jedomi');
+        $config = local_jedomi_get_sidebar_config();
+        $this->assertTrue($config['voice_enabled']);
+        $this->assertStringEndsWith('/local/jedomi/speech.php', $config['speech_url']);
+        foreach (
+            ['voice_mode', 'voice_mode_exit', 'voice_mode_listening', 'voice_mode_thinking', 'voice_mode_speaking',
+                'voice_mode_paused', 'voice_mode_confirm_notice', 'voice_mode_transcription_error',
+                'voice_mode_speech_error'] as $key
+        ) {
+            $this->assertSame(get_string($key, 'local_jedomi'), $config['strings'][$key] ?? null, $key);
+        }
+        $encoded = json_encode($config, JSON_UNESCAPED_SLASHES);
+        $this->assertStringNotContainsString('jedomi/Qwen', $encoded, 'The model is chosen on the server');
+
+        set_config('audio_enabled', 0, 'local_jedomi');
+        $config = local_jedomi_get_sidebar_config();
+        $this->assertFalse($config['voice_enabled']);
+        $this->assertArrayNotHasKey('speech_url', $config);
+    }
+
+    /**
      * MDL-UNIT-018: quick actions use the real course of the page and appear in every planned context.
      * [Pendiente:skip]
      */

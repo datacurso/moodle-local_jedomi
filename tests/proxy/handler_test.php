@@ -518,6 +518,44 @@ final class handler_test extends \advanced_testcase {
     }
 
     /**
+     * Run a web chat request as the admin and return the system message the AI received.
+     *
+     * @param array $input Extra request fields.
+     * @return string
+     */
+    private function system_message_for(array $input): string {
+        $fake = new fake_ai_client();
+        $fake->enqueue_text('ok');
+        client::set_instance_for_testing($fake);
+        $input += ['messages' => [['role' => 'user', 'content' => 'What is due this week?']], 'context' => []];
+        $this->capture(fn() => handler::run_from_request($input, 'admin', ['course_id' => 0], (int) get_admin()->id));
+        return $fake->calls[0]['messages'][0]['content'];
+    }
+
+    /**
+     * V8: a request of the voice conversation adds the spoken answer instructions, only while the voice conversation is
+     * enabled; the answer streamed to the chat is the full text.
+     */
+    public function test_voice_mode_adds_the_spoken_answer_instructions(): void {
+        $this->require_provider();
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        set_config('audio_enabled', 1, 'local_jedomi');
+        set_config('voice_enabled', 1, 'local_jedomi');
+
+        $this->assertStringContainsString('VOICE CONVERSATION:', $this->system_message_for(['voice_mode' => true]));
+        $this->assertStringNotContainsString('VOICE CONVERSATION:', $this->system_message_for([]));
+        $this->assertStringNotContainsString('VOICE CONVERSATION:', $this->system_message_for(['voice_mode' => false]));
+
+        set_config('voice_enabled', 0, 'local_jedomi');
+        $this->assertStringNotContainsString(
+            'VOICE CONVERSATION:',
+            $this->system_message_for(['voice_mode' => true]),
+            'The browser cannot turn on the voice mode while the voice conversation is disabled'
+        );
+    }
+
+    /**
      * MDL-CTR-004: each web chat query sends instructions with the site name and address, the Moodle version, the
      * database type, the role, the page title and address and the location, followed by the last messages with the text
      * of the attachments.

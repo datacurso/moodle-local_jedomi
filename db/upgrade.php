@@ -400,5 +400,12 @@ function xmldb_local_jedomi_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2026111000, 'local', 'jedomi');
     }
 
+    if ($oldversion < 2026111100) {
+        // The voice conversation is new and has its own cost: it stays off until an administrator turns it on,
+        // with the default speech model and voice already chosen.
+        \local_jedomi\ai\model_settings::apply_voice_defaults();
+        upgrade_plugin_savepoint(true, 2026111100, 'local', 'jedomi');
+    }
+
     return true;
 }

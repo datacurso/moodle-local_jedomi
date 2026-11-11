@@ -86,6 +86,26 @@ final class audio_service_test extends \advanced_testcase {
     }
 
     /**
+     * The language of the user's profile goes with the audio, as a two-letter code, so the model does not guess it.
+     *
+     * @covers \local_jedomi\local\service\audio_service::language_code
+     */
+    public function test_audio_is_sent_with_the_language_of_the_user(): void {
+        global $DB;
+        $userid = $this->setup_user();
+        $DB->set_field('user', 'lang', 'es_mx', ['id' => $userid]);
+        $curl = new fake_curl();
+        $curl->enqueue(json_encode(['text' => 'Hola', 'model' => model_settings::DEFAULT_AUDIO_MODEL, 'duration_seconds' => 1]));
+
+        audio_service::transcribe_upload($userid, $this->upload(), 'voice.ogg', new testable_provider_api(30, $curl));
+
+        $this->assertSame('es', $curl->calls[0]['params']['language']);
+        $this->assertSame('es', audio_service::language_code($userid));
+        // Without a user the current language is used, still as two letters (or nothing).
+        $this->assertMatchesRegularExpression('/^([a-z]{2})?$/', audio_service::language_code(0));
+    }
+
+    /**
      * MDL-INT-006: with audio processing off audio is rejected without calling the AI.
      * M9: with audio processing off nothing is sent and the "not enabled" message is returned.
      * MDL-INT-053: with audio processing off the audio is rejected without calling the AI service.

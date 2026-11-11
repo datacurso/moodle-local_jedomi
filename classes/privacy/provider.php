@@ -115,6 +115,11 @@ class provider implements
             'messages' => 'privacy:metadata:jedomi_ai_service:messages',
         ], 'privacy:metadata:jedomi_ai_service');
 
+        $collection->add_external_location_link('jedomi_speech_service', [
+            'userid' => 'privacy:metadata:jedomi_speech_service:userid',
+            'text' => 'privacy:metadata:jedomi_speech_service:text',
+        ], 'privacy:metadata:jedomi_speech_service');
+
         $collection->add_external_location_link('telegram', [
             'chatid' => 'privacy:metadata:telegram:chatid',
             'messages' => 'privacy:metadata:telegram:messages',

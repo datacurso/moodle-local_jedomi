@@ -163,6 +163,35 @@ final class sidebar_templates_test extends \advanced_testcase {
     }
 
     /**
+     * V9, V10: the voice conversation button and view are in the panel only while the voice conversation is enabled; the
+     * view has the state, the exit button and the regions the module updates.
+     *
+     * @return void
+     */
+    public function test_voice_conversation_button_and_view_follow_the_switch(): void {
+        $this->resetAfterTest();
+        $base = ['greeting' => 'Hi', 'files_enabled' => true, 'audio_enabled' => true, 'attach_enabled' => true];
+        $strings = ['voice_mode' => 'Voice <conversation>', 'voice_mode_exit' => 'End voice conversation',
+            'voice_mode_listening' => 'Listening...'];
+
+        $html = $this->render('sidebar', $base + ['voice_enabled' => true, 'strings' => $strings]);
+        $this->assertStringContainsString('id="jedomi-voice-mode-btn"', $html);
+        $this->assertStringContainsString('aria-label="Voice &lt;conversation&gt;"', $html);
+        $this->assertStringContainsString('id="jedomi-voice-mode"', $html);
+        $this->assertStringContainsString('data-action="local_jedomi/sidebar/voice-mode-exit"', $html);
+        $this->assertStringContainsString('aria-label="End voice conversation"', $html);
+        $this->assertStringContainsString('data-region="local_jedomi/sidebar/voice-mode-state"', $html);
+        $this->assertStringContainsString('data-region="local_jedomi/sidebar/voice-mode-level"', $html);
+        $this->assertMatchesRegularExpression('/id="jedomi-voice-mode"[^>]*jedomi-hidden/', $html);
+        $this->assertStringNotContainsString('onclick', $html);
+        $this->assertStringNotContainsString('style=', $html);
+
+        $html = $this->render('sidebar', $base + ['voice_enabled' => false, 'strings' => $strings]);
+        $this->assertStringNotContainsString('id="jedomi-voice-mode-btn"', $html);
+        $this->assertStringNotContainsString('id="jedomi-voice-mode"', $html);
+    }
+
+    /**
      * MDL-UNIT-069: while recording, the voice bar shows Cancel, the elapsed time, the recording notice and Stop.
      * While recording, the voice bar has the elapsed time and labelled cancel and stop buttons, and no send button.
      *

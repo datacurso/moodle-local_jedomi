@@ -55,4 +55,13 @@ $definitions = [
         'simpledata' => true,
         'ttl'        => 86400, // 24 hours
     ],
+
+    // Requests of each user to read answers aloud in the current minute (voice conversation rate limit).
+    // MODE_APPLICATION so the limit holds across sessions and browser tabs of the same user.
+    'speech_rate' => [
+        'mode'       => cache_store::MODE_APPLICATION,
+        'simplekeys' => true,
+        'simpledata' => true,
+        'ttl'        => 120,
+    ],
 ];

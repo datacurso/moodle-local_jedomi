@@ -9,7 +9,7 @@ This plugin is part of the **Datacurso AI Plugin Suite**.
 ## Pre-requisites
 
 1. Moodle 4.5 or later.
-2. The Moodle AI provider **Datacurso AI Provider** (`aiprovider_datacurso`) 2026110400 (release 1.7.0) or later, installed **before** Jedomi. Download it for free from [https://moodle.org/plugins/aiprovider_datacurso/versions](https://moodle.org/plugins/aiprovider_datacurso/versions).
+2. The Moodle AI provider **Datacurso AI Provider** (`aiprovider_datacurso`) 2026111100 (release 1.8.0) or later, installed **before** Jedomi. Download it for free from [https://moodle.org/plugins/aiprovider_datacurso/versions](https://moodle.org/plugins/aiprovider_datacurso/versions).
 3. A valid license key configured in the Datacurso AI Provider settings, as documented at [https://docs.datacurso.com/docs/plugins/moodle-aiprovider_datacurso/getting-license-keys](https://docs.datacurso.com/docs/plugins/moodle-aiprovider_datacurso/getting-license-keys).
 4. Moodle cron running, for the scheduled agents and the cleanup tasks.
 5. Optional: a Telegram bot created with @BotFather and a public HTTPS address for the site, only if you want to use Jedomi from Telegram.

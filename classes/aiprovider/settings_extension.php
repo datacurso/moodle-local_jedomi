@@ -23,9 +23,15 @@ use local_jedomi\ai\model_settings;
  * Jedomi AI service fields on its settings page in the Datacurso AI provider.
  *
  * Adds the chat model, the file and image switch with its vision model, the audio switch with its
- * audio model, and the max tokens. The values are stored in the local_jedomi config. The vision and
- * audio selectors never show an empty option: they show the saved model, or the default one, even
- * while their switch is off, so turning a switch on can be saved without touching its selector.
+ * audio model, the voice conversation switch with its speech model and voice, and the max tokens. The
+ * values are stored in the local_jedomi config. The model and voice selectors never show an empty
+ * option: they show the saved value, or the default one, even while their switch is off, so turning a
+ * switch on can be saved without touching its selectors.
+ *
+ * The voices depend on the speech model, so there is one voice selector per speech model, shown only
+ * while that model is chosen (hideIf on the model selector). Moodle forms then show and hide them
+ * without any JavaScript of the plugin, every selector only lists voices its model accepts, and the
+ * one of the chosen model is saved in the single speech_voice setting.
  *
  * @package    local_jedomi
  * @copyright  2026 Jedomi Project
@@ -70,6 +76,8 @@ class settings_extension implements plugin_settings_extension {
             $mform->hideIf($field, $switch, 'notchecked');
         }
 
+        self::add_voice_fields($mform);
+
         $mform->addElement('text', 'max_tokens', get_string('max_tokens', self::COMPONENT), ['size' => 10]);
         $mform->setType('max_tokens', PARAM_RAW_TRIMMED);
         $mform->addHelpButton('max_tokens', 'max_tokens', self::COMPONENT);
@@ -78,23 +86,36 @@ class settings_extension implements plugin_settings_extension {
     /**
      * Values Jedomi uses now, to prefill the form.
      *
-     * The vision and audio models are the ones Jedomi would use, also while their switch is off.
+     * The vision, audio and speech models are the ones Jedomi would use, also while their switch is off.
+     * The voice selector of the speech model in use shows its voice; the others show their default voice.
      *
      * @return array<string, mixed>
      */
     public function get_data(): array {
+        $speechmodel = model_settings::get_speech_model();
+        $voices = [];
+        foreach (array_keys(model_settings::get_available_models(model_settings::CAPABILITY_SPEECH)) as $model) {
+            $voices[model_settings::voice_field($model)] = $model === $speechmodel
+                ? model_settings::get_speech_voice()
+                : model_settings::get_default_voice($model);
+        }
+
         return [
             'model' => model_settings::get_model(),
             'files_enabled' => (int) model_settings::is_files_enabled(),
             'vision_model' => model_settings::get_vision_model(),
             'audio_enabled' => (int) model_settings::is_audio_enabled(),
             'audio_model' => model_settings::get_audio_model(),
+            'voice_enabled' => (int) !empty(get_config(self::COMPONENT, 'voice_enabled')),
+            'speech_model' => $speechmodel,
+        ] + $voices + [
             'max_tokens' => model_settings::get_max_tokens(),
         ];
     }
 
     /**
-     * Validate the chat model, the model of each switch that is on and the max tokens.
+     * Validate the chat model, the model of each switch that is on, the voice of the chosen speech model
+     * and the max tokens. The voice conversation needs audio processing, which transcribes the user.
      *
      * @param array $data Submitted form data.
      * @return array<string, string> Error messages keyed by element name; empty when valid.
@@ -113,6 +134,8 @@ class settings_extension implements plugin_settings_extension {
             }
         }
 
+        $errors += self::validate_voice($data);
+
         if (!preg_match('/^-?\d+$/', trim((string) ($data['max_tokens'] ?? '')))) {
             $errors['max_tokens'] = get_string('error_invalid_max_tokens', self::COMPONENT);
         }
@@ -123,8 +146,8 @@ class settings_extension implements plugin_settings_extension {
     /**
      * Save the values in the local_jedomi config, clamping the max tokens to the accepted range.
      *
-     * A vision or audio model that is not in its list (possible only while its switch is off) is
-     * saved as the default one. A changed value is written to the config log.
+     * A vision, audio or speech model, or a voice, that is not in its list (possible only while its
+     * switch is off) is saved as the default one. A changed value is written to the config log.
      *
      * @param \stdClass $data Validated form data.
      * @return void
@@ -142,6 +165,19 @@ class settings_extension implements plugin_settings_extension {
             self::save_value($switch, empty($data->{$switch}) ? '0' : '1');
             self::save_value($field, $model);
         }
+
+        $speechmodel = trim((string) ($data->speech_model ?? ''));
+        if (!model_settings::is_available($speechmodel, model_settings::CAPABILITY_SPEECH)) {
+            $speechmodel = model_settings::DEFAULT_SPEECH_MODEL;
+        }
+        $voice = trim((string) ($data->{model_settings::voice_field($speechmodel)} ?? ''));
+        if (!in_array($voice, model_settings::get_voices($speechmodel), true)) {
+            $voice = model_settings::get_default_voice($speechmodel);
+        }
+        self::save_value('voice_enabled', empty($data->voice_enabled) ? '0' : '1');
+        self::save_value('speech_model', $speechmodel);
+        self::save_value('speech_voice', $voice);
+
         self::save_value('max_tokens', (string) $maxtokens);
     }
 
@@ -160,6 +196,67 @@ class settings_extension implements plugin_settings_extension {
         $mform->setDefault($field, model_settings::get_default_model($capability));
         $mform->addHelpButton($field, $field, self::COMPONENT);
         return $field;
+    }
+
+    /**
+     * Add the voice conversation switch, its speech model and one voice selector per speech model.
+     *
+     * Each voice selector lists only the voices of its model, starts on the default voice and is hidden
+     * while the switch is off or another speech model is chosen.
+     *
+     * @param \MoodleQuickForm $mform Form to add the fields to.
+     * @return void
+     */
+    private static function add_voice_fields(\MoodleQuickForm $mform): void {
+        $mform->addElement(
+            'advcheckbox',
+            'voice_enabled',
+            get_string('voice_conversation', self::COMPONENT),
+            get_string('voice_enabled', self::COMPONENT)
+        );
+        $mform->setType('voice_enabled', PARAM_BOOL);
+        $mform->addHelpButton('voice_enabled', 'voice_enabled', self::COMPONENT);
+
+        $modelfield = self::add_model_select($mform, model_settings::CAPABILITY_SPEECH);
+        $mform->hideIf($modelfield, 'voice_enabled', 'notchecked');
+
+        foreach (array_keys(model_settings::get_available_models(model_settings::CAPABILITY_SPEECH)) as $model) {
+            $field = model_settings::voice_field($model);
+            $voices = [];
+            foreach (model_settings::get_voices($model) as $voice) {
+                $voices[$voice] = str_replace('_', ' ', $voice);
+            }
+            $mform->addElement('select', $field, get_string('speech_voice', self::COMPONENT), $voices);
+            $mform->setType($field, PARAM_RAW_TRIMMED);
+            $mform->setDefault($field, model_settings::get_default_voice($model));
+            $mform->addHelpButton($field, 'speech_voice', self::COMPONENT);
+            $mform->hideIf($field, 'voice_enabled', 'notchecked');
+            $mform->hideIf($field, $modelfield, 'neq', $model);
+        }
+    }
+
+    /**
+     * Validate the voice conversation: it needs audio processing, a listed speech model and a voice of that model.
+     *
+     * @param array $data Submitted form data.
+     * @return array<string, string> Error messages keyed by element name; empty when valid or switched off.
+     */
+    private static function validate_voice(array $data): array {
+        if (empty($data['voice_enabled'])) {
+            return [];
+        }
+        if (empty($data['audio_enabled'])) {
+            return ['voice_enabled' => get_string('error_voice_requires_audio', self::COMPONENT)];
+        }
+        $model = trim((string) ($data['speech_model'] ?? ''));
+        if (!model_settings::is_available($model, model_settings::CAPABILITY_SPEECH)) {
+            return ['speech_model' => get_string('error_invalid_model', self::COMPONENT)];
+        }
+        $field = model_settings::voice_field($model);
+        if (!in_array(trim((string) ($data[$field] ?? '')), model_settings::get_voices($model), true)) {
+            return [$field => get_string('error_invalid_voice', self::COMPONENT)];
+        }
+        return [];
     }
 
     /**

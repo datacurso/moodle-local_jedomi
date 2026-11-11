@@ -367,4 +367,131 @@ final class model_settings_test extends \advanced_testcase {
         $this->assertSame('jedomi/zai-org/GLM-5.3-Flash', get_config('local_jedomi', 'vision_model'));
         $this->assertSame('jedomi/openai/whisper-large-v3-turbo', get_config('local_jedomi', 'audio_model'));
     }
+
+    /**
+     * V6: the speech selector lists the text-to-speech models with the default one first, each with its voices.
+     */
+    public function test_speech_catalogue_lists_its_models_and_voices(): void {
+        $this->assertSame('jedomi/Qwen/Qwen3-TTS', model_settings::DEFAULT_SPEECH_MODEL);
+        $inworld = 'jedomi/inworld-ai/inworld-tts-1.5-mini';
+
+        $models = model_settings::get_available_models(model_settings::CAPABILITY_SPEECH);
+
+        $this->assertSame([model_settings::DEFAULT_SPEECH_MODEL => 'Qwen3-TTS', $inworld => 'Inworld TTS 1.5 mini'], $models);
+        $this->assertContains(model_settings::CAPABILITY_SPEECH, model_settings::CAPABILITIES);
+        $this->assertSame('speech_model', model_settings::MODEL_SETTINGS[model_settings::CAPABILITY_SPEECH]);
+        $this->assertSame(
+            ['Vivian', 'Serena', 'Uncle_Fu', 'Dylan', 'Eric', 'Ryan', 'Aiden', 'Ono_Anna', 'Sohee'],
+            model_settings::get_voices(model_settings::DEFAULT_SPEECH_MODEL)
+        );
+        $this->assertSame(['Diego', 'Lupita', 'Miguel', 'Rafael'], model_settings::get_voices($inworld));
+        $this->assertSame('Vivian', model_settings::get_default_voice(model_settings::DEFAULT_SPEECH_MODEL));
+        $this->assertSame('Diego', model_settings::get_default_voice($inworld));
+        $this->assertSame([], model_settings::get_voices(model_settings::DEFAULT_MODEL));
+        $this->assertSame('', model_settings::get_default_voice(model_settings::DEFAULT_MODEL));
+        $this->assertSame('speech_voice_qwen_qwen3_tts', model_settings::voice_field(model_settings::DEFAULT_SPEECH_MODEL));
+        $this->assertSame('speech_voice_inworld_ai_inworld_tts_1_5_mini', model_settings::voice_field($inworld));
+        foreach (array_keys($models) as $model) {
+            $this->assertTrue(model_settings::is_routable($model));
+        }
+    }
+
+    /**
+     * V6: a speech model never appears in the chat, vision or audio selectors, and no other model in the speech one.
+     */
+    public function test_speech_models_are_only_in_the_speech_selector(): void {
+        $speech = array_keys(model_settings::get_available_models(model_settings::CAPABILITY_SPEECH));
+        foreach ([model_settings::CAPABILITY_CHAT, model_settings::CAPABILITY_VISION, model_settings::CAPABILITY_AUDIO] as $other) {
+            $models = array_keys(model_settings::get_available_models($other));
+            $this->assertSame([], array_intersect($speech, $models), "No speech model in the {$other} selector");
+            foreach ($speech as $model) {
+                $this->assertFalse(model_settings::is_available($model, $other));
+            }
+        }
+        $this->assertFalse(model_settings::is_available(model_settings::DEFAULT_MODEL, model_settings::CAPABILITY_SPEECH));
+        $this->assertFalse(model_settings::is_available(model_settings::DEFAULT_AUDIO_MODEL, model_settings::CAPABILITY_SPEECH));
+    }
+
+    /**
+     * V5: the speech model and voice fall back to the defaults when empty or not in their list, and a voice of
+     * another model falls back to the default voice of the configured model.
+     */
+    public function test_speech_model_and_voice_fall_back_to_their_defaults(): void {
+        $this->resetAfterTest();
+        $inworld = 'jedomi/inworld-ai/inworld-tts-1.5-mini';
+
+        unset_config('speech_model', 'local_jedomi');
+        unset_config('speech_voice', 'local_jedomi');
+        $this->assertSame(model_settings::DEFAULT_SPEECH_MODEL, model_settings::get_speech_model());
+        $this->assertSame('Vivian', model_settings::get_speech_voice());
+
+        set_config('speech_model', model_settings::DEFAULT_AUDIO_MODEL, 'local_jedomi');
+        set_config('speech_voice', 'Serena', 'local_jedomi');
+        $this->assertSame(model_settings::DEFAULT_SPEECH_MODEL, model_settings::get_speech_model());
+        $this->assertSame('Serena', model_settings::get_speech_voice());
+
+        set_config('speech_model', $inworld, 'local_jedomi');
+        $this->assertSame($inworld, model_settings::get_speech_model());
+        $this->assertSame('Diego', model_settings::get_speech_voice(), 'A voice of another model uses the default voice');
+
+        set_config('speech_voice', 'Lupita', 'local_jedomi');
+        $this->assertSame('Lupita', model_settings::get_speech_voice());
+
+        set_config('speech_voice', 'lupita', 'local_jedomi');
+        $this->assertSame('Diego', model_settings::get_speech_voice(), 'Voices are case-sensitive');
+    }
+
+    /**
+     * V5: the voice conversation is off until it is saved, and also off while audio processing is off.
+     */
+    public function test_voice_conversation_is_off_by_default_and_needs_audio(): void {
+        $this->resetAfterTest();
+
+        unset_config('voice_enabled', 'local_jedomi');
+        set_config('audio_enabled', 1, 'local_jedomi');
+        $this->assertFalse(model_settings::is_voice_enabled());
+
+        set_config('voice_enabled', 1, 'local_jedomi');
+        $this->assertTrue(model_settings::is_voice_enabled());
+
+        set_config('audio_enabled', 0, 'local_jedomi');
+        $this->assertFalse(model_settings::is_voice_enabled(), 'Without audio processing nothing can be transcribed');
+    }
+
+    /**
+     * V5: the 2026111100 upgrade step leaves the voice conversation off, with Qwen3-TTS and Vivian.
+     */
+    public function test_upgrade_saves_voice_defaults(): void {
+        $this->resetAfterTest();
+        $this->load_upgrade_script();
+        set_config('version', 2026111000, 'local_jedomi');
+        unset_config('voice_enabled', 'local_jedomi');
+        unset_config('speech_model', 'local_jedomi');
+        unset_config('speech_voice', 'local_jedomi');
+
+        $this->assertTrue(xmldb_local_jedomi_upgrade(2026111000));
+
+        $this->assertSame('0', get_config('local_jedomi', 'voice_enabled'));
+        $this->assertSame(model_settings::DEFAULT_SPEECH_MODEL, get_config('local_jedomi', 'speech_model'));
+        $this->assertSame('Vivian', get_config('local_jedomi', 'speech_voice'));
+        $this->assertGreaterThanOrEqual(2026111100, (int) get_config('local_jedomi', 'version'));
+    }
+
+    /**
+     * V5: the upgrade step keeps the voice settings an administrator already saved.
+     */
+    public function test_upgrade_keeps_saved_voice_settings(): void {
+        $this->resetAfterTest();
+        $this->load_upgrade_script();
+        set_config('version', 2026111000, 'local_jedomi');
+        set_config('voice_enabled', 1, 'local_jedomi');
+        set_config('speech_model', 'jedomi/inworld-ai/inworld-tts-1.5-mini', 'local_jedomi');
+        set_config('speech_voice', 'Miguel', 'local_jedomi');
+
+        $this->assertTrue(xmldb_local_jedomi_upgrade(2026111000));
+
+        $this->assertSame('1', get_config('local_jedomi', 'voice_enabled'));
+        $this->assertSame('jedomi/inworld-ai/inworld-tts-1.5-mini', get_config('local_jedomi', 'speech_model'));
+        $this->assertSame('Miguel', get_config('local_jedomi', 'speech_voice'));
+    }
 }

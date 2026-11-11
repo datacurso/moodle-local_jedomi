@@ -25,10 +25,10 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'local_jedomi';
-$plugin->version   = 2026111000;
+$plugin->version   = 2026111100;
 $plugin->requires = 2024100700; // Moodle 4.5.
 $plugin->maturity  = MATURITY_STABLE;
-$plugin->release   = '1.4.1';
+$plugin->release   = '1.5.0';
 $plugin->dependencies = [
-    'aiprovider_datacurso' => 2026110400,
+    'aiprovider_datacurso' => 2026111100,
 ];

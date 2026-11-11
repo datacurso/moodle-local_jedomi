@@ -36,9 +36,10 @@ class system_message {
      * @param  string $role    The user's resolved role.
      * @param  array  $spt     The validated SPT payload.
      * @param  array  $context The current page context.
+     * @param  bool   $voicemode Whether the answer is read aloud in the voice conversation of the sidebar.
      * @return array           ['role' => 'system', 'content' => '...']
      */
-    public static function build(string $role, array $spt, array $context = []): array {
+    public static function build(string $role, array $spt, array $context = [], bool $voicemode = false): array {
         global $CFG;
 
         $sitename  = get_config('core', 'sitename') ?: 'Moodle';
@@ -152,6 +153,19 @@ class system_message {
         $content .= "- Use the user's language.\n";
         $content .= "- Respect permissions and privacy.\n";
         $content .= "- If something cannot be done, say why and propose the next best step.\n\n";
+
+        if ($voicemode) {
+            // The full answer is still shown in the chat; these rules keep the spoken part short and readable.
+            $content .= "VOICE CONVERSATION:\n";
+            $content .= "- The user is talking to you by voice and your answer is read aloud, sentence by sentence.\n";
+            $content .= "- Answer in a few short, complete sentences in plain spoken language.\n";
+            $content .= "- Do NOT use tables, lists, code, links, emojis or markdown (no asterisks, hashes or backticks).\n";
+            $content .= "- Say numbers and dates as they are spoken.\n";
+            $content .= "- When the answer needs many details (tables, long lists, code), give a short spoken summary"
+                . " and offer to show the details on screen.\n";
+            $content .= "- Actions that change data still wait for the confirmation on screen:"
+                . " say briefly what will be done and ask the user to confirm it on screen.\n\n";
+        }
 
         if ($output === 'telegram') {
             $content .= "TELEGRAM FORMAT:\n";

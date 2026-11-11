@@ -20,7 +20,8 @@ namespace local_jedomi\ai;
  * AI models, feature switches and token settings, and the migration of older settings.
  *
  * Only the models evaluated for Jedomi are offered, in one catalogue with what each model can do:
- * chat, vision (images and PDF pages) or audio (transcription). plugins-ai rejects any other model
+ * chat, vision (images and PDF pages), audio (transcription) or speech (text to speech, with its voices).
+ * plugins-ai rejects any other model
  * with 400 jedomi_invalid_model, and the Datacurso Token Manager has a price for each of them.
  *
  * @package    local_jedomi
@@ -40,8 +41,16 @@ class model_settings {
     /** @var string Capability: transcribe audio. */
     public const CAPABILITY_AUDIO = 'audio';
 
+    /** @var string Capability: read text aloud (text to speech) with one of its voices. */
+    public const CAPABILITY_SPEECH = 'speech';
+
     /** @var string[] Every capability, in the order of the settings page. */
-    public const CAPABILITIES = [self::CAPABILITY_CHAT, self::CAPABILITY_VISION, self::CAPABILITY_AUDIO];
+    public const CAPABILITIES = [
+        self::CAPABILITY_CHAT,
+        self::CAPABILITY_VISION,
+        self::CAPABILITY_AUDIO,
+        self::CAPABILITY_SPEECH,
+    ];
 
     /** @var string Default chat model: best quality for its price in the model evaluation. */
     public const DEFAULT_MODEL = 'jedomi/google/gemma-4-26B-A4B-it';
@@ -52,12 +61,19 @@ class model_settings {
     /** @var string Default audio model: the only one that wrote "Jedomi" right in the phase 10 tests. */
     public const DEFAULT_AUDIO_MODEL = 'jedomi/Qwen/Qwen3-ASR-1.7B';
 
+    /** @var string Default speech model: best Spanish quality when listened to in the phase 11 tests. */
+    public const DEFAULT_SPEECH_MODEL = 'jedomi/Qwen/Qwen3-TTS';
+
     /** @var array<string, string> Config name of the model of each capability. */
     public const MODEL_SETTINGS = [
         self::CAPABILITY_CHAT => 'model',
         self::CAPABILITY_VISION => 'vision_model',
         self::CAPABILITY_AUDIO => 'audio_model',
+        self::CAPABILITY_SPEECH => 'speech_model',
     ];
+
+    /** @var string Prefix of the form field with the voices of each speech model. */
+    public const VOICE_FIELD_PREFIX = 'speech_voice_';
 
     /** @var int Default answer size limit, in tokens. */
     public const DEFAULT_MAX_TOKENS = 16384;
@@ -72,11 +88,13 @@ class model_settings {
     private const LEGACY_SETTINGS = ['gateway_url', 'api_key'];
 
     /**
-     * Every model Jedomi can use, keyed by model id, with its display name and capabilities.
+     * Every model Jedomi can use, keyed by model id, with its display name, capabilities and, for speech
+     * models, its voices (the first one is the default voice).
      *
-     * Ids are exact and case-sensitive. Keep in sync with the chat, vision and audio lists of plugins-ai.
+     * Ids and voices are exact and case-sensitive. Keep in sync with the chat, vision, audio and speech
+     * lists of plugins-ai (JEDOMI_TTS_MODELS for speech) and the prices of the Token Manager.
      *
-     * @return array<string, array{name: string, capabilities: string[]}>
+     * @return array<string, array{name: string, capabilities: string[], voices?: string[]}>
      */
     public static function get_catalogue(): array {
         $chatvision = [self::CAPABILITY_CHAT, self::CAPABILITY_VISION];
@@ -98,6 +116,17 @@ class model_settings {
                 'capabilities' => [self::CAPABILITY_AUDIO],
             ],
             'jedomi/mistralai/Voxtral-Mini-3B-2507' => ['name' => 'Voxtral Mini 3B', 'capabilities' => [self::CAPABILITY_AUDIO]],
+            // Voices accepted in Spanish in the phase 11 tests; any other voice answers an error.
+            self::DEFAULT_SPEECH_MODEL => [
+                'name' => 'Qwen3-TTS',
+                'capabilities' => [self::CAPABILITY_SPEECH],
+                'voices' => ['Vivian', 'Serena', 'Uncle_Fu', 'Dylan', 'Eric', 'Ryan', 'Aiden', 'Ono_Anna', 'Sohee'],
+            ],
+            'jedomi/inworld-ai/inworld-tts-1.5-mini' => [
+                'name' => 'Inworld TTS 1.5 mini',
+                'capabilities' => [self::CAPABILITY_SPEECH],
+                'voices' => ['Diego', 'Lupita', 'Miguel', 'Rafael'],
+            ],
         ];
     }
 
@@ -131,6 +160,7 @@ class model_settings {
         return match ($capability) {
             self::CAPABILITY_VISION => self::DEFAULT_VISION_MODEL,
             self::CAPABILITY_AUDIO => self::DEFAULT_AUDIO_MODEL,
+            self::CAPABILITY_SPEECH => self::DEFAULT_SPEECH_MODEL,
             default => self::DEFAULT_MODEL,
         };
     }
@@ -184,6 +214,58 @@ class model_settings {
     }
 
     /**
+     * Model that reads the answers aloud in the voice conversation.
+     *
+     * @return string The configured model, or the default speech model when it is missing or not in the list.
+     */
+    public static function get_speech_model(): string {
+        return self::get_configured_model(self::CAPABILITY_SPEECH);
+    }
+
+    /**
+     * Voices of a speech model, with its default voice first.
+     *
+     * @param string $model Model id.
+     * @return string[] Empty for a model that is not a speech model.
+     */
+    public static function get_voices(string $model): array {
+        $info = self::get_catalogue()[$model] ?? [];
+        return in_array(self::CAPABILITY_SPEECH, $info['capabilities'] ?? [], true) ? ($info['voices'] ?? []) : [];
+    }
+
+    /**
+     * Default voice of a speech model: the first one of its list.
+     *
+     * @param string $model Model id.
+     * @return string Empty for a model that is not a speech model.
+     */
+    public static function get_default_voice(string $model): string {
+        return self::get_voices($model)[0] ?? '';
+    }
+
+    /**
+     * Voice that reads the answers aloud.
+     *
+     * @return string The configured voice when it belongs to the speech model in use, or the default voice of that model.
+     */
+    public static function get_speech_voice(): string {
+        $model = self::get_speech_model();
+        $voice = trim((string) get_config('local_jedomi', 'speech_voice'));
+        return in_array($voice, self::get_voices($model), true) ? $voice : self::get_default_voice($model);
+    }
+
+    /**
+     * Name of the form field with the voices of a speech model, for example speech_voice_qwen_qwen3_tts.
+     *
+     * @param string $model Speech model id.
+     * @return string
+     */
+    public static function voice_field(string $model): string {
+        $name = str_starts_with($model, self::MODEL_PREFIX) ? substr($model, strlen(self::MODEL_PREFIX)) : $model;
+        return self::VOICE_FIELD_PREFIX . trim(preg_replace('/[^a-z0-9]+/', '_', strtolower($name)), '_');
+    }
+
+    /**
      * Configured model of a capability, or its default one when missing or not in its list.
      *
      * @param string $capability One of the CAPABILITY_* constants.
@@ -211,6 +293,16 @@ class model_settings {
      */
     public static function is_audio_enabled(): bool {
         return (bool) (int) get_config('local_jedomi', 'audio_enabled');
+    }
+
+    /**
+     * Whether the voice conversation of the sidebar can be used. Off until it is saved, and off while audio
+     * processing is off, because what the user says is transcribed by the audio model.
+     *
+     * @return bool
+     */
+    public static function is_voice_enabled(): bool {
+        return (bool) (int) get_config('local_jedomi', 'voice_enabled') && self::is_audio_enabled();
     }
 
     /**
@@ -266,5 +358,24 @@ class model_settings {
             }
         }
         unset_config('docservice_url', 'local_jedomi');
+    }
+
+    /**
+     * Save the defaults of the voice conversation settings that are not set yet: off, with the default
+     * speech model and its default voice.
+     *
+     * Values already saved are kept. Safe to run more than once.
+     */
+    public static function apply_voice_defaults(): void {
+        $defaults = [
+            'voice_enabled' => '0',
+            'speech_model' => self::DEFAULT_SPEECH_MODEL,
+            'speech_voice' => self::get_default_voice(self::DEFAULT_SPEECH_MODEL),
+        ];
+        foreach ($defaults as $name => $value) {
+            if (get_config('local_jedomi', $name) === false) {
+                set_config($name, $value, 'local_jedomi');
+            }
+        }
     }
 }

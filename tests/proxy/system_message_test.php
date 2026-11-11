@@ -68,6 +68,24 @@ final class system_message_test extends \advanced_testcase {
     }
 
     /**
+     * V8: in voice mode the instructions ask for short spoken answers in full sentences, without tables, lists, code or
+     * markdown, offering the details on screen; without it they do not.
+     */
+    public function test_voice_mode_asks_for_spoken_answers(): void {
+        $this->resetAfterTest();
+
+        $voice = system_message::build('admin', [], [], true)['content'];
+        $text = system_message::build('admin', [])['content'];
+
+        $this->assertStringContainsString('VOICE CONVERSATION:', $voice);
+        foreach (['read aloud', 'short', 'complete sentences', 'tables', 'code', 'markdown', 'on screen'] as $rule) {
+            $this->assertStringContainsString($rule, $voice, $rule);
+        }
+        $this->assertStringNotContainsString('VOICE CONVERSATION:', $text);
+        $this->assertStringContainsString('ACTIONS THAT CHANGE DATA:', $voice, 'The voice mode keeps every other rule');
+    }
+
+    /**
      * MDL-UNIT-047: the agent and preview instructions describe how actions that change data are really handled in those channels.
      * [Pendiente:skip]
      */

@@ -70,12 +70,20 @@ class audio_service {
             throw new \moodle_exception('audio_error_unsupported', 'local_jedomi');
         }
 
+        // The language of the user is given to the audio model: detecting it from a short recording can fail and
+        // transcribe (or translate) the speech into another language.
+        $fields = ['model' => model_settings::get_audio_model()];
+        $language = self::language_code($userid);
+        if ($language !== '') {
+            $fields['language'] = $language;
+        }
+
         $response = provider_upload_service::send(
             $userid,
             $path,
             $filename,
             self::ENDPOINT,
-            ['model' => model_settings::get_audio_model()],
+            $fields,
             self::TIMEOUT,
             $api
         );
@@ -89,6 +97,21 @@ class audio_service {
             'model' => (string) ($response['model'] ?? ''),
             'duration_seconds' => (float) ($response['duration_seconds'] ?? 0),
         ];
+    }
+
+    /**
+     * Two-letter code (ISO 639-1) of the language of a user, as the audio models expect it.
+     *
+     * The language of the user's profile, or the current language when the profile has none; "es_mx" gives "es".
+     *
+     * @param int $userid User the audio belongs to.
+     * @return string Two lowercase letters, or an empty string when no language can be told.
+     */
+    public static function language_code(int $userid): string {
+        $user = $userid > 0 ? \core_user::get_user($userid, 'id, lang') : null;
+        $lang = (string) (($user && !empty($user->lang)) ? $user->lang : current_language());
+        $code = strtolower(strtok($lang, '_-') ?: '');
+        return preg_match('/^[a-z]{2}$/', $code) ? $code : '';
     }
 
     /**

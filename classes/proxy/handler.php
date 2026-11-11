@@ -55,7 +55,8 @@ class handler {
     /**
      * Run the tool loop for a web chat request, ignoring any model the browser sends.
      *
-     * @param array  $input  Decoded browser payload (messages, context; any "model" is ignored).
+     * @param array  $input  Decoded browser payload (messages, context, voice_mode; any "model" is ignored).
+     *                       voice_mode asks for answers fit to be read aloud, only while the voice conversation is on.
      * @param string $role   User role (already validated).
      * @param array  $spt    SPT payload (already validated).
      * @param int    $userid Moodle user the AI calls are made for.
@@ -92,7 +93,8 @@ class handler {
         }
         $messages = array_map([self::class, 'without_image_parts'], $messages);
 
-        $system = system_message::build($role, $spt, $context);
+        $voicemode = !empty($input['voice_mode']) && \local_jedomi\ai\model_settings::is_voice_enabled();
+        $system = system_message::build($role, $spt, $context, $voicemode);
         self::run(array_merge([$system], $messages), $role, $userid);
     }
 

@@ -36,6 +36,8 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
     let voiceBarVersion = 0;
     // True while a message is being prepared or answered, so it is not sent twice.
     let sending      = false;
+    // Voice conversation in progress, if any (see startVoiceMode).
+    let voiceMode    = null;
 
     // ── Init — entry point ────────────────────────────────────────────────────
     const init = (config) => {
@@ -153,6 +155,7 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
             files_enabled: !!cfg.files_enabled,
             audio_enabled: !!cfg.audio_enabled,
             attach_enabled: !!(cfg.files_enabled || cfg.audio_enabled),
+            voice_enabled: !!(cfg.voice_enabled && cfg.audio_enabled && cfg.speech_url),
         });
         Templates.appendNodeContents(document.body, html, js);
         updateContextLabel();
@@ -265,6 +268,10 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
         on('jedomi-audio-input',  'change', handleFileSelect);
         on('jedomi-voice-btn',    'click',  startRecording);
         on('jedomi-voice-bar',    'click',  handleVoiceAction);
+        on('jedomi-voice-mode-btn', 'click', startVoiceMode);
+        on('jedomi-voice-mode',   'click',  (e) => {
+            if (e.target.closest('[data-action="local_jedomi/sidebar/voice-mode-exit"]')) exitVoiceMode();
+        });
 
         const input = g('jedomi-input');
         if (input) {
@@ -282,7 +289,11 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
 
         // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
-            // Escape → close the sidebar.
+            // Escape → end the voice conversation first, then close the sidebar.
+            if (e.key === 'Escape' && voiceMode) {
+                exitVoiceMode();
+                return;
+            }
             if (e.key === 'Escape' && g('jedomi-sidebar')?.classList.contains('jedomi-open')) {
                 closeSidebar();
                 return;
@@ -379,6 +390,7 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
     };
 
     const closeSidebar = () => {
+        exitVoiceMode();
         // A recording in progress is thrown away and a recorded voice message stops playing.
         if (recorder && recorder.state === 'recording') {
             recordingCancelled = true;
@@ -768,9 +780,46 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
         await runChat(displayText, modelText, image);
     };
 
+    // Display of a spoken answer: each sentence appears in the bubble, as plain text, when it starts to be heard, and
+    // the complete answer (tables, code, links, confirmation card) replaces it when the turn ends. finish() can be
+    // asked before the answer arrives (an interruption): the complete answer is then shown as soon as it arrives.
+    const createVoiceDisplay = (bubble) => {
+        const display = {
+            shown: false, done: false, spoken: '', showAnswer: null, finishRequested: false,
+            showSpoken: (text) => {
+                if (display.done || !text) return;
+                if (!display.shown) {
+                    display.shown = true;
+                    setThinking(false);
+                    bubble.thinking = false;
+                    bubble.el.classList.remove('jedomi-hidden');
+                }
+                display.spoken = display.spoken ? `${display.spoken} ${text}` : text;
+                bubble.version++;
+                bubble.inner.textContent = display.spoken;
+                const msgs = g('jedomi-messages');
+                if (msgs) msgs.scrollTop = msgs.scrollHeight;
+            },
+            setFinish: (showAnswer) => {
+                display.showAnswer = showAnswer;
+                if (display.finishRequested) display.finish();
+            },
+            finish: () => {
+                display.finishRequested = true;
+                if (display.done || !display.showAnswer) return;
+                display.done = true;
+                setThinking(false);
+                display.showAnswer();
+            },
+        };
+        return display;
+    };
+
     // Show the user message, add it to the conversation and stream the answer of the chat proxy.
     // displayText is what the chat shows, modelText what the model receives and image the attached image, if any.
-    const runChat = async (displayText, modelText, image = null) => {
+    // voiceHooks, given by the voice conversation, asks for a spoken answer (voice_mode) and receives the answer as it
+    // arrives: {onToken(token), onPendingAction(pending), onDone(), onError(err)}.
+    const runChat = async (displayText, modelText, image = null, voiceHooks = null) => {
         const input   = g('jedomi-input');
         const sendBtn = g('jedomi-send');
 
@@ -784,6 +833,9 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
 
         // Create an empty bubble to fill while streaming.
         const streamBubble = createStreamBubble();
+        // A spoken answer is shown as it is heard (see createVoiceDisplay), not as it arrives.
+        const voiceDisplay = voiceHooks ? createVoiceDisplay(streamBubble) : null;
+        voiceHooks?.onDisplay?.(voiceDisplay);
 
         try {
             let fullText = '';
@@ -794,6 +846,8 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
                 // onToken: add each token to the bubble.
                 (token) => {
                     fullText += token;
+                    voiceHooks?.onToken(token);
+                    if (voiceDisplay) return;
                     if (streamBubble.thinking) {
                         // First answer: hide thinking and show the bubble.
                         setThinking(false);
@@ -851,7 +905,10 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
                 // onPendingAction: a tool that changes data waits for the user's confirmation.
                 (pending) => {
                     pendingAction = pending;
-                }
+                    voiceHooks?.onPendingAction(pending);
+                },
+                voiceHooks ? {voice_mode: true} : {},
+                voiceHooks?.signal || null
             );
 
             // Technical action blocks (JEDOMI_ACTION / JEDOMI_PENDING_ACTION) came from the legacy
@@ -861,25 +918,41 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
                 .replace(/JEDOMI_ACTION[\s\S]*?END_ACTION/g, '')
                 .replace(/JEDOMI_PENDING_ACTION:[\s\S]*?:END_PENDING/g, '')
                 .trim();
-            streamBubble.version++;
-            streamBubble.inner.innerHTML = renderMarkdown(fullText);
-            if (pendingAction) {
-                streamBubble.el.classList.remove('jedomi-hidden');
-                streamBubble.inner.appendChild(buildActionConfirmUI(pendingAction));
-            }
-            addMessageActions(streamBubble.wrap, fullText);
-
-            // Links: open in the same tab directly (no preventDefault).
-            streamBubble.inner.querySelectorAll('a[href]').forEach(a => {
-                if (!a.getAttribute('target')) {
-                    a.setAttribute('target', '_self');
+            const showAnswer = () => {
+                streamBubble.version++;
+                if (voiceDisplay) streamBubble.el.classList.remove('jedomi-hidden');
+                streamBubble.inner.innerHTML = renderMarkdown(fullText);
+                if (pendingAction) {
+                    streamBubble.el.classList.remove('jedomi-hidden');
+                    streamBubble.inner.appendChild(buildActionConfirmUI(pendingAction));
                 }
-            });
+                addMessageActions(streamBubble.wrap, fullText);
+
+                // Links: open in the same tab directly (no preventDefault).
+                streamBubble.inner.querySelectorAll('a[href]').forEach(a => {
+                    if (!a.getAttribute('target')) {
+                        a.setAttribute('target', '_self');
+                    }
+                });
+            };
+            if (voiceDisplay) {
+                voiceDisplay.setFinish(showAnswer);
+            } else {
+                showAnswer();
+            }
 
             conversation.push({ role: 'assistant', content: fullText });
             _saveConversation(); // Save it on the server.
+            voiceHooks?.onDone();
 
         } catch (err) {
+            if (voiceDisplay) voiceDisplay.done = true;
+            if (voiceHooks && err?.name === 'AbortError') {
+                // The user spoke over Jedomi: the answer was cancelled on purpose and leaves nothing in the chat.
+                setThinking(false);
+                streamBubble.wrap?.remove();
+                return;
+            }
             Log.error('Jedomi error', err);
             setThinking(false);
             streamBubble.version++;
@@ -895,8 +968,10 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
                 streamBubble.inner.innerHTML = renderMarkdown(`⚠️ ${message}`);
             }
             streamBubble.el.classList.remove('jedomi-hidden');
+            voiceHooks?.onError(err);
         } finally {
-            setThinking(false);
+            // A spoken answer keeps the thinking indicator until its first sentence is heard.
+            if (!voiceDisplay || voiceDisplay.shown || voiceDisplay.done) setThinking(false);
             sending = false;
             if (sendBtn) sendBtn.disabled = false;
             input?.focus();
@@ -906,7 +981,9 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
     // ── Call Chat Proxy (streaming) ─────────────────────────────────────────
     // The proxy receives the messages, adds the tools and the anti-hallucination system prompt,
     // runs the tool loop against the real Moodle DB and returns SSE.
-    const callGatewayStream = async (messages, onToken, onToolEvent, onPendingAction) => {
+    // extra adds fields to the request, such as voice_mode for the voice conversation.
+    // signal, when given, cancels the request (the voice conversation does it when the user speaks over Jedomi).
+    const callGatewayStream = async (messages, onToken, onToolEvent, onPendingAction, extra = {}, signal = null) => {
         // Context truncation: at most 30 messages to avoid a context overflow.
         const truncated = messages.slice(-30);
 
@@ -921,12 +998,14 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
                 location:   getCurrentLocation(),
                 course_id:  getCourseidFromUrl(),
             },
+            ...extra,
         };
 
         const res = await fetch(cfg.chatproxy_url, {
             method:  'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
+            signal: signal || undefined,
         });
 
         if (!res.ok) {
@@ -1357,7 +1436,7 @@ GENERAL INSTRUCTIONS:
     };
 
     // Send a file to a Moodle endpoint that answers JSON, or {"error": {"code", "message"}} with a message to show.
-    const uploadForText = async (url, file, fields = {}) => {
+    const uploadForText = async (url, file, fields = {}, signal = null) => {
         const S = cfg.strings || {};
         const formData = new FormData();
         formData.append('file', file);
@@ -1369,6 +1448,7 @@ GENERAL INSTRUCTIONS:
             method: 'POST',
             body: formData,
             credentials: 'same-origin',
+            signal: signal || undefined,
         });
         const data = await res.json().catch(() => ({}));
         if (data.error) {
@@ -1583,6 +1663,530 @@ GENERAL INSTRUCTIONS:
         await runChat((S.voice_message || '{$a}').replace('{$a}', () => text), text);
     };
 
+    // ── Voice conversation ─────────────────────────────────────────────────
+    // A conversation by voice, like the voice mode of other assistants: the voice view replaces the input row,
+    // the microphone stays open and the end of what the user says is detected by its silence (Web Audio). The
+    // recording is transcribed by the audio model, as a voice message, and sent with voice_mode, so the answer is
+    // short and fit to be spoken. The answer is read aloud sentence by sentence through speech.php while the next
+    // sentence is requested, and the full text stays in the chat. Speaking while Jedomi speaks interrupts it.
+    // An action that changes data still waits for the confirmation card: Jedomi asks to confirm it on screen and
+    // stops listening until it is resolved.
+    // Level (RMS, 0 to 1) above which the microphone hears speech.
+    const VOICE_MODE_THRESHOLD = 0.035;
+    // Lowest level needed to interrupt Jedomi while it speaks, so its own voice coming back through the microphone
+    // does not. The real threshold also follows the background noise measured while listening (see bargeInLevel).
+    const VOICE_MODE_BARGE_IN_MIN = 0.05;
+    // How many times the background noise the user must speak over Jedomi (speaking) or while it thinks.
+    const VOICE_MODE_BARGE_IN_NOISE_SPEAKING = 4;
+    const VOICE_MODE_BARGE_IN_NOISE_THINKING = 3;
+    // Time the user must keep speaking to interrupt Jedomi, in milliseconds.
+    const VOICE_MODE_BARGE_IN_MS = 250;
+    // Silence after speech that ends what the user says, in milliseconds.
+    const VOICE_MODE_SILENCE_MS = 1200;
+    // Shorter sounds (a cough, a click) are ignored, in milliseconds.
+    const VOICE_MODE_MIN_SPEECH_MS = 300;
+    // The voice conversation ends after this time listening without speech, in milliseconds.
+    const VOICE_MODE_IDLE_MS = 60000;
+    // How often the microphone level is measured, in milliseconds.
+    const VOICE_MODE_TICK_MS = 50;
+    // Longest text sent to speech.php at once, in characters (the server accepts up to 1000).
+    const VOICE_MODE_MAX_SENTENCE = 900;
+    // Longest and shortest first chunk of an answer, in characters. Speech models return the audio of a text only when
+    // the whole text is generated, so a short first chunk makes Jedomi start speaking sooner with any voice model.
+    const VOICE_MODE_FIRST_CHUNK_MAX = 60;
+    const VOICE_MODE_FIRST_CHUNK_MIN = 15;
+
+    // An element of the voice view by its data-region.
+    const voiceModeRegion = (name) => g('jedomi-voice-mode')?.querySelector(`[data-region="local_jedomi/sidebar/${name}"]`);
+
+    // Show the state of the voice conversation: listening, thinking, speaking or paused (waiting for a confirmation).
+    const setVoiceModeState = (state) => {
+        if (!voiceMode) return;
+        const S = cfg.strings || {};
+        voiceMode.state = state;
+        const view = g('jedomi-voice-mode');
+        if (view) {
+            ['listening', 'thinking', 'speaking', 'paused'].forEach(s => view.classList.toggle(`jedomi-voice-mode--${s}`, s === state));
+        }
+        const label = voiceModeRegion('voice-mode-state');
+        if (label) label.textContent = S[`voice_mode_${state}`] || '';
+    };
+
+    // Start the voice conversation. It must run from a click: browsers only let a page play audio after one.
+    const startVoiceMode = async () => {
+        const S = cfg.strings || {};
+        if (voiceMode || sending || recorder || voice || !cfg.speech_url) return;
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined' || !AudioContextClass) {
+            addMessage('assistant', `⚠️ ${S.mic_error || ''}`);
+            return;
+        }
+        // Created and resumed during the click, so the answers can be played later.
+        const ctx = new AudioContextClass();
+        ctx.resume().catch(() => null);
+
+        let stream;
+        try {
+            stream = await navigator.mediaDevices.getUserMedia(
+                {audio: {echoCancellation: true, noiseSuppression: true, autoGainControl: true}});
+        } catch (err) {
+            ctx.close().catch(() => null);
+            addMessage('assistant', `⚠️ ${S.mic_error || ''}`);
+            return;
+        }
+
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 1024;
+        ctx.createMediaStreamSource(stream).connect(analyser);
+        voiceMode = {
+            stream, ctx, analyser,
+            samples: new Float32Array(analyser.fftSize),
+            state: 'listening',
+            // Recording of the current utterance and whether it is sent to transcription when it stops.
+            recorder: null, keepRecording: false,
+            // Speech detection: whether speech was heard, when it started, the last time it was heard,
+            // and since when the user speaks over Jedomi.
+            heard: false, speechStart: 0, lastVoice: 0, bargeStart: 0,
+            // Each utterance is a turn; an interruption or the end of the conversation drops older work.
+            turn: 0,
+            // Sentences waiting to be spoken ({text, controller, audio}), the one playing and its audio source.
+            queue: [], current: null, source: null,
+            // Sentence splitting of the answer being received.
+            pendingText: '', inCodeBlock: false, firstQueued: false, display: null,
+            // Background noise while listening, the controller of the requests of the turn, and whether the question
+            // of the turn already went to the AI (only then can thinking be interrupted).
+            noise: 0, requestController: null, chatStarted: false,
+            answerDone: false, pendingAction: false, speechFailed: false,
+            monitor: null, idleTimer: null,
+        };
+
+        const view = g('jedomi-voice-mode');
+        view?.classList.remove('jedomi-hidden');
+        g('jedomi-input')?.closest('.jedomi-input-row')?.classList.add('jedomi-hidden');
+        view?.querySelector('[data-action="local_jedomi/sidebar/voice-mode-exit"]')?.focus();
+
+        voiceMode.monitor = setInterval(monitorVoiceMode, VOICE_MODE_TICK_MS);
+        startVoiceListening();
+    };
+
+    // End the voice conversation: stop speaking and listening, release the microphone and give the input row back.
+    const exitVoiceMode = () => {
+        if (!voiceMode) return;
+        const current = voiceMode;
+        stopVoiceSpeaking();
+        clearInterval(current.monitor);
+        clearTimeout(current.idleTimer);
+        current.keepRecording = false;
+        if (current.recorder && current.recorder.state !== 'inactive') current.recorder.stop();
+        current.stream.getTracks().forEach(track => track.stop());
+        current.ctx.close().catch(() => null);
+        voiceMode = null;
+
+        const view = g('jedomi-voice-mode');
+        view?.classList.add('jedomi-hidden');
+        const input = g('jedomi-input');
+        input?.closest('.jedomi-input-row')?.classList.remove('jedomi-hidden');
+        g('jedomi-voice-mode-btn')?.focus();
+    };
+
+    // Listen to the user: a new recording starts at once, so the beginning of what is said is kept.
+    const startVoiceListening = () => {
+        if (!voiceMode) return;
+        const current = voiceMode;
+        if (current.recorder && current.recorder.state !== 'inactive') {
+            current.keepRecording = false;
+            current.recorder.stop();
+        }
+        const type = RECORDING_TYPES.find(t => MediaRecorder.isTypeSupported(t)) || '';
+        const rec = new MediaRecorder(current.stream, type ? {mimeType: type} : undefined);
+        const chunks = [];
+        rec.addEventListener('dataavailable', (e) => {
+            if (e.data && e.data.size) chunks.push(e.data);
+        });
+        rec.addEventListener('stop', () => {
+            if (voiceMode !== current || current.recorder !== rec || !current.keepRecording) return;
+            current.keepRecording = false;
+            const mime = rec.mimeType || type || 'audio/webm';
+            sendVoiceUtterance(new Blob(chunks, {type: mime}), mime);
+        });
+        current.recorder = rec;
+        current.keepRecording = false;
+        current.heard = false;
+        current.bargeStart = 0;
+        rec.start();
+        setVoiceModeState('listening');
+        resetVoiceIdleTimer();
+    };
+
+    // End the voice conversation after a while listening without speech.
+    const resetVoiceIdleTimer = () => {
+        if (!voiceMode) return;
+        clearTimeout(voiceMode.idleTimer);
+        voiceMode.idleTimer = setTimeout(() => {
+            if (voiceMode?.state === 'listening' && !voiceMode.heard) exitVoiceMode();
+        }, VOICE_MODE_IDLE_MS);
+    };
+
+    // Measure the microphone: detect the end of what the user says, or the user speaking over Jedomi.
+    const monitorVoiceMode = () => {
+        if (!voiceMode) return;
+        const current = voiceMode;
+        current.analyser.getFloatTimeDomainData(current.samples);
+        let sum = 0;
+        for (const sample of current.samples) sum += sample * sample;
+        const level = Math.sqrt(sum / current.samples.length);
+        const meter = voiceModeRegion('voice-mode-level');
+        if (meter) meter.style.transform = `scale(${1 + Math.min(level * 8, 0.8)})`;
+        const now = Date.now();
+
+        if (current.state === 'listening') {
+            if (!current.heard && level <= VOICE_MODE_THRESHOLD) {
+                // Background noise while nobody speaks, kept as a slow moving average.
+                current.noise = current.noise ? current.noise * 0.95 + level * 0.05 : level;
+            }
+            if (level > VOICE_MODE_THRESHOLD) {
+                if (!current.heard) {
+                    current.heard = true;
+                    current.speechStart = now;
+                    clearTimeout(current.idleTimer);
+                }
+                current.lastVoice = now;
+            } else if (current.heard && now - current.lastVoice > VOICE_MODE_SILENCE_MS) {
+                if (current.lastVoice - current.speechStart >= VOICE_MODE_MIN_SPEECH_MS) {
+                    // The user finished speaking: the recording is sent to transcription when it stops.
+                    setVoiceModeState('thinking');
+                    current.keepRecording = true;
+                    current.recorder?.stop();
+                } else {
+                    // Only a short noise: keep listening.
+                    current.heard = false;
+                    resetVoiceIdleTimer();
+                }
+            }
+        } else if (current.state === 'speaking' || (current.state === 'thinking' && current.chatStarted)) {
+            // While the recording is still being transcribed it is not interrupted, so what was said is not lost.
+            if (level > bargeInLevel(current)) {
+                current.bargeStart = current.bargeStart || now;
+                if (now - current.bargeStart >= VOICE_MODE_BARGE_IN_MS) {
+                    // The user speaks while Jedomi thinks or speaks: drop that answer and listen to the new words.
+                    interruptVoiceTurn();
+                }
+            } else {
+                current.bargeStart = 0;
+            }
+        }
+    };
+
+    // Level the user must reach to interrupt Jedomi: above the background noise, and higher while Jedomi speaks so its
+    // own voice coming back through the microphone does not interrupt it.
+    const bargeInLevel = (current) => {
+        const noise = current.noise || 0;
+        if (current.state === 'speaking') {
+            return Math.max(VOICE_MODE_BARGE_IN_MIN, noise * VOICE_MODE_BARGE_IN_NOISE_SPEAKING);
+        }
+        return Math.max(VOICE_MODE_THRESHOLD, noise * VOICE_MODE_BARGE_IN_NOISE_THINKING);
+    };
+
+    // Drop the answer in progress (transcription, AI request and speech) and listen again. The question already sent
+    // stays in the conversation, so the next one is answered with it in mind.
+    const interruptVoiceTurn = () => {
+        const current = voiceMode;
+        if (!current) return;
+        current.requestController?.abort();
+        current.requestController = null;
+        stopVoiceSpeaking();
+        startVoiceListening();
+    };
+
+    // Wait until no other message is being sent or answered.
+    const waitUntilNotSending = async () => {
+        while (sending) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+    };
+
+    // Transcribe what the user said and send it as a message of the voice conversation.
+    const sendVoiceUtterance = async (blob, mime) => {
+        if (!voiceMode || !blob.size) {
+            startVoiceListening();
+            return;
+        }
+        const S = cfg.strings || {};
+        const current = voiceMode;
+        const turn = ++current.turn;
+        // One controller cancels the transcription and the AI request of this turn when the user interrupts.
+        const controller = new AbortController();
+        current.requestController = controller;
+        current.chatStarted = false;
+        let text = '';
+        // Message of the server when the transcription fails (service unavailable, no credits, limit reached...):
+        // it is already translated and says what happened, so it is shown instead of "could not understand".
+        let failure = '';
+        try {
+            const extension = mime.includes('ogg') ? 'ogg' : (mime.includes('mp4') ? 'm4a' : 'webm');
+            const data = await uploadForText(cfg.extract_file_url, new File([blob], `recording.${extension}`, {type: mime}),
+                {}, controller.signal);
+            text = (data.text || '').trim();
+        } catch (err) {
+            if (err?.name === 'AbortError') return;
+            Log.debug('Jedomi: the voice conversation could not transcribe the audio', err);
+            failure = (err?.message || '').trim();
+        }
+        if (voiceMode !== current || current.turn !== turn) return;
+        if (!text) {
+            addMessage('assistant', `⚠️ ${failure || S.voice_mode_transcription_error || ''}`);
+            startVoiceListening();
+            return;
+        }
+
+        await waitUntilNotSending();
+        if (voiceMode !== current || current.turn !== turn) return;
+        current.pendingText = '';
+        current.inCodeBlock = false;
+        current.firstQueued = false;
+        current.display = null;
+        current.answerDone = false;
+        current.pendingAction = false;
+        current.speechFailed = false;
+        const isTurn = () => voiceMode === current && current.turn === turn;
+        current.chatStarted = true;
+        await runChat((S.voice_message || '{$a}').replace('{$a}', () => text), text, null, {
+            signal: controller.signal,
+            onDisplay: (display) => {
+                if (isTurn()) current.display = display;
+            },
+            onToken: (token) => {
+                if (!isTurn()) return;
+                current.pendingText += token;
+                speakCompleteSentences(false);
+            },
+            onPendingAction: () => {
+                if (isTurn()) current.pendingAction = true;
+            },
+            onDone: () => {
+                if (!isTurn()) return;
+                speakCompleteSentences(true);
+                if (current.pendingAction) queueVoiceSentence(S.voice_mode_confirm_notice || '', true);
+                current.answerDone = true;
+                finishVoiceTurnIfDone();
+            },
+            onError: () => {
+                if (!isTurn()) return;
+                // The error is shown in the chat; listen again.
+                stopVoiceSpeaking();
+                startVoiceListening();
+            },
+        });
+    };
+
+    // Text fit to be spoken: without markdown marks, links (only their text) or emojis.
+    const speakableText = (line) => line
+        .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+        .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+        .replace(/https?:\/\/\S+/g, '')
+        .replace(/^\s{0,3}(#{1,6}\s+|>\s*|[-*+]\s+|\d+[.)]\s+)/, '')
+        .replace(/[*_`~#|]/g, '')
+        .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    // Queue the sentences of a line that is complete; code blocks and table rows are not read aloud.
+    const speakLine = (line) => {
+        const current = voiceMode;
+        if (/^\s*(```|~~~)/.test(line)) {
+            current.inCodeBlock = !current.inCodeBlock;
+            return;
+        }
+        if (current.inCodeBlock || /^\s*\|/.test(line)) return;
+        // A stop followed by a space ends a sentence, so decimals such as 15.38 are kept whole.
+        speakableText(line).replace(/([.!?…]+["')\]]*)\s+/g, '$1\n').split('\n')
+            .forEach(sentence => queueVoiceSentence(sentence));
+    };
+
+    // Split the answer received so far into sentences and queue the complete ones. final flushes the rest.
+    const speakCompleteSentences = (final) => {
+        const current = voiceMode;
+        if (!current) return;
+        let text = current.pendingText;
+        let newline = text.indexOf('\n');
+        while (newline !== -1) {
+            speakLine(text.slice(0, newline));
+            text = text.slice(newline + 1);
+            newline = text.indexOf('\n');
+        }
+        if (final) {
+            speakLine(text);
+            text = '';
+        } else if (!current.inCodeBlock && !/^\s*(\||`|~)/.test(text)) {
+            // Sentences of the line that already ended (a stop followed by a space) can be spoken before the line ends.
+            const match = text.match(/^([\s\S]*[.!?…]["')\]]*)\s+(\S[\s\S]*)?$/);
+            if (match) {
+                speakLine(match[1]);
+                text = match[2] || '';
+            }
+        }
+        current.pendingText = text;
+    };
+
+    // Where to end the first chunk of a long first sentence: after the first comma, semicolon or colon followed by a
+    // space within the limits (so decimals such as 15,38 are kept whole), else at the last space within the limit.
+    // Returns 0 when the text has no suitable place.
+    const firstChunkEnd = (text) => {
+        const clause = /[,;:](?=\s)/g;
+        let match;
+        while ((match = clause.exec(text)) !== null) {
+            const end = match.index + 1;
+            if (end > VOICE_MODE_FIRST_CHUNK_MAX) break;
+            if (end >= VOICE_MODE_FIRST_CHUNK_MIN) return end;
+        }
+        const space = text.lastIndexOf(' ', VOICE_MODE_FIRST_CHUNK_MAX);
+        return space >= VOICE_MODE_FIRST_CHUNK_MIN ? space : 0;
+    };
+
+    // Queue a sentence to be read aloud; long ones are cut at a space, and the first chunk of an answer is kept short.
+    // notice marks a text of Jedomi that is not part of the answer, so it is spoken but not shown.
+    const queueVoiceSentence = (sentence, notice = false) => {
+        if (!voiceMode) return;
+        let text = (sentence || '').trim();
+        if (!voiceMode.firstQueued && /[\p{L}\p{N}]/u.test(text)) {
+            voiceMode.firstQueued = true;
+            const end = text.length > VOICE_MODE_FIRST_CHUNK_MAX ? firstChunkEnd(text) : 0;
+            if (end > 0) {
+                queueVoiceSentence(text.slice(0, end), notice);
+                text = text.slice(end).trim();
+            }
+        }
+        while (text.length > VOICE_MODE_MAX_SENTENCE) {
+            const cut = text.lastIndexOf(' ', VOICE_MODE_MAX_SENTENCE);
+            const at = cut > 0 ? cut : VOICE_MODE_MAX_SENTENCE;
+            queueVoiceSentence(text.slice(0, at), notice);
+            text = text.slice(at).trim();
+        }
+        // Text with no letter or number (a lone symbol) is not read.
+        if (!/[\p{L}\p{N}]/u.test(text)) return;
+        voiceMode.queue.push({text, notice, controller: new AbortController(), audio: null});
+        playNextVoiceSentence();
+    };
+
+    // Ask speech.php for the audio of a sentence and decode it.
+    const fetchVoiceSentence = async (item) => {
+        const current = voiceMode;
+        const res = await fetch(cfg.speech_url, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({text: item.text, sesskey: cfg.sesskey, spt: cfg.spt}),
+            signal: item.controller.signal,
+        });
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.error?.message || `HTTP ${res.status}`);
+        }
+        const buffer = await res.arrayBuffer();
+        return current.ctx.decodeAudioData(buffer);
+    };
+
+    // Play the next sentence in order, and request the one after it while it plays.
+    const playNextVoiceSentence = async () => {
+        const current = voiceMode;
+        if (!current) return;
+        const next = current.queue[0];
+        if (next && !next.audio) {
+            next.audio = fetchVoiceSentence(next);
+            // A failure is handled when the sentence is played.
+            next.audio.catch(() => null);
+        }
+        if (current.current || !next) return;
+
+        current.queue.shift();
+        current.current = next;
+        setVoiceModeState('speaking');
+        playNextVoiceSentence();
+        let decoded = null;
+        try {
+            decoded = await next.audio;
+        } catch (err) {
+            if (err?.name !== 'AbortError') {
+                Log.debug('Jedomi: a sentence could not be read aloud', err);
+                if (voiceMode === current && !current.speechFailed) {
+                    // The text is already in the chat: tell it once and go on with the next sentence.
+                    current.speechFailed = true;
+                    addMessage('assistant', `⚠️ ${cfg.strings?.voice_mode_speech_error || ''}`);
+                }
+            }
+        }
+        if (voiceMode !== current || current.current !== next) return;
+        // The text of the sentence appears as it starts to be heard (or at once when it could not be read aloud).
+        if (!next.notice) current.display?.showSpoken(next.text);
+        if (!decoded) {
+            current.current = null;
+            playNextVoiceSentence();
+            finishVoiceTurnIfDone();
+            return;
+        }
+        const source = current.ctx.createBufferSource();
+        source.buffer = decoded;
+        source.connect(current.ctx.destination);
+        source.addEventListener('ended', () => {
+            if (voiceMode !== current || current.source !== source) return;
+            current.source = null;
+            current.current = null;
+            playNextVoiceSentence();
+            finishVoiceTurnIfDone();
+        });
+        current.source = source;
+        source.start();
+    };
+
+    // Stop speaking: the audio stops, the queue is emptied and the pending requests are cancelled.
+    const stopVoiceSpeaking = () => {
+        if (!voiceMode) return;
+        const current = voiceMode;
+        // The answer that was being spoken is shown complete.
+        current.display?.finish();
+        current.display = null;
+        current.turn++;
+        const items = current.current ? [current.current, ...current.queue] : current.queue;
+        items.forEach(item => item.controller.abort());
+        current.queue = [];
+        current.current = null;
+        current.pendingText = '';
+        if (current.source) {
+            const source = current.source;
+            current.source = null;
+            try {
+                source.stop();
+            } catch (e) {
+                // Already stopped.
+            }
+        }
+    };
+
+    // After the last sentence, listen again, or wait for the confirmation card when an action is pending.
+    const finishVoiceTurnIfDone = () => {
+        const current = voiceMode;
+        if (!current || !current.answerDone || current.current || current.queue.length) return;
+        if (current.state === 'listening' || current.state === 'paused') return;
+        // Everything was heard: the complete answer replaces the spoken sentences.
+        current.display?.finish();
+        if (current.pendingAction) {
+            if (current.recorder && current.recorder.state !== 'inactive') {
+                current.keepRecording = false;
+                current.recorder.stop();
+            }
+            clearTimeout(current.idleTimer);
+            setVoiceModeState('paused');
+            return;
+        }
+        startVoiceListening();
+    };
+
+    // The confirmation card was resolved: a paused voice conversation listens again.
+    const resumeVoiceModeAfterAction = () => {
+        if (voiceMode?.state !== 'paused') return;
+        voiceMode.pendingAction = false;
+        startVoiceListening();
+    };
+
     // ── Confirmation of actions that change data ──────────────────────────────
     // The server holds the action and sends its id; it runs only through
     // local_jedomi_resolve_action, which checks the owner, the expiry, the role and the keyword again.
@@ -1646,6 +2250,7 @@ GENERAL INSTRUCTIONS:
                 showDone('❌ ' + message);
                 addActionNote(pending, message);
             }
+            resumeVoiceModeAfterAction();
         };
 
         renderInto(div, 'local_jedomi/local/sidebar/action_confirm', {

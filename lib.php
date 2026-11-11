@@ -60,14 +60,16 @@ function local_jedomi_get_sidebar_config(): array {
     global $USER, $CFG;
 
     $context = local_jedomi_get_page_context();
+    $voiceenabled = \local_jedomi\ai\model_settings::is_voice_enabled();
 
-    return [
+    $config = [
         'chatproxy_url' => $CFG->wwwroot . '/local/jedomi/chatproxy.php',
         'extract_file_url' => $CFG->wwwroot . '/local/jedomi/extract_file.php',
         'read_file_url' => $CFG->wwwroot . '/local/jedomi/read_file.php',
         // Hidden features are also refused by the server.
         'files_enabled' => \local_jedomi\ai\model_settings::is_files_enabled(),
         'audio_enabled' => \local_jedomi\ai\model_settings::is_audio_enabled(),
+        'voice_enabled' => $voiceenabled,
         'feedback_url'  => $CFG->wwwroot . '/local/jedomi/ajax/feedback.php',
         'user_name'     => fullname($USER),
         'user_role'     => local_jedomi_get_user_role(),
@@ -181,6 +183,16 @@ function local_jedomi_get_sidebar_config(): array {
             'voice_send'            => get_string('voice_send', 'local_jedomi'),
             'voice_stop'            => get_string('voice_stop', 'local_jedomi'),
             'waiting_voice'         => get_string('waiting_voice', 'local_jedomi'),
+            // Voice conversation.
+            'voice_mode'                     => get_string('voice_mode', 'local_jedomi'),
+            'voice_mode_confirm_notice'      => get_string('voice_mode_confirm_notice', 'local_jedomi'),
+            'voice_mode_exit'                => get_string('voice_mode_exit', 'local_jedomi'),
+            'voice_mode_listening'           => get_string('voice_mode_listening', 'local_jedomi'),
+            'voice_mode_paused'              => get_string('voice_mode_paused', 'local_jedomi'),
+            'voice_mode_speaking'            => get_string('voice_mode_speaking', 'local_jedomi'),
+            'voice_mode_speech_error'        => get_string('voice_mode_speech_error', 'local_jedomi'),
+            'voice_mode_thinking'            => get_string('voice_mode_thinking', 'local_jedomi'),
+            'voice_mode_transcription_error' => get_string('voice_mode_transcription_error', 'local_jedomi'),
             // Confirmation system.
             'confirm_type_to_proceed' => get_string('confirm_type_to_proceed', 'local_jedomi'),
             'confirm_btn_yes'         => get_string('confirm_btn_yes', 'local_jedomi'),
@@ -271,6 +283,11 @@ function local_jedomi_get_sidebar_config(): array {
             'qa_student_this_week_msg'       => get_string('qa_student_this_week_msg', 'local_jedomi'),
         ],
     ];
+    if ($voiceenabled) {
+        // The endpoint of the spoken answers is only handed out while the voice conversation is on; it refuses otherwise.
+        $config['speech_url'] = $CFG->wwwroot . '/local/jedomi/speech.php';
+    }
+    return $config;
 }
 
 /**

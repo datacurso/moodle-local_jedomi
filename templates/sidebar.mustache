@@ -26,16 +26,20 @@
 
     Data attributes required for JS:
     * the element ids (jedomi-trigger, jedomi-sidebar, jedomi-input, ...) are used by local_jedomi/sidebar
+    * data-action="local_jedomi/sidebar/voice-mode-exit" - Ends the voice conversation
+    * data-region="local_jedomi/sidebar/voice-mode-state" - State of the voice conversation, updated by JS
+    * data-region="local_jedomi/sidebar/voice-mode-level" - Indicator scaled by JS with the microphone level
 
     Context variables required for this template:
     * greeting string - Greeting with the user name
     * strings object - Sidebar strings from local_jedomi_get_sidebar_config(): open_sidebar, export_conversation, half_width,
       full_width, new_conversation, close, hello, thinking, toggle_thinking, placeholder, message_input, attach,
       attach_image, image, attach_file, file, attach_audio, audio_file, voice_input, send, attached_image, ai_disclaimer,
-      drop_files_here
+      drop_files_here, voice_mode, voice_mode_exit, voice_mode_listening
     * files_enabled bool - File and image processing is on: image and file attach options
     * audio_enabled bool - Audio processing is on: microphone, voice message bar and audio attach option
     * attach_enabled bool - At least one of the two is on: attach button and drop zone
+    * voice_enabled bool - The voice conversation is on: its button next to the microphone and its view
 
     Example context (json):
     {
@@ -44,7 +48,8 @@
             "send": "Send", "thinking": "Thinking...", "ai_disclaimer": "Jedomi is an AI and can make mistakes."},
         "files_enabled": true,
         "audio_enabled": false,
-        "attach_enabled": true
+        "attach_enabled": true,
+        "voice_enabled": false
     }
 }}
 <button id="jedomi-trigger" class="jedomi-trigger" aria-label="{{strings.open_sidebar}}" title="Jedomi AI (Ctrl+Shift+J)">
@@ -99,6 +104,14 @@
         {{#audio_enabled}}
         <div id="jedomi-voice-bar" class="jedomi-hidden"></div>
         {{/audio_enabled}}
+        {{#voice_enabled}}
+        <div id="jedomi-voice-mode" class="jedomi-voice-mode jedomi-hidden">
+            <span class="jedomi-voice-mode-orb" data-region="local_jedomi/sidebar/voice-mode-level" aria-hidden="true"></span>
+            <span class="jedomi-voice-mode-state" data-region="local_jedomi/sidebar/voice-mode-state" role="status" aria-live="polite">{{strings.voice_mode_listening}}</span>
+            <button type="button" class="jedomi-voice-mode-exit" data-action="local_jedomi/sidebar/voice-mode-exit"
+                title="{{strings.voice_mode_exit}}" aria-label="{{strings.voice_mode_exit}}"><svg aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+        </div>
+        {{/voice_enabled}}
         <div class="jedomi-input-row" data-action="local_jedomi/sidebar/focus-input">
             <textarea id="jedomi-input" class="jedomi-input" placeholder="{{strings.placeholder}}"
                 rows="1" aria-label="{{strings.message_input}}"></textarea>
@@ -120,6 +133,9 @@
                 {{#audio_enabled}}
                 <button id="jedomi-voice-btn" class="jedomi-input-icon" title="{{strings.voice_input}}" aria-label="{{strings.voice_input}}"><svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="22"/></svg></button>
                 {{/audio_enabled}}
+                {{#voice_enabled}}
+                <button id="jedomi-voice-mode-btn" class="jedomi-input-icon" title="{{strings.voice_mode}}" aria-label="{{strings.voice_mode}}"><svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="10" x2="4" y2="14"/><line x1="8" y1="6" x2="8" y2="18"/><line x1="12" y1="3" x2="12" y2="21"/><line x1="16" y1="7" x2="16" y2="17"/><line x1="20" y1="10" x2="20" y2="14"/></svg></button>
+                {{/voice_enabled}}
                 <button id="jedomi-send" class="jedomi-send-btn" title="{{strings.send}}"><svg aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
             </div>
         </div>

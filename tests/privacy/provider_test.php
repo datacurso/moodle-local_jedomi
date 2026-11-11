@@ -175,6 +175,20 @@ final class provider_test extends provider_testcase {
     }
 
     /**
+     * The text of the spoken answers sent to the AI service for the voice conversation is declared.
+     */
+    public function test_metadata_declares_the_speech_service(): void {
+        $speech = $this->declared_fields('jedomi_speech_service');
+        $this->assertNotNull($speech, 'The text sent for speech must be declared');
+        $this->assertContains('userid', $speech);
+        $this->assertContains('text', $speech);
+        $this->assertStringContainsStringIgnoringCase(
+            'pseudonym',
+            get_string('privacy:metadata:jedomi_speech_service:userid', 'local_jedomi')
+        );
+    }
+
+    /**
      * MDL-INT-079: deleting by user, by list of users and by context removes the ratings and the pending actions of the
      * user and keeps those of the others.
      */

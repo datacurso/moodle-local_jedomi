@@ -244,6 +244,22 @@ Feature: Web chat of Jedomi from the question to the answer, the actions and the
     Then I should see "Audio: 2 seconds" in the "#jedomi-file-preview" "css_element"
     And I should see "jedomi_tone.wav" in the "#jedomi-messages" "css_element"
 
+  @V10
+  Scenario: The voice conversation button is shown only while the voice conversation is enabled
+    Given the following config values are set as admin:
+      | audio_enabled | 1 | local_jedomi |
+      | voice_enabled | 1 | local_jedomi |
+    And I log in as "admin"
+    And I am on homepage
+    When I click on "#jedomi-trigger" "css_element"
+    Then "#jedomi-voice-mode-btn" "css_element" should exist
+    And the following config values are set as admin:
+      | voice_enabled | 0 | local_jedomi |
+    And I reload the page
+    And I click on "#jedomi-trigger" "css_element"
+    And "#jedomi-voice-btn" "css_element" should exist
+    And "#jedomi-voice-mode-btn" "css_element" should not exist
+
   # [Pendiente:skip] Teachers always get the Student role in the chat, the AI does not know the real course nor
   # activity and the header does not show the course. Needs the real AI service for the summary.
   @SYS-E2E-007
