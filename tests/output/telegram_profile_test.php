@@ -182,4 +182,16 @@ final class telegram_profile_test extends \advanced_testcase {
         $blocked = $renderer->render($this->profile(telegram_profile::STATE_ROLE_BLOCKED));
         $this->assertStringNotContainsString('admin_settings.php?tab=integrations', $blocked);
     }
+
+    /**
+     * MDL-UNIT-110: the subtitle of the Telegram link page is addressed to the user, explains what linking the account
+     * is for and uses neutral Spanish with usted.
+     * [Pendiente:skip]
+     *
+     * @return void
+     */
+    public function test_link_page_subtitle_is_addressed_to_the_user(): void {
+        $this->markTestSkipped('Pending fix: the link page shows the subtitle meant for the administrator about '
+            . 'connecting Jedomi to a Telegram bot, with voseo.');
+    }
 }

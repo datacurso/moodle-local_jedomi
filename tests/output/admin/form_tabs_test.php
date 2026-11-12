@@ -68,4 +68,16 @@ final class form_tabs_test extends \advanced_testcase {
         $this->assertStringContainsString('data-test="courses"', $courses);
         $this->assertStringContainsString('data-test="privacy"', $privacy);
     }
+
+    /**
+     * MDL-UNIT-106: the AI service card of the General tab lists every setting configured in the provider, including
+     * the voice conversation, the voice model and the voice.
+     * [Pendiente:skip]
+     *
+     * @return void
+     */
+    public function test_ai_service_card_lists_the_voice_settings(): void {
+        $this->markTestSkipped('Pending fix: the AI service card does not mention that the voice conversation, the voice '
+            . 'model and the voice are also configured in the provider.');
+    }
 }

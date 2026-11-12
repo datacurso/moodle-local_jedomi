@@ -333,4 +333,52 @@ final class preview_runner_test extends \advanced_testcase {
         $this->assertFalse(\local_jedomi\agent\agent_manager::clear_preview_cache($hash, (int) $other->id));
         $this->assertTrue(\local_jedomi\agent\agent_manager::clear_preview_cache($hash, (int) get_admin()->id));
     }
+
+    /**
+     * Anonymisation levels of the Privacy tab and the personal data the AI must not receive with each one.
+     *
+     * @return array
+     */
+    public static function anonymization_level_provider(): array {
+        return [
+            'basic' => ['basic', ['ximena.quintanilla@example.com', 'Quintanilla']],
+            'strict' => ['strict', ['ximena.quintanilla@example.com', 'Quintanilla', 'ID-778899']],
+        ];
+    }
+
+    /**
+     * MDL-INT-100: the preview sends the tool results to the AI anonymised with the level of the Privacy tab, as the
+     * scheduled run does.
+     * [Pendiente:fail] The preview sends the tool results to the AI without applying the anonymisation level.
+     *
+     * @dataProvider anonymization_level_provider
+     * @param string $level Anonymisation level.
+     * @param string[] $hidden Personal data the AI must not receive.
+     * @return void
+     */
+    public function test_preview_anonymises_the_tool_results_like_the_scheduled_run(string $level, array $hidden): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        set_config('anonymization_level', $level, 'local_jedomi');
+        $named = $this->getDataGenerator()->create_user(['firstname' => 'Ximena', 'lastname' => 'Quintanilla',
+            'email' => 'ximena.quintanilla@example.com', 'idnumber' => 'ID-778899']);
+        $fake = new fake_ai_client();
+        $fake->enqueue_tool_calls([['id' => 'call_1', 'type' => 'function', 'function' => ['name' => 'execute_sql',
+            'arguments' => json_encode(['query' => 'SELECT id, firstname, lastname, email, idnumber FROM {user} WHERE id = '
+                . (int) $named->id])]]]);
+        $fake->enqueue_text('Done.');
+        client::set_instance_for_testing($fake);
+
+        $result = preview_runner::run('Who is Ximena?', (int) get_admin()->id);
+
+        $this->assertTrue($result['ok']);
+        $this->assertCount(2, $fake->calls);
+        $tools = array_values(array_filter($fake->calls[1]['messages'], static fn(array $m): bool => $m['role'] === 'tool'));
+        $this->assertNotEmpty($tools);
+        $sent = (string) end($tools)['content'];
+        $this->assertStringContainsString('row', $sent, 'Control: the query ran');
+        foreach ($hidden as $value) {
+            $this->assertStringNotContainsString($value, $sent, "With the {$level} level the AI must not receive {$value}");
+        }
+    }
 }

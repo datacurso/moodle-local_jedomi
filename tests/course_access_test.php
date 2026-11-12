@@ -194,4 +194,17 @@ final class course_access_test extends \advanced_testcase {
         ));
         $this->assertSame(1, $DB->count_records('local_jedomi_agents'));
     }
+
+    /**
+     * MDL-INT-096: hiding the Authenticated user role hides the panel from every user whose other roles are hidden
+     * too, it also works on the site home, and the server evaluates the rule on the activity of the page.
+     * [Pendiente:skip]
+     *
+     * @return void
+     */
+    public function test_authenticated_user_and_guest_roles_have_a_real_effect(): void {
+        $this->markTestSkipped('Pending fix: hiding Authenticated user only affects users without other roles, hiding '
+            . 'Guest or Authenticated user on the site home has no effect, and the server evaluates the '
+            . 'rule on the course sent by the browser.');
+    }
 }

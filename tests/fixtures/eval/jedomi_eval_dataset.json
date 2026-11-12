@@ -1,5 +1,5 @@
 {
-    "description": "Golden dataset for SYS-EVAL-001 and SYS-EVAL-002. The site data is created by the test; the expected values come from that data, so an answer that contains them used the tools and did not invent them.",
+    "description": "Golden dataset for SYS-EVAL-001, SYS-EVAL-002 and SYS-EVAL-003. The site data is created by the test; the expected values come from that data, so an answer that contains them used the tools and did not invent them.",
     "threshold": 0.8,
     "site": {
         "fullname": "Evaluation Front Page Site",
@@ -126,6 +126,92 @@
             "expect": "action",
             "pending_tool": "send_messages",
             "pending_contains": ""
+        }
+    ],
+    "voice_answers": [
+        {
+            "id": "voice-count-en",
+            "role": "admin",
+            "language": "en",
+            "question": "How many courses are there in this site, not counting the front page?",
+            "must_contain_any": [
+                "3",
+                "three"
+            ],
+            "offers_screen": false,
+            "action_tool": ""
+        },
+        {
+            "id": "voice-count-es",
+            "role": "admin",
+            "language": "es",
+            "question": "¿Cuántos cursos hay en este sitio sin contar la portada?",
+            "must_contain_any": [
+                "3",
+                "tres"
+            ],
+            "offers_screen": false,
+            "action_tool": ""
+        },
+        {
+            "id": "voice-students-en",
+            "role": "admin",
+            "language": "en",
+            "question": "How many students are enrolled in Marine Biology?",
+            "must_contain_any": [
+                "4",
+                "four"
+            ],
+            "offers_screen": false,
+            "action_tool": ""
+        },
+        {
+            "id": "voice-students-es",
+            "role": "admin",
+            "language": "es",
+            "question": "¿Cuántos estudiantes hay matriculados en Marine Biology?",
+            "must_contain_any": [
+                "4",
+                "cuatro"
+            ],
+            "offers_screen": false,
+            "action_tool": ""
+        },
+        {
+            "id": "voice-list-en",
+            "role": "admin",
+            "language": "en",
+            "question": "Give me the username, e-mail and enrolment date of every student of every course.",
+            "must_contain_any": [],
+            "offers_screen": true,
+            "action_tool": ""
+        },
+        {
+            "id": "voice-list-es",
+            "role": "admin",
+            "language": "es",
+            "question": "Dame el nombre de usuario, el correo y la fecha de matrícula de cada estudiante de cada curso.",
+            "must_contain_any": [],
+            "offers_screen": true,
+            "action_tool": ""
+        },
+        {
+            "id": "voice-action-en",
+            "role": "admin",
+            "language": "en",
+            "question": "Create a course called Voice Evaluation Course with the short name EVV1.",
+            "must_contain_any": [],
+            "offers_screen": false,
+            "action_tool": "ws_execute"
+        },
+        {
+            "id": "voice-action-es",
+            "role": "admin",
+            "language": "es",
+            "question": "Crea un curso llamado Curso de Evaluación por Voz con el nombre corto EVV2.",
+            "must_contain_any": [],
+            "offers_screen": false,
+            "action_tool": "ws_execute"
         }
     ]
 }

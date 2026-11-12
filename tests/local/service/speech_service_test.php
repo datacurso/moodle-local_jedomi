@@ -97,6 +97,7 @@ final class speech_service_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-110 / MDL-CTR-012: the speech goes through the provider with the configured model and voice and the audio comes back unmodified.
      * V8: with the voice conversation on, the text goes to audio/speech with the configured model and voice and the
      * MP3 of the provider comes back as is.
      *
@@ -122,6 +123,7 @@ final class speech_service_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-110 / MDL-CTR-012: the request carries the configured model and voice and the text to read.
      * V8: the model and voice chosen in the settings are the ones sent.
      *
      * @return void
@@ -140,6 +142,7 @@ final class speech_service_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-110 / MDL-INT-092: guests and requests without a session are refused without calling the AI.
      * V7: a guest or a request without a session is refused without calling the AI.
      *
      * @return void
@@ -156,6 +159,7 @@ final class speech_service_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-110: a request without a valid session key is refused without calling the AI.
      * V7: a missing or wrong session key is refused without calling the AI.
      *
      * @return void
@@ -168,6 +172,7 @@ final class speech_service_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-110: invalid or expired chat permissions are refused without calling the AI.
      * V7: missing, altered or expired permissions are refused without calling the AI.
      *
      * @return void
@@ -189,6 +194,7 @@ final class speech_service_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-110: with Jedomi disabled the speech is refused without calling the AI.
      * V7: with Jedomi disabled in the provider the request is refused without calling the AI.
      *
      * @return void
@@ -201,6 +207,7 @@ final class speech_service_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-110 / MDL-INT-006: with the voice conversation or audio off the speech is refused with the voice not enabled message, without calling the AI.
      * V7: with the voice conversation off, or audio processing off, the request is refused without calling the AI.
      *
      * @return void
@@ -217,6 +224,7 @@ final class speech_service_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-110: an empty text and one above the maximum are refused, covering the exact limit and one above.
      * V7: an empty text or a text longer than the limit is refused without calling the AI; the limit counts characters.
      *
      * @return void
@@ -238,6 +246,7 @@ final class speech_service_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-110: above the per-minute limit the speech is refused, covering the request at the limit and the next one.
      * V7: above the per-minute limit of the user the request is refused without calling the AI.
      *
      * @return void
@@ -258,6 +267,7 @@ final class speech_service_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-110: another user is not affected by the limit of a user.
      * V7: the limit is per user: another user can still ask for speech.
      *
      * @return void
@@ -275,6 +285,7 @@ final class speech_service_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-CTR-012 / MDL-INT-003: an error of the provider reaches the browser as an interpretable error.
      * An error of the AI service answers a JSON error with a message ready to show, without internal details.
      *
      * @return void
@@ -294,6 +305,7 @@ final class speech_service_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-CTR-012 / MDL-INT-001: the speech goes through the provider with its licence.
      * The audio is asked through the provider's raw request: same licence and JSON headers as a chat call, and
      * Jedomi's total timeout on the transport.
      *
@@ -312,6 +324,7 @@ final class speech_service_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-CTR-012: the no credit error of the provider reaches the browser as an interpretable error.
      * A refusal of the AI service for lack of credit answers a clean JSON error with the no credit code.
      *
      * @return void
@@ -329,6 +342,7 @@ final class speech_service_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-CTR-012: an answer without audio is reported as an error, never handed out as audio.
      * An answer without audio (a JSON body with status 200) is reported as an invalid answer.
      *
      * @return void
@@ -341,5 +355,17 @@ final class speech_service_test extends \advanced_testcase {
 
         $this->assertSame(502, $response['status']);
         $this->assertArrayHasKey('error', json_decode($response['body'], true));
+    }
+
+    /**
+     * MDL-UNIT-116: each reason a reading aloud is refused (per minute limit, text too long, voice disabled, expired
+     * permissions, no credit) is shown to the user in their language.
+     * [Pendiente:skip]
+     *
+     * @return void
+     */
+    public function test_user_sees_the_real_reason_of_a_refused_reading(): void {
+        $this->markTestSkipped('Pending fix: the chat always shows the generic message that the answer could not be read '
+            . 'aloud, never the specific reason.');
     }
 }

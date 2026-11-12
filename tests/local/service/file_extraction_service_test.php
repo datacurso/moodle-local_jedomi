@@ -594,15 +594,6 @@ final class file_extraction_service_test extends \advanced_testcase {
         $this->assertSame(4, $result['seconds']);
     }
     /**
-     * MDL-INT-052: several dropped files are all attached, a removed attachment is not charged, a cut text is announced
-     * and unsupported or disabled types show a coherent notice in the browser.
-     * [Pendiente:skip]
-     */
-    public function test_several_files_removed_attachments_and_cut_notices(): void {
-        $this->markTestSkipped('Pending fix: only the last dropped file is kept, removed attachments are read and charged, '
-            . 'cuts are not announced and GIF or disabled types are handled inconsistently.');
-    }
-    /**
      * API-INT-001: files and images up to the maximum size and resolution are accepted, larger ones get the "file too
      * large" error, and at most the defined pages and characters are read, with each limit checked exactly at and just
      * above it. The limits are applied by the AI service, so this case lives in the AI service repository.

@@ -108,9 +108,10 @@ final class handler_eval_test extends \advanced_testcase {
      *
      * @param string $datasetrole Dataset role: the user that asks.
      * @param string $question Question.
+     * @param array $extra Other fields of the request of the browser, such as voice_mode.
      * @return array{answer: string, tools: string[], pending: array[], errors: array[]}
      */
-    private function ask(string $datasetrole, string $question): array {
+    private function ask(string $datasetrole, string $question, array $extra = []): array {
         $user = $this->users[$datasetrole];
         $this->setUser($user);
         $role = \local_jedomi_get_user_role();
@@ -122,7 +123,7 @@ final class handler_eval_test extends \advanced_testcase {
         });
         try {
             handler::run_from_request(
-                ['messages' => [['role' => 'user', 'content' => $question]], 'context' => []],
+                array_merge(['messages' => [['role' => 'user', 'content' => $question]], 'context' => []], $extra),
                 $role,
                 $spt,
                 (int) $user->id
@@ -280,6 +281,68 @@ final class handler_eval_test extends \advanced_testcase {
             $failures[$item['id']] = $problems;
         }
         $this->assertFalse($DB->record_exists('course', ['shortname' => 'EVC1']), 'No action runs without confirmation');
+        $this->assert_threshold($failures);
+    }
+
+    /**
+     * SYS-EVAL-003: in the voice conversation the answers are a few short complete sentences without tables, lists, code,
+     * links, emojis or formatting, keep the values of the site data, say dates as spoken, offer the details on screen
+     * when they are long, and ask to confirm on screen an action that changes data, in English and in Spanish.
+     *
+     * @return void
+     */
+    public function test_spoken_answers_are_short_and_keep_the_data(): void {
+        set_config('audio_enabled', 1, 'local_jedomi');
+        set_config('voice_enabled', 1, 'local_jedomi');
+        $failures = [];
+        foreach ($this->dataset['voice_answers'] as $item) {
+            $result = $this->ask($item['role'], $item['question'], ['voice_mode' => true]);
+            $answer = trim($result['answer']);
+            $lower = \core_text::strtolower($answer);
+            $problems = [];
+            if ($result['errors']) {
+                $problems[] = 'service error ' . json_encode($result['errors']);
+            }
+            $sentences = preg_split('/(?<=[.!?…])\s+/u', $answer, -1, PREG_SPLIT_NO_EMPTY);
+            if (count($sentences) > 5) {
+                $problems[] = count($sentences) . ' sentences';
+            }
+            foreach ($sentences as $sentence) {
+                if (count(preg_split('/\s+/u', $sentence)) > 40) {
+                    $problems[] = 'long sentence: ' . $sentence;
+                }
+            }
+            if (preg_match('/^\s*(\||[-*+]\s|\d+[.)]\s|#)|```|\*\*|https?:\/\/|\[[^\]]+\]\(/m', $answer)) {
+                $problems[] = 'formatting, list, table, code or link';
+            }
+            if (preg_match('/[\x{1F300}-\x{1FAFF}\x{2600}-\x{27BF}]/u', $answer)) {
+                $problems[] = 'emoji';
+            }
+            if (preg_match('/\b\d{4}-\d{2}-\d{2}\b|\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/', $answer)) {
+                $problems[] = 'date written instead of spoken';
+            }
+            if ($item['must_contain_any'] && !array_filter($item['must_contain_any'],
+                    static fn(string $value): bool => str_contains($lower, \core_text::strtolower($value)))) {
+                $problems[] = 'missing any of ' . implode(', ', $item['must_contain_any']);
+            }
+            if ($answer !== '' && self::language_of($answer) !== $item['language']) {
+                $problems[] = 'answered in ' . self::language_of($answer) . ' instead of ' . $item['language'];
+            }
+            $screen = $item['language'] === 'es' ? 'pantalla' : 'screen';
+            if ($item['offers_screen'] && !str_contains($lower, $screen)) {
+                $problems[] = 'does not offer the details on screen';
+            }
+            if ($item['action_tool'] !== '') {
+                if (!in_array($item['action_tool'], array_column($result['pending'], 'tool'), true)) {
+                    $problems[] = "did not propose {$item['action_tool']}";
+                }
+                // "confirm" also matches confirme, confirmar and confirmación.
+                if (!str_contains($lower, 'confirm') || !str_contains($lower, $screen)) {
+                    $problems[] = 'does not ask to confirm on screen';
+                }
+            }
+            $failures[$item['id']] = $problems;
+        }
         $this->assert_threshold($failures);
     }
 }

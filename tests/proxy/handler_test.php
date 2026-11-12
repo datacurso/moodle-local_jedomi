@@ -533,6 +533,7 @@ final class handler_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-109 / MDL-CTR-001: the voice mode adds the spoken answer instructions only while the voice conversation is enabled; the server ignores it otherwise.
      * V8: a request of the voice conversation adds the spoken answer instructions, only while the voice conversation is
      * enabled; the answer streamed to the chat is the full text.
      */
@@ -882,12 +883,13 @@ final class handler_test extends \advanced_testcase {
     }
 
     /**
-     * MDL-INT-039: the chat knows the real role, course and activity of the page.
+     * MDL-INT-039: the chat knows the type, id and course of the activity of the page, the header shows the section, and
+     * outside a course a teacher gets the same role in the web chat, Telegram and the confirmation of actions.
      * [Pendiente:skip]
      */
     public function test_chat_uses_the_real_role_course_and_activity_of_the_page(): void {
-        $this->markTestSkipped('Pending fix: the role and the context are computed in a request without course, so teachers '
-            . 'get the student role and the AI does not receive the course or the activity.');
+        $this->markTestSkipped('Pending fix: on an activity page the AI only knows it is in an activity (no type, id or '
+            . 'course), the header never shows the section, and outside a course a teacher is a student in the web chat.');
     }
 
     /**
@@ -972,23 +974,149 @@ final class handler_test extends \advanced_testcase {
     }
 
     /**
-     * SYS-E2E-004: a teacher asks to notify the group and, after confirming, the message reaches only the valid
-     * recipients. Behat: chat_system.feature.
-     * [Pendiente:skip]
+     * MDL-INT-041: a manager who is not an administrator runs from the web chat a database query and a web service
+     * function of the manager list, with the same rule as in Telegram; the companion permission is prohibited to no
+     * default role.
+     *
+     * @return void
      */
-    public function test_teacher_can_notify_the_group_of_the_course(): void {
-        $this->markTestSkipped('Pending fix: a teacher gets the Student role in the chat, without database or web '
-            . 'service tools, so the recipients cannot be found and the sending is never proposed.');
+    public function test_manager_runs_queries_and_web_services_from_the_web_chat(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $manager = $this->getDataGenerator()->create_user();
+        role_assign((int) $DB->get_field('role', 'id', ['shortname' => 'manager']), $manager->id, \context_system::instance());
+        $this->setUser($manager);
+        \local_jedomi\local\service\admin_settings_service::save_ws_allowlist('manager', ['core_webservice_get_site_info']);
+
+        $query = json_decode(handler::run_tool('execute_sql', ['sql' => 'SELECT id FROM {course} WHERE id = ' . SITEID],
+            'manager'), true);
+        $this->assertSame(1, $query['row_count'] ?? null, json_encode($query));
+
+        $listed = json_decode(handler::run_tool('ws_execute',
+            ['wsname' => 'core_webservice_get_site_info', 'params' => '{}'], 'manager'), true);
+        $this->assertArrayHasKey('result', $listed, json_encode($listed));
+        $this->assertSame((int) $manager->id, (int) json_decode($listed['result'], true)['userid']);
+
+        $prohibits = $DB->count_records('role_capabilities',
+            ['capability' => 'local/jedomi:companion_api', 'permission' => CAP_PROHIBIT]);
+        $this->assertSame(0, $prohibits, 'The companion permission must not be prohibited to any role');
     }
 
     /**
-     * SYS-E2E-007: a teacher uses the assistant with the teacher role and the real context of the course.
-     * Behat: chat_system.feature.
-     * [Pendiente:skip]
+     * SYS-E2E-004: a teacher asks to notify the group from their course: the sending is proposed with its card, nothing
+     * is sent before confirming, and after confirming the message reaches only the valid recipients as an internal
+     * message. Behat: chat_system.feature.
+     *
+     * @return void
+     */
+    public function test_teacher_can_notify_the_group_of_the_course(): void {
+        global $PAGE;
+        $this->resetAfterTest();
+        $this->preventResetByRollback();
+        $gen = $this->getDataGenerator();
+        $course = $gen->create_course();
+        $teacher = $gen->create_and_enrol($course, 'editingteacher');
+        $one = $gen->create_and_enrol($course, 'student');
+        $two = $gen->create_and_enrol($course, 'student');
+        $this->setUser($teacher);
+        // The enrolments above already prepared a page for their welcome e-mails: the chat runs on a new page.
+        $PAGE = new \moodle_page();
+        $PAGE->set_course($course);
+        $role = \local_jedomi_get_user_role();
+        $this->assertSame('teacher', $role);
+
+        $fake = new fake_ai_client();
+        $fake->enqueue_tool_calls([['id' => 'call_1', 'type' => 'function', 'function' => [
+            'name' => 'send_messages',
+            'arguments' => json_encode(['user_ids' => [(int) $one->id, (int) $two->id, 987654],
+                'message' => 'The class of Friday is cancelled']),
+        ]]]);
+        $fake->enqueue_text('Please confirm.');
+        client::set_instance_for_testing($fake);
+        $sink = $this->redirectMessages();
+
+        $events = $this->events($this->capture(fn() => handler::run(
+            [['role' => 'user', 'content' => 'Tell the students the class of Friday is cancelled']],
+            $role,
+            (int) $teacher->id
+        )));
+
+        $this->assertContains('send_messages', $this->tool_names($fake->calls[0]));
+        $pending = array_values(array_filter($events, static fn($e) => is_array($e) && isset($e['_jedomi_pending_action'])));
+        $this->assertCount(1, $pending);
+        $card = $pending[0]['_jedomi_pending_action'];
+        $this->assertSame('send_messages', $card['tool']);
+        $this->assertSame('The class of Friday is cancelled', $card['preview']);
+        $this->assertCount(0, $sink->get_messages(), 'Nothing is sent before the confirmation');
+
+        $result = \core_external\external_api::clean_returnvalue(
+            \local_jedomi\external\resolve_action::execute_returns(),
+            \local_jedomi\external\resolve_action::execute((int) $card['id'], true, '')
+        );
+
+        $this->assertSame('executed', $result['status']);
+        $this->assertSame(2, $result['sent']);
+        $this->assertSame(1, $result['failed']);
+        $recipients = array_map(static fn($m) => (int) $m->useridto, $sink->get_messages());
+        sort($recipients);
+        $expected = [(int) $one->id, (int) $two->id];
+        sort($expected);
+        $this->assertSame($expected, $recipients);
+        foreach ($sink->get_messages() as $message) {
+            $this->assertSame((int) $teacher->id, (int) $message->useridfrom);
+            $this->assertStringContainsString('The class of Friday is cancelled', $message->fullmessage);
+        }
+    }
+
+    /**
+     * SYS-E2E-007: a teacher in their course gets the teacher role, the course of the page and the permissions of the
+     * teacher actions, and the AI works with the teacher tools on the real course; another course is refused.
+     * The PDF of the activities is covered in document_read_tool_test. Behat: chat_system.feature.
+     *
+     * @return void
      */
     public function test_teacher_uses_the_assistant_with_the_role_and_context_of_the_course(): void {
-        $this->markTestSkipped('Pending fix: teachers always get the Student role, the AI does not know the real course '
-            . 'nor activity and the header does not show the course.');
+        global $PAGE;
+        [$teacher, $own, $other] = $this->editing_teacher();
+        set_config('files_enabled', 1, 'local_jedomi');
+        // The enrolments of the fixture already prepared a page for their welcome e-mails: the chat runs on a new page.
+        $PAGE = new \moodle_page();
+        $PAGE->set_course($own);
+        $PAGE->set_url('/course/view.php', ['id' => $own->id]);
+
+        $role = \local_jedomi_get_user_role();
+        $this->assertSame('teacher', $role);
+        $context = \local_jedomi_get_page_context();
+        $this->assertSame((int) $own->id, (int) $context['course_id']);
+        $this->assertSame($own->fullname, $context['course_name']);
+        $spt = \local_jedomi_generate_spt($role);
+        $this->assertSame((int) $own->id, (int) $spt['course_id']);
+        $this->assertContains((int) $own->id, $spt['course_ids_owned']);
+        $this->assertTrue($spt['capabilities']['can_view_all_grades']);
+
+        $fake = new fake_ai_client();
+        $fake->enqueue_tool_calls([['id' => 'call_1', 'type' => 'function', 'function' => [
+            'name' => 'execute_sql',
+            'arguments' => json_encode(['sql' => 'SELECT u.firstname FROM {user_enrolments} ue JOIN {enrol} e ON e.id = '
+                . 'ue.enrolid JOIN {user} u ON u.id = ue.userid WHERE e.courseid = ' . $own->id]),
+        ]]]);
+        $fake->enqueue_text('Your students.');
+        client::set_instance_for_testing($fake);
+
+        $this->capture(fn() => handler::run([['role' => 'user', 'content' => 'How are my students doing?']], $role,
+            (int) $teacher->id));
+
+        $tools = $this->tool_names($fake->calls[0]);
+        foreach (['execute_sql', 'ws_execute', 'document_read'] as $tool) {
+            $this->assertContains($tool, $tools);
+        }
+        $toolresult = end($fake->calls[1]['messages']);
+        $this->assertSame('tool', $toolresult['role']);
+        $this->assertMatchesRegularExpression('/"row_count"\s*:\s*2\b/', $toolresult['content']);
+
+        $refused = json_decode(handler::run_tool('execute_sql',
+            ['sql' => "SELECT fullname FROM {course} WHERE id = {$other->id}"], $role), true);
+        $this->assertStringNotContainsString('Foreign Course Marker', json_encode($refused));
     }
 
     /**
@@ -1135,5 +1263,122 @@ final class handler_test extends \advanced_testcase {
         $this->assertSame('permission_denied', $deleted['error'] ?? null);
         $this->assertNotNull(\local_jedomi\agent\agent_manager::get_agent($foreign));
         $this->assertTrue($own['success'] ?? false, 'The manager still creates their own agents');
+    }
+
+    /**
+     * MDL-INT-103: a manager without the site configuration permission is only offered the administration operations
+     * they can run, or is told before the confirmation.
+     * [Pendiente:skip]
+     *
+     * @return void
+     */
+    public function test_managers_are_only_offered_the_administration_operations_they_can_run(): void {
+        $this->markTestSkipped('Pending fix: the administration operations are offered to managers but their execution '
+            . 'needs the site configuration permission, so after confirming a manager always gets the '
+            . 'missing permission message.');
+    }
+
+    /**
+     * SYS-E2E-014: speaking over the confirm on screen notice keeps the wait, an interruption while thinking leaves no
+     * hidden pending action and the wait ends and releases the microphone when the action expires.
+     * [Pendiente:skip]
+     *
+     * @return void
+     */
+    public function test_interruptions_never_skip_the_voice_confirmation_wait(): void {
+        $this->markTestSkipped('Pending fix: speaking over the confirm on screen notice makes Jedomi listen again, an '
+            . 'interrupted request can leave a pending action without its card, and the wait has no '
+            . 'time limit with the microphone open.');
+    }
+
+    /**
+     * MDL-INT-095: the server decides the availability with the course of the real page, never with the course the
+     * browser presents: requests sent from an excluded course, or from a course not selected in the "show only in the
+     * selected courses" mode, that present the site home as their course are refused without calling the AI.
+     * [Pendiente:fail] The server checks the course sent by the browser, so presenting the site home bypasses the
+     * availability by course.
+     *
+     * @return void
+     */
+    public function test_course_of_the_request_is_decided_on_the_server(): void {
+        global $PAGE;
+        $this->require_provider();
+        $this->resetAfterTest();
+        $gen = $this->getDataGenerator();
+        $excluded = $gen->create_course();
+        $selected = $gen->create_course();
+        $student = $gen->create_user();
+        $gen->enrol_user($student->id, $excluded->id, 'student');
+        $gen->enrol_user($student->id, $selected->id, 'student');
+        $this->setUser($student);
+        // Permissions obtained presenting the site home as the course of the page.
+        $PAGE = new \moodle_page();
+        $PAGE->set_course(get_site());
+        $spt = \local_jedomi_generate_spt(\local_jedomi_get_user_role());
+        $this->assertSame((int) SITEID, (int) $spt['course_id'], 'Precondition: the browser presents the site home');
+
+        $outcomes = [];
+        foreach (['exclude' => $excluded, 'include' => $selected] as $mode => $listed) {
+            set_config('course_mode', $mode, 'local_jedomi');
+            set_config('course_list', (string) $listed->id, 'local_jedomi');
+            // The real page: the excluded course, or a course that is not the selected one.
+            $page = $mode === 'exclude' ? $excluded : $gen->create_course();
+            $fake = new fake_ai_client();
+            $fake->enqueue_text('Answer.');
+            client::set_instance_for_testing($fake);
+            $context = ['page_url' => (new \moodle_url('/course/view.php', ['id' => $page->id]))->out(false),
+                'course_id' => (int) $page->id, 'location' => 'course'];
+            $events = $this->events($this->capture(fn() => handler::run_from_request(
+                ['messages' => [['role' => 'user', 'content' => 'Show my grades']], 'context' => $context],
+                spt_validator::validate($spt),
+                $spt,
+                (int) $student->id
+            )));
+            $outcomes[$mode] = ['calls' => count($fake->calls), 'errors' => count($this->error_events($events))];
+        }
+
+        foreach ($outcomes as $mode => $outcome) {
+            $this->assertSame(0, $outcome['calls'], "{$mode} mode: the AI must not be called from the real page");
+            $this->assertSame(1, $outcome['errors'], "{$mode} mode: the request must be refused");
+        }
+    }
+
+    /**
+     * MDL-CTR-011: with the Basic and the Strict levels nothing the AI receives carries the real personal data: not the
+     * message of the user, not the text of an attachment, not the context of the page and not the previous answers.
+     * [Pendiente:fail] The anonymisation only covers the tool results: messages, attachments, page context and history
+     * reach the AI with the real data.
+     *
+     * @return void
+     */
+    public function test_everything_sent_to_the_ai_is_anonymised(): void {
+        $this->require_provider();
+        foreach (['basic', 'strict'] as $level) {
+            $this->resetAfterTest();
+            $this->setAdminUser();
+            \local_jedomi\local\service\admin_settings_service::save_privacy_settings(false, $level, []);
+            $this->getDataGenerator()->create_user(['firstname' => 'Ximena', 'lastname' => 'Quintanilla',
+                'email' => 'ximena.quintanilla@example.com']);
+            $fake = new fake_ai_client();
+            $fake->enqueue_text('Done.');
+            client::set_instance_for_testing($fake);
+            $spt = \local_jedomi_generate_spt('admin');
+            $input = [
+                'messages' => [
+                    ['role' => 'user', 'content' => 'Who has the e-mail ximena.quintanilla@example.com?'],
+                    ['role' => 'assistant', 'content' => 'It is Ximena Quintanilla, ximena.quintanilla@example.com.'],
+                    ['role' => 'user', 'content' => "Summarise this file\n\n[Attached file: list.txt]\n"
+                        . 'Ximena Quintanilla <ximena.quintanilla@example.com> failed the exam.'],
+                ],
+                'context' => ['location' => 'profile', 'page_title' => 'Ximena Quintanilla: Public profile'],
+            ];
+
+            $this->capture(fn() => handler::run_from_request($input, 'admin', $spt, (int) get_admin()->id));
+
+            $this->assertCount(1, $fake->calls, 'Control: the question reached the AI');
+            $sent = json_encode($fake->calls[0]['messages'], JSON_UNESCAPED_UNICODE);
+            $this->assertStringNotContainsString('ximena.quintanilla@example.com', $sent, "{$level}: e-mail sent to the AI");
+            $this->assertStringNotContainsString('Quintanilla', $sent, "{$level}: name sent to the AI");
+        }
     }
 }

@@ -163,6 +163,7 @@ final class sidebar_templates_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-068 / MDL-UNIT-111 / MDL-UNIT-112: the voice view has the sphere, the state text and the exit button, and the button sits next to the microphone only while the voice is enabled.
      * V9, V10: the voice conversation button and view are in the panel only while the voice conversation is enabled; the
      * view has the state, the exit button and the regions the module updates.
      *
@@ -308,8 +309,9 @@ final class sidebar_templates_test extends \advanced_testcase {
      * [Pendiente:skip]
      */
     public function test_an_answer_can_be_stopped_and_failures_leave_no_orphan_message(): void {
-        $this->markTestSkipped('Pending implementation: there is no stop button and a failed answer leaves its question '
-            . 'in the history without an answer.');
+        $this->markTestSkipped('Pending implementation: the written chat has no stop button (only speaking over Jedomi '
+            . 'cancels it in the voice conversation), a new conversation does not stop it and a failed answer leaves its '
+            . 'question in the history without an answer.');
     }
 
     /**
@@ -472,5 +474,18 @@ final class sidebar_templates_test extends \advanced_testcase {
     public function test_audio_selector_formats_and_recording_duration_match_the_server(): void {
         $this->markTestSkipped('Pending fix: the audio selector accepts fewer formats than the server and recording has no '
             . 'duration limit in the browser.');
+    }
+
+    /**
+     * MDL-UNIT-117: pressing the voice conversation button while a message is sent, during a recording or with a voice
+     * message pending tells the user why, and the automatic exit after the silence is announced.
+     * [Pendiente:skip]
+     *
+     * @return void
+     */
+    public function test_voice_conversation_button_never_fails_silently(): void {
+        $this->markTestSkipped('Pending fix: the voice conversation button does nothing without telling the user while a '
+            . 'message is sent, a recording is in progress or a voice message is pending, and the '
+            . 'automatic exit after the silence is not announced.');
     }
 }

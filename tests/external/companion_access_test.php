@@ -132,24 +132,25 @@ final class companion_access_test extends \advanced_testcase {
     }
 
     /**
-     * MDL-INT-075: the agents, training data and companion service permissions are declared with their default roles.
+     * MDL-INT-075: the agents, training data and companion service permissions are declared and granted by default only
+     * to the Manager role.
      */
     public function test_permissions_are_declared_with_their_default_roles(): void {
-        foreach (
-            ['local/jedomi:manageagents', 'local/jedomi:viewtrainingdata', 'local/jedomi:managetrainingdata',
-                'local/jedomi:companion_api'] as $capability
-        ) {
+        $capabilities = ['local/jedomi:manageagents', 'local/jedomi:viewtrainingdata', 'local/jedomi:managetrainingdata',
+            'local/jedomi:companion_api'];
+        foreach ($capabilities as $capability) {
             $this->assertNotEmpty(get_capability_info($capability), $capability);
             $this->assertSame(CAP_ALLOW, get_default_capabilities('manager')[$capability] ?? null, $capability);
-        }
-        // No other archetype has a default for the companion permission: a prohibit on the authenticated user role,
-        // which every logged-in user holds, would remove it from managers too.
-        foreach (['coursecreator', 'editingteacher', 'teacher', 'student', 'guest', 'user', 'frontpage'] as $archetype) {
-            $this->assertNull(get_default_capabilities($archetype)['local/jedomi:companion_api'] ?? null, $archetype);
+            // No other archetype has a default: a prohibit on the authenticated user role, which every logged-in user
+            // holds, would remove it from managers too.
+            foreach (['coursecreator', 'editingteacher', 'teacher', 'student', 'guest', 'user', 'frontpage'] as $archetype) {
+                $this->assertNull(get_default_capabilities($archetype)[$capability] ?? null, "{$archetype} {$capability}");
+            }
         }
     }
 
     /**
+     * MDL-INT-041 / MDL-INT-075: the companion permission is granted to a non-administrator manager, who runs a read query.
      * A manager who is not a site administrator holds the companion permission and can run a read query from the chat;
      * a user with only the authenticated user role does not hold it and is refused.
      */

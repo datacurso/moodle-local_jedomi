@@ -312,4 +312,53 @@ final class agent_create_test extends \advanced_testcase {
         $owner = $this->post_as('admin', 'ajax/agent_clear_cache.php', ['hash' => str_repeat('a', 32)]);
         $this->assertTrue($owner['deleted']);
     }
+
+    /**
+     * MDL-INT-099: a manager never sees the instruction of an agent of a user with more permissions: not in the table of
+     * the Agents tab, not in its details and not in the list of agents of the web chat or of Telegram.
+     * [Pendiente:fail] The table, Ver detalles and the list_agents tool show managers the instructions of every agent.
+     *
+     * @return void
+     */
+    public function test_manager_never_sees_the_instruction_of_an_administrator_agent(): void {
+        $this->resetAfterTest();
+        $manager = $this->create_manager('agentmanager');
+        $secret = 'Administrator instruction marker';
+        $this->create_agent_of((int) get_admin()->id, $secret);
+        $this->create_agent_of((int) $manager->id, 'My report');
+
+        $table = $this->post_as('agentmanager', 'ajax/agent_stats.php', []);
+        $this->assertTrue($table['ok'], $table['error'] ?? '');
+        $this->assertStringContainsString('My report', json_encode($table['rows']), 'Control: own agents are listed');
+
+        $this->setUser($manager);
+        $chat = \local_jedomi\proxy\handler::run_tool('list_agents', [], 'manager');
+        $telegram = (new \local_jedomi\agent\tool\list_agents_tool((int) $manager->id))->execute((object) []);
+
+        $this->assertStringNotContainsString($secret, json_encode($table['rows']), 'Agents tab table');
+        $this->assertStringNotContainsString($secret, $chat, 'Web chat list of agents');
+        $this->assertStringNotContainsString($secret, $telegram, 'Telegram and agents list of agents');
+    }
+
+    /**
+     * MDL-INT-101: a manager cannot change the instruction of the agent of another manager, which keeps running only the
+     * instruction of its creator.
+     * [Pendiente:fail] A manager can edit the instruction of the agent of another manager, which then runs with the
+     * identity, the permissions and the credits of its creator.
+     *
+     * @return void
+     */
+    public function test_manager_cannot_change_the_instruction_of_another_manager_agent(): void {
+        $this->resetAfterTest();
+        $this->create_manager('agentmanager');
+        $other = $this->create_manager('othermanager');
+        $id = $this->create_agent_of((int) $other->id, 'Weekly report of the other manager');
+
+        $answer = $this->post_as('agentmanager', 'ajax/agent_create.php', ['action' => 'update', 'id' => $id,
+            'prompt' => 'Run what I want with your credits']);
+
+        $this->assertSame('Weekly report of the other manager', agent_manager::get_agent($id)->prompt,
+            'The agent must keep the instruction of its creator');
+        $this->assertFalse($answer['ok'], 'The edition of the instruction must be rejected');
+    }
 }

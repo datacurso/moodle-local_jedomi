@@ -65,6 +65,7 @@ final class audio_service_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-113: the recording of the voice conversation is transcribed with the audio model.
      * M10: the audio goes to audio/transcriptions with the audio model and its text comes back.
      * MDL-INT-053: the audio is transcribed with the configured audio model.
      */
@@ -86,6 +87,7 @@ final class audio_service_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-113: the recording is transcribed in the language of the user.
      * The language of the user's profile goes with the audio, as a two-letter code, so the model does not guess it.
      *
      * @covers \local_jedomi\local\service\audio_service::language_code
@@ -145,6 +147,7 @@ final class audio_service_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-115: a transcription that fails gives its reason to show.
      * M10: an empty transcription is reported as an audio that could not be understood.
      * MDL-INT-053: an empty transcription is treated as audio not understood.
      */
@@ -176,6 +179,7 @@ final class audio_service_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-115: each failure of the transcription has its own reason to show.
      * M9: errors of audio/transcriptions get their own message.
      * MDL-INT-053: rejections of the service (too long, unsupported format) reach the user as a controlled answer.
      * API-INT-002: a transcription the service rejects reaches the user as a controlled answer.

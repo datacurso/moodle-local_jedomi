@@ -668,7 +668,8 @@ final class agent_runner_test extends \advanced_testcase {
      * [Pendiente:skip]
      */
     public function test_repeated_failures_follow_the_schedule_and_disable_the_agent(): void {
-        $this->markTestSkipped('Pending fix: a failing agent is retried every minute forever and never disabled.');
+        $this->markTestSkipped('Pending fix: a failing agent is retried every minute forever, never disabled for repeated '
+            . 'failures, and the Failing state is not shown anywhere.');
     }
 
     /**
@@ -676,7 +677,8 @@ final class agent_runner_test extends \advanced_testcase {
      * [Pendiente:skip]
      */
     public function test_agent_result_can_be_consulted_in_moodle(): void {
-        $this->markTestSkipped('Pending feature: without a linked Telegram the agent result is not shown anywhere in Moodle.');
+        $this->markTestSkipped('Pending feature: the agent result is not shown anywhere in Moodle, so without a linked '
+            . 'Telegram, with the integration disabled or with the role blocked for Telegram it never reaches its creator.');
     }
 
     /**
@@ -802,5 +804,17 @@ final class agent_runner_test extends \advanced_testcase {
         $next = new \DateTime('@' . \local_jedomi\agent\agent_manager::get_agent($id)->nextrun);
         $next->setTimezone(new \DateTimeZone($timezone));
         $this->assertSame('08:00', $next->format('H:i'), 'The schedule is applied in the time zone of the creator');
+    }
+
+    /**
+     * MDL-INT-102: a Category or User context agent created by a teacher is not disabled on its first run for lack of
+     * a permission the teacher role does not have, or the form does not offer those contexts.
+     * [Pendiente:skip]
+     *
+     * @return void
+     */
+    public function test_teacher_category_or_user_agents_are_not_disabled_by_an_incoherent_check(): void {
+        $this->markTestSkipped('Pending fix: Category and User context agents of a teacher are disabled on their first '
+            . 'run because the access check needs the permission to view courses.');
     }
 }

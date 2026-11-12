@@ -68,6 +68,7 @@ final class system_message_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-109: in voice mode the instructions ask for short spoken sentences without formatting.
      * V8: in voice mode the instructions ask for short spoken answers in full sentences, without tables, lists, code or
      * markdown, offering the details on screen; without it they do not.
      */
@@ -78,10 +79,14 @@ final class system_message_test extends \advanced_testcase {
         $text = system_message::build('admin', [])['content'];
 
         $this->assertStringContainsString('VOICE CONVERSATION:', $voice);
-        foreach (['read aloud', 'short', 'complete sentences', 'tables', 'code', 'markdown', 'on screen'] as $rule) {
+        foreach (['read aloud', 'short', 'complete sentences', 'spoken language', 'tables', 'lists', 'code', 'links',
+                'emojis', 'markdown', 'numbers and dates as they are spoken', 'details on screen',
+                'say briefly what will be done', 'confirm it on screen'] as $rule) {
             $this->assertStringContainsString($rule, $voice, $rule);
         }
         $this->assertStringNotContainsString('VOICE CONVERSATION:', $text);
+        // Outside the voice conversation the instructions do not change: the voice block is the only difference.
+        $this->assertSame($text, preg_replace('/VOICE CONVERSATION:\n(?:- [^\n]*\n)+\n/', '', $voice));
         $this->assertStringContainsString('ACTIONS THAT CHANGE DATA:', $voice, 'The voice mode keeps every other rule');
     }
 

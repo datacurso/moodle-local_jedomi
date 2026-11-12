@@ -58,11 +58,33 @@ final class general_settings_form_test extends \advanced_testcase {
     }
 
     /**
-     * MDL-UNIT-013: the help of the permission token secret explains its purpose without mentioning retired components.
-     * [Pendiente:skip]
+     * MDL-UNIT-013: the help of the permission token secret explains its purpose and the effect of changing it, in English
+     * and in Spanish, without mentioning retired components.
+     *
+     * @return void
      */
     public function test_secret_help_does_not_mention_retired_components(): void {
-        $this->markTestSkipped('Pending fix: the secret help still refers to an external gateway that is no longer used.');
+        global $CFG;
+        $this->resetAfterTest();
+        // The test dataroot has no language packs: a minimal langconfig lets the string manager read lang/es.
+        check_dir_exists($CFG->dataroot . '/lang/es');
+        file_put_contents($CFG->dataroot . '/lang/es/langconfig.php',
+            "<?php\n\$string['thislanguage'] = 'Español';\n\$string['parentlanguage'] = '';\n");
+        get_string_manager()->reset_caches();
+
+        $expected = [
+            'en' => ['generated automatically', 'stored in moodle', 'does not need to be set', 'invalidates', 'reload'],
+            'es' => ['genera automáticamente', 'guarda en moodle', 'no hace falta configurarlo', 'invalida', 'recargar'],
+        ];
+        foreach ($expected as $lang => $phrases) {
+            $help = \core_text::strtolower(get_string_manager()->get_string('spt_secret_help', 'local_jedomi', null, $lang));
+            foreach ($phrases as $phrase) {
+                $this->assertStringContainsString($phrase, $help, "$lang help must say: $phrase");
+            }
+            foreach (['gateway', 'pasarela', 'n8n', 'external service', 'servicio externo'] as $retired) {
+                $this->assertStringNotContainsString($retired, $help, "$lang help mentions a retired component");
+            }
+        }
     }
 
     /**

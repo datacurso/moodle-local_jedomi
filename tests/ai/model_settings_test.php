@@ -369,6 +369,7 @@ final class model_settings_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-105: the speech selector lists only speech models with the default first, each with its own voices.
      * V6: the speech selector lists the text-to-speech models with the default one first, each with its voices.
      */
     public function test_speech_catalogue_lists_its_models_and_voices(): void {
@@ -397,6 +398,7 @@ final class model_settings_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-105: speech models never appear in the chat, file and image, or audio selectors.
      * V6: a speech model never appears in the chat, vision or audio selectors, and no other model in the speech one.
      */
     public function test_speech_models_are_only_in_the_speech_selector(): void {
@@ -413,6 +415,7 @@ final class model_settings_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-105: a saved model or voice no longer listed is replaced by the default, so an unlisted value never reaches the service.
      * V5: the speech model and voice fall back to the defaults when empty or not in their list, and a voice of
      * another model falls back to the default voice of the configured model.
      */
@@ -442,6 +445,7 @@ final class model_settings_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-105: on a site without configuration the voice conversation is off.
      * V5: the voice conversation is off until it is saved, and also off while audio processing is off.
      */
     public function test_voice_conversation_is_off_by_default_and_needs_audio(): void {
@@ -459,6 +463,7 @@ final class model_settings_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-086: the upgrade leaves the voice conversation off with the default model and voice.
      * V5: the 2026111100 upgrade step leaves the voice conversation off, with Qwen3-TTS and Vivian.
      */
     public function test_upgrade_saves_voice_defaults(): void {
@@ -478,6 +483,7 @@ final class model_settings_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-086: the upgrade does not touch voice values already saved.
      * V5: the upgrade step keeps the voice settings an administrator already saved.
      */
     public function test_upgrade_keeps_saved_voice_settings(): void {

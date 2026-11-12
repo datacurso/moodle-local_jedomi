@@ -207,7 +207,8 @@ final class pending_action_service_test extends \advanced_testcase {
      * [Pendiente:skip]
      */
     public function test_pending_actions_are_described_in_readable_language(): void {
-        $this->markTestSkipped('Pending fix: the send card always says students and other actions show technical details.');
+        $this->markTestSkipped('Pending fix: the send card always says students, counts every proposed recipient even '
+            . 'those the sender cannot contact, and the other actions show technical details.');
     }
 
     /**

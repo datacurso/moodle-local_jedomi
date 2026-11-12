@@ -401,4 +401,27 @@ final class observers_test extends \advanced_testcase {
     public function test_assistant_activity_is_logged_as_events(): void {
         $this->markTestSkipped('Pending implementation: the plugin triggers no Moodle events.');
     }
+
+    /**
+     * MDL-INT-105: a linked student whose role is blocked for Telegram or whose account is suspended gets no grade
+     * notification.
+     * [Pendiente:skip]
+     *
+     * @return void
+     */
+    public function test_grade_notification_follows_the_role_and_account_rules(): void {
+        $this->markTestSkipped('Pending fix: a student with the role blocked for Telegram or the account suspended still '
+            . 'gets the grade notification.');
+    }
+
+    /**
+     * MDL-INT-107: regrading a submission several times after the minimum interval does not repeat the grade
+     * notification.
+     * [Pendiente:skip]
+     *
+     * @return void
+     */
+    public function test_grade_notification_is_not_repeated_on_each_regrade(): void {
+        $this->markTestSkipped('Pending fix: each regrade notifies again once the minimum interval has passed.');
+    }
 }

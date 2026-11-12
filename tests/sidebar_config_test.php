@@ -111,6 +111,7 @@ final class sidebar_config_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-068 / MDL-UNIT-111 / MDL-UNIT-115: the panel gets the voice conversation, the text of each phase and the failure notices only while it is enabled, never with audio off.
      * V9: the sidebar receives the voice conversation, its endpoint and its strings only while it is enabled, and never
      * while audio processing is off.
      *
@@ -149,20 +150,73 @@ final class sidebar_config_test extends \advanced_testcase {
     }
 
     /**
-     * MDL-UNIT-018: quick actions use the real course of the page and appear in every planned context.
+     * MDL-UNIT-018: outside a course the quick actions never use an id of another kind as the course, and the admin
+     * quick actions appear in the administration.
      * [Pendiente:skip]
      */
     public function test_quick_actions_use_the_real_course_of_the_page(): void {
-        $this->markTestSkipped('Pending fix: admin and in-course teacher quick actions never appear'
-            . ' and the course id is taken from any page parameter.');
+        $this->markTestSkipped('Pending fix: the admin quick actions of the administration never appear and, outside a '
+            . 'course, the course id is taken from any id parameter of the page (the user id on the profile).');
     }
 
     /**
-     * SYS-E2E-002: each role sees and uses its quick actions with the course of the page. Behat: chat_system.feature.
-     * [Pendiente:skip] The admin quick actions inside a course depend on the MDL-UNIT-018 defect.
+     * Sidebar configuration of a user on a page.
+     *
+     * @param \stdClass $user User.
+     * @param \stdClass|null $course Course of the page; null for the site home.
+     * @return array
+     */
+    private function config_on_page(\stdClass $user, ?\stdClass $course): array {
+        global $PAGE;
+        $this->setUser($user);
+        $PAGE = new \moodle_page();
+        if ($course) {
+            $PAGE->set_course($course);
+            $PAGE->set_url('/course/view.php', ['id' => $course->id]);
+        } else {
+            $PAGE->set_course(get_site());
+            $PAGE->set_url('/index.php');
+        }
+        return local_jedomi_get_sidebar_config();
+    }
+
+    /**
+     * SYS-E2E-002: each role gets, inside a course and outside it, the role and the course of the page its quick actions
+     * are built with, and a teacher the permissions its conditional actions depend on. Behat: chat_system.feature.
+     *
+     * @return void
      */
     public function test_quick_actions_by_role_use_the_course_of_the_page(): void {
-        $this->markTestSkipped('Pending fix: the admin quick actions inside a course depend on the MDL-UNIT-018 defect.');
+        global $DB;
+        $this->resetAfterTest();
+        $gen = $this->getDataGenerator();
+        $course = $gen->create_course(['fullname' => 'Quick Actions Course']);
+        $teacher = $gen->create_and_enrol($course, 'editingteacher');
+        $student = $gen->create_and_enrol($course, 'student');
+        $manager = $gen->create_user();
+        role_assign((int) $DB->get_field('role', 'id', ['shortname' => 'manager']), $manager->id, \context_system::instance());
+
+        $expected = ['admin' => get_admin(), 'manager' => $manager, 'teacher' => $teacher, 'student' => $student];
+        foreach ($expected as $role => $user) {
+            $config = $this->config_on_page($user, $course);
+            $this->assertSame($role, $config['user_role'], "{$role} inside the course");
+            $this->assertSame((int) $course->id, (int) $config['context']['course_id'], "{$role} inside the course");
+            $this->assertSame('Quick Actions Course', $config['context']['course_name']);
+            $this->assertSame('course', $config['context']['location']);
+        }
+
+        $this->config_on_page($teacher, $course);
+        $spt = local_jedomi_generate_spt('teacher');
+        $this->assertSame((int) $course->id, (int) $spt['course_id']);
+        $this->assertTrue($spt['capabilities']['can_send_messages'], 'Notify group needs the messaging permission');
+        $this->assertTrue($spt['capabilities']['can_view_all_grades'], 'Top students needs the grades permission');
+
+        foreach (['admin' => get_admin(), 'manager' => $manager, 'student' => $student] as $role => $user) {
+            $config = $this->config_on_page($user, null);
+            $this->assertSame($role, $config['user_role'], "{$role} outside a course");
+            $this->assertSame(0, (int) $config['context']['course_id'], "{$role} outside a course");
+            $this->assertSame('', $config['context']['course_name'], "{$role} outside a course");
+        }
     }
     /**
      * MDL-INT-057: the chat permissions are renewed while the Moodle session is active and not after it ends.
@@ -172,6 +226,6 @@ final class sidebar_config_test extends \advanced_testcase {
      */
     public function test_chat_permissions_are_renewed_while_the_session_is_active(): void {
         $this->markTestSkipped('Pending fix: the chat permissions expire 30 minutes after loading the page and are never '
-            . 'renewed.');
+            . 'renewed, also during the voice conversation.');
     }
 }

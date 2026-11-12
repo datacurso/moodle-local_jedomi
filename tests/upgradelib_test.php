@@ -51,6 +51,7 @@ final class upgradelib_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-075 / MDL-INT-086: the update removes the prohibits of the companion permission of previous versions and keeps the changes of the administrator.
      * The prohibit left on the authenticated user role is removed, so a manager holds the capability again, while an
      * allow set by an administrator on another role is kept.
      */
@@ -83,6 +84,7 @@ final class upgradelib_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-086: a prohibit set by the administrator on another role is kept.
      * A prohibit on a role whose archetype is not one of the old defaults (for example a manager role) is kept.
      */
     public function test_prohibit_on_other_archetypes_is_kept(): void {

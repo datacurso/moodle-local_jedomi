@@ -200,6 +200,7 @@ final class document_read_tool_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-041 / MDL-INT-051 / SYS-E2E-007: an editing teacher reads the PDF of an activity of their own course.
      * An editing teacher reads the document of an activity in their own course from the web chat.
      */
     public function test_chat_editing_teacher_of_the_course_can_read(): void {
@@ -217,6 +218,7 @@ final class document_read_tool_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-041 / MDL-INT-051 / SYS-E2E-007: a teacher of another course is refused the PDF.
      * A teacher of another course cannot read the document from the web chat.
      */
     public function test_chat_teacher_of_another_course_cannot_read(): void {
@@ -232,6 +234,7 @@ final class document_read_tool_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-051: in the agents the creator teacher reads the PDF of their course.
      * An agent created by an editing teacher reads the document of an activity in the creator's course.
      */
     public function test_agent_of_the_course_teacher_can_read(): void {
@@ -247,6 +250,7 @@ final class document_read_tool_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-051: a hidden activity is refused to a user who cannot see it.
      * A non-editing teacher of the course cannot read the document of a hidden activity.
      */
     public function test_chat_teacher_cannot_read_a_hidden_activity(): void {

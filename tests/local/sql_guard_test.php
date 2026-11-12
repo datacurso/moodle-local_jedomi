@@ -81,6 +81,7 @@ final class sql_guard_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-108: a teacher only reads the data of the courses they manage.
      * MDL-INT-042: a teacher cannot read course data without limiting it to the courses they teach.
      *
      * @dataProvider unfiltered_query_provider
@@ -121,6 +122,8 @@ final class sql_guard_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-108: a teacher reads the data of their courses, also with the course as a parameter, the roles, activity
+     * types and categories, and the id and names of the users of their courses.
      * MDL-INT-042: a teacher can read the data of the courses they teach, also with parameters.
      *
      * @dataProvider filtered_query_provider
@@ -135,6 +138,7 @@ final class sql_guard_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-108: a course the teacher does not manage is refused also when it comes as a parameter of the query.
      * MDL-INT-042: a course the teacher does not teach is refused also when it comes as a parameter or as a context.
      */
     public function test_teacher_cannot_name_another_course_in_parameters_or_contexts(): void {
@@ -194,6 +198,8 @@ final class sql_guard_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-108: other users, other or all user columns and any other table (private messages, notifications,
+     * preferences) are rejected to a user who does not manage every course.
      * MDL-INT-042: a teacher who does not manage every course cannot read private data of the site: messages,
      * notifications, preferences, other databases, users outside their courses or private user columns.
      *
@@ -234,6 +240,7 @@ final class sql_guard_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-107: dangerous functions are rejected however they are written, for every user, administrators included.
      * MDL-INT-042: functions and clauses that read or write server files, pause or lock the database or reveal server
      * variables are rejected for every user, administrators included, whatever the case, spaces or comments.
      *
@@ -251,17 +258,22 @@ final class sql_guard_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-107: a normal read query with similar words in its texts or column names is not rejected by mistake.
      * MDL-INT-042: a function name inside a string literal is data, not a call.
      */
     public function test_function_names_inside_strings_are_not_rejected(): void {
         $this->resetAfterTest();
 
         $sql = "SELECT id FROM {course} WHERE fullname = 'sleep() and load_file'";
-
         $this->assertNull(sql_guard::rejection_reason($sql, (int) get_admin()->id));
+
+        $similar = "SELECT id AS sleeping, fullname AS benchmarks, shortname AS load_files, summary AS get_locks "
+            . "FROM {course} WHERE summary LIKE '%into outfile%'";
+        $this->assertNull(sql_guard::rejection_reason($similar, (int) get_admin()->id));
     }
 
     /**
+     * MDL-UNIT-108: administrators and managers keep reading every non sensitive table.
      * MDL-INT-042: administrators and managers keep reading every course without filters.
      */
     public function test_administrator_and_manager_are_not_limited(): void {
@@ -275,5 +287,55 @@ final class sql_guard_test extends \advanced_testcase {
             $this->assertNull(sql_guard::rejection_reason('SELECT id, email FROM {user}', $userid));
             $this->assertNull(sql_guard::rejection_reason('SELECT id, useridfrom FROM {messages}', $userid));
         }
+    }
+
+    /**
+     * Sensitive tables of the site.
+     *
+     * @return array<string, array{0: string}>
+     */
+    public static function sensitive_table_provider(): array {
+        $tables = ['config', 'config_log', 'sessions', 'external_tokens', 'user_private_key', 'user_password_history',
+            'user_password_resets', 'user_devices', 'auth_oauth2_linked_login', 'oauth2_issuer', 'messageinbound_datakeys',
+            'repository_instance_config', 'portfolio_instance_config', 'local_jedomi_telegram_links'];
+        return array_combine($tables, array_map(static fn(string $table): array => [$table], $tables));
+    }
+
+    /**
+     * MDL-UNIT-020: reading a table of configuration and its log, sessions, tokens, private keys, password history and
+     * resets, devices, external authentication, inbound message keys, repository and portfolio configuration or Telegram
+     * links is rejected for every user, administrators included.
+     *
+     * @dataProvider sensitive_table_provider
+     * @param string $table Table.
+     */
+    public function test_sensitive_tables_are_rejected_for_every_user(string $table): void {
+        [$teacher] = $this->teacher();
+        $manager = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->role_assign('manager', $manager->id);
+
+        foreach ([(int) get_admin()->id, (int) $manager->id, $teacher] as $userid) {
+            $this->assertNotNull(sql_guard::rejection_reason("SELECT id FROM {{$table}}", $userid), "{$table} for {$userid}");
+        }
+    }
+
+    /**
+     * MDL-UNIT-020: asking explicitly for a sensitive column (passwords, secrets, tokens, session keys, link codes) of
+     * any table is rejected, also for administrators, and reading every column of an allowed table leaves the sensitive
+     * columns out of the result.
+     */
+    public function test_sensitive_columns_are_rejected_or_left_out(): void {
+        $this->resetAfterTest();
+        $admin = (int) get_admin()->id;
+        foreach (['u.password FROM {user} u', 'secret FROM {user}', 'token FROM {course}', 'sessionkey FROM {user}',
+                'linkcode FROM {user}'] as $columns) {
+            $this->assertNotNull(sql_guard::rejection_reason('SELECT id, ' . $columns, $admin), $columns);
+        }
+
+        $row = sql_guard::filter_row(['id' => 2, 'username' => 'admin', 'password' => 'hash', 'secret' => 's', 'token' => 't',
+            'sessionkey' => 'k', 'linkcode' => 'c', 'email' => 'admin@example.com']);
+        $this->assertSame(['id' => 2, 'username' => 'admin', 'email' => 'admin@example.com'], $row);
+        $this->assertNull(sql_guard::rejection_reason('SELECT * FROM {user} WHERE id = 2', $admin),
+            'Every column of an allowed table can be asked for; the sensitive ones are removed from the result');
     }
 }

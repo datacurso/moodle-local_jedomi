@@ -127,7 +127,8 @@ final class query_profiler_test extends \advanced_testcase {
      * [Pendiente:skip]
      */
     public function test_profiler_records_every_query_and_has_retention(): void {
-        $this->markTestSkipped('Pending fix: only agent queries from their second run are recorded, chat and Telegram '
-            . 'queries are not, the threshold is fixed, there is no pagination and the record grows without limit.');
+        $this->markTestSkipped('Pending fix: chat and Telegram queries are not recorded, preview queries show as Agent #0, '
+            . 'the slow threshold is fixed, the indicator and the list differ at the limit, the indicators ignore the '
+            . 'filters, there is no pagination and the record grows without limit.');
     }
 }

@@ -213,8 +213,8 @@ final class integrations_tab_test extends \advanced_testcase {
      * @return void
      */
     public function test_guide_help_and_labels_describe_the_real_behaviour(): void {
-        $this->markTestSkipped('Pending fix: the guide and the field labels of the Integrations tab do not match the real '
-            . 'behaviour.');
+        $this->markTestSkipped('Pending fix: the guide still asks to save the switch that saves itself and misnames the '
+            . 'profile section, the section titles do not match their fields and the block time is labelled Wait time.');
     }
 
     /**
@@ -264,5 +264,17 @@ final class integrations_tab_test extends \advanced_testcase {
         $this->assertTrue($data['haslasterrortime']);
         $this->assertGreaterThanOrEqual($before, $data['lasterrortime']);
         $this->assertFalse($data['webhookok']);
+    }
+
+    /**
+     * MDL-INT-098: Regenerate secret regenerates the webhook secret and registers the webhook again without saving the
+     * other fields of the form.
+     * [Pendiente:skip]
+     *
+     * @return void
+     */
+    public function test_regenerating_the_secret_does_not_save_the_form(): void {
+        $this->markTestSkipped('Pending fix: Regenerate secret also saves the token and the limits of the form, and with '
+            . 'an invalid token the secret is not regenerated.');
     }
 }

@@ -327,6 +327,7 @@ final class webhook_conversation_test extends \advanced_testcase {
     }
 
     /**
+     * SYS-E2E-015 / MDL-INT-104: by Telegram the student gets their own assignments and grades, never the ones of a classmate.
      * MDL-INT-067: a student gets their own Moodle data (assignments and grades) through Telegram, with the
      * read-only tools of their own data, and never the data of another student.
      */
@@ -504,6 +505,35 @@ final class webhook_conversation_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-069: in a group the bot answers that it only works in a private chat, in a channel it neither answers nor
+     * acts, in neither it acts with any account, and a linked private chat is served as usual.
+     *
+     * @return void
+     */
+    public function test_bot_only_serves_private_chats(): void {
+        $owner = $this->fresh_user();
+        $this->link((int) $owner->id, '-1009000002');
+        $this->link((int) $owner->id, '779000069');
+        $this->ai->enqueue_text('Your grades are 9 and 10.');
+
+        $this->say('-1009000002', 'Show me the grades', ['chat' => ['id' => '-1009000002', 'type' => 'group'],
+            'from' => ['id' => 5550002, 'is_bot' => false, 'first_name' => 'Member']]);
+        $this->assertSame([], $this->ai->calls, 'A group never reaches the AI');
+        $this->assertSame([get_string('telegram_msg_private_only', 'local_jedomi')], array_column($this->telegram->sent, 'text'));
+
+        $limit = (int) ini_get('max_execution_time');
+        webhook_handler::handle(['channel_post' => ['chat' => ['id' => '-1009000003', 'type' => 'channel'],
+            'text' => 'Show me the grades']]);
+        set_time_limit($limit);
+        $this->assertSame([], $this->ai->calls, 'A channel never reaches the AI');
+        $this->assertCount(1, $this->telegram->sent, 'A channel gets no answer');
+
+        $this->say('779000069', 'Show me the grades', ['chat' => ['id' => '779000069', 'type' => 'private']]);
+        $this->assertCount(1, $this->ai->calls, 'A linked private chat is served');
+        $this->assertSame((int) $owner->id, $this->ai->calls[0]['userid']);
+    }
+
+    /**
      * MDL-INT-070: the next message uses the current role and courses after a role or an enrolment is removed.
      */
     public function test_next_message_uses_the_current_role_and_courses(): void {
@@ -550,6 +580,8 @@ final class webhook_conversation_test extends \advanced_testcase {
         $this->assertSame([], $this->ai->calls, 'A suspended user does not reach the AI');
         $notice = get_string('telegram_msg_account_inactive', 'local_jedomi');
         $this->assertSame([$notice, $notice], array_column($this->telegram->sent, 'text'));
+        $this->assertTrue($DB->record_exists('local_jedomi_telegram_links', ['chatid' => '779000009']), 'The link is kept');
+        $this->assertTrue($DB->record_exists('local_jedomi_telegram_links', ['chatid' => '779000019']), 'The link is kept');
 
         $DB->set_field('user', 'suspended', 0, ['id' => $user->id]);
         $this->say('779000009', 'Show me my grades');
@@ -594,8 +626,8 @@ final class webhook_conversation_test extends \advanced_testcase {
      * [Pendiente:skip]
      */
     public function test_web_service_list_applies_to_search_description_and_execution(): void {
-        $this->markTestSkipped('Pending fix: search and description ignore the role list in Telegram and the agents, and '
-            . 'partly in the web chat.');
+        $this->markTestSkipped('Pending fix: in the web chat the description of a function is given for any role whose '
+            . 'list is empty, and in Telegram and the agents search and description ignore the role list.');
     }
 
     /**
@@ -705,5 +737,42 @@ final class webhook_conversation_test extends \advanced_testcase {
 
         $this->assertFalse($DB->record_exists('local_jedomi_telegram_links', ['userid' => $user->id]));
         $this->assertSame(get_string('telegram_msg_unlinked', 'local_jedomi'), end($this->telegram->sent)['text']);
+    }
+
+    /**
+     * MDL-INT-097: with the integration disabled a message of a linked chat gets a notice that the bot is not
+     * available, without calling the AI.
+     * [Pendiente:skip]
+     *
+     * @return void
+     */
+    public function test_bot_tells_the_user_it_is_unavailable_while_disabled(): void {
+        $this->markTestSkipped('Pending fix: with the integration disabled the messages of linked users are dropped '
+            . 'without any answer or notice.');
+    }
+
+    /**
+     * MDL-INT-106: the Telegram confirmation describes the action in readable language and the critical actions need
+     * the confirmation word.
+     * [Pendiente:skip]
+     *
+     * @return void
+     */
+    public function test_telegram_confirmation_is_readable_and_asks_for_the_word(): void {
+        $this->markTestSkipped('Pending fix: the Telegram confirmation shows the technical tool name and its raw data '
+            . 'and never asks for the confirmation word.');
+    }
+
+    /**
+     * MDL-INT-114: unlinking, suspending the account, blocking the role or disabling the integration while the bot
+     * works stops the run before the next tool, sends no result and does not save the task state again.
+     * [Pendiente:skip]
+     *
+     * @return void
+     */
+    public function test_a_running_request_stops_when_the_access_changes(): void {
+        $this->markTestSkipped('Pending fix: the link, the account, the role and the integration are only checked when a '
+            . 'message arrives and on each automatic continuation, so a run in progress goes on with '
+            . 'the previous permissions.');
     }
 }

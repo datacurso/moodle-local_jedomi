@@ -75,17 +75,16 @@ Feature: Web chat of Jedomi from the question to the answer, the actions and the
     And I click on "(//button[@data-action='local_jedomi/sidebar/good'])[last()]" "xpath_element"
     And a Jedomi rating "good" should be stored for the user "admin"
 
-  # The answers are stubbed in the browser; the check is the question each quick action sends for the page.
-  # [Pendiente:skip] The admin quick actions inside a course depend on the MDL-UNIT-018 defect (they never appear and
-  # the course id is taken from any page parameter). Asserts the expected behaviour and fails until fixed; see the
-  # skipped PHPUnit companion.
+  # The answers are stubbed in the browser; the check is the question each quick action sends for the page. The admin
+  # actions of the administration and the course outside a course are covered by MDL-UNIT-018.
   @SYS-E2E-002
   Scenario: An administrator gets the course actions with the current course and the site actions on other pages
     Given I am on the "Course 1" "course" page logged in as "admin"
     And I click on "#jedomi-trigger" "css_element"
-    And "//button[contains(@class, 'jedomi-quick-btn') and contains(@data-msg, 'with ID')]" "xpath_element" should exist
+    And "//button[contains(@class, 'jedomi-quick-btn') and contains(@data-msg, 'Course 1')]" "xpath_element" should exist
     When I click on "Top student" "button" in the "#jedomi-quick-actions" "css_element"
-    Then the last Jedomi request should include the message "Who is the top student in course with ID"
+    Then the last Jedomi request should include the message "Who is the top student in course"
+    And the last Jedomi request should include the message "Course 1"
     And I am on site homepage
     And I click on "#jedomi-trigger" "css_element"
     And I click on "Overview" "button" in the "#jedomi-quick-actions" "css_element"
@@ -101,6 +100,20 @@ Feature: Web chat of Jedomi from the question to the answer, the actions and the
     And I click on "#jedomi-trigger" "css_element"
     And I should see "Global risk" in the "#jedomi-quick-actions" "css_element"
     And I should see "Inactive users" in the "#jedomi-quick-actions" "css_element"
+
+  @SYS-E2E-002
+  Scenario: A teacher gets the teacher actions of the course, including the ones of their permissions
+    Given I am on the "Course 1" "course" page logged in as "teacher1"
+    And I click on "#jedomi-trigger" "css_element"
+    And I should see "Missing work" in the "#jedomi-quick-actions" "css_element"
+    And I should see "Notify group" in the "#jedomi-quick-actions" "css_element"
+    And I should see "Top students" in the "#jedomi-quick-actions" "css_element"
+    When I click on "Performance" "button" in the "#jedomi-quick-actions" "css_element"
+    Then the last Jedomi request should include the message "What is the average grade in course"
+    And the last Jedomi request should include the message "Course 1"
+    And I am on site homepage
+    And I click on "#jedomi-trigger" "css_element"
+    And I should see "My courses" in the "#jedomi-quick-actions" "css_element"
 
   @SYS-E2E-002
   Scenario: A quick action replaces the typed text and the actions stay visible during the conversation
@@ -170,8 +183,8 @@ Feature: Web chat of Jedomi from the question to the answer, the actions and the
     Then I should see "This action has expired. Ask Jedomi again." in the "#jedomi-messages" "css_element"
     And the Jedomi agent "Late agent" should not exist
 
-  # [Pendiente:skip] A teacher gets the Student role in the chat and has no database query nor web service tools, so
-  # the AI cannot find the recipients and the sending is never proposed. Needs the real AI service.
+  # Needs the real AI service to find the recipients and propose the sending. The text and the count of the card are
+  # covered by MDL-UNIT-023.
   @SYS-E2E-004
   Scenario: A teacher asks to notify the group and the message reaches the students after confirming
     Given the Jedomi AI service is available for acceptance tests
@@ -220,6 +233,27 @@ Feature: Web chat of Jedomi from the question to the answer, the actions and the
     And I should see "archive.zip" in the "#jedomi-messages" "css_element"
     And "//div[@id='jedomi-file-preview' and not(contains(@class, 'jedomi-hidden'))]" "xpath_element" should not exist
 
+  # [Pendiente:fail] When several files are dropped only the last one is kept, and a file is read (and charged) when it
+  # is attached even if it is removed before sending. The reading is answered in the browser. Fails until fixed.
+  @MDL-INT-052
+  Scenario: Several dropped files are all attached
+    Given I log in as "admin"
+    And I am on homepage
+    And I click on "#jedomi-trigger" "css_element"
+    When I drop the files "first.txt, second.txt" on the Jedomi panel
+    Then I should see "second.txt" in the "#jedomi-file-preview" "css_element"
+    And I should see "first.txt" in the "#jedomi-file-preview" "css_element"
+
+  @MDL-INT-052
+  Scenario: An attachment removed before sending is not read nor charged
+    Given I log in as "admin"
+    And I am on homepage
+    And I click on "#jedomi-trigger" "css_element"
+    And I drop the files "notes.txt" on the Jedomi panel
+    And I should see "notes.txt" in the "#jedomi-file-preview" "css_element"
+    When I click on "#jedomi-remove-file" "css_element"
+    Then "0" Jedomi file readings should have been requested
+
   # The browser of the Behat site has no microphone permission, as when a user denies it.
   @SYS-E2E-006
   Scenario: Without microphone permission the user is told how to allow it
@@ -244,7 +278,7 @@ Feature: Web chat of Jedomi from the question to the answer, the actions and the
     Then I should see "Audio: 2 seconds" in the "#jedomi-file-preview" "css_element"
     And I should see "jedomi_tone.wav" in the "#jedomi-messages" "css_element"
 
-  @V10
+  @MDL-UNIT-068 @MDL-INT-006
   Scenario: The voice conversation button is shown only while the voice conversation is enabled
     Given the following config values are set as admin:
       | audio_enabled | 1 | local_jedomi |
@@ -260,8 +294,8 @@ Feature: Web chat of Jedomi from the question to the answer, the actions and the
     And "#jedomi-voice-btn" "css_element" should exist
     And "#jedomi-voice-mode-btn" "css_element" should not exist
 
-  # [Pendiente:skip] Teachers always get the Student role in the chat, the AI does not know the real course nor
-  # activity and the header does not show the course. Needs the real AI service for the summary.
+  # Needs the real AI service for the summary. The context of the current activity is covered by MDL-INT-039, so the
+  # activity is named in the question.
   @SYS-E2E-007
   Scenario: A teacher uses the assistant with the teacher actions and the real context of the course
     Given the Jedomi AI service is available for acceptance tests
@@ -270,15 +304,27 @@ Feature: Web chat of Jedomi from the question to the answer, the actions and the
     And the following "activities" exist:
       | activity | name          | course | idnumber | defaultfilename                                          |
       | resource | Jedomi reader | C1     | res1     | local/jedomi/tests/fixtures/behat/jedomi_document.pdf    |
+    And the following "users" exist:
+      | username | firstname | lastname | email                |
+      | teacher2 | Tom       | Teacher  | teacher2@example.com |
+    And the following "courses" exist:
+      | fullname | shortname |
+      | Course 2 | C2        |
+    And the following "course enrolments" exist:
+      | user     | course | role           |
+      | teacher2 | C2     | editingteacher |
     And I am on the "Course 1" "course" page logged in as "teacher1"
     When I click on "#jedomi-trigger" "css_element"
     Then I should see "Course 1" in the "#jedomi-context-label" "css_element"
     And I should see "Top students" in the "#jedomi-quick-actions" "css_element"
     And I should see "Notify group" in the "#jedomi-quick-actions" "css_element"
-    And I am on the "Jedomi reader" "resource activity" page
-    And I click on "#jedomi-trigger" "css_element"
-    And I send "Summarise the PDF of this activity" to Jedomi
+    And I send "Summarise the PDF of the activity Jedomi reader of Course 1" to Jedomi
     And I should see "pineapple" in the "#jedomi-messages" "css_element"
+    And I log out
+    And I am on the "Course 2" "course" page logged in as "teacher2"
+    And I click on "#jedomi-trigger" "css_element"
+    And I send "Summarise the PDF of the activity Jedomi reader of Course 1" to Jedomi
+    And I should not see "pineapple" in the "#jedomi-messages" "css_element"
 
   # Without a licence the server answers the licence error, which is the same in every channel; the other failures
   # (no credit, usage limit, service down, timeout) need the AI service and are mapped by MDL-UNIT tests of the errors.

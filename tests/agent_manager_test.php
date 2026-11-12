@@ -923,16 +923,109 @@ final class agent_manager_test extends \advanced_testcase {
      * [Pendiente:skip]
      */
     public function test_invalid_custom_schedule_is_rejected(): void {
-        $this->markTestSkipped('Pending fix: only the five parts are checked; invalid values are accepted'
-            . ' and the agent runs every 5 minutes.');
+        $this->markTestSkipped('Pending fix: only the five parts are checked; values out of range are accepted and the '
+            . 'agent runs every 5 minutes, a non numeric text is read as zero, and editing with an expression without five '
+            . 'parts silently keeps the previous schedule.');
     }
 
     /**
-     * MDL-UNIT-027: daily and weekly schedules are calculated in the site timezone, including daylight saving changes.
-     * [Pendiente:skip]
+     * Schedules in the local time of a creator and the instant they must run at, around midnight and daylight saving changes.
+     *
+     * @return array
      */
-    public function test_schedules_follow_the_site_timezone(): void {
-        $this->markTestSkipped('Pending fix: schedules are calculated in UTC instead of the site timezone.');
+    public static function creator_timezone_schedule_provider(): array {
+        return [
+            'daily, behind UTC' => ['America/Bogota', '0 8 * * *', '2026-06-10 07:30:00', '2026-06-10 08:00:00'],
+            'daily, ahead of UTC' => ['Asia/Tokyo', '0 8 * * *', '2026-06-10 08:00:00', '2026-06-11 08:00:00'],
+            'weekly on Monday' => ['America/Bogota', '30 9 * * 1', '2026-06-10 12:00:00', '2026-06-15 09:30:00'],
+            'midnight, just before' => ['America/Bogota', '0 0 * * *', '2026-06-10 23:59:00', '2026-06-11 00:00:00'],
+            'midnight, just after' => ['America/Bogota', '0 0 * * *', '2026-06-11 00:00:30', '2026-06-12 00:00:00'],
+            'weekly, just before midnight of Sunday' => ['Europe/Madrid', '0 0 * * 0', '2026-06-13 23:59:59',
+                '2026-06-14 00:00:00'],
+            'daily across the spring change' => ['Europe/Madrid', '0 8 * * *', '2026-03-28 09:00:00', '2026-03-29 08:00:00'],
+            'daily across the autumn change' => ['Europe/Madrid', '0 8 * * *', '2026-10-24 09:00:00', '2026-10-25 08:00:00'],
+            'weekly across the spring change' => ['Europe/Madrid', '0 9 * * 1', '2026-03-27 10:00:00', '2026-03-30 09:00:00'],
+        ];
+    }
+
+    /**
+     * MDL-UNIT-027: daily and weekly schedules run at their hour in the time zone of the creator, which differs from the
+     * server one, around midnight and across daylight saving changes.
+     *
+     * @dataProvider creator_timezone_schedule_provider
+     * @param string $timezone Time zone of the creator.
+     * @param string $cron Schedule.
+     * @param string $from Starting instant, in the time zone of the creator.
+     * @param string $expected Expected next run, in the time zone of the creator.
+     * @return void
+     */
+    public function test_schedules_follow_the_timezone_of_the_creator(string $timezone, string $cron, string $from,
+            string $expected): void {
+        $this->setTimezone('UTC', 'UTC');
+        $creator = $this->getDataGenerator()->create_user(['timezone' => $timezone]);
+        $tz = new \DateTimeZone($timezone);
+        $fromts = (new \DateTimeImmutable($from, $tz))->getTimestamp();
+
+        $next = agent_manager::calculate_next_run($cron, $fromts, agent_manager::creator_timezone((int) $creator->id));
+
+        $this->assertSame($expected, (new \DateTimeImmutable('@' . $next))->setTimezone($tz)->format('Y-m-d H:i:s'));
+        $this->assertGreaterThan($fromts, $next);
+    }
+
+    /**
+     * MDL-UNIT-027: a new agent waits for its hour in the time zone of its creator, not in the one of the server.
+     *
+     * @return void
+     */
+    public function test_new_agent_waits_for_the_hour_of_its_creator(): void {
+        $this->setTimezone('Europe/London', 'Europe/London');
+        $creator = $this->getDataGenerator()->create_user(['timezone' => 'America/Bogota']);
+
+        $id = agent_manager::create_agent((object) ['userid' => $creator->id, 'prompt' => 'Daily summary',
+            'schedule_cron' => '0 8 * * *', 'enabled' => 1]);
+
+        $next = (int) agent_manager::get_agent($id)->nextrun;
+        $local = (new \DateTimeImmutable('@' . $next))->setTimezone(new \DateTimeZone('America/Bogota'));
+        $this->assertSame('08:00', $local->format('H:i'));
+        $this->assertGreaterThan(time(), $next);
+    }
+
+    /**
+     * MDL-UNIT-027: when the creator no longer exists the schedule follows the time zone of the server.
+     *
+     * @return void
+     */
+    public function test_schedule_of_a_missing_creator_follows_the_server_timezone(): void {
+        global $DB;
+        $this->setTimezone('Asia/Tokyo', 'Asia/Tokyo');
+        $missing = (int) $DB->get_field_sql('SELECT MAX(id) FROM {user}') + 1000;
+
+        $this->assertSame('Asia/Tokyo', agent_manager::creator_timezone($missing));
+        $id = agent_manager::create_agent((object) ['userid' => $missing, 'prompt' => 'Daily summary',
+            'schedule_cron' => '0 8 * * *', 'enabled' => 1]);
+        $local = (new \DateTimeImmutable('@' . (int) agent_manager::get_agent($id)->nextrun))
+            ->setTimezone(new \DateTimeZone('Asia/Tokyo'));
+        $this->assertSame('08:00', $local->format('H:i'));
+    }
+
+    /**
+     * MDL-UNIT-027: changing the schedule of an agent recalculates its next run, in the time zone of its creator.
+     *
+     * @return void
+     */
+    public function test_changing_the_schedule_recalculates_the_next_run(): void {
+        $this->setTimezone('UTC', 'UTC');
+        $creator = $this->getDataGenerator()->create_user(['timezone' => 'America/Bogota']);
+        $id = agent_manager::create_agent((object) ['userid' => $creator->id, 'prompt' => 'Daily summary',
+            'schedule_cron' => '0 8 * * *', 'enabled' => 1]);
+
+        agent_manager::update_agent($id, (object) ['schedule_cron' => '45 17 * * *']);
+
+        $next = (int) agent_manager::get_agent($id)->nextrun;
+        $local = (new \DateTimeImmutable('@' . $next))->setTimezone(new \DateTimeZone('America/Bogota'));
+        $this->assertSame('17:45', $local->format('H:i'));
+        $this->assertGreaterThan(time(), $next);
+        $this->assertLessThanOrEqual(time() + DAYSECS, $next);
     }
 
     /**
@@ -940,8 +1033,9 @@ final class agent_manager_test extends \advanced_testcase {
      * [Pendiente:skip]
      */
     public function test_context_id_is_validated_when_saving(): void {
-        $this->markTestSkipped('Pending fix: the context id is read as both a context and a course id'
-            . ' and is not validated when saving.');
+        $this->markTestSkipped('Pending fix: the context id and type are not validated when saving, editing or creating '
+            . 'agents from the chat or Telegram; the run reads a Moodle context id while the purge and the chat ask for '
+            . 'the course, category or user id.');
     }
 
     /**
@@ -972,8 +1066,9 @@ final class agent_manager_test extends \advanced_testcase {
      * [Pendiente:skip]
      */
     public function test_activation_and_next_run_follow_the_schedule(): void {
-        $this->markTestSkipped('Pending fix: agents are created disabled, run the next minute when enabled, editing the '
-            . 'schedule does not recalculate the next run and "Run now" on a disabled agent reports a queue that never runs.');
+        $this->markTestSkipped('Pending fix: the form has no Active field, so the agents created from the tab are disabled '
+            . '(the ones created from the chat, Telegram or an agent are enabled), and "Run now" on a disabled agent '
+            . 'reports a queue that never runs.');
     }
 
     /**
@@ -981,7 +1076,7 @@ final class agent_manager_test extends \advanced_testcase {
      * [Pendiente:skip]
      */
     public function test_editing_keeps_name_schedule_and_roles(): void {
-        $this->markTestSkipped('Pending fix: editing ignores the new name, silently drops an invalid custom schedule and '
-            . 'cannot remove every role; the role boxes have no effect on the run.');
+        $this->markTestSkipped('Pending fix: editing ignores the new name, silently drops an invalid or empty custom '
+            . 'schedule, saves an instruction of only spaces and cannot remove every role; the role boxes have no effect.');
     }
 }

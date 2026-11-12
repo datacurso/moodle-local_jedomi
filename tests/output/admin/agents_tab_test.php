@@ -149,4 +149,16 @@ final class agents_tab_test extends \advanced_testcase {
         );
         $this->assertStringNotContainsString('tab=general', $general, 'The other settings tabs are not offered');
     }
+
+    /**
+     * MDL-INT-094: a manager with the permission to manage agents finds a link to the Agents tab in the administration
+     * menu.
+     * [Pendiente:skip]
+     *
+     * @return void
+     */
+    public function test_managers_reach_the_agents_tab_from_the_menu(): void {
+        $this->markTestSkipped('Pending fix: managers only reach the Agents tab with the direct address of the page; the '
+            . 'administration menu has no link for them.');
+    }
 }

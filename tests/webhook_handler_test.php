@@ -1397,8 +1397,9 @@ final class webhook_handler_test extends \advanced_testcase {
      * [Pendiente:skip]
      */
     public function test_bot_messages_and_notifications_are_in_the_user_language(): void {
-        $this->markTestSkipped('Pending fix: several bot messages are fixed in Spanish or English and the notifications of '
-            . 'agents, grades and assignments are fixed in one language.');
+        $this->markTestSkipped('Pending fix: several bot messages and tool progress texts are fixed in Spanish, button '
+            . 'answers and notices before identifying the user use the site language, and the agent notices, the grade '
+            . 'notification and the assignment alert are fixed in English.');
     }
 
     /**
@@ -1781,5 +1782,18 @@ final class webhook_handler_test extends \advanced_testcase {
 
         $this->assertStringContainsString('permission_denied', $denied);
         $this->assertNotNull(\local_jedomi\agent\agent_manager::get_agent($foreign));
+    }
+
+    /**
+     * MDL-UNIT-118: text that looks like a tag is shown literally in Telegram and every chunk of a long formatted
+     * answer opens and closes its own formatting.
+     * [Pendiente:skip]
+     *
+     * @return void
+     */
+    public function test_text_that_looks_like_tags_reaches_telegram_as_written(): void {
+        $this->markTestSkipped('Pending fix: text between less-than and greater-than signs disappears or opens a format, '
+            . 'tags inside code blocks are not shown, and the chunk after a cut does not reopen its '
+            . 'format, so Telegram refuses it.');
     }
 }

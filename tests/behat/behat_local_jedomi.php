@@ -1282,4 +1282,432 @@ JS;
     public function the_jedomi_chat_requests_reach_the_server(): void {
         $this->realai = true;
     }
+
+    /**
+     * Script that gives the page a fake microphone and answers the transcriptions, the file readings and the speech
+     * requests of the panel in the browser, recording what the panel sends.
+     *
+     * The microphone level is scripted (window.jedomiVoice.speak), the recorder gives a short fake recording, the
+     * transcriptions answer the queued texts or errors, and each sentence read aloud gets a short silent WAV, so the
+     * real Web Audio playback of the panel runs and ends.
+     */
+    private const VOICE_STUB = <<<'JS'
+(function() {
+    if (window.jedomiVoice) {
+        return;
+    }
+    var state = {level: 0, denied: false, transcripts: [], transcriptions: 0, readings: [], spoken: [], speechfails: false,
+        tracks: 0, released: 0, playing: 0};
+    window.jedomiVoice = state;
+    state.speak = function(ms, level) {
+        state.level = level || 0.2;
+        setTimeout(function() {
+            state.level = 0;
+        }, ms);
+    };
+    var AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    var media = navigator.mediaDevices || {};
+    media.getUserMedia = function() {
+        if (state.denied) {
+            return Promise.reject(new DOMException('Permission denied', 'NotAllowedError'));
+        }
+        var ctx = new AudioContextClass();
+        var stream = ctx.createMediaStreamDestination().stream;
+        stream.getAudioTracks().forEach(function(track) {
+            state.tracks++;
+            var stop = track.stop.bind(track);
+            track.stop = function() {
+                state.released++;
+                stop();
+            };
+        });
+        return Promise.resolve(stream);
+    };
+    if (!navigator.mediaDevices) {
+        Object.defineProperty(navigator, 'mediaDevices', {value: media, configurable: true});
+    }
+    // The level the panel measures is the scripted one.
+    AnalyserNode.prototype.getFloatTimeDomainData = function(samples) {
+        samples.fill(state.level);
+    };
+    var FakeRecorder = function(stream, options) {
+        this.stream = stream;
+        this.state = 'inactive';
+        this.mimeType = (options && options.mimeType) || 'audio/webm';
+        this.listeners = {};
+    };
+    FakeRecorder.isTypeSupported = function(type) {
+        return type.indexOf('audio/webm') === 0;
+    };
+    FakeRecorder.prototype.addEventListener = function(name, fn) {
+        (this.listeners[name] = this.listeners[name] || []).push(fn);
+    };
+    FakeRecorder.prototype.start = function() {
+        this.state = 'recording';
+    };
+    FakeRecorder.prototype.stop = function() {
+        if (this.state === 'inactive') {
+            return;
+        }
+        this.state = 'inactive';
+        var self = this;
+        setTimeout(function() {
+            (self.listeners.dataavailable || []).forEach(function(fn) {
+                fn({data: new Blob(['fake recording'], {type: self.mimeType})});
+            });
+            (self.listeners.stop || []).forEach(function(fn) {
+                fn({});
+            });
+        }, 0);
+    };
+    window.MediaRecorder = FakeRecorder;
+    // Sources of audio playing, to know when Jedomi speaks.
+    var start = AudioBufferSourceNode.prototype.start;
+    var stop = AudioBufferSourceNode.prototype.stop;
+    AudioBufferSourceNode.prototype.start = function() {
+        var node = this;
+        state.playing++;
+        node.addEventListener('ended', function() {
+            if (!node.jedomiStopped) {
+                node.jedomiStopped = true;
+                state.playing--;
+            }
+        });
+        return start.apply(node, arguments);
+    };
+    AudioBufferSourceNode.prototype.stop = function() {
+        if (!this.jedomiStopped) {
+            this.jedomiStopped = true;
+            state.playing--;
+        }
+        return stop.apply(this, arguments);
+    };
+    // A silent WAV of a quarter of a second, or of the scripted duration.
+    var wav = function() {
+        var rate = 8000;
+        var samples = Math.round(rate * (state.seconds || 0.25));
+        var buffer = new ArrayBuffer(44 + samples * 2);
+        var view = new DataView(buffer);
+        var text = function(offset, value) {
+            for (var i = 0; i < value.length; i++) {
+                view.setUint8(offset + i, value.charCodeAt(i));
+            }
+        };
+        text(0, 'RIFF');
+        view.setUint32(4, 36 + samples * 2, true);
+        text(8, 'WAVE');
+        text(12, 'fmt ');
+        view.setUint32(16, 16, true);
+        view.setUint16(20, 1, true);
+        view.setUint16(22, 1, true);
+        view.setUint32(24, rate, true);
+        view.setUint32(28, rate * 2, true);
+        view.setUint16(32, 2, true);
+        view.setUint16(34, 16, true);
+        text(36, 'data');
+        view.setUint32(40, samples * 2, true);
+        return buffer;
+    };
+    var json = function(data, status) {
+        return Promise.resolve(new Response(JSON.stringify(data), {status: status,
+            headers: {'Content-Type': 'application/json'}}));
+    };
+    var nextfetch = window.fetch.bind(window);
+    window.fetch = function(url, options) {
+        var address = String(url);
+        if (address.indexOf('/local/jedomi/speech.php') !== -1) {
+            var text = '';
+            try {
+                text = JSON.parse(options.body).text || '';
+            } catch (e) {
+                text = '';
+            }
+            state.spoken.push(text);
+            if (state.speechfails) {
+                return json({error: {code: 'unavailable', message: 'The speech service is not available.'}}, 502);
+            }
+            return Promise.resolve(new Response(wav(), {status: 200, headers: {'Content-Type': 'audio/mpeg'}}));
+        }
+        if (address.indexOf('/local/jedomi/extract_file.php') !== -1 && options && options.body instanceof FormData) {
+            var file = options.body.get('file');
+            var name = file && file.name ? file.name : '';
+            if (name.indexOf('recording.') === 0) {
+                state.transcriptions++;
+                var next = state.transcripts.length ? state.transcripts.shift() : {text: 'Hello Jedomi'};
+                if (next.error) {
+                    return json({error: {code: 'unavailable', message: next.error}}, 400);
+                }
+                return json({text: next.text, format: 'audio', seconds: 2}, 200);
+            }
+            state.readings.push(name);
+            return json({text: 'Text of ' + name, format: 'text', chars: 12}, 200);
+        }
+        return nextfetch(url, options);
+    };
+})();
+JS;
+
+    /**
+     * Give the page the fake microphone and the voice answers of the browser.
+     *
+     * @return void
+     */
+    protected function install_voice_stub(): void {
+        $this->execute_script(self::VOICE_STUB);
+    }
+
+    /**
+     * The browser has a microphone that grants or denies access to the panel.
+     *
+     * @Given /^the Jedomi browser has a microphone that (?P<how>grants|denies) access$/
+     * @param string $how Whether access is granted or denied.
+     * @return void
+     */
+    public function the_jedomi_browser_has_a_microphone(string $how): void {
+        $this->install_voice_stub();
+        $this->execute_script('window.jedomiVoice.denied = ' . ($how === 'denies' ? 'true' : 'false') . ';');
+    }
+
+    /**
+     * Queue the text the next transcription of what the user says gives.
+     *
+     * @Given /^the Jedomi transcription of what I say is "(?P<text_string>(?:[^"]|\\")*)"$/
+     * @param string $text Transcribed text.
+     * @return void
+     */
+    public function the_jedomi_transcription_is(string $text): void {
+        $this->install_voice_stub();
+        $this->execute_script('window.jedomiVoice.transcripts.push(' . json_encode(['text' => $this->escape($text)]) . ');');
+    }
+
+    /**
+     * Queue a failure of the next transcription of what the user says, with the message of the server.
+     *
+     * @Given /^the Jedomi transcription fails with the message "(?P<text_string>(?:[^"]|\\")*)"$/
+     * @param string $message Message of the server.
+     * @return void
+     */
+    public function the_jedomi_transcription_fails(string $message): void {
+        $this->install_voice_stub();
+        $this->execute_script('window.jedomiVoice.transcripts.push(' . json_encode(['error' => $this->escape($message)]) . ');');
+    }
+
+    /**
+     * Every sentence Jedomi tries to read aloud fails.
+     *
+     * @Given /^reading aloud fails for Jedomi$/
+     * @return void
+     */
+    public function reading_aloud_fails_for_jedomi(): void {
+        $this->install_voice_stub();
+        $this->execute_script('window.jedomiVoice.speechfails = true;');
+    }
+
+    /**
+     * The user speaks to the microphone for a time, then stays silent.
+     *
+     * @When /^I speak to Jedomi for "(?P<ms_number>\d+)" milliseconds$/
+     * @param int $ms Duration of the speech, in milliseconds.
+     * @return void
+     */
+    public function i_speak_to_jedomi_for(int $ms): void {
+        $this->execute_script("window.jedomiVoice.speak({$ms});");
+        usleep($ms * 1000);
+    }
+
+    /**
+     * Current state of the voice conversation shown by the panel.
+     *
+     * @Then /^the Jedomi voice conversation should be (?P<state>listening|thinking|speaking|waiting for the confirmation)$/
+     * @param string $state Expected state.
+     * @return void
+     */
+    public function the_jedomi_voice_conversation_should_be(string $state): void {
+        $class = ['listening' => 'listening', 'thinking' => 'thinking', 'speaking' => 'speaking',
+            'waiting for the confirmation' => 'paused'][$state];
+        $label = get_string('voice_mode_' . $class, 'local_jedomi');
+        $this->wait_for_value(
+            "return (function() { var v = document.getElementById('jedomi-voice-mode');"
+                . " var l = v && v.querySelector('[data-region=\"local_jedomi/sidebar/voice-mode-state\"]');"
+                . " return !!v && !v.classList.contains('jedomi-hidden') && v.classList.contains('jedomi-voice-mode--{$class}')"
+                . ' && !!l && l.textContent === ' . json_encode($label) . '; })();',
+            static fn($value): bool => $value === true,
+            "The voice conversation is not {$state}."
+        );
+    }
+
+    /**
+     * Whether the voice view replaces the input row.
+     *
+     * @Then /^the Jedomi voice conversation should be (?P<how>open|closed)$/
+     * @param string $how Open or closed.
+     * @return void
+     */
+    public function the_jedomi_voice_conversation_should_be_open_or_closed(string $how): void {
+        $open = $how === 'open' ? 'true' : 'false';
+        $this->wait_for_value(
+            "return (function() { var v = document.getElementById('jedomi-voice-mode');"
+                . " var r = document.querySelector('#jedomi-sidebar .jedomi-input-row');"
+                . " var viewopen = !!v && !v.classList.contains('jedomi-hidden');"
+                . " var rowshown = !!r && !r.classList.contains('jedomi-hidden');"
+                . " return viewopen === {$open} && rowshown === !{$open}; })();",
+            static fn($value): bool => $value === true,
+            "The voice view is not {$how}."
+        );
+    }
+
+    /**
+     * The microphone of the voice conversation was released and no audio is playing.
+     *
+     * @Then /^the Jedomi microphone should be released and no answer should be playing$/
+     * @return void
+     */
+    public function the_jedomi_microphone_should_be_released(): void {
+        $this->wait_for_value(
+            'return (function() { var s = window.jedomiVoice;'
+                . ' return !!s && s.tracks > 0 && s.released >= s.tracks && s.playing <= 0; })();',
+            static fn($value): bool => $value === true,
+            'The microphone is still open or an answer is still playing.'
+        );
+    }
+
+    /**
+     * Number of transcriptions of what the user said requested by the panel.
+     *
+     * @Then /^"(?P<count_number>\d+)" Jedomi transcriptions? should have been requested$/
+     * @param int $count Expected number.
+     * @return void
+     */
+    public function jedomi_transcriptions_should_have_been_requested(int $count): void {
+        // A request the panel is still about to send is waited for.
+        usleep(500000);
+        $this->wait_for_value(
+            'return window.jedomiVoice ? window.jedomiVoice.transcriptions : -1;',
+            static fn($value): bool => (int) $value === $count,
+            "Expected {$count} transcriptions."
+        );
+    }
+
+    /**
+     * Number of attached files sent to be read by the panel.
+     *
+     * @Then /^"(?P<count_number>\d+)" Jedomi file readings? should have been requested$/
+     * @param int $count Expected number.
+     * @return void
+     */
+    public function jedomi_file_readings_should_have_been_requested(int $count): void {
+        usleep(500000);
+        $this->wait_for_value(
+            'return window.jedomiVoice ? window.jedomiVoice.readings.length : -1;',
+            static fn($value): bool => (int) $value === $count,
+            "Expected {$count} file readings."
+        );
+    }
+
+    /**
+     * Whether a text was sent to be read aloud.
+     *
+     * @Then /^Jedomi should (?P<not>not )?have read aloud "(?P<text_string>(?:[^"]|\\")*)"$/
+     * @param string $not Empty, or "not ".
+     * @param string $text Text, or part of it.
+     * @return void
+     */
+    public function jedomi_should_have_read_aloud(string $not, string $text): void {
+        $text = $this->escape($text);
+        if ($not === '') {
+            $this->wait_for_value(
+                'return (window.jedomiVoice ? window.jedomiVoice.spoken : []).join("\n");',
+                static fn($value): bool => str_contains((string) $value, $text),
+                "\"{$text}\" was not read aloud."
+            );
+            return;
+        }
+        $spoken = (string) $this->evaluate_script('return (window.jedomiVoice ? window.jedomiVoice.spoken : []).join("\n");');
+        if (str_contains($spoken, $text)) {
+            throw new ExpectationException("\"{$text}\" was read aloud: {$spoken}", $this->getSession());
+        }
+    }
+
+    /**
+     * Length of the first sentence sent to be read aloud.
+     *
+     * @Then /^the first text Jedomi read aloud should be at most "(?P<max_number>\d+)" characters long$/
+     * @param int $max Most characters.
+     * @return void
+     */
+    public function the_first_text_read_aloud_should_be_short(int $max): void {
+        $first = $this->wait_for_value(
+            'return window.jedomiVoice && window.jedomiVoice.spoken.length ? window.jedomiVoice.spoken[0] : null;',
+            static fn($value): bool => is_string($value),
+            'Nothing was read aloud.'
+        );
+        if (\core_text::strlen($first) > $max) {
+            throw new ExpectationException("The first text read aloud is longer than {$max}: {$first}", $this->getSession());
+        }
+    }
+
+    /**
+     * Drop several files at once on the panel, as dragging them from the computer does.
+     *
+     * @When /^I drop the files "(?P<names_string>[^"]+)" on the Jedomi panel$/
+     * @param string $names Comma separated file names; each file gets a short text.
+     * @return void
+     */
+    public function i_drop_the_files_on_the_jedomi_panel(string $names): void {
+        $this->install_voice_stub();
+        $files = array_map('trim', explode(',', $names));
+        $this->execute_script('(function() { var dt = new DataTransfer();'
+            . ' ' . json_encode($files) . '.forEach(function(n) { dt.items.add(new File(["Text of " + n], n,'
+            . ' {type: n.slice(-4) === ".gif" ? "image/gif" : "text/plain"})); });'
+            . " var panel = document.getElementById('jedomi-sidebar');"
+            . " ['dragenter', 'dragover', 'drop'].forEach(function(type) {"
+            . ' var e = new DragEvent(type, {bubbles: true, cancelable: true, dataTransfer: dt});'
+            . ' panel.dispatchEvent(e); }); })();');
+    }
+
+    /**
+     * Each sentence read aloud lasts the given time, so the speaking state can be observed.
+     *
+     * @Given /^Jedomi takes "(?P<seconds_number>\d+)" seconds to read each sentence aloud$/
+     * @param int $seconds Duration of each sentence.
+     * @return void
+     */
+    public function jedomi_takes_seconds_to_read_each_sentence(int $seconds): void {
+        $this->install_voice_stub();
+        $this->execute_script("window.jedomiVoice.seconds = {$seconds};");
+    }
+
+    /**
+     * How many times a text appears in the chat of the panel.
+     *
+     * @Then /^I should see "(?P<text_string>(?:[^"]|\\")*)" "(?P<count_number>\d+)" times? in the Jedomi chat$/
+     * @param string $text Text.
+     * @param int $count Expected number of times.
+     * @return void
+     */
+    public function i_should_see_times_in_the_jedomi_chat(string $text, int $count): void {
+        $text = $this->escape($text);
+        $this->wait_for_value(
+            "return (function() { var m = document.getElementById('jedomi-messages');"
+                . ' return m ? m.innerText.split(' . json_encode($text) . ').length - 1 : -1; })();',
+            static fn($value): bool => (int) $value === $count,
+            "\"{$text}\" is not shown {$count} times in the chat."
+        );
+    }
+
+    /**
+     * The chat permissions of the page have expired: the chat endpoint refuses every question as the server does.
+     *
+     * @Given /^the Jedomi chat permissions have expired$/
+     * @return void
+     */
+    public function the_jedomi_chat_permissions_have_expired(): void {
+        $message = json_encode(['error' => get_string('token_expired', 'local_jedomi')]);
+        $this->execute_script('(function() { var next = window.fetch.bind(window);'
+            . ' window.fetch = function(url, options) {'
+            . " if (String(url).indexOf('/local/jedomi/chatproxy.php') !== -1) {"
+            . ' return Promise.resolve(new Response(' . json_encode($message) . ', {status: 403,'
+            . " headers: {'Content-Type': 'application/json'}})); }"
+            . ' return next(url, options); }; })();');
+    }
 }

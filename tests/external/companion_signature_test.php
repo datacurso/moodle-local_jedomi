@@ -365,4 +365,23 @@ final class companion_signature_test extends \advanced_testcase {
         $this->assertFalse($result['valid']);
         $this->assertNotEmpty($result['violations'], 'A weak password reports at least one policy violation');
     }
+
+    /**
+     * MDL-INT-108: a valid signed request runs once; the same request sent again within the margin is rejected without
+     * running and without revealing the reason.
+     * [Pendiente:fail] The signature has no single-use value, so an identical request can be replayed within the margin.
+     *
+     * @return void
+     */
+    public function test_signed_request_can_only_run_once(): void {
+        $now = time();
+        $hash = self::payload_hash(['sql' => self::SQL, 'params' => []]);
+        $signature = self::sign('jedomi_execute_sql', $now, $hash);
+
+        $first = $this->outcome(fn() => $this->query($signature, $now, $hash));
+        $replay = $this->outcome(fn() => $this->query($signature, $now, $hash));
+
+        $this->assertSame('accepted', $first, 'Control: the first request is valid');
+        $this->assertSame('unauthorized', $replay, 'An identical signed request must not run a second time');
+    }
 }

@@ -175,6 +175,7 @@ final class provider_test extends provider_testcase {
     }
 
     /**
+     * MDL-INT-080: the text read aloud sent to the speech service is declared.
      * The text of the spoken answers sent to the AI service for the voice conversation is declared.
      */
     public function test_metadata_declares_the_speech_service(): void {
@@ -322,5 +323,17 @@ final class provider_test extends provider_testcase {
             'agents' => $DB->count_records('local_jedomi_agents', ['userid' => $user->id]),
         ]);
         $this->assertSame(1, $DB->count_records('local_jedomi_agents', ['userid' => $other->id]));
+    }
+
+    /**
+     * MDL-INT-109: the privacy declaration includes the technical log with the data it keeps (Telegram chat numbers
+     * and IP addresses), its retention and its deletion.
+     * [Pendiente:skip]
+     *
+     * @return void
+     */
+    public function test_metadata_declares_the_technical_log(): void {
+        $this->markTestSkipped('Pending fix: the technical log keeps Telegram chat numbers and IP addresses of rejected '
+            . 'requests but is not declared in the privacy API.');
     }
 }

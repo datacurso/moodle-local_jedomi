@@ -378,6 +378,7 @@ final class settings_extension_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-104: the speech model selector is shown only with the voice conversation on.
      * MDL-UNIT-001: the vision and audio models are hidden while their switch is off.
      *
      * The rules are read from the dependencies the form hands to the browser, the same data the
@@ -476,6 +477,7 @@ final class settings_extension_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-104 / MDL-UNIT-105: only the voice selector of the chosen model is shown; it lists only the voices of its model, without an empty option and with its default voice selected.
      * V5: the voice conversation switch shows its label and its action, and each voice selector lists only the voices of
      * its model, without an empty option, and is shown only while that model is chosen.
      *
@@ -517,6 +519,7 @@ final class settings_extension_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-105: each voice selector preselects the saved voice or the default voice of its model.
      * V5: the voice selector of the chosen model shows the saved voice, and the one of the other model its default voice.
      *
      * @return void
@@ -540,6 +543,7 @@ final class settings_extension_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-104: a coherent voice configuration passes the validation.
      * V5: valid voice values pass, also with the second model and its voices.
      *
      * @return void
@@ -559,6 +563,7 @@ final class settings_extension_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-104: turning the voice conversation on with audio processing off shows the message that the voice needs audio, so nothing is saved.
      * V5: the voice conversation cannot be turned on while audio processing is off.
      *
      * @return void
@@ -570,6 +575,7 @@ final class settings_extension_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-104: with the voice on, an unlisted speech model or a voice outside the chosen model is rejected with its message.
      * V5: with the voice conversation on, a model outside the speech list or a voice outside the list of the chosen
      * model is rejected.
      *
@@ -607,6 +613,7 @@ final class settings_extension_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-104: saving keeps the voice of the chosen model.
      * V5: saving stores the switch, the model and the voice chosen for that model in a single setting.
      *
      * @return void
@@ -627,6 +634,7 @@ final class settings_extension_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-UNIT-104 / MDL-UNIT-105: with the voice off an unlisted model or voice is saved as the default one.
      * V5: with the switch off, an unlisted model or voice is saved as the default one (unlisted → default).
      *
      * @return void

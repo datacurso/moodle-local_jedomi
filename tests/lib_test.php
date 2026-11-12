@@ -627,7 +627,8 @@ final class lib_test extends \advanced_testcase {
      * @return void
      */
     public function test_telegram_role_rule_is_the_same_on_the_profile_and_the_bot(): void {
-        $this->markTestSkipped('Pending fix: the profile only reads system and page roles while the bot also reads course roles.');
+        $this->markTestSkipped('Pending fix: the profile only reads system and page roles while the bot also reads course '
+            . 'roles, and a linked user with a blocked role loses the profile link to the link page.');
     }
 
     /**
@@ -748,5 +749,24 @@ final class lib_test extends \advanced_testcase {
         };
 
         $this->assertFalse($this->profile_offers_telegram());
+    }
+
+    /**
+     * MDL-INT-086: a site without its own permission token secret, or with the former built-in one, gets a random secret
+     * of its own, and a secret of its own is kept.
+     *
+     * @return void
+     */
+    public function test_site_gets_its_own_permission_token_secret_and_keeps_it(): void {
+        $this->resetAfterTest();
+        foreach (['', 'jedomi-spt-secret'] as $old) {
+            set_config('spt_secret', $old, 'local_jedomi');
+            $secret = local_jedomi_get_spt_secret();
+            $this->assertNotSame($old, $secret);
+            $this->assertGreaterThanOrEqual(64, strlen($secret));
+            $this->assertSame($secret, get_config('local_jedomi', 'spt_secret'), 'The new secret is saved');
+        }
+        set_config('spt_secret', str_repeat('c0ffee', 12), 'local_jedomi');
+        $this->assertSame(str_repeat('c0ffee', 12), local_jedomi_get_spt_secret(), 'An own secret is kept');
     }
 }
