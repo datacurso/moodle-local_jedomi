@@ -834,14 +834,19 @@ class handler {
         if (!empty($args['status'])) {
             $filters['status'] = $args['status'];
         }
+        global $USER;
+        $actorid = (int) $USER->id;
         $result = \local_jedomi\agent\agent_manager::get_agents($filters);
         return json_encode([
             'success' => true,
             'total' => $result['total'],
-            'agents' => array_map(function ($a) {
+            'agents' => array_map(function ($a) use ($actorid) {
+                // The instruction is given only to the users who may read it.
+                $a = \local_jedomi\agent\agent_manager::agent_for_actor($a, $actorid);
                 return [
                     'id' => (int) $a->id,
                     'prompt' => $a->prompt,
+                    'prompt_hidden' => $a->prompthidden,
                     'schedule_cron' => $a->schedule_cron,
                     'context_type' => $a->context_type,
                     'context_id' => $a->context_id ? (int) $a->context_id : null,

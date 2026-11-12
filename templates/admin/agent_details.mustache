@@ -36,12 +36,14 @@
     * schedule string - Cron expression
     * lastrun int - Last run time (0 when never)
     * nextrun int - Next run time (0 when unknown)
-    * prompt string - Agent prompt
+    * prompt string - Agent prompt (empty when hidden)
+    * prompthidden bool - Whether the user may not read the prompt
 
     Example context (json):
     {
         "id": 3, "name": "Daily report", "creator": "Admin User", "userid": 2, "enabled": true, "contexttype": "course",
-        "contextid": 4, "schedule": "0 0 * * *", "lastrun": 1700000000, "nextrun": 1700086400, "prompt": "Summarise new enrolments."
+        "contextid": 4, "schedule": "0 0 * * *", "lastrun": 1700000000, "nextrun": 1700086400, "prompt": "Summarise new enrolments.",
+        "prompthidden": false
     }
 }}
 <table class="table table-sm mb-0 local_jedomi-admin-agent-details">
@@ -61,6 +63,6 @@
         <tr><th scope="row" class="text-nowrap align-top">{{#str}} agent_nextrun, local_jedomi {{/str}}</th>
             <td>{{#nextrun}}{{#userdate}} {{nextrun}}, {{#str}} strftimedatetime, core_langconfig {{/str}} {{/userdate}}{{/nextrun}}{{^nextrun}}-{{/nextrun}}</td></tr>
         <tr><th scope="row" class="text-nowrap align-top">{{#str}} agent_prompt, local_jedomi {{/str}}</th>
-            <td><pre class="mb-0 p-2 bg-light border rounded local_jedomi-admin-pre">{{#prompt}}{{prompt}}{{/prompt}}{{^prompt}}-{{/prompt}}</pre></td></tr>
+            <td>{{#prompthidden}}<span class="text-muted font-italic fst-italic">{{#str}} agent_prompt_hidden, local_jedomi {{/str}}</span>{{/prompthidden}}{{^prompthidden}}<pre class="mb-0 p-2 bg-light border rounded local_jedomi-admin-pre">{{#prompt}}{{prompt}}{{/prompt}}{{^prompt}}-{{/prompt}}</pre>{{/prompthidden}}</td></tr>
     </tbody>
 </table>

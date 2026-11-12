@@ -27,6 +27,10 @@
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
+// An error of the login check or a debugging message must never answer an HTML page or corrupt the MP3 body.
+define('AJAX_SCRIPT', true);
+define('NO_DEBUG_DISPLAY', true);
+
 require_once(__DIR__ . '/../../config.php');
 require_once(__DIR__ . '/lib.php');
 
@@ -43,12 +47,22 @@ if (!isloggedin() || isguestuser()) {
     header('Content-Type: application/json; charset=utf-8');
     die(json_encode(['error' => ['code' => 'guest_not_allowed', 'message' => get_string('chat_error_guest', 'local_jedomi')]]));
 }
-require_login(null, false);
+try {
+    require_login(null, false);
+    $loginerror = null;
+} catch (\moodle_exception $e) {
+    // Answered with the JSON error the sidebar reads, like every other refusal.
+    $loginerror = speech_service::login_error($e);
+}
 // Nothing is written to the session: release its lock, so the sentences requested in a row do not wait for each other.
 \core\session\manager::write_close();
 
-$input = json_decode((string) file_get_contents('php://input'), true);
-$response = speech_service::handle_request(is_array($input) ? $input : []);
+if ($loginerror !== null) {
+    $response = $loginerror;
+} else {
+    $input = json_decode((string) file_get_contents('php://input'), true);
+    $response = speech_service::handle_request(is_array($input) ? $input : []);
+}
 
 http_response_code($response['status']);
 header('Content-Type: ' . $response['contenttype']);

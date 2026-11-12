@@ -236,6 +236,20 @@ final class sql_guard_test extends \advanced_testcase {
             'PostgreSQL file reading' => ["SELECT pg_read_file('/etc/passwd')"],
             'PostgreSQL large object' => ["SELECT lo_import('/etc/passwd')"],
             'other database link' => ["SELECT * FROM dblink('host=x', 'SELECT 1') AS t(a int)"],
+            'server version' => ['SELECT VERSION() AS v'],
+            'database account' => ['SELECT USER() AS u'],
+            'database account with spaces' => ["SELECT id, user\n() AS u FROM {course}"],
+            'database name' => ['SELECT DATABASE() AS d'],
+            'schema name' => ['SELECT SCHEMA () AS s'],
+            'connection identifier' => ['SELECT CONNECTION_ID() AS c'],
+            'current account' => ['SELECT CURRENT_USER AS u'],
+            'current account as a call' => ['SELECT current_user() AS u'],
+            'session account' => ['SELECT SESSION_USER() AS u'],
+            'system account' => ['SELECT system_user AS u'],
+            'server variables together' => ['SELECT VERSION(), USER(), DATABASE()'],
+            'PostgreSQL database name' => ['SELECT current_database()'],
+            'PostgreSQL server setting' => ["SELECT current_setting('data_directory')"],
+            'PostgreSQL server address' => ['SELECT inet_server_addr()'],
         ];
     }
 
@@ -270,6 +284,13 @@ final class sql_guard_test extends \advanced_testcase {
         $similar = "SELECT id AS sleeping, fullname AS benchmarks, shortname AS load_files, summary AS get_locks "
             . "FROM {course} WHERE summary LIKE '%into outfile%'";
         $this->assertNull(sql_guard::rejection_reason($similar, (int) get_admin()->id));
+
+        $columns = 'SELECT m.id, m.version, u.username AS user_name FROM {analytics_models} m '
+            . "JOIN {user} u ON u.id = m.usermodified WHERE m.version > 0 AND u.username <> 'version() user() database()'";
+        $this->assertNull(
+            sql_guard::rejection_reason($columns, (int) get_admin()->id),
+            'Columns and tables named like the server information functions are not calls'
+        );
     }
 
     /**
@@ -559,5 +580,79 @@ final class sql_guard_test extends \advanced_testcase {
             sql_guard::rejection_reason('SELECT * FROM {user} WHERE id = 2', $admin),
             'Every column of an allowed table can be asked for; the sensitive ones are removed from the result'
         );
+    }
+
+    /**
+     * Columns whose names show they hold a credential or a secret, in core and plugin tables.
+     *
+     * @return array<string, array{0: string, 1: string}>
+     */
+    public static function secret_column_provider(): array {
+        return [
+            'backpack refresh token' => ['refreshtoken', 'badge_backpack_oauth2'],
+            'LTI consumer secret' => ['consumersecret', 'enrol_lti_users'],
+            'assignment approval token' => ['approval_token', 'local_assign_ai_pending'],
+            'forum approval token' => ['approval_token', 'local_forum_ai_pending'],
+            'linked login confirmation token' => ['confirmtoken', 'auth_oauth2_linked_login'],
+            'guest password' => ['guestpassword', 'bigbluebuttonbn'],
+            'quit password' => ['quitpassword', 'quizaccess_seb_quizsettings'],
+            'service salt' => ['servicesalt', 'lti'],
+            'access token' => ['accesstoken', 'local_jedomi_test'],
+            'API key' => ['api_key', 'local_jedomi_test'],
+            'API key without underscore' => ['apikey', 'local_jedomi_test'],
+            'private key' => ['privatekey', 'local_jedomi_test'],
+            'short password' => ['passwd', 'local_jedomi_test'],
+            'secret key' => ['secretkey', 'local_jedomi_test'],
+            'group enrolment key' => ['enrolmentkey', 'groups'],
+        ];
+    }
+
+    /**
+     * Columns of any table whose names show they hold a credential or a secret are rejected for every user, also
+     * administrators, and left out of the rows of a query reading every column.
+     *
+     * @dataProvider secret_column_provider
+     * @param string $column Column.
+     * @param string $table Table.
+     */
+    public function test_columns_named_as_secrets_are_rejected_and_left_out(string $column, string $table): void {
+        $this->resetAfterTest();
+        $manager = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->role_assign('manager', $manager->id);
+
+        foreach ([(int) get_admin()->id, (int) $manager->id] as $userid) {
+            $this->assertSame(
+                'sql_sensitive_rejected',
+                sql_guard::rejection_reason("SELECT id, {$column} FROM {{$table}}", $userid),
+                "User {$userid}"
+            );
+            $this->assertSame(
+                'sql_sensitive_rejected',
+                sql_guard::rejection_reason('SELECT t.id, t.' . strtoupper($column) . " FROM {{$table}} t", $userid),
+                "User {$userid}, qualified and in uppercase"
+            );
+        }
+        $this->assertSame(['id' => 1], sql_guard::filter_row(['id' => 1, strtoupper($column) => 'value']));
+    }
+
+    /**
+     * Columns that only look like secrets (token counters of the AI actions, a flag telling whether a password is used,
+     * the type or the address of a token, versions) stay readable for administrators and are kept in the rows.
+     */
+    public function test_harmless_columns_named_like_secrets_stay_allowed(): void {
+        $this->resetAfterTest();
+        $admin = (int) get_admin()->id;
+        $queries = [
+            'SELECT id, prompttokens, completiontoken FROM {ai_action_generate_text}',
+            'SELECT id, usepassword FROM {lesson}',
+            'SELECT id, accesstokenurl FROM {enrol_lti_app_registration}',
+            'SELECT id, version FROM {analytics_models}',
+        ];
+        foreach ($queries as $sql) {
+            $this->assertNull(sql_guard::rejection_reason($sql, $admin), $sql);
+        }
+        $row = ['id' => 1, 'prompttokens' => 10, 'completiontoken' => 20, 'usepassword' => 1, 'tokentype' => 0,
+            'accesstokenurl' => 'https://example.com', 'confirmtokenexpires' => 0];
+        $this->assertSame($row, sql_guard::filter_row($row));
     }
 }

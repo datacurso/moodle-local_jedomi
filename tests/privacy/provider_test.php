@@ -168,6 +168,9 @@ final class provider_test extends provider_testcase {
         $this->assertNotNull($aiservice, 'The data sent to the AI service must be declared');
         $this->assertContains('userid', $aiservice);
         $this->assertContains('messages', $aiservice);
+        foreach (['lang', 'site_id', 'site_url'] as $field) {
+            $this->assertContains($field, $aiservice, "The {$field} the Datacurso provider adds to every request must be declared");
+        }
         $this->assertStringContainsStringIgnoringCase(
             'pseudonym',
             get_string('privacy:metadata:jedomi_ai_service:userid', 'local_jedomi')

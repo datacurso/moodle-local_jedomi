@@ -1940,12 +1940,15 @@ class webhook_handler {
                 $lines = [];
                 $lines[] = "🤖 <b>Agents</b> ({$total}):";
                 foreach ($agents as $a) {
+                    // The instruction is given only to the users who may read it.
+                    $a = \local_jedomi\agent\agent_manager::agent_for_actor($a, (int) $userid);
                     $statusicon = $a->enabled ? '🟢' : '⚪';
                     $next = $a->nextrun ? userdate($a->nextrun) : '?';
                     // Always show agent ID so the model can use delete_agent(id).
                     $name = !empty($a->name) ? s($a->name) : "Agent #{$a->id}";
-                    // Truncate long prompts to keep the tool result manageable.
-                    $excerpt = s(mb_substr($a->prompt, 0, 60));
+                    // Truncate long prompts to keep the tool result manageable; hidden ones are never given.
+                    $excerpt = $a->prompthidden ? get_string('agent_prompt_hidden', 'local_jedomi')
+                        : s(mb_substr($a->prompt, 0, 60));
                     $lines[] = "{$statusicon} <b>[ID {$a->id}] {$name}</b>"
                         . " — {$excerpt}… —— {$a->schedule_cron} — next: {$next}";
                 }

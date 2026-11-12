@@ -163,6 +163,8 @@ const rowContext = (row) => ({
     contexttype: row.context_type || '',
     contextid: parseInt(row.context_id, 10) || 0,
     prompt: row.prompt || '',
+    prompthidden: row.prompthidden === true,
+    canmanage: row.canmanage === true,
 });
 
 /**

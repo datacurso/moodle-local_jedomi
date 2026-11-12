@@ -316,7 +316,6 @@ final class agent_create_test extends \advanced_testcase {
     /**
      * MDL-INT-099: a manager never sees the instruction of an agent of a user with more permissions: not in the table of
      * the Agents tab, not in its details and not in the list of agents of the web chat or of Telegram.
-     * [Pendiente:fail] The table, Ver detalles and the list_agents tool show managers the instructions of every agent.
      *
      * @return void
      */
@@ -343,8 +342,6 @@ final class agent_create_test extends \advanced_testcase {
     /**
      * MDL-INT-101: a manager cannot change the instruction of the agent of another manager, which keeps running only the
      * instruction of its creator.
-     * [Pendiente:fail] A manager can edit the instruction of the agent of another manager, which then runs with the
-     * identity, the permissions and the credits of its creator.
      *
      * @return void
      */
@@ -363,5 +360,66 @@ final class agent_create_test extends \advanced_testcase {
             'The agent must keep the instruction of its creator'
         );
         $this->assertFalse($answer['ok'], 'The edition of the instruction must be rejected');
+    }
+
+    /**
+     * MDL-INT-099 and MDL-INT-101: the table of the Agents tab gives a manager the instruction and the actions of their own
+     * agents and of the agents of a teacher only, while the administrator gets both for every agent and still edits the
+     * agent of a manager.
+     */
+    public function test_agents_table_gives_instruction_and_actions_by_rank(): void {
+        $this->resetAfterTest();
+        $manager = $this->create_manager('agentmanager');
+        $other = $this->create_manager('othermanager');
+        $teacher = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user($teacher->id, $this->getDataGenerator()->create_course()->id, 'editingteacher');
+        $ids = [
+            'own' => $this->create_agent_of((int) $manager->id, 'Own marker'),
+            'teacher' => $this->create_agent_of((int) $teacher->id, 'Teacher marker'),
+            'other' => $this->create_agent_of((int) $other->id, 'Other manager marker'),
+            'admin' => $this->create_agent_of((int) get_admin()->id, 'Admin marker'),
+        ];
+        $expected = ['own' => true, 'teacher' => true, 'other' => false, 'admin' => false];
+
+        $table = $this->post_as('agentmanager', 'ajax/agent_stats.php', []);
+        $this->assertTrue($table['ok'], $table['error'] ?? '');
+        $rows = array_column($table['rows'], null, 'id');
+        foreach ($ids as $label => $id) {
+            $this->assertSame($expected[$label], !$rows[$id]['prompthidden'], "Manager, instruction of the {$label} agent");
+            $this->assertSame($expected[$label], $rows[$id]['canmanage'], "Manager, actions of the {$label} agent");
+            if (!$expected[$label]) {
+                $this->assertNull($rows[$id]['prompt'], "Manager, no instruction of the {$label} agent");
+            }
+        }
+        $get = $this->post_as('agentmanager', 'ajax/agent_create.php', ['action' => 'get', 'id' => $ids['other']]);
+        $this->assertFalse($get['ok'], 'The form of the agent of another manager is not loaded');
+        $this->assertStringNotContainsString('Other manager marker', json_encode($get));
+
+        $admintable = $this->post_as('admin', 'ajax/agent_stats.php', []);
+        foreach ($admintable['rows'] as $row) {
+            $this->assertFalse($row['prompthidden']);
+            $this->assertTrue($row['canmanage']);
+        }
+        $edited = $this->post_as('admin', 'ajax/agent_create.php', ['action' => 'update', 'id' => $ids['other'],
+            'prompt' => 'Edited by the administrator']);
+        $this->assertTrue($edited['ok'], $edited['error'] ?? '');
+        $this->assertSame('Edited by the administrator', agent_manager::get_agent($ids['other'])->prompt);
+    }
+
+    /**
+     * MDL-INT-101: the owner of an agent edits it from the Agents tab.
+     */
+    public function test_owner_edits_their_own_agent(): void {
+        $this->resetAfterTest();
+        $manager = $this->create_manager('agentmanager');
+        $id = $this->create_agent_of((int) $manager->id, 'My report');
+
+        $get = $this->post_as('agentmanager', 'ajax/agent_create.php', ['action' => 'get', 'id' => $id]);
+        $updated = $this->post_as('agentmanager', 'ajax/agent_create.php', ['action' => 'update', 'id' => $id,
+            'prompt' => 'My new report']);
+
+        $this->assertSame('My report', $get['agent']['prompt'] ?? null);
+        $this->assertTrue($updated['ok'], $updated['error'] ?? '');
+        $this->assertSame('My new report', agent_manager::get_agent($id)->prompt);
     }
 }

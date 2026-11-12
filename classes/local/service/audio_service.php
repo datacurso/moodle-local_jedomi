@@ -102,14 +102,23 @@ class audio_service {
     /**
      * Two-letter code (ISO 639-1) of the language of a user, as the audio models expect it.
      *
-     * The language of the user's profile, or the current language when the profile has none; "es_mx" gives "es".
+     * On a page of the user (the sidebar), the language of the page: it follows a language forced by the course or
+     * chosen for the session. Elsewhere (a Telegram voice message, a scheduled task) there is no page of the user, so
+     * the language of the user's profile is used, or the current language when the profile has none.
+     * "es_mx" gives "es".
      *
      * @param int $userid User the audio belongs to.
      * @return string Two lowercase letters, or an empty string when no language can be told.
      */
     public static function language_code(int $userid): string {
-        $user = $userid > 0 ? \core_user::get_user($userid, 'id, lang') : null;
-        $lang = (string) (($user && !empty($user->lang)) ? $user->lang : current_language());
+        global $USER;
+        if ($userid > 0 && (int) ($USER->id ?? 0) === $userid) {
+            $lang = current_language();
+        } else {
+            $user = $userid > 0 ? \core_user::get_user($userid, 'id, lang') : null;
+            $lang = ($user && !empty($user->lang)) ? $user->lang : current_language();
+        }
+        $lang = (string) $lang;
         $code = strtolower(strtok($lang, '_-') ?: '');
         return preg_match('/^[a-z]{2}$/', $code) ? $code : '';
     }

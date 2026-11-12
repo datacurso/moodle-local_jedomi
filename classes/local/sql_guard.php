@@ -22,15 +22,15 @@ namespace local_jedomi\local;
  * The web chat, Telegram and the agents all call it before running a query. It applies four layers:
  *
  * 1. For every user (site administrators included): functions and clauses that read or write server files, pause or
- *    lock the database, reach other databases or reveal server variables are rejected (sql_function_rejected), and so
- *    are executable comments and optimizer hints (MySQL and MariaDB), which the database runs although they look like
- *    comments.
+ *    lock the database, reach other databases or reveal server variables or information (version, account, database,
+ *    connection) are rejected (sql_function_rejected), and so are executable comments and optimizer hints (MySQL and
+ *    MariaDB), which the database runs although they look like comments.
  * 2. For every user: anything the guard and the database could read differently is rejected (sql_construct_rejected):
  *    control characters, placeholders Moodle would bind at another place than the guard reads them (inside a comment
  *    or a string) and, outside MySQL, quoting the guard does not follow (double-quoted identifiers, dollar quoting,
  *    escape strings, backslashes and nested comments on PostgreSQL).
  * 3. For every user: tables and columns that hold credentials, keys, tokens, site configuration or sessions are
- *    rejected (sql_sensitive_rejected).
+ *    rejected (sql_sensitive_rejected); columns are recognised by name in any table (see is_sensitive_column()).
  * 4. For a user who does not manage every course (a teacher), an allowlist instead of a denylist. The query must be a
  *    single SELECT whose every token fits the small grammar of sql_select_parser (sql_construct_rejected): no CASE,
  *    OR, NOT, subqueries, UNION, comments, quoted identifiers, variables or functions other than COUNT, SUM, AVG, MIN,
@@ -70,8 +70,20 @@ class sql_guard {
     /** @var string[] Column names that hold credentials or secrets in any table. */
     private const SENSITIVE_COLUMNS = [
         'password', 'secret', 'clientsecret', 'privatetoken', 'token', 'sid', 'datakey',
-        'passwordsaltmain', 'sessionkey', 'linkcode', 'link_code',
+        'passwordsaltmain', 'sessionkey', 'linkcode', 'link_code', 'enrolmentkey',
     ];
+
+    /**
+     * @var string Pattern of the column names that hold credentials or secrets in any table, core or plugin: names ending
+     *      in secret, token, password, passwd, privatekey, apikey, sessionkey or salt (such as refreshtoken, consumersecret,
+     *      approval_token, guestpassword or servicesalt), optionally followed by "key". Names that only contain the word,
+     *      such as tokentype, accesstokenurl or prompttokens, are not matched.
+     */
+    private const SENSITIVE_COLUMN_PATTERN =
+        '/(?:secret|token|passw(?:or)?d|private_?key|api_?key|session_?key|salt)(?:_?key)?$/';
+
+    /** @var string[] Column names that match SENSITIVE_COLUMN_PATTERN but hold no secret: a token counter and a flag. */
+    private const HARMLESS_COLUMNS = ['completiontoken', 'usepassword'];
 
     /** @var string Backquote character MySQL uses to quote identifiers. */
     private const BACKQUOTE = "\x60";
@@ -115,7 +127,16 @@ class sql_guard {
      *      pause or lock the database, reach other databases or reveal server variables.
      */
     private const BLOCKED_FUNCTIONS = ['load_file', 'sleep', 'benchmark', 'get_lock', 'release_lock', 'release_all_locks',
-        'pg_sleep\w*', 'pg_read_file', 'pg_read_binary_file', 'lo_import', 'lo_export', 'dblink\w*'];
+        'pg_sleep\w*', 'pg_read_file', 'pg_read_binary_file', 'lo_import', 'lo_export', 'dblink\w*',
+        'current_user', 'session_user', 'system_user'];
+
+    /**
+     * @var string[] Functions rejected for every user when called (followed by "("), because they reveal the database
+     *      server: its version, account, database, schema, connection, settings or address. Without "(" these names are
+     *      ordinary columns (such as version) and are accepted.
+     */
+    private const SERVER_INFO_FUNCTIONS = ['version', 'user', 'database', 'schema', 'connection_id', 'current_database',
+        'current_schema', 'current_schemas', 'current_setting', 'inet_server_addr', 'inet_server_port', 'pg_backend_pid'];
 
     /** @var string[] Patterns of the placeholders Moodle binds, as lib/dml/moodle_database.php counts them. */
     private const PLACEHOLDERS = ['/\?/', '/(?<!:):[a-z][a-z0-9_]*/', '/\$[1-9][0-9]*/'];
@@ -150,7 +171,7 @@ class sql_guard {
             }
         }
         foreach (self::identifiers($code) as $identifier) {
-            if (in_array($identifier, self::SENSITIVE_COLUMNS, true)) {
+            if (self::is_sensitive_column($identifier)) {
                 return 'sql_sensitive_rejected';
             }
         }
@@ -216,7 +237,8 @@ class sql_guard {
      */
     private static function calls_blocked_function(string $code): bool {
         $code = str_replace(self::BACKQUOTE, ' ', $code);
-        $pattern = '/\b(?:' . implode('|', self::BLOCKED_FUNCTIONS) . ')\b|\binto\s+(?:outfile|dumpfile)\b|@@|(?:^|;)\s*copy\b/';
+        $pattern = '/\b(?:' . implode('|', self::BLOCKED_FUNCTIONS) . ')\b|\b(?:' . implode('|', self::SERVER_INFO_FUNCTIONS)
+            . ')\s*\(|\binto\s+(?:outfile|dumpfile)\b|@@|(?:^|;)\s*copy\b/';
         return (bool) preg_match($pattern, $code);
     }
 
@@ -729,11 +751,26 @@ class sql_guard {
      */
     public static function filter_row(array $row): array {
         foreach (array_keys($row) as $column) {
-            if (in_array(strtolower((string) $column), self::SENSITIVE_COLUMNS, true)) {
+            if (self::is_sensitive_column((string) $column)) {
                 unset($row[$column]);
             }
         }
         return $row;
+    }
+
+    /**
+     * Tell whether a column name holds credentials or secrets: one of SENSITIVE_COLUMNS, or a name matching
+     * SENSITIVE_COLUMN_PATTERN that is not one of HARMLESS_COLUMNS.
+     *
+     * @param string $column Column name.
+     * @return bool
+     */
+    public static function is_sensitive_column(string $column): bool {
+        $column = strtolower($column);
+        if (in_array($column, self::SENSITIVE_COLUMNS, true)) {
+            return true;
+        }
+        return !in_array($column, self::HARMLESS_COLUMNS, true) && preg_match(self::SENSITIVE_COLUMN_PATTERN, $column) === 1;
     }
 
     /**

@@ -121,4 +121,51 @@ final class spt_validator_test extends \advanced_testcase {
         $this->assertFalse($this->accepted($forged), 'Permissions signed with the built-in key must be rejected');
         $this->assertFalse($this->accepted($emptykey), 'Permissions signed with an empty key must be rejected');
     }
+
+    /**
+     * Permissions whose session hash, expiry or signature have the wrong type, as a client could send them.
+     *
+     * @return array<string, array{0: string, 1: mixed, 2: string}>
+     */
+    public static function malformed_field_provider(): array {
+        return [
+            'session hash as a number' => ['sesskey_hash', 5, 'invalid_session'],
+            'session hash as a list' => ['sesskey_hash', ['a'], 'invalid_session'],
+            'session hash missing' => ['sesskey_hash', null, 'invalid_session'],
+            'expiry as a word' => ['expires', 'never', 'token_expired'],
+            'expiry as a list' => ['expires', [1], 'token_expired'],
+            'expiry as a decimal text' => ['expires', '9999999999.5', 'token_expired'],
+            'expiry missing' => ['expires', null, 'token_expired'],
+            'signature as a number' => ['signature', 5, 'invalid_signature'],
+            'signature as a list' => ['signature', ['a'], 'invalid_signature'],
+            'signature missing' => ['signature', null, 'invalid_signature'],
+        ];
+    }
+
+    /**
+     * Fields of the wrong type are rejected with the error of the field, never with a type error (an HTTP 500).
+     *
+     * @dataProvider malformed_field_provider
+     * @param string $field Field of the permissions.
+     * @param mixed $value Value sent instead of the issued one; null removes the field.
+     * @param string $errorcode Expected error.
+     */
+    public function test_fields_of_the_wrong_type_are_rejected_cleanly(string $field, $value, string $errorcode): void {
+        $this->resetAfterTest();
+        set_config('spt_secret', 'site-own-secret-for-tests', 'local_jedomi');
+        $this->setUser($this->getDataGenerator()->create_user());
+        $spt = \local_jedomi_generate_spt('student');
+        if ($value === null) {
+            unset($spt[$field]);
+        } else {
+            $spt[$field] = $value;
+        }
+
+        try {
+            spt_validator::validate($spt);
+            $this->fail('Permissions with a malformed ' . $field . ' must be rejected');
+        } catch (\moodle_exception $e) {
+            $this->assertSame($errorcode, $e->errorcode);
+        }
+    }
 }

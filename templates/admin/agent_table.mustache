@@ -34,13 +34,13 @@
     Context variables required for this template:
     * hasrows bool - Whether there are agents
     * rows array - Agents: id int, userid int, creator string, name string, schedule string, enabled bool,
-      lastrun int (0 when never run)
+      lastrun int (0 when never run), canmanage bool (whether the user may edit, run, toggle or delete it)
 
     Example context (json):
     {
         "hasrows": true,
         "rows": [{"id": 3, "userid": 2, "creator": "Admin User", "name": "Daily report", "schedule": "0 0 * * *",
-            "enabled": true, "lastrun": 1700000000}]
+            "enabled": true, "lastrun": 1700000000, "canmanage": true}]
     }
 }}
 <table class="table table-sm table-hover small">
@@ -76,6 +76,7 @@
                         </button>
                         <div class="dropdown-menu dropdown-menu-right">
                             <a class="dropdown-item" href="#" data-agent-action="details" data-agent-id="{{id}}"><i class="fa fa-eye mr-2" aria-hidden="true"></i>{{#str}} agent_view_details, local_jedomi {{/str}}</a>
+                            {{#canmanage}}
                             <a class="dropdown-item" href="#" data-agent-action="edit" data-agent-id="{{id}}"><i class="fa fa-pen mr-2" aria-hidden="true"></i>{{#str}} agent_edit, local_jedomi {{/str}}</a>
                             <a class="dropdown-item" href="#" data-agent-action="run" data-agent-id="{{id}}"><i class="fa fa-play mr-2" aria-hidden="true"></i>{{#str}} agent_run_now, local_jedomi {{/str}}</a>
                             <a class="dropdown-item" href="#" data-agent-action="toggle" data-agent-id="{{id}}">
@@ -84,6 +85,7 @@
                             </a>
                             <div class="dropdown-divider"></div>
                             <a class="dropdown-item text-danger" href="#" data-agent-action="delete" data-agent-id="{{id}}"><i class="fa fa-trash-alt mr-2" aria-hidden="true"></i>{{#str}} agent_delete, local_jedomi {{/str}}</a>
+                            {{/canmanage}}
                         </div>
                     </div>
                 </td>

@@ -37,23 +37,90 @@ class agent_manager {
     // ... ── Permissions ──────────────────────────────────────────────────────────
 
     /**
-     * Whether a user may edit, enable, run, delete or purge an agent.
+     * Whether a user is the owner of an agent, a site administrator or has a strictly higher rank than the owner.
      *
-     * The owner and site administrators always may; anyone else only when the owner has no more permissions than
-     * them, so nobody can make an agent run with permissions higher than their own.
+     * An agent runs with the identity, permissions and credits of its owner, so a user of the same rank as the owner
+     * must neither read nor change what the agent does.
      *
      * @param \stdClass $agent Agent record (needs ->userid).
      * @param int $actorid User that acts on the agent.
      * @return bool
      */
-    public static function can_manage_agent(\stdClass $agent, int $actorid): bool {
+    private static function is_owner_or_above(\stdClass $agent, int $actorid): bool {
         if ($actorid <= 0) {
             return false;
         }
         if ((int) $agent->userid === $actorid || is_siteadmin($actorid)) {
             return true;
         }
-        return self::role_rank((int) $agent->userid) <= self::role_rank($actorid);
+        return self::role_rank((int) $agent->userid) < self::role_rank($actorid);
+    }
+
+    /**
+     * Whether a user may edit, enable, run, delete or purge an agent.
+     *
+     * Only the owner, site administrators and users of a strictly higher rank than the owner may, so nobody can change
+     * an agent that runs with the permissions and credits of a user of their own rank or higher.
+     *
+     * @param \stdClass $agent Agent record (needs ->userid).
+     * @param int $actorid User that acts on the agent.
+     * @return bool
+     */
+    public static function can_manage_agent(\stdClass $agent, int $actorid): bool {
+        return self::is_owner_or_above($agent, $actorid);
+    }
+
+    /**
+     * Whether a user may read the instruction (prompt) of an agent.
+     *
+     * Only the owner, site administrators and users of a strictly higher rank than the owner may.
+     *
+     * @param \stdClass $agent Agent record (needs ->userid).
+     * @param int $actorid User that reads the agent.
+     * @return bool
+     */
+    public static function can_view_instruction(\stdClass $agent, int $actorid): bool {
+        return self::is_owner_or_above($agent, $actorid);
+    }
+
+    /**
+     * Copy of an agent as a user may see it: without its instruction when they may not read it, and saying whether the
+     * instruction is hidden and whether they may manage the agent.
+     *
+     * A name generated from the first words of a hidden instruction is hidden too, since it would reveal them.
+     *
+     * @param \stdClass $agent Agent record (needs ->userid, ->prompt and ->name).
+     * @param int $actorid User that reads the agent.
+     * @return \stdClass Copy with ->prompt (null when hidden), ->name, ->prompthidden and ->canmanage.
+     */
+    public static function agent_for_actor(\stdClass $agent, int $actorid): \stdClass {
+        $copy = clone $agent;
+        $copy->prompthidden = !self::can_view_instruction($agent, $actorid);
+        $copy->canmanage = self::can_manage_agent($agent, $actorid);
+        if ($copy->prompthidden) {
+            if (isset($agent->name) && $agent->name === self::generate_name_from_prompt((string) ($agent->prompt ?? ''))) {
+                $copy->name = '';
+            }
+            $copy->prompt = null;
+        }
+        return $copy;
+    }
+
+    /**
+     * Owners of agents whose instruction a user may read.
+     *
+     * @param int $actorid User that reads the agents.
+     * @return int[] Owner user ids.
+     */
+    private static function owners_with_visible_instruction(int $actorid): array {
+        global $DB;
+        $owners = [];
+        foreach ($DB->get_fieldset_sql('SELECT DISTINCT userid FROM {local_jedomi_agents}') as $ownerid) {
+            if (self::can_view_instruction((object) ['userid' => (int) $ownerid], $actorid)) {
+                $owners[] = (int) $ownerid;
+            }
+        }
+        return $owners;
     }
 
     /**
@@ -62,7 +129,7 @@ class agent_manager {
      * @param int $id Agent id.
      * @param int $actorid User that acts on the agent.
      * @return \stdClass Agent record.
-     * @throws \moodle_exception When the agent does not exist or its owner has more permissions than the user.
+     * @throws \moodle_exception When the agent does not exist or the user may not manage it.
      */
     public static function require_manageable_agent(int $id, int $actorid): \stdClass {
         $agent = self::get_agent($id);
@@ -120,6 +187,7 @@ class agent_manager {
      *  - status ('enabled'|'disabled'): filter by enabled flag.
      *  - context_type (string): filter by context_type value.
      *  - search (string): LIKE match on the prompt field.
+     *  - actorid (int): user that searches; the search then only matches the agents whose instruction they may read.
      *  - page (int, default 1): current page.
      *  - perpage (int, default 20): items per page.
      *
@@ -153,6 +221,17 @@ class agent_manager {
             $likesearch = $DB->sql_like('prompt', ':search', false, false);
             $wheres[] = $likesearch;
             $params['search'] = '%' . $DB->sql_like_escape($search) . '%';
+            // A hidden instruction must not be guessed by searching for its words.
+            if (!empty($filters['actorid'])) {
+                $owners = self::owners_with_visible_instruction((int) $filters['actorid']);
+                if (empty($owners)) {
+                    $wheres[] = '1 = 0';
+                } else {
+                    [$insql, $inparams] = $DB->get_in_or_equal($owners, SQL_PARAMS_NAMED, 'searchowner');
+                    $wheres[] = "userid {$insql}";
+                    $params = array_merge($params, $inparams);
+                }
+            }
         }
 
         // Role filter — match role shortname inside role_filter JSON.

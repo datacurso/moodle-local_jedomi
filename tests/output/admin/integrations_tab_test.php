@@ -277,4 +277,20 @@ final class integrations_tab_test extends \advanced_testcase {
         $this->markTestSkipped('Pending fix: Regenerate secret also saves the token and the limits of the form, and with '
             . 'an invalid token the secret is not regenerated.');
     }
+
+    /**
+     * The Spanish Telegram texts (settings, guides, bot messages and errors) address the reader formally, as the rest of
+     * the plugin does, without voseo or informal forms.
+     */
+    public function test_spanish_telegram_strings_use_the_formal_form(): void {
+        $informal = '/\b(?:tu|tus|te|tienes|puedes|estás|tenés|podés|vas a|andá|hacé|usá|guardá|exponé|enviá|intentá|contactá|'
+            . 'abrí|elegí|seguí|pegá|copiá|activá|verificá|generá|simplificá|empezá|desactivá|vinculá|dividila|buscá|revisá|'
+            . 'regeneralo|pégalo|déjalo|inténtalo|envíalo|escríbele|dame)\b/iu';
+        $strings = get_string_manager()->load_component_strings('local_jedomi', 'es');
+        foreach ($strings as $key => $text) {
+            if (preg_match('/^(?:telegram_|error_telegram_)/', $key)) {
+                $this->assertDoesNotMatchRegularExpression($informal, $text, "es/{$key}");
+            }
+        }
+    }
 }

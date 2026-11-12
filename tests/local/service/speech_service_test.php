@@ -307,6 +307,105 @@ final class speech_service_test extends \advanced_testcase {
     }
 
     /**
+     * Restore the lock factory of the rate limit after each test.
+     *
+     * @return void
+     */
+    protected function tearDown(): void {
+        speech_service::set_lock_factory_for_testing(null);
+        parent::tearDown();
+    }
+
+    /**
+     * Lock factory double that grants every lock and records the resources locked and released.
+     *
+     * @param array $log Resources locked ("lock <resource>") and released ("release <resource>"), in order.
+     * @return \core\lock\lock_factory
+     */
+    private function recording_lock_factory(array &$log): \core\lock\lock_factory {
+        $factory = $this->createMock(\core\lock\lock_factory::class);
+        $factory->method('get_lock')->willReturnCallback(function (string $resource) use (&$log, $factory) {
+            $log[] = 'lock ' . $resource;
+            return new \core\lock\lock($resource, $factory);
+        });
+        $factory->method('release_lock')->willReturnCallback(function (\core\lock\lock $lock) use (&$log) {
+            $log[] = 'release ' . $lock->get_key();
+            return true;
+        });
+        return $factory;
+    }
+
+    /**
+     * The per-minute counter of a user is read and written under a lock of that user, so parallel requests (the
+     * session lock is released) cannot read the same count; sequential requests still stop at the limit.
+     *
+     * @return void
+     */
+    public function test_rate_limit_counter_is_locked_per_user(): void {
+        $user = $this->setup_user();
+        $log = [];
+        speech_service::set_lock_factory_for_testing($this->recording_lock_factory($log));
+
+        for ($i = 0; $i < speech_service::RATE_LIMIT_PER_MINUTE; $i++) {
+            $this->curl->enqueue(self::MP3);
+            $this->assertSame(200, $this->request()['status'], "Request {$i} is within the limit");
+        }
+        $calls = count($this->curl->calls);
+        $response = $this->request();
+
+        $this->assert_refused_status($response, 429, 'speech_rate_limited');
+        $this->assertCount($calls, $this->curl->calls, 'The AI service must not be called above the limit');
+        $resource = 'speech_rate_' . $user->id;
+        $expected = array_merge(...array_fill(0, speech_service::RATE_LIMIT_PER_MINUTE + 1, ["lock {$resource}",
+            "release {$resource}"]));
+        $this->assertSame($expected, $log, 'Each request takes the lock of the user and releases it');
+    }
+
+    /**
+     * When the lock of the counter cannot be taken the request is refused as rate limited, never let through.
+     *
+     * @return void
+     */
+    public function test_rate_limit_refuses_when_the_lock_is_not_available(): void {
+        $this->setup_user();
+        $factory = $this->createMock(\core\lock\lock_factory::class);
+        $factory->method('get_lock')->willReturn(false);
+        speech_service::set_lock_factory_for_testing($factory);
+
+        $this->assert_refused_without_a_call($this->request(), 429, 'speech_rate_limited');
+    }
+
+    /**
+     * A failed login check of speech.php (require_login) answers the JSON error the sidebar reads, never an HTML page.
+     *
+     * @return void
+     */
+    public function test_login_failure_answers_a_json_refusal(): void {
+        $this->setup_user();
+
+        $response = speech_service::login_error(new \require_login_exception('test'));
+
+        $this->assertSame(403, $response['status']);
+        $this->assertStringStartsWith('application/json', $response['contenttype']);
+        $error = json_decode($response['body'], true)['error'];
+        $this->assertSame('requireloginerror', $error['code']);
+        $this->assertNotEmpty($error['message']);
+    }
+
+    /**
+     * Assert a response is a JSON error with a status and a code.
+     *
+     * @param array $response Response of the request.
+     * @param int $status Expected HTTP status.
+     * @param string $code Expected error code.
+     * @return void
+     */
+    private function assert_refused_status(array $response, int $status, string $code): void {
+        $this->assertSame($status, $response['status']);
+        $this->assertSame($code, json_decode($response['body'], true)['error']['code']);
+    }
+
+    /**
      * MDL-CTR-012 / MDL-INT-003: an error of the provider reaches the browser as an interpretable error.
      * An error of the AI service answers a JSON error with a message ready to show, without internal details.
      *

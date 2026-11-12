@@ -61,11 +61,17 @@ class speech_service {
     /** @var int Total request timeout, in seconds. */
     private const TIMEOUT = 60;
 
+    /** @var int Longest wait for the lock of the rate limit counter of a user, in seconds. */
+    private const RATE_LOCK_TIMEOUT = 2;
+
     /** @var string[] Kinds of placeholder of the anonymiser, each spoken with a string "speech_placeholder_<kind>". */
     private const PLACEHOLDER_KINDS = ['person', 'email', 'id', 'text'];
 
     /** @var provider_api|null Provider client used instead of Jedomi's own in PHPUnit tests. */
     private static ?provider_api $testapi = null;
+
+    /** @var \core\lock\lock_factory|null Lock factory of the rate limit used instead of Moodle's own in PHPUnit tests. */
+    private static ?\core\lock\lock_factory $testlockfactory = null;
 
     /**
      * Replace the provider client used when a caller passes none. Only for PHPUnit tests.
@@ -78,6 +84,29 @@ class speech_service {
             throw new \coding_exception('speech_service::set_api_for_testing() is only for PHPUnit tests');
         }
         self::$testapi = $api;
+    }
+
+    /**
+     * Replace the lock factory of the rate limit. Only for PHPUnit tests.
+     *
+     * @param \core\lock\lock_factory|null $factory Factory to use; null to restore Moodle's own.
+     * @return void
+     */
+    public static function set_lock_factory_for_testing(?\core\lock\lock_factory $factory): void {
+        if (!defined('PHPUNIT_TEST') || !PHPUNIT_TEST) {
+            throw new \coding_exception('speech_service::set_lock_factory_for_testing() is only for PHPUnit tests');
+        }
+        self::$testlockfactory = $factory;
+    }
+
+    /**
+     * JSON refusal of speech.php when its login check fails, in the shape the sidebar reads.
+     *
+     * @param \moodle_exception $e Failure of require_login().
+     * @return array Keys status (403), contenttype and body.
+     */
+    public static function login_error(\moodle_exception $e): array {
+        return self::error(403, $e->errorcode, $e->getMessage());
     }
 
     /**
@@ -201,18 +230,32 @@ class speech_service {
     /**
      * Count a request of a user in the current minute.
      *
+     * speech.php releases the session lock, so the requests of a user can run in parallel: the counter is read and
+     * written under a lock of the user, or two requests could read the same count and both pass the limit. When the
+     * lock cannot be taken in time the request is refused, never let through.
+     *
      * @param int $userid User.
-     * @return bool False when the user already reached the limit of the minute; the request is then not counted.
+     * @return bool False when the user already reached the limit of the minute, or the counter is busy; the request is
+     *         then not counted.
      */
     private static function consume_rate_limit(int $userid): bool {
-        $cache = \cache::make('local_jedomi', 'speech_rate');
-        $key = $userid . '_' . intdiv(time(), 60);
-        $count = (int) $cache->get($key);
-        if ($count >= self::RATE_LIMIT_PER_MINUTE) {
+        $factory = self::$testlockfactory ?? \core\lock\lock_config::get_lock_factory('local_jedomi');
+        $lock = $factory->get_lock('speech_rate_' . $userid, self::RATE_LOCK_TIMEOUT);
+        if (!$lock) {
             return false;
         }
-        $cache->set($key, $count + 1);
-        return true;
+        try {
+            $cache = \cache::make('local_jedomi', 'speech_rate');
+            $key = $userid . '_' . intdiv(time(), 60);
+            $count = (int) $cache->get($key);
+            if ($count >= self::RATE_LIMIT_PER_MINUTE) {
+                return false;
+            }
+            $cache->set($key, $count + 1);
+            return true;
+        } finally {
+            $lock->release();
+        }
     }
 
     /**

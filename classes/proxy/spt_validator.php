@@ -46,14 +46,17 @@ class spt_validator {
             throw new \moodle_exception('chat_error_guest', 'local_jedomi');
         }
 
-        // Check sesskey binding.
+        // Check sesskey binding. The fields come from the client, so a value of another type is rejected cleanly.
         $expectedhash = substr(hash('sha256', sesskey()), 0, 16);
-        if (!hash_equals($expectedhash, $spt['sesskey_hash'] ?? '')) {
+        $sesskeyhash = $spt['sesskey_hash'] ?? null;
+        if (!is_string($sesskeyhash) || !hash_equals($expectedhash, $sesskeyhash)) {
             throw new \moodle_exception('invalid_session', 'local_jedomi');
         }
 
-        // Check TTL.
-        if (time() >= ($spt['expires'] ?? 0)) {
+        // Check TTL: only a whole number of seconds (or its digits) is an expiry.
+        $expires = $spt['expires'] ?? null;
+        $validexpiry = is_int($expires) || (is_string($expires) && ctype_digit($expires));
+        if (!$validexpiry || time() >= (int) $expires) {
             throw new \moodle_exception('token_expired', 'local_jedomi');
         }
 
@@ -61,7 +64,8 @@ class spt_validator {
         $secret = \local_jedomi_get_spt_secret();
         $expected = hash_hmac('sha256', \local_jedomi_spt_signing_string($spt), $secret);
 
-        if (!hash_equals($expected, $spt['signature'] ?? '')) {
+        $signature = $spt['signature'] ?? null;
+        if (!is_string($signature) || !hash_equals($expected, $signature)) {
             throw new \moodle_exception('invalid_signature', 'local_jedomi');
         }
 

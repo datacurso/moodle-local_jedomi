@@ -1083,4 +1083,129 @@ final class agent_manager_test extends \advanced_testcase {
         $this->markTestSkipped('Pending fix: editing ignores the new name, silently drops an invalid or empty custom '
             . 'schedule, saves an instruction of only spaces and cannot remove every role; the role boxes have no effect.');
     }
+
+    /**
+     * Create the users of the permission tests: two managers, a teacher and the site administrator.
+     *
+     * @return int[] User ids keyed by managera, managerb, teacher and admin.
+     */
+    private function create_rank_users(): array {
+        $generator = $this->getDataGenerator();
+        $managera = $generator->create_user();
+        $managerb = $generator->create_user();
+        $generator->role_assign('manager', $managera->id);
+        $generator->role_assign('manager', $managerb->id);
+        $teacher = $generator->create_user();
+        $generator->enrol_user($teacher->id, $generator->create_course()->id, 'editingteacher');
+        return ['managera' => (int) $managera->id, 'managerb' => (int) $managerb->id, 'teacher' => (int) $teacher->id,
+            'admin' => (int) get_admin()->id];
+    }
+
+    /**
+     * MDL-INT-099 and MDL-INT-101: the owner of an agent always sees and manages it.
+     */
+    public function test_owner_sees_and_manages_their_own_agent(): void {
+        $users = $this->create_rank_users();
+        foreach ($users as $label => $userid) {
+            $agent = $this->create_agent_record(['userid' => $userid]);
+            $this->assertTrue(agent_manager::can_view_instruction($agent, $userid), "The {$label} sees their instruction");
+            $this->assertTrue(agent_manager::can_manage_agent($agent, $userid), "The {$label} manages their agent");
+        }
+    }
+
+    /**
+     * MDL-INT-099 and MDL-INT-101: a site administrator sees and manages every agent.
+     */
+    public function test_admin_sees_and_manages_every_agent(): void {
+        $users = $this->create_rank_users();
+        foreach (['managera', 'teacher'] as $label) {
+            $agent = $this->create_agent_record(['userid' => $users[$label]]);
+            $this->assertTrue(agent_manager::can_view_instruction($agent, $users['admin']), "Instruction of the {$label}");
+            $this->assertTrue(agent_manager::can_manage_agent($agent, $users['admin']), "Agent of the {$label}");
+        }
+    }
+
+    /**
+     * MDL-INT-099 and MDL-INT-101: a manager sees and manages the agents of a teacher (lower rank) only; the agents of
+     * another manager (same rank) and of an administrator (higher rank) keep their instruction hidden and cannot be managed.
+     */
+    public function test_manager_sees_and_manages_only_agents_of_lower_ranks(): void {
+        $users = $this->create_rank_users();
+        $teacher = $this->create_agent_record(['userid' => $users['teacher']]);
+        $manager = $this->create_agent_record(['userid' => $users['managerb']]);
+        $admin = $this->create_agent_record(['userid' => $users['admin']]);
+
+        $this->assertTrue(agent_manager::can_view_instruction($teacher, $users['managera']));
+        $this->assertTrue(agent_manager::can_manage_agent($teacher, $users['managera']));
+        foreach (['another manager' => $manager, 'an administrator' => $admin] as $label => $agent) {
+            $this->assertFalse(agent_manager::can_view_instruction($agent, $users['managera']), "Instruction of {$label}");
+            $this->assertFalse(agent_manager::can_manage_agent($agent, $users['managera']), "Agent of {$label}");
+        }
+        $this->assertFalse(agent_manager::can_view_instruction($manager, $users['teacher']), 'A teacher, a manager agent');
+        $this->assertFalse(agent_manager::can_view_instruction($teacher, 0), 'Nobody without a user');
+        $this->assertFalse(agent_manager::can_manage_agent($teacher, 0), 'Nobody without a user');
+    }
+
+    /**
+     * MDL-INT-101: a manager cannot load, edit or delete the agent of another manager, nor purge it.
+     */
+    public function test_manager_cannot_manage_the_agent_of_another_manager(): void {
+        $users = $this->create_rank_users();
+        $agent = $this->create_agent_record(['userid' => $users['managerb'], 'context_type' => 'site']);
+
+        try {
+            agent_manager::require_manageable_agent((int) $agent->id, $users['managera']);
+            $this->fail('The agent of another manager must not be manageable');
+        } catch (\moodle_exception $e) {
+            $this->assertSame('agent_error_nopermission', $e->errorcode);
+        }
+        $this->assertSame(0, agent_manager::purge_by_context('site', null, $users['managera']));
+        $this->assertNotNull(agent_manager::get_agent((int) $agent->id));
+    }
+
+    /**
+     * MDL-INT-099: an agent seen by a user keeps its instruction only when they may see it, and says whether they may
+     * manage it.
+     */
+    public function test_agent_for_actor_hides_the_instruction_it_may_not_see(): void {
+        $users = $this->create_rank_users();
+        $teacher = $this->create_agent_record(['userid' => $users['teacher'], 'prompt' => 'Teacher instruction']);
+        $admin = $this->create_agent_record(['userid' => $users['admin'], 'prompt' => 'Admin instruction']);
+
+        $visible = agent_manager::agent_for_actor($teacher, $users['managera']);
+        $hidden = agent_manager::agent_for_actor($admin, $users['managera']);
+
+        $this->assertSame('Teacher instruction', $visible->prompt);
+        $this->assertFalse($visible->prompthidden);
+        $this->assertTrue($visible->canmanage);
+        $this->assertNull($hidden->prompt);
+        $this->assertTrue($hidden->prompthidden);
+        $this->assertFalse($hidden->canmanage);
+        $this->assertSame('Admin instruction', $admin->prompt, 'The given record is not changed');
+
+        $derived = agent_manager::get_agent(agent_manager::create_agent((object) ['userid' => $users['admin'],
+            'prompt' => 'Secret words of the admin', 'schedule_cron' => '0 8 * * *']));
+        $named = agent_manager::get_agent(agent_manager::create_agent((object) ['userid' => $users['admin'],
+            'name' => 'Weekly report', 'prompt' => 'Secret words of the admin', 'schedule_cron' => '0 8 * * *']));
+        $hiddenname = agent_manager::agent_for_actor($derived, $users['managera'])->name;
+        $this->assertSame('', $hiddenname, 'A name made of the first words of a hidden instruction is hidden too');
+        $this->assertSame('Weekly report', agent_manager::agent_for_actor($named, $users['managera'])->name);
+        $this->assertSame($derived->name, agent_manager::agent_for_actor($derived, $users['admin'])->name);
+    }
+
+    /**
+     * MDL-INT-099: searching by instruction never matches the agents whose instruction the user may not see.
+     */
+    public function test_search_by_instruction_skips_hidden_instructions(): void {
+        $users = $this->create_rank_users();
+        $this->create_agent_record(['userid' => $users['admin'], 'prompt' => 'Shared marker of the admin']);
+        $this->create_agent_record(['userid' => $users['managera'], 'prompt' => 'Shared marker of mine']);
+
+        $asmanager = agent_manager::get_agents(['search' => 'Shared marker', 'actorid' => $users['managera']]);
+        $asadmin = agent_manager::get_agents(['search' => 'Shared marker', 'actorid' => $users['admin']]);
+
+        $this->assertSame(1, $asmanager['total']);
+        $this->assertSame((string) $users['managera'], (string) $asmanager['items'][0]->userid);
+        $this->assertSame(2, $asadmin['total']);
+    }
 }

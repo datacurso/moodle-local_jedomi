@@ -28,6 +28,7 @@ use local_jedomi\agent\tool_executor;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @covers     \local_jedomi\agent\tool\create_agent_tool
  * @covers     \local_jedomi\agent\tool\delete_agent_tool
+ * @covers     \local_jedomi\agent\tool\list_agents_tool
  * @covers     \local_jedomi\agent\tool_executor
  */
 final class agent_management_tools_test extends \advanced_testcase {
@@ -62,5 +63,45 @@ final class agent_management_tools_test extends \advanced_testcase {
             (int) agent_manager::get_agent($own['agent_id'])->userid,
             'The agent of the manager creates agents owned by the manager'
         );
+    }
+
+    /**
+     * MDL-INT-099: the list of agents of a manager, in the web chat, Telegram and the agents, keeps the instruction of their
+     * own agents and of the agents of a teacher, and omits the instruction of the agents of another manager and of an
+     * administrator.
+     */
+    public function test_list_agents_of_a_manager_omits_the_hidden_instructions(): void {
+        $this->resetAfterTest();
+        $generator = $this->getDataGenerator();
+        $managera = $generator->create_user();
+        $managerb = $generator->create_user();
+        $generator->role_assign('manager', $managera->id);
+        $generator->role_assign('manager', $managerb->id);
+        $teacher = $generator->create_user();
+        $generator->enrol_user($teacher->id, $generator->create_course()->id, 'editingteacher');
+        $owners = ['Own marker' => (int) $managera->id, 'Teacher marker' => (int) $teacher->id,
+            'Other manager marker' => (int) $managerb->id, 'Admin marker' => (int) get_admin()->id];
+        foreach ($owners as $prompt => $userid) {
+            agent_manager::create_agent((object) ['userid' => $userid, 'prompt' => $prompt, 'schedule_cron' => '0 8 * * *']);
+        }
+        $this->setUser($managera);
+
+        $outputs = [
+            'web chat' => \local_jedomi\proxy\handler::run_tool('list_agents', [], 'manager'),
+            'Telegram' => \local_jedomi\telegram\webhook_handler::execute_tool('list_agents', [], (int) $managera->id),
+            'agents' => (new list_agents_tool((int) $managera->id))->execute((object) []),
+        ];
+
+        foreach ($outputs as $channel => $output) {
+            $this->assertStringContainsString('Own marker', $output, "{$channel}: own instruction");
+            $this->assertStringContainsString('Teacher marker', $output, "{$channel}: instruction of a lower rank");
+            $this->assertStringNotContainsString('Other manager marker', $output, "{$channel}: same rank");
+            $this->assertStringNotContainsString('Admin marker', $output, "{$channel}: higher rank");
+        }
+        foreach (['web chat', 'agents'] as $channel) {
+            $agents = json_decode($outputs[$channel], true)['agents'];
+            $this->assertCount(4, $agents, "{$channel}: every agent is still listed");
+            $this->assertCount(2, array_filter(array_column($agents, 'prompt_hidden')), "{$channel}: two hidden");
+        }
     }
 }

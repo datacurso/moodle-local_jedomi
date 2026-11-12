@@ -88,7 +88,8 @@ final class audio_service_test extends \advanced_testcase {
 
     /**
      * MDL-UNIT-113: the recording is transcribed in the language of the user.
-     * The language of the user's profile goes with the audio, as a two-letter code, so the model does not guess it.
+     * Outside a page of the user (a Telegram voice message, a scheduled task), the language of the user's profile goes
+     * with the audio, as a two-letter code, so the model does not guess it.
      *
      * @covers \local_jedomi\local\service\audio_service::language_code
      */
@@ -96,6 +97,8 @@ final class audio_service_test extends \advanced_testcase {
         global $DB;
         $userid = $this->setup_user();
         $DB->set_field('user', 'lang', 'es_mx', ['id' => $userid]);
+        // A Telegram update has no session of the user.
+        $this->setUser(null);
         $curl = new fake_curl();
         $curl->enqueue(json_encode(['text' => 'Hola', 'model' => model_settings::DEFAULT_AUDIO_MODEL, 'duration_seconds' => 1]));
 
@@ -105,6 +108,27 @@ final class audio_service_test extends \advanced_testcase {
         $this->assertSame('es', audio_service::language_code($userid));
         // Without a user the current language is used, still as two letters (or nothing).
         $this->assertMatchesRegularExpression('/^([a-z]{2})?$/', audio_service::language_code(0));
+    }
+
+    /**
+     * On a page of the user the language of the page is used: a language forced by the course, or one chosen for the
+     * session, wins over the language of the profile, still as two letters.
+     *
+     * @covers \local_jedomi\local\service\audio_service::language_code
+     */
+    public function test_language_of_the_page_wins_on_a_page_of_the_user(): void {
+        global $PAGE, $SESSION, $USER;
+        $userid = $this->setup_user();
+        $USER->lang = 'es_mx';
+
+        $this->assertSame('es', audio_service::language_code($userid), 'Without another choice the profile language is used');
+
+        $SESSION->lang = 'en';
+        $this->assertSame('en', audio_service::language_code($userid), 'A language chosen for the session wins');
+        unset($SESSION->lang);
+
+        $PAGE->set_course($this->getDataGenerator()->create_course(['lang' => 'en']));
+        $this->assertSame('en', audio_service::language_code($userid), 'A language forced by the course wins');
     }
 
     /**

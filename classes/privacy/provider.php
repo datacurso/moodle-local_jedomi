@@ -113,6 +113,9 @@ class provider implements
         $collection->add_external_location_link('jedomi_ai_service', [
             'userid' => 'privacy:metadata:jedomi_ai_service:userid',
             'messages' => 'privacy:metadata:jedomi_ai_service:messages',
+            'lang' => 'privacy:metadata:jedomi_ai_service:lang',
+            'site_id' => 'privacy:metadata:jedomi_ai_service:site_id',
+            'site_url' => 'privacy:metadata:jedomi_ai_service:site_url',
         ], 'privacy:metadata:jedomi_ai_service');
 
         $collection->add_external_location_link('jedomi_speech_service', [

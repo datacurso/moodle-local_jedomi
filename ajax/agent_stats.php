@@ -46,14 +46,18 @@ if (!empty($raw)) {
 
 $filters['page'] = optional_param('page', 1, PARAM_INT);
 $filters['perpage'] = optional_param('perpage', 20, PARAM_INT);
+// The search only matches the instructions the user may read; never taken from the request.
+$filters['actorid'] = (int) $USER->id;
 
 try {
     $stats = agent_manager::get_stats($filters);
+    // Each row keeps its instruction only for the users who may read it, and says whether they may manage it.
+    $rows = array_map(fn(\stdClass $row): \stdClass => agent_manager::agent_for_actor($row, (int) $USER->id), $stats->rows);
 
     echo json_encode([
         'ok'     => true,
         'charts' => $stats->charts,
-        'rows'   => $stats->rows,
+        'rows'   => $rows,
         'total'  => $stats->total,
         'page'   => $stats->page,
     ]);

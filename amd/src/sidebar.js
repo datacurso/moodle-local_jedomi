@@ -38,6 +38,8 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
     let sending      = false;
     // Voice conversation in progress, if any (see startVoiceMode).
     let voiceMode    = null;
+    // Voice conversation waiting for the microphone permission, if any: {cancelled} (see startVoiceMode).
+    let voiceModeStarting = null;
 
     // ── Init — entry point ────────────────────────────────────────────────────
     const init = (config) => {
@@ -290,7 +292,7 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
         // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
             // Escape → end the voice conversation first, then close the sidebar.
-            if (e.key === 'Escape' && voiceMode) {
+            if (e.key === 'Escape' && (voiceMode || voiceModeStarting)) {
                 exitVoiceMode();
                 return;
             }
@@ -837,10 +839,16 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
         const voiceDisplay = voiceHooks ? createVoiceDisplay(streamBubble) : null;
         voiceHooks?.onDisplay?.(voiceDisplay);
 
+        let fullText = '';
+        let pendingAction = null;
+        // Technical action blocks (JEDOMI_ACTION / JEDOMI_PENDING_ACTION) came from the legacy
+        // gateway; confirmations now arrive as the _jedomi_pending_action event, so any such
+        // block the model still writes is removed from the answer.
+        const withoutActionBlocks = (text) => text
+            .replace(/JEDOMI_ACTION[\s\S]*?END_ACTION/g, '')
+            .replace(/JEDOMI_PENDING_ACTION:[\s\S]*?:END_PENDING/g, '')
+            .trim();
         try {
-            let fullText = '';
-            let pendingAction = null;
-
             await callGatewayStream(
                 conversation,
                 // onToken: add each token to the bubble.
@@ -911,13 +919,7 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
                 voiceHooks?.signal || null
             );
 
-            // Technical action blocks (JEDOMI_ACTION / JEDOMI_PENDING_ACTION) came from the legacy
-            // gateway; confirmations now arrive as the _jedomi_pending_action event, so any such
-            // block the model still writes is removed from the answer.
-            fullText = fullText
-                .replace(/JEDOMI_ACTION[\s\S]*?END_ACTION/g, '')
-                .replace(/JEDOMI_PENDING_ACTION:[\s\S]*?:END_PENDING/g, '')
-                .trim();
+            fullText = withoutActionBlocks(fullText);
             const showAnswer = () => {
                 streamBubble.version++;
                 if (voiceDisplay) streamBubble.el.classList.remove('jedomi-hidden');
@@ -948,8 +950,16 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
         } catch (err) {
             if (voiceDisplay) voiceDisplay.done = true;
             if (voiceHooks && err?.name === 'AbortError') {
-                // The user spoke over Jedomi: the answer was cancelled on purpose and leaves nothing in the chat.
                 setThinking(false);
+                if (pendingAction) {
+                    // The server already holds an action: its card is shown, so it can still be confirmed or cancelled.
+                    streamBubble.version++;
+                    streamBubble.inner.innerHTML = renderMarkdown(withoutActionBlocks(fullText));
+                    streamBubble.inner.appendChild(buildActionConfirmUI(pendingAction));
+                    streamBubble.el.classList.remove('jedomi-hidden');
+                    return;
+                }
+                // The user spoke over Jedomi: the answer was cancelled on purpose and leaves nothing in the chat.
                 streamBubble.wrap?.remove();
                 return;
             }
@@ -1451,11 +1461,12 @@ GENERAL INSTRUCTIONS:
             signal: signal || undefined,
         });
         const data = await res.json().catch(() => ({}));
-        if (data.error) {
-            throw new Error(data.error.message || S.unknown_error || '');
-        }
-        if (!res.ok) {
-            throw new Error(S.ai_error_connection || '');
+        if (data.error || !res.ok) {
+            const error = new Error((data.error ? data.error.message || S.unknown_error : S.ai_error_connection) || '');
+            // The status and the code tell a refusal (expired session, voice no longer allowed) from a failure.
+            error.status = res.status;
+            error.code = data.error?.code || data.errorcode || '';
+            throw error;
         }
         return data;
     };
@@ -1512,7 +1523,7 @@ GENERAL INSTRUCTIONS:
 
     const startRecording = async () => {
         const S = cfg.strings || {};
-        if (recorder || voice) return;
+        if (recorder || voice || voiceMode || voiceModeStarting) return;
         if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
             addMessage('assistant', `⚠️ ${S.mic_error || ''}`);
             return;
@@ -1712,26 +1723,48 @@ GENERAL INSTRUCTIONS:
         if (label) label.textContent = S[`voice_mode_${state}`] || '';
     };
 
+    // Disable the microphone and voice conversation buttons while the voice conversation waits for the microphone.
+    const setVoiceStartButtonsDisabled = (disabled) => {
+        ['jedomi-voice-btn', 'jedomi-voice-mode-btn'].forEach(id => {
+            const button = g(id);
+            if (button) button.disabled = disabled;
+        });
+    };
+
     // Start the voice conversation. It must run from a click: browsers only let a page play audio after one.
     const startVoiceMode = async () => {
         const S = cfg.strings || {};
-        if (voiceMode || sending || recorder || voice || !cfg.speech_url) return;
+        if (voiceMode || voiceModeStarting || sending || recorder || voice || !cfg.speech_url) return;
         const AudioContextClass = window.AudioContext || window.webkitAudioContext;
         if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined' || !AudioContextClass) {
             addMessage('assistant', `⚠️ ${S.mic_error || ''}`);
             return;
         }
+        // Marked before waiting for the microphone permission: another click is ignored meanwhile, and ending the
+        // conversation (its button, Esc or closing the panel) during the prompt cancels it.
+        const starting = {cancelled: false};
+        voiceModeStarting = starting;
+        setVoiceStartButtonsDisabled(true);
         // Created and resumed during the click, so the answers can be played later.
         const ctx = new AudioContextClass();
         ctx.resume().catch(() => null);
 
-        let stream;
+        let stream = null;
         try {
             stream = await navigator.mediaDevices.getUserMedia(
                 {audio: {echoCancellation: true, noiseSuppression: true, autoGainControl: true}});
         } catch (err) {
+            stream = null;
+        }
+        if (voiceModeStarting === starting) {
+            voiceModeStarting = null;
+            setVoiceStartButtonsDisabled(false);
+        }
+        if (starting.cancelled || !stream || !g('jedomi-sidebar')?.classList.contains('jedomi-open')) {
+            // Cancelled, refused or the panel was closed meanwhile: the microphone is released at once.
+            stream?.getTracks().forEach(track => track.stop());
             ctx.close().catch(() => null);
-            addMessage('assistant', `⚠️ ${S.mic_error || ''}`);
+            if (!stream && !starting.cancelled) addMessage('assistant', `⚠️ ${S.mic_error || ''}`);
             return;
         }
 
@@ -1771,8 +1804,18 @@ GENERAL INSTRUCTIONS:
 
     // End the voice conversation: stop speaking and listening, release the microphone and give the input row back.
     const exitVoiceMode = () => {
+        if (voiceModeStarting) {
+            // Still waiting for the microphone permission: the stream is released when it arrives.
+            voiceModeStarting.cancelled = true;
+            voiceModeStarting = null;
+            setVoiceStartButtonsDisabled(false);
+        }
         if (!voiceMode) return;
         const current = voiceMode;
+        // A transcription in progress is cancelled, so what was said after leaving is not transcribed (and billed).
+        // An answer the AI is already writing is kept: it is shown in the chat.
+        if (!current.chatStarted) current.requestController?.abort();
+        current.requestController = null;
         stopVoiceSpeaking();
         clearInterval(current.monitor);
         clearTimeout(current.idleTimer);
@@ -1813,6 +1856,8 @@ GENERAL INSTRUCTIONS:
         current.keepRecording = false;
         current.heard = false;
         current.bargeStart = 0;
+        // No question of this new turn went to the AI yet: thinking cannot be interrupted until it does.
+        current.chatStarted = false;
         rec.start();
         setVoiceModeState('listening');
         resetVoiceIdleTimer();
@@ -1863,8 +1908,10 @@ GENERAL INSTRUCTIONS:
                     resetVoiceIdleTimer();
                 }
             }
-        } else if (current.state === 'speaking' || (current.state === 'thinking' && current.chatStarted)) {
+        } else if (!current.pendingAction
+                && (current.state === 'speaking' || (current.state === 'thinking' && current.chatStarted))) {
             // While the recording is still being transcribed it is not interrupted, so what was said is not lost.
+            // Nor is an answer that holds an action: the conversation must wait for its confirmation on screen.
             if (level > bargeInLevel(current)) {
                 current.bargeStart = current.bargeStart || now;
                 if (now - current.bargeStart >= VOICE_MODE_BARGE_IN_MS) {
@@ -1891,7 +1938,7 @@ GENERAL INSTRUCTIONS:
     // stays in the conversation, so the next one is answered with it in mind.
     const interruptVoiceTurn = () => {
         const current = voiceMode;
-        if (!current) return;
+        if (!current || current.pendingAction) return;
         current.requestController?.abort();
         current.requestController = null;
         stopVoiceSpeaking();
@@ -1903,6 +1950,24 @@ GENERAL INSTRUCTIONS:
         while (sending) {
             await new Promise(resolve => setTimeout(resolve, 100));
         }
+    };
+
+    // Codes of errors that mean the session or the signed permissions of the page are no longer valid.
+    const VOICE_SESSION_ERRORS = ['invalidsesskey', 'requireloginerror', 'invalid_sesskey', 'invalid_spt'];
+
+    // Whether a request of the voice conversation was refused for good (expired session or permissions, or the voice
+    // conversation or the chat no longer allowed): listening again would transcribe, and bill, every new utterance
+    // only to fail again.
+    const isVoiceRefusal = (err) => err?.message === '__SESSION_EXPIRED__' || err?.status === 403
+        || VOICE_SESSION_ERRORS.includes(err?.code);
+
+    // Message of a refusal: the session expired message, or the message of the server for any other refusal.
+    const voiceRefusalMessage = (err) => {
+        const S = cfg.strings || {};
+        if (err?.message && err.message !== '__SESSION_EXPIRED__' && !VOICE_SESSION_ERRORS.includes(err.code)) {
+            return `⚠️ ${err.message}`;
+        }
+        return `⚠️ **${S.session_expired_title || ''}**\n\n${S.session_expired_hint || ''}`;
     };
 
     // Transcribe what the user said and send it as a message of the voice conversation.
@@ -1922,6 +1987,7 @@ GENERAL INSTRUCTIONS:
         // Message of the server when the transcription fails (service unavailable, no credits, limit reached...):
         // it is already translated and says what happened, so it is shown instead of "could not understand".
         let failure = '';
+        let refusal = null;
         try {
             const extension = mime.includes('ogg') ? 'ogg' : (mime.includes('mp4') ? 'm4a' : 'webm');
             const data = await uploadForText(cfg.extract_file_url, new File([blob], `recording.${extension}`, {type: mime}),
@@ -1931,8 +1997,14 @@ GENERAL INSTRUCTIONS:
             if (err?.name === 'AbortError') return;
             Log.debug('Jedomi: the voice conversation could not transcribe the audio', err);
             failure = (err?.message || '').trim();
+            refusal = isVoiceRefusal(err) ? err : null;
         }
         if (voiceMode !== current || current.turn !== turn) return;
+        if (refusal) {
+            addMessage('assistant', voiceRefusalMessage(refusal));
+            exitVoiceMode();
+            return;
+        }
         if (!text) {
             addMessage('assistant', `⚠️ ${failure || S.voice_mode_transcription_error || ''}`);
             startVoiceListening();
@@ -1970,9 +2042,13 @@ GENERAL INSTRUCTIONS:
                 current.answerDone = true;
                 finishVoiceTurnIfDone();
             },
-            onError: () => {
+            onError: (err) => {
                 if (!isTurn()) return;
-                // The error is shown in the chat; listen again.
+                // The error is shown in the chat. After a refusal the conversation ends; else listen again.
+                if (isVoiceRefusal(err)) {
+                    exitVoiceMode();
+                    return;
+                }
                 stopVoiceSpeaking();
                 startVoiceListening();
             },
@@ -2079,7 +2155,10 @@ GENERAL INSTRUCTIONS:
         });
         if (!res.ok) {
             const data = await res.json().catch(() => ({}));
-            throw new Error(data.error?.message || `HTTP ${res.status}`);
+            const error = new Error(data.error?.message || `HTTP ${res.status}`);
+            error.status = res.status;
+            error.code = data.error?.code || data.errorcode || '';
+            throw error;
         }
         const buffer = await res.arrayBuffer();
         return current.ctx.decodeAudioData(buffer);
@@ -2107,6 +2186,12 @@ GENERAL INSTRUCTIONS:
         } catch (err) {
             if (err?.name !== 'AbortError') {
                 Log.debug('Jedomi: a sentence could not be read aloud', err);
+                if (voiceMode === current && isVoiceRefusal(err)) {
+                    // Refused for good: told once, and the conversation ends (the answer stays in the chat).
+                    addMessage('assistant', voiceRefusalMessage(err));
+                    exitVoiceMode();
+                    return;
+                }
                 if (voiceMode === current && !current.speechFailed) {
                     // The text is already in the chat: tell it once and go on with the next sentence.
                     current.speechFailed = true;
@@ -2175,6 +2260,10 @@ GENERAL INSTRUCTIONS:
             }
             clearTimeout(current.idleTimer);
             setVoiceModeState('paused');
+            // The microphone stays open while paused: the conversation ends if the action is not resolved in time.
+            current.idleTimer = setTimeout(() => {
+                if (voiceMode === current && current.state === 'paused') exitVoiceMode();
+            }, VOICE_MODE_IDLE_MS);
             return;
         }
         startVoiceListening();
