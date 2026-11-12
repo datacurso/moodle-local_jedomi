@@ -66,8 +66,9 @@ final class audio_service_test extends \advanced_testcase {
     }
 
     /**
-     * MDL-INT-112: an audio smaller than the minimum (noise, a click or an empty recording) is refused with its message
-     * before the provider is called, so it is never charged; an audio of the minimum size is transcribed.
+     * MDL-INT-112, MDL-INT-118: an audio smaller than the minimum (noise, a click or an empty recording) is refused
+     * with its message before the provider is called, so it is never charged; an audio of the minimum size is
+     * transcribed.
      */
     public function test_too_short_audio_is_rejected_without_a_call(): void {
         $userid = $this->setup_user();

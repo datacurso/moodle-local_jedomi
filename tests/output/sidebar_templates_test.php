@@ -489,4 +489,31 @@ final class sidebar_templates_test extends \advanced_testcase {
             . 'message is sent, a recording is in progress or a voice message is pending, and the '
             . 'automatic exit after the silence is not announced.');
     }
+
+    /**
+     * MDL-INT-052: several dropped files are all kept, a cut text is announced and GIF images or disabled types get a
+     * clear notice in the browser. Behat: chat_system.feature.
+     * [Pendiente:skip] Only the last dropped file is kept, the cut is not announced, a dropped GIF is accepted in the
+     * browser and refused by the server, and dropped files of a disabled type are ignored silently.
+     *
+     * @return void
+     */
+    public function test_dropped_files_are_all_kept_with_clear_notices(): void {
+        $this->markTestSkipped('Pending fix: only the last dropped file is kept, the cut text is not announced, dropped GIF '
+            . 'images are accepted by the browser and refused by the server, and disabled types are ignored silently.');
+    }
+
+    /**
+     * MDL-INT-112: in the voice conversation only what the user says is transcribed and charged: an utterance has a
+     * maximum duration, failures do not fill the chat and a failed transcription is also said aloud.
+     * Behat: voice_conversation.feature.
+     * [Pendiente:skip] Sustained background voices are transcribed and charged, an utterance has no maximum duration,
+     * each unreadable utterance adds a notice and the failure is only written.
+     *
+     * @return void
+     */
+    public function test_voice_conversation_only_transcribes_what_the_user_says(): void {
+        $this->markTestSkipped('Pending fix: sustained background voices are transcribed and charged, an utterance has no '
+            . 'maximum duration, each unreadable utterance adds a notice to the chat and the failure is not said aloud.');
+    }
 }

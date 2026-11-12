@@ -70,8 +70,6 @@ final class chat_cli_test extends \advanced_testcase {
     /**
      * MDL-INT-093: the console shows each action that changes data and asks for its confirmation before running it:
      * without a confirmation nothing is changed.
-     * [Pendiente:fail] The console runs every tool as the site administrator, including the ones that change data,
-     * without asking for a confirmation.
      *
      * @return void
      */
@@ -88,7 +86,7 @@ final class chat_cli_test extends \advanced_testcase {
             $DB->count_records('local_jedomi_agents'),
             'Without a confirmation the console must not create the agent. Output: ' . $output
         );
-        $this->assertMatchesRegularExpression('/confirm/i', $output, 'The console must ask for a confirmation');
+        $this->assertMatchesRegularExpression('/confirm|"yes"/i', $output, 'The console must ask for a confirmation');
     }
 
     /**

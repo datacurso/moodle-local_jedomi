@@ -1296,8 +1296,10 @@ final class handler_test extends \advanced_testcase {
     /**
      * MDL-INT-095: the server decides the availability with the course of the real page, never with the course the
      * browser presents: requests sent from an excluded course, or from a course not selected in the "show only in the
-     * selected courses" mode, that present the site home as their course are refused without calling the AI: the
-     * course of the page must be the one signed in the permissions.
+     * selected courses" mode, that present the site home as their course are refused without calling the AI. The
+     * request carries the context the panel sends: the address of the page, without a course id.
+     * [Pendiente:fail] The chat permissions are signed for the course the browser names, so permissions for the site
+     * home are accepted from any page.
      *
      * @return void
      */
@@ -1328,7 +1330,7 @@ final class handler_test extends \advanced_testcase {
             $fake->enqueue_text('Answer.');
             client::set_instance_for_testing($fake);
             $context = ['page_url' => (new \moodle_url('/course/view.php', ['id' => $page->id]))->out(false),
-                'course_id' => (int) $page->id, 'location' => 'course'];
+                'location' => 'course'];
             $events = $this->events($this->capture(fn() => handler::run_from_request(
                 ['messages' => [['role' => 'user', 'content' => 'Show my grades']], 'context' => $context],
                 spt_validator::validate($spt),

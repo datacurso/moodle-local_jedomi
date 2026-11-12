@@ -504,7 +504,7 @@ final class webhook_media_test extends \advanced_testcase {
     }
 
     /**
-     * MDL-INT-112: a voice message smaller than the smallest audio the audio model receives (noise or an empty
+     * MDL-INT-112, MDL-INT-118: a voice message smaller than the smallest audio the audio model receives (noise or an empty
      * recording) is answered with its message without calling the transcription nor the AI, so it is not charged.
      */
     public function test_tiny_voice_message_is_not_transcribed(): void {

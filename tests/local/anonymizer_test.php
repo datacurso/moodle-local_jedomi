@@ -117,4 +117,16 @@ final class anonymizer_test extends \advanced_testcase {
         $this->assertStringNotContainsString('778899', $strict[0]['content']);
         $this->assertStringNotContainsString('Ximena', $strict[0]['content']);
     }
+
+    /**
+     * MDL-CTR-011: the help of the anonymisation level explains what the AI receives with each level, and the user never
+     * sees a placeholder the AI altered instead of the real value.
+     * [Pendiente:skip] The help still speaks only of stored conversations, and an altered placeholder is shown as is.
+     *
+     * @return void
+     */
+    public function test_help_explains_the_levels_and_altered_placeholders_are_restored(): void {
+        $this->markTestSkipped('Pending fix: the help of the anonymisation level only mentions stored conversations, and a '
+            . 'placeholder altered by the AI is shown to the user as is.');
+    }
 }

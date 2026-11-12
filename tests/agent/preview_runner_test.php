@@ -416,4 +416,14 @@ final class preview_runner_test extends \advanced_testcase {
         $this->assertStringNotContainsString('Quintanilla', $sent);
         $this->assertStringNotContainsString('ximena.quintanilla@example.com', $sent);
     }
+
+    /**
+     * MDL-INT-100: the error messages of the preview are shown in the language of the user.
+     * [Pendiente:skip] Some error messages of the preview are fixed in English.
+     *
+     * @return void
+     */
+    public function test_preview_errors_are_in_the_user_language(): void {
+        $this->markTestSkipped('Pending fix: some error messages of the preview are fixed in English.');
+    }
 }

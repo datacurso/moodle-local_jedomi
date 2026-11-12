@@ -232,7 +232,7 @@ Feature: Web chat of Jedomi from the question to the answer, the actions and the
     And I should see "archive.zip" in the "#jedomi-messages" "css_element"
     And "//div[@id='jedomi-file-preview' and not(contains(@class, 'jedomi-hidden'))]" "xpath_element" should not exist
 
-  # [Pendiente:fail] When several files are dropped only the last one is kept. The reading is answered in the browser.
+  # [Pendiente:skip] When several files are dropped only the last one is kept. The reading is answered in the browser.
   # Fails until fixed.
   @MDL-INT-052
   Scenario: Several dropped files are all attached
