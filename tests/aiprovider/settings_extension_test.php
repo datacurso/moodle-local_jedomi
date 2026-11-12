@@ -477,7 +477,8 @@ final class settings_extension_test extends \advanced_testcase {
     }
 
     /**
-     * MDL-UNIT-104 / MDL-UNIT-105: only the voice selector of the chosen model is shown; it lists only the voices of its model, without an empty option and with its default voice selected.
+     * MDL-UNIT-104 / MDL-UNIT-105: only the voice selector of the chosen model is shown; it lists only the voices of its model,
+     * without an empty option and with its default voice selected.
      * V5: the voice conversation switch shows its label and its action, and each voice selector lists only the voices of
      * its model, without an empty option, and is shown only while that model is chosen.
      *
@@ -563,7 +564,8 @@ final class settings_extension_test extends \advanced_testcase {
     }
 
     /**
-     * MDL-UNIT-104: turning the voice conversation on with audio processing off shows the message that the voice needs audio, so nothing is saved.
+     * MDL-UNIT-104: turning the voice conversation on with audio processing off shows the message that the voice needs audio, so
+     * nothing is saved.
      * V5: the voice conversation cannot be turned on while audio processing is off.
      *
      * @return void

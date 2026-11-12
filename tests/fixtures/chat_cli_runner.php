@@ -14,7 +14,6 @@
 // You should have received a copy of the GNU General Public License
 // along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
 
-
 /**
  * Test runner that starts the command console of the assistant (cli/chat_cli.php) in its own process, with the AI
  * service replaced by a scripted answer.
@@ -37,6 +36,8 @@ define('PHPUNIT_UTIL', true);
 require(__DIR__ . '/../../../../vendor/autoload.php');
 require(__DIR__ . '/../../../../lib/phpunit/bootstrap.php');
 require_once(__DIR__ . '/fake_ai_client.php');
+// A real command line run loads the command line library; the PHPUnit site does not.
+require_once($CFG->libdir . '/clilib.php');
 
 $fake = new \local_jedomi\ai\fake_ai_client();
 $fake->enqueue_tool_calls((array) json_decode($argv[1] ?? '[]', true));

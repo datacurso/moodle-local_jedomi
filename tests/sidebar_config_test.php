@@ -111,7 +111,8 @@ final class sidebar_config_test extends \advanced_testcase {
     }
 
     /**
-     * MDL-UNIT-068 / MDL-UNIT-111 / MDL-UNIT-115: the panel gets the voice conversation, the text of each phase and the failure notices only while it is enabled, never with audio off.
+     * MDL-UNIT-068 / MDL-UNIT-111 / MDL-UNIT-115: the panel gets the voice conversation, the text of each phase and the failure
+     * notices only while it is enabled, never with audio off.
      * V9: the sidebar receives the voice conversation, its endpoint and its strings only while it is enabled, and never
      * while audio processing is off.
      *

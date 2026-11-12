@@ -959,8 +959,12 @@ final class agent_manager_test extends \advanced_testcase {
      * @param string $expected Expected next run, in the time zone of the creator.
      * @return void
      */
-    public function test_schedules_follow_the_timezone_of_the_creator(string $timezone, string $cron, string $from,
-            string $expected): void {
+    public function test_schedules_follow_the_timezone_of_the_creator(
+        string $timezone,
+        string $cron,
+        string $from,
+        string $expected
+    ): void {
         $this->setTimezone('UTC', 'UTC');
         $creator = $this->getDataGenerator()->create_user(['timezone' => $timezone]);
         $tz = new \DateTimeZone($timezone);

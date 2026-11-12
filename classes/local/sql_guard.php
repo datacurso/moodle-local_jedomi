@@ -19,25 +19,32 @@ namespace local_jedomi\local;
 /**
  * Shared guard for the read-only database query offered to the AI in every channel.
  *
- * The web chat, Telegram and the agents all call it before running a query. It applies three layers:
+ * The web chat, Telegram and the agents all call it before running a query. It applies four layers:
  *
  * 1. For every user (site administrators included): functions and clauses that read or write server files, pause or
  *    lock the database, reach other databases or reveal server variables are rejected (sql_function_rejected), and so
- *    are MySQL executable comments, which the database runs although they look like comments.
- * 2. For every user: tables and columns that hold credentials, keys, tokens, site configuration or sessions are
+ *    are executable comments and optimizer hints (MySQL and MariaDB), which the database runs although they look like
+ *    comments.
+ * 2. For every user: anything the guard and the database could read differently is rejected (sql_construct_rejected):
+ *    control characters, placeholders Moodle would bind at another place than the guard reads them (inside a comment
+ *    or a string) and, outside MySQL, quoting the guard does not follow (double-quoted identifiers, dollar quoting,
+ *    escape strings, backslashes and nested comments on PostgreSQL).
+ * 3. For every user: tables and columns that hold credentials, keys, tokens, site configuration or sessions are
  *    rejected (sql_sensitive_rejected).
- * 3. For a user who does not manage every course (a teacher), an allowlist instead of a denylist. Every table the query
- *    reads, in any FROM or JOIN including subqueries, must be either:
+ * 4. For a user who does not manage every course (a teacher), an allowlist instead of a denylist. The query must be a
+ *    single SELECT whose every token fits the small grammar of sql_select_parser (sql_construct_rejected): no CASE,
+ *    OR, NOT, subqueries, UNION, comments, quoted identifiers, variables or functions other than COUNT, SUM, AVG, MIN,
+ *    MAX, ROUND and COALESCE. Every table it reads must be either:
  *    - course data (the course table, a table with a course column, a known child table of one, the context table or a
- *      table tied to a context), which must then be limited to courses the user manages (sql_course_rejected and
- *      sql_course_unfiltered_rejected); or
+ *      table tied to a context), which must then be limited to courses the user manages by plain conditions ANDed in
+ *      the WHERE clause or in the join of the table (sql_course_rejected and sql_course_unfiltered_rejected); or
  *    - one of ALLOWED_TABLES, which hold no personal data; or
  *    - the user table, read only through USER_COLUMNS (identity columns, never with "*") and only for users tied to
  *      a course table limited to the managed courses by a join on the user id, such as
  *      "JOIN {user_enrolments} ue ON ue.userid = u.id" with the enrolment limited to the course
  *      (sql_user_column_rejected and sql_table_not_allowed).
  *    Any other table (messages, notifications, user preferences, other databases...) is rejected
- *    (sql_table_not_allowed). When a part of the query cannot be followed, it is rejected rather than guessed.
+ *    (sql_table_not_allowed). Tables, aliases and conditions come from the tokens, never from text patterns.
  *
  * Site administrators and users who manage every course keep reading every table except the sensitive ones.
  *
@@ -110,16 +117,16 @@ class sql_guard {
     private const BLOCKED_FUNCTIONS = ['load_file', 'sleep', 'benchmark', 'get_lock', 'release_lock', 'release_all_locks',
         'pg_sleep\w*', 'pg_read_file', 'pg_read_binary_file', 'lo_import', 'lo_export', 'dblink\w*'];
 
-    /** @var string[] Words that would let a query escape the course filter of a user who does not manage every course. */
-    private const UNFILTERABLE_WORDS = ['or', 'xor', 'union', 'intersect', 'except', 'between', 'right', 'full', 'cross',
-        'natural', 'straight_join', 'with'];
+    /** @var string[] Patterns of the placeholders Moodle binds, as lib/dml/moodle_database.php counts them. */
+    private const PLACEHOLDERS = ['/\?/', '/(?<!:):[a-z][a-z0-9_]*/', '/\$[1-9][0-9]*/'];
 
     /**
      * Check a query and return why it is rejected, or null when it can run.
      *
-     * For a user who does not manage every course, every table the query reads must be course data limited to courses
-     * the user manages (with plain conditions ANDed in the WHERE clause or in the join of the table), a table of
-     * ALLOWED_TABLES, or the user table read through USER_COLUMNS and tied to such a limited course table.
+     * For a user who does not manage every course, the query must fit the grammar of sql_select_parser, and every table
+     * it reads must be course data limited to courses the user manages (with plain conditions ANDed in the WHERE clause
+     * or in the join of the table), a table of ALLOWED_TABLES, or the user table read through USER_COLUMNS and tied to
+     * such a limited course table.
      *
      * @param string $sql Query as written by the AI (Moodle placeholders or prefixed table names).
      * @param int $userid User the query runs for; 0 skips the course check.
@@ -127,9 +134,15 @@ class sql_guard {
      * @return string|null Reason of the rejection (language string identifier) or null when allowed.
      */
     public static function rejection_reason(string $sql, int $userid = 0, array $params = []): ?string {
-        $code = self::inline_numeric_params(self::strip_literals($sql), $params);
+        global $DB;
+        $family = $DB->get_dbfamily();
+        $code = strtolower(self::lex($sql, $family));
         if (self::has_executable_comment($sql) || self::calls_blocked_function($code)) {
             return 'sql_function_rejected';
+        }
+        $syntax = self::syntax_rejection($sql, $family);
+        if ($syntax !== null) {
+            return $syntax;
         }
         foreach (self::referenced_tables($code) as $table) {
             if (self::is_sensitive_table($table)) {
@@ -142,35 +155,55 @@ class sql_guard {
             }
         }
         if ($userid > 0 && !self::manages_every_course($userid)) {
-            foreach (self::referenced_course_ids($code) as $courseid) {
-                if (!self::manages_course($userid, $courseid)) {
-                    return 'sql_course_rejected';
+            return self::course_rejection($sql, $userid, $params);
+        }
+        return null;
+    }
+
+    /**
+     * Reason to reject a query that the guard and the database could read differently, or null.
+     *
+     * Rejects control characters other than tab and line breaks; a double dash followed by a byte that is not ASCII
+     * (whether it starts a comment depends on the character set); a different number of placeholders in the query than
+     * in its code (Moodle counts every placeholder, also those inside comments and strings, so the parameters would
+     * shift); and, outside MySQL, the quoting the guard does not follow: double quotes and backslashes everywhere, and on
+     * PostgreSQL dollar quoting, escape strings and nested comments (and brackets on SQL Server, q-quoting on Oracle).
+     *
+     * @param string $sql Query.
+     * @param string $family Database family, as moodle_database::get_dbfamily() returns it.
+     * @return string|null sql_construct_rejected or null.
+     */
+    public static function syntax_rejection(string $sql, string $family): ?string {
+        $rejected = 'sql_construct_rejected';
+        if (preg_match('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]|--[\x80-\xFF]/', $sql)) {
+            return $rejected;
+        }
+        if (
+            ($family !== 'mysql' && strpbrk($sql, '"\\') !== false)
+                || ($family === 'postgres' && strpos($sql, '$') !== false)
+                || ($family === 'mssql' && strpos($sql, '[') !== false)
+        ) {
+            return $rejected;
+        }
+        $comments = [];
+        $code = self::lex($sql, $family, $comments);
+        if ($family === 'postgres') {
+            if (preg_match("/(?<![A-Za-z0-9_])[eE]''/", $code)) {
+                return $rejected;
+            }
+            foreach ($comments as $comment) {
+                if (strpos(substr($comment, 2), '/*') !== false) {
+                    return $rejected;
                 }
             }
-            $code = self::normalise($code);
-            $tables = self::read_tables($code);
-            if ($tables === null) {
-                return 'sql_table_not_allowed';
+        }
+        if ($family === 'oracle' && preg_match("/(?<![A-Za-z0-9_])[nN]?[qQ]''/", $code)) {
+            return $rejected;
+        }
+        foreach (self::PLACEHOLDERS as $pattern) {
+            if (preg_match_all($pattern, $sql) !== preg_match_all($pattern, $code)) {
+                return $rejected;
             }
-            $coursedata = false;
-            foreach ($tables as $table) {
-                $scoped = $table === 'user' || self::course_scope($table) !== null;
-                if (!$scoped && !in_array($table, self::ALLOWED_TABLES, true)) {
-                    return 'sql_table_not_allowed';
-                }
-                $coursedata = $coursedata || $scoped;
-            }
-            // Course data and users are only followed in a single SELECT: a subquery could read them unfiltered.
-            if ($coursedata && preg_match_all('/\bselect\b/', $code) !== 1) {
-                return 'sql_course_unfiltered_rejected';
-            }
-            $instances = [];
-            $restricted = [];
-            $rejection = self::course_filter_rejection($code, $userid, $instances, $restricted);
-            if ($rejection === null && in_array('user', $tables, true)) {
-                $rejection = self::user_rejection($code, $instances, $restricted);
-            }
-            return $rejection;
         }
         return null;
     }
@@ -188,254 +221,286 @@ class sql_guard {
     }
 
     /**
-     * Tell whether a query holds a MySQL executable comment or optimizer hint, which the database runs although the
-     * guard would read it as a comment.
+     * Tell whether a query holds an executable comment or optimizer hint (MySQL "/*!", MariaDB "/*M!", "/*+"), which
+     * the database runs although it looks like a comment. Searched in the whole query, strings included.
      *
      * @param string $sql Query.
      * @return bool
      */
     private static function has_executable_comment(string $sql): bool {
-        $executable = false;
-        self::lex($sql, $executable);
-        return $executable;
+        return (bool) preg_match('/\/\*\s*(?:m\s*)?[!+]/i', $sql);
     }
 
     /**
-     * Normalise a query for the structural checks: no backquotes, single spaces and no final semicolon.
+     * Read a query from left to right, replacing its string literals by empty strings, its comments by a space and the
+     * characters of its quoted identifiers that are not part of a name by "_", so a quote inside a comment or an
+     * identifier, or a comment mark inside a string, cannot hide code from the guard.
      *
-     * @param string $code Lowercase query without literals.
+     * In MySQL "--" starts a comment only when whitespace follows it ("--1" is a double minus), "#" starts one, strings
+     * may use double quotes and backslash escapes, and backquotes quote identifiers. Elsewhere "--" always starts a
+     * comment; the double quotes and backslashes that other databases read differently are rejected by
+     * syntax_rejection(). Reading more code than the database does keeps the guard on the safe side.
+     *
+     * @param string $sql Query.
+     * @param string $family Database family.
+     * @param string[] $comments Set to the comments of the query.
      * @return string
      */
-    private static function normalise(string $code): string {
-        $code = trim((string) preg_replace('/\s+/', ' ', str_replace(self::BACKQUOTE, '', $code)));
-        return rtrim($code, '; ');
+    private static function lex(string $sql, string $family, array &$comments = []): string {
+        if ($family === 'mysql') {
+            $pattern = '/\'(?:[^\'\\\\]|\\\\.|\'\')*\'|"(?:[^"\\\\]|\\\\.|"")*"|\x60(?:[^\x60]|\x60\x60)*\x60'
+                . '|--(?=[ \t\r\n]|$)[^\n]*|#[^\n]*|\/\*.*?\*\//s';
+        } else {
+            $pattern = '/\'(?:[^\']|\'\')*\'|--[^\n]*|\/\*.*?\*\//s';
+        }
+        return (string) preg_replace_callback($pattern, static function (array $m) use (&$comments): string {
+            $first = $m[0][0];
+            if ($first === "'" || $first === '"') {
+                return $first . $first;
+            }
+            if ($first === self::BACKQUOTE) {
+                return self::BACKQUOTE . preg_replace('/[^A-Za-z0-9_$]/', '_', substr($m[0], 1, -1)) . self::BACKQUOTE;
+            }
+            $comments[] = $m[0];
+            return ' ';
+        }, $sql);
     }
 
     /**
-     * Tables (without prefix) read by every FROM and JOIN of a query, subqueries included, plus the tables it names as
-     * placeholders or with the prefix anywhere else.
+     * Reason to reject a query of a user who does not manage every course, or null when it fits the grammar and reads
+     * only course data limited to the managed courses, allowed tables and identity columns of the users of those courses.
      *
-     * @param string $code Normalised query.
-     * @return string[]|null Null when a table source cannot be followed (derived table, function, other database...).
-     */
-    private static function read_tables(string $code): ?array {
-        $tables = [];
-        if (preg_match_all('/\{\s*([a-z0-9_]+)\s*\}/', $code, $matches)) {
-            $tables = $matches[1];
-        }
-        $prefix = self::prefix();
-        if ($prefix !== '') {
-            foreach (self::identifiers($code) as $identifier) {
-                if (strpos($identifier, $prefix) === 0) {
-                    $tables[] = substr($identifier, strlen($prefix));
-                }
-            }
-        }
-        $offset = 0;
-        while (preg_match('/\bfrom\b/', $code, $m, PREG_OFFSET_CAPTURE, $offset)) {
-            $offset = $m[0][1] + 4;
-            foreach (self::from_items(substr($code, $offset)) as $item) {
-                $table = self::item_table($item);
-                if ($table === null) {
-                    return null;
-                }
-                $tables[] = $table;
-            }
-        }
-        return array_values(array_unique($tables));
-    }
-
-    /**
-     * Split the FROM clause that starts a piece of a query into its table sources, at the commas and joins outside
-     * parentheses, up to the end of the clause.
-     *
-     * @param string $rest Normalised query after the FROM keyword.
-     * @return string[]
-     */
-    private static function from_items(string $rest): array {
-        $join = '\b(?:natural\s+)?(?:(?:left|right|full)(?:\s+outer)?\s+|inner\s+|cross\s+)?join\b|\bstraight_join\b';
-        $end = '\b(?:where|group|order|having|limit|offset|fetch|union|intersect|except|window|for|lock|into|procedure)\b';
-        $tokens = preg_split('/(\(|\)|,|;|' . $join . '|' . $end . ')/', $rest, -1, PREG_SPLIT_DELIM_CAPTURE);
-        $items = [];
-        $current = '';
-        $depth = 0;
-        foreach ($tokens as $token) {
-            if ($depth === 0 && ($token === ')' || $token === ';' || preg_match('/^' . $end . '$/', $token))) {
-                break;
-            }
-            if ($depth === 0 && ($token === ',' || preg_match('/^(?:' . $join . ')$/', $token))) {
-                $items[] = $current;
-                $current = '';
-                continue;
-            }
-            $depth += $token === '(' ? 1 : ($token === ')' ? -1 : 0);
-            $current .= $token;
-        }
-        $items[] = $current;
-        return $items;
-    }
-
-    /**
-     * Table (without prefix) of one table source of a FROM clause: a placeholder or a prefixed name, with an optional
-     * alias and join condition.
-     *
-     * @param string $item Table source.
-     * @return string|null Null when the source is not a plain table of this site.
-     */
-    private static function item_table(string $item): ?string {
-        $pattern = '/^\s*(?:\{\s*([a-z0-9_]+)\s*\}|([a-z0-9_]+))(?:\s+(?:as\s+)?(?!on\b|using\b)[a-z_][a-z0-9_]*)?'
-            . '\s*(?:\b(?:on|using)\b.*)?$/s';
-        if (!preg_match($pattern, $item, $m)) {
-            return null;
-        }
-        if ($m[1] !== '') {
-            return $m[1];
-        }
-        $prefix = self::prefix();
-        if ($prefix === '') {
-            return $m[2];
-        }
-        return strpos($m[2], $prefix) === 0 ? substr($m[2], strlen($prefix)) : null;
-    }
-
-    /**
-     * Reason to reject a query of a user who does not manage every course that reads the user table, or null when it
-     * reads only identity columns of users tied to a course table limited to the managed courses.
-     *
-     * @param string $code Normalised query.
-     * @param array[] $instances Table instances of the query.
-     * @param array $restricted Indexes of the instances limited to managed courses (value true).
+     * @param string $sql Query.
+     * @param int $userid User the query runs for.
+     * @param array $params Query parameters.
      * @return string|null
      */
-    private static function user_rejection(string $code, array $instances, array $restricted): ?string {
-        global $DB;
-        $users = array_filter($instances, static fn(array $instance): bool => $instance['table'] === 'user');
-        if (empty($users)) {
-            return 'sql_table_not_allowed';
-        }
-        // Every column with "*" (count(*) aside) or with an arithmetic star is refused: only listed columns are read.
-        if (strpos((string) preg_replace('/\(\s*\*\s*\)/', '', $code), '*') !== false) {
-            return 'sql_user_column_rejected';
-        }
-        $refs = ['user', '{user}', self::prefix() . 'user'];
-        foreach ($users as $instance) {
-            $refs[] = $instance['ref'];
-        }
-        $qualified = '/(\{\s*[a-z0-9_]+\s*\}|[a-z_][a-z0-9_]*)\s*\.\s*([a-z_][a-z0-9_]*)/';
-        preg_match_all($qualified, $code, $matches, PREG_SET_ORDER);
-        foreach ($matches as $match) {
-            $qualifier = (string) preg_replace('/\s+/', '', $match[1]);
-            if (in_array($qualifier, $refs, true) && !in_array($match[2], self::USER_COLUMNS, true)) {
-                return 'sql_user_column_rejected';
-            }
-        }
-        // An unqualified column could belong to the user table: only the identity columns are accepted.
-        $usercolumns = array_map('strtolower', array_keys($DB->get_columns('user')));
-        $private = array_diff($usercolumns, self::USER_COLUMNS);
-        foreach (self::identifiers((string) preg_replace($qualified, ' ', $code)) as $identifier) {
-            if (in_array($identifier, $private, true)) {
-                return 'sql_user_column_rejected';
-            }
-        }
-        $global = self::global_conditions($code, $instances);
-        $links = [];
-        foreach (array_keys($restricted) as $index) {
-            $other = $instances[$index];
-            if (array_key_exists('userid', $DB->get_columns($other['table']))) {
-                $links[] = preg_quote($other['ref'], '/') . '\.userid';
-            }
-        }
-        foreach ($users as $instance) {
-            $conditions = $instance['kind'] === 'left' ? array_merge($global, $instance['on']) : $global;
-            $own = preg_quote($instance['ref'], '/') . '\.id';
-            $tied = false;
-            foreach ($conditions as $condition) {
-                foreach ($links as $link) {
-                    if (
-                        preg_match('/^' . $own . ' (?:=|<=>) ' . $link . '$/', $condition)
-                            || preg_match('/^' . $link . ' (?:=|<=>) ' . $own . '$/', $condition)
-                    ) {
-                        $tied = true;
-                    }
+    private static function course_rejection(string $sql, int $userid, array $params): ?string {
+        $tokens = sql_select_parser::tokenize($sql, $params);
+        $prefix = self::prefix();
+        // Every table named anywhere (placeholders and prefixed names) must be readable, before the grammar is checked.
+        $coursedata = false;
+        $selects = 0;
+        foreach ($tokens as $index => $token) {
+            $table = $token['type'] === 'table' ? $token['value'] : null;
+            if ($token['type'] === 'word') {
+                $selects += $token['value'] === 'select' ? 1 : 0;
+                if ($prefix !== '' && strpos($token['value'], $prefix) === 0) {
+                    $table = substr($token['value'], strlen($prefix));
+                }
+                if (in_array($token['value'], ['from', 'join'], true) && !self::is_site_table($tokens, $index + 1, $prefix)) {
+                    return 'sql_table_not_allowed';
                 }
             }
-            if (!$tied) {
+            if ($table !== null) {
+                if (!self::is_readable_table($table)) {
+                    return 'sql_table_not_allowed';
+                }
+                $coursedata = $coursedata || $table === 'user' || self::course_scope($table) !== null;
+            }
+        }
+        // Course data and users are only followed in a single SELECT: a subquery could read them unfiltered.
+        if ($coursedata && $selects !== 1) {
+            return 'sql_course_unfiltered_rejected';
+        }
+        try {
+            $query = sql_select_parser::parse($tokens, $prefix);
+        } catch (\moodle_exception $e) {
+            return $e->errorcode;
+        }
+        $instances = $query['instances'];
+        foreach ($instances as $index => $instance) {
+            if (!self::is_readable_table($instance['table'])) {
                 return 'sql_table_not_allowed';
+            }
+            $instances[$index]['scope'] = self::course_scope($instance['table']);
+            $instances[$index]['columns'] = self::table_columns($instance['table']);
+        }
+        $rejection = self::unknown_column_rejection($query, $instances);
+        if ($rejection !== null) {
+            return $rejection;
+        }
+        $global = $query['where'];
+        $conditions = $query['where'];
+        foreach ($instances as $instance) {
+            $conditions = array_merge($conditions, $instance['on']);
+            if ($instance['kind'] === 'inner') {
+                $global = array_merge($global, $instance['on']);
+            }
+        }
+        foreach ($conditions as $condition) {
+            foreach (self::named_courses($condition, $instances) as $courseid) {
+                if (!self::manages_course($userid, $courseid)) {
+                    return 'sql_course_rejected';
+                }
+            }
+        }
+        $restricted = [];
+        $rejection = self::course_filter_rejection($instances, $global, $userid, $restricted);
+        if ($rejection === null) {
+            $rejection = self::user_rejection($query, $instances, $global, $restricted);
+        }
+        return $rejection;
+    }
+
+    /**
+     * Tell whether the token after FROM or JOIN names a table of this site: a placeholder, or a prefixed name that is not
+     * qualified with another database. Anything else that is not a name is left to the grammar.
+     *
+     * @param array[] $tokens Tokens of the query.
+     * @param int $index Index of the token after FROM or JOIN.
+     * @param string $prefix Database prefix.
+     * @return bool
+     */
+    private static function is_site_table(array $tokens, int $index, string $prefix): bool {
+        $token = $tokens[$index] ?? null;
+        if ($token === null || $token['type'] !== 'word') {
+            return true;
+        }
+        $next = $tokens[$index + 1] ?? null;
+        if ($next !== null && $next['type'] === 'punct' && $next['value'] === '.') {
+            return false;
+        }
+        return $prefix === '' || strpos($token['value'], $prefix) === 0;
+    }
+
+    /**
+     * Tell whether a user who does not manage every course may read a table at all: course data, the user table or one
+     * of ALLOWED_TABLES.
+     *
+     * @param string $table Table name without prefix.
+     * @return bool
+     */
+    private static function is_readable_table(string $table): bool {
+        return $table === 'user' || in_array($table, self::ALLOWED_TABLES, true) || self::course_scope($table) !== null;
+    }
+
+    /**
+     * Columns of a table in lowercase.
+     *
+     * @param string $table Table name without prefix.
+     * @return string[] Empty when the table does not exist.
+     */
+    private static function table_columns(string $table): array {
+        global $DB;
+        try {
+            return array_map('strtolower', array_keys($DB->get_columns($table)));
+        } catch (\Throwable $e) {
+            return [];
+        }
+    }
+
+    /**
+     * Reason to reject a query that names a column no table of the query has (a keyword the database could read as a
+     * value, such as CURRENT_USER, or a typo), or that qualifies a column or "*" with a name that is not a table of the
+     * query. A select alias is accepted in GROUP BY and ORDER BY.
+     *
+     * @param array $query Parsed query.
+     * @param array[] $instances Table instances with their columns.
+     * @return string|null
+     */
+    private static function unknown_column_rejection(array $query, array $instances): ?string {
+        $refs = array_column($instances, 'ref');
+        foreach ($query['stars'] as $qualifier) {
+            if ($qualifier !== null && !in_array($qualifier, $refs, true)) {
+                return 'sql_construct_rejected';
+            }
+        }
+        foreach ($query['columns'] as $column) {
+            $known = false;
+            foreach ($instances as $instance) {
+                $mine = $column['qualifier'] === null || $column['qualifier'] === $instance['ref'];
+                $known = $known || ($mine && in_array($column['column'], $instance['columns'], true));
+            }
+            $alias = $column['qualifier'] === null && in_array($column['clause'], ['group', 'order'], true)
+                && in_array($column['column'], $query['aliases'], true);
+            if (!$known && !$alias) {
+                return 'sql_construct_rejected';
             }
         }
         return null;
     }
 
     /**
-     * Conditions that apply to every row of a query: the WHERE conjuncts and the conditions of the inner joins.
+     * Index of the table instance a column operand belongs to: the instance its qualifier names, or the only instance
+     * that has the column when it is unqualified (as the database resolves it).
      *
-     * @param string $code Normalised query.
-     * @param array[] $instances Table instances of the query.
-     * @return string[]
+     * @param array $operand Operand of a condition.
+     * @param array[] $instances Table instances with their columns.
+     * @return int|null Null when the operand is not a column or its table cannot be told.
      */
-    private static function global_conditions(string $code, array $instances): array {
-        $global = preg_match('/\bwhere\b(.*?)(?:\bgroup\s+by\b|\border\s+by\b|\bhaving\b|\blimit\b|$)/', $code, $m)
-            ? self::conjuncts($m[1]) : [];
-        foreach ($instances as $instance) {
-            if ($instance['kind'] === 'inner') {
-                $global = array_merge($global, $instance['on']);
+    private static function owner(array $operand, array $instances): ?int {
+        if ($operand['type'] !== 'column') {
+            return null;
+        }
+        $owners = [];
+        foreach ($instances as $index => $instance) {
+            $mine = $operand['qualifier'] === null || $operand['qualifier'] === $instance['ref'];
+            if ($mine && in_array($operand['column'], $instance['columns'], true)) {
+                $owners[] = $index;
             }
         }
-        return $global;
+        return count($owners) === 1 ? $owners[0] : null;
     }
 
     /**
-     * Put the numeric parameters of a query in place of their placeholders, and an empty string for the rest.
+     * Tell whether an operand is the given column of the given table instance.
      *
-     * @param string $code Lowercase query without literals.
-     * @param array $params Positional or named parameters.
-     * @return string
+     * @param array $operand Operand of a condition.
+     * @param int $index Index of the table instance.
+     * @param string $column Column name.
+     * @param array[] $instances Table instances with their columns.
+     * @return bool
      */
-    private static function inline_numeric_params(string $code, array $params): string {
-        $value = static fn($param): string => (is_int($param) || (is_string($param) && ctype_digit($param)))
-            ? (string) (int) $param : "''";
-        $named = [];
-        foreach ($params as $key => $param) {
-            if (is_string($key)) {
-                $named[strtolower(ltrim($key, ':'))] = $value($param);
-            }
-        }
-        $positional = array_values(array_filter($params, static fn($key): bool => is_int($key), ARRAY_FILTER_USE_KEY));
-        $index = 0;
-        $code = (string) preg_replace_callback('/\?/', static function () use (&$index, $positional, $value): string {
-            return array_key_exists($index, $positional) ? $value($positional[$index++]) : "''";
-        }, $code);
-        return (string) preg_replace_callback(
-            '/(?<![:\w]):([a-z_][a-z0-9_]*)/',
-            static fn(array $m): string => $named[$m[1]] ?? "''",
-            $code
-        );
+    private static function is_column(array $operand, int $index, string $column, array $instances): bool {
+        return $operand['type'] === 'column' && $operand['column'] === $column && self::owner($operand, $instances) === $index;
     }
 
     /**
-     * Reason to reject a query of a user who does not manage every course when it reads course data without limiting
-     * every course table to courses the user manages, or null when it is limited.
+     * Course ids a condition names: a course column, or the id of the course table, compared with or listed as numbers.
      *
-     * @param string $code Normalised query with the numeric parameters in place.
+     * @param array $condition Condition.
+     * @param array[] $instances Table instances with their columns.
+     * @return int[]
+     */
+    private static function named_courses(array $condition, array $instances): array {
+        $iscourse = static function (array $operand) use ($instances): bool {
+            if ($operand['type'] !== 'column') {
+                return false;
+            }
+            if (in_array($operand['column'], self::COURSE_COLUMNS, true)) {
+                return true;
+            }
+            $owner = self::owner($operand, $instances);
+            return $operand['column'] === 'id' && $owner !== null && $instances[$owner]['table'] === 'course';
+        };
+        if ($condition['op'] === 'in' && $iscourse($condition['left'])) {
+            return array_map('intval', $condition['values']);
+        }
+        if ($condition['op'] !== '=') {
+            return [];
+        }
+        foreach ([[$condition['left'], $condition['right']], [$condition['right'], $condition['left']]] as [$own, $other]) {
+            if ($iscourse($own) && $other['type'] === 'number' && ctype_digit($other['value'])) {
+                return [(int) $other['value']];
+            }
+        }
+        return [];
+    }
+
+    /**
+     * Reason to reject a query that reads course data without limiting every course table to courses the user manages,
+     * or null when it is limited.
+     *
+     * @param array[] $instances Table instances with their scope and columns.
+     * @param array[] $global Conditions that apply to every row: the WHERE conditions and those of the inner joins.
      * @param int $userid User the query runs for.
-     * @param array $instances Set to the table instances of the query.
      * @param array $restricted Set to the indexes of the instances limited to managed courses (value true).
      * @return string|null
      */
-    private static function course_filter_rejection(string $code, int $userid, array &$instances, array &$restricted): ?string {
-        $instances = self::table_instances($code);
+    private static function course_filter_rejection(array $instances, array $global, int $userid, array &$restricted): ?string {
         $restricted = [];
         $scoped = array_filter($instances, static fn(array $instance): bool => $instance['scope'] !== null);
-        if (empty($scoped)) {
-            return null;
-        }
-        // Only plain conjunctions can be checked: anything that could widen the rows is refused.
-        $words = '/\b(?:' . implode('|', self::UNFILTERABLE_WORDS) . ')\b|\|\||\bnot\s*\(|\bnot\s+[a-z0-9_.]+\s*(?:=|<=>|\bin\b)/';
-        if (preg_match($words, $code) || preg_match_all('/\bselect\b/', $code) !== 1) {
-            return 'sql_course_unfiltered_rejected';
-        }
-        $global = self::global_conditions($code, $instances);
-        $single = count($instances) === 1;
         $ids = [];
         do {
             $changed = false;
@@ -444,7 +509,7 @@ class sql_guard {
                     continue;
                 }
                 $conditions = $instance['kind'] === 'left' ? array_merge($global, $instance['on']) : $global;
-                $found = self::restriction($instance, $conditions, $instances, $restricted, $single);
+                $found = self::restriction($index, $conditions, $instances, $restricted);
                 if ($found !== null) {
                     $restricted[$index] = true;
                     $ids = array_merge($ids, $found);
@@ -464,59 +529,148 @@ class sql_guard {
     }
 
     /**
-     * Tables read by a query, each with its alias, how it is joined, the conditions of its join and its course scope.
+     * Course ids a course table instance is limited to by the conditions, or null when it is not limited.
      *
-     * @param string $code Normalised query.
-     * @return array[] Each: table, ref (alias or table name), kind (from, inner or left), on (conditions), scope.
+     * A course column (or the course id of a course context) limited by "= number" or "IN (numbers)", or equal to the
+     * course column of another limited instance; for a child table, its parent column equal to the id of a limited
+     * instance of the parent table.
+     *
+     * @param int $index Index of the instance.
+     * @param array[] $conditions Conditions that apply to the instance.
+     * @param array[] $instances Every table instance of the query.
+     * @param array $restricted Instances already known to be limited, keyed by instance index (value true).
+     * @return int[]|null
      */
-    private static function table_instances(string $code): array {
-        if (!preg_match('/\bfrom\b(.*?)(?:\bwhere\b|\bgroup\s+by\b|\border\s+by\b|\bhaving\b|\blimit\b|$)/', $code, $m)) {
-            return [];
+    private static function restriction(int $index, array $conditions, array $instances, array $restricted): ?array {
+        $scope = $instances[$index]['scope'];
+        $column = $scope['type'] === 'context' ? 'instanceid' : $scope['column'];
+        if ($scope['type'] === 'context' && !self::has_course_level($index, $conditions, $instances)) {
+            return null;
         }
-        $pieces = preg_split(
-            '/\s*(,|\b(?:(?:left|inner)\s+(?:outer\s+)?)?join\b)\s*/',
-            trim($m[1]),
-            -1,
-            PREG_SPLIT_DELIM_CAPTURE
-        );
-        $instances = [];
-        $kind = 'from';
-        foreach ($pieces as $piece) {
-            if ($piece === ',') {
-                $kind = 'from';
+        foreach ($conditions as $condition) {
+            $whole = $condition['op'] === 'in' && array_filter($condition['values'], 'ctype_digit') === $condition['values'];
+            if ($whole && $scope['type'] !== 'child' && self::is_column($condition['left'], $index, $column, $instances)) {
+                return array_map('intval', $condition['values']);
+            }
+            if ($condition['op'] !== '=') {
                 continue;
             }
-            if (preg_match('/join$/', $piece)) {
-                $kind = strpos($piece, 'left') === 0 ? 'left' : 'inner';
-                continue;
+            foreach ([[$condition['left'], $condition['right']], [$condition['right'], $condition['left']]] as [$own, $other]) {
+                if (!self::is_column($own, $index, $column, $instances)) {
+                    continue;
+                }
+                if ($scope['type'] !== 'child' && $other['type'] === 'number' && ctype_digit($other['value'])) {
+                    return [(int) $other['value']];
+                }
+                $linked = self::owner($other, $instances);
+                if ($linked === null || $linked === $index || !isset($restricted[$linked])) {
+                    continue;
+                }
+                // A child table links to the id of its parent; a course table to the course column of another one.
+                $parent = $instances[$linked];
+                if ($scope['type'] === 'child') {
+                    $key = $parent['table'] === $scope['parent'] ? 'id' : null;
+                } else {
+                    $key = self::course_key($parent);
+                }
+                if ($key !== null && $other['column'] === $key) {
+                    return [];
+                }
             }
-            $on = '';
-            $parts = preg_split('/\bon\b/', $piece, 2);
-            if (count($parts) === 2) {
-                [$piece, $on] = $parts;
-            }
-            if (
-                !preg_match(
-                    '/^\s*(?:\{\s*([a-z0-9_]+)\s*\}|([a-z0-9_]+))\s*(?:as\s+)?([a-z_][a-z0-9_]*)?\s*$/',
-                    $piece,
-                    $tm
-                )
-            ) {
-                // A derived table or anything else that cannot be followed is read as unfiltered course data.
-                $instances[] = ['table' => '', 'ref' => '', 'kind' => $kind, 'on' => [],
-                    'scope' => ['type' => 'unknown']];
-                continue;
-            }
-            $table = $tm[1] !== '' ? $tm[1] : $tm[2];
-            $prefix = self::prefix();
-            if ($tm[1] === '' && $prefix !== '' && strpos($table, $prefix) === 0) {
-                $table = substr($table, strlen($prefix));
-            }
-            $alias = $tm[3] ?? '';
-            $instances[] = ['table' => $table, 'ref' => $alias !== '' ? $alias : $table, 'kind' => $kind,
-                'on' => self::conjuncts($on), 'scope' => self::course_scope($table)];
         }
-        return $instances;
+        return null;
+    }
+
+    /**
+     * Column of a table instance that holds a course id: its course column, or the instance id of a course context.
+     *
+     * @param array $instance Table instance with its scope.
+     * @return string|null Null for tables that do not hold a course id.
+     */
+    private static function course_key(array $instance): ?string {
+        $scope = $instance['scope'];
+        if ($scope === null || $scope['type'] === 'child') {
+            return null;
+        }
+        return $scope['type'] === 'context' ? 'instanceid' : $scope['column'];
+    }
+
+    /**
+     * Whether the conditions limit a context instance to the course level.
+     *
+     * @param int $index Index of the context instance.
+     * @param array[] $conditions Conditions that apply to the instance.
+     * @param array[] $instances Every table instance of the query.
+     * @return bool
+     */
+    private static function has_course_level(int $index, array $conditions, array $instances): bool {
+        foreach ($conditions as $condition) {
+            if ($condition['op'] !== '=') {
+                continue;
+            }
+            foreach ([[$condition['left'], $condition['right']], [$condition['right'], $condition['left']]] as [$own, $other]) {
+                if (
+                    self::is_column($own, $index, 'contextlevel', $instances) && $other['type'] === 'number'
+                        && $other['value'] === (string) CONTEXT_COURSE
+                ) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Reason to reject a query of a user who does not manage every course that reads the user table, or null when it
+     * reads only identity columns of users tied to a course table limited to the managed courses.
+     *
+     * @param array $query Parsed query.
+     * @param array[] $instances Table instances with their scope and columns.
+     * @param array[] $global Conditions that apply to every row.
+     * @param array $restricted Indexes of the instances limited to managed courses (value true).
+     * @return string|null
+     */
+    private static function user_rejection(array $query, array $instances, array $global, array $restricted): ?string {
+        $users = array_keys(array_filter($instances, static fn(array $instance): bool => $instance['table'] === 'user'));
+        if (empty($users)) {
+            return null;
+        }
+        // Every column with "*" (COUNT(*) aside) is refused: only listed columns are read.
+        if (!empty($query['stars'])) {
+            return 'sql_user_column_rejected';
+        }
+        $usercolumns = $instances[$users[0]]['columns'];
+        foreach ($query['columns'] as $column) {
+            $private = in_array($column['column'], $usercolumns, true)
+                && !in_array($column['column'], self::USER_COLUMNS, true);
+            if ($column['qualifier'] !== null) {
+                // A qualified column of the user table.
+                $owner = array_search($column['qualifier'], array_column($instances, 'ref'), true);
+                $private = $private && $owner !== false && $instances[$owner]['table'] === 'user';
+            }
+            // An unqualified column could belong to the user table: only the identity columns are accepted.
+            if ($private) {
+                return 'sql_user_column_rejected';
+            }
+        }
+        foreach ($users as $index) {
+            $conditions = $instances[$index]['kind'] === 'left' ? array_merge($global, $instances[$index]['on']) : $global;
+            $tied = false;
+            foreach ($conditions as $condition) {
+                if ($condition['op'] !== '=') {
+                    continue;
+                }
+                foreach ([[$condition['left'], $condition['right']], [$condition['right'], $condition['left']]] as [$own, $other]) {
+                    $linked = self::owner($other, $instances);
+                    $tied = $tied || (self::is_column($own, $index, 'id', $instances) && $linked !== null
+                        && isset($restricted[$linked]) && $other['column'] === 'userid');
+                }
+            }
+            if (!$tied) {
+                return 'sql_table_not_allowed';
+            }
+        }
+        return null;
     }
 
     /**
@@ -526,7 +680,6 @@ class sql_guard {
      * @return array|null Scope (type direct with column, context, child with column and parent) or null.
      */
     private static function course_scope(string $table): ?array {
-        global $DB;
         if ($table === 'course') {
             return ['type' => 'direct', 'column' => 'id'];
         }
@@ -537,11 +690,7 @@ class sql_guard {
             [$column, $parent] = self::CHILD_TABLES[$table];
             return ['type' => 'child', 'column' => $column, 'parent' => $parent];
         }
-        try {
-            $columns = array_map('strtolower', array_keys($DB->get_columns($table)));
-        } catch (\Throwable $e) {
-            $columns = [];
-        }
+        $columns = self::table_columns($table);
         foreach (self::COURSE_COLUMNS as $column) {
             if (in_array($column, $columns, true)) {
                 return ['type' => 'direct', 'column' => $column];
@@ -551,135 +700,6 @@ class sql_guard {
             return ['type' => 'child', 'column' => 'contextid', 'parent' => 'context'];
         }
         return null;
-    }
-
-    /**
-     * Split a condition on the ANDs outside parentheses.
-     *
-     * @param string $condition Condition.
-     * @return string[] Conditions with spaces normalised around comparisons and parentheses.
-     */
-    private static function conjuncts(string $condition): array {
-        $result = [];
-        $depth = 0;
-        $current = '';
-        foreach (preg_split('/(\(|\)|\band\b)/', $condition, -1, PREG_SPLIT_DELIM_CAPTURE) as $token) {
-            if ($token === 'and' && $depth === 0) {
-                $result[] = $current;
-                $current = '';
-                continue;
-            }
-            $depth += $token === '(' ? 1 : ($token === ')' ? -1 : 0);
-            $current .= $token;
-        }
-        $result[] = $current;
-        $normalised = [];
-        foreach ($result as $item) {
-            $item = (string) preg_replace('/\s*(<=>|=)\s*/', ' $1 ', $item);
-            $item = (string) preg_replace(['/\(\s*/', '/\s*\)/', '/\s*,\s*/', '/\s+/'], ['(', ')', ',', ' '], $item);
-            if (trim($item) !== '') {
-                $normalised[] = trim($item);
-            }
-        }
-        return $normalised;
-    }
-
-    /**
-     * Course ids an instance of a course table is limited to by the conditions, or null when it is not limited.
-     *
-     * @param array $instance Table instance.
-     * @param string[] $conditions Conditions that apply to the instance.
-     * @param array[] $instances Every table instance of the query.
-     * @param array $restricted Instances already known to be limited, keyed by instance index (value true).
-     * @param bool $single Whether the query reads only this table (unqualified columns then belong to it).
-     * @return int[]|null
-     */
-    private static function restriction(
-        array $instance,
-        array $conditions,
-        array $instances,
-        array $restricted,
-        bool $single
-    ): ?array {
-        $scope = $instance['scope'];
-        if ($scope['type'] === 'unknown') {
-            return null;
-        }
-        $ref = '(?:' . preg_quote($instance['ref'], '/') . '\.' . ($single ? ')?' : ')');
-        // Columns of other limited instances that hold a course id (for a column of this one holding a course id).
-        $coursekeys = [];
-        $parentkeys = [];
-        foreach ($instances as $index => $other) {
-            if (!isset($restricted[$index])) {
-                continue;
-            }
-            if ($other['scope']['type'] === 'direct') {
-                $coursekeys[] = preg_quote($other['ref'], '/') . '\.' . $other['scope']['column'];
-            }
-            if ($other['scope']['type'] === 'context') {
-                $coursekeys[] = preg_quote($other['ref'], '/') . '\.instanceid';
-            }
-            if ($scope['type'] === 'child' && $other['table'] === $scope['parent']) {
-                $parentkeys[] = preg_quote($other['ref'], '/') . '\.id';
-            }
-        }
-        $column = match ($scope['type']) {
-            'direct' => $scope['column'],
-            'context' => 'instanceid',
-            'child' => $scope['column'],
-        };
-        if (
-            $scope['type'] === 'context' && !self::has_condition(
-                $instance,
-                'contextlevel = ' . CONTEXT_COURSE,
-                $conditions,
-                $single
-            )
-        ) {
-            return null;
-        }
-        $own = $ref . preg_quote($column, '/');
-        $links = $scope['type'] === 'child' ? $parentkeys : $coursekeys;
-        foreach ($conditions as $condition) {
-            if ($scope['type'] !== 'child') {
-                if (
-                    preg_match('/^' . $own . ' (?:=|<=>) (\d+)$/', $condition, $m)
-                        || preg_match('/^(\d+) (?:=|<=>) ' . $own . '$/', $condition, $m)
-                ) {
-                    return [(int) $m[1]];
-                }
-                if (preg_match('/^' . $own . ' in ?\(([\d,]+)\)$/', $condition, $m)) {
-                    return array_map('intval', explode(',', $m[1]));
-                }
-            }
-            foreach ($links as $link) {
-                if (
-                    preg_match('/^' . $own . ' (?:=|<=>) ' . $link . '$/', $condition)
-                        || preg_match('/^' . $link . ' (?:=|<=>) ' . $own . '$/', $condition)
-                ) {
-                    return [];
-                }
-            }
-        }
-        return null;
-    }
-
-    /**
-     * Whether a plain condition on a column of an instance is among the conditions.
-     *
-     * @param array $instance Table instance.
-     * @param string $condition Condition with the unqualified column, such as "contextlevel = 50".
-     * @param string[] $conditions Conditions that apply to the instance.
-     * @param bool $single Whether unqualified columns belong to the instance.
-     * @return bool
-     */
-    private static function has_condition(array $instance, string $condition, array $conditions, bool $single): bool {
-        foreach ($conditions as $item) {
-            if ($item === $instance['ref'] . '.' . $condition || ($single && $item === $condition)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     /**
@@ -717,44 +737,6 @@ class sql_guard {
     }
 
     /**
-     * Remove string literals and comments so their content is not read as table or column names.
-     *
-     * @param string $sql Query.
-     * @return string Query with literals replaced by empty strings and comments removed.
-     */
-    private static function strip_literals(string $sql): string {
-        $executable = false;
-        return strtolower(self::lex($sql, $executable));
-    }
-
-    /**
-     * Read a query from left to right, replacing its string literals by empty strings and its comments by a space, so a
-     * quote inside a comment or a comment mark inside a string cannot hide code from the guard.
-     *
-     * As in MySQL, "--" starts a comment only when a space follows it ("--1" is a double minus), and "#" starts one
-     * only in MySQL: reading more than the database ignores keeps the guard on the safe side.
-     *
-     * @param string $sql Query.
-     * @param bool $executable Set to true when a comment is a MySQL executable comment or optimizer hint.
-     * @return string
-     */
-    private static function lex(string $sql, bool &$executable): string {
-        global $DB;
-        $hash = $DB->get_dbfamily() === 'mysql' ? '|#[^\n]*' : '';
-        $pattern = "/'(?:[^'\\\\]|\\\\.|'')*'|\"(?:[^\"\\\\]|\\\\.)*\"|--(?=\\s|\$)[^\\n]*{$hash}|\\/\\*.*?\\*\\//s";
-        return (string) preg_replace_callback($pattern, static function (array $m) use (&$executable): string {
-            $first = $m[0][0];
-            if ($first === "'" || $first === '"') {
-                return $first . $first;
-            }
-            if (preg_match('/^\/\*\s*[!+]/', $m[0])) {
-                $executable = true;
-            }
-            return ' ';
-        }, $sql);
-    }
-
-    /**
      * Table names (without prefix) referenced by a query: placeholders, prefixed names and names after FROM or JOIN.
      *
      * @param string $code Lowercase query without literals.
@@ -787,53 +769,6 @@ class sql_guard {
     private static function identifiers(string $code): array {
         preg_match_all('/[a-z_][a-z0-9_]*/', str_replace(self::BACKQUOTE, '', $code), $matches);
         return array_unique($matches[0]);
-    }
-
-    /**
-     * Course ids a query names explicitly (course columns, or the id of the course table, compared with numbers).
-     *
-     * @param string $code Lowercase query without literals.
-     * @return int[]
-     */
-    private static function referenced_course_ids(string $code): array {
-        $column = '(?:[a-z0-9_]+\.)?(?:' . implode('|', self::COURSE_COLUMNS) . ')';
-        $coursetable = '(?:\{\s*course\s*\}|\b' . preg_quote(self::prefix(), '/') . 'course\b)';
-        if (preg_match('/' . $coursetable . '/', $code)) {
-            // The id of the course table: bare, or qualified with one of the aliases of the course table.
-            $aliases = ['course'];
-            if (preg_match_all('/' . $coursetable . '\s+(?:as\s+)?([a-z_][a-z0-9_]*)/', $code, $matches)) {
-                $keywords = ['where', 'join', 'left', 'right', 'inner', 'outer', 'cross', 'on', 'group', 'order', 'limit',
-                    'union', 'having', 'natural', 'straight_join'];
-                $aliases = array_merge($aliases, array_diff($matches[1], $keywords));
-            }
-            $column = '(?:' . $column . '|(?:(?:' . implode('|', array_unique($aliases)) . ')\.)?id)';
-        }
-        $ids = [];
-        $patterns = [
-            '/\b' . $column . '\s*(?:=|<=>|==)\s*(\d+)/',
-            '/(\d+)\s*(?:=|<=>)\s*' . $column . '\b/',
-            '/\b' . $column . '\s+in\s*\(([\d\s,]+)\)/',
-            '/\b' . $column . '\s+between\s+(\d+)\s+and\s+(\d+)/',
-        ];
-        foreach ($patterns as $index => $pattern) {
-            if (!preg_match_all($pattern, $code, $matches, PREG_SET_ORDER)) {
-                continue;
-            }
-            foreach ($matches as $match) {
-                if ($index === 3) {
-                    // A range names every course between its limits; only the limits are checked to stay bounded.
-                    $ids[] = (int) $match[1];
-                    $ids[] = (int) $match[2];
-                    continue;
-                }
-                foreach (preg_split('/[\s,]+/', trim($match[1])) as $value) {
-                    if ($value !== '') {
-                        $ids[] = (int) $value;
-                    }
-                }
-            }
-        }
-        return array_values(array_unique($ids));
     }
 
     /**

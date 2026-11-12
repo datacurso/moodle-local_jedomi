@@ -415,7 +415,8 @@ final class model_settings_test extends \advanced_testcase {
     }
 
     /**
-     * MDL-UNIT-105: a saved model or voice no longer listed is replaced by the default, so an unlisted value never reaches the service.
+     * MDL-UNIT-105: a saved model or voice no longer listed is replaced by the default, so an unlisted value never reaches the
+     * service.
      * V5: the speech model and voice fall back to the defaults when empty or not in their list, and a voice of
      * another model falls back to the default voice of the configured model.
      */

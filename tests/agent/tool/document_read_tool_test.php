@@ -268,4 +268,182 @@ final class document_read_tool_test extends \advanced_testcase {
         $this->assertSame('permission_denied', $result['error'] ?? null);
         $this->assertSame([], $this->curl->calls);
     }
+
+    /**
+     * Store a PDF in a module context.
+     *
+     * @param int $cmid Course module id.
+     * @param string $component Component of the file area.
+     * @param string $filearea File area.
+     * @param int $itemid Item id.
+     * @param string $filename File name.
+     * @param int $sortorder Sort order (1 marks the main file of a resource).
+     */
+    private function add_pdf(
+        int $cmid,
+        string $component,
+        string $filearea,
+        int $itemid,
+        string $filename,
+        int $sortorder = 0
+    ): void {
+        get_file_storage()->create_file_from_string([
+            'contextid' => \context_module::instance($cmid)->id, 'component' => $component, 'filearea' => $filearea,
+            'itemid' => $itemid, 'filepath' => '/', 'filename' => $filename, 'sortorder' => $sortorder,
+        ], '%PDF-1.4 fake');
+    }
+
+    /**
+     * Create an assignment whose student submission and annotated feedback PDFs are stored before any other file.
+     *
+     * @param \stdClass $course Course of the assignment.
+     * @param array $options Extra options of the module generator, such as 'visible'.
+     * @return int Course module id.
+     */
+    private function create_assign_with_private_pdfs(\stdClass $course, array $options = []): int {
+        $assign = $this->getDataGenerator()->create_module('assign', ['course' => $course->id] + $options);
+        $this->add_pdf((int) $assign->cmid, 'assignsubmission_file', 'submission_files', 7, 'student_essay.pdf');
+        $this->add_pdf((int) $assign->cmid, 'assignfeedback_editpdf', 'combined', 7, 'combined.pdf');
+        $this->add_pdf((int) $assign->cmid, 'assignfeedback_editpdf', 'download', 7, 'annotated.pdf');
+        return (int) $assign->cmid;
+    }
+
+    /**
+     * Queue a successful files/read answer.
+     */
+    private function enqueue_read(): void {
+        $this->curl->enqueue(json_encode(['text' => 'Unit 1', 'model' => 'm', 'pages_total' => 1, 'pages_vision' => [],
+            'pages_skipped' => []]));
+    }
+
+    /**
+     * A student submission or annotated feedback PDF is never read, even by an editing teacher of the course: the tool
+     * reads only the published content of the activity.
+     */
+    public function test_submission_and_feedback_pdfs_are_never_returned(): void {
+        $course = $this->getDataGenerator()->create_course();
+        $cmid = $this->create_assign_with_private_pdfs($course);
+        $teacher = $this->getDataGenerator()->create_and_enrol($course, 'editingteacher');
+
+        $result = json_decode(document_read_tool::read($cmid, 'teacher', '', (int) $teacher->id), true);
+
+        $this->assertSame('no PDF files found in this activity', $result['error'] ?? null);
+        $this->assertSame([], $this->curl->calls);
+    }
+
+    /**
+     * The published attachment of an assignment is read even when submission PDFs were stored before it.
+     */
+    public function test_published_assignment_attachment_is_returned_for_the_editing_teacher(): void {
+        $course = $this->getDataGenerator()->create_course();
+        $cmid = $this->create_assign_with_private_pdfs($course);
+        $this->add_pdf($cmid, 'mod_assign', 'introattachment', 0, 'brief.pdf');
+        $teacher = $this->getDataGenerator()->create_and_enrol($course, 'editingteacher');
+        $this->enqueue_read();
+
+        $result = json_decode(document_read_tool::read($cmid, 'teacher', '', (int) $teacher->id), true);
+
+        $this->assertSame('brief.pdf', $result['filename'] ?? null);
+        $this->assertSame('brief.pdf', $this->curl->calls[0]['params']['file']->getPostFilename());
+    }
+
+    /**
+     * A teacher of course A who is a student of course B never reads a submission of B and reads only the published
+     * content of a visible activity of B.
+     */
+    public function test_teacher_elsewhere_reads_only_published_content_where_student(): void {
+        $coursea = $this->getDataGenerator()->create_course();
+        $courseb = $this->getDataGenerator()->create_course();
+        $user = $this->getDataGenerator()->create_and_enrol($coursea, 'editingteacher');
+        $this->getDataGenerator()->enrol_user((int) $user->id, (int) $courseb->id, 'student');
+        $onlyprivate = $this->create_assign_with_private_pdfs($courseb);
+        $published = $this->create_assign_with_private_pdfs($courseb);
+        $this->add_pdf($published, 'mod_assign', 'intro', 0, 'brief.pdf');
+        $hidden = $this->create_assign_with_private_pdfs($courseb, ['visible' => 0]);
+        $this->add_pdf($hidden, 'mod_assign', 'introattachment', 0, 'draft.pdf');
+        $this->enqueue_read();
+
+        $private = json_decode((new document_read_tool((int) $user->id))->execute((object) ['cmid' => $onlyprivate]), true);
+        $content = json_decode((new document_read_tool((int) $user->id))->execute((object) ['cmid' => $published]), true);
+        $draft = json_decode((new document_read_tool((int) $user->id))->execute((object) ['cmid' => $hidden]), true);
+
+        $this->assertSame('no PDF files found in this activity', $private['error'] ?? null);
+        $this->assertSame('brief.pdf', $content['filename'] ?? null);
+        $this->assertSame('permission_denied', $draft['error'] ?? null, 'A hidden activity is refused to a student');
+        $this->assertCount(1, $this->curl->calls);
+    }
+
+    /**
+     * A suspended enrolment is refused, even for the published content.
+     */
+    public function test_suspended_enrolment_is_refused(): void {
+        $cmid = $this->create_module_with_pdf();
+        $course = get_course_and_cm_from_cmid($cmid)[0];
+        $user = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user(
+            (int) $user->id,
+            (int) $course->id,
+            'editingteacher',
+            'manual',
+            0,
+            0,
+            ENROL_USER_SUSPENDED
+        );
+
+        $result = json_decode(document_read_tool::read($cmid, 'teacher', '', (int) $user->id), true);
+
+        $this->assertSame('permission_denied', $result['error'] ?? null);
+        $this->assertSame([], $this->curl->calls);
+    }
+
+    /**
+     * A hidden course is refused unless the user can view hidden courses.
+     */
+    public function test_hidden_course_is_refused_unless_the_user_can_view_hidden_courses(): void {
+        $course = $this->getDataGenerator()->create_course(['visible' => 0]);
+        $page = $this->getDataGenerator()->create_module('page', ['course' => $course->id]);
+        $this->add_pdf((int) $page->cmid, 'mod_page', 'content', 0, 'syllabus.pdf');
+        $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
+        $teacher = $this->getDataGenerator()->create_and_enrol($course, 'editingteacher');
+        $this->enqueue_read();
+
+        $refused = json_decode(document_read_tool::read((int) $page->cmid, 'teacher', '', (int) $student->id), true);
+        $allowed = json_decode(document_read_tool::read((int) $page->cmid, 'teacher', '', (int) $teacher->id), true);
+
+        $this->assertSame('permission_denied', $refused['error'] ?? null);
+        $this->assertSame('syllabus.pdf', $allowed['filename'] ?? null);
+        $this->assertCount(1, $this->curl->calls);
+    }
+
+    /**
+     * An editing teacher can still read the published content of a hidden activity of their course.
+     */
+    public function test_editing_teacher_reads_the_content_of_a_hidden_activity(): void {
+        $cmid = $this->create_module_with_pdf();
+        $course = get_course_and_cm_from_cmid($cmid)[0];
+        set_coursemodule_visible($cmid, 0);
+        $teacher = $this->getDataGenerator()->create_and_enrol($course, 'editingteacher');
+        $this->enqueue_read();
+
+        $result = json_decode(document_read_tool::read($cmid, 'teacher', '', (int) $teacher->id), true);
+
+        $this->assertSame('syllabus.pdf', $result['filename'] ?? null);
+    }
+
+    /**
+     * The main file of a resource is read first, whatever the order the files were stored in.
+     */
+    public function test_main_file_of_a_resource_is_read_first(): void {
+        $course = $this->getDataGenerator()->create_course();
+        $resource = $this->getDataGenerator()->create_module('resource', ['course' => $course->id]);
+        $fs = get_file_storage();
+        $fs->delete_area_files(\context_module::instance($resource->cmid)->id, 'mod_resource', 'content');
+        $this->add_pdf((int) $resource->cmid, 'mod_resource', 'content', 0, 'annex.pdf');
+        $this->add_pdf((int) $resource->cmid, 'mod_resource', 'content', 0, 'main.pdf', 1);
+        $this->enqueue_read();
+
+        $result = json_decode((new document_read_tool())->execute((object) ['cmid' => $resource->cmid]), true);
+
+        $this->assertSame('main.pdf', $result['filename'] ?? null);
+    }
 }

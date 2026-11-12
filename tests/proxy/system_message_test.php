@@ -79,9 +79,11 @@ final class system_message_test extends \advanced_testcase {
         $text = system_message::build('admin', [])['content'];
 
         $this->assertStringContainsString('VOICE CONVERSATION:', $voice);
-        foreach (['read aloud', 'short', 'complete sentences', 'spoken language', 'tables', 'lists', 'code', 'links',
+        foreach (
+            ['read aloud', 'short', 'complete sentences', 'spoken language', 'tables', 'lists', 'code', 'links',
                 'emojis', 'markdown', 'numbers and dates as they are spoken', 'details on screen',
-                'say briefly what will be done', 'confirm it on screen'] as $rule) {
+                'say briefly what will be done', 'confirm it on screen'] as $rule
+        ) {
             $this->assertStringContainsString($rule, $voice, $rule);
         }
         $this->assertStringNotContainsString('VOICE CONVERSATION:', $text);

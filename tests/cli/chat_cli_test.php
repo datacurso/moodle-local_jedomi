@@ -54,8 +54,8 @@ final class chat_cli_test extends \advanced_testcase {
         }
         $toolcalls = [['id' => 'call_1', 'type' => 'function', 'function' => ['name' => $tool,
             'arguments' => json_encode($args)]]];
-        $command = escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($CFG->dirroot . '/local/jedomi/tests/fixtures/chat_cli_runner.php')
-            . ' ' . escapeshellarg(json_encode($toolcalls));
+        $runner = $CFG->dirroot . '/local/jedomi/tests/fixtures/chat_cli_runner.php';
+        $command = escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($runner) . ' ' . escapeshellarg(json_encode($toolcalls));
         $process = proc_open($command, [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['redirect', 1]], $pipes);
         $this->assertIsResource($process);
         // The user asks, does not answer any confirmation request with a yes, and leaves.
@@ -83,8 +83,11 @@ final class chat_cli_test extends \advanced_testcase {
             'schedule_cron' => '0 8 * * *']);
 
         $this->assertStringContainsString('create_agent', $output, 'Control: the console received the proposal. ' . $output);
-        $this->assertSame(0, $DB->count_records('local_jedomi_agents'),
-            'Without a confirmation the console must not create the agent. Output: ' . $output);
+        $this->assertSame(
+            0,
+            $DB->count_records('local_jedomi_agents'),
+            'Without a confirmation the console must not create the agent. Output: ' . $output
+        );
         $this->assertMatchesRegularExpression('/confirm/i', $output, 'The console must ask for a confirmation');
     }
 

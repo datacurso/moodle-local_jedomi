@@ -163,7 +163,8 @@ final class sidebar_templates_test extends \advanced_testcase {
     }
 
     /**
-     * MDL-UNIT-068 / MDL-UNIT-111 / MDL-UNIT-112: the voice view has the sphere, the state text and the exit button, and the button sits next to the microphone only while the voice is enabled.
+     * MDL-UNIT-068 / MDL-UNIT-111 / MDL-UNIT-112: the voice view has the sphere, the state text and the exit button, and the button
+     * sits next to the microphone only while the voice is enabled.
      * V9, V10: the voice conversation button and view are in the panel only while the voice conversation is enabled; the
      * view has the state, the exit button and the regions the module updates.
      *

@@ -513,7 +513,8 @@ final class webhook_conversation_test extends \advanced_testcase {
     public function test_bot_only_serves_private_chats(): void {
         $owner = $this->fresh_user();
         $this->link((int) $owner->id, '-1009000002');
-        $this->link((int) $owner->id, '779000069');
+        $private = $this->fresh_user();
+        $this->link((int) $private->id, '779000069');
         $this->ai->enqueue_text('Your grades are 9 and 10.');
 
         $this->say('-1009000002', 'Show me the grades', ['chat' => ['id' => '-1009000002', 'type' => 'group'],
@@ -530,7 +531,7 @@ final class webhook_conversation_test extends \advanced_testcase {
 
         $this->say('779000069', 'Show me the grades', ['chat' => ['id' => '779000069', 'type' => 'private']]);
         $this->assertCount(1, $this->ai->calls, 'A linked private chat is served');
-        $this->assertSame((int) $owner->id, $this->ai->calls[0]['userid']);
+        $this->assertSame((int) $private->id, $this->ai->calls[0]['userid']);
     }
 
     /**

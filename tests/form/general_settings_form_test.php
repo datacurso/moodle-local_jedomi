@@ -68,8 +68,10 @@ final class general_settings_form_test extends \advanced_testcase {
         $this->resetAfterTest();
         // The test dataroot has no language packs: a minimal langconfig lets the string manager read lang/es.
         check_dir_exists($CFG->dataroot . '/lang/es');
-        file_put_contents($CFG->dataroot . '/lang/es/langconfig.php',
-            "<?php\n\$string['thislanguage'] = 'Español';\n\$string['parentlanguage'] = '';\n");
+        file_put_contents(
+            $CFG->dataroot . '/lang/es/langconfig.php',
+            "<?php\n\$string['thislanguage'] = 'Español';\n\$string['parentlanguage'] = '';\n"
+        );
         get_string_manager()->reset_caches();
 
         $expected = [

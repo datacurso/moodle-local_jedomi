@@ -320,6 +320,224 @@ final class sql_guard_test extends \advanced_testcase {
     }
 
     /**
+     * Queries of a teacher that hide or widen the course filter with syntax outside the allowed subset, with the reason.
+     *
+     * @return array<string, array{0: string, 1: array, 2: string}>
+     */
+    public static function bypass_provider(): array {
+        $ue = 'FROM {user} u JOIN {user_enrolments} ue ON ue.userid = u.id JOIN {enrol} e ON e.id = ue.enrolid';
+        $gg = 'FROM {grade_grades} gg JOIN {grade_items} gi ON gi.id = gg.itemid';
+        $rejected = 'sql_construct_rejected';
+        return [
+            'H1 filter hidden in a CASE' => ['SELECT c.id FROM {course} c WHERE CASE WHEN 0 = 1 THEN 1 AND c.id = OWN '
+                . 'AND 1 = 1 ELSE 1 = 1 END', [], $rejected],
+            'H1 grades of every course behind a CASE' => ["SELECT gi.courseid, gg.finalgrade {$gg} WHERE CASE WHEN 0 = 1 "
+                . 'THEN 1 AND gi.courseid = OWN AND 1 = 1 ELSE 1 = 1 END', [], $rejected],
+            'H1 users of every course behind a CASE' => ["SELECT u.id, u.firstname {$ue} WHERE CASE WHEN 0 = 1 THEN 1 "
+                . 'AND e.courseid = OWN AND 1 = 1 ELSE 1 = 1 END', [], $rejected],
+            'H2 backquoted reserved word as alias' => ["SELECT gg.itemid FROM {enrol} \x60where\x60, {grade_grades} gg "
+                . 'WHERE 1 = 1 AND courseid = OWN', [], $rejected],
+            'H3 control character after a double dash' => ["SELECT c.id FROM {course} c WHERE 1 = 1 --\x01 AND c.id = OWN\n",
+                [], $rejected],
+            'H4 placeholder inside a comment' => ['SELECT c.id FROM {course} c WHERE /* ? */ c.id = ?', ['OWN', 'OTHER'],
+                $rejected],
+            'H4 placeholder inside a line comment' => ["SELECT c.id FROM {course} c WHERE c.id = ? -- ?\n", ['OTHER', 'OWN'],
+                $rejected],
+            'H4 placeholder inside a string' => ["SELECT c.id FROM {course} c WHERE c.fullname <> '?' AND c.id = ?",
+                ['OWN', 'OTHER'], $rejected],
+            'H6 double-quoted column' => ["SELECT u.\"email\" {$ue} WHERE e.courseid = OWN", [], $rejected],
+            'OR' => ['SELECT c.id FROM {course} c WHERE c.id = OWN OR 1 = 1', [], $rejected],
+            'XOR' => ['SELECT c.id FROM {course} c WHERE c.id = OWN XOR 1 = 1', [], $rejected],
+            'double pipe' => ['SELECT c.id FROM {course} c WHERE c.id = OWN || 1 = 1', [], $rejected],
+            'NOT' => ['SELECT c.id FROM {course} c WHERE NOT c.id <> OWN', [], $rejected],
+            'parenthesised condition' => ['SELECT c.id FROM {course} c WHERE (c.id = OWN)', [], $rejected],
+            'IF' => ['SELECT c.id FROM {course} c WHERE IF(0, c.id = OWN, 1) = 1', [], $rejected],
+            'BETWEEN' => ['SELECT c.id FROM {course} c WHERE c.id = OWN AND c.id BETWEEN 1 AND OTHER', [], $rejected],
+            'subquery' => ['SELECT r.id FROM {role} r WHERE r.id IN (SELECT 1)', [], $rejected],
+            'WITH' => ['WITH x AS (SELECT 1) SELECT r.id FROM {role} r', [], $rejected],
+            'TABLE statement' => ['SELECT c.id FROM {course} c WHERE c.id = OWN AND (1, 1) IN (TABLE mdl_modules)', [],
+                $rejected],
+            'block comment' => ['SELECT c.id FROM {course} c /* x */ WHERE c.id = OWN', [], $rejected],
+            'line comment' => ["SELECT c.id FROM {course} c WHERE c.id = OWN -- x\n", [], $rejected],
+            'hash comment' => ["SELECT c.id FROM {course} c WHERE c.id = OWN # x\n", [], $rejected],
+            'MariaDB executable comment' => ['SELECT c.id FROM {course} c WHERE c.id = OWN /*M! OR 1 = 1 */', [],
+                'sql_function_rejected'],
+            'user variable' => ['SELECT @a FROM {course} c WHERE c.id = OWN', [], $rejected],
+            'unknown function' => ['SELECT CONCAT(c.fullname, c.shortname) FROM {course} c WHERE c.id = OWN', [], $rejected],
+            'keyword without parentheses' => ['SELECT CURRENT_USER FROM {course} c WHERE c.id = OWN', [], $rejected],
+            'unknown column' => ['SELECT c.nosuchcolumn FROM {course} c WHERE c.id = OWN', [], $rejected],
+            'USING' => ['SELECT c.id FROM {course} c JOIN {enrol} e USING (id) WHERE c.id = OWN', [], $rejected],
+            'NATURAL JOIN' => ['SELECT c.id FROM {course} c NATURAL JOIN {enrol} e WHERE c.id = OWN', [], $rejected],
+            'RIGHT JOIN' => ['SELECT c.id FROM {course} c RIGHT JOIN {enrol} e ON e.courseid = c.id WHERE c.id = OWN', [],
+                $rejected],
+            'CROSS JOIN' => ['SELECT c.id FROM {course} c CROSS JOIN {enrol} e WHERE c.id = OWN', [], $rejected],
+            'STRAIGHT_JOIN' => ['SELECT c.id FROM {course} c STRAIGHT_JOIN {enrol} e ON e.courseid = c.id WHERE c.id = OWN',
+                [], $rejected],
+            'semicolon' => ['SELECT c.id FROM {course} c WHERE c.id = OWN;', [], $rejected],
+            'hexadecimal number' => ['SELECT c.id FROM {course} c WHERE c.id = 0x10', [], $rejected],
+            'arithmetic' => ['SELECT c.id FROM {course} c WHERE c.id = OWN + 1', [], $rejected],
+            'duplicated alias' => ['SELECT c.id FROM {course} c JOIN {enrol} c ON c.courseid = OWN WHERE c.id = OWN', [],
+                $rejected],
+        ];
+    }
+
+    /**
+     * MDL-UNIT-108: a teacher cannot hide or widen the course filter with CASE, quoted identifiers, comments, control
+     * characters, placeholders the database binds differently, or any syntax outside the allowed subset.
+     *
+     * @dataProvider bypass_provider
+     * @param string $sql Query.
+     * @param array $params Parameters, with OWN and OTHER for the course ids.
+     * @param string $reason Expected rejection reason.
+     */
+    public function test_teacher_cannot_bypass_the_course_filter(string $sql, array $params, string $reason): void {
+        [$teacher, $own, $other] = $this->teacher();
+        $params = array_map(static fn($param) => self::with_ids($param, $own, $other), $params);
+
+        $this->assertSame($reason, sql_guard::rejection_reason(self::with_ids($sql, $own, $other), $teacher, $params));
+    }
+
+    /**
+     * Queries a teacher keeps running on their own course with the allowed subset.
+     *
+     * @return array<string, array{0: string, 1: array}>
+     */
+    public static function allowed_subset_provider(): array {
+        $grades = 'FROM {grade_items} gi JOIN {grade_grades} gg ON gg.itemid = gi.id WHERE gi.courseid = OWN';
+        return [
+            'own course data' => ['SELECT id, fullname FROM {course} WHERE id = OWN', []],
+            'participant names' => ['SELECT u.firstname, u.lastname FROM {user} u JOIN {user_enrolments} ue '
+                . 'ON ue.userid = u.id JOIN {enrol} e ON e.id = ue.enrolid WHERE e.courseid = OWN', []],
+            'aggregates grouped, ordered and limited' => ['SELECT gi.id, gi.itemname, COUNT(gg.id) AS total, '
+                . 'ROUND(AVG(gg.finalgrade), 2) AS average, MIN(gg.finalgrade) AS lowest, MAX(gg.finalgrade) highest, '
+                . "SUM(gg.finalgrade) AS points, COALESCE(MAX(gg.feedback), '') AS feedback {$grades} "
+                . 'GROUP BY gi.id, gi.itemname ORDER BY average DESC, gi.id ASC LIMIT 10 OFFSET 0', []],
+            'count of every row' => ["SELECT COUNT(*) AS total, COUNT(DISTINCT gg.userid) AS users {$grades}", []],
+            'missing grades' => ["SELECT DISTINCT gg.userid {$grades} AND gg.finalgrade IS NULL", []],
+            'present grades' => ["SELECT gg.userid {$grades} AND gg.finalgrade IS NOT NULL AND gg.finalgrade >= 5.5 "
+                . 'AND gg.finalgrade < 10 AND gg.finalgrade <> 7 AND gg.finalgrade != 8 AND gg.finalgrade <= 9 '
+                . 'AND gg.finalgrade > 1', []],
+            'name search' => ["SELECT id, shortname FROM {course} WHERE id = OWN AND fullname LIKE '%it''s%'", []],
+            'left outer join' => ['SELECT cm.id, m.name FROM {course_modules} cm LEFT OUTER JOIN {modules} m ON m.id = cm.module '
+                . 'WHERE cm.course = OWN', []],
+            'inner join and prefixed qualifier' => ['SELECT e.id FROM {course} JOIN {enrol} e ON e.courseid = {course}.id '
+                . 'WHERE {course}.id = ?', ['OWN']],
+            'lowercase keywords and line breaks' => ["select c.id\nfrom {course} as c\nwhere c.id in (OWN)\n", []],
+        ];
+    }
+
+    /**
+     * MDL-UNIT-108: the allowed subset keeps the usual reports of a teacher: own course data, participant names, grade
+     * aggregates with GROUP BY, ORDER BY and LIMIT, IS NULL and LIKE.
+     *
+     * @dataProvider allowed_subset_provider
+     * @param string $sql Query.
+     * @param array $params Parameters, with OWN for the own course.
+     */
+    public function test_teacher_queries_in_the_allowed_subset_are_allowed(string $sql, array $params): void {
+        [$teacher, $own, $other] = $this->teacher();
+        $params = array_map(static fn($param) => self::with_ids($param, $own, $other), $params);
+
+        $this->assertNull(sql_guard::rejection_reason(self::with_ids($sql, $own, $other), $teacher, $params));
+    }
+
+    /**
+     * Queries rejected for every user, administrators included, because the guard and the database could read them
+     * differently.
+     *
+     * @return array<string, array{0: string, 1: array, 2: string}>
+     */
+    public static function ambiguous_query_provider(): array {
+        return [
+            'control character after a double dash' => ["SELECT id FROM {course} WHERE 1 = 1 --\x01 , id\n", [],
+                'sql_construct_rejected'],
+            'null byte' => ["SELECT id FROM {course}\x00", [], 'sql_construct_rejected'],
+            'non ASCII byte after a double dash' => ["SELECT id FROM {course} --\xc2\xa0 x\n", [], 'sql_construct_rejected'],
+            'placeholder inside a comment' => ['SELECT id FROM {course} WHERE /* ? */ id = ?', [1, 2],
+                'sql_construct_rejected'],
+            'placeholder inside a string' => ["SELECT id FROM {course} WHERE fullname = '?' AND id = ?", [1, 2],
+                'sql_construct_rejected'],
+            'named placeholder inside a comment' => ['SELECT id FROM {course} WHERE id = :a /* :b */', ['a' => 1, 'b' => 2],
+                'sql_construct_rejected'],
+            'MariaDB executable comment' => ['SELECT id FROM {course} /*M! , 1 */', [], 'sql_function_rejected'],
+            'MariaDB executable comment in lowercase with a version' => ['SELECT id FROM {course} /* m!100000 , 1 */', [],
+                'sql_function_rejected'],
+            'optimizer hint' => ['SELECT /*+ MAX_EXECUTION_TIME(1) */ id FROM {course}', [], 'sql_function_rejected'],
+        ];
+    }
+
+    /**
+     * MDL-UNIT-107: control characters, placeholders the database binds differently than the guard reads them and
+     * executable comments are rejected for every user, administrators included.
+     *
+     * @dataProvider ambiguous_query_provider
+     * @param string $sql Query.
+     * @param array $params Parameters.
+     * @param string $reason Expected rejection reason.
+     */
+    public function test_ambiguous_queries_are_rejected_for_every_user(string $sql, array $params, string $reason): void {
+        [$teacher] = $this->teacher();
+        $manager = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->role_assign('manager', $manager->id);
+
+        foreach ([(int) get_admin()->id, (int) $manager->id, $teacher, 0] as $userid) {
+            $this->assertSame($reason, sql_guard::rejection_reason($sql, $userid, $params), "User {$userid}");
+        }
+    }
+
+    /**
+     * Quoting that PostgreSQL reads differently than MySQL, so the guard rejects it there.
+     *
+     * @return array<string, array{0: string}>
+     */
+    public static function postgres_quoting_provider(): array {
+        return [
+            'double-quoted column' => ['SELECT u."email" FROM {user} u'],
+            'double-quoted table' => ['SELECT value FROM "mdl_config"'],
+            'dollar quoting' => ["SELECT \$\$'\$\$, value FROM mdl_config -- '"],
+            'tagged dollar quoting' => ['SELECT $x$ text $x$ AS t'],
+            'escape string' => ["SELECT id FROM {course} WHERE fullname = E'a'"],
+            'backslash in a string' => ["SELECT id FROM {course} WHERE fullname = 'a\\' OR 1 = 1 --'"],
+            'nested comment' => ["SELECT id /* /* */ , value FROM mdl_config /* */ */ FROM {course}"],
+        ];
+    }
+
+    /**
+     * MDL-UNIT-107: on PostgreSQL, double-quoted identifiers, dollar quoting, escape strings, backslashes and nested
+     * comments are rejected, so the guard never reads a quoted identifier as a string; on MySQL they stay plain strings.
+     *
+     * @dataProvider postgres_quoting_provider
+     * @param string $sql Query.
+     */
+    public function test_postgres_quoting_is_rejected(string $sql): void {
+        $this->resetAfterTest();
+
+        $this->assertSame('sql_construct_rejected', sql_guard::syntax_rejection($sql, 'postgres'));
+    }
+
+    /**
+     * MDL-UNIT-107: the syntax check accepts plain queries on PostgreSQL and MySQL double-quoted strings.
+     */
+    public function test_plain_queries_pass_the_syntax_check(): void {
+        $this->resetAfterTest();
+
+        $this->assertNull(sql_guard::syntax_rejection(
+            "SELECT id FROM {course} WHERE fullname = 'it''s' AND id = ?",
+            'postgres'
+        ));
+        $this->assertNull(sql_guard::syntax_rejection("SELECT id::text FROM {course} /* note */ WHERE id = :id", 'postgres'));
+        $this->assertNull(
+            sql_guard::syntax_rejection('SELECT id FROM {course} WHERE fullname = "a" AND id = ?', 'mysql'),
+            'In MySQL a double-quoted text is a string'
+        );
+        $this->assertSame(
+            'sql_construct_rejected',
+            sql_guard::syntax_rejection('SELECT id FROM {course} WHERE fullname = "a?" AND id = ?', 'mysql'),
+            'Moodle binds the placeholder inside the string as well, so the parameters would shift'
+        );
+    }
+
+    /**
      * MDL-UNIT-020: asking explicitly for a sensitive column (passwords, secrets, tokens, session keys, link codes) of
      * any table is rejected, also for administrators, and reading every column of an allowed table leaves the sensitive
      * columns out of the result.
@@ -327,15 +545,19 @@ final class sql_guard_test extends \advanced_testcase {
     public function test_sensitive_columns_are_rejected_or_left_out(): void {
         $this->resetAfterTest();
         $admin = (int) get_admin()->id;
-        foreach (['u.password FROM {user} u', 'secret FROM {user}', 'token FROM {course}', 'sessionkey FROM {user}',
-                'linkcode FROM {user}'] as $columns) {
+        foreach (
+            ['u.password FROM {user} u', 'secret FROM {user}', 'token FROM {course}', 'sessionkey FROM {user}',
+                'linkcode FROM {user}'] as $columns
+        ) {
             $this->assertNotNull(sql_guard::rejection_reason('SELECT id, ' . $columns, $admin), $columns);
         }
 
         $row = sql_guard::filter_row(['id' => 2, 'username' => 'admin', 'password' => 'hash', 'secret' => 's', 'token' => 't',
             'sessionkey' => 'k', 'linkcode' => 'c', 'email' => 'admin@example.com']);
         $this->assertSame(['id' => 2, 'username' => 'admin', 'email' => 'admin@example.com'], $row);
-        $this->assertNull(sql_guard::rejection_reason('SELECT * FROM {user} WHERE id = 2', $admin),
-            'Every column of an allowed table can be asked for; the sensitive ones are removed from the result');
+        $this->assertNull(
+            sql_guard::rejection_reason('SELECT * FROM {user} WHERE id = 2', $admin),
+            'Every column of an allowed table can be asked for; the sensitive ones are removed from the result'
+        );
     }
 }

@@ -559,6 +559,10 @@ $string['spt_secret'] = 'Permission token secret';
 $string['spt_secret_help'] = 'Secret used to sign the chat permission tokens. It is generated automatically for this site and '
     . 'stored in Moodle, so it does not need to be set. Changing it invalidates the tokens already issued: users must reload '
     . 'the page to keep chatting.';
+$string['sql_construct_rejected'] = 'The query uses syntax outside the allowed read-only subset, so it was not run. Write a single '
+    . 'SELECT with FROM, [LEFT] JOIN ... ON, WHERE conditions joined only by AND (=, <>, <, >, IN (numbers), IS [NOT] NULL, '
+    . 'LIKE \'text\'), GROUP BY, ORDER BY and LIMIT, and only the functions COUNT, SUM, AVG, MIN, MAX, ROUND and COALESCE. '
+    . 'Do not use CASE, OR, NOT, subqueries, UNION, comments, quoted names, variables or semicolons.';
 $string['sql_course_rejected'] = 'The query names a course you do not manage, so it was not run.';
 $string['sql_course_unfiltered_rejected'] = 'The query reads course data without limiting it to the courses you manage, so it was '
     . 'not run. Limit every course table to the id of one of your courses (for example WHERE c.id = 12 or WHERE e.courseid IN '
@@ -786,7 +790,8 @@ $string['tool_describe_table_desc'] = 'Obtiene la estructura (columnas, tipos, c
 $string['tool_describe_table_tablename'] = 'Nombre de la tabla (ej: course, user, grade_grades)';
 $string['tool_document_read_cmid'] = 'Course module ID (cmid) of the activity. Get it from the page context when viewing an '
     . 'activity, or discover it via ws_search/ws_execute first.';
-$string['tool_document_read_desc'] = 'Read a PDF file from ANY course activity using its cmid (course module ID). Returns the text of the pages; '
+$string['tool_document_read_desc'] = 'Read the PDF published in a course activity (its description or content, never student submissions or '
+    . 'feedback) using its cmid (course module ID). Returns the text of the pages; '
     . 'scanned pages, tables and diagrams are read by a vision model. Use this when the user asks to read, analyze, summarize '
     . 'or explain a document of an activity.';
 $string['tool_document_read_pages'] = 'Optional pages to read, for example "1,3-5". Leave it out to read the whole document.';

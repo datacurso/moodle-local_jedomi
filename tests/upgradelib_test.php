@@ -51,7 +51,8 @@ final class upgradelib_test extends \advanced_testcase {
     }
 
     /**
-     * MDL-INT-075 / MDL-INT-086: the update removes the prohibits of the companion permission of previous versions and keeps the changes of the administrator.
+     * MDL-INT-075 / MDL-INT-086: the update removes the prohibits of the companion permission of previous versions and keeps the
+     * changes of the administrator.
      * The prohibit left on the authenticated user role is removed, so a manager holds the capability again, while an
      * allow set by an administrator on another role is kept.
      */

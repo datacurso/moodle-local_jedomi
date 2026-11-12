@@ -533,7 +533,8 @@ final class handler_test extends \advanced_testcase {
     }
 
     /**
-     * MDL-UNIT-109 / MDL-CTR-001: the voice mode adds the spoken answer instructions only while the voice conversation is enabled; the server ignores it otherwise.
+     * MDL-UNIT-109 / MDL-CTR-001: the voice mode adds the spoken answer instructions only while the voice conversation is enabled;
+     * the server ignores it otherwise.
      * V8: a request of the voice conversation adds the spoken answer instructions, only while the voice conversation is
      * enabled; the answer streamed to the chat is the full text.
      */
@@ -988,17 +989,25 @@ final class handler_test extends \advanced_testcase {
         $this->setUser($manager);
         \local_jedomi\local\service\admin_settings_service::save_ws_allowlist('manager', ['core_webservice_get_site_info']);
 
-        $query = json_decode(handler::run_tool('execute_sql', ['sql' => 'SELECT id FROM {course} WHERE id = ' . SITEID],
-            'manager'), true);
+        $query = json_decode(handler::run_tool(
+            'execute_sql',
+            ['sql' => 'SELECT id FROM {course} WHERE id = ' . SITEID],
+            'manager'
+        ), true);
         $this->assertSame(1, $query['row_count'] ?? null, json_encode($query));
 
-        $listed = json_decode(handler::run_tool('ws_execute',
-            ['wsname' => 'core_webservice_get_site_info', 'params' => '{}'], 'manager'), true);
+        $listed = json_decode(handler::run_tool(
+            'ws_execute',
+            ['wsname' => 'core_webservice_get_site_info', 'params' => '{}'],
+            'manager'
+        ), true);
         $this->assertArrayHasKey('result', $listed, json_encode($listed));
         $this->assertSame((int) $manager->id, (int) json_decode($listed['result'], true)['userid']);
 
-        $prohibits = $DB->count_records('role_capabilities',
-            ['capability' => 'local/jedomi:companion_api', 'permission' => CAP_PROHIBIT]);
+        $prohibits = $DB->count_records(
+            'role_capabilities',
+            ['capability' => 'local/jedomi:companion_api', 'permission' => CAP_PROHIBIT]
+        );
         $this->assertSame(0, $prohibits, 'The companion permission must not be prohibited to any role');
     }
 
@@ -1103,8 +1112,11 @@ final class handler_test extends \advanced_testcase {
         $fake->enqueue_text('Your students.');
         client::set_instance_for_testing($fake);
 
-        $this->capture(fn() => handler::run([['role' => 'user', 'content' => 'How are my students doing?']], $role,
-            (int) $teacher->id));
+        $this->capture(fn() => handler::run(
+            [['role' => 'user', 'content' => 'How are my students doing?']],
+            $role,
+            (int) $teacher->id
+        ));
 
         $tools = $this->tool_names($fake->calls[0]);
         foreach (['execute_sql', 'ws_execute', 'document_read'] as $tool) {
@@ -1114,8 +1126,11 @@ final class handler_test extends \advanced_testcase {
         $this->assertSame('tool', $toolresult['role']);
         $this->assertMatchesRegularExpression('/"row_count"\s*:\s*2\b/', $toolresult['content']);
 
-        $refused = json_decode(handler::run_tool('execute_sql',
-            ['sql' => "SELECT fullname FROM {course} WHERE id = {$other->id}"], $role), true);
+        $refused = json_decode(handler::run_tool(
+            'execute_sql',
+            ['sql' => "SELECT fullname FROM {course} WHERE id = {$other->id}"],
+            $role
+        ), true);
         $this->assertStringNotContainsString('Foreign Course Marker', json_encode($refused));
     }
 

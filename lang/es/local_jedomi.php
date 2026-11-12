@@ -563,6 +563,11 @@ $string['spt_secret'] = 'Secreto del token de permisos';
 $string['spt_secret_help'] = 'Secreto usado para firmar los tokens de permisos del chat. Se genera automáticamente para este '
     . 'sitio y se guarda en Moodle, por lo que no hace falta configurarlo. Cambiarlo invalida los tokens ya emitidos: los usuarios '
     . 'deben recargar la página para seguir chateando.';
+$string['sql_construct_rejected'] = 'La consulta usa una sintaxis fuera del subconjunto de solo lectura permitido, por lo que no '
+    . 'se ejecutó. Escriba un único SELECT con FROM, [LEFT] JOIN ... ON, condiciones WHERE unidas solo con AND (=, <>, <, >, '
+    . 'IN (números), IS [NOT] NULL, LIKE \'texto\'), GROUP BY, ORDER BY y LIMIT, y solo las funciones COUNT, SUM, AVG, MIN, '
+    . 'MAX, ROUND y COALESCE. No use CASE, OR, NOT, subconsultas, UNION, comentarios, nombres entre comillas, variables ni '
+    . 'punto y coma.';
 $string['sql_course_rejected'] = 'La consulta menciona un curso que usted no gestiona, por lo que no se ejecutó.';
 $string['sql_course_unfiltered_rejected'] = 'La consulta lee datos de cursos sin limitarlos a los cursos que usted gestiona, por '
     . 'lo que no se ejecutó. Limite cada tabla de cursos al id de uno de sus cursos (por ejemplo WHERE c.id = 12 o WHERE '
@@ -794,7 +799,8 @@ $string['tool_describe_table_desc'] = 'Obtiene la estructura (columnas, tipos, c
 $string['tool_describe_table_tablename'] = 'Nombre de la tabla (ej: course, user, grade_grades)';
 $string['tool_document_read_cmid'] = 'Course module ID (cmid) de la actividad. Obtenelo del contexto de página o descubrilo via '
     . 'ws_search/ws_execute.';
-$string['tool_document_read_desc'] = 'Leer un archivo PDF de CUALQUIER actividad del curso usando su cmid (course module ID). Devuelve el texto de las '
+$string['tool_document_read_desc'] = 'Leer el PDF publicado en una actividad del curso (su descripción o contenido, nunca entregas ni '
+    . 'devoluciones de estudiantes) usando su cmid (course module ID). Devuelve el texto de las '
     . 'páginas; las páginas escaneadas, tablas y diagramas los lee un modelo de visión. Úsalo cuando el usuario pida leer, '
     . 'analizar, resumir o explicar un documento de una actividad.';
 $string['tool_document_read_pages'] = 'Páginas opcionales a leer, por ejemplo "1,3-5". Omítelo para leer todo el documento.';

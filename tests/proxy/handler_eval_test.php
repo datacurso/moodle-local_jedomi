@@ -312,7 +312,7 @@ final class handler_eval_test extends \advanced_testcase {
                     $problems[] = 'long sentence: ' . $sentence;
                 }
             }
-            if (preg_match('/^\s*(\||[-*+]\s|\d+[.)]\s|#)|```|\*\*|https?:\/\/|\[[^\]]+\]\(/m', $answer)) {
+            if (preg_match('/^\s*(\||[-*+]\s|\d+[.)]\s|#)|\x60\x60\x60|\*\*|https?:\/\/|\[[^\]]+\]\(/m', $answer)) {
                 $problems[] = 'formatting, list, table, code or link';
             }
             if (preg_match('/[\x{1F300}-\x{1FAFF}\x{2600}-\x{27BF}]/u', $answer)) {
@@ -321,8 +321,12 @@ final class handler_eval_test extends \advanced_testcase {
             if (preg_match('/\b\d{4}-\d{2}-\d{2}\b|\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/', $answer)) {
                 $problems[] = 'date written instead of spoken';
             }
-            if ($item['must_contain_any'] && !array_filter($item['must_contain_any'],
-                    static fn(string $value): bool => str_contains($lower, \core_text::strtolower($value)))) {
+            if (
+                $item['must_contain_any'] && !array_filter(
+                    $item['must_contain_any'],
+                    static fn(string $value): bool => str_contains($lower, \core_text::strtolower($value))
+                )
+            ) {
                 $problems[] = 'missing any of ' . implode(', ', $item['must_contain_any']);
             }
             if ($answer !== '' && self::language_of($answer) !== $item['language']) {
@@ -336,7 +340,7 @@ final class handler_eval_test extends \advanced_testcase {
                 if (!in_array($item['action_tool'], array_column($result['pending'], 'tool'), true)) {
                     $problems[] = "did not propose {$item['action_tool']}";
                 }
-                // "confirm" also matches confirme, confirmar and confirmación.
+                // The word "confirm" also matches confirme, confirmar and confirmación.
                 if (!str_contains($lower, 'confirm') || !str_contains($lower, $screen)) {
                     $problems[] = 'does not ask to confirm on screen';
                 }

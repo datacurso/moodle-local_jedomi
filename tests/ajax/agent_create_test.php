@@ -357,8 +357,11 @@ final class agent_create_test extends \advanced_testcase {
         $answer = $this->post_as('agentmanager', 'ajax/agent_create.php', ['action' => 'update', 'id' => $id,
             'prompt' => 'Run what I want with your credits']);
 
-        $this->assertSame('Weekly report of the other manager', agent_manager::get_agent($id)->prompt,
-            'The agent must keep the instruction of its creator');
+        $this->assertSame(
+            'Weekly report of the other manager',
+            agent_manager::get_agent($id)->prompt,
+            'The agent must keep the instruction of its creator'
+        );
         $this->assertFalse($answer['ok'], 'The edition of the instruction must be rejected');
     }
 }
