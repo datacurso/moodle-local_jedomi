@@ -2,7 +2,7 @@
 Feature: Voice conversation with Jedomi in the web chat
   In order to talk to Jedomi without typing
   As a Moodle user
-  I need to speak to the panel, hear short answers sentence by sentence and end the conversation in any way
+  I need to speak to the panel, hear the answers in a few pieces and end the conversation in any way
 
   # The microphone, the transcription and the reading aloud are true boundaries (device and AI service): the browser
   # gets a fake microphone with a scripted level, the transcriptions answer queued texts and each sentence read aloud
@@ -77,33 +77,47 @@ Feature: Voice conversation with Jedomi in the web chat
     And "1" Jedomi transcription should have been requested
 
   @MDL-UNIT-122
-  Scenario: After a short first part, the next sentences are read aloud in fewer, longer pieces
+  Scenario: A short answer of two sentences is read aloud with a single request
     Given I log in as "student1"
     And I am on homepage
     And I click on "#jedomi-trigger" "css_element"
     And the Jedomi browser has a microphone that grants access
     And Jedomi takes "2" seconds to read each sentence aloud
-    And the Jedomi AI answers "Hello Sam. Your essay is due on Friday. The quiz opens on Monday. The forum closes on Tuesday. Nothing else is due this week."
+    And the Jedomi AI answers "Your essay is due on Friday and the quiz opens on Monday morning. Nothing else is due this week."
     And I click on "#jedomi-voice-mode-btn" "css_element"
     When I speak to Jedomi for "800" milliseconds
     Then the Jedomi voice conversation should be speaking
-    And the first text Jedomi read aloud should be at most "60" characters long
-    And Jedomi should have read aloud "Hello Sam."
-    And Jedomi should have read aloud "Your essay is due on Friday."
-    And Jedomi should have read aloud "The quiz opens on Monday. The forum closes on Tuesday. Nothing else is due this week."
+    And Jedomi should have read aloud "Your essay is due on Friday and the quiz opens on Monday morning. Nothing else is due this week."
     And the Jedomi voice conversation should be listening
-    And Jedomi should have sent "3" texts to be read aloud
+    And Jedomi should have sent "1" text to be read aloud
+
+  @MDL-UNIT-122
+  Scenario: The first part groups sentences up to a minimum and the next sentences are read aloud in one longer piece
+    Given I log in as "student1"
+    And I am on homepage
+    And I click on "#jedomi-trigger" "css_element"
+    And the Jedomi browser has a microphone that grants access
+    And Jedomi takes "2" seconds to read each sentence aloud
+    And the Jedomi AI answers "Hello Sam. Your essay is due on Friday. The quiz opens on Monday. The forum closes on Tuesday. The workshop starts on Wednesday. Nothing else is due this week."
+    And I click on "#jedomi-voice-mode-btn" "css_element"
+    When I speak to Jedomi for "800" milliseconds
+    Then the Jedomi voice conversation should be speaking
+    And the first text Jedomi read aloud should be at most "160" characters long
+    And Jedomi should have read aloud "Hello Sam. Your essay is due on Friday. The quiz opens on Monday. The forum closes on Tuesday."
+    And Jedomi should have read aloud "The workshop starts on Wednesday. Nothing else is due this week."
+    And the Jedomi voice conversation should be listening
+    And Jedomi should have sent "2" texts to be read aloud
     And I should see "Hello Sam. Your essay is due on Friday. The quiz opens on Monday." in the "#jedomi-messages" "css_element"
 
   @MDL-UNIT-114
-  Scenario: Only the speakable text is read aloud, with a short first part, and the full answer stays in the chat
+  Scenario: Only the speakable text is read aloud, a long first sentence is cut, and the full answer stays in the chat
     Given I log in as "student1"
     And I am on homepage
     And I click on "#jedomi-trigger" "css_element"
     And the Jedomi browser has a microphone that grants access
     And the Jedomi AI answers:
       """
-      **Great work**, Sam: the average of the course is 15.38 out of 20, which is above the class average this term. 📊
+      **Great work**, Sam: the average of the course is 15.38 out of 20, which is above the class average this term and keeps you among the best students of the group this year. 📊
 
       | Name | Grade |
       |---|---|
@@ -118,9 +132,9 @@ Feature: Voice conversation with Jedomi in the web chat
     And I click on "#jedomi-voice-mode-btn" "css_element"
     When I speak to Jedomi for "800" milliseconds
     Then Jedomi should have read aloud "See the report or for details."
-    And the first text Jedomi read aloud should be at most "60" characters long
-    And Jedomi should have read aloud "Great work, Sam:"
-    And Jedomi should have read aloud "15.38 out of 20"
+    And the first text Jedomi read aloud should be at most "160" characters long
+    And Jedomi should have read aloud "Great work, Sam: the average of the course is 15.38 out of 20"
+    And Jedomi should have read aloud "this year."
     And Jedomi should not have read aloud "Grade"
     And Jedomi should not have read aloud "SELECT"
     And Jedomi should not have read aloud "https"

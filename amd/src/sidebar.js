@@ -913,6 +913,7 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
                         execute_sql:    'db',
                         describe_table: 'clipboard',
                         get_site_config:'gear',
+                        site_overview:  'chart',
                         ws_search:      'search',
                         ws_describe:    'book',
                         ws_execute:     'zap',
@@ -922,6 +923,7 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
                         execute_sql:    S2.tool_execute_sql || '',
                         describe_table: S2.tool_describe_table || '',
                         get_site_config:S2.tool_get_site_config || '',
+                        site_overview:  S2.tool_site_overview || '',
                         ws_search:      S2.tool_ws_search || '',
                         ws_describe:    S2.tool_ws_describe || '',
                         ws_execute:     S2.tool_ws_execute || '',
@@ -1748,19 +1750,26 @@ GENERAL INSTRUCTIONS:
     const VOICE_MODE_TICK_MS = 50;
     // Longest text sent to speech.php at once, in characters (the server accepts up to 1000).
     const VOICE_MODE_MAX_SENTENCE = 900;
-    // Longest and shortest first chunk of an answer, in characters. Speech models return the audio of a text only when
-    // the whole text is generated, so a short first chunk makes Jedomi start speaking sooner with any voice model.
-    const VOICE_MODE_FIRST_CHUNK_MAX = 60;
-    const VOICE_MODE_FIRST_CHUNK_MIN = 15;
     /**
-     * Characters a chunk read aloud after the first one may reach by grouping whole sentences. Each chunk is one
-     * request to speech.php (and one charge), so grouping means fewer of them. A sentence is never split to fit:
-     * a longer one goes alone (cut only above VOICE_MODE_MAX_SENTENCE). A group is sent before it is full when the
-     * answer ends, before a notice of Jedomi, or when nothing else is waiting to be read, so Jedomi never goes silent.
+     * Longest and shortest first chunk of an answer, in characters. Each chunk is one request to speech.php (and one
+     * charge). The first chunk groups whole sentences until it reaches the minimum or the answer ends, so a short
+     * answer is read with one request. A first sentence longer than the maximum is cut at a clause or a space, so
+     * Jedomi does not wait for the audio of a long text before it starts speaking.
      *
      * @type {number}
      */
-    const VOICE_MODE_GROUP_TARGET = 200;
+    const VOICE_MODE_FIRST_CHUNK_MAX = 160;
+    const VOICE_MODE_FIRST_CHUNK_MIN = 80;
+    /**
+     * Characters a chunk read aloud after the first one may reach by grouping whole sentences. A sentence is never
+     * split to fit: a longer one goes alone (cut only above VOICE_MODE_MAX_SENTENCE). The group is sent when the
+     * chunk before it starts playing (its audio is ready, so the next one is prepared while it is heard), when it
+     * reaches this size, when the answer ends, before a notice of Jedomi, or at once when nothing is being read or
+     * waiting to be read, so Jedomi never goes silent.
+     *
+     * @type {number}
+     */
+    const VOICE_MODE_GROUP_TARGET = 400;
 
     // An element of the voice view by its data-region.
     const voiceModeRegion = (name) => g('jedomi-voice-mode')?.querySelector(`[data-region="local_jedomi/sidebar/${name}"]`);
@@ -2175,9 +2184,9 @@ GENERAL INSTRUCTIONS:
         current.pendingText = text;
     };
 
-    // Where to end the first chunk of a long first sentence: after the first comma, semicolon or colon followed by a
-    // space within the limits (so decimals such as 15,38 are kept whole), else at the last space within the limit.
-    // Returns 0 when the text has no suitable place.
+    // Where to end the first chunk when its text is longer than VOICE_MODE_FIRST_CHUNK_MAX: after the first comma,
+    // semicolon or colon followed by a space within the limits (so decimals such as 15,38 are kept whole), else at the
+    // last space within the limits. Returns 0 when the text has no suitable place.
     const firstChunkEnd = (text) => {
         const clause = /[,;:](?=\s)/g;
         let match;
@@ -2190,17 +2199,23 @@ GENERAL INSTRUCTIONS:
         return space >= VOICE_MODE_FIRST_CHUNK_MIN ? space : 0;
     };
 
-    // Queue a sentence to be read aloud; long ones are cut at a space, and the first chunk of an answer is kept short.
-    // notice marks a text of Jedomi that is not part of the answer, so it is spoken but not shown.
+    // Queue a sentence to be read aloud, grouped with the others of the answer (see VOICE_MODE_FIRST_CHUNK_MAX and
+    // VOICE_MODE_GROUP_TARGET); long ones are cut at a space. notice marks a text of Jedomi that is not part of the
+    // answer, so it is spoken but not shown.
     const queueVoiceSentence = (sentence, notice = false) => {
-        if (!voiceMode) return;
+        const current = voiceMode;
+        if (!current) return;
         let text = (sentence || '').trim();
-        if (!voiceMode.firstQueued && /[\p{L}\p{N}]/u.test(text)) {
-            voiceMode.firstQueued = true;
-            const end = text.length > VOICE_MODE_FIRST_CHUNK_MAX ? firstChunkEnd(text) : 0;
-            if (end > 0) {
-                queueVoiceSentence(text.slice(0, end), notice);
-                text = text.slice(end).trim();
+        if (!notice && !current.firstQueued && /[\p{L}\p{N}]/u.test(text)) {
+            // The first chunk: a sentence that makes it longer than the maximum is cut, or starts the next group.
+            const joined = current.group ? `${current.group} ${text}` : text;
+            if (joined.length > VOICE_MODE_FIRST_CHUNK_MAX) {
+                const end = firstChunkEnd(joined);
+                if (end > 0) {
+                    current.group = joined.slice(0, end).trim();
+                    text = joined.slice(end).trim();
+                }
+                flushVoiceGroup();
             }
         }
         while (text.length > VOICE_MODE_MAX_SENTENCE) {
@@ -2211,7 +2226,6 @@ GENERAL INSTRUCTIONS:
         }
         // Text with no letter or number (a lone symbol) is not read.
         if (!/[\p{L}\p{N}]/u.test(text)) return;
-        const current = voiceMode;
         if (notice) {
             // A notice of Jedomi is read after the sentences of the answer grouped before it.
             flushVoiceGroup();
@@ -2220,9 +2234,9 @@ GENERAL INSTRUCTIONS:
             // Whole sentences are grouped up to the target; one that does not fit starts the next group.
             if (current.group && current.group.length + 1 + text.length > VOICE_MODE_GROUP_TARGET) flushVoiceGroup();
             current.group = current.group ? `${current.group} ${text}` : text;
-            if (current.group.length >= VOICE_MODE_GROUP_TARGET) flushVoiceGroup();
+            const target = current.firstQueued ? VOICE_MODE_GROUP_TARGET : VOICE_MODE_FIRST_CHUNK_MIN;
+            if (current.group.length >= target) flushVoiceGroup();
         }
-        // An empty queue sends the group at once (see playNextVoiceSentence), so the first chunk is never delayed.
         playNextVoiceSentence();
     };
 
@@ -2232,6 +2246,7 @@ GENERAL INSTRUCTIONS:
         if (!current?.group) return;
         current.queue.push({text: current.group, notice: false, controller: new AbortController(), audio: null});
         current.group = '';
+        current.firstQueued = true;
     };
 
     // Ask speech.php for the audio of a sentence and decode it.
@@ -2258,9 +2273,9 @@ GENERAL INSTRUCTIONS:
     const playNextVoiceSentence = async () => {
         const current = voiceMode;
         if (!current) return;
-        // Nothing else waits to be read: the grouped sentences go now instead of waiting for more text, so the
-        // next chunk is always requested while the current one is still being prepared or played.
-        if (!current.queue.length) flushVoiceGroup();
+        // Nothing is being read or waiting to be read after the first chunk: the grouped sentences go now, so Jedomi
+        // never stays silent. While a chunk is prepared they keep growing, and go when it starts playing.
+        if (current.firstQueued && !current.current && !current.queue.length) flushVoiceGroup();
         const next = current.queue[0];
         if (next && !next.audio) {
             next.audio = fetchVoiceSentence(next);
@@ -2313,6 +2328,9 @@ GENERAL INSTRUCTIONS:
         });
         current.source = source;
         source.start();
+        // The chunk is heard: the sentences grouped meanwhile go now, so the next chunk is prepared while it plays.
+        flushVoiceGroup();
+        playNextVoiceSentence();
     };
 
     // Stop speaking: the audio stops, the queue is emptied and the pending requests are cancelled.

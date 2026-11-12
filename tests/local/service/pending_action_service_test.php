@@ -48,6 +48,7 @@ final class pending_action_service_test extends \advanced_testcase {
             'admin_describe' => ['admin_describe', ['name' => 'backup_course'], null],
             'list_agents' => ['list_agents', [], null],
             'get_site_config' => ['get_site_config', ['keys' => ['theme']], null],
+            'site_overview' => ['site_overview', ['days' => 30], null],
             'document_read' => ['document_read', ['cmid' => 5], null],
             'unknown tool' => ['no_such_tool', [], null],
         ];

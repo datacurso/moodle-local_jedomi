@@ -129,6 +129,7 @@ function local_jedomi_get_sidebar_config(): array {
             'tool_execute_sql'       => get_string('tool_execute_sql', 'local_jedomi'),
             'tool_describe_table'    => get_string('tool_describe_table', 'local_jedomi'),
             'tool_get_site_config'   => get_string('tool_get_site_config', 'local_jedomi'),
+            'tool_site_overview'     => get_string('tool_site_overview', 'local_jedomi'),
             'tool_ws_search'         => get_string('tool_ws_search', 'local_jedomi'),
             'tool_ws_describe'       => get_string('tool_ws_describe', 'local_jedomi'),
             'tool_ws_execute'        => get_string('tool_ws_execute', 'local_jedomi'),
@@ -758,6 +759,11 @@ function local_jedomi_get_tool_definitions(string $role): array {
                 ],
             ],
         ];
+    }
+
+    // Site_overview — admin, manager. The overall state of the platform in one call.
+    if (\local_jedomi\agent\tool\site_overview_tool::is_offered($role)) {
+        $tools[] = \local_jedomi\agent\tool\site_overview_tool::definition();
     }
 
     // Ws_search — every role. Semantic keyword search returning full function docs.

@@ -49,7 +49,7 @@ class webhook_handler {
 
     /** Tools the Telegram channel can run; any other tool is never offered to the AI here. */
     private const SUPPORTED_TOOLS = [
-        'describe_table', 'search_tables', 'execute_sql', 'get_site_config', 'ws_search', 'ws_describe',
+        'describe_table', 'search_tables', 'execute_sql', 'get_site_config', 'site_overview', 'ws_search', 'ws_describe',
         'ws_execute', 'admin_search', 'admin_describe', 'admin_execute', 'create_agent', 'list_agents',
         'delete_agent', 'my_courses', 'my_grades', 'my_assignments',
     ];
@@ -1288,6 +1288,7 @@ class webhook_handler {
                     'ws_search'       => 'tool_webservice_lookup',
                     'ws_describe'     => 'tool_webservice_lookup',
                     'get_site_config' => 'tool_get_site_config',
+                    'site_overview'   => 'tool_site_overview',
                     'admin_search'    => 'confirm_executing',
                     'admin_describe'  => 'confirm_executing',
                     'admin_execute'   => 'confirm_executing',
@@ -1768,6 +1769,10 @@ class webhook_handler {
                     return "⚙️ <b>Site Config</b>: No matching keys found.";
                 }
                 return "⚙️ <b>Site Config</b>:\n" . implode("\n", $output);
+
+            case 'site_overview':
+                // Admin and manager only, with the role derived above; aggregates only, no personal data.
+                return \local_jedomi\agent\tool\site_overview_tool::run($args, $role);
 
             case 'ws_search':
                 $query = $args['query'] ?? '';

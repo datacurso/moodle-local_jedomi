@@ -93,6 +93,22 @@ final class system_message_test extends \advanced_testcase {
     }
 
     /**
+     * Admins and managers are told to answer a general summary of the platform from site_overview first;
+     * teachers and students, who do not get the tool, are not.
+     */
+    public function test_platform_overview_instructions_follow_the_role(): void {
+        $this->resetAfterTest();
+
+        foreach (['admin', 'manager'] as $role) {
+            $content = system_message::build($role, [])['content'];
+            $this->assertStringContainsString('call site_overview FIRST', $content, $role);
+        }
+        foreach (['teacher', 'student'] as $role) {
+            $this->assertStringNotContainsString('site_overview', system_message::build($role, [])['content'], $role);
+        }
+    }
+
+    /**
      * MDL-UNIT-047: the agent and preview instructions describe how actions that change data are really handled in those channels.
      * [Pendiente:skip]
      */

@@ -51,7 +51,7 @@ require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/fake_telegram_api_cli
  * - Open (no role gate): describe_table, search_tables, ws_search, ws_describe.
  * - teacher/manager/admin: execute_sql (plus per-course ownership checks).
  * - manager/admin: admin_search, admin_describe, admin_execute,
- *   create_agent, list_agents, delete_agent.
+ *   create_agent, list_agents, delete_agent, site_overview.
  * - admin only: get_site_config; pending actions cache_purge, run_task and
  *   get_config (the latter also restricted to an allowlist of config keys).
  *
@@ -460,6 +460,7 @@ final class webhook_handler_test extends \advanced_testcase {
             'admin_execute (manager+)'    => ['admin_execute', ['setting' => 'x'], 'permission_denied'],
             'create_agent (manager+)'     => ['create_agent', [], 'permission_denied'],
             'list_agents (manager+)'      => ['list_agents', [], 'permission_denied'],
+            'site_overview (manager+)'    => ['site_overview', [], 'permission_denied'],
             'delete_agent (manager+)'     => ['delete_agent', [], 'permission_denied'],
         ];
     }

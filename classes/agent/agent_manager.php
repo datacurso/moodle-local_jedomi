@@ -778,6 +778,7 @@ class agent_manager {
             'search_tables',
             'describe_table',
             'get_site_config',
+            'site_overview',
             'ws_search',
             'ws_describe',
             'admin_search',

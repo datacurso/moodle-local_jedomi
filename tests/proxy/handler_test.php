@@ -703,7 +703,7 @@ final class handler_test extends \advanced_testcase {
 
         $offered = $this->tool_names($fake->calls[0]);
         $studenttools = array_column(array_column(\local_jedomi_get_tool_definitions('student'), 'function'), 'name');
-        foreach (['execute_sql', 'admin_search', 'admin_execute', 'get_site_config'] as $tool) {
+        foreach (['execute_sql', 'admin_search', 'admin_execute', 'get_site_config', 'site_overview'] as $tool) {
             $this->assertNotContains($tool, $offered, "A student must never be offered {$tool}");
         }
         $this->assertEqualsCanonicalizing($studenttools, array_values(array_diff($offered, ['send_messages'])));

@@ -43,6 +43,8 @@ final class prompt_builder {
         'admin_describe' => 'admin_describe(name) — see admin operation details',
         'admin_execute' => 'admin_execute(name, params) — execute admin operation',
         'get_site_config' => 'get_site_config(keys) — read site configuration',
+        'site_overview' => 'site_overview(days?) — the overall state of the platform in ONE call (users, courses,'
+            . ' enrolments, activities, agents, storage); call it FIRST for a general summary',
         'list_agents' => 'list_agents(status?) — list the scheduled AI agents',
         'create_agent' => 'create_agent(prompt, schedule_cron, name?, context_type?, context_id?, enabled?)'
             . ' — create a new AI agent',

@@ -846,6 +846,13 @@ $string['tool_send_messages_desc'] = 'Send a Moodle internal message to one or m
     . 'and do not ask for confirmation in text.';
 $string['tool_send_messages_message'] = 'Plain text of the message, in the user\'s language.';
 $string['tool_send_messages_user_ids'] = 'Moodle user ids of the recipients.';
+$string['tool_site_overview'] = 'Getting the platform overview...';
+$string['tool_site_overview_days'] = 'Days of the activity window used to count recently active users (1-365, default 30).';
+$string['tool_site_overview_desc'] = 'Get in ONE call an overview of the whole platform: site (name, host, '
+    . 'Moodle release, language, time zone, last cron run), users (total, active, suspended, recently active, never logged '
+    . 'in), courses (total, visible, hidden, categories, without a teacher), active enrolments, activities (total and most '
+    . 'used types), scheduled Jedomi agents and file storage. Call it FIRST for a general summary or the overall state of '
+    . 'the platform and answer from it; use other tools only for details it does not give.';
 $string['tool_sql_read'] = 'Querying database...';
 $string['tool_unknown'] = 'Running tool...';
 $string['tool_webservice_lookup'] = 'Looking up API function...';

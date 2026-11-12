@@ -640,7 +640,7 @@ final class lib_test extends \advanced_testcase {
         $common = ['describe_table', 'search_tables', 'ws_describe', 'ws_search'];
         $teacher = array_merge($common, ['document_read', 'execute_sql', 'ws_execute']);
         $manager = array_merge($teacher, ['admin_describe', 'admin_execute', 'admin_search', 'create_agent', 'delete_agent',
-            'list_agents']);
+            'list_agents', 'site_overview']);
         $admin = array_merge($manager, ['get_site_config']);
         // Students also read their own courses, visible grades and assignments; never other users' data.
         $student = array_merge($common, ['my_assignments', 'my_courses', 'my_grades']);

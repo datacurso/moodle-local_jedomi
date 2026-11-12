@@ -84,6 +84,12 @@ class system_message {
         $content .= "2. Try WS first. Only fall back to SQL if WS data is insufficient.\n";
         $content .= "3. Call tools, then answer with real results.\n\n";
 
+        if (\local_jedomi\agent\tool\site_overview_tool::is_offered($role)) {
+            $content .= "PLATFORM OVERVIEW:\n";
+            $content .= "- For a general summary or the overall state of the platform, call site_overview FIRST"
+                . " and answer from it. Use other tools only for details it does not give.\n\n";
+        }
+
         $content .= "DECISION RULE — WS FIRST, SQL SECOND:\n";
         $content .= "- Step 1: ws_search(query in ENGLISH). If a relevant function exists → ws_describe → ws_execute.\n";
         $content .= "- Step 2: Evaluate the WS result. If the data is COMPLETE and answers the question → stop and respond.\n";

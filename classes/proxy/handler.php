@@ -448,6 +448,8 @@ class handler {
                 return self::execute_sql_tool($args, $role);
             case 'get_site_config':
                 return self::get_site_config_tool($args, $role);
+            case \local_jedomi\agent\tool\site_overview_tool::NAME:
+                return \local_jedomi\agent\tool\site_overview_tool::run($args, $role);
             case 'ws_search':
                 return self::ws_search_tool($args, $role);
             case 'ws_describe':
@@ -1054,7 +1056,7 @@ class handler {
             'describe_table' => get_string('summary_table_structure', 'local_jedomi'),
             'search_tables' => ($decoded['count'] ?? count($decoded['tables'] ?? $decoded) ?? 0)
                 . get_string('summary_matching_tables', 'local_jedomi'),
-            'get_site_config' => get_string('summary_config_data', 'local_jedomi'),
+            'get_site_config', 'site_overview' => get_string('summary_config_data', 'local_jedomi'),
             'ws_search'   => count($decoded['results'] ?? []) . get_string('summary_functions_found', 'local_jedomi'),
             'ws_describe' => get_string('summary_function_details', 'local_jedomi'),
             'ws_execute' => get_string('summary_ws_executed', 'local_jedomi'),
