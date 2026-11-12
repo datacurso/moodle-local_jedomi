@@ -521,7 +521,11 @@ class handler {
             ]);
         } catch (\Exception $e) {
             $realerror = $e->getMessage();
-            if ($e instanceof \dml_exception && !empty($e->debuginfo)) {
+            // The query runner wraps the database error in execute_sql_error with the database message as debug info;
+            // the model needs that message (an unknown column, a syntax error) to fix its query instead of guessing.
+            $withdetail = $e instanceof \dml_exception
+                || ($e instanceof \moodle_exception && $e->errorcode === 'execute_sql_error');
+            if ($withdetail && !empty($e->debuginfo)) {
                 $realerror .= ' | DBG: ' . $e->debuginfo;
             }
             $prev = $e->getPrevious();

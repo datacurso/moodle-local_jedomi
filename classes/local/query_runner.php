@@ -102,7 +102,9 @@ class query_runner {
                 (int) ((microtime(true) - $start) * 1000)
             ));
             $code = $istimeout ? 'query_timeout' : 'execute_sql_error';
-            throw new \moodle_exception($code, 'local_jedomi', '', null, $e->getMessage());
+            // The debug info of a database exception holds the database's own message (an unknown column, a syntax
+            // error), which the model needs to fix its query; it is returned to the model, never logged here.
+            throw new \moodle_exception($code, 'local_jedomi', '', null, $e->debuginfo ?: $e->getMessage());
         } catch (\Exception $e) {
             if ($e instanceof \moodle_exception && $e->errorcode === 'sql_construct_rejected') {
                 // A limit that cannot be capped: refused before reaching the database.

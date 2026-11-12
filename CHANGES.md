@@ -17,6 +17,7 @@
 - A document or audio file attached to the web chat is read (and charged) only when the message is sent, as images are: attaching it only shows its chip, removing it before sending makes no request, the reading shows its progress in the input box and an error keeps the file attached; a file type that cannot be read is refused at once
 - A companion request whose signature cannot be checked against the used signatures (the cache lock is not available or the cache fails) is still refused as unauthorized, and is now logged as `replay_store_unavailable` instead of `replayed_signature` or a server error
 - After upgrading, reload the browser tabs that already have the Jedomi panel open: an old panel does not send the course of its page, so its chat queries on course pages are refused until the page is reloaded
+- A failed database query of the web chat or the agents tells the AI the database's own message again (for example an unknown column), as Telegram does, so it fixes the query in one more step instead of retrying blindly and spending several AI requests on the same question
 
 ### Security
 
