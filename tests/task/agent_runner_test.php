@@ -682,12 +682,14 @@ final class agent_runner_test extends \advanced_testcase {
     }
 
     /**
-     * MDL-INT-043: the row and time limits of the queries are the same in every channel and are really applied.
+     * MDL-UNIT-120: the description of the query given to the AI in Telegram and in the agents tells the limits that
+     * are really applied there, and the parameters offered to an agent are applied or not offered.
      * [Pendiente:skip]
      */
-    public function test_query_limits_are_consistent_and_applied(): void {
-        $this->markTestSkipped('Pending fix: the row limits differ by channel, the time limit is not applied and the '
-            . 'query parameters are ignored in agents.');
+    public function test_ai_is_told_the_real_query_limits_of_its_channel(): void {
+        $this->markTestSkipped('Pending fix: Telegram and the agents get the query description of the web chat (its row '
+            . 'and time limits and a parameters field), while Telegram applies fewer rows and the agents apply larger '
+            . 'limits and ignore the parameters.');
     }
 
     /**

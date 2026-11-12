@@ -385,7 +385,10 @@ final class sql_guard_test extends \advanced_testcase {
                 'sql_function_rejected'],
             'user variable' => ['SELECT @a FROM {course} c WHERE c.id = OWN', [], $rejected],
             'unknown function' => ['SELECT CONCAT(c.fullname, c.shortname) FROM {course} c WHERE c.id = OWN', [], $rejected],
-            'keyword without parentheses' => ['SELECT CURRENT_USER FROM {course} c WHERE c.id = OWN', [], $rejected],
+            // CURRENT_USER is a server information function, refused for every user before the grammar is checked.
+            'server keyword without parentheses' => ['SELECT CURRENT_USER FROM {course} c WHERE c.id = OWN', [],
+                'sql_function_rejected'],
+            'keyword without parentheses' => ['SELECT CURRENT_DATE FROM {course} c WHERE c.id = OWN', [], $rejected],
             'unknown column' => ['SELECT c.nosuchcolumn FROM {course} c WHERE c.id = OWN', [], $rejected],
             'USING' => ['SELECT c.id FROM {course} c JOIN {enrol} e USING (id) WHERE c.id = OWN', [], $rejected],
             'NATURAL JOIN' => ['SELECT c.id FROM {course} c NATURAL JOIN {enrol} e WHERE c.id = OWN', [], $rejected],
@@ -608,8 +611,8 @@ final class sql_guard_test extends \advanced_testcase {
     }
 
     /**
-     * Columns of any table whose names show they hold a credential or a secret are rejected for every user, also
-     * administrators, and left out of the rows of a query reading every column.
+     * MDL-UNIT-020: columns of any table whose names show they hold a credential or a secret are rejected for every
+     * user, also administrators, and left out of the rows of a query reading every column.
      *
      * @dataProvider secret_column_provider
      * @param string $column Column.
@@ -636,8 +639,9 @@ final class sql_guard_test extends \advanced_testcase {
     }
 
     /**
-     * Columns that only look like secrets (token counters of the AI actions, a flag telling whether a password is used,
-     * the type or the address of a token, versions) stay readable for administrators and are kept in the rows.
+     * MDL-UNIT-020: columns that only look like secrets (token counters of the AI actions, a flag telling whether a
+     * password is used, the type or the address of a token, versions) stay readable for administrators and are kept in
+     * the rows.
      */
     public function test_harmless_columns_named_like_secrets_stay_allowed(): void {
         $this->resetAfterTest();

@@ -268,8 +268,8 @@ final class speech_service_test extends \advanced_testcase {
     }
 
     /**
-     * MDL-INT-110: above the per-minute limit the speech is refused, covering the request at the limit and the next one.
-     * V7: above the per-minute limit of the user the request is refused without calling the AI.
+     * MDL-INT-110: above the per-minute limit the speech is refused, covering the request at the limit and the next
+     * one. V7: above the per-minute limit of the user the request is refused without calling the AI.
      *
      * @return void
      */
@@ -336,8 +336,8 @@ final class speech_service_test extends \advanced_testcase {
     }
 
     /**
-     * The per-minute counter of a user is read and written under a lock of that user, so parallel requests (the
-     * session lock is released) cannot read the same count; sequential requests still stop at the limit.
+     * MDL-INT-110: the per-minute counter of a user is read and written under a lock of that user, so parallel requests
+     * (the session lock is released) cannot read the same count; sequential requests still stop at the limit.
      *
      * @return void
      */
@@ -362,7 +362,8 @@ final class speech_service_test extends \advanced_testcase {
     }
 
     /**
-     * When the lock of the counter cannot be taken the request is refused as rate limited, never let through.
+     * MDL-INT-110: when the lock of the counter cannot be taken the request is refused as rate limited, never let
+     * through.
      *
      * @return void
      */
@@ -376,7 +377,8 @@ final class speech_service_test extends \advanced_testcase {
     }
 
     /**
-     * A failed login check of speech.php (require_login) answers the JSON error the sidebar reads, never an HTML page.
+     * MDL-INT-110: a failed login check of speech.php (require_login) answers the JSON error the sidebar reads, never
+     * an HTML page.
      *
      * @return void
      */
@@ -494,9 +496,9 @@ final class speech_service_test extends \advanced_testcase {
     }
 
     /**
-     * The text read aloud is anonymised with the level of the Privacy tab before it leaves the site, and the
-     * placeholders are spoken as plain words.
-     * Basic level: the name and e-mail of a site user never reach the AI service; the grade is kept.
+     * MDL-INT-117: the text read aloud is anonymised with the level of the Privacy tab before it leaves the site, and
+     * the placeholders are spoken as plain words. Basic level: the name and e-mail of a site user never reach the AI
+     * service; the grade is kept.
      *
      * @return void
      */
@@ -522,7 +524,7 @@ final class speech_service_test extends \advanced_testcase {
     }
 
     /**
-     * Strict level: names, e-mails and codes such as student numbers are spoken as plain words.
+     * MDL-INT-117: Strict level: names, e-mails and codes such as student numbers are spoken as plain words.
      *
      * @return void
      */
@@ -543,7 +545,7 @@ final class speech_service_test extends \advanced_testcase {
     }
 
     /**
-     * Feedback only level: what is sent to the AI service is anonymised as with the Basic level.
+     * MDL-INT-117: Feedback only level: what is sent to the AI service is anonymised as with the Basic level.
      *
      * @return void
      */
@@ -563,7 +565,7 @@ final class speech_service_test extends \advanced_testcase {
     }
 
     /**
-     * A text without personal data is read exactly as written at every level.
+     * MDL-INT-117: A text without personal data is read exactly as written at every level.
      *
      * @return void
      */
@@ -581,7 +583,7 @@ final class speech_service_test extends \advanced_testcase {
     }
 
     /**
-     * Only the spoken text is anonymised: the answer shown in the chat still gets the real values back.
+     * MDL-INT-117: Only the spoken text is anonymised: the answer shown in the chat still gets the real values back.
      *
      * @return void
      */
@@ -612,7 +614,7 @@ final class speech_service_test extends \advanced_testcase {
      * @return void
      */
     public function test_user_sees_the_real_reason_of_a_refused_reading(): void {
-        $this->markTestSkipped('Pending fix: the chat always shows the generic message that the answer could not be read '
-            . 'aloud, never the specific reason.');
+        $this->markTestSkipped('Pending fix: the per minute limit, the text too long and the missing credit refusals still '
+            . 'show the generic message that the answer could not be read aloud, not their reason.');
     }
 }

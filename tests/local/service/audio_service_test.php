@@ -97,8 +97,9 @@ final class audio_service_test extends \advanced_testcase {
         global $DB;
         $userid = $this->setup_user();
         $DB->set_field('user', 'lang', 'es_mx', ['id' => $userid]);
-        // A Telegram update has no session of the user.
-        $this->setUser(null);
+        // The recording is transcribed for a user who is not the user of the request (the upload needs a logged-in
+        // user, so the request runs as the administrator): the language of their profile goes with the audio.
+        $this->setAdminUser();
         $curl = new fake_curl();
         $curl->enqueue(json_encode(['text' => 'Hola', 'model' => model_settings::DEFAULT_AUDIO_MODEL, 'duration_seconds' => 1]));
 
@@ -111,8 +112,8 @@ final class audio_service_test extends \advanced_testcase {
     }
 
     /**
-     * On a page of the user the language of the page is used: a language forced by the course, or one chosen for the
-     * session, wins over the language of the profile, still as two letters.
+     * MDL-UNIT-113: on a page of the user the language of the page is used: a language forced by the course, or one
+     * chosen for the session, wins over the language of the profile, still as two letters.
      *
      * @covers \local_jedomi\local\service\audio_service::language_code
      */

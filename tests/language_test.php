@@ -45,7 +45,7 @@ final class language_test extends \basic_testcase {
      * @return void
      */
     public function test_spanish_strings_use_neutral_usted(): void {
-        $this->markTestSkipped('Pending fix: Spanish texts mix voseo, tuteo and usted and use English terms with a Spanish '
-            . 'equivalent.');
+        $this->markTestSkipped('Pending fix: outside Telegram, Spanish texts (settings, panel, AI and agent errors, quick '
+            . 'actions) still mix voseo, tuteo and usted and use English terms with a Spanish equivalent.');
     }
 }

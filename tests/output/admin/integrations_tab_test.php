@@ -206,8 +206,8 @@ final class integrations_tab_test extends \advanced_testcase {
     }
 
     /**
-     * MDL-UNIT-056: the setup guide describes the automatic webhook registration and the real steps, each group and field
-     * has a Telegram title and a name that describes it, and no help mentions retired components.
+     * MDL-UNIT-056: the setup guide describes the automatic webhook registration and the real steps, each group and
+     * field has a Telegram title and a name that describes it, and no help mentions retired components.
      * [Pendiente:skip]
      *
      * @return void
@@ -218,8 +218,8 @@ final class integrations_tab_test extends \advanced_testcase {
     }
 
     /**
-     * MDL-UNIT-087: after a successful registration the webhook box shows the webhook as configured and working, and after
-     * a failed one the last error with its date.
+     * MDL-UNIT-087: after a successful registration the webhook box shows the webhook as configured and working, and
+     * after a failed one the last error with its date.
      * [Pendiente:skip]
      *
      * @return void
@@ -230,8 +230,8 @@ final class integrations_tab_test extends \advanced_testcase {
     }
 
     /**
-     * MDL-INT-014: when the webhook registration fails after saving a valid token, the token is kept and the webhook box
-     * shows the error of the registration with its date.
+     * MDL-INT-014: when the webhook registration fails after saving a valid token, the token is kept and the webhook
+     * box shows the error of the registration with its date.
      */
     public function test_failed_registration_after_saving_a_token_is_shown_with_its_date(): void {
         global $PAGE;
@@ -279,8 +279,8 @@ final class integrations_tab_test extends \advanced_testcase {
     }
 
     /**
-     * The Spanish Telegram texts (settings, guides, bot messages and errors) address the reader formally, as the rest of
-     * the plugin does, without voseo or informal forms.
+     * MDL-UNIT-119: the Spanish Telegram texts (settings, guides, bot messages and errors) address the reader formally,
+     * as the rest of the plugin does, without voseo or informal forms.
      */
     public function test_spanish_telegram_strings_use_the_formal_form(): void {
         $informal = '/\b(?:tu|tus|te|tienes|puedes|estás|tenés|podés|vas a|andá|hacé|usá|guardá|exponé|enviá|intentá|contactá|'

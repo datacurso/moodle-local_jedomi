@@ -192,6 +192,6 @@ final class telegram_profile_test extends \advanced_testcase {
      */
     public function test_link_page_subtitle_is_addressed_to_the_user(): void {
         $this->markTestSkipped('Pending fix: the link page shows the subtitle meant for the administrator about '
-            . 'connecting Jedomi to a Telegram bot, with voseo.');
+            . 'connecting Jedomi to a Telegram bot (now without voseo).');
     }
 }

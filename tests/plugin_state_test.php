@@ -181,7 +181,7 @@ final class plugin_state_test extends \advanced_testcase {
      * @return void
      */
     public function test_features_work_on_every_supported_database(): void {
-        $this->markTestSkipped('Pending fix: the Telegram lock and the agent query time limit only work on MySQL or '
-            . 'MariaDB, the alert and the profiler use non portable SQL and the chat time limit is never applied.');
+        $this->markTestSkipped('Pending fix: the query time limit is not applied on SQL Server and Oracle, the Telegram '
+            . 'lock only works on MySQL or MariaDB and the alert and the profiler use non portable SQL.');
     }
 }

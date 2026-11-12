@@ -55,7 +55,8 @@ final class sql_tool_test extends \advanced_testcase {
     }
 
     /**
-     * On MySQL the agents' query carries its own time limit and row cap and leaves no session variable behind.
+     * MDL-INT-043: on MySQL the agents' query carries its own time limit and row cap and leaves no session variable
+     * behind.
      */
     public function test_mysql_query_is_limited_without_a_session_variable(): void {
         $this->resetAfterTest();
@@ -69,7 +70,7 @@ final class sql_tool_test extends \advanced_testcase {
     }
 
     /**
-     * On MariaDB the agents' query is prefixed with its own statement time limit.
+     * MDL-INT-043: On MariaDB the agents' query is prefixed with its own statement time limit.
      */
     public function test_mariadb_query_gets_the_statement_time_limit(): void {
         $this->resetAfterTest();
@@ -81,7 +82,7 @@ final class sql_tool_test extends \advanced_testcase {
     }
 
     /**
-     * A query stopped by the time limit is reported as a timeout.
+     * MDL-INT-043: A query stopped by the time limit is reported as a timeout.
      */
     public function test_query_stopped_by_the_time_limit_reports_a_timeout(): void {
         $this->resetAfterTest();
@@ -93,7 +94,7 @@ final class sql_tool_test extends \advanced_testcase {
     }
 
     /**
-     * Statements whose time and rows cannot be bounded are refused.
+     * MDL-INT-043: Statements whose time and rows cannot be bounded are refused.
      */
     public function test_statement_without_select_is_refused(): void {
         $this->resetAfterTest();
@@ -105,7 +106,7 @@ final class sql_tool_test extends \advanced_testcase {
     }
 
     /**
-     * On the real database the tool returns the rows and tells whether the cap truncated them.
+     * MDL-INT-043: On the real database the tool returns the rows and tells whether the cap truncated them.
      */
     public function test_real_database_returns_the_rows(): void {
         $this->resetAfterTest();

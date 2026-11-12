@@ -1294,19 +1294,6 @@ final class handler_test extends \advanced_testcase {
     }
 
     /**
-     * SYS-E2E-014: speaking over the confirm on screen notice keeps the wait, an interruption while thinking leaves no
-     * hidden pending action and the wait ends and releases the microphone when the action expires.
-     * [Pendiente:skip]
-     *
-     * @return void
-     */
-    public function test_interruptions_never_skip_the_voice_confirmation_wait(): void {
-        $this->markTestSkipped('Pending fix: speaking over the confirm on screen notice makes Jedomi listen again, an '
-            . 'interrupted request can leave a pending action without its card, and the wait has no '
-            . 'time limit with the microphone open.');
-    }
-
-    /**
      * MDL-INT-095: the server decides the availability with the course of the real page, never with the course the
      * browser presents: requests sent from an excluded course, or from a course not selected in the "show only in the
      * selected courses" mode, that present the site home as their course are refused without calling the AI.

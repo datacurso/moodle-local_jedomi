@@ -51,8 +51,8 @@ class behat_local_jedomi extends behat_base {
     /**
      * Script that answers the chat requests of the panel with the queued answers and captures the export.
      *
-     * Each queued answer is {text, tool, hold}: the tool is announced first, and with hold the stream waits
-     * until the answer is released.
+     * Each queued answer is {text, tool, hold, pending, pendingfirst}: the tool is announced first, and with hold the
+     * stream waits until the answer is released. A pending action is sent with the answer, or at once with pendingfirst.
      */
     private const AI_STUB = <<<'JS'
 (function() {
@@ -84,6 +84,9 @@ class behat_local_jedomi extends behat_base {
                 if (answer.tool) {
                     controller.enqueue(line({_jedomi_tool_executing: {tool: answer.tool, args: {}}}));
                 }
+                if (answer.pending && answer.pendingfirst) {
+                    controller.enqueue(line({_jedomi_pending_action: answer.pending}));
+                }
                 var finish = function() {
                     if (answer.hold && !state.released) {
                         setTimeout(finish, 100);
@@ -96,7 +99,7 @@ class behat_local_jedomi extends behat_base {
                         controller.close();
                         return;
                     }
-                    if (answer.pending) {
+                    if (answer.pending && !answer.pendingfirst) {
                         controller.enqueue(line({_jedomi_pending_action: answer.pending}));
                     }
                     controller.enqueue(line({choices: [{delta: {content: answer.text}}]}));
@@ -751,6 +754,34 @@ JS;
      * @return void
      */
     public function the_jedomi_ai_proposes_an_action(string $text, string $tool, PyStringNode $args): void {
+        $this->queue_answer(['text' => $this->escape($text), 'pending' => $this->hold_action($tool, $args)]);
+    }
+
+    /**
+     * The next answer of the Jedomi AI holds an action that changes data at once and keeps working until released.
+     *
+     * The action is held on the server as in the step above; its confirmation card reaches the panel before the rest
+     * of the answer, as when the chat proxy holds an action while the AI is still writing.
+     *
+     * @Given /^the Jedomi AI works on "(?P<text_string>(?:[^"]|\\")*)" proposing to run "(?P<tool_string>[a-z_]+)" until released with:$/
+     * @param string $text Answer text, given once released.
+     * @param string $tool Tool that changes data.
+     * @param PyStringNode $args Tool arguments as JSON.
+     * @return void
+     */
+    public function the_jedomi_ai_works_proposing_an_action(string $text, string $tool, PyStringNode $args): void {
+        $this->queue_answer(['text' => $this->escape($text), 'pending' => $this->hold_action($tool, $args),
+            'pendingfirst' => true, 'hold' => true]);
+    }
+
+    /**
+     * Hold an action that changes data for the user of the session and return its confirmation card.
+     *
+     * @param string $tool Tool that changes data.
+     * @param PyStringNode $args Tool arguments as JSON, with %course:SHORTNAME%, %user:USERNAME% and %agent:NAME%.
+     * @return array Confirmation card.
+     */
+    protected function hold_action(string $tool, PyStringNode $args): array {
         $raw = preg_replace_callback('/%(course|user|agent):([^%]+)%/', function (array $m): string {
             global $DB;
             [$table, $field] = match ($m[1]) {
@@ -768,7 +799,7 @@ JS;
         if ($card === null) {
             throw new ExpectationException("The tool {$tool} does not need a confirmation.", $this->getSession());
         }
-        $this->queue_answer(['text' => $this->escape($text), 'pending' => $card]);
+        return $card;
     }
 
     /**

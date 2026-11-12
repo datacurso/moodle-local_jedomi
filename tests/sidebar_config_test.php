@@ -220,13 +220,15 @@ final class sidebar_config_test extends \advanced_testcase {
         }
     }
     /**
-     * MDL-INT-057: the chat permissions are renewed while the Moodle session is active and not after it ends.
+     * MDL-INT-057: the chat permissions are renewed while the Moodle session is active and not after it ends, and no
+     * recording of the voice conversation is transcribed or charged with expired permissions.
      * [Pendiente:skip]
      *
      * @return void
      */
     public function test_chat_permissions_are_renewed_while_the_session_is_active(): void {
         $this->markTestSkipped('Pending fix: the chat permissions expire 30 minutes after loading the page and are never '
-            . 'renewed, also during the voice conversation.');
+            . 'renewed; in the voice conversation the utterance that meets the expiry is still transcribed and charged, '
+            . 'because the transcription does not check the chat permissions.');
     }
 }

@@ -131,7 +131,7 @@ final class document_read_tool_test extends \advanced_testcase {
     }
 
     /**
-     * M8: an error of files/read is returned with its message, without internal details.
+     * MDL-INT-051: M8: an error of files/read is returned with its message, without internal details.
      */
     public function test_service_error_is_returned_with_its_message(): void {
         $cmid = $this->create_module_with_pdf();
@@ -317,8 +317,8 @@ final class document_read_tool_test extends \advanced_testcase {
     }
 
     /**
-     * A student submission or annotated feedback PDF is never read, even by an editing teacher of the course: the tool
-     * reads only the published content of the activity.
+     * MDL-INT-051: a student submission or annotated feedback PDF is never read, even by an editing teacher of the
+     * course: the tool reads only the published content of the activity.
      */
     public function test_submission_and_feedback_pdfs_are_never_returned(): void {
         $course = $this->getDataGenerator()->create_course();
@@ -332,7 +332,7 @@ final class document_read_tool_test extends \advanced_testcase {
     }
 
     /**
-     * The published attachment of an assignment is read even when submission PDFs were stored before it.
+     * MDL-INT-051: The published attachment of an assignment is read even when submission PDFs were stored before it.
      */
     public function test_published_assignment_attachment_is_returned_for_the_editing_teacher(): void {
         $course = $this->getDataGenerator()->create_course();
@@ -348,8 +348,8 @@ final class document_read_tool_test extends \advanced_testcase {
     }
 
     /**
-     * A teacher of course A who is a student of course B never reads a submission of B and reads only the published
-     * content of a visible activity of B.
+     * MDL-INT-051: a teacher of course A who is a student of course B never reads a submission of B and reads only the
+     * published content of a visible activity of B.
      */
     public function test_teacher_elsewhere_reads_only_published_content_where_student(): void {
         $coursea = $this->getDataGenerator()->create_course();
@@ -374,7 +374,7 @@ final class document_read_tool_test extends \advanced_testcase {
     }
 
     /**
-     * A suspended enrolment is refused, even for the published content.
+     * MDL-INT-051: A suspended enrolment is refused, even for the published content.
      */
     public function test_suspended_enrolment_is_refused(): void {
         $cmid = $this->create_module_with_pdf();
@@ -397,7 +397,7 @@ final class document_read_tool_test extends \advanced_testcase {
     }
 
     /**
-     * A hidden course is refused unless the user can view hidden courses.
+     * MDL-INT-051: A hidden course is refused unless the user can view hidden courses.
      */
     public function test_hidden_course_is_refused_unless_the_user_can_view_hidden_courses(): void {
         $course = $this->getDataGenerator()->create_course(['visible' => 0]);
@@ -416,7 +416,7 @@ final class document_read_tool_test extends \advanced_testcase {
     }
 
     /**
-     * An editing teacher can still read the published content of a hidden activity of their course.
+     * MDL-INT-051: An editing teacher can still read the published content of a hidden activity of their course.
      */
     public function test_editing_teacher_reads_the_content_of_a_hidden_activity(): void {
         $cmid = $this->create_module_with_pdf();
@@ -431,7 +431,7 @@ final class document_read_tool_test extends \advanced_testcase {
     }
 
     /**
-     * The main file of a resource is read first, whatever the order the files were stored in.
+     * MDL-INT-051: The main file of a resource is read first, whatever the order the files were stored in.
      */
     public function test_main_file_of_a_resource_is_read_first(): void {
         $course = $this->getDataGenerator()->create_course();

@@ -143,7 +143,8 @@ final class spt_validator_test extends \advanced_testcase {
     }
 
     /**
-     * Fields of the wrong type are rejected with the error of the field, never with a type error (an HTTP 500).
+     * MDL-UNIT-014: fields of the wrong type are rejected with the error of the field, never with a type error (an HTTP
+     * 500).
      *
      * @dataProvider malformed_field_provider
      * @param string $field Field of the permissions.

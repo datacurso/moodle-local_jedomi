@@ -280,10 +280,10 @@ Feature: Voice conversation with Jedomi in the web chat
     And the Jedomi agent "Voice agent" should not exist
     And the Jedomi voice conversation should be listening
 
-  # [Pendiente:fail] When the chat permissions expire the transcription keeps working and being charged while every
-  # answer fails with Session expired, in a loop that only ends when the user leaves. Fails until fixed.
+  # The utterance that meets the expiry is still transcribed (the transcription does not check the chat permissions,
+  # pending in MDL-INT-057); the refusal of its answer ends the conversation, so nothing more is transcribed.
   @MDL-INT-111
-  Scenario: With the chat permissions expired the voice conversation does not keep transcribing
+  Scenario: With the chat permissions expired the voice conversation ends instead of transcribing again
     Given I log in as "student1"
     And I am on homepage
     And I click on "#jedomi-trigger" "css_element"
@@ -292,6 +292,8 @@ Feature: Voice conversation with Jedomi in the web chat
     And I click on "#jedomi-voice-mode-btn" "css_element"
     And I speak to Jedomi for "800" milliseconds
     And "1" Jedomi transcription should have been requested
+    And the Jedomi voice conversation should be closed
+    And the Jedomi microphone should be released and no answer should be playing
     When I speak to Jedomi for "800" milliseconds
     And I wait "3" seconds
     Then "1" Jedomi transcription should have been requested
@@ -310,3 +312,51 @@ Feature: Voice conversation with Jedomi in the web chat
     When I speak to Jedomi for "400" milliseconds
     And I wait "3" seconds
     Then "0" Jedomi transcriptions should have been requested
+
+  @SYS-E2E-014
+  Scenario: Speaking over the confirm on screen notice keeps the wait, and an unresolved wait ends after 60 seconds
+    Given the following Jedomi agents exist:
+      | name           |
+      | Critical agent |
+    And I log in as "admin"
+    And I am on homepage
+    And I click on "#jedomi-trigger" "css_element"
+    And the Jedomi browser has a microphone that grants access
+    And the Jedomi AI answers "I will delete the agent." proposing to run "delete_agent" with:
+      """
+      {"id": %agent:Critical agent%}
+      """
+    And I click on "#jedomi-voice-mode-btn" "css_element"
+    And I speak to Jedomi for "800" milliseconds
+    And the Jedomi voice conversation should be waiting for the confirmation
+    When I speak to Jedomi for "800" milliseconds
+    Then the Jedomi voice conversation should be waiting for the confirmation
+    And "1" Jedomi transcription should have been requested
+    And "//div[contains(@class, 'jedomi-action-pending--critical')]" "xpath_element" should exist
+    And I wait "62" seconds
+    And the Jedomi voice conversation should be closed
+    And the Jedomi microphone should be released and no answer should be playing
+    And the Jedomi agent "Critical agent" should exist
+
+  @SYS-E2E-014
+  Scenario: Speaking while Jedomi thinks an answer that already holds an action keeps its confirmation card
+    Given the following Jedomi agents exist:
+      | name           |
+      | Critical agent |
+    And I log in as "admin"
+    And I am on homepage
+    And I click on "#jedomi-trigger" "css_element"
+    And the Jedomi browser has a microphone that grants access
+    And the Jedomi AI works on "I will delete the agent." proposing to run "delete_agent" until released with:
+      """
+      {"id": %agent:Critical agent%}
+      """
+    And I click on "#jedomi-voice-mode-btn" "css_element"
+    And I speak to Jedomi for "800" milliseconds
+    And the Jedomi voice conversation should be thinking
+    When I speak to Jedomi for "600" milliseconds
+    And the Jedomi AI finishes its answer
+    Then the Jedomi voice conversation should be waiting for the confirmation
+    And "//div[contains(@class, 'jedomi-action-pending--critical')]" "xpath_element" should exist
+    And "1" Jedomi transcription should have been requested
+    And the Jedomi agent "Critical agent" should exist

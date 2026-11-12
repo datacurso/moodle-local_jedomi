@@ -132,7 +132,8 @@ final class execute_sql_test extends \advanced_testcase {
     }
 
     /**
-     * The query reaches the database with the 5 s time limit and the row cap of the web service (100 rows plus one).
+     * MDL-INT-043: the query reaches the database with the 5 s time limit and the row cap of the web service (100 rows
+     * plus one).
      */
     public function test_query_reaches_the_database_with_time_limit_and_row_cap(): void {
         global $CFG, $DB;

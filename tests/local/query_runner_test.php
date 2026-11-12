@@ -50,8 +50,8 @@ final class query_runner_test extends \advanced_testcase {
     }
 
     /**
-     * On MySQL the time limit is an optimizer hint right after the leading SELECT, whatever its case and the
-     * whitespace before it, and the row cap is given to the database.
+     * MDL-UNIT-121: on MySQL the time limit is an optimizer hint right after the leading SELECT, whatever its case and
+     * the whitespace before it, and the row cap is given to the database.
      */
     public function test_mysql_query_gets_the_time_limit_hint_and_the_row_cap(): void {
         $query = query_runner::bounded_query("  \n\tselect id, fullname FROM {course}", 'mysql', 5000, 101);
@@ -61,7 +61,8 @@ final class query_runner_test extends \advanced_testcase {
     }
 
     /**
-     * On MySQL a query with common table expressions gets the hint on its main SELECT, not inside an expression.
+     * MDL-UNIT-121: on MySQL a query with common table expressions gets the hint on its main SELECT, not inside an
+     * expression.
      */
     public function test_mysql_hint_goes_to_the_main_select_of_a_with_query(): void {
         $query = query_runner::bounded_query('WITH c AS (SELECT id FROM {course}) SELECT id FROM c', 'mysql', 30000, 1001);
@@ -73,7 +74,7 @@ final class query_runner_test extends \advanced_testcase {
     }
 
     /**
-     * On MariaDB the time limit is a SET STATEMENT prefix of the query itself, in seconds.
+     * MDL-UNIT-121: On MariaDB the time limit is a SET STATEMENT prefix of the query itself, in seconds.
      */
     public function test_mariadb_query_gets_the_set_statement_prefix(): void {
         $query = query_runner::bounded_query('SELECT id FROM {course}', 'mariadb', 5000, 101);
@@ -83,7 +84,8 @@ final class query_runner_test extends \advanced_testcase {
     }
 
     /**
-     * On PostgreSQL and the databases without a per-query limit the query text is not changed, only the row cap is set.
+     * MDL-UNIT-121: on PostgreSQL and the databases without a per-query limit the query text is not changed, only the
+     * row cap is set.
      *
      * @dataProvider unchanged_variant_provider
      * @param string $variant Database variant.
@@ -105,7 +107,7 @@ final class query_runner_test extends \advanced_testcase {
     }
 
     /**
-     * A LIMIT of the query itself is capped to the rows the runner reads instead of adding a second one.
+     * MDL-UNIT-121: A LIMIT of the query itself is capped to the rows the runner reads instead of adding a second one.
      *
      * @dataProvider own_limit_provider
      * @param string $variant Database variant.
@@ -149,7 +151,7 @@ final class query_runner_test extends \advanced_testcase {
     }
 
     /**
-     * A LIMIT inside a subquery, a string, a quoted name or a comment is not the limit of the query.
+     * MDL-UNIT-121: A LIMIT inside a subquery, a string, a quoted name or a comment is not the limit of the query.
      *
      * @dataProvider inner_limit_provider
      * @param string $sql Query.
@@ -175,8 +177,8 @@ final class query_runner_test extends \advanced_testcase {
     }
 
     /**
-     * A trailing semicolon or comment is removed, so the row cap Moodle appends cannot be commented out or follow the
-     * end of the statement.
+     * MDL-UNIT-121: a trailing semicolon or comment is removed, so the row cap Moodle appends cannot be commented out
+     * or follow the end of the statement.
      *
      * @dataProvider trailing_provider
      * @param string $variant Database variant.
@@ -205,8 +207,8 @@ final class query_runner_test extends \advanced_testcase {
     }
 
     /**
-     * A query that cannot be bounded safely is refused: a limit that is not a number, an unterminated string or
-     * comment, or a statement without a SELECT.
+     * MDL-UNIT-121: a query that cannot be bounded safely is refused: a limit that is not a number, an unterminated
+     * string or comment, or a statement without a SELECT.
      *
      * @dataProvider unbounded_provider
      * @param string $variant Database variant.
@@ -234,7 +236,7 @@ final class query_runner_test extends \advanced_testcase {
     }
 
     /**
-     * On MySQL run() sends the hint and the row cap to the database and sets no session variable.
+     * MDL-INT-043: On MySQL run() sends the hint and the row cap to the database and sets no session variable.
      */
     public function test_run_on_mysql_sends_the_hint_and_the_row_cap(): void {
         $this->resetAfterTest();
@@ -249,7 +251,7 @@ final class query_runner_test extends \advanced_testcase {
     }
 
     /**
-     * On MySQL served by the mysqli driver but reporting a MariaDB server the MariaDB prefix is used.
+     * MDL-INT-043: On MySQL served by the mysqli driver but reporting a MariaDB server the MariaDB prefix is used.
      */
     public function test_run_on_mariadb_sends_the_set_statement_prefix(): void {
         $this->resetAfterTest();
@@ -262,7 +264,8 @@ final class query_runner_test extends \advanced_testcase {
     }
 
     /**
-     * On PostgreSQL the session timeout is set for the query and restored afterwards, also when the query fails.
+     * MDL-INT-043: on PostgreSQL the session timeout is set for the query and restored afterwards, also when the query
+     * fails.
      */
     public function test_run_on_postgres_sets_and_restores_the_statement_timeout(): void {
         $this->resetAfterTest();
@@ -285,7 +288,8 @@ final class query_runner_test extends \advanced_testcase {
     }
 
     /**
-     * A query stopped by the MySQL or MariaDB time limit is reported as a timeout, not as a database error.
+     * MDL-INT-043: a query stopped by the MySQL or MariaDB time limit is reported as a timeout, not as a database
+     * error.
      *
      * @dataProvider timeout_error_provider
      * @param string $vendor Database vendor.
@@ -318,7 +322,7 @@ final class query_runner_test extends \advanced_testcase {
     }
 
     /**
-     * Another database error is not reported as a timeout.
+     * MDL-INT-043: Another database error is not reported as a timeout.
      */
     public function test_other_database_error_is_not_a_timeout(): void {
         $this->resetAfterTest();
@@ -335,7 +339,7 @@ final class query_runner_test extends \advanced_testcase {
     }
 
     /**
-     * A query whose limit cannot be capped is refused before reaching the database.
+     * MDL-INT-043: A query whose limit cannot be capped is refused before reaching the database.
      */
     public function test_run_refuses_a_query_whose_limit_cannot_be_capped(): void {
         $this->resetAfterTest();
@@ -351,7 +355,8 @@ final class query_runner_test extends \advanced_testcase {
     }
 
     /**
-     * On the real database the runner reads one row more than the cap to tell that the result was truncated.
+     * MDL-INT-043: on the real database the runner reads one row more than the cap to tell that the result was
+     * truncated.
      */
     public function test_row_cap_on_the_real_database(): void {
         $this->resetAfterTest();
