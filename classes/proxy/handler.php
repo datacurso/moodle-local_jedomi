@@ -42,6 +42,10 @@ class handler {
     /** @var int Maximum rows a database query returns to the web chat. */
     private const MAX_SQL_ROWS = 100;
 
+    /** @var string[] Locations the panel sends for its page (see getCurrentLocation in amd/src/sidebar.js). */
+    private const PAGE_LOCATIONS = ['course', 'activity', 'grades', 'admin', 'dashboard', 'messages', 'profile', 'calendar',
+        'files', 'unknown'];
+
     /**
      * Refuse the database and web service tools when Jedomi is disabled in the Datacurso AI provider (when installed:
      * without it the chat cannot reach the AI at all).
@@ -72,21 +76,16 @@ class handler {
             return;
         }
 
-        // Same access rules as the panel, applied on the server: guests, unavailable courses and hidden roles
-        // are refused without calling the AI.
+        // The course is the one signed in the permissions. The panel sends the course of its page as the server gave it
+        // (context.course_id); a different one is refused, and a request without it is taken as sent outside a course,
+        // so only permissions signed for the site accept it. The signed course is then checked again on every request
+        // with the same rules as the panel: the user must still be able to enter it, it must be available and the
+        // user must have a visible role. Nothing is sent to the AI otherwise.
         $courseid = (int) ($spt['course_id'] ?? 0);
-        $denied = \local_jedomi_chat_access_error($courseid);
+        $pagecourseid = is_numeric($context['course_id'] ?? null) ? (int) $context['course_id'] : 0;
+        $denied = \local_jedomi_signed_course_error($courseid, $pagecourseid);
         if ($denied !== null) {
             self::send_error($denied);
-            return;
-        }
-
-        // The page context comes from the browser: a course other than the one signed in the permissions is refused.
-        if (isset($context['course_id']) && !\local_jedomi_is_same_course($courseid, (int) $context['course_id'])) {
-            self::send_error([
-                'code' => 'course_mismatch',
-                'message' => get_string('chat_error_course_mismatch', 'local_jedomi'),
-            ]);
             return;
         }
 
@@ -115,15 +114,31 @@ class handler {
     /**
      * Page context sent by the browser with its free texts anonymised, before they are written in the system message.
      *
-     * The title of the page can name a person (a profile, a grade report of a user). The instructions of the system
-     * message are never anonymised: only these texts of the browser are.
+     * The title of the page can name a person (a profile, a grade report of a user), and so can the file name in the
+     * path of the page. The address keeps only its path: the query string and the fragment (ids, searches, names) are
+     * never sent. The instructions of the system message are never anonymised: only these texts of the browser are.
+     * The location and the activity type are names, not free text: a location the panel does not use becomes
+     * "unknown", an activity type that is not a plugin name is dropped, and the activity id is a number.
      *
      * @param array $context Page context sent by the browser.
      * @param \local_jedomi\local\anonymizer $anonymizer Anonymiser of the request.
      * @return array Context with the same keys.
      */
     private static function anonymize_context(array $context, \local_jedomi\local\anonymizer $anonymizer): array {
-        foreach (['page_title', 'course_name'] as $key) {
+        if (isset($context['page_url']) && is_string($context['page_url'])) {
+            $context['page_url'] = system_message::page_path($context['page_url']);
+        }
+        if (array_key_exists('location', $context) && !in_array($context['location'], self::PAGE_LOCATIONS, true)) {
+            $context['location'] = 'unknown';
+        }
+        if (isset($context['activity_type'])) {
+            $type = $context['activity_type'];
+            $context['activity_type'] = is_string($type) && preg_match('/^[a-z][a-z0-9_]{0,39}$/', $type) ? $type : '';
+        }
+        if (isset($context['activity_id'])) {
+            $context['activity_id'] = is_numeric($context['activity_id']) ? (int) $context['activity_id'] : 0;
+        }
+        foreach (['page_title', 'course_name', 'page_url'] as $key) {
             if (isset($context[$key]) && is_string($context[$key])) {
                 $context[$key] = $anonymizer->anonymize_text($context[$key]);
             }

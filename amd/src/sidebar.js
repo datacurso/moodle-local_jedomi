@@ -425,13 +425,18 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
     // Signed permissions of the panel: the server takes the course of the request from them, and applies the course
     // availability and role visibility to it.
     const _signedPermissions = () => JSON.stringify(cfg.spt || {});
+    // Course of the page the panel is on, as the server gave it with the configuration (0 outside a course). It is sent
+    // with every request: the server refuses it when it is not the course signed in the permissions. It is never read
+    // from the address, whose id is not a course on the pages of activities, profiles and others.
+    const _pageCourseId = () => parseInt(cfg.context?.course_id, 10) || 0;
 
     const _loadConversationFromServer = async () => {
         try {
             const r = await fetch(_convUrl(), {
                 method: 'POST',
                 credentials: 'same-origin',
-                body: new URLSearchParams({action: 'get', sesskey: M?.cfg?.sesskey || '', spt: _signedPermissions()}),
+                body: new URLSearchParams({action: 'get', sesskey: M?.cfg?.sesskey || '', spt: _signedPermissions(),
+                    courseid: String(_pageCourseId())}),
             });
             const d = await r.json();
             if (d.ok && Array.isArray(d.messages) && d.messages.length > 0) {
@@ -450,6 +455,7 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
             role:    last.role,
             content: last.content,
             spt:     _signedPermissions(),
+            courseid: String(_pageCourseId()),
         });
         fetch(_convUrl(), {
             method: 'POST',
@@ -465,6 +471,7 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
             action:  'clear',
             sesskey: M?.cfg?.sesskey || '',
             spt:     _signedPermissions(),
+            courseid: String(_pageCourseId()),
         });
         fetch(_convUrl(), { method: 'POST', credentials: 'same-origin', body }).catch(() => {});
         // New session after clearing.
@@ -1030,6 +1037,7 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
             sesskey:  cfg.sesskey,
             context:  {
                 ...cfg.context,
+                course_id:  _pageCourseId(),
                 page_url:   window.location.href,
                 page_title: document.title.replace(/\s*[|\-]\s*Moodle.*$/i, '').trim(),
                 location:   getCurrentLocation(),
@@ -1118,6 +1126,7 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
             sesskey:  cfg.sesskey,
             context:  {
                 ...cfg.context,
+                course_id:  _pageCourseId(),
                 page_url:   window.location.href,
                 page_title: document.title.replace(/\s*[|\-]\s*Moodle.*$/i, '').trim(),
                 location:   getCurrentLocation(),
@@ -1476,6 +1485,7 @@ GENERAL INSTRUCTIONS:
         formData.append('file', file);
         formData.append('sesskey', cfg.sesskey || '');
         formData.append('spt', _signedPermissions());
+        formData.append('courseid', String(_pageCourseId()));
         Object.entries(fields).forEach(([name, value]) => formData.append(name, value));
 
         const res = await fetch(url, {

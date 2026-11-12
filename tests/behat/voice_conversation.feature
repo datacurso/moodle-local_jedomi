@@ -76,7 +76,7 @@ Feature: Voice conversation with Jedomi in the web chat
     And the Jedomi voice conversation should be thinking
     And "1" Jedomi transcription should have been requested
 
-  @MDL-UNIT-114
+  @MDL-UNIT-122
   Scenario: After a short first part, the next sentences are read aloud in fewer, longer pieces
     Given I log in as "student1"
     And I am on homepage
@@ -95,6 +95,7 @@ Feature: Voice conversation with Jedomi in the web chat
     And Jedomi should have sent "3" texts to be read aloud
     And I should see "Hello Sam. Your essay is due on Friday. The quiz opens on Monday." in the "#jedomi-messages" "css_element"
 
+  @MDL-UNIT-114
   Scenario: Only the speakable text is read aloud, with a short first part, and the full answer stays in the chat
     Given I log in as "student1"
     And I am on homepage

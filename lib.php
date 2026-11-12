@@ -574,12 +574,38 @@ function local_jedomi_signed_request_course($spt, ?int $requestcourseid): array 
     }
 
     $courseid = (int) ($spt['course_id'] ?? 0);
-    if ($requestcourseid !== null && !local_jedomi_is_same_course($courseid, $requestcourseid)) {
-        return ['courseid' => $courseid, 'error' => ['code' => 'course_mismatch',
-            'message' => get_string('chat_error_course_mismatch', 'local_jedomi')]];
+    return ['courseid' => $courseid, 'error' => local_jedomi_signed_course_error($courseid, $requestcourseid)];
+}
+
+/**
+ * Course of a chat request read from its parameters: the signed permissions (spt, JSON) and the course of the page
+ * the panel is on (courseid, optional).
+ *
+ * The same check as {@see local_jedomi_signed_request_course()}, for the endpoints that receive their fields as
+ * request parameters (history, attachments).
+ *
+ * @return array ['courseid' => int, 'error' => array|null], the error with keys code and message.
+ */
+function local_jedomi_request_signed_course(): array {
+    return local_jedomi_signed_request_course(
+        json_decode(optional_param('spt', '', PARAM_RAW), true),
+        optional_param('courseid', null, PARAM_INT)
+    );
+}
+
+/**
+ * Error for the course signed in some already validated chat permissions: a different course of the page, a course
+ * the user cannot enter any more, or the access rules of the panel.
+ *
+ * @param int $signedcourseid Course signed in the permissions (0 or the site course outside a course).
+ * @param int|null $requestcourseid Course of the page sent by the browser, or null when none is compared.
+ * @return array|null ['code' => ..., 'message' => ...], or null when the request is allowed.
+ */
+function local_jedomi_signed_course_error(int $signedcourseid, ?int $requestcourseid): ?array {
+    if ($requestcourseid !== null && !local_jedomi_is_same_course($signedcourseid, $requestcourseid)) {
+        return ['code' => 'course_mismatch', 'message' => get_string('chat_error_course_mismatch', 'local_jedomi')];
     }
-    $error = local_jedomi_course_request_error($courseid) ?? local_jedomi_chat_access_error($courseid);
-    return ['courseid' => $courseid, 'error' => $error];
+    return local_jedomi_course_request_error($signedcourseid) ?? local_jedomi_chat_access_error($signedcourseid);
 }
 
 /**

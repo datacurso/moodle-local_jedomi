@@ -639,12 +639,13 @@ final class settings_extension_test extends \advanced_testcase {
     }
 
     /**
-     * MDL-UNIT-104 / MDL-UNIT-105: with the voice off an unlisted model or voice is saved as the default one.
+     * MDL-UNIT-104 / MDL-UNIT-105: with the voice off an unlisted speech model is saved as the default model, and a
+     * voice that is not one of the default model (Vivian) is saved as its default voice, Rafael.
      * V5: with the switch off, an unlisted model or voice is saved as the default one (unlisted → default).
      *
      * @return void
      */
-    public function test_save_with_voice_off_keeps_a_valid_model_and_voice(): void {
+    public function test_save_with_voice_off_replaces_an_unlisted_model_and_voice_with_the_defaults(): void {
         $this->resetAfterTest();
 
         (new settings_extension())->save((object) $this->valid_data([

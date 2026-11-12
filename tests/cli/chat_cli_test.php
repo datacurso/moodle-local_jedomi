@@ -45,9 +45,10 @@ final class chat_cli_test extends \advanced_testcase {
      *
      * @param string $tool Tool the AI calls.
      * @param array $args Arguments of the tool.
+     * @param string $input What the user types: by default the question, a "no" to any confirmation and exit.
      * @return string Everything the console printed.
      */
-    private function ask_the_console(string $tool, array $args): string {
+    private function ask_the_console(string $tool, array $args, string $input = "Please do it\nno\nexit\n"): string {
         global $CFG;
         if (!class_exists(\aiprovider_datacurso\httpclient\ai_services_api::class)) {
             $this->markTestSkipped('aiprovider_datacurso is not installed; the console checks the plugin state through it.');
@@ -58,8 +59,8 @@ final class chat_cli_test extends \advanced_testcase {
         $command = escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($runner) . ' ' . escapeshellarg(json_encode($toolcalls));
         $process = proc_open($command, [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['redirect', 1]], $pipes);
         $this->assertIsResource($process);
-        // The user asks, does not answer any confirmation request with a yes, and leaves.
-        fwrite($pipes[0], "Please do it\nno\nexit\n");
+        // The input is closed after it: an unanswered question reads the end of the input.
+        fwrite($pipes[0], $input);
         fclose($pipes[0]);
         $output = (string) stream_get_contents($pipes[1]);
         fclose($pipes[1]);
@@ -86,7 +87,51 @@ final class chat_cli_test extends \advanced_testcase {
             $DB->count_records('local_jedomi_agents'),
             'Without a confirmation the console must not create the agent. Output: ' . $output
         );
-        $this->assertMatchesRegularExpression('/confirm|"yes"/i', $output, 'The console must ask for a confirmation');
+        $this->assertStringContainsString(
+            'Type "yes" to run it, anything else to cancel:',
+            $output,
+            'The console must ask for a confirmation'
+        );
+        $this->assertStringContainsString('Cancelled.', $output);
+        $this->assertStringContainsString('The operator cancelled this action; it was not run.', $output);
+    }
+
+    /**
+     * MDL-INT-093: an explicit "yes" runs the action, and the confirmation shows every argument, never a cut of them.
+     *
+     * @return void
+     */
+    public function test_console_runs_the_action_after_an_explicit_yes(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $prompt = str_repeat('Summarise the activity of the week. ', 20) . 'END-OF-PROMPT-MARKER';
+
+        $output = $this->ask_the_console('create_agent', ['name' => 'Console agent', 'prompt' => $prompt,
+            'schedule_cron' => '0 8 * * *'], "Please do it\nyes\nexit\n");
+
+        $this->assertStringContainsString('Confirmed.', $output, $output);
+        $this->assertStringContainsString('END-OF-PROMPT-MARKER', $output, 'The whole arguments are shown before confirming');
+        $this->assertSame(1, $DB->count_records('local_jedomi_agents'), 'The confirmed action runs. Output: ' . $output);
+        $prompts = $DB->get_fieldset_select('local_jedomi_agents', 'prompt', '');
+        $this->assertSame([$prompt], $prompts, 'It runs with the arguments shown');
+    }
+
+    /**
+     * MDL-INT-093: a closed input (the end of the input instead of an answer) cancels the action, and the AI gets the
+     * result of the cancelled action.
+     *
+     * @return void
+     */
+    public function test_console_with_a_closed_input_cancels_the_action(): void {
+        global $DB;
+        $this->resetAfterTest();
+
+        $output = $this->ask_the_console('create_agent', ['name' => 'Console agent', 'prompt' => 'Daily summary',
+            'schedule_cron' => '0 8 * * *'], "Please do it\n");
+
+        $this->assertStringContainsString('Cancelled.', $output, $output);
+        $this->assertStringContainsString('The operator cancelled this action; it was not run.', $output);
+        $this->assertSame(0, $DB->count_records('local_jedomi_agents'), 'Nothing runs without an answer. Output: ' . $output);
     }
 
     /**

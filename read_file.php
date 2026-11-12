@@ -58,10 +58,7 @@ if ($disabled !== null) {
 
 // Same access rules as the panel: guests, an unavailable course or hidden roles are refused. The course is the one
 // signed in the permissions of the panel, never the course the browser names (a different one is refused).
-$signed = local_jedomi_signed_request_course(
-    json_decode(optional_param('spt', '', PARAM_RAW), true),
-    optional_param('courseid', null, PARAM_INT)
-);
+$signed = local_jedomi_request_signed_course();
 if ($signed['error'] !== null) {
     local_jedomi_read_file_error(403, $signed['error']);
 }

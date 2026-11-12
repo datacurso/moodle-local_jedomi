@@ -123,7 +123,8 @@ final class handler_eval_test extends \advanced_testcase {
         });
         try {
             handler::run_from_request(
-                array_merge(['messages' => [['role' => 'user', 'content' => $question]], 'context' => []], $extra),
+                array_merge(['messages' => [['role' => 'user', 'content' => $question]],
+                    'context' => ['course_id' => (int) $spt['course_id']]], $extra),
                 $role,
                 $spt,
                 (int) $user->id

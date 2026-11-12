@@ -61,10 +61,7 @@ if ($disabled !== null) {
 
 // Same access rules as the panel, for the course signed in the permissions of the panel (never the course the
 // browser names: a different one is refused).
-$signed = local_jedomi_signed_request_course(
-    json_decode(optional_param('spt', '', PARAM_RAW), true),
-    optional_param('courseid', null, PARAM_INT)
-);
+$signed = local_jedomi_request_signed_course();
 $denied = $signed['error'];
 if ($denied !== null) {
     header('Content-Type: application/json; charset=utf-8');

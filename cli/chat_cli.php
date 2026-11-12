@@ -157,7 +157,8 @@ function execute_tool(string $name, array $args): string {
  */
 function confirm_tool(string $name, array $args, string $severity): bool {
     echo "  \e[1;31m⚠️  {$name} changes data (severity: {$severity}).\e[0m\n";
-    echo "  Arguments: " . mb_substr(json_encode($args, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), 0, 500) . "\n";
+    // Every argument is shown, never a cut: the operator confirms exactly what runs.
+    echo "  Arguments:\n" . json_encode($args, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n";
     echo "  Type \"yes\" to run it, anything else to cancel: ";
     $answer = readline();
     $confirmed = $answer !== false && strtolower(trim($answer)) === 'yes';

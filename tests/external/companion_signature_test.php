@@ -406,4 +406,35 @@ final class companion_signature_test extends \advanced_testcase {
         $this->assertStringContainsString('reason=replayed_signature', $log);
         $this->assertStringNotContainsString($signature, $log);
     }
+
+    /**
+     * MDL-INT-108: when the record of the used signatures cannot be checked (its lock is not available or the cache
+     * fails) a valid request is still refused without revealing the reason, and it is logged as an unavailable record,
+     * not as a replay.
+     *
+     * @return void
+     */
+    public function test_unavailable_signature_record_is_refused_and_logged_with_its_own_reason(): void {
+        $nolock = $this->createMock(\cache_application::class);
+        $nolock->method('acquire_lock')->willReturn(false);
+        $failing = $this->createMock(\cache_application::class);
+        $failing->method('acquire_lock')->willThrowException(new \cache_exception('ex_unabletolock'));
+
+        foreach (['lock not available' => $nolock, 'cache failure' => $failing] as $case => $store) {
+            @unlink($this->logfile());
+            $now = time();
+            $hash = self::payload_hash(['sql' => self::SQL, 'params' => []]);
+            execute_sql::set_signature_store_for_testing($store);
+            try {
+                $outcome = $this->outcome(fn() => $this->query(self::sign('jedomi_execute_sql', $now, $hash), $now, $hash));
+            } finally {
+                execute_sql::set_signature_store_for_testing(null);
+            }
+
+            $this->assertSame('unauthorized', $outcome, "{$case}: the request must be refused");
+            $log = file_get_contents($this->logfile());
+            $this->assertStringContainsString('reason=replay_store_unavailable', $log, $case);
+            $this->assertStringNotContainsString('reason=replayed_signature', $log, $case);
+        }
+    }
 }

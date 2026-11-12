@@ -31,6 +31,8 @@ require_once($CFG->dirroot . '/local/jedomi/lib.php');
  * @covers     ::local_jedomi_course_request_error
  * @covers     ::local_jedomi_signed_request_course
  * @covers     ::local_jedomi_is_same_course
+ * @covers     ::local_jedomi_request_signed_course
+ * @covers     ::local_jedomi_signed_course_error
  */
 final class course_request_test extends \advanced_testcase {
     /**
@@ -160,5 +162,74 @@ final class course_request_test extends \advanced_testcase {
         $manual->unenrol_user($instance, (int) $student->id);
 
         $this->assertSame('course_access_denied', \local_jedomi_signed_request_course($spt, null)['error']['code']);
+    }
+
+    /**
+     * MDL-INT-095: the history and attachment endpoints read the permissions (spt) and the course of the page
+     * (courseid) from their request parameters, with the same outcome as the shared check.
+     *
+     * @return void
+     */
+    public function test_request_parameters_are_checked_like_the_signed_course(): void {
+        $this->resetAfterTest();
+        $gen = $this->getDataGenerator();
+        $own = $gen->create_course();
+        $other = $gen->create_course();
+        $student = $gen->create_and_enrol($own, 'student');
+        $this->setUser($student);
+        $spt = $this->permissions_on_page($own);
+        $cases = [
+            'signed course' => [json_encode($spt), (int) $own->id, null],
+            'no course sent' => [json_encode($spt), null, null],
+            'another course' => [json_encode($spt), (int) $other->id, 'course_mismatch'],
+            'no permissions' => [null, (int) $own->id, 'invalid_spt'],
+            'not JSON' => ['not json', null, 'invalid_spt'],
+        ];
+
+        try {
+            foreach ($cases as $case => [$sptparam, $courseparam, $expected]) {
+                $_POST = [];
+                if ($sptparam !== null) {
+                    $_POST['spt'] = $sptparam;
+                }
+                if ($courseparam !== null) {
+                    $_POST['courseid'] = (string) $courseparam;
+                }
+                $decoded = $sptparam === null ? null : json_decode($sptparam, true);
+
+                $result = \local_jedomi_request_signed_course();
+
+                $this->assertSame(\local_jedomi_signed_request_course($decoded, $courseparam), $result, $case);
+                $this->assertSame($expected, $result['error']['code'] ?? null, $case);
+            }
+        } finally {
+            $_POST = [];
+        }
+    }
+
+    /**
+     * MDL-INT-095: for permissions already validated, a different course of the page is refused before the access
+     * rules, and the signed course is checked again with them.
+     *
+     * @return void
+     */
+    public function test_signed_course_error_checks_the_page_and_the_access_again(): void {
+        $this->resetAfterTest();
+        $gen = $this->getDataGenerator();
+        $own = $gen->create_course();
+        $other = $gen->create_course();
+        $student = $gen->create_and_enrol($own, 'student');
+        $this->setUser($student);
+
+        $this->assertNull(\local_jedomi_signed_course_error((int) $own->id, (int) $own->id));
+        $this->assertNull(\local_jedomi_signed_course_error((int) $own->id, null), 'No course of the page to compare');
+        $this->assertNull(\local_jedomi_signed_course_error(SITEID, 0), 'The site home and no course are the same place');
+        $this->assertSame('course_mismatch', \local_jedomi_signed_course_error((int) $own->id, 0)['code']);
+        $this->assertSame('course_mismatch', \local_jedomi_signed_course_error((int) $other->id, SITEID)['code']);
+        $this->assertSame(
+            'course_access_denied',
+            \local_jedomi_signed_course_error((int) $other->id, (int) $other->id)['code'],
+            'A signed course the user cannot enter is refused'
+        );
     }
 }

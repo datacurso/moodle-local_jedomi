@@ -47,7 +47,7 @@ class system_message {
         $courseid  = $spt['course_id'] ?? 0;
         $coursename = $context['course_name'] ?? '';
         $location   = $context['location'] ?? 'unknown';
-        $pageurl    = $context['page_url'] ?? '';
+        $pageurl    = self::page_path((string) ($context['page_url'] ?? ''));
         $pagetitle  = $context['page_title'] ?? '';
         $output     = $context['output'] ?? 'web';  // Either web or telegram.
 
@@ -187,7 +187,7 @@ class system_message {
         $content .= isset($loclabels[$location]) ? "- {$loclabels[$location]}\n" : '';
 
         // Add activity cmid when available.
-        $cmid = $context['activity_id'] ?? 0;
+        $cmid = (int) ($context['activity_id'] ?? 0);
         if ($cmid > 0) {
             $content .= "- Activity cmid: {$cmid}\n";
         }
@@ -195,5 +195,27 @@ class system_message {
         $content .= "- User role: {$role}\n";
 
         return ['role' => 'system', 'content' => $content];
+    }
+
+    /**
+     * Path of a page address, without its query string and fragment, relative to the site when it is on the site.
+     *
+     * The query string and the fragment can carry ids, searches or names, so they are never sent to the AI.
+     *
+     * @param string $url Page address, absolute or relative; '' for none.
+     * @return string Path such as "/course/view.php", or '' for none.
+     */
+    public static function page_path(string $url): string {
+        global $CFG;
+
+        $url = preg_replace('/[?#].*$/s', '', trim($url));
+        if ($url === '') {
+            return '';
+        }
+        if (strpos($url, $CFG->wwwroot . '/') === 0) {
+            return substr($url, strlen($CFG->wwwroot));
+        }
+        $path = parse_url($url, PHP_URL_PATH);
+        return is_string($path) ? $path : '';
     }
 }

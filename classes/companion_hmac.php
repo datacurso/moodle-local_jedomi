@@ -46,6 +46,9 @@ require_once(__DIR__ . '/../lib.php');
  * Provides HMAC-SHA256 request authentication helpers for CompanionWS external functions.
  */
 trait companion_hmac {
+    /** @var \cache_application|null Record of the used signatures set by the tests; null for the plugin cache. */
+    private static $signaturestore = null;
+
     /**
      * Validate the HMAC-SHA256 signature sent by the Jedomi Docker gateway.
      *
@@ -99,11 +102,26 @@ trait companion_hmac {
             throw new \moodle_exception('unauthorized', 'local_jedomi');
         }
 
-        // 6. Each signature runs once: the same request sent again within the margin is a replay.
-        if (!self::consume_signature($signature)) {
-            self::log_hmac_failure($functionname, 'replayed_signature');
+        // 6. Each signature runs once: the same request sent again within the margin is a replay. When the record of the
+        // used signatures cannot be checked the request is refused too, logged with its own reason.
+        $failure = self::consume_signature($signature);
+        if ($failure !== null) {
+            self::log_hmac_failure($functionname, $failure);
             throw new \moodle_exception('unauthorized', 'local_jedomi');
         }
+    }
+
+    /**
+     * Replace the record of the used signatures in the tests, for example with one whose lock is never available.
+     *
+     * @param \cache_application|null $store Record to use; null for the companion_signatures cache of the plugin.
+     * @return void
+     */
+    public static function set_signature_store_for_testing(?\cache_application $store): void {
+        if (!defined('PHPUNIT_TEST') || !PHPUNIT_TEST) {
+            throw new \coding_exception('set_signature_store_for_testing() can only be used in PHPUnit tests.');
+        }
+        self::$signaturestore = $store;
     }
 
     /**
@@ -111,25 +129,38 @@ trait companion_hmac {
      *
      * Only the SHA-256 hash of the signature is kept, in an application cache that outlives the accepted margin of the
      * timestamp, so a replay is detected across requests and web servers sharing the cache. The check and the record
-     * are made under a lock of the cache; when the lock cannot be taken the request is rejected.
+     * are made under a lock of the cache. When the lock cannot be taken or the cache fails the signature cannot be
+     * checked, so the request is rejected (fail closed) with the reason replay_store_unavailable instead of being
+     * taken for a replay.
      *
      * @param  string $signature Valid HMAC-SHA256 hex digest of the request.
-     * @return bool   True when the signature was not used before (it is recorded now), false for a replay.
+     * @return string|null Null when the signature was not used before (it is recorded now); otherwise the reason of
+     *                     the rejection: replayed_signature or replay_store_unavailable.
      */
-    private static function consume_signature(string $signature): bool {
-        $cache = \cache::make('local_jedomi', 'companion_signatures');
+    private static function consume_signature(string $signature): ?string {
         $key = hash('sha256', $signature);
-        if (!$cache->acquire_lock($key)) {
-            return false;
+        try {
+            $cache = self::$signaturestore ?? \cache::make('local_jedomi', 'companion_signatures');
+            if (!$cache->acquire_lock($key)) {
+                return 'replay_store_unavailable';
+            }
+        } catch (\Exception $e) {
+            return 'replay_store_unavailable';
         }
         try {
             if ($cache->get($key) !== false) {
-                return false;
+                return 'replayed_signature';
             }
-            $cache->set($key, time());
-            return true;
+            return $cache->set($key, time()) ? null : 'replay_store_unavailable';
+        } catch (\Exception $e) {
+            return 'replay_store_unavailable';
         } finally {
-            $cache->release_lock($key);
+            try {
+                $cache->release_lock($key);
+            } catch (\Exception $e) {
+                // The lock expires by itself; the outcome of the check is kept.
+                debugging('local_jedomi: the lock of a companion signature could not be released.', DEBUG_DEVELOPER);
+            }
         }
     }
 
