@@ -597,6 +597,15 @@ function local_jedomi_request_signed_course(): array {
  * Error for the course signed in some already validated chat permissions: a different course of the page, a course
  * the user cannot enter any more, or the access rules of the panel.
  *
+ * Design note: the course of the page reaches the server only from the browser, which asks the panel configuration
+ * for the permissions of a course and sends that course with every request. The guarantees are that permissions are
+ * signed only for a course the user can enter, that the signed course is checked again on every request and that a
+ * course of the page different from the signed one is refused. A client that asks for the permissions of the site
+ * home while on the page of an excluded course cannot be told apart from a panel on the site home, so it gets only
+ * what the site home grants. The course availability settings and the hidden roles therefore control where the panel
+ * is shown, not what a request may do: the role and the tools always come from the capabilities of the user in the
+ * signed course ({@see local_jedomi_effective_chat_role()}).
+ *
  * @param int $signedcourseid Course signed in the permissions (0 or the site course outside a course).
  * @param int|null $requestcourseid Course of the page sent by the browser, or null when none is compared.
  * @return array|null ['code' => ..., 'message' => ...], or null when the request is allowed.

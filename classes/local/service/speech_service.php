@@ -139,7 +139,9 @@ class speech_service {
         if ($disabled !== null) {
             return self::error(403, $disabled['code'], $disabled['message']);
         }
-        $denied = \local_jedomi_chat_access_error((int) ($spt['course_id'] ?? 0));
+        // The signed course is checked again as the chat does: the user must still be able to enter it, it must be
+        // available and the user must have a visible role. The speech request carries no course of the page.
+        $denied = \local_jedomi_signed_course_error((int) ($spt['course_id'] ?? 0), null);
         if ($denied !== null) {
             return self::error(403, $denied['code'], $denied['message']);
         }

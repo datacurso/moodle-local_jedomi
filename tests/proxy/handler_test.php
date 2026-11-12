@@ -1298,58 +1298,114 @@ final class handler_test extends \advanced_testcase {
     }
 
     /**
-     * MDL-INT-095: the server decides the availability with the course of the real page, never with the course the
-     * browser presents: requests sent from an excluded course, or from a course not selected in the "show only in the
-     * selected courses" mode, that present the site home as their course are refused without calling the AI. The
-     * request carries the context the panel sends: the address of the page and the course of the page, as the server
-     * gave it to the panel, which is not the site home signed in the permissions.
+     * MDL-INT-095: an honest panel on a course page where Jedomi is not available (an excluded course, or a course not
+     * selected in the "show only in the selected courses" mode) is refused without calling the AI. The panel sends the
+     * course of its page: with permissions signed for the site home the courses differ and the request is refused as
+     * course_mismatch; with permissions signed for that course the course availability refuses it as
+     * course_unavailable.
+     *
+     * The course availability settings control where the panel is shown; they are not a security boundary. The
+     * permissions of a request always come from the capabilities of the user in the signed course (see
+     * {@see self::test_forged_site_page_gets_only_site_permissions()}).
      *
      * @return void
      */
-    public function test_course_of_the_request_is_decided_on_the_server(): void {
+    public function test_honest_panel_on_an_unavailable_course_page_is_refused(): void {
         global $PAGE;
         $this->require_provider();
         $this->resetAfterTest();
         $gen = $this->getDataGenerator();
         $excluded = $gen->create_course();
         $selected = $gen->create_course();
+        $unselected = $gen->create_course();
         $student = $gen->create_user();
-        $gen->enrol_user($student->id, $excluded->id, 'student');
-        $gen->enrol_user($student->id, $selected->id, 'student');
+        foreach ([$excluded, $selected, $unselected] as $course) {
+            $gen->enrol_user($student->id, $course->id, 'student');
+        }
         $this->setUser($student);
-        // Permissions obtained presenting the site home as the course of the page.
         $PAGE = new \moodle_page();
         $PAGE->set_course(get_site());
-        $spt = \local_jedomi_generate_spt(\local_jedomi_get_user_role());
-        $this->assertSame((int) SITEID, (int) $spt['course_id'], 'Precondition: the browser presents the site home');
+        $sitespt = \local_jedomi_generate_spt(\local_jedomi_get_user_role());
+        $this->assertSame((int) SITEID, (int) $sitespt['course_id'], 'Precondition: permissions signed for the site home');
 
-        $outcomes = [];
-        foreach (['exclude' => $excluded, 'include' => $selected] as $mode => $listed) {
+        foreach (['exclude' => [$excluded, $excluded], 'include' => [$selected, $unselected]] as $mode => [$listed, $page]) {
             set_config('course_mode', $mode, 'local_jedomi');
             set_config('course_list', (string) $listed->id, 'local_jedomi');
-            // The real page: the excluded course, or a course that is not the selected one.
-            $page = $mode === 'exclude' ? $excluded : $gen->create_course();
-            $fake = new fake_ai_client();
-            $fake->enqueue_text('Answer.');
-            client::set_instance_for_testing($fake);
+            $PAGE = new \moodle_page();
+            $PAGE->set_course($page);
+            $coursespt = \local_jedomi_generate_spt(\local_jedomi_get_user_role());
             $context = ['page_url' => (new \moodle_url('/course/view.php', ['id' => $page->id]))->out(false),
                 'location' => 'course', 'course_id' => (int) $page->id];
-            $events = $this->events($this->capture(fn() => handler::run_from_request(
-                ['messages' => [['role' => 'user', 'content' => 'Show my grades']], 'context' => $context],
-                spt_validator::validate($spt),
-                $spt,
-                (int) $student->id
-            )));
-            $errors = $this->error_events($events);
-            $outcomes[$mode] = ['calls' => count($fake->calls), 'errors' => count($errors),
-                'code' => $errors[0]['error']['code'] ?? null];
-        }
 
-        foreach ($outcomes as $mode => $outcome) {
-            $this->assertSame(0, $outcome['calls'], "{$mode} mode: the AI must not be called from the real page");
-            $this->assertSame(1, $outcome['errors'], "{$mode} mode: the request must be refused");
-            $this->assertSame('course_mismatch', $outcome['code'], "{$mode} mode: the course of the page is not the signed one");
+            $withsite = $this->chat_from_page($sitespt, $context);
+            $withcourse = $this->chat_from_page($coursespt, $context);
+
+            $this->assertSame(0, $withsite['calls'], "{$mode} mode: site permissions from the course page must not reach the AI");
+            $this->assertCount(1, $withsite['errors'], "{$mode} mode: the request with site permissions must be refused");
+            $this->assertSame('course_mismatch', $withsite['errors'][0]['error']['code'] ?? null);
+            $this->assertSame(0, $withcourse['calls'], "{$mode} mode: course permissions must not reach the AI");
+            $this->assertCount(1, $withcourse['errors'], "{$mode} mode: the request with course permissions must be refused");
+            $this->assertSame('course_unavailable', $withcourse['errors'][0]['error']['code'] ?? null);
         }
+    }
+
+    /**
+     * MDL-INT-095, known limit: the course of the page reaches the server only from the browser, so a client on a page
+     * of an excluded course can ask for the permissions of the site home and present no course of the page. That
+     * request is accepted, as opening Jedomi on the site home is, and it only gets site-level permissions: the signed
+     * course is the site home, the course-scoped capabilities are not those of the excluded course, and the role, the
+     * tools and the system message are the ones of the site home. Nothing is granted beyond what the user already has
+     * on the site home.
+     *
+     * @return void
+     */
+    public function test_forged_site_page_gets_only_site_permissions(): void {
+        global $PAGE;
+        $this->require_provider();
+        $this->resetAfterTest();
+        $gen = $this->getDataGenerator();
+        $excluded = $gen->create_course();
+        $teacher = $gen->create_and_enrol($excluded, 'editingteacher');
+        set_config('course_mode', 'exclude', 'local_jedomi');
+        set_config('course_list', (string) $excluded->id, 'local_jedomi');
+        $this->setUser($teacher);
+        // Control: the permissions of the excluded course carry the teacher role and its course capabilities.
+        $PAGE = new \moodle_page();
+        $PAGE->set_course($excluded);
+        $coursespt = \local_jedomi_generate_spt(\local_jedomi_get_user_role());
+        $this->assertSame('teacher', $coursespt['role']);
+        $this->assertTrue($coursespt['capabilities']['can_view_all_grades']);
+        $this->assertTrue($coursespt['capabilities']['can_manage_courses']);
+
+        // The forged request: permissions asked for the site home and no course of the page.
+        $PAGE = new \moodle_page();
+        $PAGE->set_course(get_site());
+        $sitespt = \local_jedomi_generate_spt(\local_jedomi_get_user_role());
+        $fake = new fake_ai_client();
+        $fake->enqueue_text('Answer.');
+        client::set_instance_for_testing($fake);
+        $events = $this->events($this->capture(fn() => handler::run_from_request(
+            ['messages' => [['role' => 'user', 'content' => 'Show the grades']], 'context' => ['course_id' => 0]],
+            spt_validator::validate($sitespt),
+            $sitespt,
+            (int) $teacher->id
+        )));
+
+        $this->assertSame([], $this->error_events($events), 'The site home request is accepted, as on the site home');
+        $this->assertCount(1, $fake->calls);
+        $this->assertSame((int) SITEID, (int) $sitespt['course_id'], 'The signed course is the site home');
+        $this->assertSame('student', $sitespt['role'], 'Outside a course a teacher gets the site-level role');
+        $this->assertFalse($sitespt['capabilities']['can_view_all_grades'], 'No grade capability of the excluded course');
+        $this->assertFalse($sitespt['capabilities']['can_manage_courses'], 'No course capability of the excluded course');
+        $studenttools = array_column(array_column(\local_jedomi_get_tool_definitions('student'), 'function'), 'name');
+        $teachertools = array_column(array_column(\local_jedomi_get_tool_definitions('teacher'), 'function'), 'name');
+        $this->assertNotEmpty(array_diff($teachertools, $studenttools), 'Precondition: the teacher has more tools');
+        $offered = $this->tool_names($fake->calls[0]);
+        $this->assertEqualsCanonicalizing($studenttools, array_values(array_diff($offered, ['send_messages'])));
+        $system = $fake->calls[0]['messages'][0];
+        $this->assertSame('system', $system['role']);
+        $this->assertStringContainsString('Role: student.', $system['content']);
+        $this->assertStringNotContainsString('Role: teacher.', $system['content']);
     }
 
     /**

@@ -215,6 +215,29 @@ final class speech_service_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-110 / MDL-INT-095: the course signed in the permissions is checked again on every speech request: a user
+     * who lost access to it (unenrolled) is refused while the permissions are still valid, without calling the AI.
+     *
+     * @return void
+     */
+    public function test_user_who_lost_access_to_the_signed_course_is_refused(): void {
+        global $DB, $PAGE;
+        $user = $this->setup_user();
+        $course = $this->getDataGenerator()->create_course();
+        $this->getDataGenerator()->enrol_user($user->id, $course->id, 'student');
+        $PAGE = new \moodle_page();
+        $PAGE->set_course($course);
+        $spt = \local_jedomi_generate_spt(\local_jedomi_get_user_role());
+        $this->assertSame((int) $course->id, (int) $spt['course_id'], 'Precondition: permissions signed for the course');
+
+        $manual = enrol_get_plugin('manual');
+        $instance = $DB->get_record('enrol', ['courseid' => $course->id, 'enrol' => 'manual'], '*', MUST_EXIST);
+        $manual->unenrol_user($instance, (int) $user->id);
+
+        $this->assert_refused_without_a_call($this->request(['spt' => $spt]), 403, 'course_access_denied');
+    }
+
+    /**
      * MDL-INT-110: with Jedomi disabled the speech is refused without calling the AI.
      * V7: with Jedomi disabled in the provider the request is refused without calling the AI.
      *

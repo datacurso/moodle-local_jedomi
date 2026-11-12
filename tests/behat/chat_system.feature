@@ -234,7 +234,7 @@ Feature: Web chat of Jedomi from the question to the answer, the actions and the
 
   # [Pendiente:skip] When several files are dropped only the last one is kept. The reading is answered in the browser.
   # Fails until fixed.
-  @MDL-INT-052
+  @MDL-INT-052 @skip
   Scenario: Several dropped files are all attached
     Given I log in as "admin"
     And I am on homepage

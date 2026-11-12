@@ -95,7 +95,7 @@ $string['agent_preview'] = 'Vista previa';
 $string['agent_preview_arguments'] = 'Argumentos';
 $string['agent_preview_cached'] = 'Resultado en caché del';
 $string['agent_preview_clear_cache'] = 'Borrar caché';
-$string['agent_preview_error'] = 'La vista previa falló. Revise el prompt e inténtelo de nuevo.';
+$string['agent_preview_error'] = 'La vista previa falló. Revise la instrucción e inténtelo de nuevo.';
 $string['agent_preview_prompt_required'] = 'Primero escriba una instrucción.';
 $string['agent_preview_result'] = 'Resultado de la vista previa';
 $string['agent_preview_result_n'] = 'Resultado {$a}';
@@ -108,7 +108,7 @@ $string['agent_preview_round'] = 'Ronda {$a}';
 $string['agent_preview_timeline'] = 'Línea de tiempo de la conversación';
 $string['agent_preview_tool_stats'] = '{$a->duration} ms · {$a->rows} filas';
 $string['agent_preview_total_time'] = 'Total: {$a} ms';
-$string['agent_prompt'] = 'Prompt';
+$string['agent_prompt'] = 'Instrucción (prompt)';
 $string['agent_prompt_hidden'] = 'Oculta: solo su creador, los administradores del sitio y los usuarios con un rol superior pueden ver esta instrucción.';
 $string['agent_prompt_placeholder'] = 'Ej: "Resuma la actividad nueva del sitio y notifíqueme"';
 $string['agent_purge'] = 'Eliminar Agentes';
@@ -125,7 +125,7 @@ $string['agent_run_queued'] = 'Agente encolado para ejecución (próximo ciclo d
 $string['agent_runner_task'] = 'Jedomi — Ejecutar agentes de IA programados';
 $string['agent_schedule'] = 'Programación';
 $string['agent_schedule_presets'] = 'Programación predefinida';
-$string['agent_search'] = 'Buscar prompt...';
+$string['agent_search'] = 'Buscar instrucción...';
 $string['agent_status'] = 'Estado';
 $string['agent_status_all'] = 'Todos';
 $string['agent_summary'] = 'Resumen';
@@ -155,8 +155,8 @@ $string['analyze_file'] = 'Resuma este archivo.';
 $string['analyze_image'] = 'Analice esta imagen.';
 $string['anon_basic'] = 'Básico (nombres y emails)';
 $string['anon_basic_desc'] = 'Reemplaza nombres y correos. Conserva la mayor parte del contexto.';
-$string['anon_feedback_only'] = 'Solo feedback (no se guarda el texto de conversaciones)';
-$string['anon_feedback_only_desc'] = 'Solo guarda calificaciones y botones de feedback. Sin texto de conversación.';
+$string['anon_feedback_only'] = 'Solo comentarios (no se guarda el texto de conversaciones)';
+$string['anon_feedback_only_desc'] = 'Solo guarda calificaciones y botones de comentarios. Sin texto de conversación.';
 $string['anon_strict'] = 'Estricto (nombres, emails, IDs, texto libre)';
 $string['anon_strict_desc'] = 'Reemplaza nombres, correos, IDs y texto libre. Máxima privacidad.';
 $string['anonymization_level'] = 'Nivel de anonimización';
@@ -220,19 +220,19 @@ $string['copytoclipboard'] = 'Copiar al portapapeles';
 $string['course_availability_courses'] = 'Cursos seleccionados';
 $string['course_availability_courses_help'] = 'Cursos donde se muestra el chat (modo incluir) o se oculta (modo excluir). Busque por nombre o nombre corto del curso.';
 $string['course_availability_heading'] = 'Disponibilidad por curso';
-$string['course_availability_heading_help'] = 'Controle en qué cursos aparece el sidebar de Jedomi.';
+$string['course_availability_heading_help'] = 'Controle en qué cursos aparece el panel lateral de Jedomi.';
 $string['course_list'] = 'IDs de cursos';
 $string['course_list_help'] = 'Ingrese los IDs de cursos separados por comas. Ejemplo: 5, 10, 23. Déjelo vacío para sin '
     . 'restricción.';
 $string['course_mode'] = 'Modo de disponibilidad';
 $string['course_mode_all'] = 'Todos los cursos (por defecto)';
-$string['course_mode_all_desc'] = 'El sidebar aparecerá en todos los cursos del sitio.';
+$string['course_mode_all_desc'] = 'El panel lateral aparecerá en todos los cursos del sitio.';
 $string['course_mode_blacklist'] = 'Todos los cursos excepto los seleccionados (lista negra)';
 $string['course_mode_exclude'] = 'Ocultar en cursos seleccionados';
-$string['course_mode_exclude_desc'] = 'El sidebar aparecerá en todos los cursos excepto los que elija abajo.';
+$string['course_mode_exclude_desc'] = 'El panel lateral aparecerá en todos los cursos excepto los que elija abajo.';
 $string['course_mode_help'] = 'Seleccione cómo controlar la disponibilidad por curso.';
 $string['course_mode_include'] = 'Mostrar solo en cursos seleccionados';
-$string['course_mode_include_desc'] = 'El sidebar aparecerá únicamente en los cursos que elija abajo.';
+$string['course_mode_include_desc'] = 'El panel lateral aparecerá únicamente en los cursos que elija abajo.';
 $string['course_mode_whitelist'] = 'Solo los cursos seleccionados (lista blanca)';
 $string['course_none_selected'] = 'Todavía no hay cursos seleccionados.';
 $string['course_remove'] = 'Quitar curso';
@@ -302,7 +302,7 @@ $string['error_ws_describe_failed'] = 'ws_describe failed: {$a}';
 $string['error_ws_execute_failed'] = 'ws_execute failed: {$a}';
 $string['error_ws_search_failed'] = 'ws_search failed: {$a}';
 $string['error_wsname_required'] = 'wsname is required';
-$string['execute_sql_error'] = 'Error de base de datos al ejecutar la query.';
+$string['execute_sql_error'] = 'Error de base de datos al ejecutar la consulta.';
 $string['export_conversation'] = 'Exportar conversación';
 $string['file'] = 'Archivo';
 $string['file_audio'] = 'Audio: {seconds} segundos';
@@ -376,7 +376,7 @@ $string['pending_desc_create_agent'] = 'Crear el agente programado "{$a}".';
 $string['pending_desc_delete_agent'] = 'Eliminar el agente programado #{$a}.';
 $string['pending_desc_send_messages'] = 'Enviar un mensaje de Moodle a {$a} usuario(s).';
 $string['pending_desc_ws_execute'] = 'Ejecutar la función de servicio web "{$a}".';
-$string['pluginname'] = 'Jedomi AI Sidebar';
+$string['pluginname'] = 'Panel lateral de IA Jedomi';
 $string['privacy:metadata:jedomi_ai_service'] = 'Las conversaciones se envían a través del proveedor de IA de Datacurso a su servicio de IA para generar las respuestas.';
 $string['privacy:metadata:jedomi_ai_service:lang'] = 'El idioma del usuario.';
 $string['privacy:metadata:jedomi_ai_service:messages'] = 'Los mensajes de la conversación y los resultados de las herramientas usadas para responderlos.';
@@ -436,7 +436,7 @@ $string['privacy:metadata:telegram'] = 'Las respuestas del bot, las notificacion
 $string['privacy:metadata:telegram:chatid'] = 'El chat de Telegram al que se envían los datos.';
 $string['privacy:metadata:telegram:messages'] = 'Las respuestas, notificaciones y resultados de agentes, que pueden incluir datos del sitio.';
 $string['privacy_access_heading'] = 'Control de acceso';
-$string['privacy_access_heading_help'] = 'Quién puede ver y usar el sidebar de Jedomi.';
+$string['privacy_access_heading_help'] = 'Quién puede ver y usar el panel lateral de Jedomi.';
 $string['privacy_agents'] = 'Agentes programados';
 $string['privacy_anon_heading'] = 'Anonimización de datos';
 $string['privacy_anon_heading_help'] = 'Controla cómo se anonimiza la información de las conversaciones antes de almacenarla.';
@@ -542,14 +542,14 @@ $string['query_profiler_sort_query'] = 'Consulta';
 $string['query_profiler_sort_time'] = 'Momento';
 $string['query_profiler_threshold'] = 'Umbral de consulta lenta (ms)';
 $string['query_profiler_total'] = 'Consultas totales';
-$string['query_timeout'] = 'La query superó el tiempo límite.';
+$string['query_timeout'] = 'La consulta superó el tiempo límite.';
 $string['read_file_blocked'] = 'El acceso a este archivo no está permitido.';
 $string['read_file_not_allowed'] = 'Esta ruta no está en la lista de permitidos.';
 $string['reading_image'] = 'Leyendo la imagen...';
 $string['regenerate'] = 'Regenerar secreto';
-$string['role_visibility_help'] = 'Desactive el toggle para ocultar el sidebar a los usuarios con ese rol. Los administradores '
-    . 'del sitio siempre lo ven.';
-$string['role_visibility_label'] = 'Mostrar sidebar por rol';
+$string['role_visibility_help'] = 'Desactive el interruptor para ocultar el panel lateral a los usuarios con ese rol. Los '
+    . 'administradores del sitio siempre lo ven.';
+$string['role_visibility_label'] = 'Mostrar el panel lateral por rol';
 $string['search_ws_placeholder'] = 'Buscar servicios web...';
 $string['security_heading'] = 'Seguridad';
 $string['security_heading_help'] = 'Secretos usados para firmar los tokens de permisos de la barra lateral de Jedomi.';
@@ -792,46 +792,50 @@ $string['tool_admin_search_desc'] = 'Busca operaciones CLI disponibles para admi
 $string['tool_admin_search_limit'] = 'Número máximo de resultados a devolver (por defecto: 8, máx.: 20).';
 $string['tool_admin_search_query'] = 'Palabras clave de búsqueda para encontrar operaciones de administración relevantes.';
 $string['tool_api_call'] = 'Ejecutando acción en Moodle...';
-$string['tool_create_agent_context_id'] = 'The ID of the course, category, or user. Required when context_type is not "site".';
-$string['tool_create_agent_context_type'] = 'Scope of execution: "site" for global, "course" for a specific course, "category" '
-    . 'for a course category, "user" for a specific user. Defaults to "site".';
-$string['tool_create_agent_desc'] = 'Create a scheduled AI agent. The agent will execute the given prompt on a recurring '
-    . 'schedule, cache results, and send notifications via Telegram (if linked). Only available to admins and managers.';
-$string['tool_create_agent_enabled'] = 'Whether the agent starts enabled. Default: true. Set to false to create inactive.';
-$string['tool_create_agent_prompt'] = 'The task description or instruction the AI agent will execute each time it runs. Be '
-    . 'specific about what data to fetch, analyze, or report. Example: "Summarize new enrollments from the last 24 hours" or '
-    . '"Check for students at risk in course 42".';
-$string['tool_create_agent_schedule'] = 'Cron expression defining how often the agent runs. Common presets: "*/5 * * * *" = every '
-    . '5 minutes, "*/30 * * * *" = every 30 minutes, "0 * * * *" = hourly, "0 0 * * *" = daily at midnight, "0 0 * * 0" = weekly '
-    . 'on Sunday.';
-$string['tool_delete_agent_desc'] = 'Delete a scheduled AI agent by ID. Permanent — removes agent and all cached results. '
-    . 'Cannot be undone.';
-$string['tool_delete_agent_id'] = 'The numeric ID of the agent to delete. Use list_agents to find the ID.';
+$string['tool_create_agent_context_id'] = 'El ID del curso, la categoría o el usuario. Obligatorio cuando context_type no es '
+    . '"site".';
+$string['tool_create_agent_context_type'] = 'Ámbito de ejecución: "site" para todo el sitio, "course" para un curso concreto, '
+    . '"category" para una categoría de cursos, "user" para un usuario concreto. Por defecto: "site".';
+$string['tool_create_agent_desc'] = 'Crea un agente de IA programado. El agente ejecutará la instrucción indicada de forma '
+    . 'periódica, guardará los resultados en caché y enviará notificaciones por Telegram (si está vinculado). Solo disponible '
+    . 'para administradores y gestores.';
+$string['tool_create_agent_enabled'] = 'Si el agente empieza activado. Por defecto: true. Use false para crearlo inactivo.';
+$string['tool_create_agent_prompt'] = 'La descripción de la tarea o la instrucción que el agente de IA ejecutará cada vez. '
+    . 'Sea concreto sobre qué datos obtener, analizar o informar. Ejemplo: "Resuma las matriculaciones nuevas de las últimas '
+    . '24 horas" o "Revise los estudiantes en riesgo del curso 42".';
+$string['tool_create_agent_schedule'] = 'Expresión cron que define cada cuánto se ejecuta el agente. Valores habituales: '
+    . '"*/5 * * * *" = cada 5 minutos, "*/30 * * * *" = cada 30 minutos, "0 * * * *" = cada hora, "0 0 * * *" = cada día a '
+    . 'medianoche, "0 0 * * 0" = cada semana el domingo.';
+$string['tool_delete_agent_desc'] = 'Elimina un agente de IA programado por su ID. Es permanente: borra el agente y todos sus '
+    . 'resultados en caché. No se puede deshacer.';
+$string['tool_delete_agent_id'] = 'El ID numérico del agente que se eliminará. Use list_agents para encontrar el ID.';
 $string['tool_describe_table'] = 'Analizando tabla...';
-$string['tool_describe_table_desc'] = 'Obtiene la estructura (columnas, tipos, claves, índices, foreign keys) de una tabla de la '
-    . 'base de datos de Moodle. Cacheado 24h.';
+$string['tool_describe_table_desc'] = 'Obtiene la estructura (columnas, tipos, claves, índices, claves foráneas) de una '
+    . 'tabla de la base de datos de Moodle. Se guarda en caché 24 horas.';
 $string['tool_describe_table_tablename'] = 'Nombre de la tabla (ej: course, user, grade_grades)';
-$string['tool_document_read_cmid'] = 'Course module ID (cmid) de la actividad. Obténgalo del contexto de página o descúbralo vía '
-    . 'ws_search/ws_execute.';
+$string['tool_document_read_cmid'] = 'Identificador del módulo del curso (cmid) de la actividad. Obténgalo del contexto de '
+    . 'página o descúbralo vía ws_search/ws_execute.';
 $string['tool_document_read_desc'] = 'Leer el PDF publicado en una actividad del curso (su descripción o contenido, nunca entregas ni '
-    . 'devoluciones de estudiantes) usando su cmid (course module ID). Devuelve el texto de las '
+    . 'devoluciones de estudiantes) usando su cmid (identificador del módulo del curso). Devuelve el texto de las '
     . 'páginas; las páginas escaneadas, tablas y diagramas los lee un modelo de visión. Úselo cuando el usuario pida leer, '
     . 'analizar, resumir o explicar un documento de una actividad.';
 $string['tool_document_read_pages'] = 'Páginas opcionales a leer, por ejemplo "1,3-5". Omítalo para leer todo el documento.';
 $string['tool_execute_sql'] = 'Consultando base de datos...';
 $string['tool_execute_sql_desc'] = 'Ejecuta una consulta SELECT en la base de datos de Moodle y devuelve las filas como JSON. '
-    . 'SOLO lectura. Límite: 100 filas, timeout 5 segundos.';
+    . 'SOLO lectura. Límite: 100 filas, tiempo límite de 5 segundos.';
 $string['tool_execute_sql_params'] = 'Parámetros vinculados para la consulta (opcional)';
-$string['tool_execute_sql_sql'] = 'Consulta SELECT a ejecutar. Use ? como placeholder para parámetros. Ejemplo: SELECT id, '
-    . 'fullname FROM {course} WHERE category = ?';
+$string['tool_execute_sql_sql'] = 'Consulta SELECT a ejecutar. Use ? como marcador de posición de los parámetros. '
+    . 'Ejemplo: SELECT id, fullname FROM {course} WHERE category = ?';
 $string['tool_get_site_config'] = 'Obteniendo configuración...';
 $string['tool_get_site_config_desc'] = 'Obtiene configuración del sitio Moodle (sitename, lang, timezone, etc.). Solo disponible '
     . 'para administradores.';
 $string['tool_get_site_config_keys'] = 'Lista de claves de configuración. Válidas: sitename, siteurl, lang, country, timezone, '
     . 'maxbytes, passwordpolicy, enrol_plugins_enabled, auth_plugins_enabled';
-$string['tool_list_agents_desc'] = 'List all configured scheduled AI agents, optionally filtered by status or context. Returns '
-    . 'agent ID, prompt excerpt, schedule, context, status, last run, next run.';
-$string['tool_list_agents_status'] = 'Optional filter: "enabled" for active agents, "disabled" for inactive. Empty = all.';
+$string['tool_list_agents_desc'] = 'Lista todos los agentes de IA programados, con un filtro opcional por estado o contexto. '
+    . 'Devuelve el ID del agente, un extracto de su instrucción, la programación, el contexto, el estado y la última y la '
+    . 'próxima ejecución.';
+$string['tool_list_agents_status'] = 'Filtro opcional: "enabled" para los agentes activos, "disabled" para los inactivos. '
+    . 'Vacío = todos.';
 $string['tool_my_assignments_desc'] = 'Solo lectura. Las tareas de los cursos del usuario actual, con sus fechas de apertura, '
     . 'entrega y cierre y el estado de la entrega, y los próximos vencimientos del calendario del usuario. Úsela cuando un '
     . 'estudiante pregunte por sus tareas o fechas de entrega.';
@@ -845,7 +849,7 @@ $string['tool_search_tables'] = 'Buscando tablas...';
 $string['tool_search_tables_desc'] = 'Busca tablas de Moodle por intención o palabras clave en INGLÉS. Busca en nombres de '
     . 'tablas Y sus descripciones COMMENT de install.xml. Devuelve los resultados más relevantes con nombre, descripción, '
     . 'nombres de campos y comentarios de campos. Use SIEMPRE search_tables antes de describe_table o execute_sql.';
-$string['tool_search_tables_limit'] = 'Máximo de resultados (default: 8, max: 15)';
+$string['tool_search_tables_limit'] = 'Máximo de resultados (por defecto: 8, máx.: 15)';
 $string['tool_search_tables_query'] = 'Intención o palabras clave en INGLÉS (ej: "user grades", "course enrolment", "student")';
 $string['tool_send_messages_desc'] = 'Envía un mensaje interno de Moodle a uno o más usuarios. '
     . 'Solo cuando el usuario pide explícitamente enviar o notificar un mensaje; nunca para responder una pregunta '
@@ -857,7 +861,7 @@ $string['tool_send_messages_user_ids'] = 'Ids de usuario de Moodle de los destin
 $string['tool_sql_read'] = 'Consultando base de datos...';
 $string['tool_unknown'] = 'Ejecutando herramienta...';
 $string['tool_webservice_lookup'] = 'Buscando función API...';
-$string['tool_ws_describe'] = 'Analizando función webservice...';
+$string['tool_ws_describe'] = 'Analizando función de servicio web...';
 $string['tool_ws_describe_desc'] = 'Obtiene documentación completa (descripción, parámetros con * = requerido, tipo de '
     . 'retorno) para una función de servicio web específica cuando ya sabe su nombre exacto. LLAME a esto SIEMPRE DESPUÉS de '
     . 'ws_search y ANTES de ws_execute para verificar los campos requeridos.';
@@ -865,20 +869,20 @@ $string['tool_ws_describe_wsname'] = 'Nombre exacto de la función (ej: core_use
 $string['tool_ws_execute'] = 'Ejecutando acción...';
 $string['tool_ws_execute_desc'] = 'Ejecuta un servicio web de Moodle en nombre del usuario actual. Úselo DESPUÉS de ws_search '
     . 'para obtener el nombre exacto de la función y los parámetros. Si el primer intento falla por "campo requerido faltante", '
-    . 'reintente con valores predeterminados para los campos opcionales. Para operaciones batch (misma acción en múltiples '
-    . 'items), llame a esta función VARIAS VECES — una por cada item.';
+    . 'reintente con valores predeterminados para los campos opcionales. Para operaciones por lotes (misma acción en varios '
+    . 'elementos), llame a esta función VARIAS VECES, una por cada elemento.';
 $string['tool_ws_execute_params'] = 'Parámetros codificados en JSON para la función del servicio web. DEBE incluir todos los '
     . 'campos * (requerido). IMPORTANTE: Si el primer intento falla con "Detectado valor de parámetro no válido" o "Missing '
-    . 'required key", significa que la instancia requiere campos que el schema marca como opcionales. En ese caso, REINTENTE '
+    . 'required key", significa que la instancia requiere campos que el esquema marca como opcionales. En ese caso, REINTENTE '
     . 'agregando valores predeterminados para los campos faltantes (ej: description="", enrolmentkey="", idnumber="", '
     . 'visibility=0, participation=true).';
 $string['tool_ws_execute_wsname'] = 'Nombre de la función del servicio web (ej: core_course_get_courses)';
-$string['tool_ws_search'] = 'Buscando funciones webservices...';
+$string['tool_ws_search'] = 'Buscando funciones de servicios web...';
 $string['tool_ws_search_desc'] = 'Busca funciones de servicios web de Moodle por intención o palabras clave en INGLÉS. Devuelve '
     . 'las más relevantes con descripción completa, parámetros (* = requerido) y estructura de retorno. Si los resultados '
     . 'incluyen lo que necesita: DEJE de buscar — llame a ws_describe con el nombre exacto, luego a ws_execute. No llame a '
     . 'ws_search de nuevo para la misma tarea.';
-$string['tool_ws_search_limit'] = 'Máximo de resultados a devolver (default: 6, max: 15)';
+$string['tool_ws_search_limit'] = 'Máximo de resultados a devolver (por defecto: 6, máx.: 15)';
 $string['tool_ws_search_query'] = 'Intención o palabras clave en INGLÉS (ej: "create user", "enrol student", "get course '
     . 'grades")';
 $string['training_data_title'] = 'Datos de entrenamiento Jedomi';
