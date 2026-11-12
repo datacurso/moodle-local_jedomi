@@ -120,6 +120,20 @@ class anonymizer {
     }
 
     /**
+     * Anonymise a text that leaves the site as it is, such as an answer read aloud.
+     *
+     * Unlike {@see self::anonymize_stored_text()} the text is kept readable at every level: e-mails and names of
+     * site users are replaced and, at the Strict level, codes mixing letters and digits too. The Feedback only
+     * level replaces what the Basic level does, as for the data sent to the AI.
+     *
+     * @param string $text Text.
+     * @return string Text with placeholders such as "[person_1]" in place of the personal data.
+     */
+    public function anonymize_text(string $text): string {
+        return $this->anonymize_string($text);
+    }
+
+    /**
      * Anonymise the result of a tool before the AI receives it.
      *
      * JSON results are walked value by value, using the column names to recognise names, identifiers and free

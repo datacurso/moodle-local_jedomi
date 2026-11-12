@@ -33,6 +33,14 @@ require_once(__DIR__ . '/../../../lib.php');
  * conversation switch, a length limit and a per-user rate limit, and calls the AI service through the
  * Datacurso provider only when all of them pass.
  *
+ * The text the browser sends is the answer shown in the chat, which carries the real personal data. Before it
+ * leaves the site it is anonymised on the server with the level of the Privacy tab, as the data the chat sends to
+ * the AI ({@see self::anonymise_for_speech()}): e-mails and names of site users are replaced at every level, and
+ * codes mixing letters and digits too at the Strict level; plain numbers such as grades are kept, as in the chat.
+ * The placeholders are not read as raw tokens: each one is spoken as a plain word in the user's language
+ * ("a person", "an email address", "an identifier", "some text"), and consecutive names of one person become a
+ * single word. The answer shown in the chat is never changed; only the spoken text is anonymised.
+ *
  * @package    local_jedomi
  * @copyright  2026 Jedomi Project
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
@@ -52,6 +60,9 @@ class speech_service {
 
     /** @var int Total request timeout, in seconds. */
     private const TIMEOUT = 60;
+
+    /** @var string[] Kinds of placeholder of the anonymiser, each spoken with a string "speech_placeholder_<kind>". */
+    private const PLACEHOLDER_KINDS = ['person', 'email', 'id', 'text'];
 
     /** @var provider_api|null Provider client used instead of Jedomi's own in PHPUnit tests. */
     private static ?provider_api $testapi = null;
@@ -128,7 +139,30 @@ class speech_service {
     }
 
     /**
+     * Anonymise a text to read aloud with the level of the Privacy tab, speaking the placeholders as plain words.
+     *
+     * @param string $text Text shown in the chat.
+     * @param string|null $level Anonymisation level; null for the one of the Privacy tab.
+     * @return string Text without the personal data, at most {@see self::MAX_CHARS} characters long.
+     */
+    public static function anonymise_for_speech(string $text, ?string $level = null): string {
+        $anonymised = (new \local_jedomi\local\anonymizer($level))->anonymize_text($text);
+        $kinds = implode('|', self::PLACEHOLDER_KINDS);
+        // A full name is replaced word by word: consecutive placeholders of one kind are spoken once.
+        $spoken = (string) preg_replace_callback(
+            '/\[(' . $kinds . ')_\d+\](?:\s+\[\1_\d+\])*/u',
+            fn(array $m): string => get_string('speech_placeholder_' . $m[1], 'local_jedomi'),
+            $anonymised
+        );
+        // The words may be longer than the values they replace; the AI service refuses longer texts.
+        return \core_text::substr($spoken, 0, self::MAX_CHARS);
+    }
+
+    /**
      * Read a text aloud with the speech model and voice of the settings.
+     *
+     * The text is anonymised first with {@see self::anonymise_for_speech()}: the personal data hidden from the AI
+     * by the Privacy tab never reaches the speech service either.
      *
      * @param int $userid User the answer is read for.
      * @param string $text Text to read, already checked.
@@ -138,6 +172,7 @@ class speech_service {
      */
     public static function synthesise(int $userid, string $text, ?provider_api $api = null): string {
         $model = model_settings::get_speech_model();
+        $text = self::anonymise_for_speech($text);
         $start = microtime(true);
         try {
             $audio = ($api ?? self::$testapi ?? new provider_api(self::TIMEOUT))->request_audio(self::ENDPOINT, [

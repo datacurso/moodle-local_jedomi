@@ -183,6 +183,13 @@ final class provider_test extends provider_testcase {
         $this->assertNotNull($speech, 'The text sent for speech must be declared');
         $this->assertContains('userid', $speech);
         $this->assertContains('text', $speech);
+        foreach (['lang', 'site_id', 'site_url'] as $field) {
+            $this->assertContains($field, $speech, "The {$field} sent with every speech request must be declared");
+        }
+        $this->assertStringContainsStringIgnoringCase(
+            'Privacy tab',
+            get_string('privacy:metadata:jedomi_speech_service:text', 'local_jedomi')
+        );
         $this->assertStringContainsStringIgnoringCase(
             'pseudonym',
             get_string('privacy:metadata:jedomi_speech_service:userid', 'local_jedomi')

@@ -132,6 +132,31 @@ final class execute_sql_test extends \advanced_testcase {
     }
 
     /**
+     * The query reaches the database with the 5 s time limit and the row cap of the web service (100 rows plus one).
+     */
+    public function test_query_reaches_the_database_with_time_limit_and_row_cap(): void {
+        global $CFG, $DB;
+        require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/recording_database.php');
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $realdb = $DB;
+        $fake = new \local_jedomi\recording_database($realdb, 'mysql', 'mysql');
+        $fake->rows = array_map(static fn(int $id): \stdClass => (object) ['id' => $id], range(1, 150));
+
+        try {
+            $DB = $fake;
+            $result = $this->run_query('SELECT id FROM {course}');
+        } finally {
+            $DB = $realdb;
+        }
+
+        $this->assertStringContainsString('/*+ MAX_EXECUTION_TIME(5000) */', $fake->queries[0]['sql']);
+        $this->assertSame(101, $fake->queries[0]['limitnum']);
+        $this->assertSame(100, $result['row_count']);
+        $this->assertTrue($result['truncated']);
+    }
+
+    /**
      * MDL-UNIT-019: without the required privilege the query is denied.
      */
     public function test_query_is_denied_without_the_privilege(): void {

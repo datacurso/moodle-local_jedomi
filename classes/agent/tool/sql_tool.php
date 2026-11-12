@@ -18,9 +18,9 @@
  * SQL query tool — executes read-only SELECT queries against the Moodle DB.
  *
  * Security:
- *  - Only SELECT / SHOW / DESCRIBE / EXPLAIN statements are allowed.
- *  - Maximum result rows: 1000.
- *  - Maximum execution time: 30 seconds.
+ *  - Only SELECT and WITH statements are allowed.
+ *  - Maximum result rows: 1000, read from the database through the shared query_runner (never more in memory).
+ *  - Maximum execution time: 30 seconds for that query only (see query_runner::fetch()), never a session setting.
  *  - Blocklisted tables: config, sessions, oauth, tokens, private keys.
  *
  * @package    local_jedomi
@@ -35,6 +35,12 @@ namespace local_jedomi\agent\tool;
  * role gating, the shared sensitive-data guard, row limits, and profiler logging.
  */
 class sql_tool implements agent_tool {
+    /** @var int Maximum rows returned to an agent (larger than the 100 of the chat channels: agents run unattended). */
+    private const MAX_ROWS = 1000;
+
+    /** @var int Time limit of an agent query in milliseconds (longer than the 5 s of the chat channels, see above). */
+    private const TIMEOUT_MS = 30000;
+
     /** @var int Agent ID being executed (for profiling). */
     private int $agentid;
 
@@ -72,13 +78,13 @@ class sql_tool implements agent_tool {
             'function' => [
                 'name' => 'execute_sql',
                 'description' => 'Execute a read-only SQL query on the Moodle database. Returns'
-                    . ' results as JSON array. Only SELECT, SHOW, DESCRIBE, EXPLAIN are allowed.',
+                    . ' results as JSON array. Only SELECT and WITH queries are allowed.',
                 'parameters' => [
                     'type' => 'object',
                     'properties' => [
                         'query' => [
                             'type' => 'string',
-                            'description' => 'The SQL query to execute — must start with SELECT, SHOW, DESCRIBE, or EXPLAIN.',
+                            'description' => 'The SQL query to execute — must start with SELECT or WITH.',
                         ],
                     ],
                     'required' => ['query'],
@@ -90,16 +96,14 @@ class sql_tool implements agent_tool {
     /**
      * Validate and run a read-only query, logging duration and row count to the profiler.
      *
-     * Allowed roles: admin, manager, teacher. Only SELECT/SHOW/DESCRIBE/EXPLAIN/WITH
-     * statements pass validation, the shared query guard rejects sensitive data, and results are
-     * capped at 1000 rows.
+     * Allowed roles: admin, manager, teacher. Only SELECT/WITH statements pass validation (SHOW, DESCRIBE
+     * and EXPLAIN cannot carry the per-query time limit and row cap), the shared query guard rejects sensitive
+     * data, and the shared runner caps the results at 1000 rows and the time at 30 seconds.
      *
      * @param \stdClass $params Decoded tool arguments; expects 'query' (or legacy 'sql') with the SQL text.
      * @return string JSON-encoded rows with count and duration, or an error message.
      */
     public function execute(\stdClass $params): string {
-        global $DB;
-
         // ... ── Permission gate: admin/manager/teacher (matches Telegram behaviour).
         // Uses the shared role detection from lib.php. Fail-closed: userid=0 → 'student' → denied.
         $role = \local_jedomi_get_user_role_for_user($this->userid);
@@ -115,10 +119,10 @@ class sql_tool implements agent_tool {
 
         // ... ── Validate read-only ────────────────────────────────────────────────
         $firstword = strtoupper(strtok($query, " \t\n\r\0\x0B"));
-        $allowed = ['SELECT', 'SHOW', 'DESCRIBE', 'EXPLAIN', 'WITH'];
+        $allowed = ['SELECT', 'WITH'];
         if (!in_array($firstword, $allowed, true)) {
             return json_encode([
-                'error' => 'Only SELECT, SHOW, DESCRIBE, EXPLAIN and WITH queries are allowed.',
+                'error' => 'Only SELECT and WITH queries are allowed.',
             ]);
         }
 
@@ -128,22 +132,14 @@ class sql_tool implements agent_tool {
             return json_encode(['error' => get_string($rejection, 'local_jedomi')]);
         }
 
-        // ... ── Execute with timeout + profiling ──────────────────────────────────
+        // ... ── Execute with a per-query time limit and a row cap read from the database + profiling ──
         $start = microtime(true);
 
         try {
-            // Use a direct ADOdb connection with a query-level timeout hint.
-            try {
-                $DB->execute("SET SESSION MAX_EXECUTION_TIME = 30000");
-                // phpcs:ignore Generic.CodeAnalysis.EmptyStatement.DetectedCatch -- comment-only catch.
-            } catch (\Exception $e) {
-                // MySQL/MariaDB version may not support this variable — ignore.
-            }
-
-            $records = $DB->get_records_sql($query, [], 0, 1000);
+            $result = \local_jedomi\local\query_runner::fetch($query, [], self::MAX_ROWS, self::TIMEOUT_MS);
 
             $elapsedms = (microtime(true) - $start) * 1000;
-            $rowcount = count($records);
+            $rowcount = count($result['rows']);
 
             // ... ── Log to profiler ──────────────────────────────────────────────
             \local_jedomi\agent\query_profiler::log_query(
@@ -153,15 +149,12 @@ class sql_tool implements agent_tool {
                 $rowcount
             );
 
-            // ... ── Format result for AI ─────────────────────────────────────────
-            $rows = array_map(function (\stdClass $r): array {
-                return \local_jedomi\local\sql_guard::filter_row((array) $r);
-            }, array_values($records));
-
+            // ... ── Format result for AI (rows already without sensitive columns) ──
             return json_encode([
                 'success' => true,
-                'rows' => $rows,
+                'rows' => $result['rows'],
                 'row_count' => $rowcount,
+                'truncated' => $result['truncated'],
                 'duration_ms' => round($elapsedms, 2),
             ], JSON_UNESCAPED_UNICODE);
         } catch (\Exception $e) {
@@ -174,8 +167,11 @@ class sql_tool implements agent_tool {
                 0
             );
 
+            $error = \local_jedomi\local\query_runner::is_timeout($e)
+                ? get_string('query_timeout', 'local_jedomi')
+                : $e->getMessage();
             return json_encode([
-                'error' => $e->getMessage(),
+                'error' => $error,
                 'duration_ms' => round($elapsedms, 2),
             ]);
         }

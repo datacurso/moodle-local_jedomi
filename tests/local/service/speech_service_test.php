@@ -36,6 +36,7 @@ require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/testable_provider_api
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @covers     \local_jedomi\local\service\speech_service
  * @covers     \local_jedomi\ai\provider_api
+ * @covers     \local_jedomi\local\anonymizer
  */
 final class speech_service_test extends \advanced_testcase {
     /** @var string Body of a fake MP3 answer, with bytes that are not valid UTF-8. */
@@ -378,6 +379,130 @@ final class speech_service_test extends \advanced_testcase {
 
         $this->assertSame(502, $response['status']);
         $this->assertArrayHasKey('error', json_decode($response['body'], true));
+    }
+
+    /**
+     * Create a site user whose name and e-mail can appear in a spoken answer.
+     *
+     * @return \stdClass
+     */
+    private function create_named_user(): \stdClass {
+        return $this->getDataGenerator()->create_user([
+            'firstname' => 'Marisol',
+            'lastname' => 'Quintanilla',
+            'email' => 'marisol.q@example.com',
+        ]);
+    }
+
+    /**
+     * The text read aloud is anonymised with the level of the Privacy tab before it leaves the site, and the
+     * placeholders are spoken as plain words.
+     * Basic level: the name and e-mail of a site user never reach the AI service; the grade is kept.
+     *
+     * @return void
+     */
+    public function test_speech_text_is_anonymised_at_the_basic_level(): void {
+        $this->setup_user();
+        $this->create_named_user();
+        set_config('anonymization_level', 'basic', 'local_jedomi');
+        $this->curl->enqueue(self::MP3);
+
+        $response = $this->request(['text' => 'Marisol Quintanilla (marisol.q@example.com) got 8.5 in the quiz.']);
+
+        $this->assertSame(200, $response['status']);
+        $input = $this->curl->last_body()['input'];
+        $this->assertStringNotContainsString('Marisol', $input);
+        $this->assertStringNotContainsString('Quintanilla', $input);
+        $this->assertStringNotContainsString('marisol.q@example.com', $input);
+        $this->assertStringNotContainsString('[', $input, 'Placeholders are never read as raw tokens');
+        $this->assertSame(
+            get_string('speech_placeholder_person', 'local_jedomi') . ' ('
+                . get_string('speech_placeholder_email', 'local_jedomi') . ') got 8.5 in the quiz.',
+            $input
+        );
+    }
+
+    /**
+     * Strict level: names, e-mails and codes such as student numbers are spoken as plain words.
+     *
+     * @return void
+     */
+    public function test_speech_text_is_anonymised_at_the_strict_level(): void {
+        $this->setup_user();
+        $this->create_named_user();
+        set_config('anonymization_level', 'strict', 'local_jedomi');
+        $this->curl->enqueue(self::MP3);
+
+        $this->request(['text' => 'Quintanilla has the student number A12345 and wrote to marisol.q@example.com.']);
+
+        $this->assertSame(
+            get_string('speech_placeholder_person', 'local_jedomi') . ' has the student number '
+                . get_string('speech_placeholder_id', 'local_jedomi') . ' and wrote to '
+                . get_string('speech_placeholder_email', 'local_jedomi') . '.',
+            $this->curl->last_body()['input']
+        );
+    }
+
+    /**
+     * Feedback only level: what is sent to the AI service is anonymised as with the Basic level.
+     *
+     * @return void
+     */
+    public function test_speech_text_is_anonymised_at_the_feedback_level(): void {
+        $this->setup_user();
+        $this->create_named_user();
+        set_config('anonymization_level', 'feedback', 'local_jedomi');
+        $this->curl->enqueue(self::MP3);
+
+        $this->request(['text' => 'Marisol wrote to marisol.q@example.com.']);
+
+        $this->assertSame(
+            get_string('speech_placeholder_person', 'local_jedomi') . ' wrote to '
+                . get_string('speech_placeholder_email', 'local_jedomi') . '.',
+            $this->curl->last_body()['input']
+        );
+    }
+
+    /**
+     * A text without personal data is read exactly as written at every level.
+     *
+     * @return void
+     */
+    public function test_text_without_personal_data_is_sent_unchanged(): void {
+        $this->setup_user();
+        $this->create_named_user();
+        foreach (['basic', 'strict', 'feedback'] as $level) {
+            set_config('anonymization_level', $level, 'local_jedomi');
+            $this->curl->enqueue(self::MP3);
+
+            $this->request(['text' => 'The average grade of the course is 7.5 out of 10.']);
+
+            $this->assertSame('The average grade of the course is 7.5 out of 10.', $this->curl->last_body()['input'], $level);
+        }
+    }
+
+    /**
+     * Only the spoken text is anonymised: the answer shown in the chat still gets the real values back.
+     *
+     * @return void
+     */
+    public function test_chat_answer_keeps_the_real_values(): void {
+        $this->setup_user();
+        $this->create_named_user();
+        set_config('anonymization_level', 'basic', 'local_jedomi');
+        // As the chat proxy does: the AI sees the tool result anonymised and its answer is restored for display.
+        $anonymizer = new \local_jedomi\local\anonymizer();
+        $toolresult = json_decode($anonymizer->anonymize_tool_result(json_encode([
+            'firstname' => 'Marisol', 'email' => 'marisol.q@example.com', 'grade' => '8.5',
+        ])), true);
+        $shown = $anonymizer->restore("{$toolresult['firstname']} ({$toolresult['email']}) got {$toolresult['grade']}.");
+        $this->assertSame('Marisol (marisol.q@example.com) got 8.5.', $shown);
+
+        $spoken = speech_service::anonymise_for_speech($shown);
+
+        $this->assertSame('Marisol (marisol.q@example.com) got 8.5.', $shown, 'The displayed answer is unchanged');
+        $this->assertStringNotContainsString('Marisol', $spoken);
+        $this->assertStringNotContainsString('marisol.q@example.com', $spoken);
     }
 
     /**
