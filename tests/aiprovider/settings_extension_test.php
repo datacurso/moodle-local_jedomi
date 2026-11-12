@@ -31,8 +31,11 @@ use local_jedomi\ai\model_settings;
  * @covers     \local_jedomi\aiprovider\settings_extension
  */
 final class settings_extension_test extends \advanced_testcase {
-    /** @var string Second text-to-speech model of the catalogue. */
+    /** @var string Default text-to-speech model of the catalogue. */
     private const INWORLD = 'jedomi/inworld-ai/inworld-tts-1.5-mini';
+
+    /** @var string Second text-to-speech model of the catalogue. */
+    private const QWEN_TTS = 'jedomi/Qwen/Qwen3-TTS';
 
     #[\Override]
     protected function setUp(): void {
@@ -59,8 +62,8 @@ final class settings_extension_test extends \advanced_testcase {
             'audio_model' => model_settings::DEFAULT_AUDIO_MODEL,
             'voice_enabled' => 0,
             'speech_model' => model_settings::DEFAULT_SPEECH_MODEL,
-            model_settings::voice_field(model_settings::DEFAULT_SPEECH_MODEL) => 'Vivian',
-            model_settings::voice_field(self::INWORLD) => 'Diego',
+            model_settings::voice_field(self::INWORLD) => 'Rafael',
+            model_settings::voice_field(self::QWEN_TTS) => 'Vivian',
             'max_tokens' => '8000',
         ], $overrides);
     }
@@ -96,8 +99,8 @@ final class settings_extension_test extends \advanced_testcase {
         $this->assertStringNotContainsString('docservice_url', $html);
         $order = [];
         $fields = ['enabled', 'model', 'files_enabled', 'vision_model', 'audio_enabled', 'audio_model', 'voice_enabled',
-            'speech_model', model_settings::voice_field(model_settings::DEFAULT_SPEECH_MODEL),
-            model_settings::voice_field(self::INWORLD), 'max_tokens'];
+            'speech_model', model_settings::voice_field(self::INWORLD),
+            model_settings::voice_field(self::QWEN_TTS), 'max_tokens'];
         foreach ($fields as $name) {
             $position = strpos($html, 'name="' . $name . '"');
             $this->assertNotFalse($position, "Field {$name} must be rendered");
@@ -224,7 +227,7 @@ final class settings_extension_test extends \advanced_testcase {
             'files_enabled' => 0,
             'vision_model' => 'jedomi/Qwen/Qwen3-VL-235B-A22B-Instruct',
             'audio_enabled' => 1,
-            'audio_model' => '  jedomi/openai/whisper-large-v3-turbo  ',
+            'audio_model' => '  jedomi/Qwen/Qwen3-ASR-1.7B  ',
             'max_tokens' => 4096,
         ]));
 
@@ -234,7 +237,7 @@ final class settings_extension_test extends \advanced_testcase {
         $this->assertSame('0', get_config('local_jedomi', 'files_enabled'));
         $this->assertSame('jedomi/Qwen/Qwen3-VL-235B-A22B-Instruct', get_config('local_jedomi', 'vision_model'));
         $this->assertSame('1', get_config('local_jedomi', 'audio_enabled'));
-        $this->assertSame('jedomi/openai/whisper-large-v3-turbo', get_config('local_jedomi', 'audio_model'));
+        $this->assertSame('jedomi/Qwen/Qwen3-ASR-1.7B', get_config('local_jedomi', 'audio_model'));
         $this->assertSame('4096', get_config('local_jedomi', 'max_tokens'));
         $this->assertFalse(get_config('local_jedomi', 'enabled'));
     }
@@ -275,7 +278,7 @@ final class settings_extension_test extends \advanced_testcase {
         set_config('audio_model', 'jedomi/mistralai/Voxtral-Mini-3B-2507', 'local_jedomi');
         set_config('voice_enabled', 1, 'local_jedomi');
         set_config('speech_model', self::INWORLD, 'local_jedomi');
-        set_config('speech_voice', 'Rafael', 'local_jedomi');
+        set_config('speech_voice', 'Miguel', 'local_jedomi');
         set_config('max_tokens', 9000, 'local_jedomi');
         set_config('plugin_enabled_local_jedomi', '0', 'aiprovider_datacurso');
 
@@ -287,8 +290,8 @@ final class settings_extension_test extends \advanced_testcase {
             'audio_model' => 'jedomi/mistralai/Voxtral-Mini-3B-2507',
             'voice_enabled' => 1,
             'speech_model' => self::INWORLD,
-            model_settings::voice_field(model_settings::DEFAULT_SPEECH_MODEL) => 'Vivian',
-            model_settings::voice_field(self::INWORLD) => 'Rafael',
+            model_settings::voice_field(self::INWORLD) => 'Miguel',
+            model_settings::voice_field(self::QWEN_TTS) => 'Vivian',
             'max_tokens' => 9000,
         ], (new settings_extension())->get_data());
 
@@ -324,8 +327,8 @@ final class settings_extension_test extends \advanced_testcase {
             'audio_model' => model_settings::DEFAULT_AUDIO_MODEL,
             'voice_enabled' => 0,
             'speech_model' => model_settings::DEFAULT_SPEECH_MODEL,
-            model_settings::voice_field(model_settings::DEFAULT_SPEECH_MODEL) => 'Vivian',
-            model_settings::voice_field(self::INWORLD) => 'Diego',
+            model_settings::voice_field(self::INWORLD) => 'Rafael',
+            model_settings::voice_field(self::QWEN_TTS) => 'Vivian',
             'max_tokens' => model_settings::DEFAULT_MAX_TOKENS,
         ], (new settings_extension())->get_data());
     }
@@ -398,8 +401,8 @@ final class settings_extension_test extends \advanced_testcase {
         $this->assertSame(['vision_model'], $dependencies['files_enabled']['notchecked']['1'][$hide]);
         $this->assertSame(['audio_model'], $dependencies['audio_enabled']['notchecked']['1'][$hide]);
         $this->assertSame(
-            ['speech_model', model_settings::voice_field(model_settings::DEFAULT_SPEECH_MODEL),
-                model_settings::voice_field(self::INWORLD)],
+            ['speech_model', model_settings::voice_field(self::INWORLD),
+                model_settings::voice_field(self::QWEN_TTS)],
             $dependencies['voice_enabled']['notchecked']['1'][$hide]
         );
         $this->assertArrayNotHasKey('model', $dependencies, 'The chat model is never hidden');
@@ -503,7 +506,7 @@ final class settings_extension_test extends \advanced_testcase {
 
         [, $dependencies] = $mform->getLockOptionObject();
         $hide = \MoodleQuickForm::DEP_HIDE;
-        foreach ([model_settings::DEFAULT_SPEECH_MODEL, self::INWORLD] as $model) {
+        foreach ([self::INWORLD, self::QWEN_TTS] as $model) {
             $field = model_settings::voice_field($model);
             $this->assertMatchesRegularExpression('/^speech_voice_[a-z0-9_]+$/', $field);
             $select = $mform->getElement($field);
@@ -528,14 +531,14 @@ final class settings_extension_test extends \advanced_testcase {
     public function test_voice_selectors_show_the_saved_and_the_default_voices(): void {
         $this->resetAfterTest();
         $this->setAdminUser();
-        set_config('speech_model', self::INWORLD, 'local_jedomi');
-        set_config('speech_voice', 'Miguel', 'local_jedomi');
+        set_config('speech_model', self::QWEN_TTS, 'local_jedomi');
+        set_config('speech_voice', 'Serena', 'local_jedomi');
 
         $form = new plugin_settings_form(null, ['component' => 'local_jedomi']);
         $form->set_data(plugin_settings_form::current_data('local_jedomi'));
         $html = $form->render();
 
-        foreach ([self::INWORLD => 'Miguel', model_settings::DEFAULT_SPEECH_MODEL => 'Vivian'] as $model => $voice) {
+        foreach ([self::QWEN_TTS => 'Serena', self::INWORLD => 'Rafael'] as $model => $voice) {
             $name = model_settings::voice_field($model);
             $this->assertSame(1, preg_match('/<select[^>]*name="' . $name . '"[^>]*>(.*?)<\/select>/s', $html, $match));
             $this->assertStringNotContainsString('value=""', $match[1], "{$name} must not have an empty option");
@@ -601,16 +604,16 @@ final class settings_extension_test extends \advanced_testcase {
      * @return array
      */
     public static function bad_voice_provider(): array {
-        $qwen = model_settings::voice_field(model_settings::DEFAULT_SPEECH_MODEL);
+        $qwen = model_settings::voice_field(self::QWEN_TTS);
         $inworld = model_settings::voice_field(self::INWORLD);
         return [
             'empty model' => [['speech_model' => ''], 'speech_model', 'error_invalid_model'],
             'chat model' => [['speech_model' => model_settings::DEFAULT_MODEL], 'speech_model', 'error_invalid_model'],
             'audio model' => [['speech_model' => model_settings::DEFAULT_AUDIO_MODEL], 'speech_model', 'error_invalid_model'],
-            'voice of another model' => [[$qwen => 'Diego'], $qwen, 'error_invalid_voice'],
+            'voice of another model' => [['speech_model' => self::QWEN_TTS, $qwen => 'Rafael'], $qwen, 'error_invalid_voice'],
             'unknown voice' => [['speech_model' => self::INWORLD, $inworld => 'Valentina'], $inworld, 'error_invalid_voice'],
-            'empty voice' => [[$qwen => ''], $qwen, 'error_invalid_voice'],
-            'voice in another case' => [[$qwen => 'vivian'], $qwen, 'error_invalid_voice'],
+            'empty voice' => [['speech_model' => self::QWEN_TTS, $qwen => ''], $qwen, 'error_invalid_voice'],
+            'voice in another case' => [['speech_model' => self::QWEN_TTS, $qwen => 'vivian'], $qwen, 'error_invalid_voice'],
         ];
     }
 
@@ -625,7 +628,7 @@ final class settings_extension_test extends \advanced_testcase {
 
         (new settings_extension())->save((object) $this->valid_data([
             'audio_enabled' => 1, 'voice_enabled' => 1, 'speech_model' => self::INWORLD,
-            model_settings::voice_field(model_settings::DEFAULT_SPEECH_MODEL) => 'Serena',
+            model_settings::voice_field(self::QWEN_TTS) => 'Serena',
             model_settings::voice_field(self::INWORLD) => 'Lupita',
         ]));
 
@@ -646,11 +649,11 @@ final class settings_extension_test extends \advanced_testcase {
 
         (new settings_extension())->save((object) $this->valid_data([
             'voice_enabled' => 0, 'speech_model' => 'jedomi/acme/x',
-            model_settings::voice_field(model_settings::DEFAULT_SPEECH_MODEL) => 'Diego',
+            model_settings::voice_field(model_settings::DEFAULT_SPEECH_MODEL) => 'Vivian',
         ]));
 
         $this->assertSame('0', get_config('local_jedomi', 'voice_enabled'));
         $this->assertSame(model_settings::DEFAULT_SPEECH_MODEL, get_config('local_jedomi', 'speech_model'));
-        $this->assertSame('Vivian', get_config('local_jedomi', 'speech_voice'));
+        $this->assertSame('Rafael', get_config('local_jedomi', 'speech_voice'));
     }
 }

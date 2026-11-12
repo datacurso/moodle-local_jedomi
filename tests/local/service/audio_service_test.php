@@ -228,6 +228,7 @@ final class audio_service_test extends \advanced_testcase {
             'unsupported' => [415, 'audio_unsupported', 'audio_error_unsupported'],
             'unreadable' => [422, 'audio_unreadable', 'audio_error_unreadable'],
             'not configured' => [503, 'unavailable', 'ai_error_unavailable'],
+            'gateway usage limit' => [402, 'quota_exceeded', 'ai_error_quota'],
         ];
     }
 

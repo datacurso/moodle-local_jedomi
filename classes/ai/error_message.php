@@ -39,6 +39,9 @@ class error_message {
     /** @var string Code: the AI service cannot be reached or failed. */
     public const CODE_UNAVAILABLE = 'unavailable';
 
+    /** @var string Code: the AI gateway reached its usage budget (HTTP 402 from plugins-ai, jedomi_quota_exceeded). */
+    public const CODE_QUOTA_EXCEEDED = 'quota_exceeded';
+
     /** @var string Code: the AI request took longer than the allowed time. */
     public const CODE_TIMEOUT = 'timeout';
 
@@ -105,6 +108,9 @@ class error_message {
             case 'emptyresponse':
                 return [self::CODE_UNAVAILABLE, 'ai_error_unavailable', null];
             case 'httperror':
+                if ((int) $e->a === 402) {
+                    return [self::CODE_QUOTA_EXCEEDED, 'ai_error_quota', null];
+                }
                 return (int) $e->a >= 500
                     ? [self::CODE_UNAVAILABLE, 'ai_error_unavailable', null]
                     : [self::CODE_GENERIC, 'ai_error_generic', null];

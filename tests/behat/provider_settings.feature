@@ -42,7 +42,7 @@ Feature: Jedomi settings in the Datacurso AI provider
     And I visit "/local/jedomi/admin_settings.php"
     And I follow "Open the Jedomi settings in the Datacurso AI provider"
     And the following fields match these values:
-      | Chat model               | DeepSeek V4.1 Flash |
-      | Enable audio processing  | 1                   |
-      | Audio model              | Qwen3-ASR 1.7B      |
-      | Max tokens               | 8192                |
+      | Chat model               | DeepSeek V4.1 Flash    |
+      | Enable audio processing  | 1                      |
+      | Audio model              | Whisper large-v3 turbo |
+      | Max tokens               | 8192                   |

@@ -233,7 +233,7 @@ final class model_settings_test extends \advanced_testcase {
      */
     public function test_each_capability_lists_only_its_models_with_default_first(): void {
         $this->assertSame('jedomi/Qwen/Qwen3-VL-30B-A3B-Instruct', model_settings::DEFAULT_VISION_MODEL);
-        $this->assertSame('jedomi/Qwen/Qwen3-ASR-1.7B', model_settings::DEFAULT_AUDIO_MODEL);
+        $this->assertSame('jedomi/openai/whisper-large-v3-turbo', model_settings::DEFAULT_AUDIO_MODEL);
 
         $this->assertSame([
             'jedomi/google/gemma-4-26B-A4B-it',
@@ -252,8 +252,8 @@ final class model_settings_test extends \advanced_testcase {
             'jedomi/moonshotai/Kimi-K3.1-Pro',
         ], array_keys(model_settings::get_available_models(model_settings::CAPABILITY_VISION)));
         $this->assertSame([
-            'jedomi/Qwen/Qwen3-ASR-1.7B',
             'jedomi/openai/whisper-large-v3-turbo',
+            'jedomi/Qwen/Qwen3-ASR-1.7B',
             'jedomi/mistralai/Voxtral-Mini-3B-2507',
         ], array_keys(model_settings::get_available_models(model_settings::CAPABILITY_AUDIO)));
 
@@ -262,7 +262,7 @@ final class model_settings_test extends \advanced_testcase {
             model_settings::get_available_models(model_settings::CAPABILITY_VISION)[model_settings::DEFAULT_VISION_MODEL]
         );
         $this->assertSame(
-            'Qwen3-ASR 1.7B',
+            'Whisper large-v3 turbo',
             model_settings::get_available_models(model_settings::CAPABILITY_AUDIO)[model_settings::DEFAULT_AUDIO_MODEL]
         );
         foreach (array_keys(model_settings::get_catalogue()) as $model) {
@@ -302,9 +302,9 @@ final class model_settings_test extends \advanced_testcase {
         $this->assertSame(model_settings::DEFAULT_AUDIO_MODEL, model_settings::get_audio_model());
 
         set_config('vision_model', 'jedomi/zai-org/GLM-5.3-Flash', 'local_jedomi');
-        set_config('audio_model', 'jedomi/openai/whisper-large-v3-turbo', 'local_jedomi');
+        set_config('audio_model', 'jedomi/Qwen/Qwen3-ASR-1.7B', 'local_jedomi');
         $this->assertSame('jedomi/zai-org/GLM-5.3-Flash', model_settings::get_vision_model());
-        $this->assertSame('jedomi/openai/whisper-large-v3-turbo', model_settings::get_audio_model());
+        $this->assertSame('jedomi/Qwen/Qwen3-ASR-1.7B', model_settings::get_audio_model());
     }
 
     /**
@@ -358,14 +358,14 @@ final class model_settings_test extends \advanced_testcase {
         set_config('files_enabled', 0, 'local_jedomi');
         set_config('audio_enabled', 1, 'local_jedomi');
         set_config('vision_model', 'jedomi/zai-org/GLM-5.3-Flash', 'local_jedomi');
-        set_config('audio_model', 'jedomi/openai/whisper-large-v3-turbo', 'local_jedomi');
+        set_config('audio_model', 'jedomi/Qwen/Qwen3-ASR-1.7B', 'local_jedomi');
 
         $this->assertTrue(xmldb_local_jedomi_upgrade(2026110300));
 
         $this->assertSame('0', get_config('local_jedomi', 'files_enabled'));
         $this->assertSame('1', get_config('local_jedomi', 'audio_enabled'));
         $this->assertSame('jedomi/zai-org/GLM-5.3-Flash', get_config('local_jedomi', 'vision_model'));
-        $this->assertSame('jedomi/openai/whisper-large-v3-turbo', get_config('local_jedomi', 'audio_model'));
+        $this->assertSame('jedomi/Qwen/Qwen3-ASR-1.7B', get_config('local_jedomi', 'audio_model'));
     }
 
     /**
@@ -373,24 +373,25 @@ final class model_settings_test extends \advanced_testcase {
      * V6: the speech selector lists the text-to-speech models with the default one first, each with its voices.
      */
     public function test_speech_catalogue_lists_its_models_and_voices(): void {
-        $this->assertSame('jedomi/Qwen/Qwen3-TTS', model_settings::DEFAULT_SPEECH_MODEL);
-        $inworld = 'jedomi/inworld-ai/inworld-tts-1.5-mini';
+        $this->assertSame('jedomi/inworld-ai/inworld-tts-1.5-mini', model_settings::DEFAULT_SPEECH_MODEL);
+        $inworld = model_settings::DEFAULT_SPEECH_MODEL;
+        $qwen = 'jedomi/Qwen/Qwen3-TTS';
 
         $models = model_settings::get_available_models(model_settings::CAPABILITY_SPEECH);
 
-        $this->assertSame([model_settings::DEFAULT_SPEECH_MODEL => 'Qwen3-TTS', $inworld => 'Inworld TTS 1.5 mini'], $models);
+        $this->assertSame([$inworld => 'Inworld TTS 1.5 mini', $qwen => 'Qwen3-TTS'], $models);
         $this->assertContains(model_settings::CAPABILITY_SPEECH, model_settings::CAPABILITIES);
         $this->assertSame('speech_model', model_settings::MODEL_SETTINGS[model_settings::CAPABILITY_SPEECH]);
         $this->assertSame(
             ['Vivian', 'Serena', 'Uncle_Fu', 'Dylan', 'Eric', 'Ryan', 'Aiden', 'Ono_Anna', 'Sohee'],
-            model_settings::get_voices(model_settings::DEFAULT_SPEECH_MODEL)
+            model_settings::get_voices($qwen)
         );
-        $this->assertSame(['Diego', 'Lupita', 'Miguel', 'Rafael'], model_settings::get_voices($inworld));
-        $this->assertSame('Vivian', model_settings::get_default_voice(model_settings::DEFAULT_SPEECH_MODEL));
-        $this->assertSame('Diego', model_settings::get_default_voice($inworld));
+        $this->assertSame(['Rafael', 'Diego', 'Lupita', 'Miguel'], model_settings::get_voices($inworld));
+        $this->assertSame('Vivian', model_settings::get_default_voice($qwen));
+        $this->assertSame('Rafael', model_settings::get_default_voice($inworld));
         $this->assertSame([], model_settings::get_voices(model_settings::DEFAULT_MODEL));
         $this->assertSame('', model_settings::get_default_voice(model_settings::DEFAULT_MODEL));
-        $this->assertSame('speech_voice_qwen_qwen3_tts', model_settings::voice_field(model_settings::DEFAULT_SPEECH_MODEL));
+        $this->assertSame('speech_voice_qwen_qwen3_tts', model_settings::voice_field($qwen));
         $this->assertSame('speech_voice_inworld_ai_inworld_tts_1_5_mini', model_settings::voice_field($inworld));
         foreach (array_keys($models) as $model) {
             $this->assertTrue(model_settings::is_routable($model));
@@ -422,27 +423,27 @@ final class model_settings_test extends \advanced_testcase {
      */
     public function test_speech_model_and_voice_fall_back_to_their_defaults(): void {
         $this->resetAfterTest();
-        $inworld = 'jedomi/inworld-ai/inworld-tts-1.5-mini';
+        $qwen = 'jedomi/Qwen/Qwen3-TTS';
 
         unset_config('speech_model', 'local_jedomi');
         unset_config('speech_voice', 'local_jedomi');
         $this->assertSame(model_settings::DEFAULT_SPEECH_MODEL, model_settings::get_speech_model());
-        $this->assertSame('Vivian', model_settings::get_speech_voice());
+        $this->assertSame('Rafael', model_settings::get_speech_voice());
 
         set_config('speech_model', model_settings::DEFAULT_AUDIO_MODEL, 'local_jedomi');
-        set_config('speech_voice', 'Serena', 'local_jedomi');
-        $this->assertSame(model_settings::DEFAULT_SPEECH_MODEL, model_settings::get_speech_model());
-        $this->assertSame('Serena', model_settings::get_speech_voice());
-
-        set_config('speech_model', $inworld, 'local_jedomi');
-        $this->assertSame($inworld, model_settings::get_speech_model());
-        $this->assertSame('Diego', model_settings::get_speech_voice(), 'A voice of another model uses the default voice');
-
         set_config('speech_voice', 'Lupita', 'local_jedomi');
+        $this->assertSame(model_settings::DEFAULT_SPEECH_MODEL, model_settings::get_speech_model());
         $this->assertSame('Lupita', model_settings::get_speech_voice());
 
-        set_config('speech_voice', 'lupita', 'local_jedomi');
-        $this->assertSame('Diego', model_settings::get_speech_voice(), 'Voices are case-sensitive');
+        set_config('speech_model', $qwen, 'local_jedomi');
+        $this->assertSame($qwen, model_settings::get_speech_model());
+        $this->assertSame('Vivian', model_settings::get_speech_voice(), 'A voice of another model uses the default voice');
+
+        set_config('speech_voice', 'Serena', 'local_jedomi');
+        $this->assertSame('Serena', model_settings::get_speech_voice());
+
+        set_config('speech_voice', 'serena', 'local_jedomi');
+        $this->assertSame('Vivian', model_settings::get_speech_voice(), 'Voices are case-sensitive');
     }
 
     /**
@@ -465,7 +466,7 @@ final class model_settings_test extends \advanced_testcase {
 
     /**
      * MDL-INT-086: the upgrade leaves the voice conversation off with the default model and voice.
-     * V5: the 2026111100 upgrade step leaves the voice conversation off, with Qwen3-TTS and Vivian.
+     * V5: the 2026111100 upgrade step leaves the voice conversation off, with the default model and its default voice.
      */
     public function test_upgrade_saves_voice_defaults(): void {
         $this->resetAfterTest();
@@ -479,7 +480,7 @@ final class model_settings_test extends \advanced_testcase {
 
         $this->assertSame('0', get_config('local_jedomi', 'voice_enabled'));
         $this->assertSame(model_settings::DEFAULT_SPEECH_MODEL, get_config('local_jedomi', 'speech_model'));
-        $this->assertSame('Vivian', get_config('local_jedomi', 'speech_voice'));
+        $this->assertSame('Rafael', get_config('local_jedomi', 'speech_voice'));
         $this->assertGreaterThanOrEqual(2026111100, (int) get_config('local_jedomi', 'version'));
     }
 
@@ -492,13 +493,13 @@ final class model_settings_test extends \advanced_testcase {
         $this->load_upgrade_script();
         set_config('version', 2026111000, 'local_jedomi');
         set_config('voice_enabled', 1, 'local_jedomi');
-        set_config('speech_model', 'jedomi/inworld-ai/inworld-tts-1.5-mini', 'local_jedomi');
-        set_config('speech_voice', 'Miguel', 'local_jedomi');
+        set_config('speech_model', 'jedomi/Qwen/Qwen3-TTS', 'local_jedomi');
+        set_config('speech_voice', 'Serena', 'local_jedomi');
 
         $this->assertTrue(xmldb_local_jedomi_upgrade(2026111000));
 
         $this->assertSame('1', get_config('local_jedomi', 'voice_enabled'));
-        $this->assertSame('jedomi/inworld-ai/inworld-tts-1.5-mini', get_config('local_jedomi', 'speech_model'));
-        $this->assertSame('Miguel', get_config('local_jedomi', 'speech_voice'));
+        $this->assertSame('jedomi/Qwen/Qwen3-TTS', get_config('local_jedomi', 'speech_model'));
+        $this->assertSame('Serena', get_config('local_jedomi', 'speech_voice'));
     }
 }

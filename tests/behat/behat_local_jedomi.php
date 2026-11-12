@@ -1702,6 +1702,23 @@ JS;
     }
 
     /**
+     * Number of texts sent to speech.php to be read aloud, each one a request.
+     *
+     * @Then /^Jedomi should have sent "(?P<count_number>\d+)" texts? to be read aloud$/
+     * @param int $count Expected number.
+     * @return void
+     */
+    public function jedomi_should_have_sent_texts_to_be_read_aloud(int $count): void {
+        // A request the panel is still about to send is waited for.
+        usleep(500000);
+        $this->wait_for_value(
+            'return window.jedomiVoice ? window.jedomiVoice.spoken.length : -1;',
+            static fn($value): bool => (int) $value === $count,
+            "Expected {$count} texts to be read aloud."
+        );
+    }
+
+    /**
      * Length of the first sentence sent to be read aloud.
      *
      * @Then /^the first text Jedomi read aloud should be at most "(?P<max_number>\d+)" characters long$/

@@ -1708,8 +1708,9 @@ GENERAL INSTRUCTIONS:
     // A conversation by voice, like the voice mode of other assistants: the voice view replaces the input row,
     // the microphone stays open and the end of what the user says is detected by its silence (Web Audio). The
     // recording is transcribed by the audio model, as a voice message, and sent with voice_mode, so the answer is
-    // short and fit to be spoken. The answer is read aloud sentence by sentence through speech.php while the next
-    // sentence is requested, and the full text stays in the chat. Speaking while Jedomi speaks interrupts it.
+    // short and fit to be spoken. The answer is read aloud through speech.php: a short first chunk, then the next
+    // sentences grouped in longer chunks, each requested while the one before plays, and the full text stays in the
+    // chat. Speaking while Jedomi speaks interrupts it.
     // An action that changes data still waits for the confirmation card: Jedomi asks to confirm it on screen and
     // stops listening until it is resolved.
     // Level (RMS, 0 to 1) above which the microphone hears speech.
@@ -1741,6 +1742,15 @@ GENERAL INSTRUCTIONS:
     // the whole text is generated, so a short first chunk makes Jedomi start speaking sooner with any voice model.
     const VOICE_MODE_FIRST_CHUNK_MAX = 60;
     const VOICE_MODE_FIRST_CHUNK_MIN = 15;
+    /**
+     * Characters a chunk read aloud after the first one may reach by grouping whole sentences. Each chunk is one
+     * request to speech.php (and one charge), so grouping means fewer of them. A sentence is never split to fit:
+     * a longer one goes alone (cut only above VOICE_MODE_MAX_SENTENCE). A group is sent before it is full when the
+     * answer ends, before a notice of Jedomi, or when nothing else is waiting to be read, so Jedomi never goes silent.
+     *
+     * @type {number}
+     */
+    const VOICE_MODE_GROUP_TARGET = 200;
 
     // An element of the voice view by its data-region.
     const voiceModeRegion = (name) => g('jedomi-voice-mode')?.querySelector(`[data-region="local_jedomi/sidebar/${name}"]`);
@@ -1817,8 +1827,9 @@ GENERAL INSTRUCTIONS:
             heard: false, speechStart: 0, lastVoice: 0, voicedMs: 0, lastTick: 0, bargeStart: 0,
             // Each utterance is a turn; an interruption or the end of the conversation drops older work.
             turn: 0,
-            // Sentences waiting to be spoken ({text, controller, audio}), the one playing and its audio source.
-            queue: [], current: null, source: null,
+            // Chunks waiting to be spoken ({text, notice, controller, audio}), the one playing and its audio source,
+            // and the sentences grouped for the next chunk (see VOICE_MODE_GROUP_TARGET).
+            queue: [], current: null, source: null, group: '',
             // Sentence splitting of the answer being received.
             pendingText: '', inCodeBlock: false, firstQueued: false, display: null,
             // Background noise while listening, the controller of the requests of the turn, and whether the question
@@ -2060,6 +2071,7 @@ GENERAL INSTRUCTIONS:
         await waitUntilNotSending();
         if (voiceMode !== current || current.turn !== turn) return;
         current.pendingText = '';
+        current.group = '';
         current.inCodeBlock = false;
         current.firstQueued = false;
         current.display = null;
@@ -2139,6 +2151,9 @@ GENERAL INSTRUCTIONS:
         if (final) {
             speakLine(text);
             text = '';
+            // The answer ended: the sentences still grouped are read now.
+            flushVoiceGroup();
+            playNextVoiceSentence();
         } else if (!current.inCodeBlock && !/^\s*(\||`|~)/.test(text)) {
             // Sentences of the line that already ended (a stop followed by a space) can be spoken before the line ends.
             const match = text.match(/^([\s\S]*[.!?…]["')\]]*)\s+(\S[\s\S]*)?$/);
@@ -2186,8 +2201,27 @@ GENERAL INSTRUCTIONS:
         }
         // Text with no letter or number (a lone symbol) is not read.
         if (!/[\p{L}\p{N}]/u.test(text)) return;
-        voiceMode.queue.push({text, notice, controller: new AbortController(), audio: null});
+        const current = voiceMode;
+        if (notice) {
+            // A notice of Jedomi is read after the sentences of the answer grouped before it.
+            flushVoiceGroup();
+            current.queue.push({text, notice, controller: new AbortController(), audio: null});
+        } else {
+            // Whole sentences are grouped up to the target; one that does not fit starts the next group.
+            if (current.group && current.group.length + 1 + text.length > VOICE_MODE_GROUP_TARGET) flushVoiceGroup();
+            current.group = current.group ? `${current.group} ${text}` : text;
+            if (current.group.length >= VOICE_MODE_GROUP_TARGET) flushVoiceGroup();
+        }
+        // An empty queue sends the group at once (see playNextVoiceSentence), so the first chunk is never delayed.
         playNextVoiceSentence();
+    };
+
+    // Queue the sentences grouped so far as one chunk to be read aloud.
+    const flushVoiceGroup = () => {
+        const current = voiceMode;
+        if (!current?.group) return;
+        current.queue.push({text: current.group, notice: false, controller: new AbortController(), audio: null});
+        current.group = '';
     };
 
     // Ask speech.php for the audio of a sentence and decode it.
@@ -2210,10 +2244,13 @@ GENERAL INSTRUCTIONS:
         return current.ctx.decodeAudioData(buffer);
     };
 
-    // Play the next sentence in order, and request the one after it while it plays.
+    // Play the next chunk in order, and request the one after it while it plays.
     const playNextVoiceSentence = async () => {
         const current = voiceMode;
         if (!current) return;
+        // Nothing else waits to be read: the grouped sentences go now instead of waiting for more text, so the
+        // next chunk is always requested while the current one is still being prepared or played.
+        if (!current.queue.length) flushVoiceGroup();
         const next = current.queue[0];
         if (next && !next.audio) {
             next.audio = fetchVoiceSentence(next);
@@ -2279,6 +2316,7 @@ GENERAL INSTRUCTIONS:
         const items = current.current ? [current.current, ...current.queue] : current.queue;
         items.forEach(item => item.controller.abort());
         current.queue = [];
+        current.group = '';
         current.current = null;
         current.pendingText = '';
         if (current.source) {
@@ -2295,7 +2333,7 @@ GENERAL INSTRUCTIONS:
     // After the last sentence, listen again, or wait for the confirmation card when an action is pending.
     const finishVoiceTurnIfDone = () => {
         const current = voiceMode;
-        if (!current || !current.answerDone || current.current || current.queue.length) return;
+        if (!current || !current.answerDone || current.current || current.queue.length || current.group) return;
         if (current.state === 'listening' || current.state === 'paused') return;
         // Everything was heard: the complete answer replaces the spoken sentences.
         current.display?.finish();

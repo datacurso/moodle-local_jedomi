@@ -58,11 +58,11 @@ class model_settings {
     /** @var string Default vision model: exact and cheap in the phase 10 tests. */
     public const DEFAULT_VISION_MODEL = 'jedomi/Qwen/Qwen3-VL-30B-A3B-Instruct';
 
-    /** @var string Default audio model: the only one that wrote "Jedomi" right in the phase 10 tests. */
-    public const DEFAULT_AUDIO_MODEL = 'jedomi/Qwen/Qwen3-ASR-1.7B';
+    /** @var string Default audio model: fast transcription for the voice conversation (Qwen3-ASR 1.7B stays listed). */
+    public const DEFAULT_AUDIO_MODEL = 'jedomi/openai/whisper-large-v3-turbo';
 
-    /** @var string Default speech model: best Spanish quality when listened to in the phase 11 tests. */
-    public const DEFAULT_SPEECH_MODEL = 'jedomi/Qwen/Qwen3-TTS';
+    /** @var string Default speech model: the fastest to start reading aloud (Qwen3-TTS stays listed). */
+    public const DEFAULT_SPEECH_MODEL = 'jedomi/inworld-ai/inworld-tts-1.5-mini';
 
     /** @var array<string, string> Config name of the model of each capability. */
     public const MODEL_SETTINGS = [
@@ -110,22 +110,19 @@ class model_settings {
             'jedomi/zai-org/GLM-5.3-Flash' => ['name' => 'GLM 5.3 Flash', 'capabilities' => $chatvision],
             'jedomi/XiaomiMiMo/MiMo-V2.6-Flash' => ['name' => 'MiMo V2.6 Flash', 'capabilities' => $chatvision],
             'jedomi/moonshotai/Kimi-K3.1-Pro' => ['name' => 'Kimi K3.1 Pro', 'capabilities' => $chatvision],
-            self::DEFAULT_AUDIO_MODEL => ['name' => 'Qwen3-ASR 1.7B', 'capabilities' => [self::CAPABILITY_AUDIO]],
-            'jedomi/openai/whisper-large-v3-turbo' => [
-                'name' => 'Whisper large-v3 turbo',
-                'capabilities' => [self::CAPABILITY_AUDIO],
-            ],
+            self::DEFAULT_AUDIO_MODEL => ['name' => 'Whisper large-v3 turbo', 'capabilities' => [self::CAPABILITY_AUDIO]],
+            'jedomi/Qwen/Qwen3-ASR-1.7B' => ['name' => 'Qwen3-ASR 1.7B', 'capabilities' => [self::CAPABILITY_AUDIO]],
             'jedomi/mistralai/Voxtral-Mini-3B-2507' => ['name' => 'Voxtral Mini 3B', 'capabilities' => [self::CAPABILITY_AUDIO]],
             // Voices accepted in Spanish in the phase 11 tests; any other voice answers an error.
             self::DEFAULT_SPEECH_MODEL => [
+                'name' => 'Inworld TTS 1.5 mini',
+                'capabilities' => [self::CAPABILITY_SPEECH],
+                'voices' => ['Rafael', 'Diego', 'Lupita', 'Miguel'],
+            ],
+            'jedomi/Qwen/Qwen3-TTS' => [
                 'name' => 'Qwen3-TTS',
                 'capabilities' => [self::CAPABILITY_SPEECH],
                 'voices' => ['Vivian', 'Serena', 'Uncle_Fu', 'Dylan', 'Eric', 'Ryan', 'Aiden', 'Ono_Anna', 'Sohee'],
-            ],
-            'jedomi/inworld-ai/inworld-tts-1.5-mini' => [
-                'name' => 'Inworld TTS 1.5 mini',
-                'capabilities' => [self::CAPABILITY_SPEECH],
-                'voices' => ['Diego', 'Lupita', 'Miguel', 'Rafael'],
             ],
         ];
     }

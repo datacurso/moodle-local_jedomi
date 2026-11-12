@@ -119,7 +119,7 @@ final class speech_service_test extends \advanced_testcase {
         $this->assertStringEndsWith('/jedomi/v1/audio/speech', $this->curl->calls[0]['url']);
         $body = $this->curl->last_body();
         $this->assertSame(model_settings::DEFAULT_SPEECH_MODEL, $body['model']);
-        $this->assertSame('Vivian', $body['voice']);
+        $this->assertSame('Rafael', $body['voice']);
         $this->assertSame('Hello, I am Jedomi.', $body['input']);
         $this->assertArrayHasKey('userid', $body);
         $this->assertArrayHasKey('site_id', $body);
@@ -133,15 +133,15 @@ final class speech_service_test extends \advanced_testcase {
      */
     public function test_speech_uses_the_configured_model_and_voice(): void {
         $this->setup_user();
-        set_config('speech_model', 'jedomi/inworld-ai/inworld-tts-1.5-mini', 'local_jedomi');
-        set_config('speech_voice', 'Rafael', 'local_jedomi');
+        set_config('speech_model', 'jedomi/Qwen/Qwen3-TTS', 'local_jedomi');
+        set_config('speech_voice', 'Serena', 'local_jedomi');
         $this->curl->enqueue(self::MP3);
 
         $response = $this->request();
 
         $this->assertSame(200, $response['status']);
-        $this->assertSame('jedomi/inworld-ai/inworld-tts-1.5-mini', $this->curl->last_body()['model']);
-        $this->assertSame('Rafael', $this->curl->last_body()['voice']);
+        $this->assertSame('jedomi/Qwen/Qwen3-TTS', $this->curl->last_body()['model']);
+        $this->assertSame('Serena', $this->curl->last_body()['voice']);
     }
 
     /**

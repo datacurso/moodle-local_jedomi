@@ -58,6 +58,7 @@ final class error_message_test extends \advanced_testcase {
             'license not allowed' => ['license_not_allowed', null, 'license', 'ai_error_license', null],
             'license missing or invalid' => ['invalidlicensekey', null, 'license', 'ai_error_license', null],
             'service unavailable' => ['httperror', 503, 'unavailable', 'ai_error_unavailable', null],
+            'gateway usage limit' => ['httperror', 402, 'quota_exceeded', 'ai_error_quota', null],
             'network error' => ['curlerror', 7, 'unavailable', 'ai_error_unavailable', null],
             'request timeout' => ['curlerror', CURLE_OPERATION_TIMEDOUT, 'timeout', 'ai_error_timeout', null],
             'bad request' => ['httperror', 400, 'generic', 'ai_error_generic', null],

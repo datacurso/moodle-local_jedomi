@@ -77,6 +77,24 @@ Feature: Voice conversation with Jedomi in the web chat
     And "1" Jedomi transcription should have been requested
 
   @MDL-UNIT-114
+  Scenario: After a short first part, the next sentences are read aloud in fewer, longer pieces
+    Given I log in as "student1"
+    And I am on homepage
+    And I click on "#jedomi-trigger" "css_element"
+    And the Jedomi browser has a microphone that grants access
+    And Jedomi takes "2" seconds to read each sentence aloud
+    And the Jedomi AI answers "Hello Sam. Your essay is due on Friday. The quiz opens on Monday. The forum closes on Tuesday. Nothing else is due this week."
+    And I click on "#jedomi-voice-mode-btn" "css_element"
+    When I speak to Jedomi for "800" milliseconds
+    Then the Jedomi voice conversation should be speaking
+    And the first text Jedomi read aloud should be at most "60" characters long
+    And Jedomi should have read aloud "Hello Sam."
+    And Jedomi should have read aloud "Your essay is due on Friday."
+    And Jedomi should have read aloud "The quiz opens on Monday. The forum closes on Tuesday. Nothing else is due this week."
+    And the Jedomi voice conversation should be listening
+    And Jedomi should have sent "3" texts to be read aloud
+    And I should see "Hello Sam. Your essay is due on Friday. The quiz opens on Monday." in the "#jedomi-messages" "css_element"
+
   Scenario: Only the speakable text is read aloud, with a short first part, and the full answer stays in the chat
     Given I log in as "student1"
     And I am on homepage
