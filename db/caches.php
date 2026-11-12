@@ -64,4 +64,14 @@ $definitions = [
         'simpledata' => true,
         'ttl'        => 120,
     ],
+
+    // Hashes of the signatures of the companion web services already used, so a signed request runs only once.
+    // MODE_APPLICATION so a replay is seen by every request. A timestamp is accepted from 60 seconds before to 60 seconds
+    // after it, so a signature is kept a little longer than twice that margin.
+    'companion_signatures' => [
+        'mode'       => cache_store::MODE_APPLICATION,
+        'simplekeys' => true,
+        'simpledata' => true,
+        'ttl'        => 130,
+    ],
 ];

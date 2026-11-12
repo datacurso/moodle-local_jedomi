@@ -22,12 +22,13 @@
  * An admin cannot see other users' conversations.
  *
  * Actions:
- *   GET  ?action=get       → returns the message history
+ *   POST action=get        → returns the message history
  *   POST action=append     → adds a message to the history
  *   POST action=clear      → clears the conversation ("New conversation" button)
  *
  * Security:
  *   - Requires the sesskey on EVERY request (CSRF)
+ *   - Requires the signed permissions of the panel (spt): the course of the request is the signed one
  *   - Logged-in users only
  *   - MODE_SESSION: nobody else can read this cache
  * @package    local_jedomi
@@ -58,8 +59,13 @@ if ($disabled !== null) {
     exit;
 }
 
-// Same access rules as the panel for the course the request comes from.
-$denied = local_jedomi_chat_access_error(optional_param('courseid', 0, PARAM_INT));
+// Same access rules as the panel, for the course signed in the permissions of the panel (never the course the
+// browser names: a different one is refused).
+$signed = local_jedomi_signed_request_course(
+    json_decode(optional_param('spt', '', PARAM_RAW), true),
+    optional_param('courseid', null, PARAM_INT)
+);
+$denied = $signed['error'];
 if ($denied !== null) {
     header('Content-Type: application/json; charset=utf-8');
     http_response_code(403);

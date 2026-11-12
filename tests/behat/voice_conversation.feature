@@ -298,8 +298,7 @@ Feature: Voice conversation with Jedomi in the web chat
     And I wait "3" seconds
     Then "1" Jedomi transcription should have been requested
 
-  # [Pendiente:fail] Any noise longer than the minimum (a cough, the television, other voices) is transcribed and
-  # charged. Fails until fixed.
+  # An utterance must be heard above the speech level for at least half a second to be transcribed (and charged).
   @MDL-INT-112
   Scenario: A short background noise is not transcribed as a sentence
     Given I log in as "student1"

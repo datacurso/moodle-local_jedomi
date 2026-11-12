@@ -215,10 +215,9 @@ Feature: Web chat of Jedomi from the question to the answer, the actions and the
     And "//div[contains(@class, 'jedomi-message-user')]//img[contains(@class, 'jedomi-msg-image')]" "xpath_element" should exist
     And I should see "4271" in the "#jedomi-messages" "css_element"
     And I attach the Jedomi test file "jedomi_document.pdf" to the panel file input
-    And I should see "jedomi_document.pdf" in the "#jedomi-messages" "css_element"
-    And I should see "loaded" in the "#jedomi-messages" "css_element"
-    And I should see "PDF: 1 pages" in the "#jedomi-file-preview" "css_element"
+    And I should see "jedomi_document.pdf" in the "#jedomi-file-preview" "css_element"
     And I click on "#jedomi-send" "css_element"
+    And I should see "PDF: 1 pages" in the "#jedomi-messages" "css_element"
     And I should see "pineapple" in the "#jedomi-messages" "css_element"
 
   @SYS-E2E-005
@@ -233,8 +232,8 @@ Feature: Web chat of Jedomi from the question to the answer, the actions and the
     And I should see "archive.zip" in the "#jedomi-messages" "css_element"
     And "//div[@id='jedomi-file-preview' and not(contains(@class, 'jedomi-hidden'))]" "xpath_element" should not exist
 
-  # [Pendiente:fail] When several files are dropped only the last one is kept, and a file is read (and charged) when it
-  # is attached even if it is removed before sending. The reading is answered in the browser. Fails until fixed.
+  # [Pendiente:fail] When several files are dropped only the last one is kept. The reading is answered in the browser.
+  # Fails until fixed.
   @MDL-INT-052
   Scenario: Several dropped files are all attached
     Given I log in as "admin"
@@ -244,6 +243,7 @@ Feature: Web chat of Jedomi from the question to the answer, the actions and the
     Then I should see "second.txt" in the "#jedomi-file-preview" "css_element"
     And I should see "first.txt" in the "#jedomi-file-preview" "css_element"
 
+  # A file is read (and charged) only when the message is sent. The reading is answered in the browser.
   @MDL-INT-052
   Scenario: An attachment removed before sending is not read nor charged
     Given I log in as "admin"
@@ -267,7 +267,7 @@ Feature: Web chat of Jedomi from the question to the answer, the actions and the
 
   # Needs the real AI service to transcribe the audio.
   @SYS-E2E-006
-  Scenario: An attached audio file is transcribed when it is attached and shows its duration
+  Scenario: An attached audio file is transcribed when the message is sent and shows its duration
     Given the Jedomi AI service is available for acceptance tests
     And the following config values are set as admin:
       | audio_enabled | 1 | local_jedomi |
@@ -275,7 +275,9 @@ Feature: Web chat of Jedomi from the question to the answer, the actions and the
     And I am on homepage
     And I click on "#jedomi-trigger" "css_element"
     When I attach the Jedomi test file "jedomi_tone.wav" to the panel audio input
-    Then I should see "Audio: 2 seconds" in the "#jedomi-file-preview" "css_element"
+    And I should see "jedomi_tone.wav" in the "#jedomi-file-preview" "css_element"
+    And I click on "#jedomi-send" "css_element"
+    Then I should see "Audio: 2 seconds" in the "#jedomi-messages" "css_element"
     And I should see "jedomi_tone.wav" in the "#jedomi-messages" "css_element"
 
   @MDL-UNIT-068 @MDL-INT-006

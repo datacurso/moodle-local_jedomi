@@ -23,6 +23,8 @@
  * be reused with other parameters.
  * Secret is stored in mdl_config as local_jedomi / hmac_secret.
  * TTL: 60 seconds — drift > 60s is rejected.
+ * Single use: a valid signature is recorded (its hash, in the companion_signatures application cache) for longer than
+ * twice the margin, and the same signature sent again is rejected, so a captured request cannot be replayed within the margin.
  *
  * Security invariants:
  *  - Timing-safe comparison via hash_equals() always
@@ -95,6 +97,39 @@ trait companion_hmac {
         if (!hash_equals(self::build_payload_hash($params), $payloadhash)) {
             self::log_hmac_failure($functionname, 'payload_mismatch');
             throw new \moodle_exception('unauthorized', 'local_jedomi');
+        }
+
+        // 6. Each signature runs once: the same request sent again within the margin is a replay.
+        if (!self::consume_signature($signature)) {
+            self::log_hmac_failure($functionname, 'replayed_signature');
+            throw new \moodle_exception('unauthorized', 'local_jedomi');
+        }
+    }
+
+    /**
+     * Record a valid signature as used, unless it was used before.
+     *
+     * Only the SHA-256 hash of the signature is kept, in an application cache that outlives the accepted margin of the
+     * timestamp, so a replay is detected across requests and web servers sharing the cache. The check and the record
+     * are made under a lock of the cache; when the lock cannot be taken the request is rejected.
+     *
+     * @param  string $signature Valid HMAC-SHA256 hex digest of the request.
+     * @return bool   True when the signature was not used before (it is recorded now), false for a replay.
+     */
+    private static function consume_signature(string $signature): bool {
+        $cache = \cache::make('local_jedomi', 'companion_signatures');
+        $key = hash('sha256', $signature);
+        if (!$cache->acquire_lock($key)) {
+            return false;
+        }
+        try {
+            if ($cache->get($key) !== false) {
+                return false;
+            }
+            $cache->set($key, time());
+            return true;
+        } finally {
+            $cache->release_lock($key);
         }
     }
 

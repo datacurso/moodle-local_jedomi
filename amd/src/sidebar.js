@@ -422,15 +422,17 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
 
     // ── Moodle session cache: server, not client ─────────────────────────────
     const _convUrl = () => `${cfg.wwwroot}/local/jedomi/conversation.php`;
-    // Course the chat permissions are bound to: the server applies the course availability and role visibility to it.
-    const _courseId = () => String(cfg.spt?.course_id || M?.cfg?.courseId || 0);
+    // Signed permissions of the panel: the server takes the course of the request from them, and applies the course
+    // availability and role visibility to it.
+    const _signedPermissions = () => JSON.stringify(cfg.spt || {});
 
     const _loadConversationFromServer = async () => {
         try {
-            const r = await fetch(
-                `${_convUrl()}?action=get&sesskey=${encodeURIComponent(M?.cfg?.sesskey || '')}&courseid=${_courseId()}`,
-                { credentials: 'same-origin' }
-            );
+            const r = await fetch(_convUrl(), {
+                method: 'POST',
+                credentials: 'same-origin',
+                body: new URLSearchParams({action: 'get', sesskey: M?.cfg?.sesskey || '', spt: _signedPermissions()}),
+            });
             const d = await r.json();
             if (d.ok && Array.isArray(d.messages) && d.messages.length > 0) {
                 conversation = d.messages;
@@ -447,7 +449,7 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
             sesskey: M?.cfg?.sesskey || '',
             role:    last.role,
             content: last.content,
-            courseid: _courseId(),
+            spt:     _signedPermissions(),
         });
         fetch(_convUrl(), {
             method: 'POST',
@@ -462,7 +464,7 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
         const body = new URLSearchParams({
             action:  'clear',
             sesskey: M?.cfg?.sesskey || '',
-            courseid: _courseId(),
+            spt:     _signedPermissions(),
         });
         fetch(_convUrl(), { method: 'POST', credentials: 'same-origin', body }).catch(() => {});
         // New session after clearing.
@@ -747,6 +749,30 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
         let displayText = text;
         let modelText = text;
 
+        // The attached file is read now, when the message is sent, as images are: a file removed before sending is
+        // never read nor charged. Its text is kept on the attachment, so a retry after another error reads nothing again.
+        if (pendingFile && !pendingFile.extracted) {
+            const attachment = pendingFile;
+            sending = true;
+            if (sendBtn) sendBtn.disabled = true;
+            const origPlaceholder = input?.placeholder;
+            if (input) input.placeholder = (S.processing_file || '').replace('{$a}', attachment.name);
+            try {
+                const data = await uploadForText(cfg.extract_file_url, attachment.file);
+                attachment.extracted = {info: fileInfo(data), text: data.text || ''};
+            } catch (err) {
+                // The file stays attached, so the user can try again or remove it.
+                addMessage('assistant', `⚠️ ${S.file_process_error || ''} **${attachment.name}**: ${err.message}`);
+                return;
+            } finally {
+                sending = false;
+                if (sendBtn) sendBtn.disabled = false;
+                if (input && origPlaceholder) input.placeholder = origPlaceholder;
+            }
+            // Removed or replaced while it was being read: the message is not sent, so the user can review it.
+            if (pendingFile !== attachment) return;
+        }
+
         // The image is read by the vision model first: the chat model only gets the question and that text.
         if (pendingImage) {
             sending = true;
@@ -769,10 +795,11 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
 
         // The file text goes with the question in the same message; the chat shows only its name.
         if (pendingFile) {
+            const {info, text: fileText} = pendingFile.extracted;
             const question = modelText || S.analyze_file || '';
             const header = (S.attached_file_info || '').replace('{$a}', pendingFile.name);
-            modelText = `${question}\n\n${header} — ${pendingFile.info}\n\n${pendingFile.text}`;
-            displayText = `${text ? text + '\n\n' : ''}📎 ${pendingFile.name} (${pendingFile.info})`;
+            modelText = `${question}\n\n${header} — ${info}\n\n${fileText}`;
+            displayText = `${text ? text + '\n\n' : ''}📎 ${pendingFile.name} (${info})`;
         }
 
         const image = pendingImage;
@@ -1006,7 +1033,6 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
                 page_url:   window.location.href,
                 page_title: document.title.replace(/\s*[|\-]\s*Moodle.*$/i, '').trim(),
                 location:   getCurrentLocation(),
-                course_id:  getCourseidFromUrl(),
             },
             ...extra,
         };
@@ -1095,7 +1121,6 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
                 page_url:   window.location.href,
                 page_title: document.title.replace(/\s*[|\-]\s*Moodle.*$/i, '').trim(),
                 location:   getCurrentLocation(),
-                course_id:  getCourseidFromUrl(),
             },
         };
         const res = await fetch(cfg.chatproxy_url, {
@@ -1401,48 +1426,47 @@ GENERAL INSTRUCTIONS:
     };
 
     // ── File (PDF/CSV/TXT/MD/Word/PowerPoint) and audio file ──────────────────
-    // Moodle sends the file to the AI service through the Datacurso provider and returns its
-    // text (or the transcription of an audio file), which is added to the message with its pages,
-    // rows and columns, characters or seconds.
+    // When the message is sent, Moodle sends the file to the AI service through the Datacurso provider and returns
+    // its text (or the transcription of an audio file), which is added to the message with its pages, rows and
+    // columns, characters or seconds. Until then the file stays in the browser.
+    // Document extensions the server reads (the audio ones are AUDIO_EXTENSIONS); the server checks them again.
+    const FILE_EXTENSIONS = ['pdf', 'csv', 'txt', 'md', 'doc', 'docx', 'ppt', 'pptx'];
+
     const handleFileSelect = (e) => {
         const file = e.target.files?.[0];
         if (file) attachFile(file);
     };
 
-    const attachFile = async (file) => {
+    // Pages, rows and columns, characters or seconds of a read file, as shown with its name.
+    const fileInfo = (data) => {
         const S = cfg.strings || {};
-        const input = g('jedomi-input');
-        const origPlaceholder = input?.placeholder;
-        if (input) input.placeholder = (S.processing_file || '').replace('{$a}', file.name);
+        return data.format === 'csv'
+            ? (S.file_csv || '').replace('{rows}', data.rows).replace('{columns}', data.columns)
+            : data.format === 'audio'
+            ? (S.file_audio || '').replace('{seconds}', data.seconds)
+            : data.format === 'pdf'
+            ? (S.file_pdf || '').replace('{pages}', data.pages)
+            : (S.file_text || '').replace('{chars}', data.chars);
+    };
 
-        try {
-            const data = await uploadForText(cfg.extract_file_url, file);
-
-            const info = data.format === 'csv'
-                ? (S.file_csv || '').replace('{rows}', data.rows).replace('{columns}', data.columns)
-                : data.format === 'audio'
-                ? (S.file_audio || '').replace('{seconds}', data.seconds)
-                : data.format === 'pdf'
-                ? (S.file_pdf || '').replace('{pages}', data.pages)
-                : (S.file_text || '').replace('{chars}', data.chars);
-
-            // The text is kept as a pending attachment, like an image, so the textarea stays free for the question.
-            pendingFile = { name: file.name, info: info, text: data.text || '' };
+    // Attach a file: only its chip is shown, like an image, so the textarea stays free for the question. Nothing is
+    // uploaded, read or charged until the message is sent; removing the chip before sending makes no request.
+    const attachFile = (file) => {
+        const S = cfg.strings || {};
+        const extension = (file.name.split('.').pop() || '').toLowerCase();
+        if (FILE_EXTENSIONS.includes(extension) || AUDIO_EXTENSIONS.includes(extension)) {
+            pendingFile = {file, name: file.name, extracted: null};
             const chipname = g('jedomi-file-preview-name');
-            if (chipname) chipname.textContent = `📎 ${file.name} — ${info}`;
+            if (chipname) chipname.textContent = `📎 ${file.name}`;
             g('jedomi-file-preview')?.classList.remove('jedomi-hidden');
-            input?.focus();
-
-            addMessage('assistant', `📎 **${file.name}** ${S.file_loaded || ''} (${info}). ${S.file_loaded_hint || ''}`);
-        } catch (err) {
-            addMessage('assistant', `⚠️ ${S.file_process_error || ''} **${file.name}**: ${err.message}`);
-        } finally {
-            if (input && origPlaceholder) input.placeholder = origPlaceholder;
-            const fi = g('jedomi-file-input');
-            if (fi) fi.value = '';
-            const ai = g('jedomi-audio-input');
-            if (ai) ai.value = '';
+            g('jedomi-input')?.focus();
+        } else {
+            addMessage('assistant', `⚠️ ${S.file_process_error || ''} **${file.name}**: ${S.file_error_unsupported || ''}`);
         }
+        const fi = g('jedomi-file-input');
+        if (fi) fi.value = '';
+        const ai = g('jedomi-audio-input');
+        if (ai) ai.value = '';
     };
 
     // Send a file to a Moodle endpoint that answers JSON, or {"error": {"code", "message"}} with a message to show.
@@ -1451,7 +1475,7 @@ GENERAL INSTRUCTIONS:
         const formData = new FormData();
         formData.append('file', file);
         formData.append('sesskey', cfg.sesskey || '');
-        formData.append('courseid', _courseId());
+        formData.append('spt', _signedPermissions());
         Object.entries(fields).forEach(([name, value]) => formData.append(name, value));
 
         const res = await fetch(url, {
@@ -1554,6 +1578,12 @@ GENERAL INSTRUCTIONS:
             const blob = new Blob(chunks, {type: mime});
             if (recordingCancelled || !blob.size) {
                 hideVoiceBar();
+                return;
+            }
+            if (Date.now() - started < VOICE_MESSAGE_MIN_MS) {
+                // A tap on the microphone is not a message: nothing is uploaded nor charged.
+                hideVoiceBar();
+                addMessage('assistant', `⚠️ ${(cfg.strings || {}).voice_too_short || ''}`);
                 return;
             }
             // The duration is measured here: a recorded WebM often reports an unknown duration.
@@ -1694,8 +1724,13 @@ GENERAL INSTRUCTIONS:
     const VOICE_MODE_BARGE_IN_MS = 250;
     // Silence after speech that ends what the user says, in milliseconds.
     const VOICE_MODE_SILENCE_MS = 1200;
-    // Shorter sounds (a cough, a click) are ignored, in milliseconds.
-    const VOICE_MODE_MIN_SPEECH_MS = 300;
+    // Least time an utterance must be heard above the speech level (see speechLevel) to be transcribed, in milliseconds.
+    // Shorter sounds (a cough, a click, a door, a short background noise) are ignored and never sent, so never charged.
+    const VOICE_MODE_MIN_SPEECH_MS = 500;
+    // How many times the background noise measured while listening the speech must be, to count as speech.
+    const VOICE_MODE_SPEECH_NOISE = 3;
+    // Shortest voice message that is sent, in milliseconds; a shorter recording is discarded with a hint.
+    const VOICE_MESSAGE_MIN_MS = 500;
     // The voice conversation ends after this time listening without speech, in milliseconds.
     const VOICE_MODE_IDLE_MS = 60000;
     // How often the microphone level is measured, in milliseconds.
@@ -1777,9 +1812,9 @@ GENERAL INSTRUCTIONS:
             state: 'listening',
             // Recording of the current utterance and whether it is sent to transcription when it stops.
             recorder: null, keepRecording: false,
-            // Speech detection: whether speech was heard, when it started, the last time it was heard,
-            // and since when the user speaks over Jedomi.
-            heard: false, speechStart: 0, lastVoice: 0, bargeStart: 0,
+            // Speech detection: whether speech was heard, when it started, the last time it was heard, how long it
+            // was heard above the speech level, the time of the last measure, and since when the user speaks over Jedomi.
+            heard: false, speechStart: 0, lastVoice: 0, voicedMs: 0, lastTick: 0, bargeStart: 0,
             // Each utterance is a turn; an interruption or the end of the conversation drops older work.
             turn: 0,
             // Sentences waiting to be spoken ({text, controller, audio}), the one playing and its audio source.
@@ -1855,6 +1890,7 @@ GENERAL INSTRUCTIONS:
         current.recorder = rec;
         current.keepRecording = false;
         current.heard = false;
+        current.voicedMs = 0;
         current.bargeStart = 0;
         // No question of this new turn went to the AI yet: thinking cannot be interrupted until it does.
         current.chatStarted = false;
@@ -1883,6 +1919,9 @@ GENERAL INSTRUCTIONS:
         const meter = voiceModeRegion('voice-mode-level');
         if (meter) meter.style.transform = `scale(${1 + Math.min(level * 8, 0.8)})`;
         const now = Date.now();
+        // Time since the last measure; a page in the background measures less often, so it is capped.
+        const elapsed = current.lastTick ? Math.min(now - current.lastTick, VOICE_MODE_TICK_MS * 4) : VOICE_MODE_TICK_MS;
+        current.lastTick = now;
 
         if (current.state === 'listening') {
             if (!current.heard && level <= VOICE_MODE_THRESHOLD) {
@@ -1893,18 +1932,21 @@ GENERAL INSTRUCTIONS:
                 if (!current.heard) {
                     current.heard = true;
                     current.speechStart = now;
+                    current.voicedMs = 0;
                     clearTimeout(current.idleTimer);
                 }
                 current.lastVoice = now;
+                if (level > speechLevel(current)) current.voicedMs += elapsed;
             } else if (current.heard && now - current.lastVoice > VOICE_MODE_SILENCE_MS) {
-                if (current.lastVoice - current.speechStart >= VOICE_MODE_MIN_SPEECH_MS) {
+                if (current.voicedMs >= VOICE_MODE_MIN_SPEECH_MS) {
                     // The user finished speaking: the recording is sent to transcription when it stops.
                     setVoiceModeState('thinking');
                     current.keepRecording = true;
                     current.recorder?.stop();
                 } else {
-                    // Only a short noise: keep listening.
+                    // Only a short noise: keep listening, and nothing is transcribed.
                     current.heard = false;
+                    current.voicedMs = 0;
                     resetVoiceIdleTimer();
                 }
             }
@@ -1923,6 +1965,10 @@ GENERAL INSTRUCTIONS:
             }
         }
     };
+
+    // Level that counts as speech while listening: above the threshold and well above the background noise, so a noisy
+    // room does not turn its noise into utterances.
+    const speechLevel = (current) => Math.max(VOICE_MODE_THRESHOLD, (current.noise || 0) * VOICE_MODE_SPEECH_NOISE);
 
     // Level the user must reach to interrupt Jedomi: above the background noise, and higher while Jedomi speaks so its
     // own voice coming back through the microphone does not interrupt it.

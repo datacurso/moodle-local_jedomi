@@ -20,6 +20,7 @@ use local_jedomi\ai\client;
 use local_jedomi\ai\fake_ai_client;
 use local_jedomi\ai\fake_curl;
 use local_jedomi\ai\testable_provider_api;
+use local_jedomi\local\service\audio_service;
 use local_jedomi\local\service\file_extraction_service;
 use local_jedomi\local\service\provider_upload_service;
 use local_jedomi\local\service\vision_service;
@@ -81,7 +82,8 @@ final class webhook_media_test extends \advanced_testcase {
         $this->curl = new fake_curl();
         provider_upload_service::set_api_for_testing(new testable_provider_api(30, $this->curl));
         $this->telegram = new fake_telegram_api_client();
-        $this->telegram->files = ['photo-big' => 'jpeg bytes', 'voice-1' => 'OggS bytes', 'doc-1' => '%PDF bytes'];
+        // Audio files are at least as large as the smallest audio the audio model receives.
+        $this->telegram->files = ['photo-big' => 'jpeg bytes', 'voice-1' => self::audio('OggS'), 'doc-1' => '%PDF bytes'];
         api_client::set_instance_for_testing($this->telegram);
     }
 
@@ -377,7 +379,7 @@ final class webhook_media_test extends \advanced_testcase {
      */
     public function test_audio_message_goes_to_the_transcription(): void {
         set_config('audio_enabled', 1, 'local_jedomi');
-        $this->telegram->files['audio-1'] = 'ID3 bytes';
+        $this->telegram->files['audio-1'] = self::audio('ID3');
         $this->curl->enqueue(json_encode(['text' => 'List my courses', 'model' => 'm', 'duration_seconds' => 2]));
         $this->ai->enqueue_text('Here they are.');
 
@@ -395,7 +397,7 @@ final class webhook_media_test extends \advanced_testcase {
      */
     private function transcribed_filename(array $audio): string {
         set_config('audio_enabled', 1, 'local_jedomi');
-        $this->telegram->files['audio-x'] = 'audio bytes';
+        $this->telegram->files['audio-x'] = self::audio('audio');
         $this->curl->enqueue(json_encode(['text' => 'Hi', 'model' => 'm', 'duration_seconds' => 1]));
         $this->ai->enqueue_text('Hello.');
 
@@ -489,5 +491,30 @@ final class webhook_media_test extends \advanced_testcase {
         $this->receive(['text' => 'How many courses are there?']);
 
         $this->assertCount(1, $this->ai->calls);
+    }
+
+    /**
+     * Content of an audio file large enough to be sent to the audio model.
+     *
+     * @param string $header First bytes of the file.
+     * @return string
+     */
+    private static function audio(string $header): string {
+        return str_pad($header, audio_service::MIN_BYTES, "\0");
+    }
+
+    /**
+     * MDL-INT-112: a voice message smaller than the smallest audio the audio model receives (noise or an empty
+     * recording) is answered with its message without calling the transcription nor the AI, so it is not charged.
+     */
+    public function test_tiny_voice_message_is_not_transcribed(): void {
+        set_config('audio_enabled', 1, 'local_jedomi');
+        $this->telegram->files['voice-tiny'] = 'OggS bytes';
+
+        $texts = $this->receive(['voice' => ['file_id' => 'voice-tiny', 'mime_type' => 'audio/ogg', 'duration' => 0]]);
+
+        $this->assertSame([get_string('audio_error_too_short', 'local_jedomi')], $texts);
+        $this->assertSame([], $this->curl->calls);
+        $this->assertSame([], $this->ai->calls);
     }
 }

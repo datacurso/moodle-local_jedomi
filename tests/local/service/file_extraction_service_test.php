@@ -307,7 +307,7 @@ final class file_extraction_service_test extends \advanced_testcase {
 
         $result = file_extraction_service::extract_upload(
             (int) $user->id,
-            $this->upload('audio'),
+            $this->upload(str_repeat('a', audio_service::MIN_BYTES)),
             'class.mp3',
             new testable_provider_api(30, $curl)
         );
@@ -585,7 +585,7 @@ final class file_extraction_service_test extends \advanced_testcase {
 
         $result = file_extraction_service::extract_upload(
             (int) $user->id,
-            $this->upload('audio'),
+            $this->upload(str_repeat('a', audio_service::MIN_BYTES)),
             'note.ogg',
             new testable_provider_api(30, $curl)
         );

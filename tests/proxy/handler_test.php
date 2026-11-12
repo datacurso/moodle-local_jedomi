@@ -1296,9 +1296,8 @@ final class handler_test extends \advanced_testcase {
     /**
      * MDL-INT-095: the server decides the availability with the course of the real page, never with the course the
      * browser presents: requests sent from an excluded course, or from a course not selected in the "show only in the
-     * selected courses" mode, that present the site home as their course are refused without calling the AI.
-     * [Pendiente:fail] The server checks the course sent by the browser, so presenting the site home bypasses the
-     * availability by course.
+     * selected courses" mode, that present the site home as their course are refused without calling the AI: the
+     * course of the page must be the one signed in the permissions.
      *
      * @return void
      */
@@ -1348,8 +1347,6 @@ final class handler_test extends \advanced_testcase {
     /**
      * MDL-CTR-011: with the Basic and the Strict levels nothing the AI receives carries the real personal data: not the
      * message of the user, not the text of an attachment, not the context of the page and not the previous answers.
-     * [Pendiente:fail] The anonymisation only covers the tool results: messages, attachments, page context and history
-     * reach the AI with the real data.
      *
      * @return void
      */

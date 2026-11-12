@@ -162,6 +162,7 @@ final class read_error_messages_test extends \advanced_testcase {
             'audio disabled' => ['audio_service', 'audio_error_disabled', 'audio_disabled', 'audio_error_disabled'],
             'audio type' => ['audio_service', 'audio_error_unsupported', 'audio_unsupported', 'audio_error_unsupported'],
             'audio not understood' => ['audio_service', 'audio_error_unreadable', 'audio_unreadable', 'audio_error_unreadable'],
+            'audio too short' => ['audio_service', 'audio_error_too_short', 'audio_too_short', 'audio_error_too_short'],
         ];
     }
 

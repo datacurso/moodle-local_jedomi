@@ -406,6 +406,31 @@ final class webhook_conversation_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-CTR-011: in Telegram the question and the history reach the AI anonymised with the placeholders of the
+     * conversation, and the answer sent to the user has the real values back.
+     */
+    public function test_question_and_history_reach_the_ai_anonymised(): void {
+        set_config('anonymization_level', 'basic', 'local_jedomi');
+        $this->fresh_user(['firstname' => 'Ximena', 'lastname' => 'Quintanilla',
+            'email' => 'ximena.quintanilla@example.com']);
+        $this->link((int) get_admin()->id, '779000042');
+        $history = 'Ximena Quintanilla (ximena.quintanilla@example.com) is enrolled.';
+        \local_jedomi\telegram\session::append('779000042', 'assistant', $history);
+        $this->ai->enqueue_text('The e-mail of [person_1] [person_2] is [email_1].');
+
+        $this->say('779000042', 'Which e-mail does Ximena Quintanilla have?');
+
+        $this->assertCount(1, $this->ai->calls, 'Control: the question reached the AI');
+        $sent = json_encode($this->ai->calls[0]['messages'], JSON_UNESCAPED_UNICODE);
+        $this->assertStringNotContainsString('Quintanilla', $sent);
+        $this->assertStringNotContainsString('ximena.quintanilla@example.com', $sent);
+        $this->assertStringContainsString('[person_1]', $sent);
+        $answer = (string) end($this->telegram->sent)['text'];
+        $this->assertStringContainsString('Ximena Quintanilla', $answer);
+        $this->assertStringContainsString('ximena.quintanilla@example.com', $answer);
+    }
+
+    /**
      * MDL-CTR-007: the placeholders of a Telegram conversation survive the hand-over to the next worker, so the
      * answer is restored after a self-ping.
      */

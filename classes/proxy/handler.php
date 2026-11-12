@@ -81,6 +81,15 @@ class handler {
             return;
         }
 
+        // The page context comes from the browser: a course other than the one signed in the permissions is refused.
+        if (isset($context['course_id']) && !\local_jedomi_is_same_course($courseid, (int) $context['course_id'])) {
+            self::send_error([
+                'code' => 'course_mismatch',
+                'message' => get_string('chat_error_course_mismatch', 'local_jedomi'),
+            ]);
+            return;
+        }
+
         // The role is computed from the session user: the presented one can never be above it.
         $role = \local_jedomi_effective_chat_role($role, $userid, $courseid);
 
@@ -93,9 +102,33 @@ class handler {
         }
         $messages = array_map([self::class, 'without_image_parts'], $messages);
 
+        // One anonymiser for the whole request: the messages, the page context and the tool results share its
+        // placeholders, so the arguments the AI proposes and its answer get the real values back.
+        $anonymizer = new \local_jedomi\local\anonymizer();
+        $context = self::anonymize_context($context, $anonymizer);
+
         $voicemode = !empty($input['voice_mode']) && \local_jedomi\ai\model_settings::is_voice_enabled();
         $system = system_message::build($role, $spt, $context, $voicemode);
-        self::run(array_merge([$system], $messages), $role, $userid);
+        self::run(array_merge([$system], $messages), $role, $userid, $anonymizer);
+    }
+
+    /**
+     * Page context sent by the browser with its free texts anonymised, before they are written in the system message.
+     *
+     * The title of the page can name a person (a profile, a grade report of a user). The instructions of the system
+     * message are never anonymised: only these texts of the browser are.
+     *
+     * @param array $context Page context sent by the browser.
+     * @param \local_jedomi\local\anonymizer $anonymizer Anonymiser of the request.
+     * @return array Context with the same keys.
+     */
+    private static function anonymize_context(array $context, \local_jedomi\local\anonymizer $anonymizer): array {
+        foreach (['page_title', 'course_name'] as $key) {
+            if (isset($context[$key]) && is_string($context[$key])) {
+                $context[$key] = $anonymizer->anonymize_text($context[$key]);
+            }
+        }
+        return $context;
     }
 
     /**
@@ -157,11 +190,20 @@ class handler {
      * tool_calls (no text parsing). Tool results are re-injected as role=tool messages
      * (OpenAI standard). The final text is sent to the browser as SSE chunks.
      *
+     * The text of the user and assistant messages (the question and the history the browser sends back, with the
+     * real values) is anonymised with the same anonymiser as the tool results; the system message is not.
+     *
      * @param array  $messages Conversation messages (system message first).
      * @param string $role     User role (already validated).
      * @param int    $userid   Moodle user the AI calls are made for.
+     * @param \local_jedomi\local\anonymizer|null $anonymizer Anonymiser of the request; null for a new one.
      */
-    public static function run(array $messages, string $role, int $userid): void {
+    public static function run(
+        array $messages,
+        string $role,
+        int $userid,
+        ?\local_jedomi\local\anonymizer $anonymizer = null
+    ): void {
         require_once(__DIR__ . '/../../lib.php');
         \local_jedomi_log('RUN_START', ['role' => $role, 'user_message_count' => count($messages)]);
 
@@ -171,9 +213,10 @@ class handler {
             $tools[] = message_service::tool_definition();
         }
         $toolrepeatcounts = [];
-        // Personal data returned by the tools reaches the AI anonymised with the level of the Privacy tab;
-        // the answer shown to the user gets the real values back.
-        $anonymizer = new \local_jedomi\local\anonymizer();
+        // Personal data of the messages and of the tool results reaches the AI anonymised with the level of the
+        // Privacy tab; the answer shown to the user gets the real values back.
+        $anonymizer = $anonymizer ?? new \local_jedomi\local\anonymizer();
+        $messages = $anonymizer->anonymize_messages($messages);
 
         for ($i = 0; $i < 50; $i++) {
             echo ": thinking\n\n";

@@ -369,7 +369,6 @@ final class companion_signature_test extends \advanced_testcase {
     /**
      * MDL-INT-108: a valid signed request runs once; the same request sent again within the margin is rejected without
      * running and without revealing the reason.
-     * [Pendiente:fail] The signature has no single-use value, so an identical request can be replayed within the margin.
      *
      * @return void
      */
@@ -383,5 +382,28 @@ final class companion_signature_test extends \advanced_testcase {
 
         $this->assertSame('accepted', $first, 'Control: the first request is valid');
         $this->assertSame('unauthorized', $replay, 'An identical signed request must not run a second time');
+    }
+
+    /**
+     * MDL-INT-108: a replay is logged with its reason and without the signature, and the same query signed again for
+     * another moment still runs.
+     *
+     * @return void
+     */
+    public function test_replay_is_logged_and_a_new_signature_runs(): void {
+        @unlink($this->logfile());
+        $now = time();
+        $hash = self::payload_hash(['sql' => self::SQL, 'params' => []]);
+        $signature = self::sign('jedomi_execute_sql', $now, $hash);
+        $this->query($signature, $now, $hash);
+
+        $replay = $this->outcome(fn() => $this->query($signature, $now, $hash));
+        $renewed = $this->outcome(fn() => $this->query(self::sign('jedomi_execute_sql', $now - 1, $hash), $now - 1, $hash));
+
+        $this->assertSame('unauthorized', $replay);
+        $this->assertSame('accepted', $renewed, 'A new signature of the same query runs');
+        $log = file_get_contents($this->logfile());
+        $this->assertStringContainsString('reason=replayed_signature', $log);
+        $this->assertStringNotContainsString($signature, $log);
     }
 }

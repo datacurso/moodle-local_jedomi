@@ -528,47 +528,86 @@ JS;
     /**
      * Send a request to a Jedomi endpoint from the current page, as the panel would, and keep its status.
      *
-     * The request carries the session key and the course of the page.
-     *
-     * The panel configuration request is the one that hands out the chat permissions; the chat query first asks for
-     * them, as the panel does, and then sends a question to the chat endpoint.
+     * Every request first asks for the chat permissions of the course of the page, as the panel does, and sends them
+     * with the session key: the server takes the course of the request from them.
      *
      * @When /^I request the Jedomi (?P<what>conversation history|image reading|panel configuration|chat query) from the browser$/
      * @param string $what Endpoint: the conversation history, the image reading, the panel configuration or a chat query.
      * @return void
      */
     public function i_request_jedomi_from_the_browser(string $what): void {
-        $common = "var course = (M.cfg.courseId || 0);"
+        $this->send_jedomi_request($what, '');
+    }
+
+    /**
+     * Send a request to a Jedomi endpoint from the current page that names another course, and keep its status.
+     *
+     * The panel configuration is asked for that course; any other request carries the chat permissions of the page
+     * and names that course too.
+     *
+     * @When /^I request the Jedomi (?P<what>[a-z ]+) for the course "(?P<shortname>[^"]+)" from the browser$/
+     * @param string $what Endpoint: the conversation history, the image reading, the panel configuration or a chat query.
+     * @param string $shortname Short name of the course the request names.
+     * @return void
+     */
+    public function i_request_jedomi_for_the_course_from_the_browser(string $what, string $shortname): void {
+        $this->send_jedomi_request($what, $shortname);
+    }
+
+    /**
+     * Send a request to a Jedomi endpoint from the current page and keep its status in window.jedomiLastRequest.
+     *
+     * @param string $what Endpoint: the conversation history, the image reading, the panel configuration or a chat query.
+     * @param string $shortname Short name of a course the request names, or '' for the course of the page only.
+     * @return void
+     */
+    protected function send_jedomi_request(string $what, string $shortname): void {
+        global $DB;
+        $named = $shortname === '' ? 0 : (int) $DB->get_field('course', 'id', ['shortname' => $shortname], MUST_EXIST);
+        $common = "var course = (M.cfg.courseId || 0); var named = {$named};"
             . " var done = function(x) { window.jedomiLastRequest = {status: x.status, body: x.responseText}; };"
             . " var x = new XMLHttpRequest();";
+        $configcourse = $what === 'panel configuration' && $named ? 'named' : 'course';
         $config = " var c = new XMLHttpRequest(); c.open('GET', M.cfg.wwwroot"
-            . " + '/local/jedomi/ajax/sidebar_config.php?sesskey=' + M.cfg.sesskey, false); c.send();";
+            . " + '/local/jedomi/ajax/sidebar_config.php?sesskey=' + M.cfg.sesskey + '&courseid=' + {$configcourse}, false);"
+            . " c.send(); var spt = null; try { spt = JSON.parse(c.responseText).spt || null; } catch (e) { spt = null; }";
         if ($what === 'panel configuration') {
             $script = $common . $config
-                . " var ok = false; try { ok = !!JSON.parse(c.responseText).spt; } catch (e) { ok = false; }"
-                . " window.jedomiLastRequest = {status: (c.status === 200 && ok) ? 200 : 403, body: c.responseText};";
+                . " window.jedomiLastRequest = {status: (c.status === 200 && spt) ? 200 : 403, body: c.responseText};";
         } else if ($what === 'chat query') {
             $script = $common . $config
-                . " var spt = null; try { spt = JSON.parse(c.responseText).spt || null; } catch (e) { spt = null; }"
                 . " x.open('POST', M.cfg.wwwroot + '/local/jedomi/chatproxy.php', false);"
                 . " x.setRequestHeader('Content-Type', 'application/json');"
-                . " x.send(JSON.stringify({sesskey: M.cfg.sesskey, spt: spt, context: {},"
+                . " x.send(JSON.stringify({sesskey: M.cfg.sesskey, spt: spt, context: named ? {course_id: named} : {},"
                 . " messages: [{role: 'user', content: 'Show me the courses'}]})); done(x);";
         } else if ($what === 'conversation history') {
-            $script = $common
-                . " x.open('GET', M.cfg.wwwroot + '/local/jedomi/conversation.php?action=get&sesskey=' + M.cfg.sesskey"
-                . " + '&courseid=' + course, false); x.send(); done(x);";
+            $script = $common . $config
+                . " var body = new URLSearchParams({action: 'get', sesskey: M.cfg.sesskey, spt: JSON.stringify(spt)});"
+                . " if (named) { body.append('courseid', named); }"
+                . " x.open('POST', M.cfg.wwwroot + '/local/jedomi/conversation.php', false);"
+                . " x.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded'); x.send(body.toString()); done(x);";
         } else {
             // A 1x1 transparent PNG.
-            $script = $common
+            $script = $common . $config
                 . " var raw = atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=');"
                 . " var bytes = new Uint8Array(raw.length); for (var i = 0; i < raw.length; i++) { bytes[i] = raw.charCodeAt(i); }"
                 . " var form = new FormData(); form.append('file', new Blob([bytes], {type: 'image/png'}), 'pixel.png');"
                 . " form.append('question', 'What is this?'); form.append('sesskey', M.cfg.sesskey);"
-                . " form.append('courseid', course);"
+                . " form.append('spt', JSON.stringify(spt)); if (named) { form.append('courseid', named); }"
                 . " x.open('POST', M.cfg.wwwroot + '/local/jedomi/read_file.php', false); x.send(form); done(x);";
         }
         $this->execute_script('(function() {' . $script . '})();');
+    }
+
+    /**
+     * Script that asks for the chat permissions of the course of the current page, as the panel does, into "spt".
+     *
+     * @return string JavaScript statements.
+     */
+    protected function panel_permissions_script(): string {
+        return "var c = new XMLHttpRequest(); c.open('GET', M.cfg.wwwroot + '/local/jedomi/ajax/sidebar_config.php?sesskey='"
+            . " + M.cfg.sesskey + '&courseid=' + (M.cfg.courseId || 0), false); c.send();"
+            . " var spt = null; try { spt = JSON.parse(c.responseText).spt || null; } catch (e) { spt = null; }";
     }
 
     /**
@@ -763,7 +802,7 @@ JS;
      * The action is held on the server as in the step above; its confirmation card reaches the panel before the rest
      * of the answer, as when the chat proxy holds an action while the AI is still writing.
      *
-     * @Given /^the Jedomi AI works on "(?P<text_string>(?:[^"]|\\")*)" proposing to run "(?P<tool_string>[a-z_]+)" until released with:$/
+     * @Given /^the Jedomi AI works on "(?P<text_string>(?:[^"]|\\")*)" proposing to run "([a-z_]+)" until released with:$/
      * @param string $text Answer text, given once released.
      * @param string $tool Tool that changes data.
      * @param PyStringNode $args Tool arguments as JSON.
@@ -915,8 +954,9 @@ JS;
      * @return void
      */
     public function i_have_a_jedomi_conversation_of_messages(int $count): void {
-        $this->execute_script('(function() { for (var i = 1; i <= ' . $count . '; i++) {'
-            . " var body = new URLSearchParams({action: 'append', sesskey: M.cfg.sesskey,"
+        $this->execute_script('(function() { ' . $this->panel_permissions_script()
+            . ' for (var i = 1; i <= ' . $count . '; i++) {'
+            . " var body = new URLSearchParams({action: 'append', sesskey: M.cfg.sesskey, spt: JSON.stringify(spt),"
             . " role: i % 2 ? 'user' : 'assistant', content: 'Message ' + String(i).padStart(3, '0')});"
             . " var x = new XMLHttpRequest(); x.open('POST', M.cfg.wwwroot + '/local/jedomi/conversation.php', false);"
             . " x.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded'); x.send(body.toString()); } })();");
@@ -972,9 +1012,11 @@ JS;
      * @return array
      */
     protected function stored_conversation(): array {
-        $json = $this->evaluate_script("return (function() { var x = new XMLHttpRequest();"
-            . " x.open('GET', M.cfg.wwwroot + '/local/jedomi/conversation.php?action=get&sesskey=' + M.cfg.sesskey, false);"
-            . " x.send(); return x.responseText; })();");
+        $json = $this->evaluate_script('return (function() { ' . $this->panel_permissions_script()
+            . " var x = new XMLHttpRequest(); x.open('POST', M.cfg.wwwroot + '/local/jedomi/conversation.php', false);"
+            . " x.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');"
+            . " x.send(new URLSearchParams({action: 'get', sesskey: M.cfg.sesskey, spt: JSON.stringify(spt)}).toString());"
+            . ' return x.responseText; })();');
         $data = json_decode((string) $json, true);
         if (!is_array($data) || !isset($data['messages']) || !is_array($data['messages'])) {
             throw new ExpectationException('The stored conversation could not be read: ' . $json, $this->getSession());

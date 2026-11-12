@@ -29,6 +29,12 @@ namespace local_jedomi\proxy;
 
 /**
  * Validates Signed Permission Tokens: signature, TTL and sesskey binding.
+ *
+ * An SPT is multi-use by design: the sidebar gets one when the page loads and sends it with every chat, history,
+ * file and speech request of that page for up to 30 minutes. It is not a single-use request signature (unlike the
+ * signatures of the companion web services, see \local_jedomi\companion_hmac): a copy is only usable with the same
+ * Moodle session, because the token is bound to the session key, and every request using it must still pass the
+ * session, session key, course and role checks of its endpoint.
  */
 class spt_validator {
     /**

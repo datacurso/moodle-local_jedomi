@@ -769,7 +769,9 @@ final class webhook_handler_test extends \advanced_testcase {
         $this->assertCount(1, $fake->calls);
         $contents = array_column($fake->calls[0]['messages'], 'content');
         $this->assertNotContains('An old question about grades', $contents);
-        $this->assertStringContainsString('Valentina', (string) end($contents));
+        // The greeting names the user, as everything sent to the AI, with a placeholder.
+        $this->assertStringContainsString('[person_', (string) end($contents));
+        $this->assertStringNotContainsString('Valentina', (string) end($contents));
     }
 
     // ... ========================

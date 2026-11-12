@@ -349,7 +349,6 @@ final class preview_runner_test extends \advanced_testcase {
     /**
      * MDL-INT-100: the preview sends the tool results to the AI anonymised with the level of the Privacy tab, as the
      * scheduled run does.
-     * [Pendiente:fail] The preview sends the tool results to the AI without applying the anonymisation level.
      *
      * @dataProvider anonymization_level_provider
      * @param string $level Anonymisation level.
@@ -380,5 +379,41 @@ final class preview_runner_test extends \advanced_testcase {
         foreach ($hidden as $value) {
             $this->assertStringNotContainsString($value, $sent, "With the {$level} level the AI must not receive {$value}");
         }
+    }
+
+    /**
+     * MDL-INT-100: the answer of the preview, written from anonymised data, shows the real values to the administrator,
+     * and the reformulation of a saved preview sends the fresh results and the previous answer to the AI anonymised.
+     *
+     * @return void
+     */
+    public function test_preview_shows_real_values_and_reformulates_with_anonymised_data(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        set_config('anonymization_level', 'basic', 'local_jedomi');
+        $named = $this->getDataGenerator()->create_user(['firstname' => 'Ximena', 'lastname' => 'Quintanilla',
+            'email' => 'ximena.quintanilla@example.com']);
+        $fake = new fake_ai_client();
+        $fake->enqueue_tool_calls([['id' => 'call_1', 'type' => 'function', 'function' => ['name' => 'execute_sql',
+            'arguments' => json_encode(['query' => 'SELECT id, firstname, lastname, email FROM {user} WHERE id = '
+                . (int) $named->id])]]]);
+        $fake->enqueue_text('The user is [person_1] [person_2].');
+        $fake->enqueue_text('Still [person_1] [person_2], [email_1].');
+        client::set_instance_for_testing($fake);
+
+        $first = preview_runner::run('Who is that user?', (int) get_admin()->id);
+
+        $this->assertTrue($first['ok']);
+        $this->assertSame('The user is Ximena Quintanilla.', $first['answer']);
+        $this->assertStringContainsString('Quintanilla', $first['profiler'][0]['result_preview'], 'The profiler is real');
+        $this->assertStringContainsString('Quintanilla', json_encode($first['conversation']), 'The conversation is real');
+
+        $again = preview_runner::run('Who is that user?', (int) get_admin()->id);
+
+        $this->assertTrue($again['reformulated'] ?? false, 'Control: the saved plan was replayed');
+        $this->assertSame('Still Ximena Quintanilla, ximena.quintanilla@example.com.', $again['answer']);
+        $sent = json_encode(end($fake->calls)['messages'], JSON_UNESCAPED_UNICODE);
+        $this->assertStringNotContainsString('Quintanilla', $sent);
+        $this->assertStringNotContainsString('ximena.quintanilla@example.com', $sent);
     }
 }

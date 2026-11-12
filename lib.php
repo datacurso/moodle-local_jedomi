@@ -111,8 +111,7 @@ function local_jedomi_get_sidebar_config(): array {
             'csv_download'         => get_string('csv_download', 'local_jedomi'),
             'file_audio'           => get_string('file_audio', 'local_jedomi'),
             'file_csv'             => get_string('file_csv', 'local_jedomi'),
-            'file_loaded'          => get_string('file_loaded', 'local_jedomi'),
-            'file_loaded_hint'     => get_string('file_loaded_hint', 'local_jedomi'),
+            'file_error_unsupported' => get_string('file_error_unsupported', 'local_jedomi'),
             'file_pdf'             => get_string('file_pdf', 'local_jedomi'),
             'file_process_error'   => get_string('file_process_error', 'local_jedomi'),
             'file_text'            => get_string('file_text', 'local_jedomi'),
@@ -182,6 +181,7 @@ function local_jedomi_get_sidebar_config(): array {
             'voice_recording'       => get_string('voice_recording', 'local_jedomi'),
             'voice_send'            => get_string('voice_send', 'local_jedomi'),
             'voice_stop'            => get_string('voice_stop', 'local_jedomi'),
+            'voice_too_short'       => get_string('voice_too_short', 'local_jedomi'),
             'waiting_voice'         => get_string('waiting_voice', 'local_jedomi'),
             // Voice conversation.
             'voice_mode'                     => get_string('voice_mode', 'local_jedomi'),
@@ -526,6 +526,71 @@ function local_jedomi_chat_access_error(int $courseid): ?array {
         return ['code' => 'role_hidden', 'message' => get_string('chat_error_role_hidden', 'local_jedomi')];
     }
     return null;
+}
+
+/**
+ * Error for a course named by a chat request that the user cannot use: it does not exist or the user cannot enter it.
+ *
+ * The course comes from the browser, so it is checked with the same rules as the course page: the user must be
+ * enrolled, be allowed to view it, or have entered it as a guest in this session. The site (0 or the site course)
+ * is always allowed here; its own rules are applied by {@see local_jedomi_chat_access_error()}.
+ *
+ * @param int $courseid Course named by the request (0 or the site course outside a course).
+ * @return array|null ['code' => ..., 'message' => ...], or null when the course can be used.
+ */
+function local_jedomi_course_request_error(int $courseid): ?array {
+    global $DB;
+
+    if ($courseid <= SITEID) {
+        return null;
+    }
+    $course = $DB->get_record('course', ['id' => $courseid]);
+    if (!$course || !can_access_course($course)) {
+        return ['code' => 'course_access_denied', 'message' => get_string('chat_error_course_access', 'local_jedomi')];
+    }
+    return null;
+}
+
+/**
+ * Course of a chat request sent after the sidebar got its signed permissions (SPT): the course signed in them.
+ *
+ * The course is never taken from the request: the signed permissions must be valid for this session and, when the
+ * browser still sends a course, it must be the signed one. The course is checked again with the access rules of the
+ * panel, as the user may have lost access since the permissions were signed.
+ *
+ * @param mixed $spt Signed permissions sent with the request, decoded; anything else is refused.
+ * @param int|null $requestcourseid Course sent by the browser, or null when none was sent.
+ * @return array ['courseid' => int, 'error' => array|null], the error with keys code and message.
+ */
+function local_jedomi_signed_request_course($spt, ?int $requestcourseid): array {
+    if (!is_array($spt)) {
+        $message = get_string('invalid_session', 'local_jedomi');
+        return ['courseid' => 0, 'error' => ['code' => 'invalid_spt', 'message' => $message]];
+    }
+    try {
+        \local_jedomi\proxy\spt_validator::validate($spt);
+    } catch (\moodle_exception $e) {
+        return ['courseid' => 0, 'error' => ['code' => 'invalid_spt', 'message' => $e->getMessage()]];
+    }
+
+    $courseid = (int) ($spt['course_id'] ?? 0);
+    if ($requestcourseid !== null && !local_jedomi_is_same_course($courseid, $requestcourseid)) {
+        return ['courseid' => $courseid, 'error' => ['code' => 'course_mismatch',
+            'message' => get_string('chat_error_course_mismatch', 'local_jedomi')]];
+    }
+    $error = local_jedomi_course_request_error($courseid) ?? local_jedomi_chat_access_error($courseid);
+    return ['courseid' => $courseid, 'error' => $error];
+}
+
+/**
+ * Whether two course ids name the same place for the chat: the site course and 0 (outside a course) are the same.
+ *
+ * @param int $first Course id.
+ * @param int $second Course id.
+ * @return bool
+ */
+function local_jedomi_is_same_course(int $first, int $second): bool {
+    return ($first > SITEID ? $first : 0) === ($second > SITEID ? $second : 0);
 }
 
 /**

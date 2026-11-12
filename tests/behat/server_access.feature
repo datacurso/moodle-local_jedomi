@@ -32,6 +32,21 @@ Feature: The server applies the course availability and the role visibility of J
     And I request the Jedomi image reading from the browser
     And the Jedomi server should refuse the last request
 
+  @MDL-INT-095
+  Scenario: A course the user cannot enter gets no chat permissions and the course is never taken from the browser
+    Given the following "courses" exist:
+      | fullname | shortname |
+      | Course 2 | C2        |
+    And I am on the "Course 1" "course" page logged in as "student1"
+    When I request the Jedomi panel configuration for the course "C2" from the browser
+    Then the Jedomi server should refuse the last request
+    And I request the Jedomi conversation history for the course "C2" from the browser
+    And the Jedomi server should refuse the last request
+    And I request the Jedomi image reading for the course "C2" from the browser
+    And the Jedomi server should refuse the last request
+    And I request the Jedomi conversation history from the browser
+    And the Jedomi server should accept the last request
+
   @MDL-INT-010
   Scenario: The server refuses the history and the file reading of a user whose roles are all hidden
     Given the following "role assigns" exist:

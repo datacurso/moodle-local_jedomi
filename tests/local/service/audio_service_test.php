@@ -54,14 +54,41 @@ final class audio_service_test extends \advanced_testcase {
     }
 
     /**
-     * Write a temporary audio file.
+     * Write a temporary audio file, by default as large as the smallest audio the audio model receives.
      *
+     * @param int $bytes Size of the file.
      * @return string Path.
      */
-    private function upload(): string {
+    private function upload(int $bytes = audio_service::MIN_BYTES): string {
         $path = make_request_directory() . '/upload.tmp';
-        file_put_contents($path, 'OggS fake audio');
+        file_put_contents($path, str_pad('OggS fake audio', $bytes, "\0"));
         return $path;
+    }
+
+    /**
+     * MDL-INT-112: an audio smaller than the minimum (noise, a click or an empty recording) is refused with its message
+     * before the provider is called, so it is never charged; an audio of the minimum size is transcribed.
+     */
+    public function test_too_short_audio_is_rejected_without_a_call(): void {
+        $userid = $this->setup_user();
+        $curl = new fake_curl();
+
+        try {
+            $tiny = $this->upload(audio_service::MIN_BYTES - 1);
+            audio_service::transcribe_upload($userid, $tiny, 'voice.webm', new testable_provider_api(30, $curl));
+            $this->fail('An audio below the minimum size must be refused');
+        } catch (\moodle_exception $e) {
+            $this->assertSame(
+                ['code' => 'audio_too_short', 'message' => get_string('audio_error_too_short', 'local_jedomi')],
+                audio_service::error_for($e)
+            );
+        }
+        $this->assertSame([], $curl->calls, 'Nothing is sent to the provider, so nothing is charged');
+
+        $curl->enqueue(json_encode(['text' => 'Hello', 'model' => 'm', 'duration_seconds' => 1]));
+        $result = audio_service::transcribe_upload($userid, $this->upload(), 'voice.webm', new testable_provider_api(30, $curl));
+        $this->assertSame('Hello', $result['text']);
+        $this->assertCount(1, $curl->calls);
     }
 
     /**

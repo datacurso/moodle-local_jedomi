@@ -46,8 +46,15 @@ try {
     // Set page URL to prevent Moodle debugging notice in lib.php::local_jedomi_get_page_context().
     $PAGE->set_url('/local/jedomi/ajax/sidebar_config.php');
 
-    // The course of the page the panel is on: the chat permissions are bound to it.
+    // The course of the page the panel is on: the chat permissions are bound to it. It comes from the browser, so
+    // it must be a course the user can enter; otherwise no permissions are signed for it.
     $courseid = optional_param('courseid', 0, PARAM_INT);
+    $courseerror = local_jedomi_course_request_error($courseid);
+    if ($courseerror !== null) {
+        http_response_code(403);
+        echo json_encode(['error' => true, 'message' => $courseerror['message']]);
+        die();
+    }
     if ($courseid > SITEID) {
         $PAGE->set_course(get_course($courseid));
     }
@@ -60,16 +67,20 @@ try {
         die();
     }
 
-    // Accept sesskey OR a pre-generated SPT (signed permission token).
+    // A signed permission token (SPT) already given to the panel is reused only when it is valid for this session and
+    // signed for the same course; otherwise a new one is signed for the course checked above.
     $sptraw = optional_param('spt', '', PARAM_RAW);
-    if (empty($sptraw)) {
+    $spt = $sptraw === '' ? null : json_decode($sptraw, true);
+    if (is_array($spt)) {
+        $signed = local_jedomi_signed_request_course($spt, (int) $COURSE->id);
+        if ($signed['error'] !== null) {
+            http_response_code(403);
+            echo json_encode(['error' => true, 'message' => $signed['error']['message']]);
+            die();
+        }
+    } else {
         require_sesskey();
         $spt = local_jedomi_generate_spt(local_jedomi_get_user_role());
-    } else {
-        $spt = json_decode($sptraw, true);
-        if (!is_array($spt)) {
-            $spt = local_jedomi_generate_spt(local_jedomi_get_user_role());
-        }
     }
 
     $config = local_jedomi_get_sidebar_config();

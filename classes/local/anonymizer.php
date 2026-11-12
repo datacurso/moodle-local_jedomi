@@ -134,6 +134,40 @@ class anonymizer {
     }
 
     /**
+     * Anonymise the text of the user and assistant messages of a conversation before the AI receives them.
+     *
+     * The text of each message, and each text part of a message with several parts, is kept readable as with
+     * {@see self::anonymize_text()}: e-mails and names of site users are replaced and, at the Strict level, codes
+     * mixing letters and digits too. The placeholders are the ones of this instance, so the arguments the AI proposes
+     * and its answer can be turned back into real data with {@see self::restore()}. The system message, tool messages,
+     * image parts and any other part are kept as they are.
+     *
+     * @param array $messages Chat messages, each with a role and a content.
+     * @return array The same messages, in the same order.
+     */
+    public function anonymize_messages(array $messages): array {
+        foreach ($messages as $index => $message) {
+            if (!is_array($message) || !in_array($message['role'] ?? '', ['user', 'assistant'], true)) {
+                continue;
+            }
+            $content = $message['content'] ?? null;
+            if (is_string($content)) {
+                $messages[$index]['content'] = $this->anonymize_string($content);
+                continue;
+            }
+            if (!is_array($content)) {
+                continue;
+            }
+            foreach ($content as $key => $part) {
+                if (is_array($part) && ($part['type'] ?? '') === 'text' && is_string($part['text'] ?? null)) {
+                    $messages[$index]['content'][$key]['text'] = $this->anonymize_string($part['text']);
+                }
+            }
+        }
+        return $messages;
+    }
+
+    /**
      * Anonymise the result of a tool before the AI receives it.
      *
      * JSON results are walked value by value, using the column names to recognise names, identifiers and free

@@ -18,6 +18,7 @@ namespace local_jedomi\agent;
 
 use local_jedomi\ai\client;
 use local_jedomi\ai\error_message;
+use local_jedomi\local\anonymizer;
 use local_jedomi\local\service\pending_action_service;
 use local_jedomi\task\agent_runner;
 
@@ -97,6 +98,9 @@ class preview_runner {
         $toolcallcounts = [];
         $loopbroken = false;
         $content = '';
+        // As in the scheduled run, personal data returned by the tools reaches the AI anonymised with the level of the
+        // Privacy tab; the arguments it proposes and what the preview shows get the real values back.
+        $anonymizer = new anonymizer();
 
         for ($round = 1; $round <= $maxrounds; $round++) {
             try {
@@ -134,6 +138,11 @@ class preview_runner {
                 $funcargs = $tc['function']['arguments'] ?? '{}';
                 $tcid = $tc['id'];
                 $toolduration = 0;
+                // The AI only knows the placeholders of the anonymised data; the tools need the real values.
+                $realargs = is_string($funcargs) ? json_decode($funcargs, true) : $funcargs;
+                if (is_array($realargs) && !empty($realargs)) {
+                    $funcargs = json_encode($anonymizer->restore_value($realargs), JSON_UNESCAPED_UNICODE);
+                }
 
                 // ... ── Loop detection ──────────────────────────────────────────────
                 $decodedargs = is_string($funcargs) ? json_decode($funcargs, true) : $funcargs;
@@ -187,7 +196,7 @@ class preview_runner {
                 $messages[] = [
                     'role' => 'tool',
                     'tool_call_id' => $tcid,
-                    'content' => $toolresult,
+                    'content' => $anonymizer->anonymize_tool_result($toolresult),
                 ];
             }
 
@@ -213,16 +222,21 @@ class preview_runner {
             '',
             $finalanswer
         ));
+        // The answer was written from anonymised data: the creator gets the real values back.
+        $finalanswer = $anonymizer->restore($finalanswer);
 
         if ($finalanswer === '') {
             return ['ok' => false, 'error' => 'No response from AI'];
         }
 
         // ... ── Save to cache ─────────────────────────────────────────────────────────
-        // Strip tool payload from messages before caching (not needed for display).
+        // Strip tool payload from messages before caching (not needed for display), and show the real values.
         $cachablemessages = $messages;
-        array_walk($cachablemessages, function (&$msg) {
+        array_walk($cachablemessages, function (&$msg) use ($anonymizer) {
             unset($msg['tool_calls']);
+            if (is_string($msg['content'] ?? null)) {
+                $msg['content'] = $anonymizer->restore($msg['content']);
+            }
         });
         self::save_cache($cachehash, $userid, $finalanswer, $profilerentries, $cachablemessages, $plan);
 
@@ -247,7 +261,11 @@ class preview_runner {
         // ... ── Try semantic cache plan replay ──────────────────────────────────────
         $plan = !empty($cached->plan_json) ? json_decode($cached->plan_json, true) : null;
         if (is_array($plan) && !empty($plan)) {
+            // The AI gets the fresh results and the previous answer anonymised, as in the scheduled run; the profiler
+            // and the reformulated answer show the real values.
+            $anonymizer = new anonymizer();
             $replayprofiler = [];
+            $replayresults = [];
             $replayfailed = false;
             foreach ($plan as $step) {
                 $stepargs = is_string($step['arguments']) ? json_decode($step['arguments'], true) : $step['arguments'];
@@ -272,17 +290,21 @@ class preview_runner {
                     'row_count' => $resultinfo['row_count'] ?? 0,
                     'error' => $resultinfo['error'] ?? null,
                 ];
+                $replayresults[] = [
+                    'tool' => $step['tool'],
+                    'result' => mb_substr($anonymizer->anonymize_tool_result($toolresult), 0, 5000),
+                ];
             }
 
             if (!$replayfailed && !empty($replayprofiler)) {
                 // Build fresh context for reformulation.
                 $freshctx = "Updated tool results:\n";
-                foreach ($replayprofiler as $fr) {
-                    $freshctx .= "\n--- {$fr['tool']} ---\n{$fr['result_preview']}\n";
+                foreach ($replayresults as $fr) {
+                    $freshctx .= "\n--- {$fr['tool']} ---\n{$fr['result']}\n";
                 }
 
                 $cachedresult = json_decode($cached->result_json, true);
-                $cachedanswer = $cachedresult['answer'] ?? $cached->result_json;
+                $cachedanswer = $anonymizer->anonymize_text((string) ($cachedresult['answer'] ?? $cached->result_json));
 
                 $reformmessages = [
                     ['role' => 'system', 'content' => 'You previously answered a question. Below are updated tool results.'
@@ -292,7 +314,7 @@ class preview_runner {
 
                 try {
                     $reform = client::instance()->complete($reformmessages, $userid, [], self::AI_TIMEOUT);
-                    $reformanswer = $reform['content'];
+                    $reformanswer = $anonymizer->restore((string) $reform['content']);
                 } catch (\Throwable $e) {
                     // The cached text below is still a valid answer.
                     $reformanswer = '';

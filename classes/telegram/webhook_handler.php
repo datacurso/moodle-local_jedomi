@@ -1097,7 +1097,15 @@ class webhook_handler {
             ));
 
             try {
-                $answer = \local_jedomi\ai\client::instance()->complete($messages, $userid, $tools, $aitimeout, 0.2);
+                // The question and the history keep the real values in the state; the AI gets them anonymised with
+                // the placeholders of the conversation, as the tool results.
+                $answer = \local_jedomi\ai\client::instance()->complete(
+                    $anonymizer->anonymize_messages($messages),
+                    $userid,
+                    $tools,
+                    $aitimeout,
+                    0.2
+                );
             } catch (\Throwable $e) {
                 $error = \local_jedomi\ai\error_message::from_exception($e, $userlang);
                 // Every failure, including a timeout, ends the turn: the request is never resent,

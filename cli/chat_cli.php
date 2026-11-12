@@ -19,6 +19,8 @@
  *
  * Replicates EXACTLY the web chat pipeline (chatproxy.php → handler.php),
  * including system_message::build(), tool definitions and native function calling.
+ * Tools that change data ask the operator to type "yes" before they run, like the web chat's
+ * confirmation card.
  *
  * Usage: php cli/chat_cli.php
  * Commands: help, debug on/off, exit
@@ -127,12 +129,40 @@ function call_ai(array $messages, array $tools = []): ?array {
 /**
  * Executes a tool call through the proxy handler using the admin role.
  *
+ * A tool that changes data (the same ones the web chat holds for confirmation) runs only after the
+ * operator confirms it; otherwise the model receives an error result and nothing is changed.
+ *
  * @param string $name tool name requested by the model
  * @param array $args decoded tool call arguments
  * @return string JSON-encoded tool result
  */
 function execute_tool(string $name, array $args): string {
+    $severity = \local_jedomi\local\service\pending_action_service::severity($name, $args);
+    if ($severity !== null && !confirm_tool($name, $args, $severity)) {
+        return json_encode(['error' => 'The operator cancelled this action; it was not run.']);
+    }
     return \local_jedomi\proxy\handler::run_tool($name, $args, 'admin');
+}
+
+/**
+ * Asks the operator to confirm a tool call that changes data.
+ *
+ * Only an explicit "yes" confirms it; an empty answer, any other answer or a closed input (for example
+ * when the script is not run from an interactive terminal) cancels it.
+ *
+ * @param string $name tool name requested by the model
+ * @param array $args decoded tool call arguments
+ * @param string $severity severity of the action, as given by pending_action_service::severity()
+ * @return bool true when the operator confirmed the action
+ */
+function confirm_tool(string $name, array $args, string $severity): bool {
+    echo "  \e[1;31m⚠️  {$name} changes data (severity: {$severity}).\e[0m\n";
+    echo "  Arguments: " . mb_substr(json_encode($args, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), 0, 500) . "\n";
+    echo "  Type \"yes\" to run it, anything else to cancel: ";
+    $answer = readline();
+    $confirmed = $answer !== false && strtolower(trim($answer)) === 'yes';
+    echo $confirmed ? "  Confirmed.\n" : "  \e[33mCancelled.\e[0m\n";
+    return $confirmed;
 }
 
 // ... ── Main Loop ─────────────────────────────────────────────────────────────

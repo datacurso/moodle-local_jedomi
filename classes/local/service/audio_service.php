@@ -36,6 +36,13 @@ class audio_service {
     /** @var int Total request timeout, in seconds. */
     private const TIMEOUT = 120;
 
+    /**
+     * @var int Smallest audio file sent to the audio model, in bytes. A smaller file is an empty recording, a click or
+     *          a fraction of a second of noise (about half a second of compressed speech plus its headers): it is
+     *          refused before the provider is called, so it is never charged.
+     */
+    public const MIN_BYTES = 2048;
+
     /** @var array<int, array{0: string, 1: string}> Code and message string for each error status of the AI service. */
     private const STATUS_ERRORS = [
         413 => ['audio_too_long', 'audio_error_too_long'],
@@ -46,6 +53,7 @@ class audio_service {
     /** @var array<string, array{0: string, 1: string}> Code and message string for each local error. */
     private const LOCAL_ERRORS = [
         'audio_error_disabled' => ['audio_disabled', 'audio_error_disabled'],
+        'audio_error_too_short' => ['audio_too_short', 'audio_error_too_short'],
         'audio_error_unsupported' => ['audio_unsupported', 'audio_error_unsupported'],
         'audio_error_unreadable' => ['audio_unreadable', 'audio_error_unreadable'],
     ];
@@ -58,8 +66,9 @@ class audio_service {
      * @param string $filename File name; its extension decides the format.
      * @param ai_services_api|null $api Provider client; null for Jedomi's own.
      * @return array{text: string, model: string, duration_seconds: float}
-     * @throws \moodle_exception audio_error_disabled, audio_error_unsupported, audio_error_unreadable
-     *         (nothing was understood), or any provider error.
+     * @throws \moodle_exception audio_error_disabled, audio_error_unsupported, audio_error_too_short (smaller than
+     *         {@see self::MIN_BYTES}, refused without calling the provider), audio_error_unreadable (nothing was
+     *         understood), or any provider error.
      */
     public static function transcribe_upload(int $userid, string $path, string $filename, ?ai_services_api $api = null): array {
         if (!model_settings::is_audio_enabled()) {
@@ -68,6 +77,10 @@ class audio_service {
         $filename = clean_param($filename, PARAM_FILE);
         if ($filename === '' || !self::is_supported($filename) || !is_readable($path)) {
             throw new \moodle_exception('audio_error_unsupported', 'local_jedomi');
+        }
+        // Noise or an empty recording is never sent: the provider charges every transcription.
+        if ((int) filesize($path) < self::MIN_BYTES) {
+            throw new \moodle_exception('audio_error_too_short', 'local_jedomi');
         }
 
         // The language of the user is given to the audio model: detecting it from a short recording can fail and
