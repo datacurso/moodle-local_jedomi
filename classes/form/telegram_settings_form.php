@@ -76,13 +76,14 @@ class telegram_settings_form extends \moodleform {
         // Regenerating the secret is an action of its own: it does not save, nor validate, the rest of the form.
         $mform->registerNoSubmitButton('regeneratesecret');
         // The class replaces btn-primary instead of being added to it: both together gave orange text on a blue button.
+        // Danger, not warning: it breaks the current webhook, and Boost's warning colour fails contrast on white.
         $mform->addElement(
             'submit',
             'regeneratesecret',
             get_string('regenerate', 'local_jedomi'),
             ['data-action' => 'local_jedomi/admin/integrations/regenerate-secret'],
             false,
-            ['customclassoverride' => 'btn-outline-warning']
+            ['customclassoverride' => 'btn-outline-danger']
         );
         $mform->addElement('static', 'regeneratesecret_help', '', get_string('telegram_webhook_secret_help', 'local_jedomi'));
 
