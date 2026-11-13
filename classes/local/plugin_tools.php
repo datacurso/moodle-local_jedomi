@@ -35,6 +35,9 @@ final class plugin_tools {
     /** @var string Pattern of a plugin tool name. */
     private const NAME_PATTERN = '/^[a-z][a-z0-9_]{2,63}$/';
 
+    /** @var int Largest result of a plugin tool sent to the AI service, in bytes. */
+    public const MAX_RESULT_BYTES = 102400;
+
     /** @var string[] Names of Jedomi's own tools and of their aliases, in every channel: never a plugin tool. */
     public const RESERVED_NAMES = [
         'admin_describe', 'admin_execute', 'admin_search', 'call_webservice', 'create_agent', 'create_agents',
@@ -80,7 +83,8 @@ final class plugin_tools {
      *
      * A failure never stops the conversation: the AI gets {"error": "tool_failed", "tool": name}, with the message
      * of a Moodle exception (a refused permission, a wrong argument) as detail. Other errors give no detail, so no
-     * path or internal message reaches the AI service.
+     * path or internal message reaches the AI service. A result larger than MAX_RESULT_BYTES is replaced by
+     * {"error": "tool_result_too_large", "tool": name}, so a plugin cannot flood the conversation and its cost.
      *
      * @param agent_tool $tool The tool.
      * @param array $args Arguments decoded from the tool call.
@@ -90,13 +94,19 @@ final class plugin_tools {
         $error = ['error' => 'tool_failed', 'tool' => $tool->get_name()];
         try {
             $params = json_decode(json_encode((object) $args));
-            return $tool->execute($params instanceof \stdClass ? $params : new \stdClass());
+            $result = $tool->execute($params instanceof \stdClass ? $params : new \stdClass());
         } catch (\moodle_exception $e) {
             return json_encode($error + ['detail' => $e->getMessage()]);
         } catch (\Throwable $e) {
             debugging('Jedomi plugin tool ' . $tool->get_name() . ' failed: ' . $e->getMessage(), DEBUG_DEVELOPER);
             return json_encode($error);
         }
+        if (strlen($result) > self::MAX_RESULT_BYTES) {
+            $message = 'Jedomi plugin tool ' . $tool->get_name() . ' answered ' . strlen($result) . ' bytes, over the limit.';
+            debugging($message, DEBUG_DEVELOPER);
+            return json_encode(['error' => 'tool_result_too_large', 'tool' => $tool->get_name()]);
+        }
+        return $result;
     }
 
     /**

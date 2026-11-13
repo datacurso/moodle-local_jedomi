@@ -231,4 +231,18 @@ final class plugin_tools_test extends \advanced_testcase {
         $this->assertSame('tool_failed', $crash['error']);
         $this->assertArrayNotHasKey('detail', $crash);
     }
+
+    /**
+     * A result larger than the limit never reaches the AI service: the AI gets a controlled error instead.
+     */
+    public function test_oversized_result_is_replaced_by_an_error(): void {
+        $tool = new fake_plugin_tool('demo_big');
+        $big = str_repeat('x', plugin_tools::MAX_RESULT_BYTES + 1);
+
+        $result = json_decode(plugin_tools::execute($tool, ['q' => $big]), true);
+
+        $this->assertSame('tool_result_too_large', $result['error']);
+        $this->assertSame('demo_big', $result['tool']);
+        $this->assertDebuggingCalled();
+    }
 }
