@@ -1,0 +1,48 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template local_jedomi/admin/avatar_option
+
+    Label of one option of the avatar selector of the Personalization tab: the avatar image, or the Jedomi icon, and
+    its name.
+
+    Classes required for JS:
+    * none
+
+    Data attributes required for JS:
+    * none
+
+    Context variables required for this template:
+    * icon object - {"trigger": true} when the option is the Jedomi icon (no image)
+    * url string - Address of the avatar image, when it is not the Jedomi icon
+    * label string - Name of the option
+
+    Example context (json):
+    {
+        "url": "https://example.com/local/jedomi/pix/avatars/avatar_01.png",
+        "label": "Avatar 1"
+    }
+}}
+<span class="local_jedomi-avatar-option">
+    {{#icon}}
+    <span class="local_jedomi-avatar-option-icon">{{> local_jedomi/local/sidebar/icon }}</span>
+    {{/icon}}
+    {{^icon}}
+    <img class="local_jedomi-avatar-option-img" src="{{url}}" alt="" width="56" height="56">
+    {{/icon}}
+    <span class="local_jedomi-avatar-option-label">{{label}}</span>
+</span>

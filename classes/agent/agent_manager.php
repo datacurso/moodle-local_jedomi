@@ -205,7 +205,7 @@ class agent_manager {
      * @param int $actorid User that reads the agents.
      * @return int[] Owner user ids.
      */
-    private static function owners_with_visible_instruction(int $actorid): array {
+    public static function owners_with_visible_instruction(int $actorid): array {
         global $DB;
         $owners = [];
         foreach ($DB->get_fieldset_sql('SELECT DISTINCT userid FROM {local_jedomi_agents}') as $ownerid) {
@@ -282,6 +282,8 @@ class agent_manager {
      *  - context_type (string): filter by context_type value.
      *  - search (string): LIKE match on the prompt field.
      *  - actorid (int): user that searches; the search then only matches the agents whose instruction they may read.
+     *  - idsql (array): [string $sql, array $params] of a query that selects the ids of the agents to keep, such as the
+     *    agents that match the filters of the agents report (see filtered_ids::sql()).
      *  - page (int, default 1): current page.
      *  - perpage (int, default 20): items per page.
      *
@@ -354,6 +356,13 @@ class agent_manager {
                     $params = array_merge($params, $inparams);
                 }
             }
+        }
+
+        // Agents selected by a query, such as the rows of the agents report with its filters.
+        if (!empty($filters['idsql'])) {
+            [$idsql, $idparams] = $filters['idsql'];
+            $wheres[] = "id IN ({$idsql})";
+            $params = array_merge($params, $idparams);
         }
 
         // Role filter — match role shortname inside role_filter JSON.
@@ -1061,23 +1070,22 @@ class agent_manager {
     // ... ── Stats ─────────────────────────────────────────────────────────────────
 
     /**
-     * Get aggregate statistics for agents matching the given filters.
+     * Data of the charts of the Agents tab, for the agents that match the given filters.
      *
      * The returned object contains:
-     *  - charts->by_role:    array of role shortname → count
-     *  - charts->by_status:  object {enabled: N, disabled: N}
-     *  - charts->executions_30d: array of {day: string, count: int}
-     *  - rows:               paginated agent records (same as get_agents()) with user_fullname, the name of the creator.
-     *  - total:              total matching count.
-     *  - page:               current page number.
+     *  - by_role:        array of role shortname → count
+     *  - by_status:      object {enabled: N, disabled: N}
+     *  - executions_30d: array of {day: string, count: int}
+     *  - role_labels:    readable name of each role shortname of by_role
+     *  - status_labels:  readable name of each status of by_status
      *
-     * @param  array $filters Same filter options as get_agents().
+     * @param  array $filters Same filter options as get_agents(), usually idsql with the filters of the agents report.
      * @return \stdClass
      */
-    public static function get_stats(array $filters): \stdClass {
+    public static function get_chart_stats(array $filters): \stdClass {
         global $DB;
 
-        // Every chart counts the agents that match the filters of the table.
+        // Every chart counts the agents that match the filters.
         [$wheresql, $params] = self::filter_where($filters);
         $matching = $DB->get_records_sql(
             "SELECT id, role_filter, enabled, lastrun FROM {local_jedomi_agents} {$wheresql}",
@@ -1126,38 +1134,37 @@ class agent_manager {
             ];
         }
 
-        // ... ── Paginated rows (same as get_agents), with the name of their creator. ──
-        $result = self::get_agents($filters);
-        $page = max(1, (int) ($filters['page'] ?? 1));
-        $userids = array_unique(array_map(fn(\stdClass $row): int => (int) $row->userid, $result['items']));
-        $namefields = 'id, ' . implode(', ', \core_user\fields::get_name_fields());
-        $users = empty($userids) ? [] : $DB->get_records_list('user', 'id', $userids, '', $namefields);
-        foreach ($result['items'] as $row) {
-            $row->user_fullname = isset($users[$row->userid]) ? fullname($users[$row->userid]) : '';
-            // Readable names for the table and the details; the raw values stay for the form.
-            $row->schedule_label = self::describe_schedule((string) $row->schedule_cron);
-            $row->context_label = self::describe_context(
-                (string) ($row->context_type ?? 'site'),
-                empty($row->context_id) ? null : (int) $row->context_id
-            );
-        }
-
         return (object) [
-            'charts' => (object) [
-                'by_role' => $byrole,
-                'by_status' => $bystatus,
-                'executions_30d' => $executions30d,
-                // Readable names of the chart keys, in the language of the user.
-                'role_labels' => (object) self::role_labels(array_keys($byrole)),
-                'status_labels' => (object) [
-                    'enabled' => get_string('agent_enabled', 'local_jedomi'),
-                    'disabled' => get_string('agent_disabled', 'local_jedomi'),
-                ],
+            'by_role' => $byrole,
+            'by_status' => $bystatus,
+            'executions_30d' => $executions30d,
+            // Readable names of the chart keys, in the language of the user.
+            'role_labels' => (object) self::role_labels(array_keys($byrole)),
+            'status_labels' => (object) [
+                'enabled' => get_string('agent_enabled', 'local_jedomi'),
+                'disabled' => get_string('agent_disabled', 'local_jedomi'),
             ],
-            'rows' => $result['items'],
-            'total' => $result['total'],
-            'page' => $page,
         ];
+    }
+
+    /**
+     * Copy of an agent as a user may see it in the details of the Agents tab: see agent_for_actor(), with the name of
+     * its creator and its readable schedule and context.
+     *
+     * @param \stdClass $agent Agent record.
+     * @param int $actorid User that reads the agent.
+     * @return \stdClass Copy with ->user_fullname, ->schedule_label and ->context_label added.
+     */
+    public static function agent_details_for_actor(\stdClass $agent, int $actorid): \stdClass {
+        $copy = self::agent_for_actor($agent, $actorid);
+        $user = \core_user::get_user((int) $agent->userid);
+        $copy->user_fullname = $user ? fullname($user) : '';
+        $copy->schedule_label = self::describe_schedule((string) $agent->schedule_cron);
+        $copy->context_label = self::describe_context(
+            (string) ($agent->context_type ?? 'site'),
+            empty($agent->context_id) ? null : (int) $agent->context_id
+        );
+        return $copy;
     }
 
     /**

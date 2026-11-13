@@ -1,0 +1,52 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template local_jedomi/admin/card_header
+
+    Header of a card of the Jedomi settings, from context values: the settings forms put it at the top of each of
+    their sections. The markup must stay the same as the header of local_jedomi/admin/card.
+
+    Classes required for JS:
+    * none
+
+    Data attributes required for JS:
+    * none
+
+    Context variables required for this template:
+    * icon string - Core pix icon key, for example i/settings
+    * color string - Icon color modifier: violet, amber, green, red, sky, indigo, purple or blue
+    * title string - Card title
+    * subtitle string - Card subtitle
+
+    Example context (json):
+    {
+        "icon": "i/settings",
+        "color": "violet",
+        "title": "Security",
+        "subtitle": "Secrets used to sign the permission tokens of the Jedomi sidebar."
+    }
+}}
+<div class="card-header local_jedomi-admin-card-header">
+    <span class="local_jedomi-admin-card-icon local_jedomi-admin-card-icon-{{color}}">
+        {{#pix}} {{icon}}, core {{/pix}}
+    </span>
+    <div>
+        <h5 class="mb-0">{{title}}</h5>
+        <small class="text-muted d-block">{{subtitle}}</small>
+    </div>
+    <div class="local_jedomi-admin-card-actions"></div>
+</div>

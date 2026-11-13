@@ -57,28 +57,13 @@ const setBusy = (button, busy) => {
 };
 
 /**
- * Show or hide the body of the integration card.
- *
- * @param {HTMLElement} card Integration card.
- * @param {boolean} show Whether to show the body.
- */
-const showBody = (card, show) => {
-    const arrow = card.querySelector(Selectors.integrations.expand);
-    card.querySelector(Selectors.integrations.body).classList.toggle('d-none', !show);
-    arrow.classList.toggle('open', show);
-    arrow.setAttribute('aria-expanded', show ? 'true' : 'false');
-};
-
-/**
- * Reflect the enabled state on the card: body visibility and highlight.
+ * Reflect the enabled state on the card: the body is shown only while the integration is enabled.
  *
  * @param {HTMLElement} card Integration card.
  * @param {boolean} enabled Whether the integration is enabled.
  */
 const setEnabledState = (card, enabled) => {
-    showBody(card, enabled);
-    card.classList.toggle('active', enabled);
-    card.classList.toggle('enabled', enabled);
+    card.querySelector(Selectors.integrations.body).classList.toggle('d-none', !enabled);
 };
 
 /**
@@ -211,14 +196,6 @@ const registerEventListeners = () => {
     });
 
     document.addEventListener('click', (e) => {
-        const expand = e.target.closest(Selectors.integrations.expand);
-        if (expand) {
-            const card = expand.closest(Selectors.integrations.card);
-            if (card.querySelector(Selectors.integrations.toggle).checked) {
-                showBody(card, card.querySelector(Selectors.integrations.body).classList.contains('d-none'));
-            }
-            return;
-        }
         const check = e.target.closest(Selectors.integrations.checkWebhook);
         if (check) {
             checkWebhook(check);

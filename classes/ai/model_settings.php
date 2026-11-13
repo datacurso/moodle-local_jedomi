@@ -19,10 +19,14 @@ namespace local_jedomi\ai;
 /**
  * AI models, feature switches and token settings, and the migration of older settings.
  *
- * Only the models evaluated for Jedomi are offered, in one catalogue with what each model can do:
- * chat, vision (images and PDF pages), audio (transcription) or speech (text to speech, with its voices).
- * plugins-ai rejects any other model
- * with 400 jedomi_invalid_model, and the Datacurso Token Manager has a price for each of them.
+ * With the Datacurso service, only the models evaluated for Jedomi are offered, in one catalogue with what each model
+ * can do: chat, vision (images and PDF pages), audio (transcription) or speech (text to speech, with its voices).
+ * plugins-ai rejects any other model with 400 jedomi_invalid_model, and the Datacurso Token Manager has a price for
+ * each of them.
+ *
+ * The getters Jedomi uses (get_model(), is_files_enabled()...) follow the service in use ({@see ai_service}): with
+ * the custom service they answer its free-text models, and a feature is on only while its model is set; without a
+ * service every feature is off. The get_configured_*() methods always answer the Datacurso settings.
  *
  * @package    local_jedomi
  * @copyright  2026 Jedomi Project
@@ -84,7 +88,10 @@ class model_settings {
     /** @var int Largest answer size limit accepted by the settings form, in tokens. */
     public const MAX_MAX_TOKENS = 128000;
 
-    /** @var string[] Legacy settings removed when the plugin moved to the provider route. */
+    /**
+     * @var string[] Legacy settings removed when the plugin moved to the provider route. The custom service of
+     *      phase 20 has its own settings (custom_gateway_url, custom_api_key...), which are never removed.
+     */
     private const LEGACY_SETTINGS = ['gateway_url', 'api_key'];
 
     /**
@@ -189,7 +196,7 @@ class model_settings {
      * @return string The configured model, or the default one when it is missing or not in the list.
      */
     public static function get_model(): string {
-        return self::get_configured_model(self::CAPABILITY_CHAT);
+        return self::get_model_in_use(self::CAPABILITY_CHAT);
     }
 
     /**
@@ -198,7 +205,7 @@ class model_settings {
      * @return string The configured model, or the default vision model when it is missing or not in the list.
      */
     public static function get_vision_model(): string {
-        return self::get_configured_model(self::CAPABILITY_VISION);
+        return self::get_model_in_use(self::CAPABILITY_VISION);
     }
 
     /**
@@ -207,7 +214,7 @@ class model_settings {
      * @return string The configured model, or the default audio model when it is missing or not in the list.
      */
     public static function get_audio_model(): string {
-        return self::get_configured_model(self::CAPABILITY_AUDIO);
+        return self::get_model_in_use(self::CAPABILITY_AUDIO);
     }
 
     /**
@@ -216,7 +223,17 @@ class model_settings {
      * @return string The configured model, or the default speech model when it is missing or not in the list.
      */
     public static function get_speech_model(): string {
-        return self::get_configured_model(self::CAPABILITY_SPEECH);
+        return self::get_model_in_use(self::CAPABILITY_SPEECH);
+    }
+
+    /**
+     * Model of a capability for the service in use.
+     *
+     * @param string $capability One of the CAPABILITY_* constants.
+     * @return string The custom model (empty when not set) with the custom service, otherwise the Datacurso one.
+     */
+    private static function get_model_in_use(string $capability): string {
+        return ai_service::is_custom() ? ai_service::get_custom_model($capability) : self::get_configured_model($capability);
     }
 
     /**
@@ -243,10 +260,20 @@ class model_settings {
     /**
      * Voice that reads the answers aloud.
      *
-     * @return string The configured voice when it belongs to the speech model in use, or the default voice of that model.
+     * @return string The custom voice with the custom service; otherwise the configured voice when it belongs to the
+     *         speech model in use, or the default voice of that model.
      */
     public static function get_speech_voice(): string {
-        $model = self::get_speech_model();
+        return ai_service::is_custom() ? ai_service::get_custom_voice() : self::get_configured_voice();
+    }
+
+    /**
+     * Voice of the Datacurso service.
+     *
+     * @return string The configured voice when it belongs to the configured speech model, or the default voice of that model.
+     */
+    public static function get_configured_voice(): string {
+        $model = self::get_configured_model(self::CAPABILITY_SPEECH);
         $voice = trim((string) get_config('local_jedomi', 'speech_voice'));
         return in_array($voice, self::get_voices($model), true) ? $voice : self::get_default_voice($model);
     }
@@ -274,40 +301,90 @@ class model_settings {
     }
 
     /**
-     * Whether images, PDF pages and attached files can be processed. On until it is saved.
+     * Whether images, PDF pages and attached files can be processed.
+     *
+     * With the Datacurso service, the switch, on until it is saved; with the custom service, while its vision model is
+     * set (only images then: see {@see self::is_documents_enabled()}).
      *
      * @return bool
      */
     public static function is_files_enabled(): bool {
-        $value = get_config('local_jedomi', 'files_enabled');
-        return $value === false || (bool) (int) $value;
+        return match (ai_service::get_active()) {
+            ai_service::CUSTOM => ai_service::get_custom_model(self::CAPABILITY_VISION) !== '',
+            default => self::is_switch_on('files_enabled', true),
+        };
     }
 
     /**
-     * Whether audio can be transcribed. Off until it is saved.
+     * Whether documents (PDF, Word, PowerPoint, text) can be read: only with the Datacurso service, which reads their
+     * text, and only while file processing is on. A generic OpenAI-compatible service has no such route.
+     *
+     * @return bool
+     */
+    public static function is_documents_enabled(): bool {
+        return ai_service::get_active() === ai_service::DATACURSO && self::is_files_enabled();
+    }
+
+    /**
+     * Whether audio can be transcribed.
+     *
+     * With the Datacurso service, the switch, off until it is saved; with the custom service, while its audio model is
+     * set.
      *
      * @return bool
      */
     public static function is_audio_enabled(): bool {
-        return (bool) (int) get_config('local_jedomi', 'audio_enabled');
+        return match (ai_service::get_active()) {
+            ai_service::CUSTOM => ai_service::get_custom_model(self::CAPABILITY_AUDIO) !== '',
+            default => self::is_switch_on('audio_enabled', false),
+        };
     }
 
     /**
-     * Whether the voice conversation of the sidebar can be used. Off until it is saved, and off while audio
-     * processing is off, because what the user says is transcribed by the audio model.
+     * Whether the voice conversation of the sidebar can be used. Off while audio processing is off, because what the
+     * user says is transcribed by the audio model.
+     *
+     * With the Datacurso service, the switch, off until it is saved; with the custom service, while its speech model
+     * and voice are set.
      *
      * @return bool
      */
     public static function is_voice_enabled(): bool {
-        return (bool) (int) get_config('local_jedomi', 'voice_enabled') && self::is_audio_enabled();
+        $on = match (ai_service::get_active()) {
+            ai_service::CUSTOM => ai_service::get_custom_model(self::CAPABILITY_SPEECH) !== ''
+                && ai_service::get_custom_voice() !== '',
+            default => self::is_switch_on('voice_enabled', false),
+        };
+        return $on && self::is_audio_enabled();
     }
 
     /**
-     * Answer size limit for every AI call.
+     * Saved state of a feature switch of the Datacurso service.
+     *
+     * @param string $name Switch: files_enabled, audio_enabled or voice_enabled.
+     * @param bool $default State until it is saved.
+     * @return bool
+     */
+    public static function is_switch_on(string $name, bool $default): bool {
+        $value = get_config('local_jedomi', $name);
+        return $value === false ? $default : (bool) (int) $value;
+    }
+
+    /**
+     * Answer size limit for every AI call, of the service in use.
      *
      * @return int
      */
     public static function get_max_tokens(): int {
+        return ai_service::is_custom() ? ai_service::get_custom_max_tokens() : self::get_configured_max_tokens();
+    }
+
+    /**
+     * Answer size limit of the Datacurso service.
+     *
+     * @return int
+     */
+    public static function get_configured_max_tokens(): int {
         $maxtokens = (int) get_config('local_jedomi', 'max_tokens');
         return $maxtokens >= self::MIN_MAX_TOKENS ? $maxtokens : self::DEFAULT_MAX_TOKENS;
     }

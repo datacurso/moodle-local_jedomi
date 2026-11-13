@@ -106,21 +106,21 @@ export const dropPendingUpdates = () => getJson('telegram_drop_pending.php');
 export const getWsTable = (state) => getJson('ws_table.php', state);
 
 /**
- * Agent statistics for the charts and one page of the agent list.
+ * Data of the charts of the Agents tab, for the agents that match the filters of the agents report.
  *
- * @param {Object|null} filters Agent filters.
- * @param {number} page Page number.
- * @param {number} perpage Rows per page.
  * @returns {Promise<Object>}
  */
-export const getAgentStats = (filters, page, perpage) => getJson('agent_stats.php', {
-    page,
-    perpage,
-    filters: JSON.stringify(filters || {}),
-});
+export const getAgentStats = () => getJson('agent_stats.php');
 
 /**
- * Run an agent action: create, update, get, toggle, run or delete.
+ * Indicators of the Query profiler tab, for the queries that match the filters of the recent queries report.
+ *
+ * @returns {Promise<Object>}
+ */
+export const getProfilerStats = () => getJson('profiler_stats.php');
+
+/**
+ * Run an agent action: create, update, get, details, toggle, run or delete.
  *
  * @param {Object|FormData} data Action fields, including "action".
  * @returns {Promise<Object>}

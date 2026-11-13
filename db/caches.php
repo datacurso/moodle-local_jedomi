@@ -65,6 +65,15 @@ $definitions = [
         'ttl'        => 120,
     ],
 
+    // Verifications of the custom AI service made by each administrator in the current minute, so the check cannot be
+    // used to scan the network. MODE_APPLICATION so the limit holds across sessions.
+    'verify_rate' => [
+        'mode'       => cache_store::MODE_APPLICATION,
+        'simplekeys' => true,
+        'simpledata' => true,
+        'ttl'        => 120,
+    ],
+
     // Hashes of the signatures of the companion web services already used, so a signed request runs only once.
     // MODE_APPLICATION so a replay is seen by every request. A timestamp is accepted from 60 seconds before to 60 seconds
     // after it, so a signature is kept a little longer than twice that margin.

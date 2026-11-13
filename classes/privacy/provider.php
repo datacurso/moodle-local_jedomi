@@ -137,6 +137,13 @@ class provider implements
             'site_url' => 'privacy:metadata:jedomi_speech_service:site_url',
         ], 'privacy:metadata:jedomi_speech_service');
 
+        // Only when the administrator chooses the custom AI service: no user id, site id or site address is sent.
+        $collection->add_external_location_link('jedomi_custom_ai_service', [
+            'messages' => 'privacy:metadata:jedomi_custom_ai_service:messages',
+            'text' => 'privacy:metadata:jedomi_custom_ai_service:text',
+            'files' => 'privacy:metadata:jedomi_custom_ai_service:files',
+        ], 'privacy:metadata:jedomi_custom_ai_service');
+
         $collection->add_external_location_link('telegram', [
             'chatid' => 'privacy:metadata:telegram:chatid',
             'messages' => 'privacy:metadata:telegram:messages',

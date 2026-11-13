@@ -17,9 +17,10 @@
 namespace local_jedomi\output\admin;
 
 /**
- * Agents tab of the Jedomi settings: charts, the agent list, the agent form and the purge form.
+ * Agents tab of the Jedomi settings: charts, the agents report, the agent form and the purge form.
  *
- * The list, the charts and the actions are loaded by the local_jedomi/admin/agents module.
+ * The charts follow the filters of the agents report; they and the row actions are handled by the
+ * local_jedomi/admin/agents module.
  *
  * @package    local_jedomi
  * @copyright  2026 Jedomi Project
@@ -45,20 +46,24 @@ class agents_tab implements \core\output\named_templatable, \renderable, \templa
     protected array $roles;
     /** @var int Agent to open in the form when the page loads; 0 for none. */
     protected int $editagentid;
+    /** @var string HTML of the agents report. */
+    protected string $report;
 
     /**
-     * Store the roles and the agent to edit.
+     * Store the roles, the agent to edit and the agents report.
      *
      * @param array $roles Roles of the site, from admin_settings_service::get_roles().
      * @param int $editagentid Agent to open in the form when the page loads; 0 for none.
+     * @param string $report HTML of the agents report.
      */
-    public function __construct(array $roles, int $editagentid) {
+    public function __construct(array $roles, int $editagentid, string $report) {
         $this->roles = $roles;
         $this->editagentid = $editagentid;
+        $this->report = $report;
     }
 
     /**
-     * Export the options of the filters and the forms for the template.
+     * Export the options of the forms and the agents report for the template.
      *
      * @param \renderer_base $output Renderer used to render the tab.
      * @return array
@@ -81,6 +86,7 @@ class agents_tab implements \core\output\named_templatable, \renderable, \templa
             'schedules' => $schedules,
             'contexttypes' => $contexttypes,
             'editagentid' => $this->editagentid,
+            'report' => $this->report,
         ];
     }
 

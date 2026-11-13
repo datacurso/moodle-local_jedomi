@@ -28,8 +28,8 @@
 namespace local_jedomi\agent;
 
 /**
- * Records SQL tool executions and exposes paginated logs, aggregate
- * statistics, and purge maintenance for the profiler dashboard.
+ * Records SQL tool executions and exposes the indicators and the purge maintenance of the profiler dashboard; the
+ * lists are the reports of the Query profiler tab.
  */
 class query_profiler {
     /** @var string[] Channels whose queries are recorded. */
@@ -116,8 +116,9 @@ class query_profiler {
     /**
      * WHERE clause and parameters of the filters shared by the list and the indicators.
      *
-     * @param array $filters Supported keys: min_duration_ms, channel, agentid, search.
-     * @return array{0: string, 1: array} SQL condition (1 = 1 when there is no filter) and its parameters.
+     * @param array $filters Supported keys: min_duration_ms, channel, agentid, search and idsql ([string $sql, array $params]
+     *     of a query that selects the ids to keep, such as the rows of the recent queries report with its filters).
+     * @return array SQL condition (1 = 1 when there is no filter) and its parameters.
      */
     private static function filter_where(array $filters): array {
         global $DB;
@@ -144,51 +145,21 @@ class query_profiler {
             $params['search'] = '%' . $DB->sql_like_escape($filters['search']) . '%';
         }
 
+        if (!empty($filters['idsql'])) {
+            [$idsql, $idparams] = $filters['idsql'];
+            $wheres[] = "id IN ({$idsql})";
+            $params = array_merge($params, $idparams);
+        }
+
         return [implode(' AND ', $wheres), $params];
     }
 
     /**
-     * Get paginated query log entries.
-     *
-     * @param  array $filters Supported keys: min_duration_ms, channel, agentid, search, sort (field), dir (ASC|DESC),
-     *                        page (from 1), perpage.
-     * @return array ['entries' => \stdClass[], 'total' => int]
-     */
-    public static function get_log(array $filters = []): array {
-        global $DB;
-
-        [$where, $params] = self::filter_where($filters);
-
-        // Pagination.
-        $page = max(1, (int) ($filters['page'] ?? 1));
-        $perpage = max(1, min(200, (int) ($filters['perpage'] ?? 50)));
-        $offset = ($page - 1) * $perpage;
-
-        // Sort.
-        $sort = in_array($filters['sort'] ?? '', ['duration_ms', 'timecreated', 'rowcount', 'query'])
-            ? $filters['sort'] : 'duration_ms';
-        $dir = strtoupper($filters['dir'] ?? 'DESC') === 'ASC' ? 'ASC' : 'DESC';
-
-        $total = $DB->count_records_select('local_jedomi_query_log', $where, $params);
-
-        $entries = $DB->get_records_sql(
-            "SELECT * FROM {local_jedomi_query_log} WHERE {$where} ORDER BY {$sort} {$dir}, id {$dir}",
-            $params,
-            $offset,
-            $perpage
-        );
-
-        return [
-            'entries' => array_values($entries),
-            'total' => (int) $total,
-        ];
-    }
-
-    /**
-     * Get aggregate stats for the profiler dashboard, over the queries that match the filters.
+     * Indicators of the profiler dashboard (total, slow, average and maximum duration), over the queries that match the
+     * filters.
      *
      * @param  int|null $mindurationms Minimum duration to consider "slow"; null for the slow threshold setting.
-     * @param  array $filters Filters of the list (min_duration_ms, channel, agentid, search), so the indicators match it.
+     * @param  array $filters Filters (min_duration_ms, channel, agentid, search, idsql), so the indicators match the list.
      * @return \stdClass
      */
     public static function get_aggregate(?int $mindurationms = null, array $filters = []): \stdClass {
@@ -209,26 +180,11 @@ class query_profiler {
             $params + ['slowmin' => $mindurationms]
         );
 
-        // Top 10 slowest queries (aggregated by query text).
-        $slowest = $DB->get_records_sql(
-            "SELECT query, COUNT(1) AS exec_count,
-                    ROUND(AVG(duration_ms), 2) AS avg_duration,
-                    ROUND(MAX(duration_ms), 2) AS max_duration
-               FROM {local_jedomi_query_log}
-              WHERE {$where}
-              GROUP BY query
-              ORDER BY avg_duration DESC",
-            $params,
-            0,
-            10
-        );
-
         return (object) [
             'total_queries' => (int) ($stats->total ?? 0),
             'slow_queries' => (int) $slow,
             'avg_duration_ms' => round((float) ($stats->avgduration ?? 0), 2),
             'max_duration_ms' => round((float) ($stats->maxduration ?? 0), 2),
-            'slowest' => array_values($slowest ?: []),
         ];
     }
 

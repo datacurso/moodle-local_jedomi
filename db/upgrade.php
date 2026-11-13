@@ -479,5 +479,20 @@ function xmldb_local_jedomi_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2026111206, 'local', 'jedomi');
     }
 
+    if ($oldversion < 2026111301) {
+        // Existing sites keep the Datacurso AI service; the custom service is chosen on the provider settings page.
+        if (get_config('local_jedomi', 'ai_service') === false) {
+            set_config('ai_service', 'datacurso', 'local_jedomi');
+        }
+        upgrade_plugin_savepoint(true, 2026111301, 'local', 'jedomi');
+    }
+
+    if ($oldversion < 2026111302) {
+        // The "none" service is retired: Jedomi is switched off with "Enabled" of the provider.
+        require_once($CFG->dirroot . '/local/jedomi/db/upgradelib.php');
+        local_jedomi_upgrade_ai_service();
+        upgrade_plugin_savepoint(true, 2026111302, 'local', 'jedomi');
+    }
+
     return true;
 }

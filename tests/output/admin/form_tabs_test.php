@@ -26,6 +26,7 @@ namespace local_jedomi\output\admin;
  * @covers     \local_jedomi\output\admin\general_tab
  * @covers     \local_jedomi\output\admin\courses_tab
  * @covers     \local_jedomi\output\admin\privacy_tab
+ * @covers     \local_jedomi\output\admin\personalization_tab
  */
 final class form_tabs_test extends \advanced_testcase {
     use \local_jedomi\tests\spanish_strings;
@@ -91,5 +92,24 @@ final class form_tabs_test extends \advanced_testcase {
             'la conversación por voz, el modelo de voz, la voz',
             self::plugin_spanish_string('provider_settings_info')
         );
+    }
+
+    /**
+     * The Personalization tab renders its form with its own template.
+     *
+     * @return void
+     */
+    public function test_personalization_tab(): void {
+        global $PAGE;
+        $this->resetAfterTest();
+        $PAGE->set_url(new \moodle_url('/local/jedomi/admin_settings.php', ['tab' => 'personalization']));
+        $renderer = $PAGE->get_renderer('local_jedomi');
+        $tab = new personalization_tab('<form data-test="personalization"></form>');
+
+        $html = $renderer->render($tab);
+
+        $this->assertSame('local_jedomi/admin/personalization_tab', $tab->get_template_name($renderer));
+        $this->assertStringContainsString('data-test="personalization"', $html);
+        $this->assertStringContainsString('local_jedomi-admin-personalization_tab', $html);
     }
 }

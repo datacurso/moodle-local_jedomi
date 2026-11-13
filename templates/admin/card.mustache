@@ -26,17 +26,25 @@
     Data attributes required for JS:
     * none
 
+    The header markup must stay the same as local_jedomi/admin/card_header, which the settings forms use for their
+    sections.
+
     Blocks:
+    * cardattributes - Extra attributes of the card, for example a data-region (optional); not named attributes,
+      which core/toggle and other core templates use for their own blocks
     * icon - Icon markup, for example the pix helper with i/settings of core (the default)
     * color - Icon color modifier: violet, amber, green, red, sky, indigo, purple or blue
     * title - Card title (defaults to the plugin name)
     * subtitle - Card subtitle (optional)
+    * actions - Controls on the right of the header, for example a switch (optional)
+    * bodyclasses - Extra classes of the card body (optional)
+    * bodyattributes - Extra attributes of the card body, for example a data-region (optional)
     * body - Card content
 
     Example context (json):
     {}
 }}
-<div class="card local_jedomi-admin-card mb-4">
+<div class="card local_jedomi-admin-card mb-4"{{$cardattributes}}{{/cardattributes}}>
     <div class="card-header local_jedomi-admin-card-header">
         <span class="local_jedomi-admin-card-icon local_jedomi-admin-card-icon-{{$color}}violet{{/color}}">
             {{$icon}}{{#pix}} i/settings, core {{/pix}}{{/icon}}
@@ -45,8 +53,9 @@
             <h5 class="mb-0">{{$title}}{{#str}} pluginname, local_jedomi {{/str}}{{/title}}</h5>
             <small class="text-muted d-block">{{$subtitle}}{{/subtitle}}</small>
         </div>
+        <div class="local_jedomi-admin-card-actions">{{$actions}}{{/actions}}</div>
     </div>
-    <div class="card-body">
+    <div class="card-body{{$bodyclasses}}{{/bodyclasses}}"{{$bodyattributes}}{{/bodyattributes}}>
         {{$body}}{{/body}}
     </div>
 </div>

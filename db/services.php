@@ -50,6 +50,15 @@ $functions = [
         'ajax'         => true,
         'loginrequired' => true,
     ],
+    'local_jedomi_verify_custom_service' => [
+        'classname'    => 'local_jedomi\external\verify_custom_service',
+        'methodname'   => 'execute',
+        'description'  => 'Check that an address and key answer as an OpenAI-compatible AI service (GET /v1/models).',
+        'type'         => 'write',
+        'capabilities' => 'moodle/site:config',
+        'ajax'         => true,
+        'loginrequired' => true,
+    ],
     'jedomi_execute_sql' => [
         'classname'    => 'local_jedomi\external\execute_sql',
         'methodname'   => 'execute',

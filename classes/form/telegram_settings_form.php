@@ -34,6 +34,8 @@ require_once($CFG->libdir . '/formslib.php');
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class telegram_settings_form extends \moodleform {
+    use card_sections;
+
     /** @var array<string, int[]> Allowed range of each number field, as [min, max]. */
     private const RANGES = [
         'telegram_rate_limit' => [0, 1000],
@@ -50,8 +52,7 @@ class telegram_settings_form extends \moodleform {
     protected function definition(): void {
         $mform = $this->_form;
 
-        $mform->addElement('header', 'botheader', get_string('telegram_bot_heading', 'local_jedomi'));
-        $mform->setExpanded('botheader');
+        $this->add_subsection('telegrambotheader', get_string('telegram_bot_heading', 'local_jedomi'));
         $tokenset = !empty($this->_customdata['tokenset']);
         $placeholder = $tokenset
             ? get_string('telegram_bot_token_placeholder_saved', 'local_jedomi')
@@ -87,14 +88,14 @@ class telegram_settings_form extends \moodleform {
         );
         $mform->addElement('static', 'regeneratesecret_help', '', get_string('telegram_webhook_secret_help', 'local_jedomi'));
 
-        $mform->addElement('header', 'rateheader', get_string('telegram_limits_heading', 'local_jedomi'));
+        $this->add_subsection('telegramlimitsheader', get_string('telegram_limits_heading', 'local_jedomi'));
         foreach (array_keys(self::RANGES) as $field) {
             $mform->addElement('text', $field, get_string($field, 'local_jedomi'), ['size' => 6]);
             $mform->setType($field, PARAM_INT);
             $mform->addHelpButton($field, $field, 'local_jedomi');
         }
 
-        $mform->addElement('header', 'accessheader', get_string('telegram_access_heading', 'local_jedomi'));
+        $this->add_subsection('telegramaccessheader', get_string('telegram_access_heading', 'local_jedomi'));
         $mform->addElement(
             'static',
             'telegram_role_visibility_help',

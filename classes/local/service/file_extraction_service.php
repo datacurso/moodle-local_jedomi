@@ -26,7 +26,8 @@ use local_jedomi\ai\model_settings;
  * POST /jedomi/v1/files/extract, which reads their text for free; a PDF without text (scanned) is read
  * again by the vision model through files/read. Audio
  * files and microphone recordings are transcribed by the audio model. Each kind is refused when its
- * feature is off in the Jedomi settings.
+ * feature is off in the Jedomi settings. With the custom service documents are refused (documents_error_custom): a
+ * generic OpenAI-compatible service has no route that reads them.
  *
  * @package    local_jedomi
  * @copyright  2026 Jedomi Project
@@ -56,6 +57,7 @@ class file_extraction_service {
     private const LOCAL_ERRORS = [
         'file_error_unsupported' => ['file_unsupported', 'file_error_unsupported'],
         'files_error_disabled' => ['files_disabled', 'files_error_disabled'],
+        'documents_error_custom' => ['documents_unavailable', 'documents_error_custom'],
     ];
 
     /**
@@ -67,7 +69,8 @@ class file_extraction_service {
      * @param ai_services_api|null $api Provider client; null for Jedomi's own.
      * @return array{text: string, format: string, pages: int, rows: int, columns: int, chars: int, seconds: int,
      *     truncated: bool}
-     * @throws \moodle_exception file_error_unsupported, files_error_disabled, audio_error_*, or any provider error.
+     * @throws \moodle_exception file_error_unsupported, files_error_disabled, documents_error_custom, audio_error_*, or
+     *         any provider error.
      */
     public static function extract_upload(int $userid, string $path, string $filename, ?ai_services_api $api = null): array {
         $filename = clean_param($filename, PARAM_FILE);
@@ -83,6 +86,9 @@ class file_extraction_service {
         }
         if (!model_settings::is_files_enabled()) {
             throw new \moodle_exception('files_error_disabled', 'local_jedomi');
+        }
+        if (!model_settings::is_documents_enabled()) {
+            throw new \moodle_exception('documents_error_custom', 'local_jedomi');
         }
 
         try {

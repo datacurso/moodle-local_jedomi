@@ -13,7 +13,7 @@ Feature: Jedomi settings page
       | manager1 | manager | System       |           |
 
   @MDL-INT-020
-  Scenario: The administrator sees the seven tabs and the AI service card of the General tab
+  Scenario: The administrator sees the eight tabs and the AI service card of the General tab
     Given I log in as "admin"
     When I visit "/local/jedomi/admin_settings.php"
     Then I should see "General"
@@ -23,7 +23,24 @@ Feature: Jedomi settings page
     And I should see "APIs"
     And I should see "Agents"
     And I should see "Query profiler"
+    And I should see "Personalization"
     And "//a[contains(@href, '/ai/provider/datacurso/admin/plugin_settings.php') and contains(@href, 'component=local_jedomi')]" "xpath_element" should exist
+
+  @MDL-INT-020
+  Scenario Outline: Every section of the form tabs is a card with a title and a subtitle, without collapsible sections
+    Given I log in as "admin"
+    When I visit "/local/jedomi/admin_settings.php?tab=<tab>"
+    Then I should see "<title>" in the ".local_jedomi-admin-card-header" "css_element"
+    And I should see "<subtitle>"
+    And I should not see "Expand all"
+    And ".collapsible" "css_element" should not exist
+
+    Examples:
+      | tab             | title               | subtitle                                                              |
+      | general         | AI service          | When a query counts as slow and how long the query log is kept        |
+      | courses         | Course availability | Control which courses show the Jedomi sidebar.                        |
+      | privacy         | Access control      | How personal data is protected before it reaches the AI service.      |
+      | personalization | Avatar              | Where the button that opens the Jedomi sidebar is placed on the page. |
 
   @MDL-INT-020
   Scenario: Saving a tab shows the saved notice and keeps the open tab in the address
@@ -75,11 +92,9 @@ Feature: Jedomi settings page
     And I press "Create agent"
     Then I should see "Agent \"Weekly logins\" created successfully."
     And the Jedomi agent "Weekly logins" should exist
-    And I click on "Agent actions" "button" in the "Weekly logins" "table_row"
-    And I click on "Run now" "link" in the "Weekly logins" "table_row"
+    And I press "Run now" action in the "Weekly logins" report row
     And I should see "Agent queued for execution (next cron cycle)."
-    And I click on "Agent actions" "button" in the "Weekly logins" "table_row"
-    And I click on "Delete" "link" in the "Weekly logins" "table_row"
+    And I press "Delete" action in the "Weekly logins" report row
     And I click on "Delete" "button" in the ".modal-dialog" "css_element"
     And I should not see "Weekly logins" in the "table" "css_element"
     And the Jedomi agent "Weekly logins" should not exist
@@ -112,7 +127,7 @@ Feature: Jedomi settings page
     And the Jedomi agent "Course report" should exist
 
   @MDL-INT-075
-  Scenario Outline: The APIs tab and its function table require the site configuration permission
+  Scenario Outline: The APIs tab and the profiler endpoints require the site configuration permission
     Given I log in as "manager1"
     When I visit "<page>"
     Then I should see "Sorry, but you do not currently have permissions to do that"
@@ -121,3 +136,4 @@ Feature: Jedomi settings page
       | page                                        |
       | /local/jedomi/admin_settings.php?tab=apis   |
       | /local/jedomi/ajax/ws_table.php             |
+      | /local/jedomi/ajax/profiler_stats.php       |

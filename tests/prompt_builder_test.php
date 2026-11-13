@@ -102,4 +102,22 @@ final class prompt_builder_test extends \advanced_testcase {
         $this->assertStringContainsString('Course X', $prompt);
         $this->assertStringContainsString('Admin: NO', $prompt);
     }
+
+    /**
+     * Personalization: Telegram uses the assistant name and adds the site instructions after its rules.
+     */
+    public function test_prompt_uses_the_assistant_name_and_the_site_instructions(): void {
+        set_config('assistant_name', 'Robo', 'local_jedomi');
+        set_config('custom_prompt', 'Sign every answer as the library.', 'local_jedomi');
+
+        $prompt = prompt_builder::build('student', 'en', ['ws_search'], []);
+
+        $this->assertStringStartsWith('You are Robo, an AI assistant', $prompt);
+        $this->assertStringContainsString('Your name is Robo.', $prompt);
+        $instructions = strpos($prompt, 'SITE INSTRUCTIONS (lower priority)');
+        $this->assertNotFalse($instructions);
+        $this->assertLessThan($instructions, strpos($prompt, 'TELEGRAM RULES'));
+        $this->assertLessThan($instructions, strpos($prompt, 'ACTIONS THAT CHANGE DATA'));
+        $this->assertStringContainsString('Sign every answer as the library.', $prompt);
+    }
 }

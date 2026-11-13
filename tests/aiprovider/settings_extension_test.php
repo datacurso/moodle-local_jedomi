@@ -19,6 +19,7 @@ namespace local_jedomi\aiprovider;
 use aiprovider_datacurso\form\plugin_settings_form;
 use aiprovider_datacurso\local\plugin_settings;
 use aiprovider_datacurso\local\plugin_settings_extension;
+use local_jedomi\ai\ai_service;
 use local_jedomi\ai\model_settings;
 
 /**
@@ -55,6 +56,7 @@ final class settings_extension_test extends \advanced_testcase {
         return array_merge([
             'component' => 'local_jedomi',
             'enabled' => 1,
+            'ai_service' => ai_service::DATACURSO,
             'model' => model_settings::DEFAULT_MODEL,
             'files_enabled' => 1,
             'vision_model' => model_settings::DEFAULT_VISION_MODEL,
@@ -66,6 +68,20 @@ final class settings_extension_test extends \advanced_testcase {
             model_settings::voice_field(self::QWEN_TTS) => 'Vivian',
             'max_tokens' => '8000',
         ], $overrides);
+    }
+
+    /**
+     * Values of the form without the service select and the custom service fields.
+     *
+     * @param array $data Values of get_data().
+     * @return array
+     */
+    private static function datacurso_values(array $data): array {
+        return array_filter(
+            $data,
+            static fn(string $name): bool => $name !== ai_service::CONFIG && !str_starts_with($name, 'custom_'),
+            ARRAY_FILTER_USE_KEY
+        );
     }
 
     /**
@@ -96,10 +112,12 @@ final class settings_extension_test extends \advanced_testcase {
 
         $this->assertStringContainsString('name="enabled"', $html);
         $this->assertStringContainsString('name="model"', $html);
+        $this->assertStringNotContainsString('name="service_datacurso"', $html);
+        $this->assertStringNotContainsString('name="service_custom"', $html);
         $this->assertStringNotContainsString('docservice_url', $html);
         $order = [];
-        $fields = ['enabled', 'model', 'files_enabled', 'vision_model', 'audio_enabled', 'audio_model', 'voice_enabled',
-            'speech_model', model_settings::voice_field(self::INWORLD),
+        $fields = ['enabled', 'ai_service', 'model', 'files_enabled', 'vision_model', 'audio_enabled', 'audio_model',
+            'voice_enabled', 'speech_model', model_settings::voice_field(self::INWORLD),
             model_settings::voice_field(self::QWEN_TTS), 'max_tokens'];
         foreach ($fields as $name) {
             $position = strpos($html, 'name="' . $name . '"');
@@ -293,7 +311,7 @@ final class settings_extension_test extends \advanced_testcase {
             model_settings::voice_field(self::INWORLD) => 'Miguel',
             model_settings::voice_field(self::QWEN_TTS) => 'Vivian',
             'max_tokens' => 9000,
-        ], (new settings_extension())->get_data());
+        ], self::datacurso_values((new settings_extension())->get_data()));
 
         $current = plugin_settings_form::current_data('local_jedomi');
         $this->assertSame(0, $current['enabled']);
@@ -330,7 +348,7 @@ final class settings_extension_test extends \advanced_testcase {
             model_settings::voice_field(self::INWORLD) => 'Rafael',
             model_settings::voice_field(self::QWEN_TTS) => 'Vivian',
             'max_tokens' => model_settings::DEFAULT_MAX_TOKENS,
-        ], (new settings_extension())->get_data());
+        ], self::datacurso_values((new settings_extension())->get_data()));
     }
 
     /**
@@ -656,5 +674,298 @@ final class settings_extension_test extends \advanced_testcase {
         $this->assertSame('0', get_config('local_jedomi', 'voice_enabled'));
         $this->assertSame(model_settings::DEFAULT_SPEECH_MODEL, get_config('local_jedomi', 'speech_model'));
         $this->assertSame('Rafael', get_config('local_jedomi', 'speech_voice'));
+    }
+
+    /**
+     * Valid submitted values with the custom service chosen.
+     *
+     * @param array $overrides Values replacing the defaults.
+     * @return array
+     */
+    private function custom_data(array $overrides = []): array {
+        return $this->valid_data(array_merge([
+            'ai_service' => ai_service::CUSTOM,
+            'custom_gateway_url' => 'https://api.example.com/v1',
+            'custom_api_key' => 'sk-new-key',
+            'custom_allow_http' => 0,
+            'custom_verified' => 1,
+            'custom_model' => 'meta-llama/Llama-3.3-70B-Instruct',
+            'custom_vision_model' => '',
+            'custom_audio_model' => '',
+            'custom_speech_model' => '',
+            'custom_speech_voice' => '',
+            'custom_max_tokens' => '',
+        ], $overrides));
+    }
+
+    /**
+     * Allow any public address without resolving it, and remember the address and key of custom_data() as verified.
+     *
+     * @return void
+     */
+    private function verify_custom_pair(): void {
+        set_config('curlsecurityblockedhosts', '');
+        set_config('curlsecurityallowedport', '');
+        ai_service::remember_verified('https://api.example.com', 'sk-new-key');
+    }
+
+    /**
+     * One "AI service" select comes right after "Enabled", with exactly the Datacurso service (the default) and the
+     * custom service; each option shows only its own fields.
+     *
+     * @return void
+     */
+    public function test_service_select_shows_only_its_fields(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+
+        $mform = new \MoodleQuickForm('jedomitest', 'post', '');
+        (new settings_extension())->add_fields($mform);
+
+        $select = $mform->getElement('ai_service');
+        $this->assertSame('select', $select->getType());
+        $this->assertSame(get_string('ai_service', 'local_jedomi'), $select->getLabel());
+        $options = [];
+        foreach ($select->_options as $option) {
+            $options[$option['attr']['value']] = $option['text'];
+        }
+        $this->assertSame([
+            ai_service::DATACURSO => get_string('service_datacurso', 'local_jedomi'),
+            ai_service::CUSTOM => get_string('service_custom', 'local_jedomi'),
+        ], $options);
+        $this->assertSame(ai_service::DATACURSO, $mform->_defaultValues['ai_service']);
+        $this->assertFalse($mform->elementExists('service_datacurso'));
+        $this->assertFalse($mform->elementExists('service_custom'));
+        [, $dependencies] = $mform->getLockOptionObject();
+        $hide = \MoodleQuickForm::DEP_HIDE;
+        $datacurso = $dependencies['ai_service']['neq'][ai_service::DATACURSO][$hide];
+        foreach (
+            ['model', 'files_enabled', 'vision_model', 'audio_enabled', 'audio_model', 'voice_enabled', 'speech_model',
+                model_settings::voice_field(self::INWORLD), 'max_tokens'] as $field
+        ) {
+            $this->assertContains($field, $datacurso);
+        }
+        $custom = $dependencies['ai_service']['neq'][ai_service::CUSTOM][$hide];
+        $models = ['custom_model', 'custom_vision_model', 'custom_audio_model', 'custom_speech_model', 'custom_speech_voice',
+            'custom_max_tokens'];
+        foreach (array_merge(['custom_gateway_url', 'custom_api_key', 'custom_allow_http', 'custom_verify'], $models) as $field) {
+            $this->assertContains($field, $custom);
+            $this->assertNotContains($field, $datacurso);
+        }
+        // The model fields of the custom service appear only once the connection is verified.
+        $this->assertSame($models, $dependencies['custom_verified']['neq']['1'][$hide]);
+        // The custom model fields are free text, with no catalogue.
+        $this->assertSame('text', $mform->getElement('custom_model')->getType());
+    }
+
+    /**
+     * Only the fields of the chosen service are validated.
+     *
+     * @return void
+     */
+    public function test_validation_follows_the_chosen_service(): void {
+        $this->resetAfterTest();
+        $this->verify_custom_pair();
+        $extension = new settings_extension();
+        $bad = ['model' => 'jedomi/acme/unknown', 'max_tokens' => 'abc'];
+
+        $this->assertArrayHasKey('model', $extension->validate($this->valid_data($bad)));
+        // With the custom service chosen the Datacurso fields are neither checked nor saved.
+        $this->assertSame([], $extension->validate($this->custom_data($bad)));
+    }
+
+    /**
+     * The custom service needs the verified address and key; a changed address must be verified again.
+     *
+     * @return void
+     */
+    public function test_custom_service_must_be_verified(): void {
+        $this->resetAfterTest();
+        $this->verify_custom_pair();
+        $extension = new settings_extension();
+
+        $this->assertSame([], $extension->validate($this->custom_data()));
+        $this->assertSame(
+            ['custom_gateway_url' => get_string('error_custom_not_verified', 'local_jedomi')],
+            $extension->validate($this->custom_data(['custom_gateway_url' => 'https://other.example.com']))
+        );
+        $this->assertSame(
+            ['custom_gateway_url' => get_string('error_custom_not_verified', 'local_jedomi')],
+            $extension->validate($this->custom_data(['custom_api_key' => 'sk-other']))
+        );
+        $this->assertSame(
+            ['custom_gateway_url' => get_string('custom_verify_invalid_url', 'local_jedomi')],
+            $extension->validate($this->custom_data(['custom_gateway_url' => 'not a url']))
+        );
+        $this->assertSame(
+            ['custom_gateway_url' => get_string('custom_verify_http_not_allowed', 'local_jedomi')],
+            $extension->validate($this->custom_data(['custom_gateway_url' => 'http://api.example.com']))
+        );
+    }
+
+    /**
+     * An empty key keeps the saved key, but only for the saved address.
+     *
+     * @return void
+     */
+    public function test_empty_key_keeps_the_saved_key_only_for_the_saved_address(): void {
+        $this->resetAfterTest();
+        $this->verify_custom_pair();
+        set_config('custom_gateway_url', 'https://api.example.com', 'local_jedomi');
+        set_config('custom_api_key', 'sk-new-key', 'local_jedomi');
+        $extension = new settings_extension();
+
+        $this->assertSame([], $extension->validate($this->custom_data(['custom_api_key' => ''])));
+        $this->assertSame(
+            ['custom_api_key' => get_string('custom_verify_key_required', 'local_jedomi')],
+            $extension->validate($this->custom_data(['custom_api_key' => '', 'custom_gateway_url' => 'https://b.example.com']))
+        );
+
+        $extension->save((object) $this->custom_data(['custom_api_key' => '']));
+        $this->assertSame('sk-new-key', get_config('local_jedomi', 'custom_api_key'));
+    }
+
+    /**
+     * The model ids of the custom service are free text, but must be plausible ids; voice needs audio and a voice.
+     *
+     * @dataProvider bad_custom_model_provider
+     * @param array $overrides Submitted values.
+     * @param array $expected Expected errors as [field => string key].
+     * @return void
+     */
+    public function test_custom_model_validation(array $overrides, array $expected): void {
+        $this->resetAfterTest();
+        $this->verify_custom_pair();
+
+        $errors = (new settings_extension())->validate($this->custom_data($overrides));
+
+        $this->assertSame(array_map(static fn(string $key): string => get_string($key, 'local_jedomi'), $expected), $errors);
+    }
+
+    /**
+     * Custom model values and their errors.
+     *
+     * @return array
+     */
+    public static function bad_custom_model_provider(): array {
+        return [
+            'no chat model' => [['custom_model' => ''], ['custom_model' => 'error_custom_model_required']],
+            'spaces in a model' => [['custom_model' => 'my model'], ['custom_model' => 'error_custom_model_invalid']],
+            'markup in a model' => [['custom_vision_model' => '<b>x</b>'], ['custom_vision_model' => 'error_custom_model_invalid']],
+            'speech without audio' => [['custom_speech_model' => 'tts', 'custom_speech_voice' => 'af'],
+                ['custom_speech_model' => 'error_voice_requires_audio']],
+            'speech without voice' => [['custom_audio_model' => 'whisper', 'custom_speech_model' => 'tts'],
+                ['custom_speech_voice' => 'error_custom_voice_required']],
+            'bad max tokens' => [['custom_max_tokens' => '12.5'], ['custom_max_tokens' => 'error_invalid_max_tokens']],
+        ];
+    }
+
+    /**
+     * Saving the custom service stores its own settings and keeps the Datacurso ones untouched.
+     *
+     * @return void
+     */
+    public function test_save_custom_service_keeps_the_datacurso_settings(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        set_config('model', 'jedomi/zai-org/GLM-5.3-Flash', 'local_jedomi');
+        $extension = new settings_extension();
+
+        $extension->save((object) $this->custom_data([
+            'model' => model_settings::DEFAULT_MODEL,
+            'custom_vision_model' => ' Qwen/Qwen2.5-VL-7B-Instruct ',
+            'custom_max_tokens' => '999999',
+        ]));
+
+        $this->assertSame(ai_service::CUSTOM, get_config('local_jedomi', 'ai_service'));
+        $this->assertSame('jedomi/zai-org/GLM-5.3-Flash', get_config('local_jedomi', 'model'));
+        $this->assertSame('https://api.example.com', get_config('local_jedomi', 'custom_gateway_url'));
+        $this->assertSame('sk-new-key', get_config('local_jedomi', 'custom_api_key'));
+        $this->assertSame('meta-llama/Llama-3.3-70B-Instruct', get_config('local_jedomi', 'custom_model'));
+        $this->assertSame('Qwen/Qwen2.5-VL-7B-Instruct', get_config('local_jedomi', 'custom_vision_model'));
+        $this->assertSame((string) model_settings::MAX_MAX_TOKENS, get_config('local_jedomi', 'custom_max_tokens'));
+        $this->assertSame('0', get_config('local_jedomi', 'custom_allow_http'));
+        // The key is logged masked, never in clear.
+        $logs = $DB->get_records('config_log', ['plugin' => 'local_jedomi', 'name' => 'custom_api_key']);
+        $this->assertCount(1, $logs);
+        $this->assertSame('********', reset($logs)->value);
+
+        // Switching back to Datacurso finds its settings as they were, and the custom ones are kept.
+        $extension->save((object) $this->valid_data(['model' => 'jedomi/zai-org/GLM-5.3-Flash']));
+        $this->assertSame(ai_service::DATACURSO, get_config('local_jedomi', 'ai_service'));
+        $this->assertSame('meta-llama/Llama-3.3-70B-Instruct', get_config('local_jedomi', 'custom_model'));
+        $this->assertSame('sk-new-key', get_config('local_jedomi', 'custom_api_key'));
+    }
+
+    /**
+     * There is no "no service" choice: a submission without the select, or with any other value, keeps the Datacurso
+     * service. Jedomi is switched off with "Enabled" of the provider instead.
+     *
+     * @return void
+     */
+    public function test_save_without_a_valid_service_keeps_datacurso(): void {
+        $this->resetAfterTest();
+        $extension = new settings_extension();
+
+        foreach (['none', '', 'other'] as $value) {
+            set_config('ai_service', ai_service::CUSTOM, 'local_jedomi');
+            $extension->save((object) $this->valid_data(['ai_service' => $value]));
+            $this->assertSame(ai_service::DATACURSO, get_config('local_jedomi', 'ai_service'), $value);
+        }
+        $data = $this->valid_data();
+        unset($data['ai_service']);
+        set_config('ai_service', ai_service::CUSTOM, 'local_jedomi');
+        $extension->save((object) $data);
+        $this->assertSame(ai_service::DATACURSO, get_config('local_jedomi', 'ai_service'));
+        $this->assertFalse(get_config('local_jedomi', 'custom_model'));
+    }
+
+    /**
+     * The saved key is never written back into the page; the field shows that a key is saved.
+     *
+     * @return void
+     */
+    public function test_saved_key_never_reaches_the_page(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $this->verify_custom_pair();
+        set_config('ai_service', ai_service::CUSTOM, 'local_jedomi');
+        set_config('custom_gateway_url', 'https://api.example.com', 'local_jedomi');
+        set_config('custom_api_key', 'sk-new-key', 'local_jedomi');
+        set_config('custom_model', 'llama', 'local_jedomi');
+
+        $data = plugin_settings_form::current_data('local_jedomi');
+        $form = new plugin_settings_form(null, ['component' => 'local_jedomi']);
+        $form->set_data($data);
+        $html = $form->render();
+
+        $this->assertArrayNotHasKey('custom_api_key', $data);
+        $this->assertStringNotContainsString('sk-new-key', $html);
+        $this->assertStringContainsString(s(get_string('custom_api_key_saved', 'local_jedomi')), $html);
+        $this->assertSame(ai_service::CUSTOM, $data['ai_service']);
+        $this->assertSame(1, $data['custom_verified'], 'The saved address and key were verified');
+        $this->assertSame('llama', $data['custom_model']);
+        $this->assertSame('', $data['custom_vision_model']);
+    }
+
+    /**
+     * On a site that never chose, or that kept the retired "none" value, the Datacurso service is selected.
+     *
+     * @return void
+     */
+    public function test_get_data_defaults_to_datacurso(): void {
+        $this->resetAfterTest();
+        set_config('ai_service', 'none', 'local_jedomi');
+        $this->assertSame(ai_service::DATACURSO, (new settings_extension())->get_data()['ai_service']);
+        unset_config('ai_service', 'local_jedomi');
+
+        $data = (new settings_extension())->get_data();
+
+        $this->assertSame(ai_service::DATACURSO, $data['ai_service']);
+        $this->assertArrayNotHasKey('service_datacurso', $data);
+        $this->assertArrayNotHasKey('service_custom', $data);
+        $this->assertSame(0, $data['custom_verified']);
+        $this->assertSame('', $data['custom_gateway_url']);
     }
 }

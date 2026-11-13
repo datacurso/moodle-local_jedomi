@@ -33,6 +33,8 @@ use local_jedomi\local\service\admin_settings_service;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class privacy_settings_form extends \moodleform {
+    use card_sections;
+
     /**
      * Define the form fields.
      *
@@ -41,9 +43,13 @@ class privacy_settings_form extends \moodleform {
     protected function definition(): void {
         $mform = $this->_form;
 
-        $mform->addElement('header', 'accessheader', get_string('privacy_access_heading', 'local_jedomi'));
-        $mform->setExpanded('accessheader');
-        $mform->addElement('static', 'accesshelp', '', get_string('privacy_access_heading_help', 'local_jedomi'));
+        $this->add_card_start(
+            'accessheader',
+            get_string('privacy_access_heading', 'local_jedomi'),
+            get_string('privacy_access_heading_help', 'local_jedomi'),
+            'i/permissions',
+            'blue'
+        );
         $mform->addElement(
             'static',
             'rolevisibility',
@@ -55,8 +61,15 @@ class privacy_settings_form extends \moodleform {
             $mform->setDefault('role_visible_' . $role['id'], 1);
         }
 
-        $mform->addElement('header', 'anonheader', get_string('privacy_anon_heading', 'local_jedomi'));
-        $mform->setExpanded('anonheader');
+        $this->add_card_end();
+
+        $this->add_card_start(
+            'anonheader',
+            get_string('privacy_anon_heading', 'local_jedomi'),
+            get_string('privacy_anon_heading_help', 'local_jedomi'),
+            'i/hide',
+            'indigo'
+        );
         $mform->addElement(
             'static',
             'anonhelp',
@@ -75,6 +88,7 @@ class privacy_settings_form extends \moodleform {
         }
         $mform->setType('anonymization_level', PARAM_ALPHA);
         $mform->setDefault('anonymization_level', 'basic');
+        $this->add_card_end();
 
         $this->add_action_buttons(false);
     }

@@ -47,8 +47,9 @@ class tool_executor {
         $tools = self::get_tools($agentid, $userid, $channel);
         $defs = [];
         foreach ($tools as $name => $tool) {
-            if ($name === 'document_read' && !\local_jedomi\ai\model_settings::is_files_enabled()) {
-                // Not offered while file and image processing is off; execute() refuses it too.
+            if ($name === 'document_read' && !\local_jedomi\ai\model_settings::is_documents_enabled()) {
+                // Not offered while documents cannot be read (file processing off, or the custom service); execute()
+                // refuses it too.
                 continue;
             }
             $defs[] = $tool->get_definition();

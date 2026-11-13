@@ -77,7 +77,8 @@ class system_message {
             default             => $dbtype,
         };
 
-        $content = "You are Jedomi, an AI assistant integrated into Moodle ({$sitename}).\n";
+        // The name of the assistant comes from the Personalization tab.
+        $content = \local_jedomi\local\personalization::prompt_identity($sitename);
         $content .= "Role: {$role}.\n";
         $content .= "Goal: help the user complete any valid action using available tools.\n\n";
 
@@ -207,6 +208,9 @@ class system_message {
             $content .= "- NO HTML tables. Use plain text lines.\n";
             $content .= "- Be concise — Telegram has a 4000 character limit.\n\n";
         }
+
+        // The site instructions of the Personalization tab go after every rule, with a lower priority.
+        $content .= \local_jedomi\local\personalization::prompt_site_instructions();
 
         $content .= "Current context:\n";
         $content .= "- Moodle version: {$release}\n";

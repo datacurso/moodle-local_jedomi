@@ -14,9 +14,27 @@ Feature: Telegram configuration in the Integrations tab
     Then the field "Enable Telegram integration" matches value "1"
 
   @MDL-E2E-006
+  Scenario: The switch alone shows or hides the Telegram settings, with no collapse arrow
+    Given I log in as "admin"
+    And I visit "/local/jedomi/admin_settings.php?tab=integrations"
+    And "[data-action='local_jedomi/admin/integrations/expand']" "css_element" should not exist
+    And I should not see "Telegram limits and response time"
+    When I click on "Enable Telegram integration" "checkbox"
+    And I wait until the page is ready
+    Then I should see "Telegram bot" in the "[data-region='local_jedomi/admin/integrations/body']" "css_element"
+    And I should see "Telegram limits and response time"
+    And I should see "Telegram access by role"
+    And I should not see "Expand all"
+    And I click on "Enable Telegram integration" "checkbox"
+    And I wait until the page is ready
+    And I should not see "Telegram limits and response time"
+
+  @MDL-E2E-006
   Scenario: An invalid token is refused with an error and the bot stays disconnected
     Given I log in as "admin"
     And I visit "/local/jedomi/admin_settings.php?tab=integrations"
+    And I click on "Enable Telegram integration" "checkbox"
+    And I wait until the page is ready
     When I set the field "Bot token" to "123456:not-a-real-token"
     And I press "Save changes"
     Then I should see "Invalid bot token. Check the token from @BotFather and try again."
@@ -26,6 +44,8 @@ Feature: Telegram configuration in the Integrations tab
   Scenario: The limits and the roles allowed in Telegram are saved with the saved notice
     Given I log in as "admin"
     And I visit "/local/jedomi/admin_settings.php?tab=integrations"
+    And I click on "Enable Telegram integration" "checkbox"
+    And I wait until the page is ready
     When I set the following fields to these values:
       | Rate limit                 | 12 |
       | Cooldown                   | 7  |

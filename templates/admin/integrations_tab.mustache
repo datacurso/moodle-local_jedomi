@@ -17,16 +17,16 @@
 {{!
     @template local_jedomi/admin/integrations_tab
 
-    Integrations tab of the Jedomi settings: the Telegram bot card with its switch, webhook status,
-    settings form and setup guide.
+    Integrations tab of the Jedomi settings: the Telegram bot card (local_jedomi/admin/card) with its switch in the
+    header, and the webhook status, settings form and setup guide in its body.
 
     Classes required for JS:
     * none
 
     Data attributes required for JS:
     * data-region="local_jedomi/admin/integrations/telegram" on the card
-    * data-action="local_jedomi/admin/integrations/toggle-telegram" on the switch, saved at once
-    * data-action="local_jedomi/admin/integrations/expand" on the expand/collapse button
+    * data-action="local_jedomi/admin/integrations/toggle-telegram" on the switch, saved at once; it also shows or
+      hides the card body
     * data-region="local_jedomi/admin/integrations/body" on the card body
     * data-action="local_jedomi/admin/integrations/check-webhook" and data-region="local_jedomi/admin/integrations/webhook-live"
     * data-action="local_jedomi/admin/integrations/drop-pending" and data-region="local_jedomi/admin/integrations/drop-pending-result"
@@ -66,37 +66,25 @@
     }
 }}
 <div class="local_jedomi-admin local_jedomi-admin-integrations_tab">
-    <div class="local_jedomi-admin-int-item{{#enabled}} enabled{{/enabled}}" data-region="local_jedomi/admin/integrations/telegram">
-        <div class="local_jedomi-admin-int-header">
-            <div class="local_jedomi-admin-int-meta">
-                <span class="local_jedomi-admin-int-logo">{{#pix}} t/sendmessage, core {{/pix}}</span>
-                <div>
-                    <span class="local_jedomi-admin-int-name">
-                        {{#str}} telegram_heading, local_jedomi {{/str}}
-                        {{#showbadge}}<span class="local_jedomi-admin-int-badge ml-2">@{{botusername}}</span>{{/showbadge}}
-                    </span>
-                    <span class="local_jedomi-admin-int-desc">{{#str}} telegram_heading_help, local_jedomi {{/str}}</span>
-                </div>
-            </div>
-            <div class="local_jedomi-admin-int-controls">
-                {{< core/toggle }}
-                    {{$id}}{{uniqid}}-telegram-enabled{{/id}}
-                    {{$extraclasses}}mb-0{{/extraclasses}}
-                    {{$attributes}}data-action="local_jedomi/admin/integrations/toggle-telegram"{{#enabled}} checked{{/enabled}}{{/attributes}}
-                    {{$label}}{{#str}} telegram_enabled, local_jedomi {{/str}}{{/label}}
-                    {{$labelclasses}}sr-only visually-hidden{{/labelclasses}}
-                {{/ core/toggle }}
-                <button type="button" class="btn btn-link p-0 local_jedomi-admin-int-arrow{{#enabled}} open{{/enabled}}"
-                        data-action="local_jedomi/admin/integrations/expand"
-                        aria-expanded="{{#enabled}}true{{/enabled}}{{^enabled}}false{{/enabled}}"
-                        title="{{#str}} telegram_setup_guide, local_jedomi {{/str}}">
-                    {{#pix}} t/expanded, core {{/pix}}
-                    <span class="sr-only visually-hidden">{{#str}} telegram_heading, local_jedomi {{/str}}</span>
-                </button>
-            </div>
-        </div>
-
-        <div class="local_jedomi-admin-int-body{{^enabled}} d-none{{/enabled}}" data-region="local_jedomi/admin/integrations/body">
+    {{< local_jedomi/admin/card }}
+        {{$cardattributes}} data-region="local_jedomi/admin/integrations/telegram"{{/cardattributes}}
+        {{$icon}}{{#pix}} t/sendmessage, core {{/pix}}{{/icon}}
+        {{$color}}sky{{/color}}
+        {{$title}}{{#str}} telegram_heading, local_jedomi {{/str}}
+            {{#showbadge}}<span class="local_jedomi-admin-int-badge ml-2">@{{botusername}}</span>{{/showbadge}}{{/title}}
+        {{$subtitle}}{{#str}} telegram_heading_help, local_jedomi {{/str}}{{/subtitle}}
+        {{$actions}}
+            {{< core/toggle }}
+                {{$id}}{{uniqid}}-telegram-enabled{{/id}}
+                {{$extraclasses}}mb-0{{/extraclasses}}
+                {{$attributes}}data-action="local_jedomi/admin/integrations/toggle-telegram"{{#enabled}} checked{{/enabled}}{{/attributes}}
+                {{$label}}{{#str}} telegram_enabled, local_jedomi {{/str}}{{/label}}
+                {{$labelclasses}}sr-only visually-hidden{{/labelclasses}}
+            {{/ core/toggle }}
+        {{/actions}}
+        {{$bodyclasses}} p-0{{^enabled}} d-none{{/enabled}}{{/bodyclasses}}
+        {{$bodyattributes}} data-region="local_jedomi/admin/integrations/body"{{/bodyattributes}}
+        {{$body}}
             <div class="local_jedomi-admin-int-section">
                 {{#tokenset}}
                 <div class="local_jedomi-admin-status mb-3{{#verified}} local_jedomi-admin-status-ok{{/verified}}{{^verified}} local_jedomi-admin-status-warn{{/verified}}">
@@ -223,8 +211,8 @@
                 </div>
                 {{/usersteps}}
             </details>
-        </div>
-    </div>
+        {{/body}}
+    {{/ local_jedomi/admin/card }}
 
     {{#showerroralert}}
     <div class="alert alert-warning d-flex align-items-start mt-3" role="alert">

@@ -63,8 +63,10 @@ final class language_test extends \basic_testcase {
 
         // Families whose key is built at run time: help buttons (addHelpButton($field, $field)), anonymisation levels
         // (privacy_settings_form), API roles (apis_tab), course modes (course_settings_form), creator reasons
-        // (agent_runner), profiler origins (profiler_tab), spoken placeholders (speech_service), Telegram guide steps
-        // (integrations_tab) and tool progress labels (webhook_handler, by the name of the tool the AI calls).
+        // (agent_runner), profiler origins (query_log report entity), spoken placeholders (speech_service), Telegram guide steps
+        // (integrations_tab), tool progress labels (webhook_handler, by the name of the tool the AI calls) and the
+        // corners, sides, distances and length errors of personalization_settings_form, and the verification results of
+        // the custom AI service (custom_verify_<reason>, verify_custom_service and settings_extension).
         $dynamic = [
             '/^privacy:metadata/', '/^jedomi:/', '/^cachedef_/', '/^messageprovider:/', '/^pluginname$/',
             '/_help$/',
@@ -76,6 +78,9 @@ final class language_test extends \basic_testcase {
             '/^speech_placeholder_/',
             '/^telegram_step(U?\d)_(title|desc)$/',
             '/^tool_progress_/',
+            '/^personalization_(corner|side|offset)_/',
+            '/^personalization_[a-z_]+_toolong$/',
+            '/^custom_verify_[a-z_]+$/',
         ];
         $unused = [];
         foreach (array_keys($en) as $key) {

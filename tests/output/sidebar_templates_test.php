@@ -53,7 +53,7 @@ final class sidebar_templates_test extends \advanced_testcase {
         $this->resetAfterTest();
 
         $html = $this->render('sidebar', ['greeting' => 'Hi, <b>Ana</b>!', 'strings' => ['placeholder' => 'Ask Jedomi'],
-            'files_enabled' => true, 'audio_enabled' => true, 'attach_enabled' => true]);
+            'files_enabled' => true, 'documents_enabled' => true, 'audio_enabled' => true, 'attach_enabled' => true]);
 
         foreach (
             ['jedomi-trigger', 'jedomi-sidebar', 'jedomi-messages', 'jedomi-input', 'jedomi-send', 'jedomi-clear',
@@ -155,7 +155,8 @@ final class sidebar_templates_test extends \advanced_testcase {
         $this->assertStringNotContainsString('data-type="file"', $html);
         $this->assertStringNotContainsString('id="jedomi-image-input"', $html);
 
-        $html = $this->render('sidebar', $base + ['files_enabled' => true, 'audio_enabled' => false, 'attach_enabled' => true]);
+        $html = $this->render('sidebar', $base + ['files_enabled' => true, 'documents_enabled' => true, 'audio_enabled' => false,
+            'attach_enabled' => true]);
         $this->assertStringContainsString('data-type="image"', $html);
         $this->assertStringContainsString('data-type="file"', $html);
         $this->assertStringNotContainsString('data-type="audio"', $html);
@@ -352,7 +353,7 @@ final class sidebar_templates_test extends \advanced_testcase {
             'send' => 'Send', 'stop_answer' => 'Stop the answer', 'keyboard_shortcuts' => 'Keyboard shortcuts: Alt+Shift+J',
             'image' => 'Image', 'file' => 'File', 'audio_file' => 'Audio file'];
         $html = $this->render('sidebar', ['greeting' => 'Hi', 'strings' => $strings, 'files_enabled' => true,
-            'audio_enabled' => true, 'attach_enabled' => true, 'voice_enabled' => true]);
+            'documents_enabled' => true, 'audio_enabled' => true, 'attach_enabled' => true, 'voice_enabled' => true]);
 
         $this->assertMatchesRegularExpression(
             '~<div id="jedomi-sidebar"[^>]*aria-hidden="true"[^>]*\sinert>~',
@@ -529,9 +530,11 @@ final class sidebar_templates_test extends \advanced_testcase {
         $PAGE->set_url(new \moodle_url('/local/jedomi/ajax/sidebar_config.php'));
         $config = \local_jedomi_get_sidebar_config();
         return $this->render('sidebar', [
-            'greeting' => str_replace('{name}', $config['user_name'], $config['strings']['greeting']),
+            'greeting' => $config['welcome_message'],
+            'assistant' => $config['assistant'],
             'strings' => $config['strings'],
             'files_enabled' => $files,
+            'documents_enabled' => $files,
             'audio_enabled' => $audio,
             'attach_enabled' => $files || $audio,
         ]);
@@ -552,12 +555,16 @@ final class sidebar_templates_test extends \advanced_testcase {
         foreach (['export_conversation', 'half_width', 'full_width', 'new_conversation', 'close'] as $key) {
             $this->assertStringContainsString('title="' . s(get_string($key, 'local_jedomi')) . '"', $html, $key);
         }
-        $greeting = str_replace('{name}', 'Ada Lovelace', get_string('greeting', 'local_jedomi'));
+        $greeting = str_replace(
+            ['{username}', '{assistantname}'],
+            ['Ada Lovelace', 'Jedomi'],
+            get_string('welcome_message_default', 'local_jedomi')
+        );
         $this->assertStringContainsString(s($greeting), $html);
-        $this->assertStringContainsString(s(get_string('hello', 'local_jedomi')), $html);
         $this->assertMatchesRegularExpression('/class="jedomi-disclaimer">\s*' . preg_quote(s(get_string(
             'ai_disclaimer',
-            'local_jedomi'
+            'local_jedomi',
+            'Jedomi'
         )), '/') . '/', $html);
     }
 
@@ -655,8 +662,8 @@ final class sidebar_templates_test extends \advanced_testcase {
      */
     public function test_audio_selector_formats_and_recording_duration_match_the_server(): void {
         $this->resetAfterTest();
-        $html = $this->render('sidebar', ['strings' => [], 'files_enabled' => true, 'audio_enabled' => true,
-            'attach_enabled' => true]);
+        $html = $this->render('sidebar', ['strings' => [], 'files_enabled' => true, 'documents_enabled' => true,
+            'audio_enabled' => true, 'attach_enabled' => true]);
         $this->assertMatchesRegularExpression('/id="jedomi-audio-input" accept="([^"]+)"/', $html);
         preg_match('/id="jedomi-audio-input" accept="([^"]+)"/', $html, $match);
         $accepted = array_map(fn($extension) => ltrim($extension, '.'), explode(',', $match[1]));
@@ -780,5 +787,98 @@ final class sidebar_templates_test extends \advanced_testcase {
             $manager->get_string('image_not_kept', 'local_jedomi', null, 'en'),
             self::plugin_spanish_string('image_not_kept')
         );
+    }
+
+    /**
+     * Personalization: the button and the header show the avatar and the name of the assistant, also in the text
+     * alternatives, and carry the classes of the configured corner and panel side.
+     *
+     * @return void
+     */
+    public function test_panel_shows_the_configured_assistant(): void {
+        $this->resetAfterTest();
+        $assistant = ['name' => 'Robo <3', 'avatar_url' => 'https://example.com/robo.png', 'corner' => 'top-right',
+            'side' => 'right', 'x' => 10, 'y' => 80];
+
+        $html = $this->render('sidebar', ['greeting' => "Hi <b>Ada</b>\nI am Robo", 'assistant' => $assistant,
+            'strings' => ['open_sidebar' => 'Open Robo <3']]);
+
+        $this->assertMatchesRegularExpression(
+            '~<button type="button" id="jedomi-trigger" class="jedomi-trigger jedomi-fab-top-right"[^>]*'
+                . 'aria-label="Open Robo &lt;3"~',
+            $html
+        );
+        $this->assertStringContainsString(
+            '<img class="jedomi-trigger-avatar" src="https://example.com/robo.png" alt="Robo &lt;3"',
+            $html
+        );
+        $this->assertStringContainsString('<span class="jedomi-trigger-label">Robo &lt;3</span>', $html);
+        $this->assertMatchesRegularExpression(
+            '~<div id="jedomi-sidebar" class="jedomi-sidebar jedomi-closed jedomi-side-right"[^>]*aria-label="Robo &lt;3"~',
+            $html
+        );
+        $this->assertStringContainsString('<img class="jedomi-logo-avatar" src="https://example.com/robo.png" alt=""', $html);
+        $this->assertStringContainsString('<strong class="jedomi-assistant-name">Robo &lt;3</strong>', $html);
+        // The welcome message is text: escaped, its lines kept by the stylesheet.
+        $this->assertStringContainsString("Hi &lt;b&gt;Ada&lt;/b&gt;\nI am Robo", $html);
+        $this->assertStringNotContainsString('style=', $html);
+    }
+
+    /**
+     * Personalization: without an avatar image the button and the header keep the Jedomi icon.
+     *
+     * @return void
+     */
+    public function test_panel_keeps_the_jedomi_icon_without_an_avatar(): void {
+        $this->resetAfterTest();
+        $assistant = ['name' => 'Jedomi', 'avatar_url' => null, 'corner' => 'bottom-left', 'side' => 'left', 'x' => 24,
+            'y' => 24];
+
+        $html = $this->render('sidebar', ['greeting' => 'Hi', 'assistant' => $assistant, 'strings' => []]);
+
+        $this->assertStringNotContainsString('<img class="jedomi-trigger-avatar"', $html);
+        $this->assertStringNotContainsString('<img class="jedomi-logo-avatar"', $html);
+        $this->assertMatchesRegularExpression('~id="jedomi-trigger"[^>]*>\s*<svg aria-hidden="true"~', $html);
+        $this->assertStringContainsString('jedomi-fab-bottom-left', $html);
+        $this->assertStringContainsString('jedomi-side-left', $html);
+    }
+
+    /**
+     * Personalization: the module places the button with CSS variables, and on phones the stylesheet keeps the bottom
+     * corner of phase 16 whatever corner is configured, without touching the layers of the panel and the button.
+     *
+     * @return void
+     */
+    public function test_position_is_applied_with_css_variables_and_kept_on_phones(): void {
+        $source = file_get_contents(__DIR__ . '/../../amd/src/sidebar.js');
+        $this->assertStringContainsString("setProperty('--j-fab-x'", $source);
+        $this->assertStringContainsString("setProperty('--j-fab-y'", $source);
+
+        $css = file_get_contents(__DIR__ . '/../../styles.css');
+        $this->assertStringContainsString('var(--j-fab-x, 24px)', $css);
+        $this->assertMatchesRegularExpression(
+            '~@media \(max-width: 767px\) \{[^@]*?\.jedomi-trigger,\s*\.jedomi-trigger\[class\*="jedomi-fab-"\] \{[^}]*'
+                . 'bottom: 16px;[^}]*top: auto;~',
+            $css
+        );
+        $this->assertStringContainsString('z-index: 1037;', $css);
+        $this->assertStringContainsString('z-index: 1036;', $css);
+    }
+
+    /**
+     * With the custom AI service only images are read: the image option stays, the document option and input go.
+     *
+     * @return void
+     */
+    public function test_documents_option_follows_the_documents_switch(): void {
+        $this->resetAfterTest();
+
+        $html = $this->render('sidebar', ['greeting' => 'Hi', 'strings' => [], 'files_enabled' => true,
+            'documents_enabled' => false, 'audio_enabled' => false, 'attach_enabled' => true]);
+
+        $this->assertStringContainsString('data-type="image"', $html);
+        $this->assertStringContainsString('id="jedomi-image-input"', $html);
+        $this->assertStringNotContainsString('data-type="file"', $html);
+        $this->assertStringNotContainsString('id="jedomi-file-input"', $html);
     }
 }

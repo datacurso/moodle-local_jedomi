@@ -29,6 +29,8 @@ require_once($CFG->libdir . '/formslib.php');
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class general_settings_form extends \moodleform {
+    use card_sections;
+
     /**
      * Define the form fields.
      *
@@ -37,15 +39,26 @@ class general_settings_form extends \moodleform {
     protected function definition(): void {
         $mform = $this->_form;
 
-        $mform->addElement('header', 'securityheader', get_string('security_heading', 'local_jedomi'));
-        $mform->setExpanded('securityheader');
-        $mform->addElement('static', 'securityhelp', '', get_string('security_heading_help', 'local_jedomi'));
+        $this->add_card_start(
+            'securityheader',
+            get_string('security_heading', 'local_jedomi'),
+            get_string('security_heading_help', 'local_jedomi'),
+            'i/lock',
+            'red'
+        );
         $mform->addElement('passwordunmask', 'spt_secret', get_string('spt_secret', 'local_jedomi'));
         $mform->setType('spt_secret', PARAM_TEXT);
         $mform->addElement('static', 'spt_secret_help', '', get_string('spt_secret_help', 'local_jedomi'));
 
-        $mform->addElement('header', 'profilerheader', get_string('profiler_heading', 'local_jedomi'));
-        $mform->setExpanded('profilerheader');
+        $this->add_card_end();
+
+        $this->add_card_start(
+            'profilerheader',
+            get_string('profiler_heading', 'local_jedomi'),
+            get_string('profiler_heading_help', 'local_jedomi'),
+            'i/dashboard',
+            'amber'
+        );
         $mform->addElement('text', 'profiler_slow_ms', get_string('profiler_slow_ms', 'local_jedomi'), ['size' => 8]);
         $mform->setType('profiler_slow_ms', PARAM_INT);
         $mform->addHelpButton('profiler_slow_ms', 'profiler_slow_ms', 'local_jedomi');
@@ -57,6 +70,7 @@ class general_settings_form extends \moodleform {
         );
         $mform->setType('profiler_retention_days', PARAM_INT);
         $mform->addHelpButton('profiler_retention_days', 'profiler_retention_days', 'local_jedomi');
+        $this->add_card_end();
 
         $this->add_action_buttons(false);
     }

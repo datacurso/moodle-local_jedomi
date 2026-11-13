@@ -1,0 +1,193 @@
+<?php
+// This file is part of Moodle - http://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+
+namespace local_jedomi\ai;
+
+/**
+ * AI service Jedomi uses (Datacurso or a custom OpenAI-compatible service) and the custom service settings.
+ *
+ * The service is chosen with the "AI service" select of the Jedomi page in the Datacurso AI provider, and stored in
+ * the single ai_service setting. A site that never chose, or any other saved value, uses the Datacurso service, as
+ * before the setting existed. The custom service has its own settings (custom_*), so
+ * switching services never overwrites the Datacurso ones. The custom API key is a secret: it is only read on the
+ * server to call the service, and never sent back to a browser, written to a log or put in an event.
+ *
+ * @package    local_jedomi
+ * @copyright  2026 Jedomi Project
+ * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ */
+class ai_service {
+    /** @var string Service: Datacurso, through the Datacurso AI provider. */
+    public const DATACURSO = 'datacurso';
+
+    /** @var string Service: a custom OpenAI-compatible service. */
+    public const CUSTOM = 'custom';
+
+    /** @var string Config name of the service in use. */
+    public const CONFIG = 'ai_service';
+
+    /** @var array Config name of the custom model of each capability. */
+    public const CUSTOM_MODEL_SETTINGS = [
+        model_settings::CAPABILITY_CHAT => 'custom_model',
+        model_settings::CAPABILITY_VISION => 'custom_vision_model',
+        model_settings::CAPABILITY_AUDIO => 'custom_audio_model',
+        model_settings::CAPABILITY_SPEECH => 'custom_speech_model',
+    ];
+
+    /** @var string Plugin of the settings. */
+    private const COMPONENT = 'local_jedomi';
+
+    /**
+     * Service in use.
+     *
+     * @return string CUSTOM or DATACURSO; DATACURSO when nothing (or any other value) is saved.
+     */
+    public static function get_active(): string {
+        return get_config(self::COMPONENT, self::CONFIG) === self::CUSTOM ? self::CUSTOM : self::DATACURSO;
+    }
+
+    /**
+     * Whether the custom service is in use.
+     *
+     * @return bool
+     */
+    public static function is_custom(): bool {
+        return self::get_active() === self::CUSTOM;
+    }
+
+    /**
+     * Saved base address of the custom service, normalised.
+     *
+     * @return string Empty when none is saved.
+     */
+    public static function get_custom_url(): string {
+        return custom_endpoint::normalise((string) get_config(self::COMPONENT, 'custom_gateway_url'));
+    }
+
+    /**
+     * Saved API key of the custom service. Only for the server-side calls: never send it to a browser or a log.
+     *
+     * @return string Empty when none is saved.
+     */
+    public static function get_custom_key(): string {
+        return trim((string) get_config(self::COMPONENT, 'custom_api_key'));
+    }
+
+    /**
+     * Key to use for an address: the typed one, or, when none is typed, the saved key, but only for the saved address.
+     *
+     * The saved key is never sent to an address it was not saved for, so changing the address needs the key again.
+     *
+     * @param string $url Address.
+     * @param string $typed Key typed in the form; empty when the field was left empty.
+     * @return string|null The key (empty for none), or null when the key must be typed again.
+     */
+    public static function effective_key(string $url, string $typed): ?string {
+        $typed = trim($typed);
+        if ($typed !== '') {
+            return $typed;
+        }
+        $saved = self::get_custom_key();
+        if ($saved === '' || custom_endpoint::normalise($url) === self::get_custom_url()) {
+            return $saved;
+        }
+        return null;
+    }
+
+    /**
+     * Whether "Allow HTTP for local models" is on. Off until it is saved.
+     *
+     * @return bool
+     */
+    public static function allows_custom_http(): bool {
+        return (bool) (int) get_config(self::COMPONENT, 'custom_allow_http');
+    }
+
+    /**
+     * Saved custom model of a capability.
+     *
+     * @param string $capability One of the model_settings::CAPABILITY_* constants.
+     * @return string Empty when none is saved: the feature is then off.
+     */
+    public static function get_custom_model(string $capability): string {
+        return trim((string) get_config(self::COMPONENT, self::CUSTOM_MODEL_SETTINGS[$capability]));
+    }
+
+    /**
+     * Saved voice of the custom speech model.
+     *
+     * @return string Empty when none is saved.
+     */
+    public static function get_custom_voice(): string {
+        return trim((string) get_config(self::COMPONENT, 'custom_speech_voice'));
+    }
+
+    /**
+     * Saved answer size limit of the custom service.
+     *
+     * @return int The saved value, or the default one when it is empty or too small.
+     */
+    public static function get_custom_max_tokens(): int {
+        $maxtokens = (int) get_config(self::COMPONENT, 'custom_max_tokens');
+        return $maxtokens >= model_settings::MIN_MAX_TOKENS ? $maxtokens : model_settings::DEFAULT_MAX_TOKENS;
+    }
+
+    /**
+     * Remember that an address and key answered as an OpenAI-compatible service.
+     *
+     * Only a keyed fingerprint and the time are stored, never the address or the key. Saving the custom service
+     * requires its address and key to match the last verified pair.
+     *
+     * @param string $url Address that was verified.
+     * @param string $key Key that was used; empty for none.
+     * @return void
+     */
+    public static function remember_verified(string $url, string $key): void {
+        $record = json_encode(['hash' => self::fingerprint($url, $key), 'time' => time()]);
+        set_config('custom_verified', $record, self::COMPONENT);
+    }
+
+    /**
+     * Whether an address and key are the last pair that was verified.
+     *
+     * @param string $url Address.
+     * @param string $key Key; empty for none.
+     * @return bool
+     */
+    public static function is_verified(string $url, string $key): bool {
+        $record = json_decode((string) get_config(self::COMPONENT, 'custom_verified'), true);
+        if (!is_array($record) || !is_string($record['hash'] ?? null)) {
+            return false;
+        }
+        return hash_equals($record['hash'], self::fingerprint($url, $key));
+    }
+
+    /**
+     * Keyed fingerprint of an address and key, with a random secret of the site created the first time it is needed.
+     *
+     * @param string $url Address; normalised first.
+     * @param string $key Key.
+     * @return string
+     */
+    private static function fingerprint(string $url, string $key): string {
+        $secret = (string) get_config(self::COMPONENT, 'custom_verify_secret');
+        if ($secret === '') {
+            $secret = bin2hex(random_bytes(32));
+            set_config('custom_verify_secret', $secret, self::COMPONENT);
+        }
+        return hash_hmac('sha256', custom_endpoint::normalise($url) . "\n" . trim($key), $secret);
+    }
+}

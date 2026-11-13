@@ -48,6 +48,9 @@ class error_message {
     /** @var string Code: the Datacurso AI provider is disabled in Site administration > AI > AI providers. */
     public const CODE_PROVIDER_DISABLED = 'provider_disabled';
 
+    /** @var string Code: the model of the custom AI service cannot call tools. */
+    public const CODE_TOOLS_UNSUPPORTED = 'tools_unsupported';
+
     /** @var string Code: any other failure. */
     public const CODE_GENERIC = 'generic';
 
@@ -85,6 +88,9 @@ class error_message {
      * @return array{0: string, 1: string, 2: mixed}
      */
     private static function classify_jedomi(\Throwable $e): array {
+        if ($e instanceof \moodle_exception && $e->module === 'local_jedomi') {
+            return self::classify_custom_service($e);
+        }
         if (!$e instanceof \moodle_exception || $e->module !== 'aiprovider_datacurso') {
             return [self::CODE_GENERIC, 'ai_error_generic', null];
         }
@@ -120,6 +126,37 @@ class error_message {
     }
 
     /**
+     * Map a failure of the custom AI service to its code, string key and parameter.
+     *
+     * The users get the same messages as with the Datacurso service; the status or cURL error is never shown.
+     *
+     * @param \moodle_exception $e Failure with the local_jedomi component.
+     * @return array
+     */
+    private static function classify_custom_service(\moodle_exception $e): array {
+        switch ($e->errorcode) {
+            case 'ai_error_tools_unsupported':
+                return [self::CODE_TOOLS_UNSUPPORTED, 'ai_error_tools_unsupported', null];
+            case 'custom_error_unreachable':
+                return self::is_timeout($e)
+                    ? [self::CODE_TIMEOUT, 'ai_error_timeout', null]
+                    : [self::CODE_UNAVAILABLE, 'ai_error_unavailable', null];
+            case 'custom_error_url':
+                return [self::CODE_UNAVAILABLE, 'ai_error_unavailable', null];
+            case 'custom_error_http':
+                $status = (int) $e->a;
+                if ($status === 429) {
+                    return [self::CODE_RATE_LIMITED, 'ai_error_ratelimit_noretry', null];
+                }
+                return ($status >= 500 || in_array($status, [401, 403, 404], true) || ($status >= 300 && $status < 400))
+                    ? [self::CODE_UNAVAILABLE, 'ai_error_unavailable', null]
+                    : [self::CODE_GENERIC, 'ai_error_generic', null];
+            default:
+                return [self::CODE_GENERIC, 'ai_error_generic', null];
+        }
+    }
+
+    /**
      * Whether a failure is a request timeout (cURL error 28).
      *
      * A timed-out request must not be resent: the AI service may have processed and billed it.
@@ -128,9 +165,10 @@ class error_message {
      * @return bool
      */
     public static function is_timeout(\Throwable $e): bool {
-        return $e instanceof \moodle_exception
-            && $e->module === 'aiprovider_datacurso'
-            && $e->errorcode === 'curlerror'
-            && (int) $e->a === CURLE_OPERATION_TIMEDOUT;
+        if (!$e instanceof \moodle_exception || (int) $e->a !== CURLE_OPERATION_TIMEDOUT) {
+            return false;
+        }
+        return ($e->module === 'aiprovider_datacurso' && $e->errorcode === 'curlerror')
+            || ($e->module === 'local_jedomi' && $e->errorcode === 'custom_error_unreachable');
     }
 }

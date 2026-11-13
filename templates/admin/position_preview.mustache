@@ -1,0 +1,62 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template local_jedomi/admin/position_preview
+
+    Live preview of the floating button in the Personalization tab: a small page where the button sits in the chosen
+    corner and the panel side is marked. The button can be dragged, or moved with the arrow keys, to set its distances.
+
+    Classes required for JS:
+    * none
+
+    Data attributes required for JS:
+    * data-region="local_jedomi/personalization/preview" - The preview page, read by local_jedomi/admin/personalization
+    * data-region="local_jedomi/personalization/button" - The button in the preview, moved by the module
+    * data-region="local_jedomi/personalization/panel" - The panel side in the preview
+    * data-customavatar - Whether a custom avatar is set: then the preset avatar choice does not change the preview
+
+    Context variables required for this template:
+    * avatarurl string - Address of the avatar shown on the button; empty for the Jedomi icon
+    * icon object - {"trigger": true}: the Jedomi icon, shown while there is no avatar image
+    * customavatar bool - Whether a custom avatar is set
+    * name string - Name of the assistant, as the text alternative of the button
+    * help string - How to move the button in the preview
+
+    Example context (json):
+    {
+        "avatarurl": "https://example.com/local/jedomi/pix/avatars/avatar_01.png",
+        "icon": {"trigger": true},
+        "customavatar": false,
+        "name": "Jedomi",
+        "help": "Drag the button in the preview."
+    }
+}}
+<div class="local_jedomi-position-preview" data-region="local_jedomi/personalization/preview"
+    data-customavatar="{{#customavatar}}1{{/customavatar}}{{^customavatar}}0{{/customavatar}}">
+    <div class="local_jedomi-position-preview-panel" data-region="local_jedomi/personalization/panel" aria-hidden="true"></div>
+    <button type="button" class="local_jedomi-position-preview-button" data-region="local_jedomi/personalization/button"
+        aria-label="{{name}}" aria-describedby="local_jedomi-position-preview-help">
+        <img src="{{avatarurl}}" alt="" class="{{^avatarurl}}d-none{{/avatarurl}}">
+        <span class="local_jedomi-position-preview-icon {{#avatarurl}}d-none{{/avatarurl}}">{{> local_jedomi/local/sidebar/icon }}</span>
+    </button>
+</div>
+<p id="local_jedomi-position-preview-help" class="form-text text-muted">{{help}}</p>
+{{#js}}
+require(['local_jedomi/admin/personalization'], function(personalization) {
+    personalization.init();
+});
+{{/js}}

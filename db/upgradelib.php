@@ -65,6 +65,18 @@ function local_jedomi_remove_companion_api_prohibits(): int {
 }
 
 /**
+ * Leave every site on a real AI service: the retired "none" value, a missing choice or any other value becomes the
+ * Datacurso service; the custom service is kept. Jedomi is switched off with "Enabled" of the provider instead.
+ *
+ * @return void
+ */
+function local_jedomi_upgrade_ai_service(): void {
+    if (get_config('local_jedomi', 'ai_service') !== 'custom') {
+        set_config('ai_service', 'datacurso', 'local_jedomi');
+    }
+}
+
+/**
  * Keep one rating for repeated clicks on the same answer, from before ratings had a message id.
  *
  * Ratings of the same user, chat session and answer excerpt are the same answer rated several times: only the newest

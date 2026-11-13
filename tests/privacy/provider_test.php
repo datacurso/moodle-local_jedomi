@@ -200,6 +200,15 @@ final class provider_test extends provider_testcase {
     }
 
     /**
+     * The data sent to a custom AI service is declared, without a user or site identifier.
+     */
+    public function test_metadata_declares_the_custom_ai_service(): void {
+        $custom = $this->declared_fields('jedomi_custom_ai_service');
+        $this->assertNotNull($custom, 'The data sent to the custom AI service must be declared');
+        $this->assertSame(['messages', 'text', 'files'], array_values($custom));
+    }
+
+    /**
      * MDL-INT-079: deleting by user, by list of users and by context removes the ratings and the pending actions of the
      * user and keeps those of the others.
      */

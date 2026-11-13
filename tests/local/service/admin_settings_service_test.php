@@ -441,34 +441,6 @@ final class admin_settings_service_test extends \advanced_testcase {
         $this->assertSame($table['pages'], $table['page']);
     }
     /**
-     * MDL-UNIT-100: a query of an agent that no longer exists is presented without creator.
-     * Recent profiled queries come newest first with the name of the agent owner.
-     *
-     * @return void
-     */
-    public function test_get_recent_profiler_entries(): void {
-        global $DB;
-        $this->resetAfterTest();
-        $user = $this->getDataGenerator()->create_user(['firstname' => 'Ada', 'lastname' => 'Lovelace']);
-        $agentid = $DB->insert_record('local_jedomi_agents', (object) ['userid' => $user->id, 'prompt' => 'p',
-            'schedule_cron' => '0 * * * *', 'timecreated' => time(), 'timemodified' => time()]);
-        $DB->insert_record('local_jedomi_query_log', (object) ['agentid' => $agentid, 'query' => 'SELECT 1',
-            'duration_ms' => 5, 'rowcount' => 1, 'timecreated' => 100]);
-        $DB->insert_record('local_jedomi_query_log', (object) ['agentid' => 999, 'query' => 'SELECT 2',
-            'duration_ms' => 1500, 'rowcount' => 3, 'timecreated' => 200]);
-
-        $entries = admin_settings_service::get_recent_profiler_entries(0, 'timecreated');
-
-        $this->assertSame(['SELECT 2', 'SELECT 1'], array_column($entries, 'query'));
-        $this->assertSame('', $entries[0]['userfullname']);
-        $this->assertSame('Ada Lovelace', $entries[1]['userfullname']);
-        $this->assertSame((int) $agentid, $entries[1]['agentid']);
-
-        $slow = admin_settings_service::get_recent_profiler_entries(1000, 'duration_ms');
-        $this->assertSame(['SELECT 2'], array_column($slow, 'query'));
-    }
-
-    /**
      * MDL-INT-014: the stored token is never kept in clear text.
      */
     public function test_verified_token_is_stored_encrypted(): void {
@@ -581,5 +553,105 @@ final class admin_settings_service_test extends \advanced_testcase {
             'admin'
         ), true);
         $this->assertArrayNotHasKey('result', $result, 'A function that is not selected must not be run');
+    }
+
+    /**
+     * Personalization: without settings the tab shows the current icon, corner, name and the default welcome message.
+     *
+     * @return void
+     */
+    public function test_personalization_settings_defaults(): void {
+        $this->resetAfterTest();
+
+        $settings = admin_settings_service::get_personalization_settings();
+
+        $this->assertSame([
+            'avatar' => 'default',
+            'position' => ['corner' => 'bottom-left', 'x' => 24, 'y' => 24, 'side' => 'left'],
+            'assistant_name' => 'Jedomi',
+            'welcome_message' => get_string('welcome_message_default', 'local_jedomi'),
+            'custom_prompt' => '',
+        ], $settings);
+    }
+
+    /**
+     * Personalization: the values are normalised before they are stored, and the change is logged without them.
+     *
+     * @return void
+     */
+    public function test_save_personalization_settings_normalises_and_logs(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $sink = $this->redirectEvents();
+
+        admin_settings_service::save_personalization_settings(
+            '04',
+            ['corner' => 'top-right', 'x' => '30', 'y' => 900, 'side' => 'right'],
+            ' <i>Robo</i> ',
+            'Hello {firstname}',
+            'Be brief.'
+        );
+
+        $this->assertSame('04', get_config('local_jedomi', 'avatar'));
+        $this->assertSame(
+            ['corner' => 'top-right', 'x' => 30, 'y' => 500, 'side' => 'right'],
+            json_decode(get_config('local_jedomi', 'avatar_position'), true)
+        );
+        $this->assertSame('Robo', get_config('local_jedomi', 'assistant_name'));
+        $this->assertSame('Hello {firstname}', get_config('local_jedomi', 'welcome_message'));
+        $this->assertSame('Be brief.', get_config('local_jedomi', 'custom_prompt'));
+        $events = $sink->get_events();
+        $this->assertCount(1, $events);
+        $this->assertInstanceOf(\local_jedomi\event\settings_updated::class, $events[0]);
+        $this->assertSame('personalization', $events[0]->other['tab']);
+        $this->assertStringNotContainsString('Robo', json_encode($events[0]->get_data()));
+
+        admin_settings_service::save_personalization_settings('evil', [], '', '', str_repeat('p', 3000));
+        $this->assertSame('default', get_config('local_jedomi', 'avatar'));
+        $this->assertSame('Jedomi', admin_settings_service::get_personalization_settings()['assistant_name']);
+        $this->assertSame(2000, \core_text::strlen(get_config('local_jedomi', 'custom_prompt')));
+    }
+
+    /**
+     * Personalization: saving the default welcome message unchanged keeps it empty, so every user gets it in their
+     * own language.
+     *
+     * @return void
+     */
+    public function test_saving_the_default_welcome_message_keeps_it_translated(): void {
+        $this->resetAfterTest();
+
+        $default = get_string('welcome_message_default', 'local_jedomi');
+        admin_settings_service::save_personalization_settings('default', [], 'Jedomi', str_replace("\n", "\r\n", $default), '');
+
+        $this->assertSame('', get_config('local_jedomi', 'welcome_message'));
+    }
+
+    /**
+     * Personalization: the custom avatar uploaded in the form is stored in the customavatar file area, one file only.
+     *
+     * @return void
+     */
+    public function test_custom_avatar_is_saved_from_the_draft_area(): void {
+        global $USER;
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $draftid = file_get_unused_draft_itemid();
+        $fs = get_file_storage();
+        $fs->create_file_from_string([
+            'contextid' => \context_user::instance($USER->id)->id,
+            'component' => 'user',
+            'filearea' => 'draft',
+            'itemid' => $draftid,
+            'filepath' => '/',
+            'filename' => 'robo.png',
+        ], 'png-bytes');
+
+        admin_settings_service::save_personalization_settings('default', [], 'Robo', '', '', $draftid);
+
+        $files = $fs->get_area_files(\context_system::instance()->id, 'local_jedomi', 'customavatar', 0, 'id', false);
+        $this->assertSame(['robo.png'], array_values(array_map(fn($file) => $file->get_filename(), $files)));
+        $url = \local_jedomi\local\personalization::avatar_url();
+        $this->assertStringContainsString('/local_jedomi/customavatar/0/robo.png', $url);
     }
 }

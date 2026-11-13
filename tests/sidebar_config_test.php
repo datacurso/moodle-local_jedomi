@@ -278,4 +278,88 @@ final class sidebar_config_test extends \advanced_testcase {
         $endpoint = file_get_contents(__DIR__ . '/../ajax/sidebar_config.php');
         $this->assertStringContainsString('!isloggedin() || isguestuser()', $endpoint, 'No renewal without a session');
     }
+
+    /**
+     * Personalization: by default the panel keeps the Jedomi name and icon, its corner and a welcome message that greets
+     * the user and presents Jedomi.
+     *
+     * @return void
+     */
+    public function test_sidebar_config_has_the_default_personalization(): void {
+        global $PAGE;
+        $this->resetAfterTest();
+        $this->setUser($this->getDataGenerator()->create_user(['firstname' => 'Ada', 'lastname' => 'Lovelace']));
+        $PAGE->set_url('/local/jedomi/ajax/sidebar_config.php');
+
+        $config = local_jedomi_get_sidebar_config();
+
+        $this->assertSame(
+            ['name' => 'Jedomi', 'avatar_url' => null, 'corner' => 'bottom-left', 'side' => 'left', 'x' => 24, 'y' => 24],
+            $config['assistant']
+        );
+        $this->assertStringContainsString('Ada Lovelace', $config['welcome_message']);
+        $this->assertStringContainsString('Jedomi', $config['welcome_message']);
+        $this->assertSame(get_string('open_sidebar', 'local_jedomi', 'Jedomi'), $config['strings']['open_sidebar']);
+    }
+
+    /**
+     * Personalization: the configured name, avatar, position and welcome message reach the panel, with the placeholders
+     * resolved on the server and the name in every label that names the assistant.
+     *
+     * @return void
+     */
+    public function test_sidebar_config_has_the_configured_personalization(): void {
+        global $PAGE;
+        $this->resetAfterTest();
+        $course = $this->getDataGenerator()->create_course(['fullname' => 'Maths & Physics']);
+        $user = $this->getDataGenerator()->create_and_enrol($course, 'student', ['firstname' => 'Ada']);
+        $this->setUser($user);
+        $PAGE->set_url('/local/jedomi/ajax/sidebar_config.php');
+        $PAGE->set_course($course);
+        set_config('assistant_name', 'Robo', 'local_jedomi');
+        set_config('avatar', '05', 'local_jedomi');
+        set_config('avatar_position', '{"corner":"top-right","x":10,"y":80,"side":"right"}', 'local_jedomi');
+        set_config('welcome_message', 'Hi {firstname}, I am {assistantname} in {coursename}.', 'local_jedomi');
+
+        $config = local_jedomi_get_sidebar_config();
+
+        $this->assertSame('Robo', $config['assistant']['name']);
+        $this->assertStringEndsWith('/local/jedomi/pix/avatars/avatar_05.png', $config['assistant']['avatar_url']);
+        $this->assertSame(['top-right', 'right', 10, 80], [$config['assistant']['corner'], $config['assistant']['side'],
+            $config['assistant']['x'], $config['assistant']['y']]);
+        // Plain text: the template escapes it once.
+        $this->assertSame('Hi Ada, I am Robo in Maths & Physics.', $config['welcome_message']);
+        $this->assertSame(get_string('open_sidebar', 'local_jedomi', 'Robo'), $config['strings']['open_sidebar']);
+        $this->assertSame(get_string('ai_disclaimer', 'local_jedomi', 'Robo'), $config['strings']['ai_disclaimer']);
+        $this->assertSame(get_string('chat_placeholder', 'local_jedomi', 'Robo'), $config['strings']['placeholder']);
+    }
+
+    /**
+     * With the custom service, the panel never receives its address or key, and documents are announced as unavailable.
+     *
+     * @return void
+     */
+    public function test_sidebar_config_with_the_custom_service(): void {
+        global $PAGE;
+        $this->resetAfterTest();
+        set_config('ai_service', 'custom', 'local_jedomi');
+        set_config('custom_gateway_url', 'https://custom-gateway.invalid', 'local_jedomi');
+        set_config('custom_api_key', 'sk-custom-secret', 'local_jedomi');
+        set_config('custom_model', 'chat-model', 'local_jedomi');
+        set_config('custom_vision_model', 'vision-model', 'local_jedomi');
+        $this->setUser($this->getDataGenerator()->create_user());
+        $PAGE->set_url('/local/jedomi/ajax/sidebar_config.php');
+
+        $config = local_jedomi_get_sidebar_config();
+
+        $encoded = json_encode($config);
+        $this->assertStringNotContainsString('custom-gateway.invalid', $encoded);
+        $this->assertStringNotContainsString('sk-custom-secret', $encoded);
+        $this->assertTrue($config['files_enabled'], 'Images are read by the custom vision model');
+        $this->assertFalse($config['documents_enabled']);
+        $this->assertSame(get_string('documents_error_custom', 'local_jedomi'), $config['strings']['documents_error_custom']);
+
+        set_config('ai_service', 'datacurso', 'local_jedomi');
+        $this->assertTrue(local_jedomi_get_sidebar_config()['documents_enabled']);
+    }
 }

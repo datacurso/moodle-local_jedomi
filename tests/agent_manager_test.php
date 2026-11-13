@@ -667,42 +667,39 @@ final class agent_manager_test extends \advanced_testcase {
     }
 
     // ... ========================
-    // Stats — get_stats
+    // Stats — get_chart_stats
     // ========================
 
     /**
-     * Test get_stats returns correct structure.
+     * Test get_chart_stats returns the data of the three charts.
      */
-    public function test_get_stats_structure(): void {
+    public function test_get_chart_stats_structure(): void {
         $this->create_agent_record(['prompt' => 'Agent 1']);
 
-        $stats = agent_manager::get_stats([]);
-        $this->assertObjectHasProperty('charts', $stats);
-        $this->assertObjectHasProperty('rows', $stats);
-        $this->assertObjectHasProperty('total', $stats);
-        $this->assertObjectHasProperty('page', $stats);
-        $this->assertObjectHasProperty('by_role', $stats->charts);
-        $this->assertObjectHasProperty('by_status', $stats->charts);
-        $this->assertObjectHasProperty('executions_30d', $stats->charts);
+        $charts = agent_manager::get_chart_stats([]);
+        $this->assertObjectHasProperty('by_role', $charts);
+        $this->assertObjectHasProperty('by_status', $charts);
+        $this->assertObjectHasProperty('executions_30d', $charts);
+        $this->assertObjectNotHasProperty('rows', $charts, 'The rows come from the report builder table');
     }
 
     /**
-     * Test get_stats counts enabled vs disabled.
+     * Test get_chart_stats counts enabled vs disabled.
      */
-    public function test_get_stats_by_status(): void {
+    public function test_get_chart_stats_by_status(): void {
         $this->create_agent_record(['prompt' => 'E1', 'enabled' => 1]);
         $this->create_agent_record(['prompt' => 'E2', 'enabled' => 1]);
         $this->create_agent_record(['prompt' => 'D1', 'enabled' => 0]);
 
-        $stats = agent_manager::get_stats([]);
-        $this->assertEquals(2, $stats->charts->by_status->enabled);
-        $this->assertEquals(1, $stats->charts->by_status->disabled);
+        $charts = agent_manager::get_chart_stats([]);
+        $this->assertEquals(2, $charts->by_status->enabled);
+        $this->assertEquals(1, $charts->by_status->disabled);
     }
 
     /**
-     * Test get_stats aggregates by role_filter.
+     * Test get_chart_stats aggregates by role_filter.
      */
-    public function test_get_stats_by_role(): void {
+    public function test_get_chart_stats_by_role(): void {
         $this->create_agent_record([
             'prompt'      => 'Mgr',
             'role_filter' => json_encode(['manager']),
@@ -716,9 +713,9 @@ final class agent_manager_test extends \advanced_testcase {
             'role_filter' => json_encode(['manager', 'teacher']),
         ]);
 
-        $stats = agent_manager::get_stats([]);
-        $this->assertEquals(2, $stats->charts->by_role['manager']);
-        $this->assertEquals(2, $stats->charts->by_role['teacher']);
+        $charts = agent_manager::get_chart_stats([]);
+        $this->assertEquals(2, $charts->by_role['manager']);
+        $this->assertEquals(2, $charts->by_role['teacher']);
     }
 
     // ... ========================

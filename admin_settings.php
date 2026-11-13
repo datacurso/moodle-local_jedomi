@@ -17,7 +17,7 @@
 /**
  * Jedomi settings page: one tab per settings area, each rendered from a renderable and a template.
  *
- * Tabs: general, courses, privacy, integrations, apis, agents and profiler.
+ * Tabs: general, courses, privacy, integrations, apis, agents, profiler and personalization.
  *
  * @package   local_jedomi
  * @copyright 2026 Jedomi Project
@@ -28,8 +28,10 @@ require_once(__DIR__ . '/../../config.php');
 require_once($CFG->libdir . '/adminlib.php');
 
 use core\output\notification;
+use core_reportbuilder\system_report_factory;
 use local_jedomi\form\course_settings_form;
 use local_jedomi\form\general_settings_form;
+use local_jedomi\form\personalization_settings_form;
 use local_jedomi\form\privacy_settings_form;
 use local_jedomi\form\telegram_settings_form;
 use local_jedomi\local\service\admin_settings_service;
@@ -38,8 +40,13 @@ use local_jedomi\output\admin\apis_tab;
 use local_jedomi\output\admin\courses_tab;
 use local_jedomi\output\admin\general_tab;
 use local_jedomi\output\admin\integrations_tab;
+use local_jedomi\output\admin\personalization_tab;
 use local_jedomi\output\admin\privacy_tab;
 use local_jedomi\output\admin\profiler_tab;
+use local_jedomi\reportbuilder\local\helpers\filtered_ids;
+use local_jedomi\reportbuilder\local\systemreports\agents as agents_report;
+use local_jedomi\reportbuilder\local\systemreports\query_log as query_log_report;
+use local_jedomi\reportbuilder\local\systemreports\query_log_aggregate as query_log_aggregate_report;
 
 // Tab key => lang string of its label.
 $tabs = [
@@ -50,6 +57,7 @@ $tabs = [
     'apis' => 'tab_apis',
     'agents' => 'tab_agents',
     'profiler' => 'tab_profiler',
+    'personalization' => 'tab_personalization',
 ];
 $tab = optional_param('tab', 'general', PARAM_ALPHA);
 if (!array_key_exists($tab, $tabs)) {
@@ -191,29 +199,41 @@ switch ($tab) {
         break;
 
     case 'agents':
-        $content = new agents_tab(admin_settings_service::get_roles(), optional_param('edit_agent', 0, PARAM_INT));
+        $report = system_report_factory::create(agents_report::class, $context);
+        $content = new agents_tab(
+            admin_settings_service::get_roles(),
+            optional_param('edit_agent', 0, PARAM_INT),
+            $report->output()
+        );
         break;
 
     case 'profiler':
-        $minms = max(0, optional_param('qp_min_ms', 0, PARAM_INT));
-        $sort = optional_param('qp_sort', 'timecreated', PARAM_ALPHAEXT) === 'duration_ms' ? 'duration_ms' : 'timecreated';
-        $channel = optional_param('qp_channel', '', PARAM_ALPHA);
-        $channel = in_array($channel, \local_jedomi\agent\query_profiler::CHANNELS, true) ? $channel : '';
-        $page = max(0, optional_param('qp_page', 0, PARAM_INT)) + 1;
-        $perpage = 20;
-        // The indicators, the slowest queries and the list follow the same filters.
-        $filters = ['min_duration_ms' => $minms, 'channel' => $channel];
-        $list = admin_settings_service::get_profiler_page($filters, $sort, $page, $perpage);
+        // The indicators follow the filters of the recent queries report, as the profiler module does when they change.
+        $recent = system_report_factory::create(query_log_report::class, $context);
+        $slowest = system_report_factory::create(query_log_aggregate_report::class, $context);
         $content = new profiler_tab(
-            \local_jedomi\agent\query_profiler::get_aggregate(null, $filters),
-            $list['entries'],
-            $minms,
-            $sort,
-            $channel,
-            $list['total'],
-            $page,
-            $perpage
+            \local_jedomi\agent\query_profiler::get_aggregate(null, ['idsql' => filtered_ids::sql($recent)]),
+            $recent->output(),
+            $slowest->output()
         );
+        break;
+
+    case 'personalization':
+        $form = new personalization_settings_form($pageurl);
+        if ($data = $form->get_data()) {
+            require_sesskey();
+            admin_settings_service::save_personalization_settings(
+                (string) $data->avatar,
+                personalization_settings_form::position($data),
+                (string) $data->assistant_name,
+                (string) $data->welcome_message,
+                (string) $data->custom_prompt,
+                (int) $data->customavatar
+            );
+            redirect($pageurl, $saved, null, notification::NOTIFY_SUCCESS);
+        }
+        $form->set_data(personalization_settings_form::defaults(admin_settings_service::get_personalization_settings()));
+        $content = new personalization_tab($form->render());
         break;
 
     default:

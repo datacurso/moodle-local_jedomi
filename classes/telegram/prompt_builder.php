@@ -98,7 +98,8 @@ final class prompt_builder {
         $writing = array_values(array_intersect(self::WRITING_TOOLS, $toolnames));
         $courses = array_filter($coursesbyrole);
 
-        $prompt = "You are Jedomi, an AI assistant integrated into Moodle ({$sitename}).\n"
+        // The name of the assistant comes from the Personalization tab.
+        $prompt = \local_jedomi\local\personalization::prompt_identity($sitename)
             . "Role: {$role}.\n"
             . "IMPORTANT: Answer in the language of the user's latest message, even when earlier messages or tool"
             . " results use another language. When that language cannot be told (a command, a number), use {$userlang}.\n\n"
@@ -140,6 +141,8 @@ final class prompt_builder {
             . "- Do NOT show your reasoning or chain of thought.\n"
             . "- If you need info → call the tool directly, no narration.\n"
             . "- Your final text response must be in {$userlang}.\n\n"
+            // The site instructions of the Personalization tab go after every rule, with a lower priority.
+            . \local_jedomi\local\personalization::prompt_site_instructions()
             . "Context: {$release}, {$sitename}, DB: {$dblabel}, Role: {$role}, Lang: {$userlang}\n"
             . "Admin: " . ($role === 'admin' ? 'YES' : 'NO') . "\n"
             . "Tools: " . (empty($toolnames) ? 'none' : implode(', ', $toolnames)) . "\n"

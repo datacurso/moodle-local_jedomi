@@ -17,8 +17,9 @@
 {{!
     @template local_jedomi/admin/agents_tab
 
-    Agents tab of the Jedomi settings: charts, filters, the agent list, the create/edit form with preview
-    and the purge form. The list, charts and actions are loaded by the local_jedomi/admin/agents module.
+    Agents tab of the Jedomi settings: charts, the agents report, the create/edit form with preview and the purge
+    form. The charts follow the filters of the agents report; they and the row actions of the report are handled by
+    the local_jedomi/admin/agents module.
 
     Classes required for JS:
     * none
@@ -26,10 +27,8 @@
     Data attributes required for JS:
     * data-region="local_jedomi/admin/agents" on the root, with data-edit-agent-id
     * data-region="local_jedomi/admin/agents/chart" on each canvas, with data-chart (role, status, executions)
-    * data-region="local_jedomi/admin/agents/filter-*" on the filter fields (role, status, context, search)
-    * data-action="local_jedomi/admin/agents/apply-filters" on the filter button
-    * data-region="local_jedomi/admin/agents/table-message", "table-wrap", "table-body" and "pagination"
-      (the table wrapper holds local_jedomi/admin/agent_table)
+    * data-region="local_jedomi/admin/agents/table-message" above the report, and data-region="core_reportbuilder/report"
+      on the report, whose row actions have data-agent-action (details, edit, run, toggle, delete) and data-agent-id
     * data-form="local_jedomi/admin/agents/create" on the agent form and data-form="local_jedomi/admin/agents/purge" on the purge form
     * data-region="local_jedomi/admin/agents/form-heading", "form-message", "edit-id", "submit-label", "custom-cron", "enabled",
       "context-id-wrap", "preview-panel", "preview-spinner", "preview-body", "purge-id-wrap", "purge-role-wrap" and
@@ -41,13 +40,15 @@
     * schedules array - Schedule options: value string, label string
     * contexttypes array - Context types: value string, label string
     * editagentid int - Agent to open in the form when the page loads; 0 for none
+    * report string - HTML of the agents report
 
     Example context (json):
     {
         "roles": [{"id": 5, "name": "Student"}],
         "schedules": [{"value": "0 * * * *", "label": "Every hour"}, {"value": "custom", "label": "Custom"}],
         "contexttypes": [{"value": "site", "label": "Site"}],
-        "editagentid": 0
+        "editagentid": 0,
+        "report": "<div data-region=\"core_reportbuilder/report\"></div>"
     }
 }}
 <div class="local_jedomi-admin local_jedomi-admin-agents_tab" data-region="local_jedomi/admin/agents" data-edit-agent-id="{{editagentid}}">
@@ -73,59 +74,13 @@
         {{/body}}
     {{/ local_jedomi/admin/card }}
 
-    <div class="card local_jedomi-admin-card mb-4">
-        <div class="card-body">
-            <div class="row align-items-end">
-                <div class="col-md-3">
-                    <label class="font-weight-bold fw-bold" for="{{uniqid}}-filter-role">{{#str}} agent_filter_role, local_jedomi {{/str}}</label>
-                    <select id="{{uniqid}}-filter-role" class="custom-select custom-select-sm form-select form-select-sm w-100" data-region="local_jedomi/admin/agents/filter-role">
-                        <option value="">{{#str}} agent_status_all, local_jedomi {{/str}}</option>
-                        {{#roles}}<option value="{{id}}">{{name}}</option>{{/roles}}
-                    </select>
-                </div>
-                <div class="col-md-2">
-                    <label class="font-weight-bold fw-bold" for="{{uniqid}}-filter-status">{{#str}} agent_filter_status, local_jedomi {{/str}}</label>
-                    <select id="{{uniqid}}-filter-status" class="custom-select custom-select-sm form-select form-select-sm w-100" data-region="local_jedomi/admin/agents/filter-status">
-                        <option value="">{{#str}} agent_status_all, local_jedomi {{/str}}</option>
-                        <option value="enabled">{{#str}} agent_enabled, local_jedomi {{/str}}</option>
-                        <option value="disabled">{{#str}} agent_disabled, local_jedomi {{/str}}</option>
-                    </select>
-                </div>
-                <div class="col-md-2">
-                    <label class="font-weight-bold fw-bold" for="{{uniqid}}-filter-context">{{#str}} agent_filter_context, local_jedomi {{/str}}</label>
-                    <select id="{{uniqid}}-filter-context" class="custom-select custom-select-sm form-select form-select-sm w-100" data-region="local_jedomi/admin/agents/filter-context">
-                        <option value="">{{#str}} agent_status_all, local_jedomi {{/str}}</option>
-                        {{#contexttypes}}<option value="{{value}}">{{label}}</option>{{/contexttypes}}
-                    </select>
-                </div>
-                <div class="col-md-3">
-                    <label class="font-weight-bold fw-bold" for="{{uniqid}}-filter-search">{{#str}} agent_search, local_jedomi {{/str}}</label>
-                    <input type="text" id="{{uniqid}}-filter-search" class="form-control form-control-sm" data-region="local_jedomi/admin/agents/filter-search"
-                           placeholder="{{#str}} agent_search, local_jedomi {{/str}}">
-                </div>
-                <div class="col-md-2">
-                    <button type="button" class="btn btn-primary btn-sm w-100" data-action="local_jedomi/admin/agents/apply-filters">
-                        {{#str}} agent_apply_filters, local_jedomi {{/str}}
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-
     {{< local_jedomi/admin/card }}
         {{$icon}}{{#pix}} i/grading, core {{/pix}}{{/icon}}
         {{$color}}purple{{/color}}
         {{$title}}{{#str}} agent_table, local_jedomi {{/str}}{{/title}}
         {{$body}}
             <div class="alert d-none" role="alert" data-region="local_jedomi/admin/agents/table-message"></div>
-            <div class="table-responsive" data-region="local_jedomi/admin/agents/table-wrap">
-                {{< local_jedomi/admin/agent_table }}
-                    {{$tablebody}}
-                        <tr><td colspan="6" class="text-center text-muted py-4">{{#str}} loading, admin {{/str}}</td></tr>
-                    {{/tablebody}}
-                {{/ local_jedomi/admin/agent_table }}
-            </div>
-            <div class="d-flex align-items-center justify-content-between flex-wrap" data-region="local_jedomi/admin/agents/pagination"></div>
+            {{{report}}}
         {{/body}}
     {{/ local_jedomi/admin/card }}
 

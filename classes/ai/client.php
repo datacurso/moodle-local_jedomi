@@ -23,9 +23,13 @@ require_once(__DIR__ . '/../../lib.php');
 /**
  * Single entry point for every Jedomi AI call (web chat, agents, preview, Telegram and CLI).
  *
- * Calls POST /jedomi/v1/chat/completions on plugins-ai through the Datacurso provider client, which
- * adds the license key, rate-limit headers, the pseudonymised user id, site id, timezone and language.
- * Calls are not streamed: the provider client reads the whole answer.
+ * The destination follows the service in use ({@see ai_service}). With the Datacurso service, it calls
+ * POST /jedomi/v1/chat/completions on plugins-ai through the Datacurso provider client, which adds the license key,
+ * rate-limit headers, the pseudonymised user id, site id, timezone and language. With the custom service, it calls
+ * POST {url}/v1/chat/completions directly ({@see custom_api}), without the user id and outside the Datacurso credits,
+ * consumption history and rate limit.
+ * The messages are anonymised by the callers in the same way for both services.
+ * Calls are not streamed: the client reads the whole answer.
  *
  * @package    local_jedomi
  * @copyright  2026 Jedomi Project
@@ -44,13 +48,18 @@ class client {
     /** @var \Closure Builds the provider client for a given timeout: fn(int $timeout): provider_api. */
     private \Closure $apifactory;
 
+    /** @var \Closure Builds the custom service client: fn(): custom_api. */
+    private \Closure $customfactory;
+
     /**
      * Constructor.
      *
      * @param \Closure|null $apifactory Builds the provider client for a timeout; defaults to {@see provider_api}.
+     * @param \Closure|null $customfactory Builds the custom service client; defaults to {@see custom_api::from_settings()}.
      */
-    public function __construct(?\Closure $apifactory = null) {
+    public function __construct(?\Closure $apifactory = null, ?\Closure $customfactory = null) {
         $this->apifactory = $apifactory ?? static fn(int $timeout): provider_api => new provider_api($timeout);
+        $this->customfactory = $customfactory ?? static fn(): custom_api => custom_api::from_settings();
     }
 
     /**
@@ -83,7 +92,8 @@ class client {
      * @param int|null $timeout Total request timeout in seconds; null for {@see DEFAULT_TIMEOUT}.
      * @param float|null $temperature Sampling temperature; null for the model default.
      * @return array{content: string, tool_calls: array, finish_reason: string, reasoning: string}
-     * @throws \moodle_exception Provider errors (component aiprovider_datacurso) or an answer without choices.
+     * @throws \moodle_exception Provider errors (component aiprovider_datacurso), custom service errors (custom_error_*,
+     *         ai_error_tools_unsupported), or an answer without choices.
      */
     public function complete(
         array $messages,
@@ -92,6 +102,7 @@ class client {
         ?int $timeout = null,
         ?float $temperature = null
     ): array {
+        $service = ai_service::get_active();
         $model = model_settings::get_model();
         $payload = [
             'model' => $model,
@@ -109,6 +120,7 @@ class client {
         }
 
         \local_jedomi_log('AI_REQUEST', [
+            'service' => $service,
             'model' => $model,
             'messages_count' => count($messages),
             'tools_count' => count($tools),
@@ -116,8 +128,12 @@ class client {
 
         $start = microtime(true);
         try {
-            $api = ($this->apifactory)($timeout ?? self::DEFAULT_TIMEOUT);
-            $response = $api->request('POST', self::PATH, $payload);
+            if ($service === ai_service::CUSTOM) {
+                $response = ($this->customfactory)()->chat($payload, $timeout ?? self::DEFAULT_TIMEOUT);
+            } else {
+                $api = ($this->apifactory)($timeout ?? self::DEFAULT_TIMEOUT);
+                $response = $api->request('POST', self::PATH, $payload);
+            }
         } catch (\moodle_exception $e) {
             \local_jedomi_log('AI_ERROR', [
                 'code' => $e->errorcode,

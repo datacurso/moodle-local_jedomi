@@ -16,6 +16,8 @@
 
 namespace local_jedomi\local\service;
 
+use local_jedomi\ai\ai_service;
+use local_jedomi\ai\custom_api;
 use local_jedomi\ai\error_message;
 use local_jedomi\ai\model_settings;
 use local_jedomi\ai\provider_api;
@@ -26,7 +28,8 @@ defined('MOODLE_INTERNAL') || die();
 require_once(__DIR__ . '/../../../lib.php');
 
 /**
- * Reads a sentence of an answer aloud for the voice conversation, through POST /jedomi/v1/audio/speech.
+ * Reads a sentence of an answer aloud for the voice conversation, through POST /jedomi/v1/audio/speech of the
+ * Datacurso service, or POST {url}/v1/audio/speech of the custom service.
  *
  * Every request to speech.php goes through {@see handle_request()}, which applies the same protections
  * as the chat proxy (session, session key, signed permissions, plugin and chat access) plus the voice
@@ -199,21 +202,25 @@ class speech_service {
      *
      * @param int $userid User the answer is read for.
      * @param string $text Text to read, already checked.
-     * @param provider_api|null $api Provider client; null for Jedomi's own.
+     * @param provider_api|null $api Provider client of the Datacurso service; null for Jedomi's own.
      * @return string MP3 audio.
-     * @throws \moodle_exception Any provider error, or ai_error_invalidanswer when the answer has no audio.
+     * @throws \moodle_exception Any provider or custom service error, or ai_error_invalidanswer when the answer has no
+     *         audio.
      */
     public static function synthesise(int $userid, string $text, ?provider_api $api = null): string {
         $model = model_settings::get_speech_model();
         $text = self::anonymise_for_speech($text);
         $start = microtime(true);
+        $body = ['model' => $model, 'input' => $text, 'voice' => model_settings::get_speech_voice()];
         try {
-            $audio = ($api ?? self::$testapi ?? new provider_api(self::TIMEOUT))->request_audio(self::ENDPOINT, [
-                'model' => $model,
-                'input' => $text,
-                'voice' => model_settings::get_speech_voice(),
-                'userid' => $userid,
-            ]);
+            if (ai_service::is_custom()) {
+                $audio = custom_api::from_settings()->speech($body, self::TIMEOUT);
+            } else {
+                $audio = ($api ?? self::$testapi ?? new provider_api(self::TIMEOUT))->request_audio(
+                    self::ENDPOINT,
+                    $body + ['userid' => $userid]
+                );
+            }
         } catch (\moodle_exception $e) {
             \local_jedomi_log('SPEECH_ERROR', [
                 'code' => $e->errorcode,

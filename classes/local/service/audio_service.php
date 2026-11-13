@@ -17,10 +17,13 @@
 namespace local_jedomi\local\service;
 
 use aiprovider_datacurso\httpclient\ai_services_api;
+use local_jedomi\ai\ai_service;
+use local_jedomi\ai\custom_api;
 use local_jedomi\ai\model_settings;
 
 /**
- * Transcribes audio with the audio model of Jedomi, through POST /jedomi/v1/audio/transcriptions.
+ * Transcribes audio with the audio model of Jedomi, through POST /jedomi/v1/audio/transcriptions of the Datacurso
+ * service, or POST {url}/v1/audio/transcriptions of the custom service.
  *
  * @package    local_jedomi
  * @copyright  2026 Jedomi Project
@@ -64,7 +67,7 @@ class audio_service {
      * @param int $userid User the audio belongs to.
      * @param string $path Path of the file on disk.
      * @param string $filename File name; its extension decides the format.
-     * @param ai_services_api|null $api Provider client; null for Jedomi's own.
+     * @param ai_services_api|null $api Provider client of the Datacurso service; null for Jedomi's own.
      * @return array{text: string, model: string, duration_seconds: float}
      * @throws \moodle_exception audio_error_disabled, audio_error_unsupported, audio_error_too_short (smaller than
      *         {@see self::MIN_BYTES}, refused without calling the provider), audio_error_unreadable (nothing was
@@ -91,15 +94,20 @@ class audio_service {
             $fields['language'] = $language;
         }
 
-        $response = provider_upload_service::send(
-            $userid,
-            $path,
-            $filename,
-            self::ENDPOINT,
-            $fields,
-            self::TIMEOUT,
-            $api
-        );
+        if (ai_service::is_custom()) {
+            $response = custom_api::from_settings()->transcribe($path, $filename, $fields, self::TIMEOUT);
+            $response['model'] = $fields['model'];
+        } else {
+            $response = provider_upload_service::send(
+                $userid,
+                $path,
+                $filename,
+                self::ENDPOINT,
+                $fields,
+                self::TIMEOUT,
+                $api
+            );
+        }
 
         $text = trim((string) ($response['text'] ?? ''));
         if ($text === '') {

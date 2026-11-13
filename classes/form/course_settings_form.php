@@ -31,6 +31,8 @@ use local_jedomi\local\service\admin_settings_service;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class course_settings_form extends \moodleform {
+    use card_sections;
+
     /**
      * Define the form fields.
      *
@@ -39,9 +41,13 @@ class course_settings_form extends \moodleform {
     protected function definition(): void {
         $mform = $this->_form;
 
-        $mform->addElement('header', 'coursesheader', get_string('course_availability_heading', 'local_jedomi'));
-        $mform->setExpanded('coursesheader');
-        $mform->addElement('static', 'courseshelp', '', get_string('course_availability_heading_help', 'local_jedomi'));
+        $this->add_card_start(
+            'coursesheader',
+            get_string('course_availability_heading', 'local_jedomi'),
+            get_string('course_availability_heading_help', 'local_jedomi'),
+            'i/course',
+            'green'
+        );
 
         foreach (admin_settings_service::COURSE_MODES as $mode) {
             $mform->addElement(
@@ -62,6 +68,7 @@ class course_settings_form extends \moodleform {
         ]);
         $mform->addHelpButton('course_ids', 'course_availability_courses', 'local_jedomi');
         $mform->hideIf('course_ids', 'course_mode', 'eq', 'all');
+        $this->add_card_end();
 
         $this->add_action_buttons(false);
     }

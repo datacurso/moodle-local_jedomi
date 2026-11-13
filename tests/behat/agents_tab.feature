@@ -17,12 +17,10 @@ Feature: Scheduled agents and their queries in the Jedomi settings
     And I press "Create agent"
     Then I should see "Agent \"How many users logged in\" created successfully."
     And the Jedomi agent "How many users logged in" should exist
-    And I click on "Agent actions" "button" in the "How many users logged in" "table_row"
-    And I click on "View details" "link" in the "How many users logged in" "table_row"
+    And I press "View details" action in the "How many users logged in" report row
     And I should see "How many users logged in this week? Show the list." in the ".modal-dialog" "css_element"
     And I click on "Close" "button" in the ".modal-dialog" "css_element"
-    And I click on "Agent actions" "button" in the "How many users logged in" "table_row"
-    And I click on "Edit" "link" in the "How many users logged in" "table_row"
+    And I press "Edit" action in the "How many users logged in" report row
     And the field "Prompt" matches value "How many users logged in this week? Show the list."
     And the field "Name" matches value "How many users logged in"
     And I click on "[data-action='local_jedomi/admin/agents/cancel-edit']" "css_element"
@@ -36,17 +34,13 @@ Feature: Scheduled agents and their queries in the Jedomi settings
       | Weekly logins | 0       |
     And I log in as "admin"
     And I visit "/local/jedomi/admin_settings.php?tab=agents"
-    When I click on "Agent actions" "button" in the "Weekly logins" "table_row"
-    And I click on "Run now" "link" in the "Weekly logins" "table_row"
+    When I press "Run now" action in the "Weekly logins" report row
     And I should see "This agent is disabled, so it was not queued. Enable it to run it."
-    And I click on "Agent actions" "button" in the "Weekly logins" "table_row"
-    And I click on "Enable" "link" in the "Weekly logins" "table_row"
+    And I press "Enable" action in the "Weekly logins" report row
     Then I should see "Enabled" in the "Weekly logins" "table_row"
-    And I click on "Agent actions" "button" in the "Weekly logins" "table_row"
-    And I click on "Run now" "link" in the "Weekly logins" "table_row"
+    And I press "Run now" action in the "Weekly logins" report row
     And I should see "Agent queued for execution (next cron cycle)."
-    And I click on "Agent actions" "button" in the "Weekly logins" "table_row"
-    And I click on "Delete" "link" in the "Weekly logins" "table_row"
+    And I press "Delete" action in the "Weekly logins" report row
     And I click on "Delete" "button" in the ".modal-dialog" "css_element"
     And I should not see "Weekly logins" in the "table" "css_element"
     And the Jedomi agent "Weekly logins" should not exist
@@ -70,7 +64,7 @@ Feature: Scheduled agents and their queries in the Jedomi settings
     And the Jedomi agent "Course report" should not exist
 
   @MDL-E2E-008
-  Scenario: The query profiler shows indicators, filters by minimum duration, sorts by duration and leads to the agent
+  Scenario: The query profiler shows indicators, filters by minimum duration, groups the slowest queries and leads to the agent
     Given the following Jedomi agents exist:
       | name          | prompt                   |
       | Slow report   | Report for Slow report   |
@@ -85,16 +79,36 @@ Feature: Scheduled agents and their queries in the Jedomi settings
     Then I should see "Total queries"
     And I should see "Slow queries (>1s)"
     And I should see "Slowest queries (avg)"
-    And I should see "SELECT quick FROM {user}"
-    And I set the field "Minimum duration (ms)" to "1000"
-    And I set the field "Sort by" to "Duration"
-    And I press "Apply filters"
-    And "SELECT quick FROM {user}" "table_row" should not exist
-    And "SELECT slowest FROM {course}" "text" should appear before "SELECT slower FROM {course}" "text"
+    And "SELECT slowest FROM {course}" "text" should appear before "SELECT quick FROM {user}" "text"
+    And I should see "SELECT quick FROM {user}" in the "[data-region='local_jedomi/admin/profiler/recent']" "css_element"
+    And I click on "Filters" "button" in the "[data-region='local_jedomi/admin/profiler/recent']" "css_element"
+    And I set the following fields in the "Minimum duration (ms)" "core_reportbuilder > Filter" to these values:
+      | Minimum duration (ms) operator | Greater than or equal |
+      | Minimum duration (ms) value    | 1000                  |
+    And I click on "Apply" "button" in the "[data-region='local_jedomi/admin/profiler/recent'] [data-region='report-filters']" "css_element"
+    And I should not see "SELECT quick FROM {user}" in the "[data-region='local_jedomi/admin/profiler/recent']" "css_element"
+    And I should see "2" in the "[data-indicator='total']" "css_element"
     And I click on "a" "css_element" in the "SELECT slowest FROM {course}" "table_row"
     And the url should match "edit_agent="
     And the field "Prompt" matches value "Report for Slow report"
     And I should see "Edit" in the "[data-region='local_jedomi/admin/agents/form-heading']" "css_element"
+
+  @MDL-E2E-007
+  Scenario: The agents report filters the agents and the charts by status
+    Given the following Jedomi agents exist:
+      | name         | enabled |
+      | Active agent | 1       |
+      | Paused agent | 0       |
+    And I log in as "admin"
+    And I visit "/local/jedomi/admin_settings.php?tab=agents"
+    And I should see "Paused agent" in the "table" "css_element"
+    When I click on "Filters" "button"
+    And I set the following fields in the "Status" "core_reportbuilder > Filter" to these values:
+      | Status operator | Is equal to |
+      | Status value    | Enabled     |
+    And I click on "Apply" "button" in the "[data-region='report-filters']" "css_element"
+    Then I should see "Active agent" in the "table" "css_element"
+    And I should not see "Paused agent" in the "table" "css_element"
 
   # The schedule is computed in the site time zone (Australia/Perth on the Behat site).
   @SYS-E2E-009
@@ -106,11 +120,9 @@ Feature: Scheduled agents and their queries in the Jedomi settings
     And I set the field "Schedule" to "Daily"
     And I press "Create agent"
     And I should see "Agent \"Daily courses\" created successfully."
-    When I click on "Agent actions" "button" in the "Daily courses" "table_row"
-    And I click on "Enable" "link" in the "Daily courses" "table_row"
+    When I press "Enable" action in the "Daily courses" report row
     And I should see "Enabled" in the "Daily courses" "table_row"
-    And I click on "Agent actions" "button" in the "Daily courses" "table_row"
-    And I click on "View details" "link" in the "Daily courses" "table_row"
+    And I press "View details" action in the "Daily courses" report row
     Then I should see "12:00 AM" in the ".modal-dialog" "css_element"
 
   # Needs the real AI service (JEDOMI_BEHAT_LICENSE).

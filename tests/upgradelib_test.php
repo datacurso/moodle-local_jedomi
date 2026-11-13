@@ -24,6 +24,7 @@ namespace local_jedomi;
  * @copyright  2026 Jedomi Project
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @covers     ::local_jedomi_remove_companion_api_prohibits
+ * @covers     ::local_jedomi_upgrade_ai_service
  */
 final class upgradelib_test extends \advanced_testcase {
     #[\Override]
@@ -97,5 +98,23 @@ final class upgradelib_test extends \advanced_testcase {
         local_jedomi_remove_companion_api_prohibits();
 
         $this->assertSame(CAP_PROHIBIT, $this->companion_permission($customroleid));
+    }
+
+    /**
+     * The retired "none" service, a missing choice or an unknown value become the Datacurso service; the custom
+     * service is kept.
+     *
+     * @return void
+     */
+    public function test_ai_service_without_a_valid_choice_becomes_datacurso(): void {
+        $cases = ['none' => 'datacurso', 'other' => 'datacurso', 'datacurso' => 'datacurso', 'custom' => 'custom'];
+        foreach ($cases as $saved => $expected) {
+            set_config('ai_service', $saved, 'local_jedomi');
+            local_jedomi_upgrade_ai_service();
+            $this->assertSame($expected, get_config('local_jedomi', 'ai_service'), $saved);
+        }
+        unset_config('ai_service', 'local_jedomi');
+        local_jedomi_upgrade_ai_service();
+        $this->assertSame('datacurso', get_config('local_jedomi', 'ai_service'));
     }
 }

@@ -41,7 +41,7 @@ class fake_curl extends \curl {
     /** @var array<int, array{body: string, http_code: int, error: string, errno: int}> Queued responses. */
     public array $queue = [];
 
-    /** @var array<int, array{url: string, params: mixed, options: array}> POST calls received. */
+    /** @var array Requests received (url, params, options; method GET for a GET). */
     public array $calls = [];
 
     /** @var array Options set through setopt(). */
@@ -68,6 +68,16 @@ class fake_curl extends \curl {
     #[\Override]
     public function post($url, $params = '', $options = []) {
         $this->calls[] = ['url' => (string) $url, 'params' => $params, 'options' => $options];
+        $response = array_shift($this->queue) ?? ['body' => '', 'http_code' => 0, 'error' => '', 'errno' => 0];
+        $this->info = ['http_code' => $response['http_code']];
+        $this->error = $response['error'];
+        $this->errno = $response['errno'];
+        return $response['body'];
+    }
+
+    #[\Override]
+    public function get($url, $params = [], $options = []) {
+        $this->calls[] = ['url' => (string) $url, 'params' => $params, 'options' => $options, 'method' => 'GET'];
         $response = array_shift($this->queue) ?? ['body' => '', 'http_code' => 0, 'error' => '', 'errno' => 0];
         $this->info = ['http_code' => $response['http_code']];
         $this->error = $response['error'];

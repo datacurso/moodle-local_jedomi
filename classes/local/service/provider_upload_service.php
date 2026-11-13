@@ -129,13 +129,17 @@ class provider_upload_service {
     }
 
     /**
-     * HTTP status of an error answer of the AI service, or null for any other failure.
+     * HTTP status of an error answer of the AI service (Datacurso or custom), or null for any other failure.
      *
      * @param \Throwable $e Failure.
      * @return int|null
      */
     public static function http_status(\Throwable $e): ?int {
-        if ($e instanceof \moodle_exception && $e->module === 'aiprovider_datacurso' && $e->errorcode === 'httperror') {
+        if (
+            $e instanceof \moodle_exception
+                && (($e->module === 'aiprovider_datacurso' && $e->errorcode === 'httperror')
+                    || ($e->module === 'local_jedomi' && $e->errorcode === 'custom_error_http'))
+        ) {
             return (int) $e->a;
         }
         return null;

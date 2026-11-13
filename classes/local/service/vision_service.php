@@ -17,6 +17,8 @@
 namespace local_jedomi\local\service;
 
 use aiprovider_datacurso\httpclient\ai_services_api;
+use local_jedomi\ai\ai_service;
+use local_jedomi\ai\custom_api;
 use local_jedomi\ai\model_settings;
 
 /**
@@ -24,6 +26,10 @@ use local_jedomi\ai\model_settings;
  *
  * The AI service returns only text: PDF pages with text are read directly and only the pages without
  * text (or the requested ones) go to the vision model. The chat model never receives images.
+ *
+ * With the custom service, an image is sent as image_url content of POST {url}/v1/chat/completions to the custom
+ * vision model, which answers its text. A generic OpenAI-compatible service cannot read PDF files: they are refused
+ * with documents_error_custom.
  *
  * @package    local_jedomi
  * @copyright  2026 Jedomi Project
@@ -42,6 +48,16 @@ class vision_service {
     /** @var int Total request timeout, in seconds: several scanned pages may go to the vision model. */
     private const TIMEOUT = 180;
 
+    /** @var int Largest image sent to the custom service, in bytes. */
+    public const MAX_CUSTOM_IMAGE_BYTES = 10485760;
+
+    /** @var string Instruction of the custom vision model, before the question of the user. */
+    private const CUSTOM_PROMPT = 'Read this image for an assistant that cannot see it. Transcribe all of its text exactly, '
+        . 'then describe briefly what it shows (charts, tables, diagrams, photos). Answer only with that content.';
+
+    /** @var array Content type of each image extension. */
+    private const IMAGE_TYPES = ['jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp'];
+
     /** @var array<int, array{0: string, 1: string}> Code and message string for each error status of the AI service. */
     private const STATUS_ERRORS = [
         413 => ['file_too_large', 'file_error_too_large'],
@@ -53,6 +69,8 @@ class vision_service {
     private const LOCAL_ERRORS = [
         'files_error_disabled' => ['files_disabled', 'files_error_disabled'],
         'image_error_unsupported' => ['file_unsupported', 'image_error_unsupported'],
+        'documents_error_custom' => ['documents_unavailable', 'documents_error_custom'],
+        'file_error_too_large' => ['file_too_large', 'file_error_too_large'],
     ];
 
     /**
@@ -64,7 +82,8 @@ class vision_service {
      * @param string $question Question of the user about the file; empty for none.
      * @param ai_services_api|null $api Provider client; null for Jedomi's own.
      * @return array{text: string, model: string, pages_total: int|null, pages_vision: int[], pages_skipped: int[]}
-     * @throws \moodle_exception files_error_disabled, image_error_unsupported, or any provider error.
+     * @throws \moodle_exception files_error_disabled, image_error_unsupported, documents_error_custom (a PDF with the
+     *         custom service), file_error_too_large, or any provider or custom service error.
      */
     public static function read_upload(
         int $userid,
@@ -77,6 +96,10 @@ class vision_service {
         $filename = self::check_filename($filename);
         if (!is_readable($path)) {
             throw new \moodle_exception('image_error_unsupported', 'local_jedomi');
+        }
+        if (ai_service::is_custom()) {
+            self::require_custom_image($filename, (int) filesize($path));
+            return self::read_with_custom_service($filename, (string) file_get_contents($path), $question);
         }
         $response = provider_upload_service::send(
             $userid,
@@ -98,7 +121,8 @@ class vision_service {
      * @param string $question Question about the file; empty for none.
      * @param ai_services_api|null $api Provider client; null for Jedomi's own.
      * @return array{text: string, model: string, pages_total: int|null, pages_vision: int[], pages_skipped: int[]}
-     * @throws \moodle_exception files_error_disabled, image_error_unsupported, or any provider error.
+     * @throws \moodle_exception files_error_disabled, image_error_unsupported, documents_error_custom (a PDF with the
+     *         custom service), file_error_too_large, or any provider or custom service error.
      */
     public static function read_stored_file(
         \stored_file $file,
@@ -107,7 +131,11 @@ class vision_service {
         ?ai_services_api $api = null
     ): array {
         self::require_enabled();
-        self::check_filename($file->get_filename());
+        $filename = self::check_filename($file->get_filename());
+        if (ai_service::is_custom()) {
+            self::require_custom_image($filename, (int) $file->get_filesize());
+            return self::read_with_custom_service($filename, $file->get_content(), $question);
+        }
         $response = provider_upload_service::send_stored_file(
             $file,
             self::ENDPOINT,
@@ -149,6 +177,54 @@ class vision_service {
      */
     public static function is_supported(string $filename): bool {
         return in_array(strtolower(pathinfo($filename, PATHINFO_EXTENSION)), self::EXTENSIONS, true);
+    }
+
+    /**
+     * Stop unless the custom service can read the file: only images up to {@see self::MAX_CUSTOM_IMAGE_BYTES}.
+     *
+     * @param string $filename Clean file name.
+     * @param int $size Size, in bytes.
+     * @throws \moodle_exception documents_error_custom for a PDF, file_error_too_large for a large image.
+     */
+    private static function require_custom_image(string $filename, int $size): void {
+        if (!isset(self::IMAGE_TYPES[strtolower(pathinfo($filename, PATHINFO_EXTENSION))])) {
+            throw new \moodle_exception('documents_error_custom', 'local_jedomi');
+        }
+        if ($size > self::MAX_CUSTOM_IMAGE_BYTES) {
+            throw new \moodle_exception('file_error_too_large', 'local_jedomi');
+        }
+    }
+
+    /**
+     * Read an image with the vision model of the custom service.
+     *
+     * @param string $filename Clean image file name; its extension gives the content type.
+     * @param string $content Image bytes.
+     * @param string $question Question of the user about the image; empty for none.
+     * @return array
+     * @throws \moodle_exception Custom service errors, or ai_error_invalidanswer when the answer has no text.
+     */
+    private static function read_with_custom_service(string $filename, string $content, string $question): array {
+        $model = model_settings::get_vision_model();
+        $type = self::IMAGE_TYPES[strtolower(pathinfo($filename, PATHINFO_EXTENSION))];
+        $prompt = self::CUSTOM_PROMPT . (trim($question) !== '' ? "\n\nQuestion of the user: " . trim($question) : '');
+        $answer = custom_api::from_settings()->chat([
+            'model' => $model,
+            'messages' => [[
+                'role' => 'user',
+                'content' => [
+                    ['type' => 'text', 'text' => $prompt],
+                    ['type' => 'image_url', 'image_url' => ['url' => 'data:' . $type . ';base64,' . base64_encode($content)]],
+                ],
+            ]],
+            'max_tokens' => model_settings::get_max_tokens(),
+            'stream' => false,
+        ], self::TIMEOUT);
+        $text = $answer['choices'][0]['message']['content'] ?? null;
+        if (!is_string($text)) {
+            throw new \moodle_exception('ai_error_invalidanswer', 'local_jedomi');
+        }
+        return self::normalise(['text' => $text, 'model' => $model]);
     }
 
     /**

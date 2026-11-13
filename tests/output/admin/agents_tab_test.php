@@ -40,10 +40,11 @@ final class agents_tab_test extends \advanced_testcase {
         $PAGE->set_url(new \moodle_url('/local/jedomi/admin_settings.php'));
         $roles = [['id' => 5, 'shortname' => 'student', 'name' => 'Student']];
 
-        $data = (new agents_tab($roles, 7))->export_for_template($PAGE->get_renderer('local_jedomi'));
+        $data = (new agents_tab($roles, 7, '<div>report</div>'))->export_for_template($PAGE->get_renderer('local_jedomi'));
 
         $this->assertSame([['id' => 5, 'name' => 'Student']], $data['roles']);
         $this->assertSame(7, $data['editagentid']);
+        $this->assertSame('<div>report</div>', $data['report']);
         $this->assertContains('custom', array_column($data['schedules'], 'value'));
         $this->assertSame(['site', 'course', 'category', 'user'], array_column($data['contexttypes'], 'value'));
     }
@@ -58,11 +59,20 @@ final class agents_tab_test extends \advanced_testcase {
         $this->resetAfterTest();
         $PAGE->set_url(new \moodle_url('/local/jedomi/admin_settings.php'));
 
-        $html = $PAGE->get_renderer('local_jedomi')->render(new agents_tab([], 0));
+        $html = $PAGE->get_renderer('local_jedomi')->render(new agents_tab([], 0, '<div data-region="core_reportbuilder/report">'
+            . '</div>'));
 
-        foreach (['table-body', 'pagination', 'preview-body', 'purge-message'] as $region) {
+        foreach (['chart', 'table-message', 'preview-body', 'purge-message'] as $region) {
             $this->assertStringContainsString('data-region="local_jedomi/admin/agents/' . $region . '"', $html);
         }
+        foreach (['table-body', 'pagination', 'filter-role', 'apply-filters'] as $removed) {
+            $this->assertStringNotContainsString(
+                'local_jedomi/admin/agents/' . $removed . '"',
+                $html,
+                'The report builder table replaces the hand-written table, its filters and its pagination'
+            );
+        }
+        $this->assertStringContainsString('data-region="core_reportbuilder/report"', $html);
         $this->assertStringContainsString('data-form="local_jedomi/admin/agents/create"', $html);
     }
 
@@ -101,29 +111,25 @@ final class agents_tab_test extends \advanced_testcase {
         $this->assertSame('Course: Algebra I', $manager::describe_context('course', (int) $coursecontext->id));
         $this->assertStringContainsString('#999999', $manager::describe_context('course', 999999));
 
-        // Rows and charts carry readable names: localised role names and status names.
+        // The details and the charts carry readable names: localised role names and status names.
         $creator = $this->getDataGenerator()->create_user();
         $manager::create_agent((object) ['userid' => $creator->id, 'prompt' => 'Course report', 'schedule_cron' => '0 8 * * *',
             'enabled' => 1, 'context_type' => 'course', 'context_id' => $coursecontext->id,
             'role_filter' => json_encode(['editingteacher'])]);
-        $stats = $manager::get_stats([]);
-        $this->assertSame('Every day at 08:00', $stats->rows[0]->schedule_label);
-        $this->assertSame('Course: Algebra I', $stats->rows[0]->context_label);
+        $charts = $manager::get_chart_stats([]);
         $teacher = $DB->get_record('role', ['shortname' => 'editingteacher']);
         $teachername = role_get_name($teacher, \context_system::instance(), ROLENAME_ALIAS);
-        $this->assertSame($teachername, $stats->charts->role_labels->editingteacher);
-        $this->assertNotSame('editingteacher', $stats->charts->role_labels->editingteacher);
-        $this->assertSame(get_string('agent_enabled', 'local_jedomi'), $stats->charts->status_labels->enabled);
-        $this->assertSame(get_string('agent_disabled', 'local_jedomi'), $stats->charts->status_labels->disabled);
+        $this->assertSame($teachername, $charts->role_labels->editingteacher);
+        $this->assertNotSame('editingteacher', $charts->role_labels->editingteacher);
+        $this->assertSame(get_string('agent_enabled', 'local_jedomi'), $charts->status_labels->enabled);
+        $this->assertSame(get_string('agent_disabled', 'local_jedomi'), $charts->status_labels->disabled);
 
-        // The table and the details show the readable names, the charts use the labels.
+        // The details show the readable names, the charts use the labels.
         $PAGE->set_url(new \moodle_url('/local/jedomi/admin_settings.php'));
         $renderer = $PAGE->get_renderer('local_jedomi');
         $row = ['id' => 1, 'userid' => 2, 'creator' => 'A', 'name' => 'N', 'schedule' => '0 8 * * *',
             'schedulelabel' => 'Every day at 08:00', 'contextlabel' => 'Course: Algebra I', 'enabled' => true,
             'lastrun' => 0, 'failcount' => 0, 'canmanage' => true];
-        $table = $renderer->render_from_template('local_jedomi/admin/agent_table', ['hasrows' => true, 'rows' => [$row]]);
-        $this->assertStringContainsString('Every day at 08:00', $table);
         $details = $renderer->render_from_template('local_jedomi/admin/agent_details', $row);
         $this->assertStringContainsString('Course: Algebra I', $details);
         $source = file_get_contents(__DIR__ . '/../../../amd/src/admin/agents.js');
@@ -140,7 +146,7 @@ final class agents_tab_test extends \advanced_testcase {
     private function purge_form(array $roles): string {
         global $PAGE;
         $PAGE->set_url(new \moodle_url('/local/jedomi/admin_settings.php'));
-        $html = $PAGE->get_renderer('local_jedomi')->render(new agents_tab($roles, 0));
+        $html = $PAGE->get_renderer('local_jedomi')->render(new agents_tab($roles, 0, ''));
         $this->assertSame(1, preg_match('~<form data-form="local_jedomi/admin/agents/purge">.*?</form>~s', $html, $matches));
         return $matches[0];
     }
@@ -170,7 +176,7 @@ final class agents_tab_test extends \advanced_testcase {
      * MDL-INT-022: the executions chart counts every run of the last 30 days from the agent_run events of the standard
      * log, only for the agents that match the filters; without the standard log it falls back to the last run.
      */
-    public function test_filters_apply_to_the_table_and_the_charts(): void {
+    public function test_filters_apply_to_the_executions_chart(): void {
         $this->resetAfterTest();
         $this->preventResetByRollback();
         set_config('enabled_stores', 'logstore_standard', 'tool_log');
@@ -187,28 +193,27 @@ final class agents_tab_test extends \advanced_testcase {
         \local_jedomi\agent\agent_manager::mark_run($on, true, 'ok');
         \local_jedomi\agent\agent_manager::mark_run($off, true, 'ok');
 
-        $today = static function (\stdClass $stats): int {
-            $last = end($stats->charts->executions_30d);
+        $today = static function (\stdClass $charts): int {
+            $last = end($charts->executions_30d);
             return $last->count;
         };
-        $all = \local_jedomi\agent\agent_manager::get_stats([]);
-        $this->assertCount(30, $all->charts->executions_30d);
+        $all = \local_jedomi\agent\agent_manager::get_chart_stats([]);
+        $this->assertCount(30, $all->executions_30d);
         $this->assertSame(4, $today($all), 'Every run counts, successful or failed, not only the last one');
-        $this->assertSame(3, $today(\local_jedomi\agent\agent_manager::get_stats(['status' => 'enabled'])));
-        $this->assertSame(1, $today(\local_jedomi\agent\agent_manager::get_stats(['status' => 'disabled'])));
+        $this->assertSame(3, $today(\local_jedomi\agent\agent_manager::get_chart_stats(['status' => 'enabled'])));
+        $this->assertSame(1, $today(\local_jedomi\agent\agent_manager::get_chart_stats(['status' => 'disabled'])));
 
         set_config('enabled_stores', '', 'tool_log');
         get_log_manager(true);
-        $this->assertSame(2, $today(\local_jedomi\agent\agent_manager::get_stats([])), 'Without the log, the last run');
+        $this->assertSame(2, $today(\local_jedomi\agent\agent_manager::get_chart_stats([])), 'Without the log, the last run');
     }
 
     /**
-     * MDL-INT-022: the Role and Status filters, sent as the tab sends them, filter the table and the charts, and each row
-     * carries the name of its creator.
+     * MDL-INT-022: the Role and Status filters filter the charts.
      *
      * @return void
      */
-    public function test_role_and_status_filters_apply_to_the_table_and_the_charts(): void {
+    public function test_role_and_status_filters_apply_to_the_charts(): void {
         global $DB;
         $this->resetAfterTest();
         $creator = $this->getDataGenerator()->create_user(['firstname' => 'Ana', 'lastname' => 'Pérez']);
@@ -221,17 +226,14 @@ final class agents_tab_test extends \advanced_testcase {
         $make('Teachers off', 0, ['editingteacher']);
         $make('Students on', 1, ['student']);
 
-        $stats = \local_jedomi\agent\agent_manager::get_stats(['role' => $teacherrole, 'status' => 'enabled']);
-        $this->assertSame(['Teachers on'], array_column($stats->rows, 'prompt'));
-        $this->assertSame(['editingteacher' => 1], $stats->charts->by_role);
-        $this->assertSame(1, $stats->charts->by_status->enabled);
-        $this->assertSame(0, $stats->charts->by_status->disabled);
-        $this->assertSame(fullname($creator), $stats->rows[0]->user_fullname);
+        $charts = \local_jedomi\agent\agent_manager::get_chart_stats(['role' => $teacherrole, 'status' => 'enabled']);
+        $this->assertSame(['editingteacher' => 1], $charts->by_role);
+        $this->assertSame(1, $charts->by_status->enabled);
+        $this->assertSame(0, $charts->by_status->disabled);
 
-        $disabled = \local_jedomi\agent\agent_manager::get_stats(['status' => '0']);
-        $this->assertSame(['Teachers off'], array_column($disabled->rows, 'prompt'));
-        $this->assertSame(1, $disabled->charts->by_status->disabled);
-        $this->assertSame(0, $disabled->charts->by_status->enabled);
+        $disabled = \local_jedomi\agent\agent_manager::get_chart_stats(['status' => '0']);
+        $this->assertSame(1, $disabled->by_status->disabled);
+        $this->assertSame(0, $disabled->by_status->enabled);
     }
 
     /**
@@ -252,7 +254,7 @@ final class agents_tab_test extends \advanced_testcase {
 
         $agents = $request('agents');
         $this->assertStringContainsString(
-            'data-region="local_jedomi/admin/agents/table-body"',
+            'data-region="core_reportbuilder/report"',
             $agents,
             'A manager with the permission to manage agents opens the Agents tab'
         );
@@ -260,7 +262,7 @@ final class agents_tab_test extends \advanced_testcase {
 
         $general = $request('general');
         $this->assertStringContainsString(
-            'data-region="local_jedomi/admin/agents/table-body"',
+            'data-region="core_reportbuilder/report"',
             $general,
             'A manager who cannot configure the site only gets the Agents tab'
         );

@@ -119,7 +119,7 @@ class document_read_tool implements agent_tool {
      * @return bool
      */
     public static function is_offered(string $role): bool {
-        return model_settings::is_files_enabled() && in_array($role, self::ALLOWED_ROLES, true);
+        return model_settings::is_documents_enabled() && in_array($role, self::ALLOWED_ROLES, true);
     }
 
     /**
@@ -149,6 +149,10 @@ class document_read_tool implements agent_tool {
 
         if (!model_settings::is_files_enabled()) {
             return json_encode(['error' => get_string('files_error_disabled', 'local_jedomi')]);
+        }
+        if (!model_settings::is_documents_enabled()) {
+            // The custom AI service cannot read documents.
+            return json_encode(['error' => get_string('documents_error_custom', 'local_jedomi')]);
         }
         if ($cmid <= 0) {
             return json_encode(['error' => 'cmid is required']);

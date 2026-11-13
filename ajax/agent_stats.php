@@ -15,10 +15,9 @@
 // along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
 
 /**
- * AJAX endpoint — GET agent stats for charts + table.
+ * AJAX endpoint — GET the data of the charts of the Agents tab.
  *
- * Returns aggregated stats (by_role, by_status, executions_30d) and
- * paginated agent rows matching the optional filters.
+ * The charts count the agents that match the filters the user saved in the agents report, so they follow the report.
  *
  * @package    local_jedomi
  * @copyright  2026 Jedomi Project
@@ -30,36 +29,18 @@ require_login(null, false);
 require_capability('local/jedomi:manageagents', context_system::instance());
 require_sesskey();
 
+use core_reportbuilder\system_report_factory;
 use local_jedomi\agent\agent_manager;
+use local_jedomi\reportbuilder\local\helpers\filtered_ids;
+use local_jedomi\reportbuilder\local\systemreports\agents;
 
 header('Content-Type: application/json');
 
-$filters = [];
-$raw = optional_param('filters', '', PARAM_RAW);
-
-if (!empty($raw)) {
-    $decoded = json_decode($raw, true);
-    if (is_array($decoded)) {
-        $filters = $decoded;
-    }
-}
-
-$filters['page'] = optional_param('page', 1, PARAM_INT);
-$filters['perpage'] = optional_param('perpage', 20, PARAM_INT);
-// The search only matches the instructions the user may read; never taken from the request.
-$filters['actorid'] = (int) $USER->id;
-
 try {
-    $stats = agent_manager::get_stats($filters);
-    // Each row keeps its instruction only for the users who may read it, and says whether they may manage it.
-    $rows = array_map(fn(\stdClass $row): \stdClass => agent_manager::agent_for_actor($row, (int) $USER->id), $stats->rows);
-
+    $report = system_report_factory::create(agents::class, context_system::instance());
     echo json_encode([
         'ok'     => true,
-        'charts' => $stats->charts,
-        'rows'   => $rows,
-        'total'  => $stats->total,
-        'page'   => $stats->page,
+        'charts' => agent_manager::get_chart_stats(['idsql' => filtered_ids::sql($report)]),
     ]);
 } catch (\Exception $e) {
     echo json_encode([

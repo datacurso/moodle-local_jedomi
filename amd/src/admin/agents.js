@@ -14,25 +14,24 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Agents tab of the Jedomi settings: charts, agent list and actions, create/edit form, preview and purge.
+ * Agents tab of the Jedomi settings: charts that follow the agents report, row actions, create/edit form, preview and
+ * purge.
  *
  * @module     local_jedomi/admin/agents
  * @copyright  2026 Jedomi Project
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-import $ from 'jquery';
 import Modal from 'core/modal';
 import Notification from 'core/notification';
 import Pending from 'core/pending';
 import Templates from 'core/templates';
+import {dispatchEvent} from 'core/event_dispatcher';
 import {getString, getStrings} from 'core/str';
+import ReportEvents from 'core_reportbuilder/local/events';
 import Selectors from 'local_jedomi/local/admin/selectors';
 import * as Repository from 'local_jedomi/local/admin/repository';
 import * as Charts from 'local_jedomi/local/admin/charts';
-
-/** @type {number} Agents per page. */
-const PERPAGE = 20;
 
 /** @type {number} Milliseconds a success message stays visible. */
 const MESSAGE_DELAY = 4000;
@@ -47,12 +46,6 @@ const STRING_KEYS = [
 
 /** @type {Object<string, string>} Loaded strings, by key. */
 let strings = {};
-
-/** @type {number} Page of the agent list being shown. */
-let currentPage = 1;
-
-/** @type {Array<Object>} Rows of the page being shown, source of the details modal. */
-let agentRows = [];
 
 /**
  * Escape text for places that take HTML, such as the modal title.
@@ -84,35 +77,6 @@ const showMessage = (element, type, text, autohide = false) => {
 };
 
 /**
- * Current filters of the agent list.
- *
- * @param {HTMLElement} root Tab root.
- * @returns {Object}
- */
-const getFilters = (root) => {
-    const filters = {};
-    const role = root.querySelector(Selectors.agents.filterRole).value;
-    const status = root.querySelector(Selectors.agents.filterStatus).value;
-    const context = root.querySelector(Selectors.agents.filterContext).value;
-    const search = root.querySelector(Selectors.agents.filterSearch).value.trim();
-    if (role) {
-        filters.role = role;
-    }
-    if (status !== '') {
-        filters.status = status;
-    }
-    if (context) {
-        // The agent_stats.php filter name is snake case.
-        // eslint-disable-next-line camelcase
-        filters.context_type = context;
-    }
-    if (search) {
-        filters.search = search;
-    }
-    return filters;
-};
-
-/**
  * Turn an object of counts into chart data.
  *
  * @param {Object<string, number>} counts Counts by key.
@@ -122,16 +86,15 @@ const getFilters = (root) => {
 const toPairs = (counts, labels = {}) => Object.keys(counts).map((key) => ({label: labels[key] || key, count: counts[key]}));
 
 /**
- * Load the statistics and draw the charts.
+ * Load the statistics and draw the charts; they count the agents that match the filters of the agents report.
  *
  * @param {HTMLElement} root Tab root.
- * @param {Object|null} filters Agent filters.
  */
-const loadStats = async(root, filters) => {
+const loadStats = async(root) => {
     const pending = new Pending('local_jedomi/admin/agents:stats');
     const nodata = strings.agent_chart_no_data;
     try {
-        const data = await Repository.getAgentStats(filters, 1, PERPAGE);
+        const data = await Repository.getAgentStats();
         if (!data.ok) {
             throw new Error(data.error);
         }
@@ -151,7 +114,7 @@ const loadStats = async(root, filters) => {
 /**
  * Template context of an agent row.
  *
- * @param {Object} row Agent row from agent_stats.php.
+ * @param {Object} row Agent from the details action of agent_create.php.
  * @returns {Object}
  */
 const rowContext = (row) => ({
@@ -176,58 +139,18 @@ const rowContext = (row) => ({
 });
 
 /**
- * Load a page of the agent list and its pagination.
- *
- * @param {HTMLElement} root Tab root.
- * @param {Object|null} filters Agent filters.
- * @param {number} page Page number.
- */
-const loadAgents = async(root, filters, page) => {
-    const pending = new Pending('local_jedomi/admin/agents:list');
-    const tbody = root.querySelector(Selectors.agents.tableBody);
-    tbody.classList.add('local_jedomi-admin-loading');
-    try {
-        const data = await Repository.getAgentStats(filters, page, PERPAGE);
-        if (!data.ok) {
-            throw new Error(data.error || strings.agent_error_load);
-        }
-        agentRows = (data.rows || []).map(rowContext);
-        const table = await Templates.renderForPromise('local_jedomi/admin/agent_table', {
-            hasrows: agentRows.length > 0,
-            rows: agentRows,
-        });
-        Templates.replaceNodeContents(root.querySelector(Selectors.agents.tableWrap), table.html, table.js);
-
-        const total = parseInt(data.total, 10) || 0;
-        const current = parseInt(data.page, 10) || 1;
-        const pagecount = Math.ceil(total / PERPAGE);
-        const paginationregion = root.querySelector(Selectors.agents.pagination);
-        if (pagecount > 1) {
-            const pages = [];
-            for (let p = 1; p <= pagecount; p++) {
-                pages.push({page: p, active: p === current});
-            }
-            const pagination = await Templates.renderForPromise('local_jedomi/admin/agent_pagination', {total, pages});
-            Templates.replaceNodeContents(paginationregion, pagination.html, pagination.js);
-        } else {
-            Templates.replaceNodeContents(paginationregion, '', '');
-        }
-    } catch (error) {
-        showMessage(root.querySelector(Selectors.agents.tableMessage), 'danger', error.message);
-    }
-    tbody.classList.remove('local_jedomi-admin-loading');
-    pending.resolve();
-};
-
-/**
- * Reload the charts and the current page of the agent list.
+ * Reload the agents report, keeping its page, and the charts.
  *
  * @param {HTMLElement} root Tab root.
  */
 const refresh = (root) => {
-    const filters = getFilters(root);
-    loadStats(root, filters);
-    loadAgents(root, filters, currentPage);
+    const report = root.querySelector(Selectors.agents.report);
+    if (report) {
+        // The tableReload listener of the tab reloads the charts too.
+        dispatchEvent(ReportEvents.tableReload, {preservePagination: true}, report);
+    } else {
+        loadStats(root);
+    }
 };
 
 /**
@@ -307,15 +230,23 @@ const editAgent = async(root, id) => {
 };
 
 /**
- * Show the full configuration of an agent of the current page in a modal.
+ * Show the full configuration of an agent in a modal.
  *
+ * @param {HTMLElement} root Tab root.
  * @param {number|string} id Agent id.
  */
-const showDetails = async(id) => {
-    const row = agentRows.find((agent) => String(agent.id) === String(id));
-    if (!row) {
+const showDetails = async(root, id) => {
+    let data;
+    try {
+        data = await Repository.agentAction({action: 'details', id});
+    } catch (error) {
+        data = {ok: false, error: error.message};
+    }
+    if (!data.ok || !data.agent) {
+        showMessage(root.querySelector(Selectors.agents.tableMessage), 'danger', data.error || strings.agent_error_load);
         return;
     }
+    const row = rowContext(data.agent);
     const title = row.name || strings.agent_unnamed + ' #' + row.id;
     await Modal.create({
         title: escapeText(title),
@@ -365,7 +296,7 @@ const handleAgentAction = async(root, item) => {
         return;
     }
     if (action === 'details') {
-        await showDetails(id);
+        await showDetails(root, id);
     } else if (action === 'edit') {
         await editAgent(root, id);
     } else if (action === 'delete') {
@@ -588,28 +519,14 @@ const purgeAgents = async(root, form) => {
  * @param {HTMLElement} root Tab root.
  */
 const registerEventListeners = (root) => {
-    // The table wrapper scrolls horizontally and would clip the action menus, so lift the clipping while a menu is open.
-    const wrap = $(root.querySelector(Selectors.agents.tableWrap));
-    wrap.on('show.bs.dropdown', () => wrap.addClass('local_jedomi-admin-overflow-visible'));
-    wrap.on('hidden.bs.dropdown', () => wrap.removeClass('local_jedomi-admin-overflow-visible'));
+    // The report reloads its table after its filters are applied or reset, and after the actions of the tab.
+    root.addEventListener(ReportEvents.tableReload, () => loadStats(root));
 
     root.addEventListener('click', (e) => {
         const item = e.target.closest(Selectors.agents.agentAction);
         if (item) {
             e.preventDefault();
             handleAgentAction(root, item);
-            return;
-        }
-        const pagelink = e.target.closest(Selectors.agents.pageLink);
-        if (pagelink) {
-            e.preventDefault();
-            currentPage = parseInt(pagelink.dataset.page, 10) || 1;
-            loadAgents(root, getFilters(root), currentPage);
-            return;
-        }
-        if (e.target.closest(Selectors.agents.applyFilters)) {
-            currentPage = 1;
-            refresh(root);
             return;
         }
         if (e.target.closest(Selectors.agents.cancelEdit)) {
@@ -678,7 +595,6 @@ export const init = async() => {
     strings = Object.fromEntries(STRING_KEYS.map((key, i) => [key, values[i]]));
     registerEventListeners(root);
     updateOptionalFields(root);
-    await loadStats(root, null);
-    await loadAgents(root, null, 1);
+    await loadStats(root);
     await openRequestedAgent(root);
 };

@@ -180,12 +180,41 @@ final class integrations_tab_test extends \advanced_testcase {
      */
     public function test_disabled_integration_hides_the_card_content(): void {
         $this->resetAfterTest();
+        $body = '~<div class="card-body[^"]*\bd-none\b[^"]*"\s+data-region="local_jedomi/admin/integrations/body"~';
 
         $disabled = $this->render_with(['enabled' => 0]);
         $enabled = $this->render_with(['enabled' => 1]);
 
-        $this->assertMatchesRegularExpression('/local_jedomi-admin-int-body d-none"/', $disabled);
-        $this->assertDoesNotMatchRegularExpression('/local_jedomi-admin-int-body d-none"/', $enabled);
+        $this->assertMatchesRegularExpression($body, $disabled);
+        $this->assertDoesNotMatchRegularExpression($body, $enabled);
+        $this->assertStringContainsString('data-region="local_jedomi/admin/integrations/body"', $enabled);
+    }
+
+    /**
+     * The Telegram card is the shared card of the settings: icon, title, badge and subtitle, with the switch on the
+     * right of the header and no collapse arrow; the switch alone shows or hides the body.
+     *
+     * @return void
+     */
+    public function test_telegram_card_uses_the_shared_card_with_the_switch_in_its_header(): void {
+        $this->resetAfterTest();
+
+        $html = $this->render_with([]);
+
+        $this->assertMatchesRegularExpression(
+            '~<div class="card local_jedomi-admin-card mb-4"\s+data-region="local_jedomi/admin/integrations/telegram">\s*'
+                . '<div class="card-header local_jedomi-admin-card-header">\s*'
+                . '<span class="local_jedomi-admin-card-icon local_jedomi-admin-card-icon-sky">.*?</span>\s*'
+                . '<div>\s*<h5 class="mb-0">' . get_string('telegram_heading', 'local_jedomi')
+                . '\s*<span class="local_jedomi-admin-int-badge ml-2">@jedomibot</span></h5>\s*'
+                . '<small class="text-muted d-block">' . preg_quote(get_string('telegram_heading_help', 'local_jedomi'), '~')
+                . '</small>\s*</div>\s*<div class="local_jedomi-admin-card-actions">.*?'
+                . 'data-action="local_jedomi/admin/integrations/toggle-telegram".*?</div>\s*</div>~s',
+            $html
+        );
+        $this->assertStringNotContainsString('local_jedomi/admin/integrations/expand', $html);
+        $this->assertStringNotContainsString('local_jedomi-admin-int-arrow', $html);
+        $this->assertStringNotContainsString('local_jedomi-admin-int-item', $html);
     }
 
     /**

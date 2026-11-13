@@ -16,6 +16,7 @@
 
 namespace local_jedomi\local\service;
 
+use local_jedomi\local\personalization;
 use local_jedomi\telegram\api_client;
 use local_jedomi\telegram\manager;
 
@@ -277,6 +278,93 @@ class admin_settings_service {
     }
 
     /**
+     * Settings of the Personalization tab, normalised; the welcome message is the default one while none is set.
+     *
+     * @return array{avatar: string, position: array{corner: string, x: int, y: int, side: string},
+     *     assistant_name: string, welcome_message: string, custom_prompt: string}
+     */
+    public static function get_personalization_settings(): array {
+        return [
+            'avatar' => personalization::avatar(),
+            'position' => personalization::position(),
+            'assistant_name' => personalization::assistant_name(),
+            'welcome_message' => personalization::welcome_template(),
+            'custom_prompt' => personalization::custom_prompt(),
+        ];
+    }
+
+    /**
+     * Save the settings of the Personalization tab, normalised, and log the change (without the values).
+     *
+     * A welcome message equal to the default one of the current language is stored empty, so every user keeps getting
+     * the default message in their own language.
+     *
+     * @param string $avatar One of {@see personalization::AVATARS}; anything else is stored as the Jedomi icon.
+     * @param array $position Corner, x, y and side of the button; see {@see personalization::normalise_position()}.
+     * @param string $assistantname Name of the assistant; empty for Jedomi.
+     * @param string $welcomemessage Welcome message with placeholders; empty for the default one.
+     * @param string $customprompt Site instructions for the AI, capped at {@see personalization::CUSTOM_PROMPT_MAX}.
+     * @param int|null $avatardraftid Draft area of the custom avatar field; null leaves the custom avatar unchanged.
+     * @return void
+     */
+    public static function save_personalization_settings(
+        string $avatar,
+        array $position,
+        string $assistantname,
+        string $welcomemessage,
+        string $customprompt,
+        ?int $avatardraftid = null
+    ): void {
+        set_config('avatar', personalization::clean_avatar($avatar), 'local_jedomi');
+        set_config('avatar_position', json_encode(personalization::normalise_position($position)), 'local_jedomi');
+        set_config('assistant_name', personalization::clean_name($assistantname), 'local_jedomi');
+
+        $welcome = self::normalise_newlines(trim(clean_param($welcomemessage, PARAM_NOTAGS)));
+        $welcome = \core_text::substr($welcome, 0, personalization::WELCOME_MAX);
+        if ($welcome === self::normalise_newlines(personalization::default_welcome())) {
+            $welcome = '';
+        }
+        set_config('welcome_message', $welcome, 'local_jedomi');
+        set_config('custom_prompt', personalization::clean_custom_prompt($customprompt), 'local_jedomi');
+
+        if ($avatardraftid !== null) {
+            file_save_draft_area_files(
+                $avatardraftid,
+                \context_system::instance()->id,
+                'local_jedomi',
+                personalization::FILEAREA,
+                0,
+                self::custom_avatar_options()
+            );
+        }
+        \local_jedomi\event\settings_updated::create_for_tab('personalization')->trigger();
+    }
+
+    /**
+     * Options of the custom avatar file area: one web image of up to 512 KB.
+     *
+     * @return array{subdirs: int, maxfiles: int, maxbytes: int, accepted_types: string[]}
+     */
+    public static function custom_avatar_options(): array {
+        return [
+            'subdirs' => 0,
+            'maxfiles' => 1,
+            'maxbytes' => personalization::AVATAR_MAXBYTES,
+            'accepted_types' => ['web_image'],
+        ];
+    }
+
+    /**
+     * Text with Unix line ends.
+     *
+     * @param string $text Text with any line ends.
+     * @return string
+     */
+    private static function normalise_newlines(string $text): string {
+        return str_replace(["\r\n", "\r"], "\n", $text);
+    }
+
+    /**
      * Role key for the web service allowlist, falling back to "admin" for an unknown key.
      *
      * @param string $role Requested role key.
@@ -461,75 +549,6 @@ class admin_settings_service {
             return 'Lectura';
         }
         return \local_jedomi_classify_ws_access($name) === 'Escritura' ? 'Escritura' : 'Lectura';
-    }
-
-    /**
-     * Recent queries run by agents, with the full name of the user who owns each agent.
-     *
-     * @param int $mindurationms Only queries that took at least this many milliseconds; 0 for all.
-     * @param string $sort "duration_ms" or "timecreated", always newest or slowest first.
-     * @param int $limit Maximum number of entries.
-     * @param string $channel Only the queries of this channel; empty for every channel.
-     * @return array<int, array{agentid: int, channel: string, userfullname: string, query: string, duration_ms: float,
-     *     rowcount: int, timecreated: int}> The user name is empty when the agent no longer exists.
-     */
-    public static function get_recent_profiler_entries(
-        int $mindurationms,
-        string $sort,
-        int $limit = 20,
-        string $channel = ''
-    ): array {
-        return self::get_profiler_page(['min_duration_ms' => $mindurationms, 'channel' => $channel], $sort, 1, $limit)['entries'];
-    }
-
-    /**
-     * A page of the profiled queries that match the filters, with the user of each one.
-     *
-     * The user is the one the query ran for (web chat, Telegram, companion, preview) or, for a scheduled run, the owner
-     * of the agent.
-     *
-     * @param array $filters Filters of query_profiler::get_log(): min_duration_ms, channel, agentid, search.
-     * @param string $sort "duration_ms" or "timecreated", always newest or slowest first.
-     * @param int $page Page, from 1.
-     * @param int $perpage Entries per page.
-     * @return array{entries: array, total: int} Entries as in get_recent_profiler_entries() and the number of matches.
-     */
-    public static function get_profiler_page(array $filters, string $sort, int $page, int $perpage): array {
-        global $DB;
-        $log = \local_jedomi\agent\query_profiler::get_log($filters + [
-            'sort' => $sort === 'duration_ms' ? 'duration_ms' : 'timecreated',
-            'dir' => 'DESC',
-            'page' => $page,
-            'perpage' => $perpage,
-        ]);
-        $owners = [];
-        $names = [];
-        $entries = [];
-        foreach ($log['entries'] as $entry) {
-            $agentid = (int) $entry->agentid;
-            $channel = (string) ($entry->channel ?? 'agent');
-            $userid = (int) ($entry->userid ?? 0);
-            if (($channel === 'agent' || $userid === 0) && $agentid > 0) {
-                if (!array_key_exists($agentid, $owners)) {
-                    $owners[$agentid] = (int) $DB->get_field('local_jedomi_agents', 'userid', ['id' => $agentid]);
-                }
-                $userid = $owners[$agentid];
-            }
-            if (!array_key_exists($userid, $names)) {
-                $user = $userid ? \core_user::get_user($userid) : false;
-                $names[$userid] = $user ? fullname($user) : '';
-            }
-            $entries[] = [
-                'agentid' => $agentid,
-                'channel' => $channel,
-                'userfullname' => $names[$userid],
-                'query' => (string) $entry->query,
-                'duration_ms' => (float) $entry->duration_ms,
-                'rowcount' => (int) $entry->rowcount,
-                'timecreated' => (int) $entry->timecreated,
-            ];
-        }
-        return ['entries' => $entries, 'total' => (int) $log['total']];
     }
 
     /**

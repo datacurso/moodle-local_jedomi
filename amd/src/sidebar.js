@@ -284,20 +284,38 @@ define(['core/log', 'core/ajax', 'core/templates', 'core/str', 'core/notificatio
     // The theme is not involved: the local_jedomi/sidebar template is rendered here and appended to body.
     const injectHTML = async () => {
         const S        = cfg.strings || {};
-        const greeting = (S.greeting || '').replace('{name}', cfg.user_name || '');
+        // The welcome message comes resolved from the server as plain text; the template escapes it.
+        const greeting = cfg.welcome_message || '';
         // Features that are off get no button, no attach option and no drop zone; the server refuses them too.
         const {html, js} = await Templates.renderForPromise('local_jedomi/sidebar', {
             greeting,
+            assistant: cfg.assistant || {},
             strings: S,
             files_enabled: !!cfg.files_enabled,
+            documents_enabled: !!(cfg.files_enabled && cfg.documents_enabled),
             audio_enabled: !!cfg.audio_enabled,
             attach_enabled: !!(cfg.files_enabled || cfg.audio_enabled),
             voice_enabled: !!(cfg.voice_enabled && cfg.audio_enabled && cfg.speech_url),
         });
         Templates.appendNodeContents(document.body, html, js);
+        applyTriggerPosition();
         updateContextLabel();
         loadQuickActions();
         startGlowCycle();
+    };
+
+    // Distances of the button from the edges of its corner, set in the Personalization tab. The corner itself is a class
+    // of the template; the stylesheet reads these variables, and ignores them on phones (phase 16 position).
+    const applyTriggerPosition = () => {
+        const trigger = document.getElementById('jedomi-trigger');
+        if (!trigger) return;
+        const assistant = cfg.assistant || {};
+        const offset = (value) => {
+            const number = Number(value);
+            return Number.isFinite(number) ? Math.max(0, Math.min(500, Math.round(number))) + 'px' : '24px';
+        };
+        trigger.style.setProperty('--j-fab-x', offset(assistant.x));
+        trigger.style.setProperty('--j-fab-y', offset(assistant.y));
     };
 
     // Render a template into a node, replacing its content or appending to it.
@@ -3031,6 +3049,9 @@ define(['core/log', 'core/ajax', 'core/templates', 'core/str', 'core/notificatio
                 addMessage('assistant', `⚠️ ${S.file_process_error || ''} **${file.name}**: ${S.audio_error_disabled || ''}`);
             } else if (!isaudio && !cfg.files_enabled) {
                 addMessage('assistant', `⚠️ ${S.file_process_error || ''} **${file.name}**: ${S.files_error_disabled || ''}`);
+            } else if (!isaudio && !isimage && !cfg.documents_enabled) {
+                // The custom AI service reads images only.
+                addMessage('assistant', `⚠️ ${S.file_process_error || ''} **${file.name}**: ${S.documents_error_custom || ''}`);
             } else if (isimage && !IMAGE_TYPES.includes(file.type)) {
                 addMessage('assistant', `⚠️ ${S.file_process_error || ''} **${file.name}**: ${S.image_error_unsupported || ''}`);
             } else if (isimage) {

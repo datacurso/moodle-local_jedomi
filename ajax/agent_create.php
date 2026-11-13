@@ -116,6 +116,16 @@ try {
             echo json_encode(['ok' => true, 'agent' => $agent]);
             break;
 
+        case 'details':
+            // Every user who manages agents may view the details; the instruction only when they may read it.
+            $id = required_param('id', PARAM_INT);
+            $agent = agent_manager::get_agent($id);
+            if (!$agent) {
+                throw new \moodle_exception('agent_not_found', 'local_jedomi');
+            }
+            echo json_encode(['ok' => true, 'agent' => agent_manager::agent_details_for_actor($agent, (int) $USER->id)]);
+            break;
+
         case 'toggle':
             $id = required_param('id', PARAM_INT);
             $agent = agent_manager::require_manageable_agent($id, (int) $USER->id);

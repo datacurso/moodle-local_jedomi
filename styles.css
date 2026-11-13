@@ -77,11 +77,23 @@
     transform: translateX(0);
 }
 
+/* Panel opening from the right side (Personalization tab). */
+.jedomi-sidebar.jedomi-side-right {
+    left: auto;
+    right: 0;
+    border-right: 0;
+    border-left: 1px solid var(--j-border);
+}
+.jedomi-sidebar.jedomi-side-right.jedomi-closed {
+    transform: translateX(100%);
+}
+
 /* ── Trigger FAB ───────────────────────────────────────────────────────────── */
 .jedomi-trigger {
     position: fixed;
-    bottom: 24px;
-    left: 24px;
+    /* Distances set in the Personalization tab: amd/src/sidebar.js sets --j-fab-x and --j-fab-y. */
+    bottom: var(--j-fab-y, 24px);
+    left: var(--j-fab-x, 24px);
     z-index: 1036;
     background: var(--j-accent);
     border: 2px solid rgba(255, 255, 255, 0.25);
@@ -102,6 +114,42 @@
 .jedomi-trigger svg {
     width: 28px;
     height: 28px;
+}
+
+/* Corner of the button (Personalization tab); bottom left is the default. */
+.jedomi-trigger.jedomi-fab-bottom-right,
+.jedomi-trigger.jedomi-fab-top-right {
+    left: auto;
+    right: var(--j-fab-x, 24px);
+}
+.jedomi-trigger.jedomi-fab-top-left,
+.jedomi-trigger.jedomi-fab-top-right {
+    bottom: auto;
+    top: var(--j-fab-y, 24px);
+}
+
+/* Avatar image on the button and in the header, in place of the Jedomi icon. */
+.jedomi-trigger-avatar {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 50%;
+}
+.jedomi-logo.jedomi-logo-has-avatar {
+    background: transparent;
+    box-shadow: none;
+    overflow: hidden;
+}
+.jedomi-logo-avatar {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 10px;
+}
+
+/* The welcome message is plain text: its line breaks are kept. */
+.jedomi-welcome {
+    white-space: pre-line;
 }
 .jedomi-trigger-label {
     display: none;
@@ -1230,9 +1278,13 @@
     .jedomi-sidebar {
         width: 100vw !important;
     }
-    .jedomi-trigger {
+    /* Phase 16 position on phones, whatever corner and distances are configured. */
+    .jedomi-trigger,
+    .jedomi-trigger[class*="jedomi-fab-"] {
         bottom: 16px;
         left: 16px;
+        right: auto;
+        top: auto;
         width: 52px;
         height: 52px;
     }
@@ -1246,8 +1298,6 @@
    ───────────────────────────────────────────────────────────────────────────── */
 
 .local_jedomi-admin {
-    max-width: 780px;
-    margin: 0 auto;
     padding-bottom: 2rem;
 }
 
@@ -1264,6 +1314,12 @@
     font-weight: 600;
     background: #f9fafb;
     border-bottom: 1px solid #e5e7eb;
+}
+
+.local_jedomi-admin-card-actions {
+    display: flex;
+    align-items: center;
+    margin-left: auto;
 }
 
 .local_jedomi-admin-card-header h5 {
@@ -1321,6 +1377,24 @@
     background: #dbeafe;
 }
 
+/* Sections of the settings forms: a card body holds the standard form rows; subsections have a plain title. */
+.local_jedomi-admin-card .card-body > .fitem:last-child {
+    margin-bottom: 0;
+}
+
+.local_jedomi-admin-subsection-title {
+    margin: 1.5rem 0 1rem;
+    padding-bottom: 0.5rem;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: #111827;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.local_jedomi-admin-int-section form > fieldset:first-of-type .local_jedomi-admin-subsection-title {
+    margin-top: 0;
+}
+
 .local_jedomi-admin-save-row {
     margin-top: 1.25rem;
     padding-top: 1rem;
@@ -1374,65 +1448,6 @@
 }
 
 /* Integrations tab. */
-.local_jedomi-admin-int-item {
-    overflow: hidden;
-    background: #fff;
-    border: 1.5px solid #e5e7eb;
-    border-radius: 0.625rem;
-    transition: border-color 0.25s, box-shadow 0.25s;
-}
-
-.local_jedomi-admin-int-item.active {
-    border-color: #7c3aed;
-    box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.08);
-}
-
-.local_jedomi-admin-int-item.enabled {
-    border-color: #22c55e;
-}
-
-.local_jedomi-admin-int-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.875rem 1.125rem;
-    background: #f9fafb;
-}
-
-.local_jedomi-admin-int-meta,
-.local_jedomi-admin-int-controls {
-    display: flex;
-    align-items: center;
-    gap: 0.875rem;
-}
-
-.local_jedomi-admin-int-logo {
-    display: flex;
-    flex-shrink: 0;
-    align-items: center;
-    justify-content: center;
-    width: 2.25rem;
-    height: 2.25rem;
-    font-size: 1.125rem;
-    color: #0369a1;
-    background: #e0f2fe;
-    border-radius: 0.5rem;
-}
-
-.local_jedomi-admin-int-name {
-    display: block;
-    font-size: 0.9375rem;
-    font-weight: 600;
-    color: #111827;
-}
-
-.local_jedomi-admin-int-desc {
-    display: block;
-    margin-top: 0.0625rem;
-    font-size: 0.8rem;
-    color: #6b7280;
-}
-
 .local_jedomi-admin-int-badge {
     padding: 0.25rem 0.6rem;
     font-size: 0.75rem;
@@ -1440,19 +1455,6 @@
     color: #166534;
     background: #dcfce7;
     border-radius: 2rem;
-}
-
-.local_jedomi-admin-int-arrow {
-    color: #6b7280;
-    transition: transform 0.2s;
-}
-
-.local_jedomi-admin-int-arrow.open {
-    transform: rotate(180deg);
-}
-
-.local_jedomi-admin-int-body {
-    border-top: 1px solid #e5e7eb;
 }
 
 .local_jedomi-admin-int-section {
@@ -1555,10 +1557,6 @@
     overflow-y: auto;
     border: 1px solid #e5e7eb;
     border-radius: 0.375rem;
-}
-
-.table-responsive.local_jedomi-admin-overflow-visible {
-    overflow: visible;
 }
 
 .local_jedomi-admin-agent-details th {
@@ -1807,6 +1805,81 @@
     color: #7dd3fc;
 }
 
+/* Personalization tab: avatar selector and live preview of the button. */
+.local_jedomi-avatar-option {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    margin: 0 8px 8px 0;
+}
+.local_jedomi-avatar-option-img,
+.local_jedomi-avatar-option-icon {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    object-fit: cover;
+}
+.local_jedomi-avatar-option-icon,
+.local_jedomi-position-preview-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #7c3aed;
+}
+.local_jedomi-avatar-option-label {
+    font-size: 0.8rem;
+}
+.local_jedomi-position-preview {
+    position: relative;
+    width: 100%;
+    max-width: 480px;
+    aspect-ratio: 16 / 10;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    background: #f8f9fa;
+    overflow: hidden;
+}
+.local_jedomi-position-preview-panel {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 30%;
+    height: 100%;
+    background: rgba(124, 58, 237, 0.12);
+    border-right: 1px dashed #7c3aed;
+}
+.local_jedomi-position-preview-panel.local_jedomi-position-preview-panel-right {
+    left: auto;
+    right: 0;
+    border-right: 0;
+    border-left: 1px dashed #7c3aed;
+}
+.local_jedomi-position-preview-button {
+    position: absolute;
+    bottom: 8px;
+    left: 8px;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    overflow: hidden;
+    cursor: grab;
+    touch-action: none;
+    background: #7c3aed;
+}
+.local_jedomi-position-preview-button img,
+.local_jedomi-position-preview-icon {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+.local_jedomi-position-preview-icon svg {
+    width: 18px;
+    height: 18px;
+}
+
 /* ── Accessibility: keyboard focus, reduced motion and forced colours ─────── */
 .jedomi-trigger:focus-visible,
 .jedomi-btn-icon:focus-visible,
@@ -1874,8 +1947,7 @@
 }
 
 /* Core pix icons inside the round/square icon holders: no trailing margin, logo keeps its size. */
-.local_jedomi-admin-card-icon .icon,
-.local_jedomi-admin-int-logo .icon {
+.local_jedomi-admin-card-icon .icon {
     margin: 0;
 }
 .local_jedomi-tg-logo .icon {
@@ -1911,11 +1983,32 @@
     /*rtl:ignore*/
     transform: translateX(100%);
 }
+[dir="rtl"] .jedomi-sidebar.jedomi-side-right {
+    /*rtl:ignore*/
+    right: auto;
+    /*rtl:ignore*/
+    left: 0;
+    /*rtl:ignore*/
+    border-left: 0;
+    /*rtl:ignore*/
+    border-right: 1px solid var(--j-border);
+}
+[dir="rtl"] .jedomi-sidebar.jedomi-side-right.jedomi-closed {
+    /*rtl:ignore*/
+    transform: translateX(-100%);
+}
 [dir="rtl"] .jedomi-trigger {
     /*rtl:ignore*/
     left: auto;
     /*rtl:ignore*/
-    right: 24px;
+    right: var(--j-fab-x, 24px);
+}
+[dir="rtl"] .jedomi-trigger.jedomi-fab-bottom-right,
+[dir="rtl"] .jedomi-trigger.jedomi-fab-top-right {
+    /*rtl:ignore*/
+    right: auto;
+    /*rtl:ignore*/
+    left: var(--j-fab-x, 24px);
 }
 [dir="rtl"] .jedomi-bubble th,
 [dir="rtl"] .jedomi-bubble td,
@@ -1927,8 +2020,10 @@
 [dir="rtl"] .jedomi-table th {
     text-align: start !important;
 }
+
 @media (max-width: 767px) {
-    [dir="rtl"] .jedomi-trigger {
+    [dir="rtl"] .jedomi-trigger,
+    [dir="rtl"] .jedomi-trigger[class*="jedomi-fab-"] {
         /*rtl:ignore*/
         left: auto;
         /*rtl:ignore*/

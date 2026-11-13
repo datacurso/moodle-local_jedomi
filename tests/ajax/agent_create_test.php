@@ -323,18 +323,22 @@ final class agent_create_test extends \advanced_testcase {
         $this->resetAfterTest();
         $manager = $this->create_manager('agentmanager');
         $secret = 'Administrator instruction marker';
-        $this->create_agent_of((int) get_admin()->id, $secret);
-        $this->create_agent_of((int) $manager->id, 'My report');
+        $adminagent = $this->create_agent_of((int) get_admin()->id, $secret);
+        $own = $this->create_agent_of((int) $manager->id, 'My report');
 
-        $table = $this->post_as('agentmanager', 'ajax/agent_stats.php', []);
-        $this->assertTrue($table['ok'], $table['error'] ?? '');
-        $this->assertStringContainsString('My report', json_encode($table['rows']), 'Control: own agents are listed');
+        $details = $this->post_as('agentmanager', 'ajax/agent_create.php', ['action' => 'details', 'id' => $adminagent]);
+        $mine = $this->post_as('agentmanager', 'ajax/agent_create.php', ['action' => 'details', 'id' => $own]);
+        $charts = $this->post_as('agentmanager', 'ajax/agent_stats.php', []);
+        $this->assertTrue($details['ok'], $details['error'] ?? '');
+        $this->assertTrue($charts['ok'], $charts['error'] ?? '');
+        $this->assertStringContainsString('My report', json_encode($mine), 'Control: own details are shown');
 
         $this->setUser($manager);
         $chat = \local_jedomi\proxy\handler::run_tool('list_agents', [], 'manager');
         $telegram = (new \local_jedomi\agent\tool\list_agents_tool((int) $manager->id))->execute((object) []);
 
-        $this->assertStringNotContainsString($secret, json_encode($table['rows']), 'Agents tab table');
+        $this->assertStringNotContainsString($secret, json_encode($details), 'Agents tab details');
+        $this->assertStringNotContainsString($secret, json_encode($charts), 'Agents tab charts');
         $this->assertStringNotContainsString($secret, $chat, 'Web chat list of agents');
         $this->assertStringNotContainsString($secret, $telegram, 'Telegram and agents list of agents');
     }
@@ -363,11 +367,11 @@ final class agent_create_test extends \advanced_testcase {
     }
 
     /**
-     * MDL-INT-099 and MDL-INT-101: the table of the Agents tab gives a manager the instruction and the actions of their own
+     * MDL-INT-099 and MDL-INT-101: the details of the Agents tab give a manager the instruction and the actions of their own
      * agents and of the agents of a teacher only, while the administrator gets both for every agent and still edits the
      * agent of a manager.
      */
-    public function test_agents_table_gives_instruction_and_actions_by_rank(): void {
+    public function test_agent_details_give_instruction_and_actions_by_rank(): void {
         $this->resetAfterTest();
         $manager = $this->create_manager('agentmanager');
         $other = $this->create_manager('othermanager');
@@ -381,22 +385,28 @@ final class agent_create_test extends \advanced_testcase {
         ];
         $expected = ['own' => true, 'teacher' => true, 'other' => false, 'admin' => false];
 
-        $table = $this->post_as('agentmanager', 'ajax/agent_stats.php', []);
-        $this->assertTrue($table['ok'], $table['error'] ?? '');
-        $rows = array_column($table['rows'], null, 'id');
+        $details = fn(string $username, int $id): array => $this->post_as(
+            $username,
+            'ajax/agent_create.php',
+            ['action' => 'details', 'id' => $id]
+        )['agent'] ?? [];
+        $rows = array_map(fn(int $id): array => $details('agentmanager', $id), $ids);
         foreach ($ids as $label => $id) {
-            $this->assertSame($expected[$label], !$rows[$id]['prompthidden'], "Manager, instruction of the {$label} agent");
-            $this->assertSame($expected[$label], $rows[$id]['canmanage'], "Manager, actions of the {$label} agent");
+            $this->assertSame($expected[$label], !$rows[$label]['prompthidden'], "Manager, instruction of the {$label} agent");
+            $this->assertSame($expected[$label], $rows[$label]['canmanage'], "Manager, actions of the {$label} agent");
             if (!$expected[$label]) {
-                $this->assertNull($rows[$id]['prompt'], "Manager, no instruction of the {$label} agent");
+                $this->assertNull($rows[$label]['prompt'], "Manager, no instruction of the {$label} agent");
             }
         }
+        $this->assertSame(fullname($manager), $rows['own']['user_fullname']);
+        $this->assertSame(get_string('agent_context_type_site', 'local_jedomi'), $rows['own']['context_label']);
+        $this->assertNotSame('', $rows['own']['schedule_label']);
         $get = $this->post_as('agentmanager', 'ajax/agent_create.php', ['action' => 'get', 'id' => $ids['other']]);
         $this->assertFalse($get['ok'], 'The form of the agent of another manager is not loaded');
         $this->assertStringNotContainsString('Other manager marker', json_encode($get));
 
-        $admintable = $this->post_as('admin', 'ajax/agent_stats.php', []);
-        foreach ($admintable['rows'] as $row) {
+        foreach ($ids as $id) {
+            $row = $details('admin', $id);
             $this->assertFalse($row['prompthidden']);
             $this->assertTrue($row['canmanage']);
         }

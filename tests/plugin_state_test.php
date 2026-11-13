@@ -222,7 +222,15 @@ final class plugin_state_test extends \advanced_testcase {
         \local_jedomi\agent\query_profiler::log_query(1, 'SELECT 1', 12.5, 1);
         $aggregate = \local_jedomi\agent\query_profiler::get_aggregate();
         $this->assertSame(1, $aggregate->total_queries);
-        $this->assertCount(1, $aggregate->slowest);
+        // The slowest queries report groups by query on the current database.
+        $this->setAdminUser();
+        $source = \local_jedomi\reportbuilder\local\systemreports\query_log_aggregate::class;
+        \core_reportbuilder\system_report_factory::create($source, \context_system::instance());
+        $slowest = \core_reportbuilder\external\systemreports\retrieve::execute(
+            $source,
+            ['contextid' => \context_system::instance()->id]
+        );
+        $this->assertCount(1, $slowest['data']['rows']);
 
         // Each channel has a time limit, and the README documents the databases without one.
         foreach (['web', 'telegram', 'companion', 'agent'] as $channel) {

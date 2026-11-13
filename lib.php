@@ -50,6 +50,37 @@ function local_jedomi_before_footer(): string {
 }
 
 /**
+ * Serve the files of the plugin: the custom avatar of the panel, to logged-in users only.
+ *
+ * @param stdClass|null $course Course of the request (unused: the avatar is a site file).
+ * @param stdClass|null $cm Course module of the request (unused).
+ * @param context $context Context of the file; only the system context has files.
+ * @param string $filearea File area; only "customavatar" is served.
+ * @param array $args Item id followed by the path and name of the file.
+ * @param bool $forcedownload Whether the file must be downloaded.
+ * @param array $options Options for send_stored_file().
+ * @return bool False when the file is not served.
+ */
+function local_jedomi_pluginfile($course, $cm, $context, $filearea, $args, $forcedownload, array $options = []) {
+    if ($context->contextlevel != CONTEXT_SYSTEM || $filearea !== \local_jedomi\local\personalization::FILEAREA) {
+        return false;
+    }
+    // The panel is only shown to users logged in with their own account, so its avatar is too.
+    if (!isloggedin() || isguestuser()) {
+        return false;
+    }
+    $itemid = (int) array_shift($args);
+    $filename = (string) array_pop($args);
+    $filepath = $args ? '/' . implode('/', $args) . '/' : '/';
+    $file = get_file_storage()->get_file($context->id, 'local_jedomi', $filearea, $itemid, $filepath, $filename);
+    if (!$file || $file->is_directory()) {
+        return false;
+    }
+    send_stored_file($file, DAYSECS, 0, $forcedownload, $options);
+    return true;
+}
+
+/**
  * Build the full sidebar config array (strings, endpoints, SPT, etc.).
  *
  * Never includes AI service URLs or keys: every AI call is made server-side.
@@ -62,6 +93,7 @@ function local_jedomi_get_sidebar_config(array $page = []): array {
 
     $context = local_jedomi_get_page_context($page);
     $voiceenabled = \local_jedomi\ai\model_settings::is_voice_enabled();
+    $assistantname = \local_jedomi\local\personalization::assistant_name();
 
     $config = [
         'chatproxy_url' => $CFG->wwwroot . '/local/jedomi/chatproxy.php',
@@ -69,10 +101,16 @@ function local_jedomi_get_sidebar_config(array $page = []): array {
         'read_file_url' => $CFG->wwwroot . '/local/jedomi/read_file.php',
         // Hidden features are also refused by the server.
         'files_enabled' => \local_jedomi\ai\model_settings::is_files_enabled(),
+        // Documents need the Datacurso service; with the custom service only images are read.
+        'documents_enabled' => \local_jedomi\ai\model_settings::is_documents_enabled(),
         'audio_enabled' => \local_jedomi\ai\model_settings::is_audio_enabled(),
         'voice_enabled' => $voiceenabled,
         'feedback_url'  => $CFG->wwwroot . '/local/jedomi/ajax/feedback.php',
         'user_name'     => fullname($USER),
+        // Name, avatar and position of the assistant set in the Personalization tab.
+        'assistant'     => local_jedomi_sidebar_assistant(),
+        // Plain text: the panel template escapes it.
+        'welcome_message' => \local_jedomi\local\personalization::welcome_message($USER, local_jedomi_page_course_name()),
         'user_role'     => local_jedomi_get_user_role(),
         'wwwroot'       => $CFG->wwwroot,
         'context'       => $context,
@@ -83,7 +121,7 @@ function local_jedomi_get_sidebar_config(array $page = []): array {
         'strings'       => [
             // UI chrome.
             'title'             => get_string('sidebar_title', 'local_jedomi'),
-            'open_sidebar'      => get_string('open_sidebar', 'local_jedomi'),
+            'open_sidebar'      => get_string('open_sidebar', 'local_jedomi', $assistantname),
             'close'             => get_string('close', 'local_jedomi'),
             'new_conversation'  => get_string('new_conversation', 'local_jedomi'),
             'export_conversation' => get_string('export_conversation', 'local_jedomi'),
@@ -100,12 +138,10 @@ function local_jedomi_get_sidebar_config(array $page = []): array {
             'image'             => get_string('image', 'local_jedomi'),
             'image_not_kept'    => get_string('image_not_kept', 'local_jedomi'),
             'message_input'     => get_string('message_input', 'local_jedomi'),
-            'placeholder'       => get_string('chat_placeholder', 'local_jedomi'),
+            'placeholder'       => get_string('chat_placeholder', 'local_jedomi', $assistantname),
             'send'              => get_string('send', 'local_jedomi'),
             'voice_input'       => get_string('voice_input', 'local_jedomi'),
             // Greeting.
-            'greeting'          => get_string('greeting', 'local_jedomi'),
-            'hello'             => get_string('hello', 'local_jedomi'),
             'thinking'          => get_string('thinking', 'local_jedomi'),
             'new_conversation_msg' => get_string('new_conversation_msg', 'local_jedomi'),
             'new_conversation_confirm' => get_string('new_conversation_confirm', 'local_jedomi'),
@@ -140,6 +176,7 @@ function local_jedomi_get_sidebar_config(array $page = []): array {
             'file_remove'            => get_string('file_remove', 'local_jedomi'),
             'file_truncated'         => get_string('file_truncated', 'local_jedomi'),
             'files_error_disabled'   => get_string('files_error_disabled', 'local_jedomi'),
+            'documents_error_custom' => get_string('documents_error_custom', 'local_jedomi'),
             'image_attach_limit'     => get_string('image_attach_limit', 'local_jedomi'),
             'image_error_unsupported' => get_string('image_error_unsupported', 'local_jedomi'),
             'file_pdf'             => get_string('file_pdf', 'local_jedomi'),
@@ -148,7 +185,7 @@ function local_jedomi_get_sidebar_config(array $page = []): array {
             'processing_file'      => get_string('processing_file', 'local_jedomi'),
             'reading_image'        => get_string('reading_image', 'local_jedomi'),
             // Footer / disclaimer.
-            'ai_disclaimer'     => get_string('ai_disclaimer', 'local_jedomi'),
+            'ai_disclaimer'     => get_string('ai_disclaimer', 'local_jedomi', $assistantname),
             'drop_files_here'   => get_string('drop_files_here', 'local_jedomi'),
             // Tools.
             'tool_sql_read'          => get_string('tool_sql_read', 'local_jedomi'),
@@ -336,6 +373,37 @@ function local_jedomi_get_sidebar_config(array $page = []): array {
         $config['speech_url'] = $CFG->wwwroot . '/local/jedomi/speech.php';
     }
     return $config;
+}
+
+/**
+ * Name, avatar and position of the assistant for the panel, from the Personalization tab.
+ *
+ * @return array{name: string, avatar_url: string|null, corner: string, side: string, x: int, y: int}
+ */
+function local_jedomi_sidebar_assistant(): array {
+    $position = \local_jedomi\local\personalization::position();
+    return [
+        'name' => \local_jedomi\local\personalization::assistant_name(),
+        'avatar_url' => \local_jedomi\local\personalization::avatar_url(),
+        'corner' => $position['corner'],
+        'side' => $position['side'],
+        'x' => $position['x'],
+        'y' => $position['y'],
+    ];
+}
+
+/**
+ * Name of the course the panel is on, as plain text for the welcome message; '' outside a course.
+ *
+ * @return string
+ */
+function local_jedomi_page_course_name(): string {
+    global $COURSE;
+    $courseid = (int) ($COURSE->id ?? 0);
+    if ($courseid <= SITEID) {
+        return '';
+    }
+    return format_string($COURSE->fullname ?? '', true, ['context' => context_course::instance($courseid), 'escape' => false]);
 }
 
 /**
