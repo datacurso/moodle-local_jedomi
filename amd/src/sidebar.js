@@ -14,8 +14,8 @@
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-define(['core/log', 'core/ajax', 'core/templates', 'core/str', 'core/notification'],
-    function(Log, Ajax, Templates, Str, Notification) {
+define(['core/log', 'core/ajax', 'core/templates', 'core/str', 'core/notification', 'local_jedomi/api'],
+    function(Log, Ajax, Templates, Str, Notification, Api) {
 
     // ── State ─────────────────────────────────────────────────────────────────
     let cfg          = {};
@@ -59,6 +59,8 @@ define(['core/log', 'core/ajax', 'core/templates', 'core/str', 'core/notificatio
 
     // ── Init — entry point ────────────────────────────────────────────────────
     const init = (config) => {
+        // Other plugins can now ask, through local_jedomi/api, to open the panel with a suggestion.
+        Api.panelStarted();
         const doBootstrap = () => {
             if (document.readyState === 'loading') {
                 document.addEventListener('DOMContentLoaded', () => bootstrap());
@@ -81,6 +83,7 @@ define(['core/log', 'core/ajax', 'core/templates', 'core/str', 'core/notificatio
                     // Without its configuration the panel cannot work: it is never started empty. A notice with a
                     // retry button is shown instead.
                     Log.debug('Jedomi: the panel configuration could not be loaded', error);
+                    Api.panelFailed();
                     showConfigError(config);
                 });
         } else {
@@ -256,6 +259,7 @@ define(['core/log', 'core/ajax', 'core/templates', 'core/str', 'core/notificatio
         injected = true;
         injecting = false;
         Log.debug('Jedomi sidebar injected successfully');
+        Api.panelReady(showSuggestion);
 
 
 
@@ -552,6 +556,21 @@ define(['core/log', 'core/ajax', 'core/templates', 'core/str', 'core/notificatio
         // Moodle's layout is NOT touched.
         setExpandMode(expandMode);
         g('jedomi-input')?.focus();
+    };
+
+    // Open the panel with a suggestion of another plugin (local_jedomi/api) written in the message field, as plain text:
+    // the user can change it and sends it. It is never sent here. Answers whether the suggestion was written.
+    const showSuggestion = (text) => {
+        const input = g('jedomi-input');
+        if (!input || voiceMode) {
+            return false;
+        }
+        openSidebar();
+        input.value = text;
+        input.dispatchEvent(new Event('input'));
+        input.focus();
+        input.setSelectionRange(input.value.length, input.value.length);
+        return true;
     };
 
     // Whether an element is inside a core modal (Bootstrap .modal), which sits above the panel.
