@@ -22,7 +22,7 @@ Feature: Jedomi settings page
     And I should see "Integrations"
     And I should see "APIs"
     And I should see "Agents"
-    And I should see "Query Profiler"
+    And I should see "Query profiler"
     And "//a[contains(@href, '/ai/provider/datacurso/admin/plugin_settings.php') and contains(@href, 'component=local_jedomi')]" "xpath_element" should exist
 
   @MDL-INT-020
@@ -40,7 +40,7 @@ Feature: Jedomi settings page
       | moodle/site:config | Prohibit   | manager | System       |           |
     And I log in as "manager1"
     When I visit "/local/jedomi/admin_settings.php"
-    Then I should not see "Query Profiler"
+    Then I should not see "Query profiler"
     And I should see "Sorry, but you do not currently have permissions to do that"
 
   @MDL-INT-016 @MDL-INT-075
@@ -72,11 +72,11 @@ Feature: Jedomi settings page
     And I visit "/local/jedomi/admin_settings.php?tab=agents"
     When I set the field "Prompt" to "How many users logged in this week?"
     And I set the field "Name" to "Weekly logins"
-    And I press "Create Agent"
+    And I press "Create agent"
     Then I should see "Agent \"Weekly logins\" created successfully."
     And the Jedomi agent "Weekly logins" should exist
     And I click on "Agent actions" "button" in the "Weekly logins" "table_row"
-    And I click on "Run Now" "link" in the "Weekly logins" "table_row"
+    And I click on "Run now" "link" in the "Weekly logins" "table_row"
     And I should see "Agent queued for execution (next cron cycle)."
     And I click on "Agent actions" "button" in the "Weekly logins" "table_row"
     And I click on "Delete" "link" in the "Weekly logins" "table_row"
@@ -104,7 +104,7 @@ Feature: Jedomi settings page
     And I log in as "admin"
     And I visit "/local/jedomi/admin_settings.php?tab=agents"
     When I set the field "Context type" to "Site"
-    And I press "Purge"
+    And I press "Purge context agents"
     And I click on "Delete" "button" in the ".modal-dialog" "css_element"
     Then I should see "2 agent(s) deleted successfully."
     And the Jedomi agent "Site report" should not exist

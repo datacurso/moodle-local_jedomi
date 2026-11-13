@@ -27,7 +27,7 @@
     * none
 
     Blocks:
-    * icon - Font Awesome icon class, for example fa-plug
+    * icon - Icon markup, for example the pix helper with i/settings of core (the default)
     * color - Icon color modifier: violet, amber, green, red, sky, indigo, purple or blue
     * title - Card title (defaults to the plugin name)
     * subtitle - Card subtitle (optional)
@@ -39,7 +39,7 @@
 <div class="card local_jedomi-admin-card mb-4">
     <div class="card-header local_jedomi-admin-card-header">
         <span class="local_jedomi-admin-card-icon local_jedomi-admin-card-icon-{{$color}}violet{{/color}}">
-            <i class="fa {{$icon}}fa-cog{{/icon}}" aria-hidden="true"></i>
+            {{$icon}}{{#pix}} i/settings, core {{/pix}}{{/icon}}
         </span>
         <div>
             <h5 class="mb-0">{{$title}}{{#str}} pluginname, local_jedomi {{/str}}{{/title}}</h5>

@@ -9,7 +9,10 @@
    arbitrary themes; !important is required so its styles reliably override
    theme CSS with higher-specificity selectors. */
 
-:root {
+/* Design tokens are scoped to the plugin's own root elements so they never leak into the theme. */
+.jedomi-sidebar,
+.jedomi-trigger,
+.jedomi-dropzone {
     /* ── Superficie ──────────────────────────────────────────────── */
     --j-bg: #fff;
     --j-surface: #f9fafb;
@@ -20,7 +23,7 @@
     --j-text: #111827;
     --j-text-2: #374151;
     --j-muted: #6b7280;
-    --j-muted-2: #9ca3af;
+    --j-muted-2: #6b7280;
 
     /* ── Acento único (violeta) ──────────────────────────────────── */
     --j-accent: #7c3aed;
@@ -57,7 +60,8 @@
     background: var(--j-bg);
     border-right: 1px solid var(--j-border);
     box-shadow: var(--j-shadow);
-    z-index: 99999;
+    /* Above the Boost navbar (1030) and drawers (up to 1035), below core modals (backdrop 1040, modal 1050). */
+    z-index: 1037;
     display: flex;
     flex-direction: column;
     font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -78,7 +82,7 @@
     position: fixed;
     bottom: 24px;
     left: 24px;
-    z-index: 99997;
+    z-index: 1036;
     background: var(--j-accent);
     border: 2px solid rgba(255, 255, 255, 0.25);
     border-radius: 50%;
@@ -93,7 +97,6 @@
     transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.4s ease;
 }
 .jedomi-trigger:hover {
-    transform: scale(1.07);
     box-shadow: 0 6px 28px rgba(124, 58, 237, 0.45), 0 0 0 4px rgba(255, 255, 255, 0.2);
 }
 .jedomi-trigger svg {
@@ -322,7 +325,7 @@
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: var(--j-muted);
+    color: #4b5563;
 }
 .jedomi-bubble img.jedomi-msg-image {
     max-width: 100%;
@@ -463,7 +466,6 @@
     background: var(--j-accent);
     color: white;
     border-color: var(--j-accent);
-    transform: translateY(-1px);
 }
 .jedomi-quick-btn:hover svg {
     color: rgba(255, 255, 255, 0.85);
@@ -489,9 +491,10 @@
 }
 .jedomi-input-row:focus-within {
     border-color: var(--j-accent);
-    box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.08);
+    box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.35);
     background: var(--j-bg);
 }
+/* The visible focus ring is drawn on the row (:focus-within); the outline below only shows in forced-colors mode. */
 .jedomi-input {
     flex: 1;
     border: none;
@@ -500,7 +503,7 @@
     color: var(--j-text);
     resize: none;
     max-height: 120px;
-    outline: none;
+    outline: 2px solid transparent;
     font-family: inherit;
     line-height: 1.5;
     padding: 0;
@@ -548,7 +551,6 @@
 }
 .jedomi-send-btn:hover {
     background: var(--j-accent-d);
-    transform: scale(1.05);
 }
 .jedomi-send-btn:disabled {
     background: var(--j-border);
@@ -650,20 +652,23 @@
     gap: 4px;
     padding: 6px 2px 2px;
     margin-top: 4px;
-    opacity: 0;
     transition: opacity 0.15s;
-}
-.jedomi-message-assistant:hover .jedomi-msg-actions,
-.jedomi-bubble:hover .jedomi-msg-actions,
-.jedomi-msg-actions:focus-within {
-    opacity: 1;
 }
 .jedomi-user-actions {
     justify-content: flex-end;
     padding: 4px 0 0;
 }
-.jedomi-message-user:hover .jedomi-user-actions {
-    opacity: 1;
+/* Touch screens have no hover: the actions stay visible there. Only devices that can hover hide them until then. */
+@media (hover: hover) {
+    .jedomi-msg-actions {
+        opacity: 0;
+    }
+    .jedomi-message-assistant:hover .jedomi-msg-actions,
+    .jedomi-message-user:hover .jedomi-msg-actions,
+    .jedomi-bubble:hover .jedomi-msg-actions,
+    .jedomi-msg-actions:focus-within {
+        opacity: 1;
+    }
 }
 .jedomi-action-btn {
     background: none;
@@ -696,11 +701,11 @@
 
 .jedomi-action-btn.jedomi-feedback-good,
 .jedomi-action-btn.jedomi-action-done {
-    color: #10b981;
+    color: #047857;
 }
 
 .jedomi-action-btn.jedomi-feedback-bad {
-    color: #ef4444;
+    color: #b91c1c;
 }
 
 .jedomi-bubble a[href] {
@@ -836,7 +841,7 @@
 .jedomi-bubble .jedomi-table th,
 .jedomi-table th {
     background: var(--j-surface-2) !important;
-    color: var(--j-muted) !important;
+    color: #4b5563 !important;
     font-weight: 600 !important;
     font-size: 11px !important;
     text-transform: uppercase !important;
@@ -873,7 +878,7 @@
     background: var(--j-surface-2);
     border: 1px solid var(--j-border);
     border-radius: 6px;
-    color: var(--j-muted);
+    color: #4b5563;
     cursor: pointer;
     transition: all 0.2s;
 }
@@ -881,7 +886,6 @@
     background: var(--j-accent);
     border-color: var(--j-accent);
     color: white;
-    transform: translateY(-1px);
 }
 
 /* ── Expand modes ──────────────────────────────────────────────────────────── */
@@ -936,6 +940,9 @@
 }
 .jedomi-confirm-yes,
 .jedomi-confirm-no {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     padding: 8px 16px;
     border-radius: 8px;
     border: none;
@@ -945,18 +952,36 @@
     transition: all 0.2s;
     letter-spacing: 0.01em;
 }
+.jedomi-confirm-icon {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+}
+.jedomi-confirm-msg .jedomi-confirm-icon {
+    vertical-align: -2px;
+    margin-right: 4px;
+}
+/* Send and non-critical confirmations: white on #047857 (5.48:1). */
 .jedomi-confirm-yes {
-    background: #10b981;
-    color: white;
-    box-shadow: 0 2px 6px rgba(16, 185, 129, 0.3);
+    background: #047857;
+    color: #fff;
+    box-shadow: 0 2px 6px rgba(4, 120, 87, 0.3);
 }
 .jedomi-confirm-yes:hover {
-    background: #059669;
+    background: #065f46;
     transform: translateY(-1px);
+}
+/* Critical (destructive) confirmations: white on #b91c1c (6.47:1). */
+.jedomi-action-pending--critical .jedomi-confirm-yes {
+    background: #b91c1c;
+    box-shadow: 0 2px 6px rgba(185, 28, 28, 0.3);
+}
+.jedomi-action-pending--critical .jedomi-confirm-yes:hover {
+    background: #991b1b;
 }
 .jedomi-confirm-no {
     background: var(--j-surface-2);
-    color: var(--j-muted);
+    color: #4b5563;
     border: 1px solid var(--j-border);
 }
 .jedomi-confirm-no:hover {
@@ -990,14 +1015,13 @@
     margin-bottom: 10px;
     line-height: 1.4;
 }
+/* Warning titles: #b91c1c on #fef2f2 (5.91:1); #92400e on #fffbeb (6.84:1) and on #fefce8 (6.85:1). */
 .jedomi-action-pending--critical .jedomi-action-warning {
-    color: #dc2626;
+    color: #b91c1c;
 }
-.jedomi-action-pending--high     .jedomi-action-warning {
-    color: #d97706;
-}
-.jedomi-action-pending--medium   .jedomi-action-warning {
-    color: #ca8a04;
+.jedomi-action-pending--high .jedomi-action-warning,
+.jedomi-action-pending--medium .jedomi-action-warning {
+    color: #92400e;
 }
 .jedomi-action-desc {
     font-size: 12.5px;
@@ -1012,7 +1036,7 @@
 .jedomi-type-confirm-wrap {
     margin: 10px 0 12px;
     font-size: 12px;
-    color: var(--j-muted);
+    color: #4b5563;
 }
 .jedomi-type-confirm-wrap label {
     display: block;
@@ -1034,14 +1058,15 @@
 }
 .jedomi-type-confirm:focus {
     outline: none;
-    border-color: #ef4444;
-    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.08);
+    border-color: #b91c1c;
+    box-shadow: 0 0 0 3px rgba(185, 28, 28, 0.35);
 }
+/* #4b5563 keeps 6.9:1 or more on every card background. */
 .jedomi-action-result {
     margin-top: 8px;
     font-size: 12px;
     min-height: 18px;
-    color: var(--j-muted);
+    color: #4b5563;
 }
 
 /* ── Voice recording ───────────────────────────────────────────────────────── */
@@ -1113,7 +1138,7 @@
     flex-shrink: 0;
 }
 .jedomi-voice-stop {
-    background: #ef4444;
+    background: #b91c1c;
     color: white;
 }
 .jedomi-voice-play {
@@ -1196,7 +1221,7 @@
     justify-content: center;
     cursor: pointer;
     flex-shrink: 0;
-    background: #ef4444;
+    background: #b91c1c;
     color: white;
 }
 
@@ -1262,12 +1287,12 @@
 }
 
 .local_jedomi-admin-card-icon-amber {
-    color: #d97706;
+    color: #b45309;
     background: #fef3c7;
 }
 
 .local_jedomi-admin-card-icon-green {
-    color: #16a34a;
+    color: #15803d;
     background: #dcfce7;
 }
 
@@ -1277,7 +1302,7 @@
 }
 
 .local_jedomi-admin-card-icon-sky {
-    color: #0284c7;
+    color: #0369a1;
     background: #e0f2fe;
 }
 
@@ -1389,7 +1414,7 @@
     width: 2.25rem;
     height: 2.25rem;
     font-size: 1.125rem;
-    color: #0284c7;
+    color: #0369a1;
     background: #e0f2fe;
     border-radius: 0.5rem;
 }
@@ -1418,7 +1443,7 @@
 }
 
 .local_jedomi-admin-int-arrow {
-    color: #9ca3af;
+    color: #6b7280;
     transition: transform 0.2s;
 }
 
@@ -1754,7 +1779,7 @@
     font-size: 0.875rem;
     font-weight: 700;
     color: #fff;
-    background: #0284c7;
+    background: #0369a1;
     border-radius: 0.5rem;
 }
 
@@ -1763,7 +1788,7 @@
 }
 
 .local_jedomi-tg-badge-green {
-    background: #16a34a;
+    background: #15803d;
 }
 
 .local_jedomi-tg-command {
@@ -1780,4 +1805,133 @@
 
 .local_jedomi-tg-command .btn-link {
     color: #7dd3fc;
+}
+
+/* ── Accessibility: keyboard focus, reduced motion and forced colours ─────── */
+.jedomi-trigger:focus-visible,
+.jedomi-btn-icon:focus-visible,
+.jedomi-action-btn:focus-visible,
+.jedomi-quick-btn:focus-visible,
+.jedomi-send-btn:focus-visible,
+.jedomi-input-icon:focus-visible,
+.jedomi-attach-option:focus-visible,
+.jedomi-csv-btn:focus-visible,
+.jedomi-thinking-bar:focus-visible,
+.jedomi-voice-stop:focus-visible,
+.jedomi-voice-play:focus-visible,
+.jedomi-voice-mode-exit:focus-visible,
+.jedomi-confirm-yes:focus-visible,
+.jedomi-confirm-no:focus-visible,
+.jedomi-moodle-link:focus-visible,
+.jedomi-bubble a:focus-visible {
+    outline: 2px solid var(--j-accent);
+    outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .jedomi-sidebar,
+    .jedomi-sidebar *,
+    .jedomi-sidebar *::before,
+    .jedomi-sidebar *::after,
+    .jedomi-trigger,
+    .jedomi-trigger::before,
+    .jedomi-dropzone,
+    .jedomi-dropzone * {
+        animation: none !important;
+        transition: none !important;
+    }
+}
+
+/* Windows high contrast and similar modes: hand the palette over to the system colours. */
+@media (forced-colors: active) {
+    .jedomi-sidebar,
+    .jedomi-trigger,
+    .jedomi-dropzone {
+        --j-accent: Highlight;
+        --j-accent-d: Highlight;
+        --j-accent-l: Canvas;
+        --j-user-bg: Highlight;
+        --j-user-text: HighlightText;
+        --j-border: CanvasText;
+    }
+    .jedomi-input-row:focus-within {
+        outline: 2px solid Highlight;
+        outline-offset: 2px;
+    }
+}
+
+/* ── Navbar alignment and RTL (appended) ───────────────────────────────────── */
+
+/* Below Moodle's fixed-top navbar: amd/src/sidebar.js sets --j-nav-h to the navbar height. */
+.jedomi-sidebar.jedomi-below-navbar {
+    top: var(--j-nav-h);
+    height: calc(100vh - var(--j-nav-h));
+}
+.jedomi-sidebar.jedomi-below-navbar .jedomi-header {
+    height: var(--j-nav-h);
+    min-height: var(--j-nav-h);
+    padding: 0 14px;
+}
+
+/* Core pix icons inside the round/square icon holders: no trailing margin, logo keeps its size. */
+.local_jedomi-admin-card-icon .icon,
+.local_jedomi-admin-int-logo .icon {
+    margin: 0;
+}
+.local_jedomi-tg-logo .icon {
+    width: auto;
+    height: auto;
+    margin: 0;
+    font-size: inherit;
+}
+
+/*
+ * RTL: the panel and the trigger are anchored to the right edge, mirroring the LTR layout.
+ * Moodle already flips styles.css with RTLCSS when it serves the RTL stylesheet, so every
+ * direction-dependent declaration here is marked rtl:ignore: it states the final RTL value
+ * and must not be flipped a second time.
+ */
+[dir="rtl"] .jedomi-sidebar {
+    /*rtl:ignore*/
+    left: auto;
+    /*rtl:ignore*/
+    right: 0;
+    /*rtl:ignore*/
+    border-right: 0;
+    /*rtl:ignore*/
+    border-left: 1px solid var(--j-border);
+}
+[dir="rtl"] .jedomi-sidebar.jedomi-expand-full {
+    /*rtl:ignore*/
+    left: auto !important;
+    /*rtl:ignore*/
+    right: 0 !important;
+}
+[dir="rtl"] .jedomi-closed {
+    /*rtl:ignore*/
+    transform: translateX(100%);
+}
+[dir="rtl"] .jedomi-trigger {
+    /*rtl:ignore*/
+    left: auto;
+    /*rtl:ignore*/
+    right: 24px;
+}
+[dir="rtl"] .jedomi-bubble th,
+[dir="rtl"] .jedomi-bubble td,
+[dir="rtl"] .jedomi-thinking-bar,
+[dir="rtl"] .jedomi-attach-option {
+    text-align: start;
+}
+[dir="rtl"] .jedomi-bubble .jedomi-table th,
+[dir="rtl"] .jedomi-table th {
+    text-align: start !important;
+}
+@media (max-width: 767px) {
+    [dir="rtl"] .jedomi-trigger {
+        /*rtl:ignore*/
+        left: auto;
+        /*rtl:ignore*/
+        right: 16px;
+    }
 }

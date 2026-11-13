@@ -56,7 +56,7 @@
 }}
 <div class="local_jedomi-telegram_profile">
     <div class="d-flex align-items-center mb-4">
-        <span class="local_jedomi-tg-logo mr-3"><i class="fa fa-paper-plane" aria-hidden="true"></i></span>
+        <span class="local_jedomi-tg-logo mr-3">{{#pix}} t/sendmessage, core {{/pix}}</span>
         <div>
             <h2 class="h4 mb-0">{{#str}} telegram_link_title, local_jedomi {{/str}}</h2>
             <p class="text-muted small mb-0">{{#str}} telegram_link_subtitle, local_jedomi {{/str}}</p>
@@ -65,7 +65,7 @@
 
     {{#notconfigured}}
     <div class="alert alert-info d-flex align-items-start" role="alert">
-        <i class="fa fa-info-circle fa-lg mr-2 mt-1" aria-hidden="true"></i>
+        {{#pix}} i/circleinfo, core {{/pix}}
         <div>
             <strong>{{#str}} telegram_admin_not_configured_title, local_jedomi {{/str}}</strong><br>
             <small>{{#str}} telegram_admin_not_configured_desc, local_jedomi {{/str}}
@@ -76,7 +76,7 @@
 
     {{#roleblocked}}
     <div class="alert alert-danger d-flex align-items-center" role="alert">
-        <i class="fa fa-ban fa-lg mr-2" aria-hidden="true"></i>
+        {{#pix}} t/block, core {{/pix}}
         <div>{{#str}} telegram_msg_role_blocked, local_jedomi {{/str}}</div>
     </div>
     {{/roleblocked}}
@@ -84,7 +84,7 @@
     {{#linked}}
     <div class="card mb-4 local_jedomi-tg-linked">
         <div class="card-header d-flex align-items-center">
-            <i class="fa fa-check-circle fa-lg mr-2" aria-hidden="true"></i>
+            {{#pix}} i/checkedcircle, core {{/pix}}
             <strong>{{#str}} telegram_status_connected, local_jedomi {{/str}}</strong>
         </div>
         <div class="card-body">
@@ -93,7 +93,7 @@
                 <p class="text-muted small mb-0">{{#str}} telegram_linked_on, local_jedomi, {{#userdate}} {{linkedtime}}, {{#str}} strftimedatetime, core_langconfig {{/str}} {{/userdate}} {{/str}}</p>
             </div>
             <div class="local_jedomi-tg-howto mb-3">
-                <p class="font-weight-bold fw-bold small mb-2"><i class="fa fa-info-circle mr-1" aria-hidden="true"></i>{{#str}} telegram_howto_title, local_jedomi {{/str}}</p>
+                <p class="font-weight-bold fw-bold small mb-2">{{#pix}} i/circleinfo, core {{/pix}}{{#str}} telegram_howto_title, local_jedomi {{/str}}</p>
                 <ul class="small mb-0">
                     <li>{{#str}} telegram_howto_question, local_jedomi {{/str}}</li>
                     <li>{{#str}} telegram_howto_screenshot, local_jedomi {{/str}}</li>
@@ -105,7 +105,7 @@
                 <input type="hidden" name="sesskey" value="{{sesskey}}">
                 <input type="hidden" name="action" value="unlink">
                 <button type="submit" class="btn btn-outline-danger btn-sm">
-                    <i class="fa fa-unlink mr-1" aria-hidden="true"></i>{{#str}} unlink, local_jedomi {{/str}}
+                    {{#pix}} e/remove_link, core {{/pix}}{{#str}} unlink, local_jedomi {{/str}}
                 </button>
             </form>
         </div>
@@ -115,7 +115,7 @@
     {{#notlinked}}
     <div class="card mb-4">
         <div class="card-header d-flex align-items-center">
-            <i class="fa fa-paper-plane mr-2 local_jedomi-tg-icon" aria-hidden="true"></i>
+            <span class="local_jedomi-tg-icon">{{#pix}} t/sendmessage, core {{/pix}}</span>
             <strong>{{#str}} telegram_not_linked, local_jedomi {{/str}}</strong>
         </div>
         <div class="card-body">
@@ -129,8 +129,8 @@
             </p>
 
             <div class="mb-4">
-                <a href="{{deeplink}}" target="_blank" rel="noopener" class="btn btn-success btn-lg btn-block w-100">
-                    <i class="fa fa-paper-plane mr-2" aria-hidden="true"></i>{{#str}} telegram_open_auto, local_jedomi {{/str}}
+                <a href="{{deeplink}}" target="_blank" rel="noopener" class="btn btn-primary btn-lg btn-block w-100">
+                    {{#pix}} t/sendmessage, core {{/pix}}{{#str}} telegram_open_auto, local_jedomi {{/str}}
                 </a>
                 <p class="text-center text-muted small mt-2 mb-0">{{#str}} telegram_open_auto_help, local_jedomi, {{botusername}} {{/str}}</p>
             </div>
@@ -141,8 +141,8 @@
                     <div>
                         <strong class="small">{{#str}} telegram_link_step1_title, local_jedomi {{/str}}</strong>
                         <p class="small mb-2">{{#str}} telegram_link_step1_desc, local_jedomi, {{botusername}} {{/str}}</p>
-                        <a href="{{deeplink}}" target="_blank" rel="noopener" class="btn btn-sm btn-info">
-                            <i class="fa fa-paper-plane mr-1" aria-hidden="true"></i>{{#str}} telegram_link_open_bot, local_jedomi, {{botusername}} {{/str}}
+                        <a href="{{deeplink}}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary">
+                            {{#pix}} t/sendmessage, core {{/pix}}{{#str}} telegram_link_open_bot, local_jedomi, {{botusername}} {{/str}}
                         </a>
                     </div>
                 </div>
@@ -155,7 +155,7 @@
                             <span id="{{uniqid}}-command">/start {{code}}</span>
                             <button type="button" class="btn btn-link btn-sm p-0" data-action="copytoclipboard"
                                     data-clipboard-target="#{{uniqid}}-command" title="{{#str}} copytoclipboard, local_jedomi {{/str}}">
-                                <i class="fa fa-copy" aria-hidden="true"></i>
+                                {{#pix}} t/copy, core {{/pix}}
                                 <span class="sr-only visually-hidden">{{#str}} copytoclipboard, local_jedomi {{/str}}</span>
                             </button>
                         </div>
@@ -171,13 +171,13 @@
             </div>
 
             <div class="local_jedomi-tg-box mb-3">
-                <p class="small font-weight-bold fw-bold text-muted mb-2"><i class="fa fa-info-circle mr-1" aria-hidden="true"></i>{{#str}} telegram_no_app_title, local_jedomi {{/str}}</p>
+                <p class="small font-weight-bold fw-bold text-muted mb-2">{{#pix}} i/circleinfo, core {{/pix}}{{#str}} telegram_no_app_title, local_jedomi {{/str}}</p>
                 <p class="small mb-2">{{#str}} telegram_no_app_desc, local_jedomi, {{botusername}} {{/str}}</p>
                 <div class="local_jedomi-tg-command d-flex justify-content-between">
                     <span id="{{uniqid}}-command-manual">/start {{code}}</span>
                     <button type="button" class="btn btn-link btn-sm p-0" data-action="copytoclipboard"
                             data-clipboard-target="#{{uniqid}}-command-manual" title="{{#str}} copytoclipboard, local_jedomi {{/str}}">
-                        <i class="fa fa-copy" aria-hidden="true"></i>
+                        {{#pix}} t/copy, core {{/pix}}
                         <span class="sr-only visually-hidden">{{#str}} copytoclipboard, local_jedomi {{/str}}</span>
                     </button>
                 </div>
@@ -187,7 +187,7 @@
                 <input type="hidden" name="sesskey" value="{{sesskey}}">
                 <input type="hidden" name="action" value="generate">
                 <button type="submit" class="btn btn-outline-secondary btn-sm">
-                    <i class="fa fa-refresh mr-1" aria-hidden="true"></i>{{#str}} telegram_link_new_code, local_jedomi {{/str}}
+                    {{#pix}} i/reload, core {{/pix}}{{#str}} telegram_link_new_code, local_jedomi {{/str}}
                 </button>
             </form>
             {{/hascode}}
@@ -214,7 +214,7 @@
                 <input type="hidden" name="sesskey" value="{{sesskey}}">
                 <input type="hidden" name="action" value="generate">
                 <button type="submit" class="btn btn-primary btn-lg btn-block w-100">
-                    <i class="fa fa-paper-plane mr-2" aria-hidden="true"></i>{{#str}} telegram_link_generate, local_jedomi {{/str}}
+                    {{#pix}} t/sendmessage, core {{/pix}}{{#str}} telegram_link_generate, local_jedomi {{/str}}
                 </button>
             </form>
             {{/hascode}}

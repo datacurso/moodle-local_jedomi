@@ -52,7 +52,7 @@
 }}
 <div class="local_jedomi-admin local_jedomi-admin-agents_tab" data-region="local_jedomi/admin/agents" data-edit-agent-id="{{editagentid}}">
     {{< local_jedomi/admin/card }}
-        {{$icon}}fa-chart-bar{{/icon}}
+        {{$icon}}{{#pix}} i/report, core {{/pix}}{{/icon}}
         {{$color}}indigo{{/color}}
         {{$title}}{{#str}} agent_summary, local_jedomi {{/str}}{{/title}}
         {{$body}}
@@ -113,7 +113,7 @@
     </div>
 
     {{< local_jedomi/admin/card }}
-        {{$icon}}fa-robot{{/icon}}
+        {{$icon}}{{#pix}} i/grading, core {{/pix}}{{/icon}}
         {{$color}}purple{{/color}}
         {{$title}}{{#str}} agent_table, local_jedomi {{/str}}{{/title}}
         {{$body}}
@@ -131,7 +131,7 @@
 
     <div class="card local_jedomi-admin-card mb-4">
         <div class="card-header local_jedomi-admin-card-header">
-            <span class="local_jedomi-admin-card-icon local_jedomi-admin-card-icon-blue"><i class="fa fa-plus-circle" aria-hidden="true"></i></span>
+            <span class="local_jedomi-admin-card-icon local_jedomi-admin-card-icon-blue">{{#pix}} t/add, core {{/pix}}</span>
             <h5 class="mb-0" data-region="local_jedomi/admin/agents/form-heading">{{#str}} agent_create, local_jedomi {{/str}}</h5>
         </div>
         <div class="card-body">
@@ -210,10 +210,10 @@
 
                 <div class="local_jedomi-admin-save-row d-flex align-items-center flex-wrap">
                     <button type="submit" class="btn btn-primary mr-2">
-                        <i class="fa fa-plus-circle mr-1" aria-hidden="true"></i><span data-region="local_jedomi/admin/agents/submit-label">{{#str}} agent_create, local_jedomi {{/str}}</span>
+                        {{#pix}} t/add, core {{/pix}}<span data-region="local_jedomi/admin/agents/submit-label">{{#str}} agent_create, local_jedomi {{/str}}</span>
                     </button>
                     <button type="button" class="btn btn-outline-info mr-2" data-action="local_jedomi/admin/agents/preview">
-                        <i class="fa fa-eye mr-1" aria-hidden="true"></i>{{#str}} agent_preview, local_jedomi {{/str}}
+                        {{#pix}} t/preview, core {{/pix}}{{#str}} agent_preview, local_jedomi {{/str}}
                     </button>
                     <button type="button" class="btn btn-outline-secondary d-none" data-action="local_jedomi/admin/agents/cancel-edit">
                         {{#str}} cancel, moodle {{/str}}
@@ -222,9 +222,9 @@
 
                 <div class="local_jedomi-admin-preview d-none" data-region="local_jedomi/admin/agents/preview-panel">
                     <div class="local_jedomi-admin-preview-header">
-                        <i class="fa fa-robot mr-1" aria-hidden="true"></i>{{#str}} agent_preview_result, local_jedomi {{/str}}
+                        {{#pix}} i/grading, core {{/pix}}{{#str}} agent_preview_result, local_jedomi {{/str}}
                         <span class="ml-2 d-none" data-region="local_jedomi/admin/agents/preview-spinner">
-                            <i class="fa fa-spinner fa-spin" aria-hidden="true"></i>
+                            {{#pix}} i/loading, core {{/pix}}
                             <span class="sr-only visually-hidden">{{#str}} loading, admin {{/str}}</span>
                         </span>
                     </div>
@@ -235,7 +235,7 @@
     </div>
 
     {{< local_jedomi/admin/card }}
-        {{$icon}}fa-trash-alt{{/icon}}
+        {{$icon}}{{#pix}} t/delete, core {{/pix}}{{/icon}}
         {{$color}}red{{/color}}
         {{$title}}{{#str}} agent_purge, local_jedomi {{/str}}{{/title}}
         {{$body}}
@@ -271,7 +271,7 @@
                     </div>
                     <div class="col-md-3">
                         <button type="submit" class="btn btn-danger mb-3">
-                            <i class="fa fa-trash-alt mr-1" aria-hidden="true"></i>{{#str}} agent_purge_btn, local_jedomi {{/str}}
+                            {{#pix}} t/delete, core {{/pix}}{{#str}} agent_purge_btn, local_jedomi {{/str}}
                         </button>
                     </div>
                 </div>

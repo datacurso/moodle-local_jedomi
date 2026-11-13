@@ -46,7 +46,7 @@
 <div class="small">
     {{^ok}}
     <div class="d-flex align-items-start local_jedomi-admin-text-warn">
-        <i class="fa fa-times-circle mr-2 mt-1" aria-hidden="true"></i>
+        {{#pix}} e/cancel_solid_circle, core {{/pix}}
         <div>
             <strong class="d-block">{{#networkerror}}{{#str}} webhook_live_network_error, local_jedomi {{/str}}{{/networkerror}}{{^networkerror}}{{#str}} webhook_live_api_error, local_jedomi {{/str}}{{/networkerror}}</strong>
             <span>{{error}}</span>
@@ -64,14 +64,14 @@
     </div>
     {{#telegramerror}}
     <div class="local_jedomi-admin-status local_jedomi-admin-status-warn mb-2">
-        <i class="fa fa-exclamation-triangle mr-1" aria-hidden="true"></i>
+        {{#pix}} i/warning, core {{/pix}}
         <strong>{{#str}} webhook_live_telegram_error, local_jedomi {{/str}}</strong><br>
         <span>{{telegramerror}}</span>
     </div>
     {{/telegramerror}}
     {{#storederror}}
     <div class="local_jedomi-admin-status local_jedomi-admin-status-warn">
-        <i class="fa fa-info-circle mr-1" aria-hidden="true"></i>
+        {{#pix}} i/circleinfo, core {{/pix}}
         <strong>{{#str}} webhook_live_last_registration, local_jedomi {{/str}}</strong><br>
         <span>{{storederror}}</span>
         {{#storederrortime}}
@@ -80,7 +80,7 @@
     </div>
     {{/storederror}}
     {{#healthy}}
-    <div class="local_jedomi-admin-text-ok"><i class="fa fa-check-circle mr-1" aria-hidden="true"></i>{{#str}} webhook_live_healthy, local_jedomi {{/str}}</div>
+    <div class="local_jedomi-admin-text-ok">{{#pix}} i/checkedcircle, core {{/pix}}{{#str}} webhook_live_healthy, local_jedomi {{/str}}</div>
     {{/healthy}}
     {{/ok}}
 </div>

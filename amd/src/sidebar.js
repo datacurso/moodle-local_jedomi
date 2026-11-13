@@ -172,7 +172,7 @@ define(['core/log', 'core/ajax', 'core/templates', 'core/str', 'core/notificatio
         const panel = document.createElement('div');
         panel.id = 'jedomi-sidebar';
         panel.className = 'jedomi-sidebar jedomi-closed jedomi-config-error';
-        panel.setAttribute('role', 'dialog');
+        panel.setAttribute('role', 'complementary');
         panel.setAttribute('aria-label', 'Jedomi');
         const alert = document.createElement('div');
         alert.className = 'alert alert-warning m-3';
@@ -433,6 +433,9 @@ define(['core/log', 'core/ajax', 'core/templates', 'core/str', 'core/notificatio
         // Keyboard shortcuts. Alt+Shift is used because Ctrl+Shift+J and Ctrl+Shift+N are browser shortcuts (console
         // and private window). The physical key (code) is checked, as Alt changes the character on some keyboards.
         document.addEventListener('keydown', (e) => {
+            // A key pressed in a core modal (for example the new conversation confirmation) belongs to that modal:
+            // its Escape only closes the modal, not the sidebar.
+            if (isInCoreModal(e.target)) return;
             // Escape → end the voice conversation first, then close the sidebar.
             if (e.key === 'Escape' && (voiceMode || voiceModeStarting)) {
                 exitVoiceMode();
@@ -518,16 +521,9 @@ define(['core/log', 'core/ajax', 'core/templates', 'core/str', 'core/notificatio
         // Align with Moodle's fixed-top navbar: position only, the layout is not touched.
         const navbar = document.querySelector('nav.navbar.fixed-top, .navbar.fixed-top');
         const navH   = navbar ? navbar.getBoundingClientRect().height : 0;
-        panel.style.top    = navH > 0 ? navH + 'px' : '0';
-        panel.style.height = navH > 0 ? `calc(100vh - ${navH}px)` : '100vh';
-
-        // The Jedomi header has the same visual height as the navbar.
-        const jedomiHeader = panel.querySelector('.jedomi-header');
-        if (jedomiHeader && navH > 0) {
-            jedomiHeader.style.height    = navH + 'px';
-            jedomiHeader.style.minHeight = navH + 'px';
-            jedomiHeader.style.padding   = '0 14px';
-        }
+        // The stylesheet reads --j-nav-h: top and height of the panel, height of its header (same as the navbar).
+        panel.style.setProperty('--j-nav-h', navH > 0 ? navH + 'px' : '0px');
+        panel.classList.toggle('jedomi-below-navbar', navH > 0);
 
         panel.classList.replace('jedomi-closed', 'jedomi-open');
         // The open panel is reachable with the keyboard and by screen readers again.
@@ -540,11 +536,22 @@ define(['core/log', 'core/ajax', 'core/templates', 'core/str', 'core/notificatio
         g('jedomi-input')?.focus();
     };
 
-    // Keep the focus inside the open panel: Tab after its last control goes to the first one, and Shift+Tab before
-    // its first control goes to the last one.
+    // Whether an element is inside a core modal (Bootstrap .modal), which sits above the panel.
+    const isInCoreModal = (el) => !!(el && el.closest && el.closest('.modal'));
+
+    // Whether the open panel covers the whole page: full screen, or the phone layout where it takes the full width.
+    // Only then does it behave as a dialog; beside the page it is a complementary region the user can Tab out of.
+    const panelCoversPage = (panel) => panel.classList.contains('jedomi-expand-full')
+        || window.matchMedia('(max-width: 767px)').matches;
+
+    // While the panel covers the page, keep the focus inside it: Tab after its last control goes to the first one,
+    // and Shift+Tab before its first control goes to the last one. The focus is never taken back from a core modal.
     const trapFocus = (e) => {
         const panel = g('jedomi-sidebar');
-        if (e.key !== 'Tab' || !panel?.classList.contains('jedomi-open')) return;
+        if (e.key !== 'Tab' || !panel?.classList.contains('jedomi-open') || !panelCoversPage(panel)) return;
+        if (isInCoreModal(document.activeElement) || isInCoreModal(e.target) || document.querySelector('.modal.show')) {
+            return;
+        }
         const focusable = [...panel.querySelectorAll(
             'button:not([disabled]), [href], input:not([disabled]):not([type="file"]), textarea:not([disabled]), '
             + 'select:not([disabled]), [tabindex]:not([tabindex="-1"])'

@@ -67,7 +67,7 @@
         <input type="hidden" name="api_role" value="{{role}}">
 
         {{< local_jedomi/admin/card }}
-            {{$icon}}fa-cloud{{/icon}}
+            {{$icon}}{{#pix}} i/siteevent, core {{/pix}}{{/icon}}
             {{$color}}sky{{/color}}
             {{$title}}{{#str}} tab_apis_heading, local_jedomi {{/str}}{{/title}}
             {{$subtitle}}{{#str}} tab_apis_heading_help, local_jedomi {{/str}}{{/subtitle}}
@@ -125,8 +125,10 @@
             {{/body}}
         {{/ local_jedomi/admin/card }}
 
-        <div class="local_jedomi-admin-save-row">
-            <button type="submit" class="btn btn-primary"><i class="fa fa-save mr-1" aria-hidden="true"></i>{{#str}} savechanges, moodle {{/str}}</button>
+        <div class="form-group row mt-3">
+            <div class="col-md-9 offset-md-3">
+                <button type="submit" class="btn btn-primary">{{#str}} savechanges, moodle {{/str}}</button>
+            </div>
         </div>
     </form>
 </div>

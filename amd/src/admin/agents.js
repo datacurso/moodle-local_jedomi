@@ -494,11 +494,23 @@ const previewAgent = async(root) => {
         showMessage(root.querySelector(Selectors.agents.formMessage), 'warning', strings.agent_preview_prompt_required);
         return;
     }
+    const button = root.querySelector(Selectors.agents.preview);
+    if (button && button.disabled) {
+        return;
+    }
     const pending = new Pending('local_jedomi/admin/agents:preview');
     const body = root.querySelector(Selectors.agents.previewBody);
     const spinner = root.querySelector(Selectors.agents.previewSpinner);
+    const setBusy = (busy) => {
+        if (button) {
+            button.disabled = busy;
+            button.setAttribute('aria-busy', busy ? 'true' : 'false');
+        }
+        body.setAttribute('aria-busy', busy ? 'true' : 'false');
+        spinner.classList.toggle('d-none', !busy);
+    };
     root.querySelector(Selectors.agents.previewPanel).classList.remove('d-none');
-    spinner.classList.remove('d-none');
+    setBusy(true);
     body.textContent = '';
     let context;
     try {
@@ -517,9 +529,10 @@ const previewAgent = async(root) => {
         Templates.replaceNodeContents(body, html, js);
     } catch (error) {
         Notification.exception(error);
+    } finally {
+        setBusy(false);
+        pending.resolve();
     }
-    spinner.classList.add('d-none');
-    pending.resolve();
 };
 
 /**

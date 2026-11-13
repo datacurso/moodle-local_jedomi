@@ -73,22 +73,23 @@
                 <td>{{#lastrun}}{{#userdate}} {{lastrun}}, {{#str}} strftimedatetimeshort, core_langconfig {{/str}} {{/userdate}}{{/lastrun}}{{^lastrun}}-{{/lastrun}}</td>
                 <td>
                     <div class="dropdown">
-                        <button class="btn btn-sm btn-outline-secondary" type="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false"
+                        <button class="btn btn-sm btn-outline-secondary" type="button" data-toggle="dropdown" data-boundary="viewport"
+                                data-display="static" aria-haspopup="true" aria-expanded="false"
                                 title="{{#str}} agent_actions_menu, local_jedomi {{/str}}">
-                            <i class="fa fa-ellipsis-v" aria-hidden="true"></i>
+                            {{#pix}} i/menu, core {{/pix}}
                             <span class="sr-only visually-hidden">{{#str}} agent_actions_menu, local_jedomi {{/str}}</span>
                         </button>
                         <div class="dropdown-menu dropdown-menu-right">
-                            <a class="dropdown-item" href="#" data-agent-action="details" data-agent-id="{{id}}"><i class="fa fa-eye mr-2" aria-hidden="true"></i>{{#str}} agent_view_details, local_jedomi {{/str}}</a>
+                            <a class="dropdown-item" href="#" data-agent-action="details" data-agent-id="{{id}}">{{#pix}} t/preview, core {{/pix}}{{#str}} agent_view_details, local_jedomi {{/str}}</a>
                             {{#canmanage}}
-                            <a class="dropdown-item" href="#" data-agent-action="edit" data-agent-id="{{id}}"><i class="fa fa-pen mr-2" aria-hidden="true"></i>{{#str}} agent_edit, local_jedomi {{/str}}</a>
-                            <a class="dropdown-item" href="#" data-agent-action="run" data-agent-id="{{id}}"><i class="fa fa-play mr-2" aria-hidden="true"></i>{{#str}} agent_run_now, local_jedomi {{/str}}</a>
+                            <a class="dropdown-item" href="#" data-agent-action="edit" data-agent-id="{{id}}">{{#pix}} t/edit, core {{/pix}}{{#str}} agent_edit, local_jedomi {{/str}}</a>
+                            <a class="dropdown-item" href="#" data-agent-action="run" data-agent-id="{{id}}">{{#pix}} t/play, core {{/pix}}{{#str}} agent_run_now, local_jedomi {{/str}}</a>
                             <a class="dropdown-item" href="#" data-agent-action="toggle" data-agent-id="{{id}}">
-                                {{#enabled}}<i class="fa fa-toggle-off mr-2" aria-hidden="true"></i>{{#str}} agent_disable, local_jedomi {{/str}}{{/enabled}}
-                                {{^enabled}}<i class="fa fa-toggle-on mr-2" aria-hidden="true"></i>{{#str}} agent_enable, local_jedomi {{/str}}{{/enabled}}
+                                {{#enabled}}{{#pix}} t/hide, core {{/pix}}{{#str}} agent_disable, local_jedomi {{/str}}{{/enabled}}
+                                {{^enabled}}{{#pix}} t/show, core {{/pix}}{{#str}} agent_enable, local_jedomi {{/str}}{{/enabled}}
                             </a>
                             <div class="dropdown-divider"></div>
-                            <a class="dropdown-item text-danger" href="#" data-agent-action="delete" data-agent-id="{{id}}"><i class="fa fa-trash-alt mr-2" aria-hidden="true"></i>{{#str}} agent_delete, local_jedomi {{/str}}</a>
+                            <a class="dropdown-item text-danger" href="#" data-agent-action="delete" data-agent-id="{{id}}">{{#pix}} t/delete, core {{/pix}}{{#str}} agent_delete, local_jedomi {{/str}}</a>
                             {{/canmanage}}
                         </div>
                     </div>

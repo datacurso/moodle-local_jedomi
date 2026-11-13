@@ -55,12 +55,12 @@
     }
 }}
 {{^ok}}
-<div class="text-danger"><i class="fa fa-exclamation-triangle mr-1" aria-hidden="true"></i>{{error}}</div>
+<div class="text-danger">{{#pix}} e/cancel_solid_circle, core {{/pix}}{{error}}</div>
 {{/ok}}
 {{#ok}}
 {{#cached}}
 <div class="alert alert-info d-flex align-items-center justify-content-between small p-2 mb-2">
-    <span><i class="fa fa-archive mr-1" aria-hidden="true"></i>{{#str}} agent_preview_cached, local_jedomi {{/str}} {{#userdate}} {{cachedat}}, {{#str}} strftimedatetime, core_langconfig {{/str}} {{/userdate}}</span>
+    <span>{{#pix}} i/db, core {{/pix}}{{#str}} agent_preview_cached, local_jedomi {{/str}} {{#userdate}} {{cachedat}}, {{#str}} strftimedatetime, core_langconfig {{/str}} {{/userdate}}</span>
     {{#hash}}
     <button type="button" class="btn btn-sm btn-outline-danger" data-action="local_jedomi/admin/agents/clear-cache" data-hash="{{hash}}">
         {{#str}} agent_preview_clear_cache, local_jedomi {{/str}}
@@ -83,7 +83,7 @@
         <div class="local_jedomi-admin-timeline-tools">
             {{#toolcalls}}
             <details class="mb-1">
-                <summary class="local_jedomi-admin-summary-tool"><i class="fa fa-wrench mr-1" aria-hidden="true"></i>{{name}}</summary>
+                <summary class="local_jedomi-admin-summary-tool">{{#pix}} t/preferences, core {{/pix}}{{name}}</summary>
                 <pre class="local_jedomi-admin-code"><code>{{args}}</code></pre>
             </details>
             {{/toolcalls}}
@@ -93,7 +93,7 @@
         <div class="local_jedomi-admin-timeline-tools">
             {{#toolresults}}
             <details class="mb-1">
-                <summary class="local_jedomi-admin-summary-result"><i class="fa fa-table mr-1" aria-hidden="true"></i>{{#str}} agent_preview_result_n, local_jedomi, {{index}} {{/str}}</summary>
+                <summary class="local_jedomi-admin-summary-result">{{#pix}} e/table, core {{/pix}}{{#str}} agent_preview_result_n, local_jedomi, {{index}} {{/str}}</summary>
                 <pre class="local_jedomi-admin-code local_jedomi-admin-code-result"><code>{{text}}</code></pre>
             </details>
             {{/toolresults}}
@@ -111,7 +111,7 @@
         <div class="d-flex justify-content-between align-items-center flex-wrap">
             <strong>{{tool}}</strong>
             <span>{{#str}} agent_preview_tool_stats, local_jedomi, { "duration": "{{duration}}", "rows": {{rows}} } {{/str}}</span>
-            {{#haserror}}<span class="text-danger"><i class="fa fa-times-circle mr-1" aria-hidden="true"></i>{{error}}</span>{{/haserror}}
+            {{#haserror}}<span class="text-danger">{{#pix}} e/cancel_solid_circle, core {{/pix}}{{error}}</span>{{/haserror}}
         </div>
         {{#hasresultpreview}}
         <details class="mt-1">
@@ -129,7 +129,7 @@
     {{/profiler}}
     {{#hastotaltime}}
     <div class="local_jedomi-admin-text-ok font-weight-bold fw-bold small py-1">
-        <i class="fa fa-bolt mr-1" aria-hidden="true"></i>{{#str}} agent_preview_total_time, local_jedomi, {{totaltime}} {{/str}}
+        {{#pix}} i/new, core {{/pix}}{{#str}} agent_preview_total_time, local_jedomi, {{totaltime}} {{/str}}
     </div>
     {{/hastotaltime}}
     <hr class="my-2">

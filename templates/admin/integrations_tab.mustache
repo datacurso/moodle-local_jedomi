@@ -69,7 +69,7 @@
     <div class="local_jedomi-admin-int-item{{#enabled}} enabled{{/enabled}}" data-region="local_jedomi/admin/integrations/telegram">
         <div class="local_jedomi-admin-int-header">
             <div class="local_jedomi-admin-int-meta">
-                <span class="local_jedomi-admin-int-logo"><i class="fa fa-paper-plane" aria-hidden="true"></i></span>
+                <span class="local_jedomi-admin-int-logo">{{#pix}} t/sendmessage, core {{/pix}}</span>
                 <div>
                     <span class="local_jedomi-admin-int-name">
                         {{#str}} telegram_heading, local_jedomi {{/str}}
@@ -90,7 +90,7 @@
                         data-action="local_jedomi/admin/integrations/expand"
                         aria-expanded="{{#enabled}}true{{/enabled}}{{^enabled}}false{{/enabled}}"
                         title="{{#str}} telegram_setup_guide, local_jedomi {{/str}}">
-                    <i class="fa fa-chevron-down" aria-hidden="true"></i>
+                    {{#pix}} t/expanded, core {{/pix}}
                     <span class="sr-only visually-hidden">{{#str}} telegram_heading, local_jedomi {{/str}}</span>
                 </button>
             </div>
@@ -101,11 +101,11 @@
                 {{#tokenset}}
                 <div class="local_jedomi-admin-status mb-3{{#verified}} local_jedomi-admin-status-ok{{/verified}}{{^verified}} local_jedomi-admin-status-warn{{/verified}}">
                     {{#verified}}
-                    <i class="fa fa-check-circle mr-1" aria-hidden="true"></i>
+                    {{#pix}} i/checkedcircle, core {{/pix}}
                     {{#str}} telegram_status_connected, local_jedomi {{/str}} — <strong>@{{botusername}}</strong> ({{botfirstname}})
                     {{/verified}}
                     {{^verified}}
-                    <i class="fa fa-times-circle mr-1" aria-hidden="true"></i>
+                    {{#pix}} e/cancel_solid_circle, core {{/pix}}
                     {{#str}} telegram_status_disconnected, local_jedomi {{/str}} — {{#str}} telegram_status_invalid_token, local_jedomi {{/str}}
                     {{/verified}}
                 </div>
@@ -118,7 +118,7 @@
                         <button type="button" class="btn btn-outline-secondary" data-action="copytoclipboard"
                                 data-clipboard-target="#{{uniqid}}-webhook-url"
                                 title="{{#str}} copytoclipboard, local_jedomi {{/str}}">
-                            <i class="fa fa-copy" aria-hidden="true"></i>
+                            {{#pix}} t/copy, core {{/pix}}
                             <span class="sr-only visually-hidden">{{#str}} copytoclipboard, local_jedomi {{/str}}</span>
                         </button>
                     </div>
@@ -128,20 +128,20 @@
                 {{#tokenset}}
                 <div class="local_jedomi-admin-webhook-box mt-3">
                     <div class="d-flex align-items-center justify-content-between mb-2">
-                        <strong><i class="fa fa-plug mr-1" aria-hidden="true"></i>{{#str}} telegram_webhook_status, local_jedomi {{/str}}</strong>
+                        <strong>{{#pix}} i/link, core {{/pix}}{{#str}} telegram_webhook_status, local_jedomi {{/str}}</strong>
                         <button type="button" class="btn btn-outline-secondary btn-sm" data-action="local_jedomi/admin/integrations/check-webhook">
                             <span data-region="local_jedomi/admin/integrations/button-label">
-                                <i class="fa fa-sync mr-1" aria-hidden="true"></i>{{#str}} check_webhook, local_jedomi {{/str}}
+                                {{#pix}} i/reload, core {{/pix}}{{#str}} check_webhook, local_jedomi {{/str}}
                             </span>
                             <span class="d-none" data-region="local_jedomi/admin/integrations/button-busy">
-                                <i class="fa fa-spinner fa-pulse mr-1" aria-hidden="true"></i>{{#str}} webhook_checking, local_jedomi {{/str}}
+                                {{#pix}} i/loading, core {{/pix}}{{#str}} webhook_checking, local_jedomi {{/str}}
                             </span>
                         </button>
                     </div>
                     <div class="small">
                         {{#haslasterror}}
-                        <div class="d-flex align-items-start text-warning-emphasis local_jedomi-admin-text-warn">
-                            <i class="fa fa-exclamation-triangle mr-2 mt-1" aria-hidden="true"></i>
+                        <div class="d-flex align-items-start text-warning local_jedomi-admin-text-warn">
+                            {{#pix}} i/warning, core {{/pix}}
                             <div>
                                 <strong class="d-block">{{#str}} webhook_error, local_jedomi {{/str}}</strong>
                                 <span>{{lasterror}}</span>
@@ -152,10 +152,10 @@
                         </div>
                         {{/haslasterror}}
                         {{#webhookok}}
-                        <div class="local_jedomi-admin-text-ok"><i class="fa fa-check-circle mr-1" aria-hidden="true"></i>{{#str}} webhook_ok, local_jedomi {{/str}}</div>
+                        <div class="local_jedomi-admin-text-ok">{{#pix}} i/checkedcircle, core {{/pix}}{{#str}} webhook_ok, local_jedomi {{/str}}</div>
                         {{/webhookok}}
                         {{#webhooknotchecked}}
-                        <div class="text-muted"><i class="fa fa-minus-circle mr-1" aria-hidden="true"></i>{{#str}} webhook_not_checked, local_jedomi {{/str}}</div>
+                        <div class="text-muted">{{#pix}} i/excluded, core {{/pix}}{{#str}} webhook_not_checked, local_jedomi {{/str}}</div>
                         {{/webhooknotchecked}}
                     </div>
 
@@ -164,10 +164,10 @@
                     <div class="local_jedomi-admin-webhook-drop">
                         <button type="button" class="btn btn-outline-danger btn-sm" data-action="local_jedomi/admin/integrations/drop-pending">
                             <span data-region="local_jedomi/admin/integrations/button-label">
-                                <i class="fa fa-trash-alt mr-1" aria-hidden="true"></i>{{#str}} drop_pending_updates, local_jedomi {{/str}}
+                                {{#pix}} t/delete, core {{/pix}}{{#str}} drop_pending_updates, local_jedomi {{/str}}
                             </span>
                             <span class="d-none" data-region="local_jedomi/admin/integrations/button-busy">
-                                <i class="fa fa-spinner fa-pulse mr-1" aria-hidden="true"></i>{{#str}} drop_pending_running, local_jedomi {{/str}}
+                                {{#pix}} i/loading, core {{/pix}}{{#str}} drop_pending_running, local_jedomi {{/str}}
                             </span>
                         </button>
                         <span class="form-text text-muted small">{{#str}} drop_pending_updates_help, local_jedomi {{/str}}</span>
@@ -183,7 +183,7 @@
 
             <details class="local_jedomi-admin-int-section local_jedomi-admin-guide">
                 <summary class="font-weight-bold fw-bold">
-                    <i class="fa fa-list-ol mr-1" aria-hidden="true"></i>{{#str}} telegram_setup_guide, local_jedomi {{/str}}
+                    {{#pix}} e/numbered_list, core {{/pix}}{{#str}} telegram_setup_guide, local_jedomi {{/str}}
                 </summary>
                 <p class="local_jedomi-admin-guide-title mt-3">{{#str}} telegram_step_admin_title, local_jedomi {{/str}}</p>
                 {{#adminsteps}}
@@ -195,14 +195,14 @@
                         {{#showwebhookstate}}
                         {{#isconfigured}}
                         <div class="local_jedomi-admin-status local_jedomi-admin-status-ok mt-2">
-                            <i class="fa fa-check-circle mr-1" aria-hidden="true"></i>
+                            {{#pix}} i/checkedcircle, core {{/pix}}
                             <strong>{{#str}} telegram_webhook_auto_ok_title, local_jedomi {{/str}}</strong> — {{#str}} telegram_webhook_auto_ok_desc, local_jedomi {{/str}}
                         </div>
                         {{/isconfigured}}
                         {{^isconfigured}}
                         {{#tokenset}}
                         <div class="local_jedomi-admin-status local_jedomi-admin-status-warn mt-2">
-                            <i class="fa fa-exclamation-triangle mr-1" aria-hidden="true"></i>
+                            {{#pix}} i/warning, core {{/pix}}
                             <strong>{{#str}} telegram_webhook_auto_missing_title, local_jedomi {{/str}}</strong> — {{#str}} telegram_webhook_auto_missing_desc, local_jedomi {{/str}}
                         </div>
                         {{/tokenset}}
@@ -228,7 +228,7 @@
 
     {{#showerroralert}}
     <div class="alert alert-warning d-flex align-items-start mt-3" role="alert">
-        <i class="fa fa-exclamation-triangle fa-lg mr-2 mt-1" aria-hidden="true"></i>
+        {{#pix}} i/warning, core {{/pix}}
         <div>
             <strong>{{#str}} webhook_error_alert_title, local_jedomi {{/str}}</strong><br>
             <small>

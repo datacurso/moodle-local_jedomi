@@ -56,7 +56,7 @@
 }}
 <div class="local_jedomi-admin local_jedomi-admin-profiler_tab">
     {{< local_jedomi/admin/card }}
-        {{$icon}}fa-tachometer-alt{{/icon}}
+        {{$icon}}{{#pix}} i/dashboard, core {{/pix}}{{/icon}}
         {{$color}}amber{{/color}}
         {{$title}}{{#str}} query_profiler_heading, local_jedomi {{/str}}{{/title}}
         {{$body}}
@@ -105,7 +105,7 @@
                         </select>
                     </div>
                     <div class="col-md-3 mb-2">
-                        <button type="submit" class="btn btn-sm btn-primary w-100"><i class="fa fa-filter mr-1" aria-hidden="true"></i>{{#str}} agent_apply_filters, local_jedomi {{/str}}</button>
+                        <button type="submit" class="btn btn-sm btn-primary w-100">{{#pix}} i/filter, core {{/pix}}{{#str}} agent_apply_filters, local_jedomi {{/str}}</button>
                     </div>
                 </div>
             </form>
