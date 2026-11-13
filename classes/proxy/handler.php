@@ -123,12 +123,13 @@ class handler {
 
         $voicemode = !empty($input['voice_mode']) && \local_jedomi\ai\model_settings::is_voice_enabled();
         $system = system_message::build($role, $spt, $context, $voicemode);
-        if (self::run(array_merge([$system], $messages), $role, $userid, $anonymizer)) {
+        // The signed course is also the context the tools of other plugins are offered in.
+        $requestcontext = $courseid > SITEID
+            ? (\context_course::instance($courseid, IGNORE_MISSING) ?: \context_system::instance())
+            : \context_system::instance();
+        if (self::run(array_merge([$system], $messages), $role, $userid, $anonymizer, $requestcontext)) {
             // Audit trail without the conversation: who was answered, where and through which channel.
-            $eventcontext = $courseid > SITEID
-                ? (\context_course::instance($courseid, IGNORE_MISSING) ?: \context_system::instance())
-                : \context_system::instance();
-            \local_jedomi\event\chat_answered::create_for_channel('web', $eventcontext, $userid)->trigger();
+            \local_jedomi\event\chat_answered::create_for_channel('web', $requestcontext, $userid)->trigger();
         }
     }
 
@@ -308,13 +309,16 @@ class handler {
      * @param string $role     User role (already validated).
      * @param int    $userid   Moodle user the AI calls are made for.
      * @param \local_jedomi\local\anonymizer|null $anonymizer Anonymiser of the request; null for a new one.
+     * @param \context|null $toolcontext Context the tools of other plugins are offered in (the signed course or the
+     *                                   system); null offers none.
      * @return bool True when an answer of the AI was sent to the user, false on an error or a stopped answer.
      */
     public static function run(
         array $messages,
         string $role,
         int $userid,
-        ?\local_jedomi\local\anonymizer $anonymizer = null
+        ?\local_jedomi\local\anonymizer $anonymizer = null,
+        ?\context $toolcontext = null
     ): bool {
         require_once(__DIR__ . '/../../lib.php');
         \local_jedomi_log('RUN_START', ['role' => $role, 'user_message_count' => count($messages)]);
@@ -324,6 +328,10 @@ class handler {
             // Offered only in the web chat, where the user confirms each send.
             $tools[] = message_service::tool_definition();
         }
+        // Tools of other plugins (tool registry hook), offered by each plugin to this user in this context. Only these
+        // can run under their names: a plugin tool that was not offered is an unknown tool.
+        $plugintools = $toolcontext !== null ? \local_jedomi\local\plugin_tools::available($userid, $toolcontext, 'web') : [];
+        $tools = array_merge($tools, \local_jedomi\local\plugin_tools::definitions($plugintools));
         $toolrepeatcounts = [];
         // Personal data of the messages and of the tool results reaches the AI anonymised with the level of the
         // Privacy tab; the answer shown to the user gets the real values back.
@@ -438,7 +446,9 @@ class handler {
                     $result = json_encode(['error' => get_string('error_unknown_tool', 'local_jedomi', $name)]);
                 } else {
                     try {
-                        $result = self::execute_tool_by_name($name, $args, $role);
+                        $result = isset($plugintools[$name])
+                            ? self::execute_plugin_tool($plugintools[$name], $args, $role)
+                            : self::execute_tool_by_name($name, $args, $role);
                     } catch (\Throwable $e) {
                         $result = json_encode([
                             'error' => 'tool_failed',
@@ -565,6 +575,20 @@ class handler {
      */
     public static function run_tool(string $name, array $args, string $role): string {
         return self::execute_tool_by_name($name, $args, $role);
+    }
+
+    /**
+     * Run a tool of another plugin as the session user, logged like the tools of Jedomi.
+     *
+     * @param \local_jedomi\agent\tool\agent_tool $tool Tool offered by its plugin for this request.
+     * @param array $args Tool arguments.
+     * @param string $role User role, for the log.
+     * @return string Result of the tool.
+     */
+    private static function execute_plugin_tool(\local_jedomi\agent\tool\agent_tool $tool, array $args, string $role): string {
+        \local_jedomi_log('TOOL_CALL', ['tool' => $tool->get_name(), 'arg_names' => array_keys($args), 'role' => $role,
+            'source' => 'plugin']);
+        return \local_jedomi\local\plugin_tools::execute($tool, $args);
     }
 
     /**
