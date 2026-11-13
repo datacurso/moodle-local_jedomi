@@ -37,6 +37,8 @@ require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/testable_provider_api
  * @covers     \local_jedomi\agent\preview_runner
  */
 final class preview_runner_test extends \advanced_testcase {
+    use \local_jedomi\tests\spanish_strings;
+
     #[\Override]
     protected function tearDown(): void {
         client::set_instance_for_testing(null);
@@ -435,7 +437,7 @@ final class preview_runner_test extends \advanced_testcase {
             $this->assertStringContainsString($key, $source);
             $this->assertNotSame(
                 $manager->get_string($key, 'local_jedomi', 3, 'en'),
-                $manager->get_string($key, 'local_jedomi', 3, 'es'),
+                self::plugin_spanish_string($key, 3),
                 "{$key} is translated"
             );
         }

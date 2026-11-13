@@ -34,7 +34,7 @@ final class general_settings_form_test extends \advanced_testcase {
     public function test_submitted_values_are_returned(): void {
         $this->resetAfterTest();
         $this->setAdminUser();
-        general_settings_form::mock_submit(['spt_secret' => 's3cret']);
+        general_settings_form::mock_submit(['spt_secret' => 's3cret', 'profiler_slow_ms' => 1000, 'profiler_retention_days' => 30]);
 
         $data = (new general_settings_form())->get_data();
 
@@ -82,7 +82,12 @@ final class general_settings_form_test extends \advanced_testcase {
     public function test_training_data_option_is_not_shown(): void {
         $this->resetAfterTest();
         $this->setAdminUser();
-        general_settings_form::mock_submit(['spt_secret' => 's3cret', 'collect_training_data' => 1]);
+        general_settings_form::mock_submit([
+            'spt_secret' => 's3cret',
+            'profiler_slow_ms' => 1000,
+            'profiler_retention_days' => 30,
+            'collect_training_data' => 1,
+        ]);
 
         $form = new general_settings_form();
         ob_start();

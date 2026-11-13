@@ -137,7 +137,7 @@ class ws_runner {
      * @param \ReflectionMethod $method Method of the function (from resolve()).
      * @param array $args Arguments by name.
      * @param bool $intransaction Run inside a delegated transaction committed only when the call succeeds.
-     * @return mixed Result of the function.
+     * @return mixed Result of the function, shaped by its return description.
      * @throws \moodle_exception missingparam, ws_invalid_parameters, ws_execute_error or the error of the function.
      */
     public static function call(\ReflectionMethod $method, array $args, bool $intransaction = false) {
@@ -158,7 +158,6 @@ class ws_runner {
             if ($transaction) {
                 $transaction->allow_commit();
             }
-            return $result;
         } catch (\Throwable $e) {
             if ($transaction) {
                 try {
@@ -179,6 +178,38 @@ class ws_runner {
                 throw $e;
             }
             throw new \moodle_exception('ws_execute_error', 'local_jedomi', '', $e->getMessage() . ' [' . get_class($e) . ']');
+        }
+        return self::clean_result($method, $result);
+    }
+
+    /**
+     * Shape the result of a web service function with its return description, as Moodle does for every web service
+     * call: lists become lists (not arrays keyed by id) and only the described fields are kept.
+     *
+     * Functions without a return description get their result unchanged. A result that does not match its description
+     * is also returned unchanged: the function already ran (and its changes are committed), so it is not reported as
+     * failed.
+     *
+     * @param \ReflectionMethod $method Method of the function (from resolve()).
+     * @param mixed $result Result of the function.
+     * @return mixed The cleaned result.
+     */
+    private static function clean_result(\ReflectionMethod $method, $result) {
+        $classname = $method->getDeclaringClass()->getName();
+        $describer = $method->getName() . '_returns';
+        if (!method_exists($classname, $describer)) {
+            return $result;
+        }
+        $description = $classname::$describer();
+        if (!$description instanceof \core_external\external_description) {
+            return $result;
+        }
+        try {
+            return \core_external\external_api::clean_returnvalue($description, $result);
+        } catch (\invalid_response_exception $e) {
+            \local_jedomi_log('WS: the result of ' . $classname . '::' . $method->getName() . '() does not match its return '
+                . 'description: ' . $e->debuginfo);
+            return $result;
         }
     }
 }

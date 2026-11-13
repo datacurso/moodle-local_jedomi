@@ -40,6 +40,8 @@ require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/fake_telegram_api_cli
  * @covers     \local_jedomi\telegram\webhook_handler
  */
 final class webhook_conversation_test extends \advanced_testcase {
+    use \local_jedomi\tests\other_plugins_debugging;
+
     /** @var fake_ai_client AI double. */
     private fake_ai_client $ai;
 
@@ -754,6 +756,8 @@ final class webhook_conversation_test extends \advanced_testcase {
         foreach (json_decode($search->execute((object) ['query' => 'courses site info']), true)['functions'] as $function) {
             $this->assertSame($listed, $function['name']);
         }
+        // The search index reads the description of every web service of the site, also of other plugins.
+        $this->discard_debugging_of_other_plugins();
     }
 
     /**

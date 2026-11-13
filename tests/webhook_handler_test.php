@@ -58,6 +58,8 @@ require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/fake_telegram_api_cli
  * @covers \local_jedomi\telegram\webhook_handler
  */
 final class webhook_handler_test extends \advanced_testcase {
+    use \local_jedomi\tests\spanish_strings;
+
     /**
      * Setup test environment.
      */
@@ -932,21 +934,40 @@ final class webhook_handler_test extends \advanced_testcase {
 
     /**
      * The per-chat lock uses the Moodle lock API, so it works on every supported database (MDL-INT-078).
+     *
+     * Two workers are two processes with their own database connection. A test runs in a single connection, where the
+     * MySQL GET_LOCK factory is re-entrant, so the database record factory, which is not, stands in for the second
+     * process.
      */
     public function test_dedup_lock_normal_flow(): void {
-        $lock = \local_jedomi\telegram\webhook_handler::acquire_chat_lock('999999');
-        $this->assertInstanceOf(\core\lock\lock::class, $lock, 'The first worker of a chat takes the lock');
+        global $CFG;
+        $this->resetAfterTest();
+        $CFG->lock_factory = '\core\lock\db_record_lock_factory';
+        $taken = [];
+        try {
+            $lock = \local_jedomi\telegram\webhook_handler::acquire_chat_lock('999999');
+            $taken[] = $lock;
+            $this->assertInstanceOf(\core\lock\lock::class, $lock, 'The first worker of a chat takes the lock');
 
-        $second = \local_jedomi\telegram\webhook_handler::acquire_chat_lock('999999');
-        $this->assertFalse($second, 'A second worker of the same chat is refused');
-        $other = \local_jedomi\telegram\webhook_handler::acquire_chat_lock('888888');
-        $this->assertInstanceOf(\core\lock\lock::class, $other, 'Another chat is not blocked');
-        $other->release();
+            $second = \local_jedomi\telegram\webhook_handler::acquire_chat_lock('999999');
+            $taken[] = $second;
+            $this->assertFalse($second, 'A second worker of the same chat is refused');
+            $other = \local_jedomi\telegram\webhook_handler::acquire_chat_lock('888888');
+            $taken[] = $other;
+            $this->assertInstanceOf(\core\lock\lock::class, $other, 'Another chat is not blocked');
 
-        $lock->release();
-        $again = \local_jedomi\telegram\webhook_handler::acquire_chat_lock('999999');
-        $this->assertInstanceOf(\core\lock\lock::class, $again, 'The lock is free again once released');
-        $again->release();
+            $lock->release();
+            $again = \local_jedomi\telegram\webhook_handler::acquire_chat_lock('999999');
+            $taken[] = $again;
+            $this->assertInstanceOf(\core\lock\lock::class, $again, 'The lock is free again once released');
+        } finally {
+            // Locks are always released, also when an assertion fails, so none is left for the shutdown handler.
+            foreach ($taken as $held) {
+                if ($held instanceof \core\lock\lock) {
+                    $held->release();
+                }
+            }
+        }
     }
 
     /**
@@ -1520,7 +1541,7 @@ final class webhook_handler_test extends \advanced_testcase {
             'telegram_new_conversation_greeting', 'tool_progress_create_courses', 'tool_progress_enrol_users'];
         foreach ($keys as $key) {
             $english = $manager->get_string($key, 'local_jedomi', 'Ana', 'en');
-            $spanish = $manager->get_string($key, 'local_jedomi', 'Ana', 'es');
+            $spanish = self::plugin_spanish_string($key, 'Ana');
             $this->assertNotSame($english, $spanish, "{$key} is translated");
         }
     }

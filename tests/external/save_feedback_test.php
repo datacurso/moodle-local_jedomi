@@ -144,7 +144,10 @@ final class save_feedback_test extends \advanced_testcase {
     private function rate_answer_with_level(string $level): array {
         global $DB;
         $this->resetAfterTest();
-        \local_jedomi\local\service\admin_settings_service::save_privacy_settings(false, $level, []);
+        \local_jedomi\local\service\admin_settings_service::save_privacy_settings(
+            $level,
+            array_column(\local_jedomi\local\service\admin_settings_service::get_roles(), 'id')
+        );
         $named = $this->getDataGenerator()->create_user(['firstname' => 'Ximena', 'lastname' => 'Quintanilla',
             'email' => 'ximena.quintanilla@example.com', 'idnumber' => 'ID-778899']);
         $this->setUser($this->getDataGenerator()->create_user());

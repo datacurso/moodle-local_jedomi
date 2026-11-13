@@ -28,6 +28,8 @@ namespace local_jedomi\output;
  * @coversNothing
  */
 final class sidebar_templates_test extends \advanced_testcase {
+    use \local_jedomi\tests\spanish_strings;
+
     /**
      * Render a template of the plugin.
      *
@@ -301,7 +303,7 @@ final class sidebar_templates_test extends \advanced_testcase {
             $this->assertStringContainsString("L.{$key}", str_replace('cfg.strings?.', 'L.', $source), "{$key} is used");
             $this->assertNotSame(
                 $manager->get_string($key, 'local_jedomi', null, 'en'),
-                $manager->get_string($key, 'local_jedomi', null, 'es'),
+                self::plugin_spanish_string($key),
                 "{$key} is translated"
             );
         }
@@ -690,7 +692,7 @@ final class sidebar_templates_test extends \advanced_testcase {
         foreach ($keys as $key) {
             $this->assertNotSame(
                 $manager->get_string($key, 'local_jedomi', null, 'en'),
-                $manager->get_string($key, 'local_jedomi', null, 'es'),
+                self::plugin_spanish_string($key),
                 "{$key} is translated"
             );
             $this->assertStringContainsString("get_string('{$key}', 'local_jedomi')", $lib, "{$key} reaches the sidebar");
@@ -772,7 +774,7 @@ final class sidebar_templates_test extends \advanced_testcase {
         $manager = get_string_manager();
         $this->assertNotSame(
             $manager->get_string('image_not_kept', 'local_jedomi', null, 'en'),
-            $manager->get_string('image_not_kept', 'local_jedomi', null, 'es')
+            self::plugin_spanish_string('image_not_kept')
         );
     }
 }

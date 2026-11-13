@@ -26,6 +26,8 @@ namespace local_jedomi;
  * @coversNothing
  */
 final class language_test extends \basic_testcase {
+    use \local_jedomi\tests\spanish_strings;
+
     /**
      * MDL-UNIT-058: both languages declare the same strings, no visible text is fixed in code or templates and no
      * declared string is unused.
@@ -97,7 +99,7 @@ final class language_test extends \basic_testcase {
      */
     public function test_spanish_strings_use_neutral_usted(): void {
         $manager = get_string_manager();
-        $es = $manager->load_component_strings('local_jedomi', 'es', true);
+        $es = self::plugin_spanish_strings();
         $en = $manager->load_component_strings('local_jedomi', 'en', true);
         $this->assertSame([], array_values(array_diff(array_keys($en), array_keys($es))), 'Every string is translated');
 

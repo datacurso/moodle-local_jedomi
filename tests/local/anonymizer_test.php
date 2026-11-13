@@ -26,6 +26,8 @@ namespace local_jedomi\local;
  * @covers     \local_jedomi\local\anonymizer
  */
 final class anonymizer_test extends \advanced_testcase {
+    use \local_jedomi\tests\spanish_strings;
+
     /**
      * Create the site user whose personal data the messages carry.
      *
@@ -185,7 +187,7 @@ final class anonymizer_test extends \advanced_testcase {
         $this->resetAfterTest();
         $manager = get_string_manager();
         $english = $manager->get_string('anonymization_level_help', 'local_jedomi', null, 'en');
-        $spanish = $manager->get_string('anonymization_level_help', 'local_jedomi', null, 'es');
+        $spanish = self::plugin_spanish_string('anonymization_level_help');
         $this->assertStringNotContainsString('stored conversations', $english);
         $this->assertStringNotContainsString('conversaciones guardadas', $spanish);
         foreach (['Telegram', 'agent preview', 'Basic', 'Strict', 'Feedback only', 'real values'] as $part) {

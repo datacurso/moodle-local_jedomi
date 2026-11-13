@@ -28,6 +28,8 @@ namespace local_jedomi\output\admin;
  * @covers     \local_jedomi\output\admin\privacy_tab
  */
 final class form_tabs_test extends \advanced_testcase {
+    use \local_jedomi\tests\spanish_strings;
+
     /**
      * MDL-INT-020: the General tab shows the AI service card with the link to the Jedomi settings in the provider.
      * The General tab exports the provider settings link and the form, and renders both.
@@ -85,11 +87,9 @@ final class form_tabs_test extends \advanced_testcase {
         foreach (['Enabled switch', 'chat model', 'audio processing', 'voice conversation', 'voice model', 'the voice'] as $part) {
             $this->assertStringContainsString($part, $html, $part);
         }
-        force_current_language('es');
         $this->assertStringContainsString(
             'la conversación por voz, el modelo de voz, la voz',
-            get_string('provider_settings_info', 'local_jedomi')
+            self::plugin_spanish_string('provider_settings_info')
         );
-        force_current_language('en');
     }
 }

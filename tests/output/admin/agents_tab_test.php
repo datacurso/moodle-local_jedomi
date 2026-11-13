@@ -26,6 +26,9 @@ namespace local_jedomi\output\admin;
  * @covers     \local_jedomi\output\admin\agents_tab
  */
 final class agents_tab_test extends \advanced_testcase {
+    use \local_jedomi\tests\other_plugins_debugging;
+    use \local_jedomi\tests\spanish_strings;
+
     /**
      * The tab exports the roles, schedules and context types for the filters and the agent form.
      *
@@ -88,7 +91,7 @@ final class agents_tab_test extends \advanced_testcase {
         );
         $custom = get_string('agent_cron_custom', 'local_jedomi', '0 8-17/2 * * 1-5');
         $this->assertSame($custom, $manager::describe_schedule('0 8-17/2 * * 1-5'));
-        $spanish = get_string_manager()->get_string('agent_cron_daily_at', 'local_jedomi', '08:00', 'es');
+        $spanish = self::plugin_spanish_string('agent_cron_daily_at', '08:00');
         $this->assertSame('Cada día a las 08:00', $spanish);
 
         // Context: the type and the name, in the language of the user.
@@ -294,5 +297,7 @@ final class agents_tab_test extends \advanced_testcase {
         $root = admin_get_root(true, false);
         $this->assertNull($root->locate('local_jedomi_agents'), 'Administrators keep the settings page only');
         $this->assertNotNull($root->locate('local_jedomi'));
+        // The administration tree loads the settings of every plugin of the site, not only those of Jedomi.
+        $this->discard_debugging_of_other_plugins();
     }
 }

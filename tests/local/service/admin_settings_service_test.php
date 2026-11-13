@@ -256,14 +256,16 @@ final class admin_settings_service_test extends \advanced_testcase {
     }
 
     /**
-     * Telegram limits and role visibility are saved.
+     * Telegram limits and role visibility are saved; the guest and site home roles are never offered nor stored.
      *
      * @return void
      */
     public function test_save_telegram_settings(): void {
-        global $DB;
+        global $CFG;
         $this->resetAfterTest();
-        $roleids = array_map('intval', array_keys($DB->get_records('role', null, 'sortorder ASC', 'id')));
+        $roleids = array_column(admin_settings_service::get_roles(), 'id');
+        $this->assertNotContains((int) $CFG->guestroleid, $roleids);
+        $this->assertNotContains((int) $CFG->defaultfrontpageroleid, $roleids);
 
         admin_settings_service::save_telegram_settings(40, 6, 12, 45, [$roleids[0]]);
 

@@ -901,6 +901,8 @@ final class handler_test extends \advanced_testcase {
     public function test_chat_uses_the_real_role_course_and_activity_of_the_page(): void {
         global $PAGE;
         $this->resetAfterTest();
+        // The resource generator needs a current user to store the file of the resource.
+        $this->setAdminUser();
         $gen = $this->getDataGenerator();
         $course = $gen->create_course(['fullname' => 'Context Course']);
         $other = $gen->create_course();
@@ -1280,7 +1282,10 @@ final class handler_test extends \advanced_testcase {
     private function tool_result_with_level(string $level): array {
         $this->resetAfterTest();
         $this->setAdminUser();
-        \local_jedomi\local\service\admin_settings_service::save_privacy_settings(false, $level, []);
+        \local_jedomi\local\service\admin_settings_service::save_privacy_settings(
+            $level,
+            array_column(\local_jedomi\local\service\admin_settings_service::get_roles(), 'id')
+        );
         $named = $this->getDataGenerator()->create_user(['firstname' => 'Ximena', 'lastname' => 'Quintanilla',
             'email' => 'ximena.quintanilla@example.com', 'idnumber' => 'ID-778899']);
         $fake = new fake_ai_client();
@@ -1677,7 +1682,10 @@ final class handler_test extends \advanced_testcase {
         foreach (['basic', 'strict'] as $level) {
             $this->resetAfterTest();
             $this->setAdminUser();
-            \local_jedomi\local\service\admin_settings_service::save_privacy_settings(false, $level, []);
+            \local_jedomi\local\service\admin_settings_service::save_privacy_settings(
+                $level,
+                array_column(\local_jedomi\local\service\admin_settings_service::get_roles(), 'id')
+            );
             $this->getDataGenerator()->create_user(['firstname' => 'Ximena', 'lastname' => 'Quintanilla',
                 'email' => 'ximena.quintanilla@example.com']);
             $fake = new fake_ai_client();

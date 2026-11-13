@@ -364,7 +364,15 @@ final class integrations_tab_test extends \advanced_testcase {
         $form = new \local_jedomi\form\telegram_settings_form(null, ['roles' => [], 'tokenset' => false]);
 
         $this->assertNull($form->get_data(), 'The rest of the form is neither validated nor saved');
-        $this->assertTrue($form->no_submit_button_pressed());
+        // The method moodleform::no_submit_button_pressed() keeps its first answer in a static variable shared by every
+        // form of the PHP process, so after other tests it no longer reflects this form. The button is checked instead:
+        // it is a registered no-submit button (registered before it is added) and it was the one sent.
+        $this->assertTrue($form->is_submitted());
+        $this->assertNotSame('', optional_param('regeneratesecret', '', PARAM_RAW));
+        ob_start();
+        $form->display();
+        $html = ob_get_clean();
+        $this->assertMatchesRegularExpression('/<input[^>]*name="regeneratesecret"[^>]*data-no-submit="1"/', $html);
         \local_jedomi\telegram\manager::regenerate_webhook_secret();
         $this->assertNotSame($oldsecret, \local_jedomi\telegram\manager::get_webhook_secret());
         $settings = admin_settings_service::get_telegram_settings();

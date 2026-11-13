@@ -39,6 +39,8 @@ require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/testable_provider_api
  * @covers     \local_jedomi\local\anonymizer
  */
 final class speech_service_test extends \advanced_testcase {
+    use \local_jedomi\tests\spanish_strings;
+
     /** @var string Body of a fake MP3 answer, with bytes that are not valid UTF-8. */
     private const MP3 = "ID3\x04\x00\x00\x00\x00\x00\x00\xff\xfb\x90\x64 fake mp3 frames";
 
@@ -667,7 +669,7 @@ final class speech_service_test extends \advanced_testcase {
             $this->assertStringContainsString("'{$code}': '{$key}',", $source, "{$code} has its string in the sidebar");
             $this->assertNotSame(
                 get_string_manager()->get_string($key, 'local_jedomi', 5, 'en'),
-                get_string_manager()->get_string($key, 'local_jedomi', 5, 'es'),
+                self::plugin_spanish_string($key, 5),
                 "{$key} is translated"
             );
         }

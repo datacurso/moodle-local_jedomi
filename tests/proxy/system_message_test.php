@@ -87,8 +87,22 @@ final class system_message_test extends \advanced_testcase {
             $this->assertStringContainsString($rule, $voice, $rule);
         }
         $this->assertStringNotContainsString('VOICE CONVERSATION:', $text);
-        // Outside the voice conversation the instructions do not change: the voice block is the only difference.
-        $this->assertSame($text, preg_replace('/VOICE CONVERSATION:\n(?:- [^\n]*\n)+\n/', '', $voice));
+
+        // The language follows the latest message in text, and the language of the page in voice, where a wrong
+        // transcription could otherwise switch it.
+        $latest = "- Answer in the language of the user's latest message, even when earlier messages, tool results"
+            . " or these instructions use another language.\n";
+        $this->assertStringContainsString($latest, $text);
+        $this->assertStringNotContainsString($latest, $voice, 'Voice mode has a single language rule');
+        $language = get_string('thislanguageint', 'langconfig');
+        $this->assertStringContainsString("- Answer in {$language}, the language the user speaks.", $voice);
+        $this->assertStringContainsString('speech recognition error', $voice);
+
+        // Otherwise the instructions do not change: the voice block and the language rule are the only differences.
+        $this->assertSame(
+            str_replace($latest, '', $text),
+            preg_replace('/VOICE CONVERSATION:\n(?:- [^\n]*\n)+\n/', '', $voice)
+        );
         $this->assertStringContainsString('ACTIONS THAT CHANGE DATA:', $voice, 'The voice mode keeps every other rule');
     }
 

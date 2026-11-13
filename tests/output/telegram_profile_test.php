@@ -26,6 +26,8 @@ namespace local_jedomi\output;
  * @covers     \local_jedomi\output\telegram_profile
  */
 final class telegram_profile_test extends \advanced_testcase {
+    use \local_jedomi\tests\spanish_strings;
+
     /**
      * Build the renderable for a state.
      *
@@ -200,7 +202,7 @@ final class telegram_profile_test extends \advanced_testcase {
         $this->assertStringNotContainsString(get_string('telegram_heading_help', 'local_jedomi'), $html);
 
         $manager = get_string_manager();
-        $spanish = $manager->get_string('telegram_link_subtitle', 'local_jedomi', null, 'es');
+        $spanish = self::plugin_spanish_string('telegram_link_subtitle');
         $this->assertStringContainsString('Vincule su cuenta', $spanish);
         $this->assertDoesNotMatchRegularExpression('/\b(tu|tus|vincula|vinculá|puedes|podés)\b/iu', $spanish);
         $this->assertStringNotContainsString('bot de Telegram para que los usuarios', $spanish, 'Not the administrator text');

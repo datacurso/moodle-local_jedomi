@@ -134,16 +134,19 @@ final class profiler_tab_test extends \advanced_testcase {
     }
 
     /**
-     * MDL-UNIT-100: the duration is highlighted only above the slow query threshold, not exactly at it.
+     * MDL-UNIT-100: the duration is highlighted at or above the slow query threshold, never below it.
+     *
+     * Note: a query exactly at the threshold is highlighted on purpose, so the highlight matches the slow query counter
+     * of the tab, which counts the queries at or above the threshold.
      *
      * @return void
      */
-    public function test_duration_is_highlighted_only_above_the_threshold(): void {
+    public function test_duration_is_highlighted_at_or_above_the_threshold(): void {
         $this->resetAfterTest();
 
         $data = $this->export([], [$this->entry(999.99), $this->entry(1000), $this->entry(1000.01), $this->entry(25000)]);
 
-        $this->assertSame([false, false, true, true], array_column($data['recent'], 'slow'));
+        $this->assertSame([false, true, true, true], array_column($data['recent'], 'slow'));
     }
 
     /**
