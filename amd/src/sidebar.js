@@ -14,15 +14,25 @@
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Templates) {
+define(['core/log', 'core/ajax', 'core/templates', 'core/str', 'core/notification'],
+    function(Log, Ajax, Templates, Str, Notification) {
 
     // ── State ─────────────────────────────────────────────────────────────────
     let cfg          = {};
     let conversation = [];
     // Image attached for the next message: {base64, mimeType, file}. It is read by the vision model when sent.
     let pendingImage = null;
-    // Text of an attached file, sent with the next message: {name, info, text}.
-    let pendingFile = null;
+    // Files attached to the next message, in order: [{file, name, extracted, controller}]. Each one is read (and
+    // charged) only when the message is sent; extracted keeps its text, so a retry reads nothing again.
+    let pendingFiles = [];
+    // Address of the panel configuration, kept to renew the signed permissions (SPT) before they expire.
+    let configUrl    = null;
+    // Time, on the clock of the browser, when the signed permissions expire (0 when unknown).
+    let sptExpiresAt = 0;
+    // Renewal of the signed permissions in progress, shared by the requests that wait for it.
+    let renewing     = null;
+    // True after the user asked to load the panel again: it opens when it loads, or the notice opens again.
+    let retryOpen    = false;
     let injected     = false;
     // True while the sidebar template is being rendered, so a second bootstrap does not inject it twice.
     let injecting    = false;
@@ -40,6 +50,12 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
     let voiceMode    = null;
     // Voice conversation waiting for the microphone permission, if any: {cancelled} (see startVoiceMode).
     let voiceModeStarting = null;
+    // Written answer in progress, if any: aborting it stops the answer (stop button and new conversation).
+    let chatController = null;
+    // Requests to the conversation history, sent one after the other so they reach the server in order.
+    let historyQueue = Promise.resolve();
+    // Element that had the focus before the panel opened, to give it back when the panel closes.
+    let focusBeforeOpen = null;
 
     // ── Init — entry point ────────────────────────────────────────────────────
     const init = (config) => {
@@ -53,22 +69,136 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
 
         // If we received a configUrl (lightweight init), fetch the full config.
         if (config && config.configUrl) {
-            fetch(config.configUrl)
-                .then(r => r.json())
+            configUrl = config.configUrl;
+            fetchConfig()
                 .then(fullConfig => {
-                    cfg = fullConfig || {};
+                    cfg = fullConfig;
+                    setPermissionsExpiry(fullConfig);
                     doBootstrap();
+                    return null;
                 })
-                .catch(() => {
-                    // Fallback: bootstrap with empty config.
-                    cfg = {};
-                    doBootstrap();
+                .catch((error) => {
+                    // Without its configuration the panel cannot work: it is never started empty. A notice with a
+                    // retry button is shown instead.
+                    Log.debug('Jedomi: the panel configuration could not be loaded', error);
+                    showConfigError(config);
                 });
         } else {
             // Backward compat: config passed inline.
             cfg = config || {};
             doBootstrap();
         }
+    };
+
+    // ── Panel configuration and signed permissions ──────────────────────────
+    // Margin before the expiry of the signed permissions in which they are renewed, in milliseconds.
+    const SPT_RENEW_MARGIN_MS = 120000;
+
+    // Fetch the panel configuration. A refusal (an error answer, a login page or a failed request) is an error: a
+    // configuration without signed permissions is never used.
+    const fetchConfig = async () => {
+        const res = await fetch(configUrl, {credentials: 'same-origin'});
+        const data = await res.json();
+        if (!res.ok || !data || data.error || !data.spt) {
+            throw new Error(data?.message || `HTTP ${res.status}`);
+        }
+        return data;
+    };
+
+    // Remember when the signed permissions expire, on the clock of the browser: the server sends its own time with them.
+    const setPermissionsExpiry = (config) => {
+        const lifetime = Number(config?.spt?.expires) - Number(config?.server_time);
+        sptExpiresAt = Number.isFinite(lifetime) && lifetime > 0 ? Date.now() + lifetime * 1000 : 0;
+    };
+
+    // Ask the server for new signed permissions while the Moodle session is active. Resolves to whether they were
+    // renewed; the requests in progress share one renewal.
+    const renewPermissions = () => {
+        if (!configUrl) {
+            return Promise.resolve(false);
+        }
+        if (!renewing) {
+            renewing = fetchConfig()
+                .then((fresh) => {
+                    cfg.spt = fresh.spt;
+                    cfg.sesskey = fresh.sesskey || cfg.sesskey;
+                    setPermissionsExpiry(fresh);
+                    return true;
+                })
+                .catch((error) => {
+                    Log.debug('Jedomi: the chat permissions could not be renewed', error);
+                    return false;
+                })
+                .finally(() => {
+                    renewing = null;
+                });
+        }
+        return renewing;
+    };
+
+    // Renew the signed permissions when they expire in less than SPT_RENEW_MARGIN_MS, before a request uses them.
+    const ensureFreshPermissions = async () => {
+        if (configUrl && sptExpiresAt && Date.now() >= sptExpiresAt - SPT_RENEW_MARGIN_MS) {
+            await renewPermissions();
+        }
+    };
+
+    // Notice shown instead of the panel when its configuration cannot be loaded, with a button to try again. It is
+    // built without templates: the server may be failing.
+    const showConfigError = async (config) => {
+        let strings = config?.strings || {};
+        if (!strings.config_load_error) {
+            try {
+                const [message, retry] = await Str.get_strings([
+                    {key: 'config_load_error', component: 'local_jedomi'},
+                    {key: 'config_load_retry', component: 'local_jedomi'},
+                ]);
+                strings = {config_load_error: message, config_load_retry: retry};
+            } catch (error) {
+                strings = {config_load_error: '', config_load_retry: ''};
+            }
+        }
+        ['jedomi-trigger', 'jedomi-sidebar'].forEach((id) => document.getElementById(id)?.remove());
+
+        const trigger = document.createElement('button');
+        trigger.id = 'jedomi-trigger';
+        trigger.className = 'jedomi-trigger';
+        trigger.setAttribute('aria-label', 'Jedomi');
+        const label = document.createElement('span');
+        label.className = 'jedomi-trigger-label';
+        label.textContent = 'Jedomi';
+        trigger.appendChild(label);
+
+        const panel = document.createElement('div');
+        panel.id = 'jedomi-sidebar';
+        panel.className = 'jedomi-sidebar jedomi-closed jedomi-config-error';
+        panel.setAttribute('role', 'dialog');
+        panel.setAttribute('aria-label', 'Jedomi');
+        const alert = document.createElement('div');
+        alert.className = 'alert alert-warning m-3';
+        alert.setAttribute('role', 'alert');
+        const text = document.createElement('p');
+        text.textContent = strings.config_load_error;
+        const retry = document.createElement('button');
+        retry.type = 'button';
+        retry.className = 'btn btn-secondary';
+        retry.textContent = strings.config_load_retry;
+        alert.append(text, retry);
+        panel.appendChild(alert);
+
+        trigger.addEventListener('click', () => {
+            const open = panel.classList.toggle('jedomi-open');
+            panel.classList.toggle('jedomi-closed', !open);
+            if (open) retry.focus();
+        });
+        retry.addEventListener('click', () => {
+            retryOpen = true;
+            trigger.remove();
+            panel.remove();
+            init(config);
+        });
+        document.body.append(trigger, panel);
+        if (retryOpen) trigger.click();
     };
 
     const bootstrap = async () => {
@@ -104,11 +234,16 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
 
         // Load the conversation from the Moodle session cache (server).
         // No sessionStorage: the history lives on the server.
-        _loadConversationFromServer().then(() => {
-            if (conversation.length > 0) {
-                setTimeout(() => _restoreConversationUI(), 150);
+        // Actions still waiting for confirmation are shown again, so they can be confirmed or cancelled after a reload.
+        _loadConversationFromServer().then((pendingActions) => {
+            if (conversation.length > 0 || pendingActions.length > 0) {
+                setTimeout(() => {
+                    _restoreConversationUI();
+                    showRestoredActions(pendingActions);
+                }, 150);
             }
-        });
+            return null;
+        }).catch(() => null);
 
         // 3. Wire the events.
         wireUp();
@@ -125,7 +260,7 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
 
 
         // Reopen automatically if it was open before navigating.
-        if (sessionStorage.getItem('jedomi_open') === '1') {
+        if (sessionStorage.getItem('jedomi_open') === '1' || retryOpen) {
             setTimeout(() => openSidebar(), 120);
         }
     };
@@ -236,7 +371,7 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
                 const url  = URL.createObjectURL(blob);
                 const a    = document.createElement('a');
                 a.href     = url;
-                a.download = 'jedomi_datos.csv';
+                a.download = `${cfg.strings?.export_csv_filename || 'jedomi_data'}.csv`;
                 document.body.appendChild(a);
                 a.click();
                 setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 500);
@@ -244,9 +379,12 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
         }
         on('jedomi-edit-last',    'click',  editLastMessage);
         on('jedomi-send',         'click',  sendMessage);
-        on('jedomi-overlay',      'click',  closeSidebar);
+        on('jedomi-stop',         'click',  stopAnswer);
         on('jedomi-remove-image', 'click',  clearImage);
-        on('jedomi-remove-file', 'click',   clearFile);
+        on('jedomi-file-preview', 'click',  (e) => {
+            const btn = e.target.closest('[data-action="local_jedomi/sidebar/remove-file"]');
+            if (btn) removeFile(parseInt(btn.getAttribute('data-index'), 10));
+        });
         on('jedomi-edit-last',    'click',  editLastMessage);
         on('jedomi-attach-btn',   'click',  toggleAttachMenu);
         on('jedomi-attach-menu',   'click',  (e) => {
@@ -289,7 +427,11 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
             });
         }
 
-        // Keyboard shortcuts
+        // While the panel is open the focus stays in it: Tab and Shift+Tab go round its controls.
+        g('jedomi-sidebar')?.addEventListener('keydown', trapFocus);
+
+        // Keyboard shortcuts. Alt+Shift is used because Ctrl+Shift+J and Ctrl+Shift+N are browser shortcuts (console
+        // and private window). The physical key (code) is checked, as Alt changes the character on some keyboards.
         document.addEventListener('keydown', (e) => {
             // Escape → end the voice conversation first, then close the sidebar.
             if (e.key === 'Escape' && (voiceMode || voiceModeStarting)) {
@@ -300,17 +442,18 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
                 closeSidebar();
                 return;
             }
-            // Ctrl+Shift+J → open/close Jedomi.
-            if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'J') {
+            if (!e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) return;
+            // Alt+Shift+J → open/close Jedomi.
+            if (e.code === 'KeyJ') {
                 e.preventDefault();
                 const isOpen = g('jedomi-sidebar')?.classList.contains('jedomi-open');
                 isOpen ? closeSidebar() : openSidebar();
             }
-            // Ctrl+Shift+N → new conversation.
-            if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'N') {
+            // Alt+Shift+N → new conversation, after a confirmation when there is a conversation to lose.
+            if (e.code === 'KeyN') {
                 e.preventDefault();
-                clearChat();
                 openSidebar();
+                confirmNewConversation();
             }
         });
     };
@@ -370,6 +513,7 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
         const panel = g('jedomi-sidebar');
         if (!panel) return;
         sessionStorage.setItem('jedomi_open', '1'); // Keep the state.
+        if (!panel.contains(document.activeElement)) focusBeforeOpen = document.activeElement;
 
         // Align with Moodle's fixed-top navbar: position only, the layout is not touched.
         const navbar = document.querySelector('nav.navbar.fixed-top, .navbar.fixed-top');
@@ -386,9 +530,35 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
         }
 
         panel.classList.replace('jedomi-closed', 'jedomi-open');
-        // Moodle's layout is NOT touched, only the overlay.
+        // The open panel is reachable with the keyboard and by screen readers again.
+        panel.inert = false;
+        panel.removeAttribute('inert');
+        panel.removeAttribute('aria-hidden');
+        g('jedomi-trigger')?.setAttribute('aria-expanded', 'true');
+        // Moodle's layout is NOT touched.
         setExpandMode(expandMode);
         g('jedomi-input')?.focus();
+    };
+
+    // Keep the focus inside the open panel: Tab after its last control goes to the first one, and Shift+Tab before
+    // its first control goes to the last one.
+    const trapFocus = (e) => {
+        const panel = g('jedomi-sidebar');
+        if (e.key !== 'Tab' || !panel?.classList.contains('jedomi-open')) return;
+        const focusable = [...panel.querySelectorAll(
+            'button:not([disabled]), [href], input:not([disabled]):not([type="file"]), textarea:not([disabled]), '
+            + 'select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        )].filter(el => el.offsetParent !== null && !el.closest('.jedomi-hidden'));
+        if (!focusable.length) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (e.shiftKey && (document.activeElement === first || !panel.contains(document.activeElement))) {
+            e.preventDefault();
+            last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+            e.preventDefault();
+            first.focus();
+        }
     };
 
     const closeSidebar = () => {
@@ -399,10 +569,36 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
             recorder.stop();
         }
         voice?.audio.pause();
-        g('jedomi-sidebar')?.classList.replace('jedomi-open', 'jedomi-closed');
-        g('jedomi-overlay')?.classList.add('jedomi-hidden');
+        const panel = g('jedomi-sidebar');
+        const trigger = g('jedomi-trigger');
+        // The focus goes back to where it was (the trigger by default) before the panel stops being reachable.
+        if (panel && panel.contains(document.activeElement)) {
+            const back = focusBeforeOpen && document.contains(focusBeforeOpen) && !panel.contains(focusBeforeOpen)
+                && focusBeforeOpen !== document.body ? focusBeforeOpen : trigger;
+            back?.focus();
+        }
+        focusBeforeOpen = null;
+        if (panel) {
+            panel.classList.replace('jedomi-open', 'jedomi-closed');
+            // The closed panel is out of the Tab order and hidden from screen readers.
+            panel.inert = true;
+            panel.setAttribute('inert', '');
+            panel.setAttribute('aria-hidden', 'true');
+        }
+        trigger?.setAttribute('aria-expanded', 'false');
         document.body.classList.remove('jedomi-push-half', 'jedomi-push-full');
         sessionStorage.removeItem('jedomi_open'); // limpiar estado
+    };
+
+    // Note shown after a reload in place of the images of a user message, which the history does not keep.
+    const addImagePlaceholder = (wrap, count) => {
+        const bubble = wrap.querySelector('.jedomi-bubble');
+        if (!bubble) return;
+        const note = document.createElement('p');
+        note.className = 'jedomi-msg-image-placeholder';
+        const label = (cfg.strings || {}).image_not_kept || '';
+        note.textContent = count > 1 ? `🖼 ${label} (${count})` : `🖼 ${label}`;
+        bubble.appendChild(note);
     };
 
     // Restore the saved messages in the DOM after a page reload.
@@ -412,10 +608,16 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
         // Clear the initial greeting.
         msgs.replaceChildren();
         conversation.forEach(msg => {
+            const content = typeof msg.content === 'string' ? msg.content : '...';
             if (msg.role === 'user') {
-                addMessage('user', typeof msg.content === 'string' ? msg.content : '...');
+                // The text the chat showed when it was sent (the question and the names of its files).
+                const wrap = addMessage('user', typeof msg.display === 'string' && msg.display ? msg.display : content);
+                // The images are not kept in the history (only that the message had them): a note takes their place.
+                if (wrap && msg.images > 0) addImagePlaceholder(wrap, msg.images);
             } else if (msg.role === 'assistant') {
-                addMessage('assistant', typeof msg.content === 'string' ? msg.content : '...');
+                const wrap = addMessage('assistant', content);
+                // The answer gets its Copy and rating buttons back, with the same id, so its rating is kept.
+                if (wrap) addMessageActions(wrap, content, msg.id || '');
             }
         });
     };
@@ -432,6 +634,7 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
 
     const _loadConversationFromServer = async () => {
         try {
+            await ensureFreshPermissions();
             const r = await fetch(_convUrl(), {
                 method: 'POST',
                 credentials: 'same-origin',
@@ -442,38 +645,97 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
             if (d.ok && Array.isArray(d.messages) && d.messages.length > 0) {
                 conversation = d.messages;
             }
-        } catch(e) { /* silencioso — primera visita o cache vacío */ }
+            return d.ok && Array.isArray(d.pendingactions) ? d.pendingactions : [];
+        } catch (e) {
+            // First visit or empty cache: nothing to restore.
+            return [];
+        }
+    };
+
+    // Cards of the actions the server still holds for the user, each in its own answer bubble.
+    const showRestoredActions = (cards) => {
+        const msgs = g('jedomi-messages');
+        if (!msgs || !cards.length) return;
+        cards.forEach((pending) => {
+            const wrap = document.createElement('div');
+            wrap.className = 'jedomi-message jedomi-message-assistant';
+            const bubble = document.createElement('div');
+            bubble.className = 'jedomi-bubble';
+            bubble.appendChild(buildActionConfirmUI(pending));
+            wrap.appendChild(bubble);
+            msgs.appendChild(wrap);
+        });
+        msgs.scrollTop = msgs.scrollHeight;
+    };
+
+    // Send a change of the conversation history to the server. The changes go one after the other, so a removal never
+    // reaches the server before the message it removes. The permissions are renewed first when they are about to
+    // expire; the body is built with the renewed ones.
+    const _historyRequest = (fields) => {
+        historyQueue = historyQueue.then(() => ensureFreshPermissions()).then(() => fetch(_convUrl(), {
+            method: 'POST',
+            credentials: 'same-origin',
+            body: new URLSearchParams({
+                ...fields,
+                sesskey: M?.cfg?.sesskey || '',
+                spt:     _signedPermissions(),
+                courseid: String(_pageCourseId()),
+            }),
+        })).catch(() => null); // Silent.
+        return historyQueue;
     };
 
     const _saveConversation = () => {
         // Only save the LAST message (the one just completed).
         if (conversation.length === 0) return;
         const last = conversation[conversation.length - 1];
-        const body = new URLSearchParams({
-            action:  'append',
-            sesskey: M?.cfg?.sesskey || '',
-            role:    last.role,
-            content: last.content,
-            spt:     _signedPermissions(),
-            courseid: String(_pageCourseId()),
-        });
-        fetch(_convUrl(), {
-            method: 'POST',
-            credentials: 'same-origin',
-            body,
-        }).catch(() => {}); // silencioso
+        const fields = {action: 'append', role: last.role, content: last.content};
+        if (last.display) fields.display = last.display;
+        if (last.images) fields.images = String(last.images);
+        if (last.id) fields.messageid = last.id;
+        _historyRequest(fields);
+    };
+
+    // Remove the last user message, and what follows it, from the conversation and from the history on the server:
+    // the question was edited, or its answer was stopped before any text or failed.
+    const _undoLastQuestion = () => {
+        const lastUserIdx = conversation.map(m => m.role).lastIndexOf('user');
+        if (lastUserIdx < 0) return;
+        conversation.splice(lastUserIdx);
+        _historyRequest({action: 'undolast'});
+    };
+
+    // Stop the written answer in progress: what was received stays in the chat, marked as stopped.
+    const stopAnswer = () => {
+        chatController?.abort();
+    };
+
+    // New conversation from the keyboard shortcut: a conversation in progress is only cleared after a confirmation.
+    const confirmNewConversation = () => {
+        if (!conversation.length) {
+            clearChat();
+            return;
+        }
+        const S = cfg.strings || {};
+        Notification.saveCancelPromise(S.new_conversation || '', S.new_conversation_confirm || '', S.new_conversation || '')
+            .then(() => {
+                clearChat();
+                g('jedomi-input')?.focus();
+                return null;
+            })
+            .catch(() => g('jedomi-input')?.focus());
     };
 
     const clearChat = () => {
+        // An answer in progress is stopped: it belongs to the conversation that is cleared.
+        if (chatController) {
+            const controller = chatController;
+            controller.cleared = true;
+            controller.abort();
+        }
         conversation = [];
         // Clear it on the server (Moodle session cache).
-        const body = new URLSearchParams({
-            action:  'clear',
-            sesskey: M?.cfg?.sesskey || '',
-            spt:     _signedPermissions(),
-            courseid: String(_pageCourseId()),
-        });
-        fetch(_convUrl(), { method: 'POST', credentials: 'same-origin', body }).catch(() => {});
+        _historyRequest({action: 'clear'});
         // New session after clearing.
         sessionId = crypto.randomUUID ? crypto.randomUUID()
             : Date.now().toString(36) + Math.random().toString(36).slice(2);
@@ -500,36 +762,51 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
             input.select();
         }
 
-        // Remove the last user/assistant pair from the conversation.
-        const lastUserIdx = [...conversation].reverse().findIndex(m => m.role === 'user');
-        if (lastUserIdx >= 0) {
-            const actualIdx = conversation.length - 1 - lastUserIdx;
-            // Remove from the last user message onwards.
-            conversation.splice(actualIdx);
-        }
+        // Remove the last user message and what follows it, here and on the server, so they do not come back after a
+        // reload.
+        _undoLastQuestion();
 
-        // Remove the last bubbles from the DOM.
+        // Remove its bubble and the ones after it from the chat.
         const msgs = g('jedomi-messages');
-        if (msgs) {
-            const bubbles = msgs.querySelectorAll('.jedomi-message');
-            // Remove the last 2 (user + assistant).
-            const toRemove = Math.min(2, bubbles.length - 1); // dejar al menos el saludo
-            for (let i = 0; i < toRemove; i++) {
-                const last = msgs.querySelector('.jedomi-message:last-child');
-                if (last) last.remove();
-            }
+        const editable = msgs ? [...msgs.querySelectorAll('.jedomi-message-user:not([data-orphan])')].pop() : null;
+        if (editable) {
+            while (editable.nextElementSibling) editable.nextElementSibling.remove();
+            editable.remove();
         }
+        refreshEditButton();
+    };
+
+    // Only the last question of the conversation can be edited: the Edit button is shown under it alone.
+    const refreshEditButton = () => {
+        const msgs = g('jedomi-messages');
+        if (!msgs) return;
+        msgs.querySelectorAll('.jedomi-user-actions').forEach(node => node.remove());
+        const last = [...msgs.querySelectorAll('.jedomi-message-user:not([data-orphan])')].pop();
+        if (!last) return;
+        const editActions = document.createElement('div');
+        editActions.className = 'jedomi-msg-actions jedomi-user-actions';
+        last.insertBefore(editActions, last.firstChild);
+        renderInto(editActions, 'local_jedomi/local/sidebar/user_actions', {strings: cfg.strings || {}}).then(() => {
+            editActions.querySelector('[data-action="local_jedomi/sidebar/edit"]')
+                ?.addEventListener('click', () => editLastMessage());
+            return null;
+        }).catch(() => null);
     };
 
     const exportConversation = () => {
         if (!conversation.length) return;
+        // The title, the speaker names and the file name are language strings, in the language of the user.
+        const L = cfg.strings || {};
+        const speaker = (role) => (role === 'user' ? L.export_role_user : L.export_role_assistant) || role;
         const lines = conversation.map(m =>
-            `[${m.role.toUpperCase()}]\n${typeof m.content === 'string' ? m.content : JSON.stringify(m.content)}\n`
+            `[${speaker(m.role)}]\n${typeof m.content === 'string' ? m.content : JSON.stringify(m.content)}\n`
         ).join('\n---\n\n');
-        const blob = new Blob([`JEDOMI — Conversation\n${'='.repeat(40)}\n\n${lines}`], {type: 'text/plain'});
+        const title = L.export_title || 'Jedomi';
+        const blob = new Blob([`${title}\n${'='.repeat(40)}\n\n${lines}`], {type: 'text/plain'});
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = `jedomi-conversation-${new Date().toISOString().slice(0,10)}.txt`;
+        const filename = L.export_filename || 'jedomi-conversation';
+        a.download = `${filename}-${new Date().toISOString().slice(0,10)}.txt`;
         a.click();
         URL.revokeObjectURL(a.href);
     };
@@ -537,12 +814,11 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
     // ── Context Label & Quick Actions ─────────────────────────────────────────
     const updateContextLabel = () => {
         const ctx  = cfg.context || {};
-        const loc  = ctx.location || getCurrentLocation();
-        const name = ctx.course_name || ctx.activity_name || '';
+        const loc  = ctx.location || 'unknown';
         const S    = cfg.strings || {};
         const labels = {
-            course:    '\uD83D\uDCDA ' + (name || S.ctx_course    || ''),
-            activity:  '\uD83D\uDCDD ' + (name || ctx.activity_type || S.ctx_activity || ''),
+            course:    '\uD83D\uDCDA ' + (ctx.course_name || S.ctx_course || ''),
+            activity:  '\uD83D\uDCDD ' + (ctx.activity_name || ctx.course_name || S.ctx_activity || ''),
             grades:    '\uD83D\uDCCA ' + (S.ctx_grades    || ''),
             admin:     '\u2699\uFE0F '  + (S.ctx_admin    || ''),
             dashboard: '\uD83C\uDFE0 ' + (S.ctx_dashboard || ''),
@@ -562,21 +838,6 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
         }
     };
 
-    const getCurrentLocation = () => {
-        const p = window.location.pathname;
-        const q = window.location.search;
-        if (p.includes('/admin/'))                           return 'admin';
-        if (p.includes('/grade/') || q.includes('grade'))   return 'grades';
-        if (p.includes('/calendar/'))                        return 'calendar';
-        if (p.includes('/message/'))                         return 'messages';
-        if (p.includes('/user/') || p.includes('/profile/')) return 'profile';
-        if (p.includes('/files/'))                           return 'files';
-        if (p.includes('/my/') || p === '/')                 return 'dashboard';
-        if (p.includes('/mod/'))                             return 'activity';
-        if (p.includes('/course/'))                          return 'course';
-        return 'unknown';
-    };
-
     const loadQuickActions = async () => {
         const container = g('jedomi-quick-actions');
         if (!container) return;
@@ -586,9 +847,10 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
         const spt      = cfg.spt    || {};
         const role     = cfg.user_role || ctx.user_role || 'student';
         const caps     = spt.capabilities || {};
-        const loc      = ctx.location || getCurrentLocation();
-        const cid      = ctx.course_id || getCourseidFromUrl();
-        const uid      = spt.userid || ctx.user_id || 0;
+        // The location and the course come from the server, which reads them from the page; never from the address,
+        // whose id is not a course on the pages of activities, profiles and others.
+        const loc      = ctx.location || 'unknown';
+        const cid      = parseInt(ctx.course_id, 10) || 0;
         // Use the course name when available, not the ID.
         const courseName = ctx.course_name
             ? `"${ctx.course_name}"`
@@ -596,8 +858,8 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
 
         let actions = [];
 
-        // ── Detect whether we are in a course (from the PHP context or the URL) ──
-        const inCourse = !!(ctx.course_name || cid) && loc !== 'admin' && loc !== 'dashboard';
+        // ── Inside a course: the course of the page, as the server gave it ──
+        const inCourse = cid > 0 && loc !== 'admin' && loc !== 'dashboard';
 
         // ── ADMIN ────────────────────────────────────────────────
         if (role === 'admin') {
@@ -739,46 +1001,51 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
         });
     };
 
-    const getCourseidFromUrl = () => {
-        const m = window.location.href.match(/[?&]id=(\d+)/);
-        return m ? parseInt(m[1]) : (cfg.context?.course_id || 0);
-    };
-
     // ── Send Message ──────────────────────────────────────────────────────────
     const sendMessage = async () => {
         const input   = g('jedomi-input');
         const sendBtn = g('jedomi-send');
         const text    = input?.value.trim() || '';
 
-        if ((!text && !pendingImage && !pendingFile) || sending) return;
+        if ((!text && !pendingImage && !pendingFiles.length) || sending) return;
 
         const S = cfg.strings || {};
         let displayText = text;
         let modelText = text;
 
-        // The attached file is read now, when the message is sent, as images are: a file removed before sending is
-        // never read nor charged. Its text is kept on the attachment, so a retry after another error reads nothing again.
-        if (pendingFile && !pendingFile.extracted) {
-            const attachment = pendingFile;
+        // The attached files are read now, when the message is sent, as images are: a file removed before sending is
+        // never read nor charged, and removing it while it is read cancels its reading. The text of each one is kept
+        // on its attachment, so a retry after another error reads nothing again.
+        const attachments = pendingFiles.slice();
+        for (const attachment of attachments) {
+            if (attachment.extracted) continue;
             sending = true;
             if (sendBtn) sendBtn.disabled = true;
             const origPlaceholder = input?.placeholder;
             if (input) input.placeholder = (S.processing_file || '').replace('{$a}', attachment.name);
+            attachment.controller = new AbortController();
             try {
-                const data = await uploadForText(cfg.extract_file_url, attachment.file);
+                const data = await uploadForText(cfg.extract_file_url, attachment.file, {}, attachment.controller.signal);
                 attachment.extracted = {info: fileInfo(data), text: data.text || ''};
+                if (data.truncated) {
+                    addMessage('assistant', `⚠️ ${(S.file_truncated || '').replace('{$a}', attachment.name)}`);
+                }
             } catch (err) {
+                if (err?.name === 'AbortError') return;
                 // The file stays attached, so the user can try again or remove it.
                 addMessage('assistant', `⚠️ ${S.file_process_error || ''} **${attachment.name}**: ${err.message}`);
                 return;
             } finally {
+                attachment.controller = null;
                 sending = false;
                 if (sendBtn) sendBtn.disabled = false;
                 if (input && origPlaceholder) input.placeholder = origPlaceholder;
             }
-            // Removed or replaced while it was being read: the message is not sent, so the user can review it.
-            if (pendingFile !== attachment) return;
+            // Removed while it was being read: the message is not sent, so the user can review it.
+            if (!pendingFiles.includes(attachment)) return;
         }
+        // Removed or added while the others were read: the message is not sent, so the user can review it.
+        if (attachments.length !== pendingFiles.length || attachments.some((a, i) => pendingFiles[i] !== a)) return;
 
         // The image is read by the vision model first: the chat model only gets the question and that text.
         if (pendingImage) {
@@ -800,13 +1067,14 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
             }
         }
 
-        // The file text goes with the question in the same message; the chat shows only its name.
-        if (pendingFile) {
-            const {info, text: fileText} = pendingFile.extracted;
+        // The text of each file goes with the question in the same message; the chat shows only their names.
+        if (attachments.length) {
             const question = modelText || S.analyze_file || '';
-            const header = (S.attached_file_info || '').replace('{$a}', pendingFile.name);
-            modelText = `${question}\n\n${header} — ${info}\n\n${fileText}`;
-            displayText = `${text ? text + '\n\n' : ''}📎 ${pendingFile.name} (${info})`;
+            const parts = attachments.map(({name, extracted}) =>
+                `${(S.attached_file_info || '').replace('{$a}', name)} — ${extracted.info}\n\n${extracted.text}`);
+            modelText = [question, ...parts].join('\n\n');
+            const names = attachments.map(({name, extracted}) => `📎 ${name} (${extracted.info})`).join('\n');
+            displayText = `${text ? text + '\n\n' : ''}${names}`;
         }
 
         const image = pendingImage;
@@ -859,13 +1127,29 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
         const input   = g('jedomi-input');
         const sendBtn = g('jedomi-send');
 
-        addMessage('user', displayText, image);
-        conversation.push({ role: 'user', content: modelText });
+        const userWrap = addMessage('user', displayText, image);
+        const userMessage = {role: 'user', content: modelText};
+        // What the chat shows for the question (without the text read from its files), kept for a reload.
+        if (displayText && displayText !== modelText) userMessage.display = displayText;
+        // Only the number of images is kept for a reload, never the images themselves.
+        if (image) userMessage.images = 1;
+        conversation.push(userMessage);
         _saveConversation(); // Save at once.
 
         setThinking(true);
         sending = true;
         if (sendBtn) sendBtn.disabled = true;
+        // A written answer can be stopped: the stop button replaces the send button while it is in progress. The
+        // voice conversation stops its answers by speaking over Jedomi.
+        const controller = voiceHooks ? null : new AbortController();
+        chatController = controller;
+        const stopBtn = g('jedomi-stop');
+        if (controller) {
+            sendBtn?.classList.add('jedomi-hidden');
+            stopBtn?.classList.remove('jedomi-hidden');
+        }
+        // Screen readers announce the answer once it is complete, not every token.
+        g('jedomi-messages')?.setAttribute('aria-busy', 'true');
 
         // Create an empty bubble to fill while streaming.
         const streamBubble = createStreamBubble();
@@ -952,10 +1236,11 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
                     voiceHooks?.onPendingAction(pending);
                 },
                 voiceHooks ? {voice_mode: true} : {},
-                voiceHooks?.signal || null
+                voiceHooks?.signal || controller?.signal || null
             );
 
             fullText = withoutActionBlocks(fullText);
+            const messageId = newMessageId();
             const showAnswer = () => {
                 streamBubble.version++;
                 if (voiceDisplay) streamBubble.el.classList.remove('jedomi-hidden');
@@ -964,7 +1249,7 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
                     streamBubble.el.classList.remove('jedomi-hidden');
                     streamBubble.inner.appendChild(buildActionConfirmUI(pendingAction));
                 }
-                addMessageActions(streamBubble.wrap, fullText);
+                addMessageActions(streamBubble.wrap, fullText, messageId);
 
                 // Links: open in the same tab directly (no preventDefault).
                 streamBubble.inner.querySelectorAll('a[href]').forEach(a => {
@@ -979,7 +1264,7 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
                 showAnswer();
             }
 
-            conversation.push({ role: 'assistant', content: fullText });
+            conversation.push({role: 'assistant', content: fullText, id: messageId});
             _saveConversation(); // Save it on the server.
             voiceHooks?.onDone();
 
@@ -999,6 +1284,36 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
                 streamBubble.wrap?.remove();
                 return;
             }
+            if (controller && err?.name === 'AbortError') {
+                setThinking(false);
+                // A new conversation stopped it: the chat was already cleared.
+                if (controller.cleared) {
+                    streamBubble.wrap?.remove();
+                    return;
+                }
+                const partial = withoutActionBlocks(fullText);
+                if (!partial && !pendingAction) {
+                    // Stopped before any text: the question goes back to the message field, as when it is edited.
+                    editLastMessage();
+                    renderInto(g('jedomi-messages'), 'local_jedomi/local/sidebar/notice',
+                        {text: cfg.strings?.answer_stopped || ''}, true);
+                    return;
+                }
+                // The text received so far stays, marked as stopped, and is kept in the conversation.
+                const messageId = newMessageId();
+                streamBubble.version++;
+                streamBubble.inner.innerHTML = renderMarkdown(partial);
+                if (pendingAction) streamBubble.inner.appendChild(buildActionConfirmUI(pendingAction));
+                const note = document.createElement('p');
+                note.className = 'jedomi-stopped-note text-muted small mb-0';
+                note.textContent = cfg.strings?.answer_stopped || '';
+                streamBubble.inner.appendChild(note);
+                streamBubble.el.classList.remove('jedomi-hidden');
+                addMessageActions(streamBubble.wrap, partial, messageId);
+                conversation.push({role: 'assistant', content: partial, id: messageId});
+                _saveConversation();
+                return;
+            }
             Log.error('Jedomi error', err);
             setThinking(false);
             streamBubble.version++;
@@ -1014,12 +1329,25 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
                 streamBubble.inner.innerHTML = renderMarkdown(`⚠️ ${message}`);
             }
             streamBubble.el.classList.remove('jedomi-hidden');
+            // The question has no answer: it leaves the history (here and on the server), so it is not sent again
+            // as if it had been answered. It stays in the chat with the error, and can no longer be edited.
+            if (!pendingAction) {
+                _undoLastQuestion();
+                if (userWrap) userWrap.dataset.orphan = '1';
+                refreshEditButton();
+            }
             voiceHooks?.onError(err);
         } finally {
             // A spoken answer keeps the thinking indicator until its first sentence is heard.
             if (!voiceDisplay || voiceDisplay.shown || voiceDisplay.done) setThinking(false);
             sending = false;
             if (sendBtn) sendBtn.disabled = false;
+            if (controller) {
+                if (chatController === controller) chatController = null;
+                stopBtn?.classList.add('jedomi-hidden');
+                sendBtn?.classList.remove('jedomi-hidden');
+            }
+            g('jedomi-messages')?.setAttribute('aria-busy', 'false');
             input?.focus();
         }
     };
@@ -1030,32 +1358,39 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
     // extra adds fields to the request, such as voice_mode for the voice conversation.
     // signal, when given, cancels the request (the voice conversation does it when the user speaks over Jedomi).
     const callGatewayStream = async (messages, onToken, onToolEvent, onPendingAction, extra = {}, signal = null) => {
-        // Context truncation: at most 30 messages to avoid a context overflow.
-        const truncated = messages.slice(-30);
+        // Context truncation: at most 30 messages to avoid a context overflow. Only the role and the content are sent:
+        // the text shown in the chat and the id of an answer stay in the browser.
+        const truncated = messages.slice(-30).map(({role, content}) => ({role, content}));
 
-        const payload = {
-            messages: truncated,
-            spt:      cfg.spt,
-            sesskey:  cfg.sesskey,
-            context:  {
-                ...cfg.context,
-                course_id:  _pageCourseId(),
-                page_url:   window.location.href,
-                page_title: document.title.replace(/\s*[|\-]\s*Moodle.*$/i, '').trim(),
-                location:   getCurrentLocation(),
-            },
-            ...extra,
-        };
-
-        const res = await fetch(cfg.chatproxy_url, {
+        // The page context (location, course, activity and path) is the one the server read from the page; only the
+        // title comes from the document. The payload is built after a renewal, so it carries the renewed permissions.
+        const request = () => fetch(cfg.chatproxy_url, {
             method:  'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
+            body: JSON.stringify({
+                messages: truncated,
+                spt:      cfg.spt,
+                sesskey:  cfg.sesskey,
+                context:  {
+                    ...cfg.context,
+                    course_id:  _pageCourseId(),
+                    page_title: document.title.replace(/\s*[|\-]\s*Moodle.*$/i, '').trim(),
+                },
+                ...extra,
+            }),
             signal: signal || undefined,
         });
 
+        await ensureFreshPermissions();
+        let res = await request();
+        // Refused permissions (expired or no longer valid): they are renewed while the Moodle session is active and
+        // the request is sent once more.
+        if (res.status === 403 && await renewPermissions()) {
+            res = await request();
+        }
+
         if (!res.ok) {
-            // Detect an expired session (403 from chatproxy.php → invalid sesskey/SPT).
+            // Detect an expired session (403 from chatproxy.php → invalid sesskey/SPT that could not be renewed).
             if (res.status === 403) {
                 throw new Error('__SESSION_EXPIRED__');
             }
@@ -1120,104 +1455,6 @@ define(['core/log', 'core/ajax', 'core/templates'], function(Log, Ajax, Template
         }
     };
 
-    // Fallback without streaming (for clients without SSE support).
-    const callGateway = async (messages) => {
-        const payload = {
-            messages: messages,
-            spt:      cfg.spt,
-            sesskey:  cfg.sesskey,
-            context:  {
-                ...cfg.context,
-                course_id:  _pageCourseId(),
-                page_url:   window.location.href,
-                page_title: document.title.replace(/\s*[|\-]\s*Moodle.*$/i, '').trim(),
-                location:   getCurrentLocation(),
-            },
-        };
-        const res = await fetch(cfg.chatproxy_url, {
-            method:  'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body:    JSON.stringify(payload),
-        });
-        if (!res.ok) {
-            if (res.status === 403) {
-                throw new Error('__SESSION_EXPIRED__');
-            }
-            const err = await res.json().catch(() => ({}));
-            throw new Error(err.error || `HTTP ${res.status}`);
-        }
-        const ct = res.headers.get('content-type') || '';
-        if (ct.includes('text/html')) {
-            throw new Error('__SESSION_EXPIRED__');
-        }
-        return res.json();
-    };
-
-    // ── System Prompt ─────────────────────────────────────────────────────────
-    const buildSystemPrompt = () => {
-        const ctx   = cfg.context || {};
-        const role  = cfg.user_role || 'user';
-        const loc   = ctx.location || getCurrentLocation();
-        const url   = window.location.href;
-        const cid   = ctx.course_id || getCourseidFromUrl();
-        const cname = ctx.course_name || '';
-        const wwwroot = cfg.wwwroot || (window.M?.cfg?.wwwroot) || '';
-
-        const roleDescs = {
-            admin:   'You are the Moodle site administrator.',
-            manager: 'You are a manager with access to user and course management.',
-            teacher: `You are a teacher.${cname ? ` You are in course "${cname}" (ID: ${cid}).` : ''}`,
-            student: `You are a student.${cname ? ` You are in course "${cname}" (ID: ${cid}).` : ''}`,
-        };
-
-        const locDescs = {
-            course:   `Currently viewing course${cname ? ` "${cname}"` : ''} (ID: ${cid}).`,
-            activity: `Currently in an activity of type "${ctx.activity_type || 'unknown'}".`,
-            grades:   'Currently viewing the gradebook.',
-            admin:    'Currently in the Moodle administration panel.',
-            dashboard:'Currently on the Moodle dashboard.',
-            messages: 'Currently in the messages section.',
-        };
-
-        return `You are Jedomi, the native AI assistant for Moodle LMS 5.2.
-${roleDescs[role] || ''}
-${locDescs[loc] || ''}
-Current URL: ${url}
-Page title: ${document.title}
-wwwroot: ${wwwroot}
-
-AVAILABLE TOOLS (you MUST use these for any data question):
-- execute_sql: Run SELECT queries on the Moodle database. Parameters: query (SQL with ? placeholders), params (array of values).
-- describe_table: Describe a table's columns. Parameter: table (table name without prefix).
-- search_tables: Find tables by keyword. Parameter: keyword.
-- get_site_config: Get Moodle configuration values. Parameter: key (config name).
-- ws_search: Search web service functions by intent in ENGLISH. Parameters: query (e.g. 'create user'). Always call BEFORE ws_execute.
-- ws_describe: Get full docs for a specific WS function by exact name. Call AFTER ws_search and BEFORE ws_execute to confirm required params.
-- ws_execute: Execute a web service function. Parameters: wsname, params (JSON with ALL * fields present).
-
-ANTI-HALLUCINATION RULES (CRITICAL — NEVER violate these):
-1. CRITICAL: You MUST call a tool BEFORE answering ANY question about site data (user counts, grades, courses, activity, config, etc.). NEVER guess numbers.
-2. If a tool returns 0 rows or an error, say "I couldn't find that data" — do NOT fabricate results.
-3. If you don't know the answer, say "I don't know" — do NOT make up information.
-4. Only use execute_sql for SELECT queries. Never modify data.
-5. Use bound parameters (?) instead of concatenating values in SQL.
-6. WS STRATEGY (MANDATORY): 1) ws_search(query in ENGLISH) → 2) ws_describe(exact name) → 3) ws_execute with ALL * (required) fields present. If user didn't provide a value, generate a sensible default. NEVER guess function names.
-7. WS ERROR HANDLING: If ws_execute returns an error, read the full message. Common causes: missing required field, invalid type, duplicate unique value. Fix and retry once. Do NOT retry with same parameters.
-8. Respect privacy: do not reveal personal data of other users unless authorized.
-9. Do NOT fabricate tool calls. Only call tools that actually exist.
-
-GENERAL INSTRUCTIONS:
-- Always respond in the language the user is writing in.
-- When mentioning Moodle pages, include navigable links: [Text](FULL_URL).
-- For courses: ${wwwroot}/course/view.php?id=COURSEID
-- For grades: ${wwwroot}/grade/report/user/index.php?id=COURSEID
-- For users: ${wwwroot}/user/view.php?id=USERID&course=COURSEID
-- For assignments: ${wwwroot}/mod/assign/view.php?id=CMID
-- Show data (grades, students, etc.) in markdown tables.
-- Explain WHAT data you queried and WHY it is relevant.
-- For actions (enrol, messages, etc.) always use the Moodle API.`;
-    };
-
     // ── Stream Bubble ─────────────────────────────────────────────────────────
     // Create an empty bubble in the DOM and return references to fill it.
     const createStreamBubble = () => {
@@ -1237,8 +1474,13 @@ GENERAL INSTRUCTIONS:
         return { wrap, el: bubble, inner, rawText: '', thinking: true, version: 0 };
     };
 
-    // Action buttons under each assistant answer.
-    const addMessageActions = async (wrap, text) => {
+    // Id of a new answer, so its rating is stored once and can be changed (letters, digits, - and _ only).
+    const newMessageId = () => `${(sessionId || 'jedomi').replace(/[^\w-]/g, '').slice(0, 36)}-${Date.now().toString(36)}`
+        + `-${Math.random().toString(36).slice(2, 8)}`;
+
+    // Action buttons under each assistant answer. messageId identifies the answer: rating it again, with the same or
+    // the other value, changes its rating instead of adding another one.
+    const addMessageActions = async (wrap, text, messageId = '') => {
         const actions = document.createElement('div');
         actions.className = 'jedomi-msg-actions';
         // Inside the bubble (inner), not outside (wrap).
@@ -1254,22 +1496,52 @@ GENERAL INSTRUCTIONS:
                 return null;
             }).catch(() => null);
         });
-        actions.querySelector('[data-action="local_jedomi/sidebar/good"]')?.addEventListener('click', (e) => {
-            e.target.closest('button').classList.add('jedomi-feedback-good');
-            saveFeedback(text, 'good');
+        const good = actions.querySelector('[data-action="local_jedomi/sidebar/good"]');
+        const bad = actions.querySelector('[data-action="local_jedomi/sidebar/bad"]');
+        // Only one rating is shown as given: the last one.
+        const showRating = (rating) => {
+            good?.classList.toggle('jedomi-feedback-good', rating === 'good');
+            good?.setAttribute('aria-pressed', rating === 'good' ? 'true' : 'false');
+            bad?.classList.toggle('jedomi-feedback-bad', rating === 'bad');
+            bad?.setAttribute('aria-pressed', rating === 'bad' ? 'true' : 'false');
+        };
+        good?.addEventListener('click', () => {
+            showRating('good');
+            actions.querySelector('.jedomi-feedback-comment')?.remove();
+            saveFeedback(text, 'good', messageId);
         });
-        actions.querySelector('[data-action="local_jedomi/sidebar/bad"]')?.addEventListener('click', (e) => {
-            e.target.closest('button').classList.add('jedomi-feedback-bad');
-            saveFeedback(text, 'bad');
+        bad?.addEventListener('click', async () => {
+            showRating('bad');
+            saveFeedback(text, 'bad', messageId);
+            if (actions.querySelector('.jedomi-feedback-comment')) return;
+            // "Improve" offers an optional comment, saved with the same rating.
+            const holder = document.createElement('div');
+            holder.className = 'jedomi-feedback-comment';
+            actions.appendChild(holder);
+            await renderInto(holder, 'local_jedomi/local/sidebar/feedback_comment', {
+                uniqid: `jedomi-comment-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+                strings: cfg.strings || {},
+            });
+            const field = holder.querySelector('[data-region="local_jedomi/sidebar/feedback-comment-text"]');
+            field?.focus();
+            holder.querySelector('[data-action="local_jedomi/sidebar/feedback-comment-send"]')?.addEventListener('click', () => {
+                const comment = (field?.value || '').trim();
+                if (!comment) return;
+                saveFeedback(text, 'bad', messageId, comment);
+                const thanks = document.createElement('p');
+                thanks.className = 'jedomi-feedback-comment small mb-0';
+                thanks.setAttribute('role', 'status');
+                thanks.textContent = cfg.strings?.feedback_comment_saved || '';
+                holder.replaceWith(thanks);
+            });
         });
     };
 
-    const saveFeedback = async (text, rating) => {
+    const saveFeedback = async (text, rating, messageId = '', comment = null) => {
+        const args = {rating, sessionid: sessionId || '', messagetext: text.slice(0, 1000), messageid: messageId};
+        if (comment !== null) args.comment = comment;
         try {
-            await Ajax.call([{
-                methodname: 'local_jedomi_save_feedback',
-                args: {rating, sessionid: sessionId || '', messagetext: text.slice(0, 1000)},
-            }])[0];
+            await Ajax.call([{methodname: 'local_jedomi_save_feedback', args}])[0];
         } catch (e) {
             Log.debug('Jedomi: feedback not saved', e);
         }
@@ -1307,20 +1579,14 @@ GENERAL INSTRUCTIONS:
                 img.className = 'jedomi-msg-image';
                 bubble.appendChild(img);
             }
-            // Edit button under user messages.
-            const editActions = document.createElement('div');
-            editActions.className = 'jedomi-msg-actions jedomi-user-actions';
-            wrap.appendChild(editActions);
-            renderInto(editActions, 'local_jedomi/local/sidebar/user_actions', {strings: cfg.strings || {}}).then(() => {
-                editActions.querySelector('[data-action="local_jedomi/sidebar/edit"]')
-                    ?.addEventListener('click', () => editLastMessage());
-                return null;
-            }).catch(() => null);
         }
 
         wrap.appendChild(bubble);
         msgs.appendChild(wrap);
+        // Only the last question can be edited: the Edit button moves under it.
+        if (role === 'user') refreshEditButton();
         msgs.scrollTop = msgs.scrollHeight;
+        return wrap;
     };
 
     // Detect the Moodle page type from the URL.
@@ -1328,14 +1594,16 @@ GENERAL INSTRUCTIONS:
         const wwwroot = cfg.wwwroot || '';
         if (!url.includes(wwwroot) && !url.startsWith('/')) return null;
 
+        // The type labels are language strings, in the language of the user.
+        const L = cfg.strings || {};
         const patterns = [
-            { re: /\/course\/view\.php\?id=(\d+)/,      icon: '📚', type: 'Curso' },
-            { re: /\/user\/view\.php\?id=(\d+)/,        icon: '👤', type: 'Perfil' },
-            { re: /\/mod\/assign\/view\.php\?id=(\d+)/,  icon: '📝', type: 'Tarea' },
-            { re: /\/mod\/quiz\/view\.php\?id=(\d+)/,    icon: '❓', type: 'Quiz' },
-            { re: /\/grade\/report\/user/,               icon: '📊', type: 'Notas' },
-            { re: /\/admin\//,                           icon: '⚙️', type: 'Admin' },
-            { re: /\/message\//,                         icon: '💬', type: 'Mensajes' },
+            { re: /\/course\/view\.php\?id=(\d+)/,      icon: '📚', type: L.link_type_course },
+            { re: /\/user\/view\.php\?id=(\d+)/,        icon: '👤', type: L.link_type_profile },
+            { re: /\/mod\/assign\/view\.php\?id=(\d+)/,  icon: '📝', type: L.link_type_assign },
+            { re: /\/mod\/quiz\/view\.php\?id=(\d+)/,    icon: '❓', type: L.link_type_quiz },
+            { re: /\/grade\/report\/user/,               icon: '📊', type: L.link_type_grades },
+            { re: /\/admin\//,                           icon: '⚙️', type: L.link_type_admin },
+            { re: /\/message\//,                         icon: '💬', type: L.link_type_messages },
         ];
 
         for (const p of patterns) {
@@ -1344,22 +1612,28 @@ GENERAL INSTRUCTIONS:
                 return { icon: p.icon, type: p.type, id: match?.[1] };
             }
         }
-        return { icon: '🔗', type: 'Moodle', id: null };
+        return { icon: '🔗', type: L.link_type_moodle || 'Moodle', id: null };
     };
+
+    // Italic text: _text_ only when the underscores are not part of a word, a path or an address, so names such as
+    // course_modules or mod_assign, and addresses with underscores, are shown as they are.
+    const ITALIC_PATTERN = /(^|[^\w\\/.:=&?%-])_([^_\s](?:[^_\n]*[^_\s])?)_(?![\w/])/g;
 
     const renderMarkdown = (text) => {
         if (!text) return '';
-        let html = text
+        // Code and links are set aside while the rest is formatted, so their content (names and addresses with
+        // underscores, marks of lists or headings) is never formatted; they are put back at the end.
+        const kept = [];
+        const keep = (html) => `\u0000${kept.push(html) - 1}\u0000`;
+        let html = text.replace(/\u0000/g, '')
             .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
             // Code blocks
-            .replace(/```[\w]*\n([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
+            .replace(/```[\w]*\n([\s\S]*?)```/g, (match, code) => keep(`<pre><code>${code}</code></pre>`))
             // Inline code
-            .replace(/`([^`\n]+)`/g, '<code>$1</code>')
+            .replace(/`([^`\n]+)`/g, (match, code) => keep(`<code>${code}</code>`))
             // Bold
             .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-            // Italic
-            .replace(/_(.+?)_/g, '<em>$1</em>')
             // Rich Moodle links [text](url): a preview card for Moodle URLs.
             .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, linkText, url) => {
                 // Only web and site-relative links: model output can carry javascript: or data: URLs.
@@ -1368,12 +1642,19 @@ GENERAL INSTRUCTIONS:
                 }
                 const pageInfo = getMoodlePageInfo(url);
                 if (pageInfo) {
-                    return `<a href="${url}" class="jedomi-moodle-link" data-type="${pageInfo.type}">` +
+                    return keep(`<a href="${url}" class="jedomi-moodle-link" data-type="${pageInfo.type}">` +
                            `${pageInfo.icon} <span data-link-text>${linkText}</span> ` +
-                           `<span class="jedomi-link-badge">${pageInfo.type} ↗</span></a>`;
+                           `<span class="jedomi-link-badge">${pageInfo.type} ↗</span></a>`);
                 }
-                return `<a href="${url}"><span data-link-text>${linkText}</span> ↗</a>`;
+                return keep(`<a href="${url}"><span data-link-text>${linkText}</span> ↗</a>`);
             })
+            // Bare web addresses keep their underscores.
+            .replace(/\bhttps?:\/\/[^\s<]+/g, (url) => keep(url))
+            // Italic
+            .replace(ITALIC_PATTERN, '$1<em>$2</em>')
+            // Headings: # to ###### become small headings that fit in the panel.
+            .replace(/^(#{1,6}) +(.+?)#*\s*$/gm, (match, marks, title) =>
+                `<h${Math.min(marks.length + 3, 6)} class="jedomi-md-heading">${title}</h${Math.min(marks.length + 3, 6)}>`)
             // ── Markdown tables: ONE table per block, with a working CSV button ──
             // Step 1: mark rows and separators.
             .replace(/^\|(.+)\|$/gm, (row) => {
@@ -1412,11 +1693,21 @@ GENERAL INSTRUCTIONS:
             })
             // Unordered lists
             .replace(/^[-*] (.+)$/gm, '<li>$1</li>')
-            .replace(/((?:<li>.*<\/li>\n?)+)/g, '<ul>$1</ul>')
+            .replace(/((?:<li>.*<\/li>\n?)+)/g, (block) => `<ul>${block.replace(/\n/g, '')}</ul>\n`)
+            // Numbered lists, which keep their first number.
+            .replace(/^(\d+)[.)] (.+)$/gm, '<li data-number="$1">$2</li>')
+            .replace(/((?:<li data-number="\d+">.*<\/li>\n?)+)/g, (block) => {
+                const start = parseInt(block.match(/data-number="(\d+)"/)[1], 10);
+                const items = block.replace(/<li data-number="\d+">/g, '<li>').replace(/\n/g, '');
+                return `<ol${start !== 1 ? ` start="${start}"` : ''}>${items}</ol>\n`;
+            })
+            // No line break right after a heading or a list.
+            .replace(/(<\/h[4-6]>|<\/[ou]l>)\n/g, '$1')
             // Paragraphs
             .replace(/\n\n/g, '</p><p>')
             .replace(/\n/g, '<br>');
 
+        html = html.replace(/\u0000(\d+)\u0000/g, (match, index) => kept[index]);
         return '<p>' + html + '</p>';
     };
 
@@ -1445,7 +1736,8 @@ GENERAL INSTRUCTIONS:
 
     const handleFileSelect = (e) => {
         const file = e.target.files?.[0];
-        if (file) attachFile(file);
+        const files = [...(e.target.files || [])];
+        if (files.length) attachFiles(files);
     };
 
     // Pages, rows and columns, characters or seconds of a read file, as shown with its name.
@@ -1460,43 +1752,91 @@ GENERAL INSTRUCTIONS:
             : (S.file_text || '').replace('{chars}', data.chars);
     };
 
-    // Attach a file: only its chip is shown, like an image, so the textarea stays free for the question. Nothing is
-    // uploaded, read or charged until the message is sent; removing the chip before sending makes no request.
-    const attachFile = (file) => {
+    // Most files attached to one message.
+    const MAX_ATTACHMENTS = 5;
+
+    // Attach files: only their chips are shown, like an image, so the textarea stays free for the question. Nothing is
+    // uploaded, read or charged until the message is sent; removing a chip before sending makes no request. A file of
+    // a kind that cannot be read, or beyond MAX_ATTACHMENTS, is not attached and the user is told why.
+    const attachFiles = (files) => {
         const S = cfg.strings || {};
-        const extension = (file.name.split('.').pop() || '').toLowerCase();
-        if (FILE_EXTENSIONS.includes(extension) || AUDIO_EXTENSIONS.includes(extension)) {
-            pendingFile = {file, name: file.name, extracted: null};
-            const chipname = g('jedomi-file-preview-name');
-            if (chipname) chipname.textContent = `📎 ${file.name}`;
-            g('jedomi-file-preview')?.classList.remove('jedomi-hidden');
-            g('jedomi-input')?.focus();
-        } else {
-            addMessage('assistant', `⚠️ ${S.file_process_error || ''} **${file.name}**: ${S.file_error_unsupported || ''}`);
+        let overLimit = false;
+        files.forEach((file) => {
+            const extension = (file.name.split('.').pop() || '').toLowerCase();
+            if (!FILE_EXTENSIONS.includes(extension) && !AUDIO_EXTENSIONS.includes(extension)) {
+                addMessage('assistant', `⚠️ ${S.file_process_error || ''} **${file.name}**: ${S.file_error_unsupported || ''}`);
+            } else if (pendingFiles.length >= MAX_ATTACHMENTS) {
+                overLimit = true;
+            } else {
+                pendingFiles.push({file, name: file.name, extracted: null, controller: null});
+            }
+        });
+        if (overLimit) {
+            addMessage('assistant', `⚠️ ${(S.file_attach_limit || '').replace('{$a}', MAX_ATTACHMENTS)}`);
         }
+        renderFileChips();
+        if (pendingFiles.length) g('jedomi-input')?.focus();
         const fi = g('jedomi-file-input');
         if (fi) fi.value = '';
         const ai = g('jedomi-audio-input');
         if (ai) ai.value = '';
     };
 
+    // Show a chip for each attached file, each one with its remove button.
+    const renderFileChips = () => {
+        const preview = g('jedomi-file-preview');
+        if (!preview) return;
+        const S = cfg.strings || {};
+        preview.classList.toggle('jedomi-hidden', !pendingFiles.length);
+        if (!pendingFiles.length) {
+            preview.replaceChildren();
+            return;
+        }
+        renderInto(preview, 'local_jedomi/local/sidebar/file_chips', {
+            files: pendingFiles.map((attachment, index) => ({
+                index,
+                name: attachment.name,
+                removelabel: (S.file_remove || '').replace('{$a}', attachment.name),
+            })),
+        });
+    };
+
+    // Remove one attached file: a reading in progress is cancelled, so it is not charged.
+    const removeFile = (index) => {
+        const attachment = pendingFiles[index];
+        if (!attachment) return;
+        attachment.controller?.abort();
+        pendingFiles.splice(index, 1);
+        renderFileChips();
+    };
+
     // Send a file to a Moodle endpoint that answers JSON, or {"error": {"code", "message"}} with a message to show.
     const uploadForText = async (url, file, fields = {}, signal = null) => {
         const S = cfg.strings || {};
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('sesskey', cfg.sesskey || '');
-        formData.append('spt', _signedPermissions());
-        formData.append('courseid', String(_pageCourseId()));
-        Object.entries(fields).forEach(([name, value]) => formData.append(name, value));
+        // Built for each try, so a retry after a renewal carries the renewed permissions.
+        const request = async () => {
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('sesskey', cfg.sesskey || '');
+            formData.append('spt', _signedPermissions());
+            formData.append('courseid', String(_pageCourseId()));
+            Object.entries(fields).forEach(([name, value]) => formData.append(name, value));
+            const response = await fetch(url, {
+                method: 'POST',
+                body: formData,
+                credentials: 'same-origin',
+                signal: signal || undefined,
+            });
+            return {res: response, data: await response.json().catch(() => ({}))};
+        };
 
-        const res = await fetch(url, {
-            method: 'POST',
-            body: formData,
-            credentials: 'same-origin',
-            signal: signal || undefined,
-        });
-        const data = await res.json().catch(() => ({}));
+        await ensureFreshPermissions();
+        let {res, data} = await request();
+        // Expired permissions are renewed while the Moodle session is active and the file is sent once more; nothing
+        // was read nor charged on the refused try.
+        if (res.status === 403 && data.error?.code === 'invalid_spt' && await renewPermissions()) {
+            ({res, data} = await request());
+        }
         if (data.error || !res.ok) {
             const error = new Error((data.error ? data.error.message || S.unknown_error : S.ai_error_connection) || '');
             // The status and the code tell a refusal (expired session, voice no longer allowed) from a failure.
@@ -1512,7 +1852,8 @@ GENERAL INSTRUCTIONS:
     // stopping the recording can be played, deleted or sent. It stays in the browser until it is sent: only
     // then it is uploaded and transcribed by the audio model (billed per second), and its text is sent as
     // the user message. The text typed in the input box is kept for later.
-    const AUDIO_EXTENSIONS = ['mp3', 'wav', 'm4a', 'ogg', 'webm'];
+    // The same audio extensions the server transcribes (audio_service::EXTENSIONS).
+    const AUDIO_EXTENSIONS = ['ogg', 'oga', 'opus', 'webm', 'mp3', 'm4a', 'mp4', 'wav'];
     const RECORDING_TYPES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/ogg', 'audio/mp4'];
     const VOICE_ACTION = 'local_jedomi/sidebar/voice-';
 
@@ -1619,6 +1960,13 @@ GENERAL INSTRUCTIONS:
         timer = setInterval(() => {
             const time = voiceRegion('voice-time');
             if (time) time.textContent = formatDuration((Date.now() - started) / 1000);
+            if (Date.now() - started >= VOICE_MESSAGE_MAX_MS && current.state === 'recording') {
+                // The longest recording the audio model accepts: it stops, and the user can listen to it and send it.
+                clearInterval(timer);
+                current.stop();
+                addMessage('assistant', `⚠️ ${((cfg.strings || {}).voice_too_long || '').replace('{$a}',
+                    VOICE_MESSAGE_MAX_MS / 60000)}`);
+            }
         }, 500);
     };
 
@@ -1744,6 +2092,11 @@ GENERAL INSTRUCTIONS:
     const VOICE_MODE_SPEECH_NOISE = 3;
     // Shortest voice message that is sent, in milliseconds; a shorter recording is discarded with a hint.
     const VOICE_MESSAGE_MIN_MS = 500;
+    // Longest voice message, in milliseconds: the recording stops there with a hint, and can still be played and sent.
+    const VOICE_MESSAGE_MAX_MS = 300000;
+    // Longest utterance of the voice conversation, in milliseconds. A sound that never stops (background voices, a
+    // television) would keep the utterance open: it ends here and is sent when speech was heard, or dropped otherwise.
+    const VOICE_MODE_MAX_UTTERANCE_MS = 30000;
     // The voice conversation ends after this time listening without speech, in milliseconds.
     const VOICE_MODE_IDLE_MS = 60000;
     // How often the microphone level is measured, in milliseconds.
@@ -1795,10 +2148,29 @@ GENERAL INSTRUCTIONS:
         });
     };
 
+    /**
+     * Why the voice conversation cannot start now: a message is being sent, a voice message is being recorded or a
+     * voice message waits to be sent; empty when it can start.
+     *
+     * @returns {string} sending, recording, pending or an empty string.
+     */
+    const voiceModeBusyReason = () => {
+        if (sending) return 'sending';
+        if (recorder) return 'recording';
+        if (voice) return 'pending';
+        return '';
+    };
+
     // Start the voice conversation. It must run from a click: browsers only let a page play audio after one.
     const startVoiceMode = async () => {
         const S = cfg.strings || {};
-        if (voiceMode || voiceModeStarting || sending || recorder || voice || !cfg.speech_url) return;
+        if (voiceMode || voiceModeStarting || !cfg.speech_url) return;
+        // Busy: the button never does nothing silently, the user is told why the conversation does not start.
+        const busy = voiceModeBusyReason();
+        if (busy) {
+            addMessage('assistant', `⚠️ ${S[`voice_mode_busy_${busy}`] || ''}`);
+            return;
+        }
         const AudioContextClass = window.AudioContext || window.webkitAudioContext;
         if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined' || !AudioContextClass) {
             addMessage('assistant', `⚠️ ${S.mic_error || ''}`);
@@ -1877,6 +2249,8 @@ GENERAL INSTRUCTIONS:
         }
         if (!voiceMode) return;
         const current = voiceMode;
+        // A notice read aloud by the browser stops too.
+        window.speechSynthesis?.cancel();
         // A transcription in progress is cancelled, so what was said after leaving is not transcribed (and billed).
         // An answer the AI is already writing is kept: it is shown in the chat.
         if (!current.chatStarted) current.requestController?.abort();
@@ -1934,7 +2308,18 @@ GENERAL INSTRUCTIONS:
         if (!voiceMode) return;
         clearTimeout(voiceMode.idleTimer);
         voiceMode.idleTimer = setTimeout(() => {
-            if (voiceMode?.state === 'listening' && !voiceMode.heard) exitVoiceMode();
+            if (voiceMode?.state !== 'listening' || voiceMode.heard) return;
+            // The exit is announced on screen and aloud with the voice of the browser (free), then the conversation
+            // ends. The recording stops first, so the notice is not transcribed.
+            const current = voiceMode;
+            const notice = (cfg.strings || {}).voice_mode_idle_exit || '';
+            current.keepRecording = false;
+            if (current.recorder && current.recorder.state !== 'inactive') current.recorder.stop();
+            addMessage('assistant', `ℹ️ ${notice}`);
+            speakVoiceNotice(notice, () => {
+                // Speaking over the notice keeps the conversation: it is listening again.
+                if (voiceMode === current && current.state === 'speaking') exitVoiceMode();
+            });
         }, VOICE_MODE_IDLE_MS);
     };
 
@@ -1967,7 +2352,18 @@ GENERAL INSTRUCTIONS:
                 }
                 current.lastVoice = now;
                 if (level > speechLevel(current)) current.voicedMs += elapsed;
-            } else if (current.heard && now - current.lastVoice > VOICE_MODE_SILENCE_MS) {
+            }
+            if (current.heard && now - current.speechStart >= VOICE_MODE_MAX_UTTERANCE_MS) {
+                if (current.voicedMs >= VOICE_MODE_MIN_SPEECH_MS) {
+                    // The longest utterance: what was said is sent, and a sound that never stops cannot keep it open.
+                    setVoiceModeState('thinking');
+                    current.keepRecording = true;
+                    current.recorder?.stop();
+                } else {
+                    // Only noise for the whole utterance: it is dropped with a new recording, and nothing is charged.
+                    startVoiceListening();
+                }
+            } else if (level <= VOICE_MODE_THRESHOLD && current.heard && now - current.lastVoice > VOICE_MODE_SILENCE_MS) {
                 if (current.voicedMs >= VOICE_MODE_MIN_SPEECH_MS) {
                     // The user finished speaking: the recording is sent to transcription when it stops.
                     setVoiceModeState('thinking');
@@ -2037,6 +2433,28 @@ GENERAL INSTRUCTIONS:
     const isVoiceRefusal = (err) => err?.message === '__SESSION_EXPIRED__' || err?.status === 403
         || VOICE_SESSION_ERRORS.includes(err?.code);
 
+    // Language string of each reason speech.php gives for not reading a text aloud.
+    const VOICE_SPEECH_ERRORS = {
+        'voice_disabled': 'speech_error_disabled',
+        'speech_empty': 'speech_error_empty',
+        'speech_rate_limited': 'speech_error_rate_limited',
+        'speech_too_long': 'speech_error_too_long',
+    };
+
+    /**
+     * Reason a sentence could not be read aloud: the message of speech.php (per minute limit, text too long, no
+     * credit...), the string of its code when the answer had no message, or the generic notice for a network failure.
+     *
+     * @param {Error} err Failure of the request.
+     * @returns {string}
+     */
+    const voiceSpeechErrorReason = (err) => {
+        const S = cfg.strings || {};
+        if (err?.reason) return err.reason;
+        const key = VOICE_SPEECH_ERRORS[err?.code];
+        return (key && S[key]) || S.voice_mode_speech_error || '';
+    };
+
     // Message of a refusal: the session expired message, or the message of the server for any other refusal.
     const voiceRefusalMessage = (err) => {
         const S = cfg.strings || {};
@@ -2044,6 +2462,37 @@ GENERAL INSTRUCTIONS:
             return `⚠️ ${err.message}`;
         }
         return `⚠️ **${S.session_expired_title || ''}**\n\n${S.session_expired_hint || ''}`;
+    };
+
+    // Longest time a notice read aloud by the browser may take before listening again, in milliseconds.
+    const VOICE_NOTICE_MAX_MS = 8000;
+
+    // Say a short notice aloud with the voice of the browser, which costs nothing and works even when the speech
+    // service is not available (no credits, service down), then call done. The microphone is not listening meanwhile,
+    // so the notice is not transcribed.
+    const speakVoiceNotice = (notice, done) => {
+        const synth = window.speechSynthesis;
+        const text = speakableText(notice);
+        if (!synth || typeof window.SpeechSynthesisUtterance !== 'function' || !text) {
+            done();
+            return;
+        }
+        let finished = false;
+        let guard = null;
+        const finish = () => {
+            if (finished) return;
+            finished = true;
+            clearTimeout(guard);
+            done();
+        };
+        guard = setTimeout(finish, VOICE_NOTICE_MAX_MS);
+        const utterance = new window.SpeechSynthesisUtterance(text);
+        utterance.lang = document.documentElement.lang || '';
+        utterance.addEventListener('end', finish);
+        utterance.addEventListener('error', finish);
+        setVoiceModeState('speaking');
+        synth.cancel();
+        synth.speak(utterance);
     };
 
     // Transcribe what the user said and send it as a message of the voice conversation.
@@ -2082,8 +2531,20 @@ GENERAL INSTRUCTIONS:
             return;
         }
         if (!text) {
-            addMessage('assistant', `⚠️ ${failure || S.voice_mode_transcription_error || ''}`);
-            startVoiceListening();
+            const notice = failure || S.voice_mode_transcription_error || '';
+            // The same notice right after itself is not repeated, so noise does not fill the chat. A new notice is
+            // also said aloud, as the user may not be looking at the screen.
+            const msgs = g('jedomi-messages');
+            const lastMessage = msgs?.querySelector('.jedomi-message:last-of-type');
+            if (lastMessage && lastMessage.dataset.voiceNotice === notice) {
+                startVoiceListening();
+                return;
+            }
+            const wrap = addMessage('assistant', `⚠️ ${notice}`);
+            if (wrap) wrap.dataset.voiceNotice = notice;
+            speakVoiceNotice(notice, () => {
+                if (voiceMode === current && current.turn === turn) startVoiceListening();
+            });
             return;
         }
 
@@ -2252,17 +2713,27 @@ GENERAL INSTRUCTIONS:
     // Ask speech.php for the audio of a sentence and decode it.
     const fetchVoiceSentence = async (item) => {
         const current = voiceMode;
-        const res = await fetch(cfg.speech_url, {
+        const request = () => fetch(cfg.speech_url, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({text: item.text, sesskey: cfg.sesskey, spt: cfg.spt}),
             signal: item.controller.signal,
         });
+        await ensureFreshPermissions();
+        let res = await request();
+        // Expired permissions are renewed while the Moodle session is active and the sentence is requested once more.
+        if (res.status === 403) {
+            const refusal = await res.clone().json().catch(() => ({}));
+            if (refusal.error?.code === 'invalid_spt' && await renewPermissions()) {
+                res = await request();
+            }
+        }
         if (!res.ok) {
             const data = await res.json().catch(() => ({}));
             const error = new Error(data.error?.message || `HTTP ${res.status}`);
             error.status = res.status;
             error.code = data.error?.code || data.errorcode || '';
+            error.reason = data.error?.message || '';
             throw error;
         }
         const buffer = await res.arrayBuffer();
@@ -2303,7 +2774,7 @@ GENERAL INSTRUCTIONS:
                 if (voiceMode === current && !current.speechFailed) {
                     // The text is already in the chat: tell it once and go on with the next sentence.
                     current.speechFailed = true;
-                    addMessage('assistant', `⚠️ ${cfg.strings?.voice_mode_speech_error || ''}`);
+                    addMessage('assistant', `⚠️ ${voiceSpeechErrorReason(err)}`);
                 }
             }
         }
@@ -2474,11 +2945,11 @@ GENERAL INSTRUCTIONS:
         return div;
     };
 
+    // Remove every attached file, cancelling any reading in progress.
     const clearFile = () => {
-        pendingFile = null;
-        g('jedomi-file-preview')?.classList.add('jedomi-hidden');
-        const chipname = g('jedomi-file-preview-name');
-        if (chipname) chipname.textContent = '';
+        pendingFiles.forEach((attachment) => attachment.controller?.abort());
+        pendingFiles = [];
+        renderFileChips();
     };
 
     const clearImage = () => {
@@ -2534,22 +3005,45 @@ GENERAL INSTRUCTIONS:
             handleDroppedFiles(files);
         });
     };
+    // Image types the file and image model reads (the server checks them again).
+    const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+
+    // Attach the dropped files: the first readable image and up to MAX_ATTACHMENTS files. A file of a kind whose
+    // processing is off, an image of another type or a second image is not attached, and the user is told why.
     const handleDroppedFiles = (files) => {
+        const S = cfg.strings || {};
+        const documents = [];
+        let image = null;
+        let extraImages = false;
         for (const file of files) {
             const extension = (file.name.split('.').pop() || '').toLowerCase();
             const isaudio = AUDIO_EXTENSIONS.includes(extension);
+            const isimage = (file.type || '').startsWith('image/');
             // Only the kinds whose feature is on are accepted; the server refuses the others too.
-            if ((isaudio && !cfg.audio_enabled) || (!isaudio && !cfg.files_enabled)) {
-                continue;
-            }
-            if (file.type.startsWith('image/')) {
-                const dt = new DataTransfer();
-                dt.items.add(file);
-                const input = g('jedomi-image-input');
-                if (input) { input.files = dt.files; input.dispatchEvent(new Event('change')); }
+            if (isaudio && !cfg.audio_enabled) {
+                addMessage('assistant', `⚠️ ${S.file_process_error || ''} **${file.name}**: ${S.audio_error_disabled || ''}`);
+            } else if (!isaudio && !cfg.files_enabled) {
+                addMessage('assistant', `⚠️ ${S.file_process_error || ''} **${file.name}**: ${S.files_error_disabled || ''}`);
+            } else if (isimage && !IMAGE_TYPES.includes(file.type)) {
+                addMessage('assistant', `⚠️ ${S.file_process_error || ''} **${file.name}**: ${S.image_error_unsupported || ''}`);
+            } else if (isimage) {
+                extraImages = extraImages || image !== null;
+                image = image || file;
             } else {
-                attachFile(file);
+                documents.push(file);
             }
+        }
+        if (image) {
+            const dt = new DataTransfer();
+            dt.items.add(image);
+            const input = g('jedomi-image-input');
+            if (input) { input.files = dt.files; input.dispatchEvent(new Event('change')); }
+        }
+        if (extraImages) {
+            addMessage('assistant', `⚠️ ${S.image_attach_limit || ''}`);
+        }
+        if (documents.length) {
+            attachFiles(documents);
         }
     };
 
@@ -2558,12 +3052,14 @@ GENERAL INSTRUCTIONS:
         const menu = g('jedomi-attach-menu');
         if (!menu) return;
         menu.classList.toggle('jedomi-hidden');
+        g('jedomi-attach-btn')?.setAttribute('aria-expanded', menu.classList.contains('jedomi-hidden') ? 'false' : 'true');
         if (!menu.classList.contains('jedomi-hidden')) {
             setTimeout(() => document.addEventListener('click', closeAttachOutside), 10);
         }
     };
     const closeAttachMenu = () => {
         g('jedomi-attach-menu')?.classList.add('jedomi-hidden');
+        g('jedomi-attach-btn')?.setAttribute('aria-expanded', 'false');
         document.removeEventListener('click', closeAttachOutside);
     };
     const closeAttachOutside = (e) => {

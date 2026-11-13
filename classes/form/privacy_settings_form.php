@@ -45,13 +45,6 @@ class privacy_settings_form extends \moodleform {
         $mform->setExpanded('accessheader');
         $mform->addElement('static', 'accesshelp', '', get_string('privacy_access_heading_help', 'local_jedomi'));
         $mform->addElement(
-            'advcheckbox',
-            'hide_from_guests',
-            get_string('hide_from_guests', 'local_jedomi'),
-            get_string('hide_from_guests_help', 'local_jedomi')
-        );
-
-        $mform->addElement(
             'static',
             'rolevisibility',
             get_string('role_visibility_label', 'local_jedomi'),

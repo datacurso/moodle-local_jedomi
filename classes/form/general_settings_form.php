@@ -22,7 +22,7 @@ global $CFG;
 require_once($CFG->libdir . '/formslib.php');
 
 /**
- * Form of the General tab of the Jedomi settings: session token secret and training data collection.
+ * Form of the General tab of the Jedomi settings: the session token secret and the query profiler settings.
  *
  * @package    local_jedomi
  * @copyright  2026 Jedomi Project
@@ -44,16 +44,40 @@ class general_settings_form extends \moodleform {
         $mform->setType('spt_secret', PARAM_TEXT);
         $mform->addElement('static', 'spt_secret_help', '', get_string('spt_secret_help', 'local_jedomi'));
 
-        $mform->addElement('header', 'improvementheader', get_string('improvement_heading', 'local_jedomi'));
-        $mform->setExpanded('improvementheader');
-        $mform->addElement('static', 'improvementhelp', '', get_string('improvement_heading_help', 'local_jedomi'));
+        $mform->addElement('header', 'profilerheader', get_string('profiler_heading', 'local_jedomi'));
+        $mform->setExpanded('profilerheader');
+        $mform->addElement('text', 'profiler_slow_ms', get_string('profiler_slow_ms', 'local_jedomi'), ['size' => 8]);
+        $mform->setType('profiler_slow_ms', PARAM_INT);
+        $mform->addHelpButton('profiler_slow_ms', 'profiler_slow_ms', 'local_jedomi');
         $mform->addElement(
-            'advcheckbox',
-            'collect_training_data',
-            get_string('collect_training_data', 'local_jedomi'),
-            get_string('collect_training_data_help', 'local_jedomi')
+            'text',
+            'profiler_retention_days',
+            get_string('profiler_retention_days', 'local_jedomi'),
+            ['size' => 8]
         );
+        $mform->setType('profiler_retention_days', PARAM_INT);
+        $mform->addHelpButton('profiler_retention_days', 'profiler_retention_days', 'local_jedomi');
 
         $this->add_action_buttons(false);
+    }
+
+    /**
+     * Check that the slow threshold and the retention are within their ranges.
+     *
+     * @param array $data Submitted data.
+     * @param array $files Submitted files.
+     * @return array Errors keyed by field name.
+     */
+    public function validation($data, $files): array {
+        $errors = parent::validation($data, $files);
+        $slowms = (int) ($data['profiler_slow_ms'] ?? 0);
+        if ($slowms < 1 || $slowms > 600000) {
+            $errors['profiler_slow_ms'] = get_string('profiler_slow_ms_invalid', 'local_jedomi');
+        }
+        $days = (int) ($data['profiler_retention_days'] ?? 0);
+        if ($days < 1 || $days > 3650) {
+            $errors['profiler_retention_days'] = get_string('profiler_retention_days_invalid', 'local_jedomi');
+        }
+        return $errors;
     }
 }

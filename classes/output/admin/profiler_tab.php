@@ -17,16 +17,14 @@
 namespace local_jedomi\output\admin;
 
 /**
- * Profiler tab of the Jedomi settings: statistics of the queries run by agents.
+ * Profiler tab of the Jedomi settings: statistics of the queries of every channel (agents, previews, web chat,
+ * Telegram and companion), filtered and paginated.
  *
  * @package    local_jedomi
  * @copyright  2026 Jedomi Project
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class profiler_tab implements \core\output\named_templatable, \renderable, \templatable {
-    /** @var int Queries that take longer than this, in milliseconds, are highlighted. */
-    private const SLOW_MS = 1000;
-
     /** @var \stdClass Aggregate statistics from query_profiler::get_aggregate(). */
     protected \stdClass $aggregate;
     /** @var array Recent queries from admin_settings_service::get_recent_profiler_entries(). */
@@ -35,6 +33,14 @@ class profiler_tab implements \core\output\named_templatable, \renderable, \temp
     protected int $minms;
     /** @var string Current sort: "duration_ms" or "timecreated". */
     protected string $sort;
+    /** @var string Current channel filter; empty for every channel. */
+    protected string $channel;
+    /** @var int Number of queries that match the filters. */
+    protected int $total;
+    /** @var int Current page, from 1. */
+    protected int $page;
+    /** @var int Queries per page. */
+    protected int $perpage;
 
     /**
      * Store the statistics and the current filters.
@@ -43,12 +49,55 @@ class profiler_tab implements \core\output\named_templatable, \renderable, \temp
      * @param array $recent Recent queries from admin_settings_service::get_recent_profiler_entries().
      * @param int $minms Current minimum duration filter, in milliseconds; 0 for none.
      * @param string $sort Current sort: "duration_ms" or "timecreated".
+     * @param string $channel Current channel filter; empty for every channel.
+     * @param int $total Number of queries that match the filters; 0 when the list is not paginated.
+     * @param int $page Current page, from 1.
+     * @param int $perpage Queries per page.
      */
-    public function __construct(\stdClass $aggregate, array $recent, int $minms, string $sort) {
+    public function __construct(
+        \stdClass $aggregate,
+        array $recent,
+        int $minms,
+        string $sort,
+        string $channel = '',
+        int $total = 0,
+        int $page = 1,
+        int $perpage = 20
+    ) {
         $this->aggregate = $aggregate;
         $this->recent = $recent;
         $this->minms = $minms;
         $this->sort = $sort;
+        $this->channel = $channel;
+        $this->total = $total;
+        $this->page = max(1, $page);
+        $this->perpage = max(1, $perpage);
+    }
+
+    /**
+     * Readable origin of a query and the link to its agent, if any.
+     *
+     * @param array $entry Entry of admin_settings_service::get_profiler_page().
+     * @return array{0: string, 1: string} Label and URL (empty when there is no agent to open).
+     */
+    public static function origin(array $entry): array {
+        $agentid = (int) $entry['agentid'];
+        $channel = (string) ($entry['channel'] ?? 'agent');
+        $url = $agentid > 0
+            ? (new \moodle_url('/local/jedomi/admin_settings.php', ['tab' => 'agents', 'edit_agent' => $agentid]))->out(false)
+            : '';
+        switch ($channel) {
+            case 'preview':
+                return $agentid > 0
+                    ? [get_string('query_profiler_origin_preview_agent', 'local_jedomi', $agentid), $url]
+                    : [get_string('query_profiler_origin_preview', 'local_jedomi'), ''];
+            case 'web':
+            case 'telegram':
+            case 'companion':
+                return [get_string('query_profiler_origin_' . $channel, 'local_jedomi'), ''];
+            default:
+                return [get_string('agent_number', 'local_jedomi', $agentid), $url];
+        }
     }
 
     /**
@@ -68,20 +117,44 @@ class profiler_tab implements \core\output\named_templatable, \renderable, \temp
             ];
         }
         $recent = [];
+        // The list highlights the same queries that the slow indicator counts (at least the threshold).
+        $slowms = \local_jedomi\agent\query_profiler::slow_threshold_ms();
         foreach ($this->recent as $entry) {
-            $url = new \moodle_url('/local/jedomi/admin_settings.php', ['tab' => 'agents', 'edit_agent' => $entry['agentid']]);
+            [$origin, $url] = self::origin($entry);
             $recent[] = [
                 'agentid' => $entry['agentid'],
-                'agenturl' => $url->out(false),
+                'origin' => $origin,
+                'agenturl' => $url,
                 'userfullname' => $entry['userfullname'],
                 'query' => mb_substr($entry['query'], 0, 100),
                 'duration' => round($entry['duration_ms'], 2),
-                'slow' => $entry['duration_ms'] > self::SLOW_MS,
+                'slow' => $entry['duration_ms'] >= $slowms,
                 'rowcount' => $entry['rowcount'],
                 'timecreated' => $entry['timecreated'],
             ];
         }
+        $channels = [['value' => '', 'label' => get_string('query_profiler_channel_all', 'local_jedomi'),
+            'selected' => $this->channel === '']];
+        foreach (\local_jedomi\agent\query_profiler::CHANNELS as $channel) {
+            $label = $channel === 'agent' ? get_string('query_profiler_origin_agent', 'local_jedomi')
+                : get_string('query_profiler_origin_' . $channel, 'local_jedomi');
+            $channels[] = ['value' => $channel, 'label' => $label, 'selected' => $this->channel === $channel];
+        }
+        $pagingbar = '';
+        if ($this->total > $this->perpage) {
+            $baseurl = new \moodle_url('/local/jedomi/admin_settings.php', array_filter([
+                'tab' => 'profiler',
+                'qp_min_ms' => $this->minms ?: null,
+                'qp_sort' => $this->sort,
+                'qp_channel' => $this->channel ?: null,
+            ]));
+            // The paging bar and its qp_page parameter count pages from 0; the tab counts them from 1.
+            $bar = new \paging_bar($this->total, $this->page - 1, $this->perpage, $baseurl, 'qp_page');
+            $pagingbar = $output->render($bar);
+        }
         return [
+            'channels' => $channels,
+            'pagingbar' => $pagingbar,
             'total' => (int) $this->aggregate->total_queries,
             'slow' => (int) $this->aggregate->slow_queries,
             'avg' => $this->aggregate->avg_duration_ms,

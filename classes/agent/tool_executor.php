@@ -40,10 +40,11 @@ class tool_executor {
      *
      * @param  int $agentid Agent ID (for SQL profiler logging).
      * @param  int $userid  Agent creator userid (for WS permission checks).
+     * @param  string $channel agent for a scheduled run, preview for a preview (for SQL profiler logging).
      * @return array Array of tool definitions compatible with OpenAI's "tools" field.
      */
-    public static function get_definitions(int $agentid = 0, int $userid = 0): array {
-        $tools = self::get_tools($agentid, $userid);
+    public static function get_definitions(int $agentid = 0, int $userid = 0, string $channel = 'agent'): array {
+        $tools = self::get_tools($agentid, $userid, $channel);
         $defs = [];
         foreach ($tools as $name => $tool) {
             if ($name === 'document_read' && !\local_jedomi\ai\model_settings::is_files_enabled()) {
@@ -94,16 +95,17 @@ class tool_executor {
      *
      * @param  int $agentid
      * @param  int $userid
+     * @param  string $channel agent or preview.
      * @return tool\agent_tool[]
      */
-    private static function get_tools(int $agentid = 0, int $userid = 0): array {
+    private static function get_tools(int $agentid = 0, int $userid = 0, string $channel = 'agent'): array {
         // Tools are rebuilt for every run that names its agent or its user, so a run never keeps
         // the permissions of the user of a previous run.
         if (empty(self::$instances) || $agentid > 0 || $userid > 0) {
             $wstool = new tool\ws_tool($userid);
             self::$instances = [
                 // Data tools.
-                'execute_sql' => new tool\sql_tool($agentid, $userid),
+                'execute_sql' => new tool\sql_tool($agentid, $userid, $channel),
                 'describe_table' => new tool\describe_table_tool(),
                 'search_tables' => new tool\search_tables_tool(),
                 'get_site_config' => new tool\site_config_tool($userid),
@@ -111,8 +113,8 @@ class tool_executor {
                 // Web service tools.
                 'call_webservice' => $wstool,
                 'ws_execute' => $wstool,
-                'ws_search' => new tool\ws_search_tool(),
-                'ws_describe' => new tool\ws_describe_tool(),
+                'ws_search' => new tool\ws_search_tool($userid),
+                'ws_describe' => new tool\ws_describe_tool($userid),
 
                 // Agent management tools.
                 'create_agent' => new tool\create_agent_tool($userid),

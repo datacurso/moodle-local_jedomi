@@ -1324,16 +1324,16 @@ JS;
 
     // phpcs:disable moodle.Files.LineLength.MaxExceeded -- Behat step patterns must stay on one line.
     /**
-     * Type the id of a course in a field of a container, for the forms that ask for a course id.
+     * Type the Moodle context id of a course in a field of a container, for the forms that ask for a context id.
      *
-     * @When /^I set the field "(?P<field_string>(?:[^"]|\\")*)" in the "(?P<container_string>(?:[^"]|\\")*)" "(?P<selector_string>[^"]*)" to the id of the course "(?P<shortname_string>(?:[^"]|\\")*)"$/
+     * @When /^I set the field "(?P<field_string>(?:[^"]|\\")*)" in the "(?P<container_string>(?:[^"]|\\")*)" "(?P<selector_string>[^"]*)" to the context id of the course "(?P<shortname_string>(?:[^"]|\\")*)"$/
      * @param string $field Field label.
      * @param string $container Container locator.
      * @param string $selector Container selector type.
      * @param string $shortname Course short name.
      * @return void
      */
-    public function i_set_the_field_in_the_container_to_the_id_of_the_course(
+    public function i_set_the_field_in_the_container_to_the_context_id_of_the_course(
         string $field,
         string $container,
         string $selector,
@@ -1341,7 +1341,8 @@ JS;
     ): void {
         global $DB;
         $courseid = $DB->get_field('course', 'id', ['shortname' => $shortname], MUST_EXIST);
-        $this->execute('behat_forms::i_set_the_field_in_container_to', [$field, $container, $selector, (string) $courseid]);
+        $contextid = \context_course::instance($courseid)->id;
+        $this->execute('behat_forms::i_set_the_field_in_container_to', [$field, $container, $selector, (string) $contextid]);
     }
     // phpcs:enable moodle.Files.LineLength.MaxExceeded
 
@@ -1372,6 +1373,28 @@ JS;
     var state = {level: 0, denied: false, transcripts: [], transcriptions: 0, readings: [], spoken: [], speechfails: false,
         tracks: 0, released: 0, playing: 0};
     window.jedomiVoice = state;
+    // The voice of the browser, which reads the short notices of the voice conversation: it records them and ends at
+    // once, so no sound is played.
+    state.notices = [];
+    var fakeSynth = {
+        speak: function(utterance) {
+            state.notices.push(utterance.text);
+            setTimeout(function() {
+                utterance.dispatchEvent(new Event('end'));
+            }, 50);
+        },
+        cancel: function() {
+            return;
+        }
+    };
+    Object.defineProperty(window, 'speechSynthesis', {configurable: true, get: function() {
+        return fakeSynth;
+    }});
+    window.SpeechSynthesisUtterance = function(text) {
+        var target = new EventTarget();
+        target.text = text;
+        return target;
+    };
     state.speak = function(ms, level) {
         state.level = level || 0.2;
         setTimeout(function() {
@@ -1765,6 +1788,24 @@ JS;
     public function jedomi_takes_seconds_to_read_each_sentence(int $seconds): void {
         $this->install_voice_stub();
         $this->execute_script("window.jedomiVoice.seconds = {$seconds};");
+    }
+
+    /**
+     * The voice of the browser said a notice of the voice conversation aloud a number of times.
+     *
+     * @Then /^Jedomi should have said "(?P<text_string>(?:[^"]|\\")*)" aloud "(?P<count_number>\d+)" times?$/
+     * @param string $text Text of the notice.
+     * @param int $count Expected number of times.
+     * @return void
+     */
+    public function jedomi_should_have_said_aloud(string $text, int $count): void {
+        $text = $this->escape($text);
+        $this->wait_for_value(
+            'return (window.jedomiVoice && window.jedomiVoice.notices || []).filter(function(t) {'
+                . ' return t === ' . json_encode($text) . '; }).length;',
+            static fn($value): bool => (int) $value === $count,
+            "\"{$text}\" was not said aloud {$count} times."
+        );
     }
 
     /**

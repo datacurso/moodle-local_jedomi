@@ -1,0 +1,45 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template local_jedomi/local/sidebar/feedback_comment
+
+    Optional comment of an answer rated as in need of improvement.
+
+    Classes required for JS:
+    * none
+
+    Data attributes required for JS:
+    * data-region="local_jedomi/sidebar/feedback-comment-text" on the text field
+    * data-action="local_jedomi/sidebar/feedback-comment-send" on the button
+
+    Context variables required for this template:
+    * uniqid string - Unique id of the field
+    * strings object - Sidebar strings: feedback_comment, feedback_comment_send
+
+    Example context (json):
+    {
+        "uniqid": "jedomi-comment-1",
+        "strings": {"feedback_comment": "What could be improved? (optional)", "feedback_comment_send": "Send comment"}
+    }
+}}
+<div class="jedomi-feedback-comment">
+    <label class="sr-only" for="{{uniqid}}">{{strings.feedback_comment}}</label>
+    <textarea id="{{uniqid}}" class="form-control form-control-sm" rows="2" maxlength="1000"
+        placeholder="{{strings.feedback_comment}}" data-region="local_jedomi/sidebar/feedback-comment-text"></textarea>
+    <button type="button" class="btn btn-secondary btn-sm mt-1"
+        data-action="local_jedomi/sidebar/feedback-comment-send">{{strings.feedback_comment_send}}</button>
+</div>

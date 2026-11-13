@@ -419,11 +419,25 @@ final class preview_runner_test extends \advanced_testcase {
 
     /**
      * MDL-INT-100: the error messages of the preview are shown in the language of the user.
-     * [Pendiente:skip] Some error messages of the preview are fixed in English.
      *
      * @return void
      */
     public function test_preview_errors_are_in_the_user_language(): void {
-        $this->markTestSkipped('Pending fix: some error messages of the preview are fixed in English.');
+        global $CFG;
+        $source = file_get_contents($CFG->dirroot . '/local/jedomi/classes/agent/preview_runner.php');
+        $fixed = ['No response from AI', 'encountered an issue', 'Same tool with same arguments', 'does not run actions'];
+        foreach ($fixed as $text) {
+            $this->assertStringNotContainsString($text, $source, "'{$text}' is no longer fixed in English");
+        }
+        $manager = get_string_manager();
+        $keys = ['preview_error_no_answer', 'preview_error_fetch_failed', 'preview_detail_loop', 'preview_detail_confirmation'];
+        foreach ($keys as $key) {
+            $this->assertStringContainsString($key, $source);
+            $this->assertNotSame(
+                $manager->get_string($key, 'local_jedomi', 3, 'en'),
+                $manager->get_string($key, 'local_jedomi', 3, 'es'),
+                "{$key} is translated"
+            );
+        }
     }
 }

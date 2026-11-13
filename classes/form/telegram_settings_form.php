@@ -24,6 +24,8 @@ require_once($CFG->libdir . '/formslib.php');
 /**
  * Telegram form of the Integrations tab of the Jedomi settings: bot token, limits and role access.
  *
+ * The Regenerate secret button is a no-submit button: the page handles it on its own, without saving the form.
+ *
  * Custom data: roles (array of ['id' => int, 'shortname' => string, 'name' => string]) and
  * tokenset (bool, whether a bot token is already stored).
  *
@@ -37,7 +39,7 @@ class telegram_settings_form extends \moodleform {
         'telegram_rate_limit' => [0, 1000],
         'telegram_cooldown' => [0, 1440],
         'telegram_max_turns' => [1, 100],
-        'telegram_gateway_timeout' => [5, 300],
+        'telegram_gateway_timeout' => [5, \local_jedomi\telegram\webhook_handler::MAX_AI_TIMEOUT],
     ];
 
     /**
@@ -48,9 +50,10 @@ class telegram_settings_form extends \moodleform {
     protected function definition(): void {
         $mform = $this->_form;
 
-        $mform->addElement('header', 'botheader', get_string('security_heading', 'local_jedomi'));
+        $mform->addElement('header', 'botheader', get_string('telegram_bot_heading', 'local_jedomi'));
         $mform->setExpanded('botheader');
-        $placeholder = !empty($this->_customdata['tokenset'])
+        $tokenset = !empty($this->_customdata['tokenset']);
+        $placeholder = $tokenset
             ? get_string('telegram_bot_token_placeholder_saved', 'local_jedomi')
             : get_string('telegram_bot_token_placeholder', 'local_jedomi');
         $mform->addElement(
@@ -61,20 +64,31 @@ class telegram_settings_form extends \moodleform {
         );
         $mform->setType('telegram_bot_token', PARAM_TEXT);
         $mform->addElement('static', 'telegram_bot_token_help', '', get_string('telegram_bot_token_help', 'local_jedomi'));
+        if ($tokenset) {
+            $mform->addElement(
+                'advcheckbox',
+                'telegram_remove_token',
+                get_string('telegram_remove_token', 'local_jedomi'),
+                get_string('telegram_remove_token_desc', 'local_jedomi')
+            );
+            $mform->disabledIf('telegram_bot_token', 'telegram_remove_token', 'checked');
+        }
+        // Regenerating the secret is an action of its own: it does not save, nor validate, the rest of the form.
+        $mform->registerNoSubmitButton('regeneratesecret');
         $mform->addElement('submit', 'regeneratesecret', get_string('regenerate', 'local_jedomi'), [
             'data-action' => 'local_jedomi/admin/integrations/regenerate-secret',
             'class' => 'btn-outline-warning',
         ]);
         $mform->addElement('static', 'regeneratesecret_help', '', get_string('telegram_webhook_secret_help', 'local_jedomi'));
 
-        $mform->addElement('header', 'rateheader', get_string('telegram_rate_limit', 'local_jedomi'));
+        $mform->addElement('header', 'rateheader', get_string('telegram_limits_heading', 'local_jedomi'));
         foreach (array_keys(self::RANGES) as $field) {
             $mform->addElement('text', $field, get_string($field, 'local_jedomi'), ['size' => 6]);
             $mform->setType($field, PARAM_INT);
             $mform->addHelpButton($field, $field, 'local_jedomi');
         }
 
-        $mform->addElement('header', 'accessheader', get_string('privacy_access_heading', 'local_jedomi'));
+        $mform->addElement('header', 'accessheader', get_string('telegram_access_heading', 'local_jedomi'));
         $mform->addElement(
             'static',
             'telegram_role_visibility_help',

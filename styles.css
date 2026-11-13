@@ -73,21 +73,6 @@
     transform: translateX(0);
 }
 
-/* ── Overlay (mobile) ──────────────────────────────────────────────────────── */
-#jedomi-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 99998;
-    background: rgba(0, 0, 0, 0.18);
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.28s ease;
-}
-#jedomi-overlay.jedomi-open {
-    opacity: 1;
-    pointer-events: auto;
-}
-
 /* ── Trigger FAB ───────────────────────────────────────────────────────────── */
 .jedomi-trigger {
     position: fixed;
@@ -345,6 +330,12 @@
     margin-top: 8px;
     display: block;
 }
+.jedomi-bubble .jedomi-msg-image-placeholder {
+    margin-top: 6px;
+    font-size: 0.85em;
+    font-style: italic;
+    opacity: 0.8;
+}
 
 /* ── Thinking colapsable ───────────────────────────────────────────────────── */
 .jedomi-thinking-wrapper {
@@ -564,6 +555,19 @@
     cursor: not-allowed;
     transform: none;
 }
+/* Stop button: replaces the send button while a written answer is in progress. */
+.jedomi-stop-btn {
+    background: #b91c1c;
+}
+.jedomi-stop-btn:hover {
+    background: #991b1b;
+}
+/* Optional comment of an answer rated as in need of improvement. */
+.jedomi-feedback-comment {
+    flex-basis: 100%;
+    margin-top: 6px;
+}
+
 
 /* ── Attach (+) dropdown ──────────────────────────────────────────────────── */
 .jedomi-attach-wrap {
@@ -633,11 +637,16 @@
     font-size: 12px;
     color: var(--j-muted);
     flex: 1;
+    overflow-wrap: anywhere;
+}
+.jedomi-file-chips .jedomi-file-chip {
+    margin-top: 4px;
 }
 
 /* ── Message actions ───────────────────────────────────────────────────────── */
 .jedomi-msg-actions {
     display: flex;
+    flex-wrap: wrap;
     gap: 4px;
     padding: 6px 2px 2px;
     margin-top: 4px;
@@ -645,7 +654,8 @@
     transition: opacity 0.15s;
 }
 .jedomi-message-assistant:hover .jedomi-msg-actions,
-.jedomi-bubble:hover .jedomi-msg-actions {
+.jedomi-bubble:hover .jedomi-msg-actions,
+.jedomi-msg-actions:focus-within {
     opacity: 1;
 }
 .jedomi-user-actions {
@@ -808,20 +818,6 @@
     letter-spacing: 0.01em;
 }
 
-/* ── Overlay ───────────────────────────────────────────────────────────────── */
-.jedomi-overlay {
-    position: fixed !important;
-    inset: 0 !important;
-    background: rgba(0, 0, 0, 0.15) !important;
-    z-index: 99997 !important;
-}
-
-@media (min-width: 768px) {
-    .jedomi-overlay {
-        display: none !important;
-    }
-}
-
 /* ── Tablas ────────────────────────────────────────────────────────────────── */
 .jedomi-table-wrap {
     margin: 10px 0;
@@ -922,6 +918,7 @@
     margin-bottom: 8px;
 }
 .jedomi-confirm-preview {
+    white-space: pre-line;
     font-size: 12px;
     color: var(--j-muted);
     font-style: italic;

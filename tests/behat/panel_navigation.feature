@@ -23,13 +23,13 @@ Feature: Opening, closing, keyboard and accessibility of the Jedomi panel
     Then "//div[@id='jedomi-sidebar' and contains(@class, 'jedomi-open')]" "xpath_element" should exist
     And I click on "#jedomi-close" "css_element"
     And "//div[@id='jedomi-sidebar' and contains(@class, 'jedomi-closed')]" "xpath_element" should exist
-    And I press the ctrl+shift j key
+    And I press the alt+shift j key
     And "//div[@id='jedomi-sidebar' and contains(@class, 'jedomi-open')]" "xpath_element" should exist
     And I press the escape key
     And "//div[@id='jedomi-sidebar' and contains(@class, 'jedomi-closed')]" "xpath_element" should exist
-    And I press the ctrl+shift j key
+    And I press the alt+shift j key
     And "//div[@id='jedomi-sidebar' and contains(@class, 'jedomi-open')]" "xpath_element" should exist
-    And I press the ctrl+shift j key
+    And I press the alt+shift j key
     And "//div[@id='jedomi-sidebar' and contains(@class, 'jedomi-closed')]" "xpath_element" should exist
 
   @MDL-E2E-003
@@ -44,7 +44,7 @@ Feature: Opening, closing, keyboard and accessibility of the Jedomi panel
   Scenario: The new conversation shortcut opens the panel with a new conversation
     Given I log in as "student1"
     And I am on homepage
-    When I press the ctrl+shift n key
+    When I press the alt+shift n key
     Then "//div[@id='jedomi-sidebar' and contains(@class, 'jedomi-open')]" "xpath_element" should exist
     And I should see "New conversation started. How can I help you?" in the "#jedomi-messages" "css_element"
 
@@ -64,9 +64,8 @@ Feature: Opening, closing, keyboard and accessibility of the Jedomi panel
     And "//div[@id='jedomi-sidebar' and contains(@class, 'jedomi-open')]" "xpath_element" should exist
     And the Jedomi panel should fill the window width
 
-  # [Pendiente:skip] The closed panel is reachable with Tab and by screen readers, does not keep nor give back the
-  # focus, answers are not announced, several buttons only have a tooltip and the backdrop never appears.
-  # This scenario asserts the expected behaviour and fails until fixed; see the skipped PHPUnit companion.
+  # The closed panel is out of the Tab order and hidden from screen readers, the focus goes back to the button when it
+  # closes, the messages are a live region and every button has a name.
   @MDL-E2E-004
   Scenario: The panel is hidden from the keyboard while closed, keeps the focus while open and announces answers
     Given I log in as "student1"
@@ -80,18 +79,19 @@ Feature: Opening, closing, keyboard and accessibility of the Jedomi panel
     And I press the escape key
     And the focused element is "#jedomi-trigger" "css_element"
 
-  # [Pendiente:skip] See the scenario above.
+  # On mobile the panel fills the screen, so there is nothing outside it to touch: its close button closes it.
   @MDL-E2E-004
-  Scenario: On mobile touching outside the panel closes it
+  Scenario: On mobile the panel fills the screen and its close button closes it
     Given I log in as "student1"
     And I change viewport size to "mobile"
     And I am on homepage
     And I click on "#jedomi-trigger" "css_element"
-    When I click on "#jedomi-overlay" "css_element"
-    Then "//div[@id='jedomi-sidebar' and contains(@class, 'jedomi-closed')]" "xpath_element" should exist
+    And the Jedomi panel should fill the window width
+    And "#jedomi-overlay" "css_element" should not exist
+    When I click on "#jedomi-close" "css_element"
+    Then "//div[@id='jedomi-sidebar' and contains(@class, 'jedomi-closed') and @aria-hidden='true']" "xpath_element" should exist
 
-  # [Pendiente:skip] The shortcuts match browser shortcuts (console and private window) and the new conversation
-  # shortcut clears the conversation without confirmation. Asserts the expected behaviour; fails until fixed.
+  # The new conversation shortcut (Alt+Shift+N) asks for a confirmation before clearing a conversation.
   @MDL-E2E-005
   Scenario: The new conversation shortcut asks for confirmation before clearing a conversation
     Given I log in as "student1"
@@ -100,11 +100,16 @@ Feature: Opening, closing, keyboard and accessibility of the Jedomi panel
     And the Jedomi AI answers "Your next task is the essay."
     And I send "What is my next task?" to Jedomi
     And I should see "Your next task is the essay." in the "#jedomi-messages" "css_element"
-    When I press the ctrl+shift n key
+    When I press the alt+shift n key
     Then ".modal-dialog" "css_element" should exist
     And I should see "What is my next task?" in the "#jedomi-messages" "css_element"
+    And I click on "Cancel" "button" in the ".modal-dialog" "css_element"
+    And I should see "What is my next task?" in the "#jedomi-messages" "css_element"
+    And I press the alt+shift n key
+    And I click on "New conversation" "button" in the ".modal-dialog" "css_element"
+    And I should not see "What is my next task?" in the "#jedomi-messages" "css_element"
 
-  # [Pendiente:skip] See the scenario above: Ctrl+Shift+J opens the browser console and Ctrl+Shift+N a private window.
+  # Ctrl+Shift+J opens the browser console and Ctrl+Shift+N a private window: the panel uses Alt+Shift instead.
   @MDL-E2E-005
   Scenario: The panel does not use the shortcuts the browsers reserve
     Given I log in as "student1"
@@ -114,8 +119,7 @@ Feature: Opening, closing, keyboard and accessibility of the Jedomi panel
     And I press the ctrl+shift n key
     And "//div[@id='jedomi-sidebar' and contains(@class, 'jedomi-closed')]" "xpath_element" should exist
 
-  # [Pendiente:skip] When the panel configuration cannot be loaded the panel is shown empty and does not work,
-  # without a notice. Asserts the expected behaviour; fails until fixed.
+  # The panel is never started without its configuration: a notice with a button to try again is shown instead.
   @MDL-E2E-013
   Scenario: The user is told when the panel configuration cannot be loaded
     Given I log in as "student1"

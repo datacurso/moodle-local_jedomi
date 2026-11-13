@@ -45,6 +45,19 @@ class ws_runner {
     }
 
     /**
+     * Functions the web service search of a role may return, the same list that gates description and execution.
+     *
+     * @param string $role Jedomi role (admin, manager, teacher, student).
+     * @return string[]|null Null when the role may call every function; otherwise its list (empty: none).
+     */
+    public static function searchable_functions(string $role): ?array {
+        if (\local_jedomi_role_has_full_ws_access($role)) {
+            return null;
+        }
+        return array_values(array_filter(\local_jedomi_get_role_allowlist($role), 'is_string'));
+    }
+
+    /**
      * Method that implements a web service function.
      *
      * @param string $wsname Web service function name.
@@ -89,13 +102,43 @@ class ws_runner {
     }
 
     /**
-     * Call the method of a web service function with the arguments matched by name.
+     * Validate the arguments of a web service function against its parameter description, as Moodle does for every
+     * web service call: types are checked and cleaned, defaults applied and unknown keys rejected.
+     *
+     * Functions without a parameter description (not an external function) get their arguments unchanged.
+     *
+     * @param \ReflectionMethod $method Method of the function (from resolve()).
+     * @param array $args Arguments by name.
+     * @return array Validated arguments by name.
+     * @throws \moodle_exception ws_invalid_parameters with the reason Moodle gives.
+     */
+    public static function validate(\ReflectionMethod $method, array $args): array {
+        $classname = $method->getDeclaringClass()->getName();
+        $describer = $method->getName() . '_parameters';
+        if (!method_exists($classname, $describer)) {
+            return $args;
+        }
+        $description = $classname::$describer();
+        if (!$description instanceof \core_external\external_description) {
+            return $args;
+        }
+        try {
+            return \core_external\external_api::validate_parameters($description, $args);
+        } catch (\invalid_parameter_exception $e) {
+            $detail = !empty($e->debuginfo) ? (string) $e->debuginfo : $e->getMessage();
+            throw new \moodle_exception('ws_invalid_parameters', 'local_jedomi', '', $detail, $detail);
+        }
+    }
+
+    /**
+     * Call the method of a web service function with the arguments matched by name, after validating them with the
+     * parameter description of the function (the same validation in every channel).
      *
      * @param \ReflectionMethod $method Method of the function (from resolve()).
      * @param array $args Arguments by name.
      * @param bool $intransaction Run inside a delegated transaction committed only when the call succeeds.
      * @return mixed Result of the function.
-     * @throws \moodle_exception missingparam, ws_execute_error or the error of the function.
+     * @throws \moodle_exception missingparam, ws_invalid_parameters, ws_execute_error or the error of the function.
      */
     public static function call(\ReflectionMethod $method, array $args, bool $intransaction = false) {
         global $DB;
@@ -103,6 +146,7 @@ class ws_runner {
         if ($missing !== null) {
             throw new \moodle_exception('missingparam', 'error', '', $missing);
         }
+        $args = self::validate($method, $args);
         $callargs = [];
         foreach ($method->getParameters() as $parameter) {
             $name = $parameter->getName();

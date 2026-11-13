@@ -76,13 +76,39 @@ class hook_callbacks {
             return;
         }
 
+        // The page the panel is on, read here from the page itself: the configuration is requested by AJAX, where the
+        // page is the endpoint. The server checks these values again before using them.
         $configurl = (new \moodle_url('/local/jedomi/ajax/sidebar_config.php', [
             'sesskey' => sesskey(),
             'courseid' => (int) $PAGE->course->id,
+            'cmid' => !empty($PAGE->cm) ? (int) $PAGE->cm->id : 0,
+            'pagetype' => (string) $PAGE->pagetype,
+            'pagepath' => self::page_path(),
         ]))->out(false);
 
+        // The notice shown when the configuration cannot be loaded needs its texts before the configuration.
         $PAGE->requires->js_call_amd('local_jedomi/sidebar', 'init', [[
             'configUrl' => $configurl,
+            'strings' => [
+                'config_load_error' => get_string('config_load_error', 'local_jedomi'),
+                'config_load_retry' => get_string('config_load_retry', 'local_jedomi'),
+            ],
         ]]);
+    }
+
+    /**
+     * Path of the current page relative to the site, without its query string (for example "/user/files.php").
+     *
+     * @return string Path, or '' when the page has no address.
+     */
+    private static function page_path(): string {
+        global $PAGE;
+
+        try {
+            $url = $PAGE->url->out_as_local_url(false);
+        } catch (\Throwable $e) {
+            return '';
+        }
+        return (string) preg_replace('/[?#].*$/s', '', $url);
     }
 }

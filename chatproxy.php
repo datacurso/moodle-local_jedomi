@@ -56,7 +56,7 @@ if (!$input || !isset($input['messages'])) {
 }
 
 $sesskey = $input['sesskey'] ?? '';
-if (!confirm_sesskey($sesskey)) {
+if (!is_string($sesskey) || $sesskey === '' || !confirm_sesskey($sesskey)) {
     http_response_code(403);
     header('Content-Type: application/json');
     die(json_encode(['error' => 'invalid_sesskey']));
@@ -79,6 +79,10 @@ try {
     header('Content-Type: application/json');
     die(json_encode(['error' => $e->getMessage()]));
 }
+
+// The user can stop an answer: the browser then closes the request. The script is not killed halfway through a tool
+// or a held action; the tool loop sees the closed connection and stops before the next AI round.
+ignore_user_abort(true);
 
 // ... ── SSE headers ──
 header('Content-Type: text/event-stream');

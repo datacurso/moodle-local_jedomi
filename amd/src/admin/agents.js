@@ -115,10 +115,11 @@ const getFilters = (root) => {
 /**
  * Turn an object of counts into chart data.
  *
- * @param {Object<string, number>} counts Counts by label.
+ * @param {Object<string, number>} counts Counts by key.
+ * @param {Object<string, string>} labels Readable name of each key; a key without one is shown as it is.
  * @returns {Array<{label: string, count: number}>}
  */
-const toPairs = (counts) => Object.keys(counts).map((label) => ({label, count: counts[label]}));
+const toPairs = (counts, labels = {}) => Object.keys(counts).map((key) => ({label: labels[key] || key, count: counts[key]}));
 
 /**
  * Load the statistics and draw the charts.
@@ -135,8 +136,10 @@ const loadStats = async(root, filters) => {
             throw new Error(data.error);
         }
         const charts = data.charts || {};
-        Charts.drawPie(root.querySelector(Selectors.agents.chart('role')), toPairs(charts.by_role || {}), nodata);
-        Charts.drawBar(root.querySelector(Selectors.agents.chart('status')), toPairs(charts.by_status || {}), nodata);
+        Charts.drawPie(root.querySelector(Selectors.agents.chart('role')),
+            toPairs(charts.by_role || {}, charts.role_labels || {}), nodata);
+        Charts.drawBar(root.querySelector(Selectors.agents.chart('status')),
+            toPairs(charts.by_status || {}, charts.status_labels || {}), nodata);
         const executions = (charts.executions_30d || []).map((item) => ({label: item.label || item.day || '', count: item.count}));
         Charts.drawBar(root.querySelector(Selectors.agents.chart('executions')), executions, nodata);
     } catch (error) {
@@ -157,11 +160,16 @@ const rowContext = (row) => ({
     creator: row.user_fullname || '',
     name: row.name || '',
     schedule: row.schedule_cron || '',
+    schedulelabel: row.schedule_label || row.schedule_cron || '',
     enabled: parseInt(row.enabled, 10) === 1,
     lastrun: parseInt(row.lastrun, 10) || 0,
     nextrun: parseInt(row.nextrun, 10) || 0,
+    failcount: parseInt(row.failcount, 10) || 0,
+    lasterror: row.lasterror || '',
+    lastresult: row.lastresult || '',
     contexttype: row.context_type || '',
     contextid: parseInt(row.context_id, 10) || 0,
+    contextlabel: row.context_label || row.context_type || '',
     prompt: row.prompt || '',
     prompthidden: row.prompthidden === true,
     canmanage: row.canmanage === true,
@@ -271,7 +279,13 @@ const editAgent = async(root, id) => {
         const form = root.querySelector(Selectors.agents.createForm);
         form.querySelector(Selectors.field('name')).value = agent.name || '';
         form.querySelector(Selectors.field('prompt')).value = agent.prompt || '';
-        form.querySelector(Selectors.field('schedule_cron')).value = agent.schedule_cron || '*/5 * * * *';
+        // A schedule that is not one of the presets is shown as "Custom" with its expression.
+        const schedule = form.querySelector(Selectors.field('schedule_cron'));
+        const cron = (agent.schedule_cron || '').trim();
+        const preset = Array.from(schedule.options).some((option) => option.value === cron && option.value !== 'custom');
+        schedule.value = preset ? cron : 'custom';
+        form.querySelector(Selectors.field('custom_cron')).value = preset ? '' : cron;
+        form.querySelector(Selectors.agents.enabled).checked = parseInt(agent.enabled, 10) === 1;
         form.querySelector(Selectors.field('context_type')).value = agent.context_type || 'site';
         form.querySelector(Selectors.field('context_id')).value = agent.context_id || '';
         const roleids = (agent.role_ids || []).map((roleid) => parseInt(roleid, 10));
@@ -492,7 +506,8 @@ const previewAgent = async(root) => {
         context = previewContext(await Repository.previewAgent(
             prompt.value,
             form.querySelector(Selectors.field('context_type')).value,
-            form.querySelector(Selectors.field('context_id')).value
+            form.querySelector(Selectors.field('context_id')).value,
+            root.querySelector(Selectors.agents.editId).value
         ));
     } catch (error) {
         context = {ok: false, error: error.message};

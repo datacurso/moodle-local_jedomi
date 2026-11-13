@@ -189,10 +189,72 @@ final class save_feedback_test extends \advanced_testcase {
     }
     /**
      * MDL-INT-056: each answer keeps a single rating, the last one, and "Improve" accepts an optional comment.
-     * [Pendiente:skip]
+     *
+     * @return void
      */
     public function test_each_answer_keeps_a_single_editable_rating(): void {
-        $this->markTestSkipped('Pending fix: every click stores a new rating, both ratings can be given and Improve has no '
-            . 'comment.');
+        global $DB;
+        $this->resetAfterTest();
+        $user = $this->getDataGenerator()->create_user();
+        $other = $this->getDataGenerator()->create_user();
+        $this->setUser($user);
+
+        save_feedback::execute('good', 'sess_1', 'Answer one', 'sess_1-a1');
+        save_feedback::execute('good', 'sess_1', 'Answer one', 'sess_1-a1');
+        save_feedback::execute('bad', 'sess_1', 'Answer one', 'sess_1-a1');
+        $records = $DB->get_records('local_jedomi_feedback', ['userid' => $user->id]);
+        $this->assertCount(1, $records, 'Rating the same answer again changes its rating');
+        $record = reset($records);
+        $this->assertSame('bad', $record->rating, 'The last rating is kept');
+        $this->assertNull($record->feedbackcomment);
+
+        save_feedback::execute('bad', 'sess_1', 'Answer one', 'sess_1-a1', 'The dates are wrong.');
+        $record = $DB->get_record('local_jedomi_feedback', ['userid' => $user->id, 'messageid' => 'sess_1-a1']);
+        $this->assertSame('The dates are wrong.', $record->feedbackcomment, '"Improve" accepts a comment');
+        $this->assertSame('bad', $record->rating);
+
+        // A later rating without a comment keeps the comment; changing it to Helpful removes it.
+        save_feedback::execute('bad', 'sess_1', 'Answer one', 'sess_1-a1');
+        $comment = $DB->get_field('local_jedomi_feedback', 'feedbackcomment', ['id' => $record->id]);
+        $this->assertSame('The dates are wrong.', $comment);
+        save_feedback::execute('good', 'sess_1', 'Answer one', 'sess_1-a1');
+        $record = $DB->get_record('local_jedomi_feedback', ['id' => $record->id]);
+        $this->assertSame('good', $record->rating);
+        $this->assertNull($record->feedbackcomment, 'A helpful answer has no comment');
+        $this->assertSame(1, $DB->count_records('local_jedomi_feedback', ['userid' => $user->id]));
+
+        // Another answer gets its own rating, and the same answer id of another user is another rating.
+        save_feedback::execute('good', 'sess_1', 'Answer two', 'sess_1-a2');
+        $this->setUser($other);
+        save_feedback::execute('bad', 'sess_1', 'Answer one', 'sess_1-a1');
+        $this->assertSame(2, $DB->count_records('local_jedomi_feedback', ['userid' => $user->id]));
+        $this->assertSame(1, $DB->count_records('local_jedomi_feedback', ['userid' => $other->id]));
+        $this->assertSame('good', $DB->get_field('local_jedomi_feedback', 'rating', ['userid' => $user->id,
+            'messageid' => 'sess_1-a1']), 'The rating of another user is not changed');
+    }
+
+    /**
+     * MDL-INT-056: the upgrade keeps one rating, the newest, for repeated clicks on the same answer stored before
+     * answers had an id.
+     *
+     * @return void
+     */
+    public function test_upgrade_keeps_one_rating_per_answer(): void {
+        global $CFG, $DB;
+        require_once($CFG->dirroot . '/local/jedomi/db/upgradelib.php');
+        $this->resetAfterTest();
+        $user = $this->getDataGenerator()->create_user();
+        $row = static fn(string $rating, string $text, int $time): \stdClass => (object) ['userid' => $user->id,
+            'rating' => $rating, 'sessionid' => 'sess_old', 'messagetext' => $text, 'timecreated' => $time];
+        $DB->insert_record('local_jedomi_feedback', $row('good', 'Old answer', 100));
+        $DB->insert_record('local_jedomi_feedback', $row('good', 'Old answer', 101));
+        $newest = $DB->insert_record('local_jedomi_feedback', $row('bad', 'Old answer', 102));
+        $DB->insert_record('local_jedomi_feedback', $row('good', 'Another answer', 103));
+        $DB->insert_record('local_jedomi_feedback', $row('good', '', 104));
+        $DB->insert_record('local_jedomi_feedback', $row('bad', '', 105));
+
+        $this->assertSame(2, \local_jedomi_deduplicate_feedback());
+        $this->assertSame(4, $DB->count_records('local_jedomi_feedback'));
+        $this->assertSame('bad', $DB->get_field('local_jedomi_feedback', 'rating', ['id' => $newest]), 'The newest is kept');
     }
 }

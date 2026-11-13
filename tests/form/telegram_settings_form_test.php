@@ -37,7 +37,7 @@ final class telegram_settings_form_test extends \advanced_testcase {
             'telegram_rate_limit' => 30,
             'telegram_cooldown' => 5,
             'telegram_max_turns' => 10,
-            'telegram_gateway_timeout' => 120,
+            'telegram_gateway_timeout' => 45,
             'telegram_role_visible_3' => 0,
             'telegram_role_visible_5' => 1,
         ];
@@ -58,7 +58,7 @@ final class telegram_settings_form_test extends \advanced_testcase {
         $data = (new telegram_settings_form(null, ['roles' => $roles, 'tokenset' => false]))->get_data();
 
         $this->assertSame(30, (int) $data->telegram_rate_limit);
-        $this->assertSame(120, (int) $data->telegram_gateway_timeout);
+        $this->assertSame(45, (int) $data->telegram_gateway_timeout);
         $this->assertSame([5], telegram_settings_form::visible_role_ids($data, $roles));
         $this->assertEmpty($data->regeneratesecret ?? '');
     }
@@ -74,7 +74,7 @@ final class telegram_settings_form_test extends \advanced_testcase {
             'negative cooldown' => ['telegram_cooldown', -1],
             'zero max turns' => ['telegram_max_turns', 0],
             'timeout below 5' => ['telegram_gateway_timeout', 4],
-            'timeout above 300' => ['telegram_gateway_timeout', 301],
+            'timeout above the effective limit' => ['telegram_gateway_timeout', 51],
         ];
     }
 
@@ -106,7 +106,7 @@ final class telegram_settings_form_test extends \advanced_testcase {
             'message limit' => ['telegram_rate_limit', 0, 1000],
             'block time' => ['telegram_cooldown', 0, 1440],
             'max turns' => ['telegram_max_turns', 1, 100],
-            'AI response time' => ['telegram_gateway_timeout', 5, 300],
+            'AI response time' => ['telegram_gateway_timeout', 5, 50],
         ];
     }
 

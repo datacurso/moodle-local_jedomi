@@ -59,6 +59,12 @@ class anonymizer {
     /** @var int Most capitalised words looked up as possible names in one text. */
     private const MAX_NAME_CANDIDATES = 200;
 
+    /**
+     * @var string Pattern of a placeholder as the AI may write it back: another case, a space or a hyphen instead of the
+     *      underscore, spaces inside the brackets or Markdown escapes ("[Person 1]", "[person-1]", "\[person\_1\]").
+     */
+    private const LOOSE_PLACEHOLDER_PATTERN = '/\\\\?\[\s*([a-z]+)\s*(?:\\\\?[_\- ])?\s*(\d+)\s*\\\\?\]/i';
+
     /** @var string Applied level. */
     private string $level;
 
@@ -146,13 +152,28 @@ class anonymizer {
      * @return array The same messages, in the same order.
      */
     public function anonymize_messages(array $messages): array {
+        // Texts written by people (an attached document, a pasted export) can already hold placeholder-shaped tokens.
+        // They are escaped in every message before any placeholder is created, so none of them can be taken for a
+        // placeholder created later in this call and be "restored" into a real value it never stood for.
+        $messages = $this->map_message_texts($messages, fn(string $text): string => $this->escape_foreign_placeholders($text));
+        return $this->map_message_texts($messages, fn(string $text): string => $this->anonymize_string($text));
+    }
+
+    /**
+     * Apply a function to the text of the user and assistant messages and to each text part of their contents.
+     *
+     * @param array $messages Chat messages.
+     * @param callable $map Function from text to text.
+     * @return array
+     */
+    private function map_message_texts(array $messages, callable $map): array {
         foreach ($messages as $index => $message) {
             if (!is_array($message) || !in_array($message['role'] ?? '', ['user', 'assistant'], true)) {
                 continue;
             }
             $content = $message['content'] ?? null;
             if (is_string($content)) {
-                $messages[$index]['content'] = $this->anonymize_string($content);
+                $messages[$index]['content'] = $map($content);
                 continue;
             }
             if (!is_array($content)) {
@@ -160,7 +181,7 @@ class anonymizer {
             }
             foreach ($content as $key => $part) {
                 if (is_array($part) && ($part['type'] ?? '') === 'text' && is_string($part['text'] ?? null)) {
-                    $messages[$index]['content'][$key]['text'] = $this->anonymize_string($part['text']);
+                    $messages[$index]['content'][$key]['text'] = $map($part['text']);
                 }
             }
         }
@@ -191,10 +212,28 @@ class anonymizer {
      * @return string
      */
     public function restore(string $text): string {
-        if (empty($this->originals)) {
+        if (empty($this->originals) || strpos($text, '[') === false) {
             return $text;
         }
-        return strtr($text, $this->originals);
+        // One pass, so a restored value that looks like a placeholder is never replaced again. A placeholder the AI
+        // wrote slightly differently ("[Person 1]") still gets its real value; a token that matches no placeholder of
+        // this anonymiser is kept as written.
+        return (string) preg_replace_callback(
+            self::LOOSE_PLACEHOLDER_PATTERN,
+            fn(array $m): string => $this->originals[self::canonical_placeholder($m[1], $m[2])] ?? $m[0],
+            $text
+        );
+    }
+
+    /**
+     * Placeholder written as this anonymiser writes it, from its kind and number in any form.
+     *
+     * @param string $kind Kind as written (any case).
+     * @param string $number Number.
+     * @return string Placeholder such as "[person_1]".
+     */
+    private static function canonical_placeholder(string $kind, string $number): string {
+        return '[' . strtolower($kind) . '_' . (int) $number . ']';
     }
 
     /**
@@ -268,6 +307,11 @@ class anonymizer {
         if (!is_string($value) || $value === '') {
             return $value;
         }
+        if (isset($this->originals[$value])) {
+            // Already a placeholder of this anonymiser (data anonymised twice): replacing it again would show the
+            // placeholder to the user instead of the real value.
+            return $value;
+        }
         $trimmed = ltrim($value);
         if ($trimmed !== '' && ($trimmed[0] === '{' || $trimmed[0] === '[')) {
             $nested = json_decode($value, true);
@@ -301,6 +345,7 @@ class anonymizer {
      * @return string
      */
     private function anonymize_string(string $text): string {
+        $text = $this->escape_foreign_placeholders($text);
         $text = (string) preg_replace_callback(
             '/[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}/iu',
             fn(array $m): string => $this->placeholder('email', $m[0]),
@@ -326,6 +371,30 @@ class anonymizer {
             );
         }
         return $text;
+    }
+
+    /**
+     * Replace the placeholder-shaped tokens of an incoming text that this anonymiser did not create.
+     *
+     * A document or a record can contain a token such as "[person_1]" (an export that was anonymised before). Left as
+     * it is, the AI could not tell it from a placeholder of this anonymiser, and the answer would show the real value of
+     * that placeholder where the text had the token. Each such token gets its own "[literal_N]" placeholder, so the AI
+     * sees a distinct token and the answer gets the original token back. Placeholders created by this anonymiser (or
+     * loaded with {@see self::from_map()}) are kept, so anonymising a text twice does not hide them.
+     *
+     * @param string $text Text.
+     * @return string
+     */
+    private function escape_foreign_placeholders(string $text): string {
+        if (strpos($text, '[') === false) {
+            return $text;
+        }
+        // Also the loose forms ("[Person 1]"), which restore() would otherwise turn into the real value of a placeholder.
+        return (string) preg_replace_callback(
+            self::LOOSE_PLACEHOLDER_PATTERN,
+            fn(array $m): string => isset($this->originals[$m[0]]) ? $m[0] : $this->placeholder('literal', $m[0]),
+            $text
+        );
     }
 
     /**

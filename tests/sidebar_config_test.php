@@ -152,12 +152,33 @@ final class sidebar_config_test extends \advanced_testcase {
 
     /**
      * MDL-UNIT-018: outside a course the quick actions never use an id of another kind as the course, and the admin
-     * quick actions appear in the administration.
-     * [Pendiente:skip]
+     * quick actions appear in the administration. The panel builds them from the location and the course the server
+     * reads from the page, never from the address.
+     *
+     * @return void
      */
     public function test_quick_actions_use_the_real_course_of_the_page(): void {
-        $this->markTestSkipped('Pending fix: the admin quick actions of the administration never appear and, outside a '
-            . 'course, the course id is taken from any id parameter of the page (the user id on the profile).');
+        global $PAGE;
+        $this->resetAfterTest();
+        $user = $this->getDataGenerator()->create_user();
+        $this->setUser($user);
+        $PAGE = new \moodle_page();
+        $PAGE->set_course(get_site());
+
+        $config = local_jedomi_get_sidebar_config(['path' => '/user/profile.php', 'pagetype' => 'user-profile']);
+        $this->assertSame(0, $config['context']['course_id'], 'The profile has no course');
+        $this->assertSame('profile', $config['context']['location']);
+
+        $this->setAdminUser();
+        $config = local_jedomi_get_sidebar_config(['path' => '/admin/search.php', 'pagetype' => 'admin-search']);
+        $this->assertSame('admin', $config['user_role']);
+        $this->assertSame('admin', $config['context']['location'], 'The admin quick actions of the administration');
+        $this->assertSame(0, $config['context']['course_id']);
+
+        $source = file_get_contents(__DIR__ . '/../amd/src/sidebar.js');
+        $this->assertStringNotContainsString('getCourseidFromUrl', $source, 'The course is never read from the address');
+        $this->assertStringNotContainsString('getCurrentLocation', $source, 'The location is never read from the address');
+        $this->assertStringNotContainsString('buildSystemPrompt', $source, 'The system prompt is built on the server');
     }
 
     /**
@@ -222,13 +243,39 @@ final class sidebar_config_test extends \advanced_testcase {
     /**
      * MDL-INT-057: the chat permissions are renewed while the Moodle session is active and not after it ends, and no
      * recording of the voice conversation is transcribed or charged with expired permissions.
-     * [Pendiente:skip]
+     *
+     * The panel renews them two minutes before they expire, using the time of the server sent with them, and retries a
+     * request once after a refusal for expired permissions. The configuration endpoint refuses guests and requests
+     * without a session, so nothing is renewed after the session ends.
      *
      * @return void
      */
     public function test_chat_permissions_are_renewed_while_the_session_is_active(): void {
-        $this->markTestSkipped('Pending fix: the chat permissions expire 30 minutes after loading the page and are never '
-            . 'renewed; in the voice conversation the utterance that meets the expiry is still transcribed and charged, '
-            . 'because the transcription does not check the chat permissions.');
+        global $PAGE;
+        $this->resetAfterTest();
+        $this->setUser($this->getDataGenerator()->create_user());
+        $PAGE->set_url('/local/jedomi/ajax/sidebar_config.php');
+
+        $before = time();
+        $config = local_jedomi_get_sidebar_config();
+        $this->assertGreaterThanOrEqual($before, $config['server_time']);
+        $this->assertLessThanOrEqual(time(), $config['server_time']);
+
+        $expired = local_jedomi_generate_spt('student');
+        $this->assertGreaterThan($config['server_time'], $expired['expires']);
+        unset($expired['signature']);
+        $expired['expires'] = time() - 1;
+        ksort($expired);
+        $expired['signature'] = hash_hmac('sha256', local_jedomi_spt_signing_string($expired), local_jedomi_get_spt_secret());
+        $this->assertSame('invalid_spt', local_jedomi_signed_request_course($expired, 0)['error']['code'] ?? null);
+        $renewed = local_jedomi_generate_spt('student');
+        $this->assertNull(local_jedomi_signed_request_course($renewed, 0)['error'], 'Renewed permissions are accepted');
+
+        $source = file_get_contents(__DIR__ . '/../amd/src/sidebar.js');
+        foreach (['SPT_RENEW_MARGIN_MS', 'ensureFreshPermissions', 'renewPermissions', 'server_time'] as $needle) {
+            $this->assertStringContainsString($needle, $source, $needle);
+        }
+        $endpoint = file_get_contents(__DIR__ . '/../ajax/sidebar_config.php');
+        $this->assertStringContainsString('!isloggedin() || isguestuser()', $endpoint, 'No renewal without a session');
     }
 }

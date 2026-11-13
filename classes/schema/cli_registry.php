@@ -187,6 +187,19 @@ class cli_registry {
     }
 
     /**
+     * Whether a user may run the administration operations: a site administrator or a user with moodle/site:config.
+     *
+     * @param int $userid Moodle user id.
+     * @return bool
+     */
+    public static function can_execute(int $userid): bool {
+        if ($userid <= 0) {
+            return false;
+        }
+        return is_siteadmin($userid) || has_capability('moodle/site:config', \context_system::instance(), $userid);
+    }
+
+    /**
      * Execute a CLI operation.
      *
      * Defense in depth: every operation here (purge_caches, scheduled tasks,
@@ -201,11 +214,7 @@ class cli_registry {
      * @return array           Result with success/error + data.
      */
     public static function execute(string $name, array $params, int $userid): array {
-        if ($userid <= 0) {
-            return ['error' => 'permission_denied'];
-        }
-        $hasconfigcap = has_capability('moodle/site:config', \context_system::instance(), $userid);
-        if (!is_siteadmin($userid) && !$hasconfigcap) {
+        if (!self::can_execute($userid)) {
             return ['error' => 'permission_denied'];
         }
 

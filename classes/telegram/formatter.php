@@ -34,15 +34,65 @@ final class formatter {
     /** Tags Telegram accepts in HTML mode (tg-spoiler and tg-emoji included). */
     private const ALLOWED = ['b', 'i', 'u', 's', 'a', 'code', 'pre', 'blockquote', 'tg-spoiler', 'tg-emoji'];
 
+    /** Other HTML tags, which are removed keeping their text. Any other text between < and > is shown as written. */
+    private const KNOWN_HTML = [
+        'abbr', 'address', 'article', 'aside', 'big', 'body', 'br', 'caption', 'center', 'cite', 'col', 'colgroup', 'dd',
+        'del', 'details', 'div', 'dl', 'dt', 'em', 'figcaption', 'figure', 'font', 'footer', 'h1', 'h2', 'h3', 'h4', 'h5',
+        'h6', 'head', 'header', 'hr', 'html', 'img', 'ins', 'kbd', 'label', 'li', 'main', 'mark', 'nav', 'ol', 'p', 'q',
+        'samp', 'section', 'small', 'span', 'strike', 'strong', 'sub', 'summary', 'sup', 'table', 'tbody', 'td', 'tfoot',
+        'th', 'thead', 'time', 'title', 'tr', 'tt', 'ul', 'var',
+    ];
+
+    /** A tag: name and attributes written as name="value", so text such as "a <b and c>" is not a tag. */
+    private const TAG_PATTERN = '<\/?[a-zA-Z][a-zA-Z0-9-]*'
+        . '(?:\s+[a-zA-Z_:][-a-zA-Z0-9_:.]*\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s"\'=<>\x60]+))*\s*\/?>';
+
+    /** Marker around the number of a code block kept apart until the end of the conversion. */
+    private const MARK = "\x1A";
+
     /**
      * Convert an AI answer to Telegram HTML.
+     *
+     * Code blocks are converted first and kept apart, so their content, tags included, is shown as written.
      *
      * @param string $content Answer of the AI.
      * @return string Telegram HTML with special characters escaped and tags balanced.
      */
     public static function to_html(string $content): string {
+        $blocks = [];
+        $keep = static function (string $html) use (&$blocks): string {
+            $blocks[] = $html;
+            return self::MARK . (count($blocks) - 1) . self::MARK;
+        };
+        $content = str_replace(self::MARK, '', $content);
+
+        // Markdown code: the content is literal text.
+        // phpcs:ignore moodle.Strings.ForbiddenStrings.Found -- literal Markdown fences.
+        $content = preg_replace_callback('/```([\w+-]*)[^\S\n]*\n?(.*?)```/s', static function (array $m) use ($keep): string {
+            return $keep(self::code_block(htmlspecialchars($m[2], ENT_NOQUOTES, 'UTF-8'), $m[1]));
+        }, $content) ?? $content;
+        // phpcs:ignore moodle.Strings.ForbiddenStrings.Found -- literal Markdown fences.
+        $content = preg_replace_callback('/``([^`]+)``/', static function (array $m) use ($keep): string {
+            return $keep('<pre>' . htmlspecialchars($m[1], ENT_NOQUOTES, 'UTF-8') . '</pre>');
+        }, $content) ?? $content;
+        $content = preg_replace_callback('/\x60([^\x60\n]+)\x60/', static function (array $m) use ($keep): string {
+            return $keep('<code>' . htmlspecialchars($m[1], ENT_NOQUOTES, 'UTF-8') . '</code>');
+        }, $content) ?? $content;
+
         // HTML tables are not supported by Telegram: they become pipe-delimited <pre> blocks.
         $content = \local_jedomi_sanitize_html_tables($content);
+
+        // HTML code: entities are decoded and the tags inside are shown as text.
+        $content = preg_replace_callback('/<pre\b[^>]*>(.*?)<\/pre>/is', static function (array $m) use ($keep): string {
+            if (preg_match('/^\s*<code\b([^>]*)>(.*)<\/code>\s*$/is', $m[1], $code)) {
+                $language = preg_match('/class\s*=\s*["\']language-([a-zA-Z0-9_+-]+)["\']/i', $code[1], $l) ? $l[1] : '';
+                return $keep(self::code_block(self::escape_text($code[2]), $language));
+            }
+            return $keep('<pre>' . self::escape_text($m[1]) . '</pre>');
+        }, $content) ?? $content;
+        $content = preg_replace_callback('/<code\b([^>]*)>(.*?)<\/code>/is', static function (array $m) use ($keep): string {
+            return $keep(self::opening_tag('code', '<code' . $m[1] . '>') . self::escape_text($m[2]) . '</code>');
+        }, $content) ?? $content;
 
         // Inline and display math delimiters \[...\] and \(...\) become dollar signs.
         $content = preg_replace('/\\\\\[(.*?)\\\\\x5d/s', '$$$$1$$', $content) ?? $content;
@@ -50,17 +100,6 @@ final class formatter {
 
         // Markdown links.
         $content = preg_replace('/\[([^\]\n]+)\]\(([^)\s]+)\)/', '<a href="$2">$1</a>', $content) ?? $content;
-
-        // Code first, so the formatting marks inside it are kept.
-        // phpcs:ignore moodle.Strings.ForbiddenStrings.Found -- literal Markdown fences.
-        $content = preg_replace('/```(\w*)\s*\n?(.*?)```/s', '<pre>$2</pre>', $content) ?? $content;
-        // phpcs:ignore moodle.Strings.ForbiddenStrings.Found -- literal Markdown fences.
-        $content = preg_replace('/``([^`]+)``/', '<pre>$1</pre>', $content) ?? $content;
-        // phpcs:ignore moodle.Strings.ForbiddenStrings.Found -- literal Markdown fences.
-        $content = preg_replace('/`([^`\n]+)`/', '<code>$1</code>', $content) ?? $content;
-        $content = preg_replace_callback('/<(code|pre)\b[^>]*>.*?<\/\1>/is', static function (array $m): string {
-            return str_replace(['*', '_', '~'], ['&#42;', '&#95;', '&#126;'], $m[0]);
-        }, $content) ?? $content;
 
         // List items marked with an asterisk, a dash or a plus sign keep a bullet instead of becoming italics.
         $content = preg_replace('/^([ \t]*)[*+-][ \t]+/m', '$1• ', $content) ?? $content;
@@ -78,18 +117,36 @@ final class formatter {
             '/<\/(?:p|div|li|h[1-6])>/i',
         ], ['<b>', '</b>', '<i>', '</i>', '<u>', '</u>', '<s>', '</s>', "\n", '• ', "\n"], $content) ?? $content;
 
-        return self::escape_and_balance($content);
+        $html = self::escape_and_balance($content);
+
+        // The code blocks go back in their place.
+        $restore = static fn(array $m): string => $blocks[(int) $m[1]] ?? '';
+        return preg_replace_callback('/' . self::MARK . '(\d+)' . self::MARK . '/', $restore, $html) ?? $html;
+    }
+
+    /**
+     * A code block, with the language when it is known.
+     *
+     * @param string $escaped Content of the block, already escaped.
+     * @param string $language Language of the code, empty when unknown.
+     * @return string
+     */
+    private static function code_block(string $escaped, string $language): string {
+        if ($language !== '' && preg_match('/^[a-zA-Z0-9_+-]+$/', $language)) {
+            return '<pre><code class="language-' . $language . '">' . $escaped . '</code></pre>';
+        }
+        return '<pre>' . $escaped . '</pre>';
     }
 
     /**
      * Keep the allowed tags (with their allowed attributes only), drop other HTML tags, escape every other
-     * <, > and & and close or drop unbalanced tags.
+     * <, > and & and close or drop unbalanced tags. Text between < and > that is not an HTML tag is shown as written.
      *
      * @param string $html Text with HTML tags.
      * @return string
      */
     private static function escape_and_balance(string $html): string {
-        $parts = preg_split('/(<\/?[a-zA-Z][a-zA-Z0-9-]*(?:\s[^<>]*)?\/?>)/', $html, -1, PREG_SPLIT_DELIM_CAPTURE);
+        $parts = preg_split('/(' . self::TAG_PATTERN . ')/', $html, -1, PREG_SPLIT_DELIM_CAPTURE);
         $output = '';
         $open = [];
         foreach ($parts as $index => $part) {
@@ -106,7 +163,10 @@ final class formatter {
                 $tag = 'tg-spoiler';
             }
             if (!in_array($tag, self::ALLOWED, true)) {
-                // Other HTML tags are removed, their text is kept.
+                // Other HTML tags are removed, their text is kept; anything else is text.
+                if (!in_array($tag, self::KNOWN_HTML, true)) {
+                    $output .= self::escape_text($part);
+                }
                 continue;
             }
             if ($closing) {

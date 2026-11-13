@@ -30,8 +30,7 @@ Feature: Location of the page sent to the Jedomi AI
       | /calendar/view.php?view=month      | calendar  |
       | /tag/search.php                    | unknown   |
 
-  # [Pendiente:skip] The private files page is detected as "profile" instead of "files". Asserts the expected
-  # behaviour and fails until fixed; see the skipped PHPUnit companion.
+  # The location is read by the server from the page, so the private files page is not taken for the profile.
   @MDL-UNIT-073
   Scenario: The private files page is sent with the files location
     Given I log in as "admin"

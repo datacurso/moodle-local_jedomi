@@ -63,3 +63,43 @@ function local_jedomi_remove_companion_api_prohibits(): int {
 
     return count($roleids);
 }
+
+/**
+ * Keep one rating for repeated clicks on the same answer, from before ratings had a message id.
+ *
+ * Ratings of the same user, chat session and answer excerpt are the same answer rated several times: only the newest
+ * one stays. Ratings without an excerpt (the "Feedback only" privacy level) cannot be told apart and are all kept.
+ *
+ * @return int Number of ratings removed.
+ */
+function local_jedomi_deduplicate_feedback(): int {
+    global $DB;
+
+    $seen = [];
+    $duplicates = [];
+    $records = $DB->get_recordset_select(
+        'local_jedomi_feedback',
+        'messageid IS NULL',
+        [],
+        'id DESC',
+        'id, userid, sessionid, messagetext'
+    );
+    foreach ($records as $record) {
+        $text = trim((string) $record->messagetext);
+        if ($text === '') {
+            continue;
+        }
+        $key = $record->userid . '|' . (string) $record->sessionid . '|' . sha1($text);
+        if (isset($seen[$key])) {
+            $duplicates[] = (int) $record->id;
+        } else {
+            $seen[$key] = true;
+        }
+    }
+    $records->close();
+
+    foreach (array_chunk($duplicates, 500) as $chunk) {
+        $DB->delete_records_list('local_jedomi_feedback', 'id', $chunk);
+    }
+    return count($duplicates);
+}

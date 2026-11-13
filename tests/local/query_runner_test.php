@@ -322,18 +322,21 @@ final class query_runner_test extends \advanced_testcase {
     }
 
     /**
-     * MDL-INT-043: Another database error is not reported as a timeout.
+     * MDL-INT-043: Another database error is not reported as a timeout, and carries the message of the database as debug
+     * information.
      */
     public function test_other_database_error_is_not_a_timeout(): void {
         $this->resetAfterTest();
         $this->with_database('mysql', 'mysql', function (\local_jedomi\recording_database $db): void {
-            $db->failure = new \dml_read_exception("Unknown column 'nope' in 'field list'", 'SELECT', []);
+            $db->failure = new \dml_read_exception("Unknown column 'nope' in 'field list'", 'SELECT nope FROM mdl_x', [7]);
 
             try {
                 query_runner::run('SELECT id FROM {course}', [], get_admin()->id, 50);
                 $this->fail('The error must be reported');
             } catch (\moodle_exception $e) {
                 $this->assertSame('execute_sql_error', $e->errorcode);
+                // The model gets the database's own message, without the query and parameters the exception repeats.
+                $this->assertSame("Unknown column 'nope' in 'field list'", $e->debuginfo);
             }
         });
     }

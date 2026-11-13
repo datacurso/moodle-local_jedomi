@@ -100,8 +100,8 @@ final class prompt_builder {
 
         $prompt = "You are Jedomi, an AI assistant integrated into Moodle ({$sitename}).\n"
             . "Role: {$role}.\n"
-            . "IMPORTANT: Respond in the user's language ({$userlang}). "
-            . "The user writes in {$userlang}, you answer in {$userlang}.\n\n"
+            . "IMPORTANT: Answer in the language of the user's latest message, even when earlier messages or tool"
+            . " results use another language. When that language cannot be told (a command, a number), use {$userlang}.\n\n"
             . "HOW TO HANDLE REQUESTS:\n"
             . "- Greetings / simple chat → respond directly. NO tools.\n"
             . "- Moodle tasks → use the tools below.\n"

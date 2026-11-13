@@ -31,4 +31,13 @@ if ($hassiteconfig) {
         new moodle_url('/local/jedomi/admin_settings.php'),
         'moodle/site:config'
     ));
+} else {
+    // Managers who cannot configure the site but can manage agents reach the Agents tab from the AI category.
+    // Site administrators already get the full settings page above, so the link is not duplicated for them.
+    $ADMIN->add('ai', new admin_externalpage(
+        'local_jedomi_agents',
+        new lang_string('agents_menu_link', 'local_jedomi'),
+        new moodle_url('/local/jedomi/admin_settings.php', ['tab' => 'agents']),
+        'local/jedomi:manageagents'
+    ));
 }

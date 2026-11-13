@@ -173,8 +173,11 @@ final class pending_action_service_test extends \advanced_testcase {
     public function test_hold_send_messages_carries_count_and_preview(): void {
         $this->resetAfterTest();
         $message = str_repeat('Reminder: submit your essay. ', 20);
+        $one = (int) $this->getDataGenerator()->create_user()->id;
+        $two = (int) $this->getDataGenerator()->create_user()->id;
 
-        $pending = pending_action_service::hold(2, 'send_messages', ['user_ids' => [5, '6', 5, 0, -1], 'message' => $message]);
+        $pending = pending_action_service::hold(2, 'send_messages', ['user_ids' => [$one, (string) $two, $one, 0, -1],
+            'message' => $message]);
 
         $this->assertSame('medium', $pending['severity']);
         $this->assertSame(2, $pending['count']);
@@ -205,11 +208,44 @@ final class pending_action_service_test extends \advanced_testcase {
 
     /**
      * MDL-UNIT-023: the send card names recipients by their real role and pending actions are described in readable language.
-     * [Pendiente:skip]
+     *
+     * @return void
      */
     public function test_pending_actions_are_described_in_readable_language(): void {
-        $this->markTestSkipped('Pending fix: the send card always says students, counts every proposed recipient even '
-            . 'those the sender cannot contact, and the other actions show technical details.');
+        global $DB;
+        $this->resetAfterTest();
+        $course = $this->getDataGenerator()->create_course();
+        $sender = $this->getDataGenerator()->create_and_enrol($course, 'editingteacher');
+        $reachable = $this->getDataGenerator()->create_and_enrol($course, 'student');
+        $deleted = $this->getDataGenerator()->create_and_enrol($course, 'student');
+        delete_user($deleted);
+
+        // Only the recipients that will get the message are counted: not the sender, a deleted or a missing user.
+        $card = pending_action_service::hold((int) $sender->id, 'send_messages', ['user_ids' => [(int) $reachable->id,
+            (int) $sender->id, (int) $deleted->id, 987654], 'message' => 'Class moved to room 3']);
+        $this->assertSame(1, $card['count']);
+        $this->assertSame(get_string('pending_desc_send_messages', 'local_jedomi', 1), $card['description']);
+        $text = get_string_manager()->get_string('confirm_send_bulk', 'local_jedomi', null, 'en');
+        $this->assertStringNotContainsString('student', $text, 'Recipients are not always students');
+
+        // The data of the other actions is shown as readable lines, never as JSON.
+        $card = pending_action_service::hold((int) $sender->id, 'ws_execute', ['wsname' => 'core_user_update_users',
+            'params' => json_encode(['users' => [['id' => 5, 'firstname' => 'Ana', 'suspended' => true]]])]);
+        $this->assertSame(
+            "Users › #1 › Id: 5\nUsers › #1 › Firstname: Ana\nUsers › #1 › Suspended: " . get_string('yes'),
+            $card['details']
+        );
+        $this->assertStringNotContainsString('{', $card['details']);
+
+        $card = pending_action_service::hold((int) $sender->id, 'create_agent', ['name' => 'Digest', 'prompt' => 'Sum up',
+            'schedule_cron' => '0 8 * * 1']);
+        $this->assertSame("Name: Digest\nPrompt: Sum up\nSchedule cron: 0 8 * * 1", $card['details']);
+
+        // The cards are the same when the panel loads them again after a reload.
+        $reloaded = pending_action_service::cards_for_user((int) $sender->id);
+        $this->assertCount(3, $reloaded);
+        $this->assertSame($card, end($reloaded));
+        $this->assertSame(3, $DB->count_records(pending_action_service::TABLE, ['userid' => $sender->id]));
     }
 
     /**

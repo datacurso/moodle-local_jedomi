@@ -47,6 +47,12 @@ class webhook_handler {
     /** Lock TTL in seconds — stale locks older than this are auto-released. */
     private const LOCK_TTL = 120;
 
+    /** Seconds a worker runs the tool loop before it hands the rest to the next worker. */
+    private const HARD_GUARD = 55;
+
+    /** Longest AI call that fits in one worker (the hard guard less a margin), the top of the timeout setting. */
+    public const MAX_AI_TIMEOUT = self::HARD_GUARD - 5;
+
     /** Tools the Telegram channel can run; any other tool is never offered to the AI here. */
     private const SUPPORTED_TOOLS = [
         'describe_table', 'search_tables', 'execute_sql', 'get_site_config', 'site_overview', 'ws_search', 'ws_describe',
@@ -59,6 +65,16 @@ class webhook_handler {
 
     /** Prefix of the callback data of the cancel button of a held action. */
     private const CALLBACK_CANCEL = 'cancel:';
+
+    /**
+     * Pseudonym of a chat for the technical log, which never keeps the Telegram chat id.
+     *
+     * @param string $chatid Telegram chat id.
+     * @return string
+     */
+    private static function chatref(string $chatid): string {
+        return \local_jedomi_log_pseudonym('chat', $chatid);
+    }
 
     /**
      * Validate and normalise a Telegram chat id.
@@ -122,6 +138,34 @@ class webhook_handler {
      * @param array $update Decoded JSON from Telegram webhook
      */
     public static function handle(array $update): void {
+        // Every answer goes out in the language of the linked user; the site language when the chat is not linked yet.
+        \local_jedomi\local\user_language::run(self::update_user_id($update), static function () use ($update): void {
+            self::dispatch($update);
+        });
+    }
+
+    /**
+     * Moodle user linked to the chat of an update, or null when the chat is not linked.
+     *
+     * @param array $update Decoded JSON from Telegram webhook
+     * @return int|null
+     */
+    private static function update_user_id(array $update): ?int {
+        $rawchatid = $update['callback_query']['message']['chat']['id'] ?? ($update['message']['chat']['id'] ?? '');
+        $chatid = self::normalise_chat_id((string) $rawchatid);
+        if ($chatid === null) {
+            return null;
+        }
+        $link = self::get_link_by_chat_id($chatid);
+        return $link ? (int) $link->userid : null;
+    }
+
+    /**
+     * Dispatch an update based on its type.
+     *
+     * @param array $update Decoded JSON from Telegram webhook
+     */
+    private static function dispatch(array $update): void {
         $disabled = \local_jedomi_plugin_disabled_error();
         if ($disabled !== null) {
             self::reply_plugin_disabled($update, $disabled['message']);
@@ -129,8 +173,9 @@ class webhook_handler {
         }
 
         if (!manager::is_enabled()) {
-            // The administrator turned the integration off: the bot processes nothing.
-            \local_jedomi_log('Telegram webhook: integration disabled, update ignored');
+            // The administrator turned the integration off: the bot processes nothing, a linked chat is told so.
+            \local_jedomi_log('Telegram webhook: integration disabled, update not processed');
+            self::reply_integration_disabled($update);
             return;
         }
 
@@ -176,13 +221,35 @@ class webhook_handler {
     }
 
     /**
+     * Tell a linked chat that the bot is not available while the Telegram integration is disabled.
+     *
+     * Nothing else runs; a chat that is not linked gets no answer.
+     *
+     * @param array $update Decoded JSON from Telegram webhook
+     */
+    private static function reply_integration_disabled(array $update): void {
+        $client = api_client::instance();
+        if (isset($update['callback_query'])) {
+            $callbackid = (string) ($update['callback_query']['id'] ?? '');
+            if ($callbackid !== '') {
+                $client->answer_callback_query($callbackid);
+            }
+            $rawchatid = $update['callback_query']['message']['chat']['id'] ?? '';
+        } else {
+            $rawchatid = $update['message']['chat']['id'] ?? '';
+        }
+        $chatid = self::normalise_chat_id((string) $rawchatid);
+        if ($chatid !== null && self::get_link_by_chat_id($chatid) !== null) {
+            $client->send_message($chatid, get_string('telegram_msg_unavailable', 'local_jedomi'));
+        }
+    }
+
+    /**
      * Handle an incoming message (text, photo, document, voice or audio).
      *
      * @param array $message Decoded message object from the Telegram update
      */
     private static function handle_message(array $message): void {
-        global $DB;
-
         $chatid = self::normalise_chat_id((string) ($message['chat']['id'] ?? ''));
         $text = trim($message['text'] ?? '');
 
@@ -193,29 +260,53 @@ class webhook_handler {
             return;
         }
 
-        \local_jedomi_log('[TELEGRAM ENTRY] chat=' . $chatid . ' textlen=' . mb_strlen($text));
+        \local_jedomi_log('[TELEGRAM ENTRY] chat=' . self::chatref($chatid) . ' textlen=' . mb_strlen($text));
 
-        // ... ── Deduplicate via MySQL advisory lock ──
-        // Telegram retries if 200 OK is slow. Without dedup, multiple PHP-FPM
-        // workers process the same message concurrently, spawning 50-iter loops
-        // each and overwhelming the Gateway.
-        // GET_LOCK('key', 0) returns 1 if lock acquired, 0 if another process
-        // holds it. Key is unique per chat_id — concurrent messages from
-        // different chats are NOT blocked. Lock auto-releases on script end.
+        // One message per chat at a time: Telegram retries a slow update, and two workers on the same chat would run
+        // the same tool loop twice. The Moodle lock API works on every supported database (the advisory lock used
+        // before worked only on MySQL); the lock is released when the message is done, also on an exception.
+        $lock = self::acquire_chat_lock($chatid);
+        if ($lock === false) {
+            \local_jedomi_log('DEDUP: another process is handling chat ' . self::chatref($chatid) . ', skipping');
+            // Another process already holds the lock for this chat: the message is not lost without notice.
+            api_client::instance()->send_message($chatid, get_string('telegram_msg_still_processing', 'local_jedomi'));
+            return;
+        }
         try {
-            $lockresult = (int) $DB->get_field_sql('SELECT GET_LOCK(?, 0)', ['jedomi_chat_' . $chatid]);
-            if ($lockresult !== 1) {
-                if (function_exists('\\local_jedomi_log')) {
-                    \local_jedomi_log('DEDUP: another process is handling chat ' . $chatid . ', skipping');
-                }
-                return; // Another process already holds the lock for this chat.
-            }
-        } catch (\Exception $e) {
-            // GET_LOCK not supported (non-MySQL). Proceed without dedup.
-            if (function_exists('\\local_jedomi_log')) {
-                \local_jedomi_log('DEDUP: GET_LOCK not available, proceeding without dedup');
+            self::process_message($message, $chatid, $text);
+        } finally {
+            if ($lock !== null) {
+                $lock->release();
             }
         }
+    }
+
+    /**
+     * Take the per-chat lock that keeps two workers from handling messages of the same chat at once.
+     *
+     * @param string $chatid Normalised Telegram chat id.
+     * @return \core\lock\lock|false|null The lock, false when another process holds it, null when no lock
+     *     factory is available (the message is then handled without the lock).
+     */
+    public static function acquire_chat_lock(string $chatid) {
+        try {
+            $factory = \core\lock\lock_config::get_lock_factory('local_jedomi_telegram_chat');
+            return $factory->get_lock('chat_' . $chatid, 0) ?: false;
+        } catch (\Throwable $e) {
+            \local_jedomi_log('DEDUP: lock not available (' . get_class($e) . '), proceeding without dedup');
+            return null;
+        }
+    }
+
+    /**
+     * Handle a message once the per-chat lock is held.
+     *
+     * @param array $message Decoded message object from the Telegram update.
+     * @param string $chatid Normalised Telegram chat id.
+     * @param string $text Trimmed text of the message.
+     */
+    private static function process_message(array $message, string $chatid, string $text): void {
+        global $DB;
 
         // Handle /help command (always responds, even if rate-limited or unlinked).
         // Aliases: /ayuda (Spanish).
@@ -276,6 +367,12 @@ class webhook_handler {
             return;
         }
 
+        // A linked chat can move to another account with a new link code.
+        if (preg_match('/^\/start\s+\S+/', $text)) {
+            self::handle_start_command($chatid, $text, (string) ($message['chat']['username'] ?? ''));
+            return;
+        }
+
         // Handle /desvincular command: any linked user can unlink, whatever the state of the account.
         if (strcasecmp($text, '/desvincular') === 0 || strcasecmp($text, '/unlink') === 0) {
             self::handle_unlink_command($chatid, $link);
@@ -305,16 +402,27 @@ class webhook_handler {
         global $USER;
         $USER = $user;
 
+        // The confirmation word confirms the newest critical action of the chat that waits for it.
+        if (pending_action_service::is_confirm_keyword($text)) {
+            $critical = self::waiting_critical_action($chatid);
+            if ($critical !== null) {
+                api_client::instance()->send_message($chatid, self::resolve_held_action($chatid, $critical, true, true));
+                return;
+            }
+        }
+
         // Handle /new command to start fresh conversation.
         if (strcasecmp($text, '/new') === 0 || strcasecmp($text, '/nuevo') === 0 || strcasecmp($text, '/clear') === 0) {
-            \local_jedomi_log('[TELEGRAM ENTRY] /new detected, calling proxy_to_gateway user=' . $link->userid);
-            session::clear($chatid);
-            session::clear_context($chatid);
-            // Clear any stale tool_loop state with new session generation.
-            session::set_context('tool_loop_' . $chatid, ['session_gen' => time()]);
+            \local_jedomi_log('[TELEGRAM ENTRY] /new detected, calling proxy_to_gateway user='
+                . \local_jedomi_log_pseudonym('user', $link->userid));
+            self::reset_conversation($chatid);
             // Get user's name so the model greets them personally.
-            $firstname = $DB->get_field('user', 'firstname', ['id' => $link->userid]) ?: 'user';
-            self::proxy_to_gateway($link->userid, $chatid, "Hola, soy {$firstname}");
+            $firstname = (string) $DB->get_field('user', 'firstname', ['id' => $link->userid]);
+            self::proxy_to_gateway(
+                $link->userid,
+                $chatid,
+                get_string('telegram_new_conversation_greeting', 'local_jedomi', $firstname)
+            );
             return;
         }
 
@@ -505,6 +613,13 @@ class webhook_handler {
             return;
         }
 
+        // A chat linked to another account moves to this one: the earlier account loses the link and its data.
+        foreach ($DB->get_fieldset_select('local_jedomi_telegram_links', 'userid', 'chatid = ?', [$chatid]) as $previous) {
+            if ((int) $previous !== $userid) {
+                telegram_link_service::unlink((int) $previous);
+            }
+        }
+
         // Upsert the link (delete any existing link for this user first).
         $DB->delete_records('local_jedomi_telegram_links', ['userid' => $userid]);
         $DB->insert_record('local_jedomi_telegram_links', (object)[
@@ -518,12 +633,21 @@ class webhook_handler {
 
         // Invalidate code so it can't be reused.
         manager::invalidate_link_code($userid, $code);
+        \local_jedomi\event\telegram_linked::create([
+            'context' => \context_system::instance(),
+            'userid' => $userid,
+            'relateduserid' => $userid,
+        ])->trigger();
 
+        // The chat was not linked when the update arrived: the welcome goes out in the language of the user just linked.
         $fullname = fullname($user);
-        $client->send_message($chatid, get_string('telegram_msg_linked_success', 'local_jedomi', [
-            'fullname' => s($fullname),
-            'username' => s($user->username),
-        ]));
+        $welcome = \local_jedomi\local\user_language::run($userid, static function () use ($fullname, $user): string {
+            return get_string('telegram_msg_linked_success', 'local_jedomi', [
+                'fullname' => s($fullname),
+                'username' => s($user->username),
+            ]);
+        });
+        $client->send_message($chatid, $welcome);
     }
 
     /**
@@ -541,6 +665,20 @@ class webhook_handler {
     }
 
     /**
+     * Start a new conversation: the history, the cached context and the task in progress are reset, and a new session
+     * generation stops any continuation of the previous task.
+     *
+     * Used by the /new command and the New conversation button.
+     *
+     * @param string $chatid Telegram chat id
+     */
+    private static function reset_conversation(string $chatid): void {
+        session::clear($chatid);
+        session::clear_context($chatid);
+        session::set_context('tool_loop_' . $chatid, ['session_gen' => time()]);
+    }
+
+    /**
      * Execute a command triggered by inline keyboard callback.
      *
      * @param string $command Callback command name
@@ -551,7 +689,8 @@ class webhook_handler {
     private static function execute_cmd_callback(string $command, string $chatid, int $messageid, api_client $client): void {
         switch ($command) {
             case 'new':
-                session::clear($chatid);
+                // The same reset as the /new command.
+                self::reset_conversation($chatid);
                 $client->edit_message_text(
                     $chatid,
                     $messageid,
@@ -675,7 +814,8 @@ class webhook_handler {
     private static function hold_action(string $chatid, int $userid, string $name, array $args): ?string {
         global $DB;
 
-        if (pending_action_service::severity($name, $args) === null) {
+        $severity = pending_action_service::severity($name, $args);
+        if ($severity === null) {
             return null;
         }
         $callbackid = random_string(16);
@@ -686,46 +826,145 @@ class webhook_handler {
             'timecreated' => time(),
         ]);
 
-        $description = s($name) . ': ' . s(\core_text::substr(json_encode($args, JSON_UNESCAPED_UNICODE), 0, 300));
         api_client::instance()->send_message(
             $chatid,
-            get_string('telegram_confirm_action', 'local_jedomi', $description),
-            ['inline_keyboard' => [[
-                ['text' => get_string('confirm_btn_yes', 'local_jedomi'), 'callback_data' => self::CALLBACK_CONFIRM . $callbackid],
-                ['text' => get_string('confirm_btn_no', 'local_jedomi'), 'callback_data' => self::CALLBACK_CANCEL . $callbackid],
-            ]]]
+            self::confirmation_text($userid, $name, $args, $severity),
+            ['inline_keyboard' => [self::confirmation_buttons($callbackid, $severity)]]
         );
-        return json_encode(['status' => 'awaiting_confirmation',
-            'note' => 'The action waits for the user to confirm it with the buttons of the chat. Do not call it again.']);
+        $note = $severity === pending_action_service::SEVERITY_CRITICAL
+            ? 'The action waits for the user to type the confirmation word in the chat. Do not call it again.'
+            : 'The action waits for the user to confirm it with the buttons of the chat. Do not call it again.';
+        return json_encode(['status' => 'awaiting_confirmation', 'note' => $note]);
+    }
+
+    /**
+     * Confirmation message of a held action, with the same readable description and data as the web card; a critical
+     * action asks for the confirmation word, as the web chat does.
+     *
+     * @param int $userid Linked Moodle user.
+     * @param string $name Tool name.
+     * @param array $args Tool arguments.
+     * @param string $severity One of the pending_action_service::SEVERITY_* constants.
+     * @return string HTML text for Telegram.
+     */
+    private static function confirmation_text(int $userid, string $name, array $args, string $severity): string {
+        $card = pending_action_service::card($userid, $name, $args, $severity);
+        $text = '<b>' . s($card['description']) . '</b>';
+        if ($name === 'send_messages') {
+            $text = '<b>' . s(str_replace('{count}', (string) $card['count'], get_string('confirm_send_bulk', 'local_jedomi')))
+                . '</b>';
+            if ($card['preview'] !== '') {
+                $text .= "\n<i>" . s($card['preview']) . '</i>';
+            }
+        }
+        if ($card['details'] !== '') {
+            $text .= "\n" . s($card['details']);
+        }
+        $message = get_string('telegram_confirm_action', 'local_jedomi', $text);
+        if ($severity === pending_action_service::SEVERITY_CRITICAL) {
+            $message .= "\n\n" . get_string('telegram_confirm_keyword', 'local_jedomi', s(self::confirm_keyword()));
+        }
+        return $message;
+    }
+
+    /**
+     * Buttons of a held action: a critical action is confirmed only with the confirmation word, so it has no
+     * confirm button.
+     *
+     * @param string $callbackid Callback id of the held action.
+     * @param string $severity One of the pending_action_service::SEVERITY_* constants.
+     * @return array[] One row of inline keyboard buttons.
+     */
+    private static function confirmation_buttons(string $callbackid, string $severity): array {
+        $cancel = ['text' => get_string('confirm_btn_no', 'local_jedomi'), 'callback_data' => self::CALLBACK_CANCEL . $callbackid];
+        if ($severity === pending_action_service::SEVERITY_CRITICAL) {
+            return [$cancel];
+        }
+        return [
+            ['text' => get_string('confirm_btn_yes', 'local_jedomi'), 'callback_data' => self::CALLBACK_CONFIRM . $callbackid],
+            $cancel,
+        ];
+    }
+
+    /**
+     * Confirmation word of critical actions: the confirm button label in capitals, as in the web chat.
+     *
+     * @return string
+     */
+    private static function confirm_keyword(): string {
+        return \core_text::strtoupper(get_string('confirm_btn_yes', 'local_jedomi'));
+    }
+
+    /**
+     * Callback id of the newest critical action of a chat that is still waiting for the confirmation word.
+     *
+     * @param string $chatid Telegram chat id.
+     * @return string|null
+     */
+    private static function waiting_critical_action(string $chatid): ?string {
+        global $DB;
+        $records = $DB->get_records_select(
+            'local_jedomi_telegram_pending_actions',
+            'chatid = :chatid AND timecreated >= :cutoff',
+            ['chatid' => $chatid, 'cutoff' => time() - pending_action_service::EXPIRY],
+            'timecreated DESC, id DESC'
+        );
+        foreach ($records as $record) {
+            $action = json_decode((string) $record->actionjson, true);
+            if (
+                is_array($action) && pending_action_service::severity(
+                    (string) ($action['name'] ?? ''),
+                    (array) ($action['params'] ?? [])
+                ) === pending_action_service::SEVERITY_CRITICAL
+            ) {
+                return (string) $record->callbackid;
+            }
+        }
+        return null;
     }
 
     /**
      * Confirm or cancel a held action of a chat. The action runs once, only for the user who still has the chat linked
      * and is active, and never after it expires.
      *
+     * A critical action runs only with the confirmation word typed in the chat; a confirm button for it (from an
+     * older message) is rejected and the action is kept.
+     *
      * @param string $chatid Telegram chat id.
      * @param string $actionid Callback id of the held action.
      * @param bool $confirm True to run it, false to cancel it.
+     * @param bool $keyword Whether the confirmation word was typed.
      * @return string Message for the user.
      */
-    private static function resolve_held_action(string $chatid, string $actionid, bool $confirm): string {
+    private static function resolve_held_action(string $chatid, string $actionid, bool $confirm, bool $keyword = false): string {
         global $DB, $USER;
 
         $pending = $DB->get_record('local_jedomi_telegram_pending_actions', ['callbackid' => $actionid, 'chatid' => $chatid]);
         if (!$pending) {
             return get_string('pending_action_not_found', 'local_jedomi');
         }
-        // Removed before it runs, so it can run only once.
-        $DB->delete_records('local_jedomi_telegram_pending_actions', ['id' => $pending->id]);
         if ((int) $pending->timecreated < time() - pending_action_service::EXPIRY) {
+            $DB->delete_records('local_jedomi_telegram_pending_actions', ['id' => $pending->id]);
             return get_string('pending_action_expired', 'local_jedomi');
         }
+        $action = json_decode($pending->actionjson, true);
+        $critical = is_array($action) && pending_action_service::severity(
+            (string) ($action['name'] ?? ''),
+            (array) ($action['params'] ?? [])
+        ) === pending_action_service::SEVERITY_CRITICAL;
+        if ($confirm && $critical && !$keyword) {
+            return get_string('telegram_confirm_keyword', 'local_jedomi', s(self::confirm_keyword()));
+        }
+        // Removed before it runs, so it can run only once.
+        $DB->delete_records('local_jedomi_telegram_pending_actions', ['id' => $pending->id]);
+        $link = self::get_link_by_chat_id($chatid);
         if (!$confirm) {
+            if ($link) {
+                pending_action_service::action_event(false, (string) ($action['name'] ?? ''), 'telegram', (int) $link->userid);
+            }
             return get_string('confirm_cancelled', 'local_jedomi');
         }
 
-        $action = json_decode($pending->actionjson, true);
-        $link = self::get_link_by_chat_id($chatid);
         $user = $link ? self::get_active_user((int) $link->userid) : null;
         if (
             !is_array($action) || !$user || (int) ($action['userid'] ?? 0) !== (int) $user->id
@@ -735,6 +974,7 @@ class webhook_handler {
         }
 
         $USER = $user;
+        pending_action_service::action_event(true, (string) ($action['name'] ?? ''), 'telegram', (int) $user->id);
         try {
             $result = self::execute_tool((string) ($action['name'] ?? ''), (array) ($action['params'] ?? []), (int) $user->id);
         } catch (\Throwable $e) {
@@ -779,7 +1019,7 @@ class webhook_handler {
         curl_close($ch);
 
         if ($err) {
-            \local_jedomi_log('[TELEGRAM SELF-PING] cURL error: ' . $err . ' for chat=' . $chatid);
+            \local_jedomi_log('[TELEGRAM SELF-PING] cURL error: ' . $err . ' for chat=' . self::chatref($chatid));
         }
     }
 
@@ -790,6 +1030,19 @@ class webhook_handler {
      * @param string $chatid Telegram chat id whose checkpoint state is loaded
      */
     public static function handle_internal_ping(string $chatid): void {
+        $normalised = self::normalise_chat_id($chatid);
+        $link = $normalised === null ? null : self::get_link_by_chat_id($normalised);
+        \local_jedomi\local\user_language::run($link ? (int) $link->userid : null, static function () use ($chatid): void {
+            self::continue_tool_loop($chatid);
+        });
+    }
+
+    /**
+     * Continue the tool loop of a chat from its checkpoint, in the language already chosen by the caller.
+     *
+     * @param string $chatid Telegram chat id whose checkpoint state is loaded
+     */
+    private static function continue_tool_loop(string $chatid): void {
         global $DB;
 
         $chatid = self::normalise_chat_id($chatid);
@@ -818,7 +1071,7 @@ class webhook_handler {
         $expectedgen = (int)($state['session_gen'] ?? 0);
         $incominggen = (int)($_GET['session_gen'] ?? 0);
         if ($expectedgen > 0 && $incominggen > 0 && $incominggen !== $expectedgen) {
-            \local_jedomi_log('[GATELOOP] session_gen mismatch chat=' . $chatid . ' expected=' . $expectedgen
+            \local_jedomi_log('[GATELOOP] session_gen mismatch chat=' . self::chatref($chatid) . ' expected=' . $expectedgen
                 . ' got=' . $incominggen . ' — aborting stale self-ping');
             return;
         }
@@ -828,7 +1081,7 @@ class webhook_handler {
         $user = $link ? self::get_active_user((int) $link->userid) : null;
         $stateuserid = (int) ($state['userid'] ?? 0);
         if (!$user || ($stateuserid > 0 && $stateuserid !== (int) $user->id) || !self::is_user_role_allowed((int) $user->id)) {
-            \local_jedomi_log('[GATELOOP] chat ' . $chatid . ' no longer linked to an active user, task stopped');
+            \local_jedomi_log('[GATELOOP] chat ' . self::chatref($chatid) . ' no longer linked to an active user, task stopped');
             session::set_context('tool_loop_' . $chatid, []);
             return;
         }
@@ -871,12 +1124,13 @@ class webhook_handler {
                     // Lock is still valid (< 2 min) — block.
                     api_client::instance()->send_message(
                         $chatid,
-                        '⏳ Sigo procesando tu solicitud anterior, dame un momento...'
+                        get_string('telegram_msg_still_processing', 'local_jedomi')
                     );
                     return;
                 }
                 // Lock expired (> LOCK_TTL seconds) — auto-release and continue.
-                \local_jedomi_log('[GATELOOP] stale_lock chat=' . $chatid . ' age=' . $lockage . 's — auto-releasing');
+                \local_jedomi_log('[GATELOOP] stale_lock chat=' . self::chatref($chatid) . ' age=' . $lockage
+                    . 's — auto-releasing');
                 session::set_context($statekey, []);
                 // Fall through to process the new message.
             }
@@ -903,7 +1157,7 @@ class webhook_handler {
             try {
                 $checkpoint = session::get_context($statekey);
             } catch (\Exception $e) {
-                \local_jedomi_log('[GATELOOP] checkpoint read FAILED for chat ' . $chatid . ': ' . $e->getMessage());
+                \local_jedomi_log('[GATELOOP] checkpoint read FAILED for chat ' . self::chatref($chatid) . ': ' . $e->getMessage());
                 $checkpoint = null;
             }
             if (!empty($checkpoint) && !empty($checkpoint['messages'])) {
@@ -923,7 +1177,7 @@ class webhook_handler {
                     $cpjson = json_encode($checkpoint, JSON_UNESCAPED_UNICODE);
                     \local_jedomi_log(sprintf(
                         '[GATELOOP] checkpoint restored chat=%s iter=%d state_bytes=%d msg_count=%d',
-                        $chatid,
+                        self::chatref($chatid),
                         $checkpoint['iteration'] ?? 0,
                         strlen($cpjson),
                         count($checkpoint['messages'])
@@ -950,14 +1204,14 @@ class webhook_handler {
         } else {
             $state = session::get_context($statekey);
             if (empty($state) || empty($state['messages'])) {
-                \local_jedomi_log('[GATELOOP] self-ping empty state for chat ' . $chatid . ', nothing to continue');
+                \local_jedomi_log('[GATELOOP] self-ping empty state for chat ' . self::chatref($chatid) . ', nothing to continue');
                 return; // Nothing to continue.
             }
             $messages = $state['messages'];
             $statejsoncheck = json_encode($state, JSON_UNESCAPED_UNICODE);
             \local_jedomi_log(sprintf(
                 '[GATELOOP] self-ping restored chat=%s iter=%d state_bytes=%d msg_count=%d',
-                $chatid,
+                self::chatref($chatid),
                 $state['iteration'] ?? 0,
                 strlen($statejsoncheck),
                 count($messages)
@@ -995,7 +1249,7 @@ class webhook_handler {
         // picks up at the saved iteration. The user sees a single seamless response.
         $loopstart = time();
         $maxiterations = 50;
-        $hardguard = 55; // Seconds — chain to next worker before FPM kills us.
+        $hardguard = self::HARD_GUARD; // Seconds — chain to next worker before FPM kills us.
 
         // Extend PHP execution limit to cover our hard guard + buffer.
         // Without this, php max_execution_time or fpm request_terminate_timeout
@@ -1020,7 +1274,7 @@ class webhook_handler {
             if ($iteration > 0) {
                 \local_jedomi_log(sprintf(
                     '[GATELOOP] iter_top chat=%s iter=%d elapsed=%ds msg_count=%d',
-                    $chatid,
+                    self::chatref($chatid),
                     $iteration,
                     $elapsed,
                     count($messages)
@@ -1034,10 +1288,14 @@ class webhook_handler {
             if ($elapsed >= $hardguard) {
                 \local_jedomi_log(sprintf(
                     '[GATELOOP] hard_guard chat=%s iter=%d elapsed=%d self-pinging',
-                    $chatid,
+                    self::chatref($chatid),
                     $iteration,
                     $elapsed
                 ));
+                if (!self::access_still_valid($chatid, $userid)) {
+                    self::stop_without_access($statekey, $chatid);
+                    return;
+                }
                 $state['iteration'] = $iteration + 1;
                 $state['messages'] = $messages;
                 $state['is_locked'] = true;
@@ -1054,10 +1312,14 @@ class webhook_handler {
             if ($elapsed >= 40 && $iteration > 0) {
                 \local_jedomi_log(sprintf(
                     '[GATELOOP] medium_guard chat=%s iter=%d elapsed=%d self-pinging',
-                    $chatid,
+                    self::chatref($chatid),
                     $iteration,
                     $elapsed
                 ));
+                if (!self::access_still_valid($chatid, $userid)) {
+                    self::stop_without_access($statekey, $chatid);
+                    return;
+                }
                 $state['iteration'] = $iteration + 1;
                 $state['messages'] = $messages;
                 $state['is_locked'] = true;
@@ -1071,10 +1333,7 @@ class webhook_handler {
             // ... ── Soft guard (~30s): send a keepalive so the user knows we're alive ──
             if ($elapsed >= 30 && !$senttimeoutwarning) {
                 $senttimeoutwarning = true;
-                api_client::instance()->send_message(
-                    $chatid,
-                    "🔄 Sigamos, estoy procesando tu solicitud…"
-                );
+                api_client::instance()->send_message($chatid, get_string('telegram_msg_keepalive', 'local_jedomi'));
             }
 
             // ... ── Re-send typing indicator each iteration (Telegram auto-expires after ~6s) ──
@@ -1089,7 +1348,7 @@ class webhook_handler {
 
             \local_jedomi_log(sprintf(
                 '[GATELOOP] calling_ai chat=%s iter=%d elapsed=%ds timeout=%ds msg_count=%d',
-                $chatid,
+                self::chatref($chatid),
                 $iteration,
                 time() - $loopstart,
                 $aitimeout,
@@ -1112,6 +1371,12 @@ class webhook_handler {
                 // because the AI service may already have processed (and billed) it.
                 \local_jedomi_log('[AI] error on iter ' . $iteration . ': ' . $error['code']);
                 self::release_lock($statekey, $chatid, $error['message']);
+                return;
+            }
+
+            // The access may have changed while the AI answered: nothing more runs and nothing is sent.
+            if (!self::access_still_valid($chatid, $userid)) {
+                self::stop_without_access($statekey, $chatid);
                 return;
             }
 
@@ -1278,8 +1543,7 @@ class webhook_handler {
             }
             if ($hastools && ($iteration % 5 === 0 || $iteration === 1)) {
                 $tooldisplay = [];
-                // Map tool names to lang string keys (WS/admin tools)
-                // or inline labels (create_* tools — no lang strings exist).
+                // Each tool has a progress label in the language of the user; a tool without one shows its name.
                 $toollangkeys = [
                     'execute_sql'     => 'tool_sql_read',
                     'ws_execute'      => 'tool_api_call',
@@ -1292,41 +1556,14 @@ class webhook_handler {
                     'admin_search'    => 'confirm_executing',
                     'admin_describe'  => 'confirm_executing',
                     'admin_execute'   => 'confirm_executing',
-                ];
-                $toolinlinelabels = [
-                    'create_categories'  => 'Crear categorías',
-                    'create_courses'     => 'Crear cursos',
-                    'create_users'       => 'Crear usuarios',
-                    'enrol_users'        => 'Matricular usuarios',
-                    'create_interactive' => 'Crear contenido interactivo',
-                    'set_course_sections' => 'Estructurar secciones',
-                    'upload_content_files' => 'Subir archivos',
-                    'create_quiz'        => 'Crear cuestionarios',
-                    'create_page'        => 'Crear páginas',
-                    'create_label'       => 'Crear etiquetas',
-                    'create_lesson'      => 'Crear lecciones',
-                    'create_forum'       => 'Crear foros',
-                    'create_assign'      => 'Crear tareas',
-                    'create_book'        => 'Crear libros',
-                    'create_group'       => 'Crear grupos',
-                    'create_grouping'    => 'Crear agrupamientos',
-                    'create_groupings_groups' => 'Agrupar grupos',
-                    'list_agents'     => 'Listar agentes',
-                    'list_agent'      => 'Listar agentes', // Alias hallucinated singular.
-                    'create_agent'    => 'Crear agente',
-                    'create_agents'   => 'Crear agente', // Alias hallucinated plural.
-                    'delete_agent'    => 'Eliminar agente',
-                    'delete_agents'   => 'Eliminar agente', // Alias hallucinated plural.
+                    'list_agent'      => 'tool_progress_list_agents', // Alias hallucinated singular.
+                    'create_agents'   => 'tool_progress_create_agent', // Alias hallucinated plural.
+                    'delete_agents'   => 'tool_progress_delete_agent', // Alias hallucinated plural.
                 ];
                 foreach ($message['tool_calls'] ?? [] as $tc) {
-                    $name = $tc['function']['name'] ?? '';
-                    if (isset($toollangkeys[$name])) {
-                        $label = get_string($toollangkeys[$name], 'local_jedomi');
-                    } else if (isset($toolinlinelabels[$name])) {
-                        $label = $toolinlinelabels[$name];
-                    } else {
-                        $label = $name;
-                    }
+                    $name = (string) ($tc['function']['name'] ?? '');
+                    $key = $toollangkeys[$name] ?? 'tool_progress_' . $name;
+                    $label = get_string_manager()->string_exists($key, 'local_jedomi') ? get_string($key, 'local_jedomi') : $name;
                     $tooldisplay[] = $label;
                 }
                 $progressicon = match (true) {
@@ -1353,16 +1590,23 @@ class webhook_handler {
 
                 // If sanitisation emptied the text, send original as plain text.
                 if (trim(strip_tags($display)) === '') {
-                    $fallback = (is_string($content) && $content !== '') ? $content : '✅ Listo.';
+                    $fallback = (is_string($content) && $content !== '')
+                        ? $content : get_string('telegram_msg_done', 'local_jedomi');
                     session::set_context($statekey, []);
+                    session::append($chatid, 'assistant', $fallback);
+                    \local_jedomi\event\chat_answered::create_for_channel('telegram', null, $userid)->trigger();
                     api_client::instance()->send_message($chatid, $fallback);
                     return;
                 }
 
                 // ... ── Release lock before sending final response ──
-                \local_jedomi_log('[GATELOOP] text response for chat ' . $chatid . ' at iter ' . $iteration
+                \local_jedomi_log('[GATELOOP] text response for chat ' . self::chatref($chatid) . ' at iter ' . $iteration
                     . ', elapsed=' . (time() - $loopstart) . 's, len=' . strlen($display));
                 session::set_context($statekey, []);
+
+                // The answer is kept in the history, so the next turns have the whole conversation.
+                session::append($chatid, 'assistant', (string) $content);
+                \local_jedomi\event\chat_answered::create_for_channel('telegram', null, $userid)->trigger();
 
                 // If the response is large (> 3800 chars) or contains tabular data
                 // (<pre> block), send as a .txt file instead of chunking multiple messages.
@@ -1410,7 +1654,7 @@ class webhook_handler {
             if ($isactivelylocked && ($freshstate['iteration'] ?? 0) > $iteration) {
                 \local_jedomi_log(sprintf(
                     '[GATELOOP] stale_iteration chat=%s iter=%d fresh_iter=%d — reloading',
-                    $chatid,
+                    self::chatref($chatid),
                     $iteration,
                     $freshstate['iteration']
                 ));
@@ -1440,7 +1684,7 @@ class webhook_handler {
                 if ($repeatcount > 8) {
                     \local_jedomi_log(sprintf(
                         '[GATELOOP] loop_detected chat=%s iter=%d tool=%s key=%s count=%d',
-                        $chatid,
+                        self::chatref($chatid),
                         $iteration,
                         $name,
                         $callkey,
@@ -1451,12 +1695,18 @@ class webhook_handler {
                 } else if ($repeatcount >= 4) {
                     \local_jedomi_log(sprintf(
                         '[GATELOOP] loop_warning chat=%s iter=%d tool=%s key=%s count=%d',
-                        $chatid,
+                        self::chatref($chatid),
                         $iteration,
                         $name,
                         $callkey,
                         $repeatcount
                     ));
+                }
+
+                // Each tool runs only while the user still has access.
+                if (!self::access_still_valid($chatid, $userid)) {
+                    self::stop_without_access($statekey, $chatid);
+                    return;
                 }
 
                 // The AI only knows the placeholders of the anonymised data; the tools need the real values.
@@ -1491,31 +1741,33 @@ class webhook_handler {
             $statejson = json_encode($state, JSON_UNESCAPED_UNICODE);
             \local_jedomi_log(sprintf(
                 '[GATELOOP] state_save chat=%s iter=%d state_bytes=%d msg_count=%d',
-                $chatid,
+                self::chatref($chatid),
                 $iteration,
                 strlen($statejson),
                 count($messages)
             ));
 
+            // The state of a task whose access changed (or that unlinking removed) is not written again.
+            if (!self::access_still_valid($chatid, $userid)) {
+                self::stop_without_access($statekey, $chatid);
+                return;
+            }
+
             try {
                 $state['anonymizer'] = $anonymizer->export_map();
                 session::set_context($statekey, $state);
             } catch (\Exception $e) {
-                \local_jedomi_log('[GATELOOP] STATE SAVE FAILED for chat ' . $chatid
+                \local_jedomi_log('[GATELOOP] STATE SAVE FAILED for chat ' . self::chatref($chatid)
                     . ' iter=' . $iteration . ' bytes=' . strlen($statejson)
                     . ' err=' . $e->getMessage());
                 // Fallback: release lock and inform user, don't crash silently.
                 session::set_context($statekey, []);
-                api_client::instance()->send_message(
-                    $chatid,
-                    '⚠️ Lo siento, tuve un problema al guardar el progreso. '
-                    . 'Por favor intentá de nuevo con /new.'
-                );
+                api_client::instance()->send_message($chatid, get_string('telegram_msg_state_save_failed', 'local_jedomi'));
                 return;
             }
 
             if ($looping) {
-                \local_jedomi_log('[GATELOOP] loop_exit for chat ' . $chatid . ' at iter ' . $iteration
+                \local_jedomi_log('[GATELOOP] loop_exit for chat ' . self::chatref($chatid) . ' at iter ' . $iteration
                     . ', elapsed=' . (time() - $loopstart) . 's');
                 session::set_context($statekey, []);
                 api_client::instance()->send_message($chatid, get_string('telegram_msg_max_iterations', 'local_jedomi'));
@@ -1524,11 +1776,39 @@ class webhook_handler {
         }
 
         // ... ── Max iterations reached ──
-        \local_jedomi_log('[GATELOOP] max iterations reached for chat ' . $chatid);
+        \local_jedomi_log('[GATELOOP] max iterations reached for chat ' . self::chatref($chatid));
         session::set_context($statekey, []);
         api_client::instance()->send_message($chatid, get_string('telegram_msg_max_iterations', 'local_jedomi'));
     }
 
+
+    /**
+     * Whether a request in progress may go on: Jedomi and the Telegram integration are enabled and the chat is still
+     * linked to the same user, whose account is active and whose role is allowed.
+     *
+     * @param string $chatid Telegram chat id.
+     * @param int $userid User the request runs for.
+     * @return bool
+     */
+    private static function access_still_valid(string $chatid, int $userid): bool {
+        $link = self::get_link_by_chat_id($chatid);
+        return $link !== null && (int) $link->userid === $userid && \local_jedomi_telegram_recipient($userid) !== null;
+    }
+
+    /**
+     * Stop a request in progress whose access changed. Nothing is sent, and the task state is released only when it
+     * still exists, so the state that unlinking removed is not written again.
+     *
+     * @param string $statekey Key of the task state.
+     * @param string $chatid Telegram chat id.
+     */
+    private static function stop_without_access(string $statekey, string $chatid): void {
+        global $DB;
+        \local_jedomi_log('[GATELOOP] access changed for chat ' . self::chatref($chatid) . ', request stopped');
+        if ($DB->record_exists('local_jedomi_telegram_sessions', ['chatid' => $statekey])) {
+            session::set_context($statekey, []);
+        }
+    }
 
     /**
      * Turn an AI client answer into the shape the tool loop uses.
@@ -1552,16 +1832,19 @@ class webhook_handler {
     }
 
     /**
-     * Total timeout of each AI call, from the Telegram timeout setting (5–300 s, default 120 s).
+     * Total timeout of each AI call, from the Telegram timeout setting (5 s to MAX_AI_TIMEOUT, the default).
+     *
+     * A worker hands the loop to the next one after HARD_GUARD seconds, so a longer value could never apply; values
+     * saved by older versions are capped here.
      *
      * @return int
      */
-    private static function get_ai_timeout(): int {
+    public static function get_ai_timeout(): int {
         $timeout = (int) get_config('local_jedomi', 'telegram_gateway_timeout');
         if ($timeout < 5) {
-            return 120;
+            return self::MAX_AI_TIMEOUT;
         }
-        return min($timeout, 300);
+        return min($timeout, self::MAX_AI_TIMEOUT);
     }
 
     /**
@@ -1666,9 +1949,9 @@ class webhook_handler {
                 }
 
                 // ... ── Guard, timeout, row cap and sensitive columns shared with the web chat ──
-                $maxrows = 50;
+                $maxrows = \local_jedomi\local\query_runner::row_limit('telegram');
                 try {
-                    $result = \local_jedomi\local\query_runner::run($sql, $params, $userid, $maxrows);
+                    $result = \local_jedomi\local\query_runner::run($sql, $params, $userid, $maxrows, 'telegram');
                 } catch (\moodle_exception $e) {
                     if (in_array($e->errorcode, ['execute_sql_error', 'query_timeout'], true)) {
                         return "❌ SQL error: " . $e->getMessage() . (empty($e->debuginfo) ? '' : ' | ' . $e->debuginfo);
@@ -1780,7 +2063,12 @@ class webhook_handler {
                 if (empty($query)) {
                     return "Search query required.";
                 }
-                $entries = ws_indexer::search($query, [], $limit);
+                // Only the functions of the list of the role, the same list that gates the execution.
+                $allowed = \local_jedomi\local\ws_runner::searchable_functions($role);
+                if ($allowed === []) {
+                    return get_string('note_ws_none_configured', 'local_jedomi');
+                }
+                $entries = ws_indexer::search($query, $allowed ?? [], $limit);
                 $results = [];
                 foreach ($entries as $entry) {
                     $line = "• <b>" . s($entry['name']) . "</b> (" . s($entry['component']) . ")"
@@ -1803,6 +2091,9 @@ class webhook_handler {
                 $wsname = $args['wsname'] ?? '';
                 if (empty($wsname)) {
                     return "Web service name required.";
+                }
+                if (!\local_jedomi\local\ws_runner::role_allows($role, (string) $wsname)) {
+                    return json_encode(['error' => 'permission_denied: function not in allowlist']);
                 }
                 $info = ws_indexer::describe($wsname);
                 if (isset($info['error'])) {
@@ -1912,11 +2203,6 @@ class webhook_handler {
                 if (empty($prompt) || empty($schedule)) {
                     return "❌ Both prompt and schedule_cron are required.";
                 }
-                // Validate cron expression has 5 fields.
-                $parts = preg_split('/\s+/', $schedule);
-                if (count($parts) !== 5) {
-                    return "❌ Invalid cron expression. Use 5 fields like: \"*/30 * * * *\"";
-                }
                 $data = new \stdClass();
                 $data->userid = $userid;
                 $data->name = trim($args['name'] ?? '');
@@ -1925,6 +2211,11 @@ class webhook_handler {
                 $data->context_type = $args['context_type'] ?? 'site';
                 $data->context_id = isset($args['context_id']) ? (int) $args['context_id'] : null;
                 $data->enabled = isset($args['enabled']) ? (int) $args['enabled'] : 1;
+                // The schedule and the context (a Moodle context id of the chosen type) are validated as in the form.
+                $invalid = \local_jedomi\agent\agent_manager::validation_error($data);
+                if ($invalid !== null) {
+                    return '❌ ' . s($invalid);
+                }
                 $id = \local_jedomi\agent\agent_manager::create_agent($data);
                 $agent = \local_jedomi\agent\agent_manager::get_agent($id);
                 $nextrun = $agent ? userdate($agent->nextrun) : '?';
@@ -2066,7 +2357,7 @@ class webhook_handler {
                 // Allowlist matching get_site_config pattern: only non-sensitive keys.
                 $safekeys = [
                     'enabled', 'model', 'version',
-                    'hide_from_guests', 'anonymization_level',
+                    'anonymization_level',
                     'course_mode', 'course_list',
                     'telegram_enabled', 'telegram_bot_username', 'telegram_bot_firstname',
                     'telegram_bot_verified', 'telegram_rate_limit', 'telegram_cooldown',
@@ -2094,8 +2385,8 @@ class webhook_handler {
     }
 
     /**
-     * Check if text looks like a bare link code (4-8 uppercase alphanumeric chars).
-     * This prevents treating random user messages as codes.
+     * Check if text has the exact format of a link code: six characters of the code alphabet with at least one digit
+     * (see manager::generate_link_code()). A greeting or another short word is never taken as a code.
      *
      * Internal: exposed as a testable entry point; not a stable plugin API.
      *
@@ -2103,8 +2394,7 @@ class webhook_handler {
      * @return bool True if the text matches the link code format
      */
     public static function looks_like_link_code(string $text): bool {
-        $text = strtoupper(trim($text));
-        return (bool) preg_match('/^[A-Z0-9]{4,8}$/', $text);
+        return manager::is_link_code_format(trim($text));
     }
 
     // ... ── Helpers ──────────────────────────────────────────────────────────────
@@ -2136,63 +2426,13 @@ class webhook_handler {
     /**
      * Decide whether the user may use the Telegram bot based on the hidden-roles setting.
      *
-     * Admins are always allowed; otherwise the user is blocked only when every role
-     * they hold (system and course contexts) is in the configured hidden list.
+     * The same rule as the profile link and the notifications: see local_jedomi_telegram_role_allowed_for().
      *
      * @param  int $userid Moodle user id to check.
      * @return bool True if the user is allowed to interact with the bot.
      */
     public static function is_user_role_allowed(int $userid): bool {
-        // Site admins always have access (matching web version).
-        $admins = get_admins();
-        foreach ($admins as $admin) {
-            if ((int) $admin->id === $userid) {
-                return true;
-            }
-        }
-
-        $hidden = get_config('local_jedomi', 'telegram_hidden_roles') ?: '';
-        if (empty($hidden)) {
-            return true;
-        }
-        $hiddenids = array_filter(array_map('intval', explode(',', $hidden)));
-        if (empty($hiddenids)) {
-            return true;
-        }
-
-        // Collect all role IDs across all contexts.
-        $allroleids = [];
-
-        // Check system context.
-        $systemroles = get_user_roles(\context_system::instance(), $userid, false);
-        foreach ($systemroles as $r) {
-            $allroleids[] = (int)$r->roleid;
-        }
-
-        // Check course contexts.
-        $courses = enrol_get_all_users_courses($userid);
-        foreach ($courses as $course) {
-            $ctx = \context_course::instance($course->id);
-            $courseroles = get_user_roles($ctx, $userid, false);
-            foreach ($courseroles as $r) {
-                $allroleids[] = (int)$r->roleid;
-            }
-        }
-
-        // No roles found anywhere — allow (don't block users without roles).
-        if (empty($allroleids)) {
-            return true;
-        }
-
-        // If ANY role is NOT in the hidden list, the user is allowed.
-        foreach ($allroleids as $rid) {
-            if (!in_array($rid, $hiddenids, true)) {
-                return true;
-            }
-        }
-
-        // All roles are hidden — block.
-        return false;
+        return \local_jedomi_telegram_role_allowed_for($userid);
     }
 
     /**
@@ -2218,7 +2458,7 @@ class webhook_handler {
         try {
             $transaction = $DB->start_delegated_transaction();
         } catch (\Throwable $e) {
-            \local_jedomi_log('[TELEGRAM RATE] limit check failed for chat ' . $chatid . ': ' . $e->getMessage());
+            \local_jedomi_log('[TELEGRAM RATE] limit check failed for chat ' . self::chatref($chatid) . ': ' . $e->getMessage());
             return null;
         }
         try {
@@ -2265,7 +2505,7 @@ class webhook_handler {
             $transaction->allow_commit();
             return false;
         } catch (\Throwable $e) {
-            \local_jedomi_log('[TELEGRAM RATE] limit check failed for chat ' . $chatid . ': ' . $e->getMessage());
+            \local_jedomi_log('[TELEGRAM RATE] limit check failed for chat ' . self::chatref($chatid) . ': ' . $e->getMessage());
             try {
                 // The rollback throws the error again; it is already handled here.
                 $transaction->rollback($e);
@@ -2315,12 +2555,7 @@ class webhook_handler {
      * @return \stdClass|null The user record, or null when the account can no longer be served.
      */
     private static function get_active_user(int $userid): ?\stdClass {
-        global $DB;
-        $user = $DB->get_record('user', ['id' => $userid, 'deleted' => 0]);
-        if (!$user || !empty($user->suspended) || $user->auth === 'nologin' || isguestuser($user)) {
-            return null;
-        }
-        return $user;
+        return \local_jedomi_telegram_active_user($userid);
     }
 
     /**
@@ -2395,7 +2630,7 @@ class webhook_handler {
 
         // Only the tools of the role that Telegram can really run are offered.
         $tools = array_values(array_filter(
-            \local_jedomi_get_tool_definitions($role),
+            \local_jedomi_get_tool_definitions($role, $userid, 'telegram'),
             static fn(array $tool): bool => in_array($tool['function']['name'] ?? '', self::SUPPORTED_TOOLS, true)
         ));
 

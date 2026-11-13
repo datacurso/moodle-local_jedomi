@@ -407,5 +407,77 @@ function xmldb_local_jedomi_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2026111100, 'local', 'jedomi');
     }
 
+    if ($oldversion < 2026111202) {
+        // The Agents tab shows the answer of the last run of an agent and the reason of its last failure.
+        $table = new xmldb_table('local_jedomi_agents');
+        $fields = [
+            new xmldb_field('lastresult', XMLDB_TYPE_TEXT, null, null, null, null, null, 'failcount'),
+            new xmldb_field('lasterror', XMLDB_TYPE_TEXT, null, null, null, null, null, 'lastresult'),
+        ];
+        foreach ($fields as $field) {
+            if (!$dbman->field_exists($table, $field)) {
+                $dbman->add_field($table, $field);
+            }
+        }
+        upgrade_plugin_savepoint(true, 2026111202, 'local', 'jedomi');
+    }
+
+    if ($oldversion < 2026111203) {
+        // Each answer keeps a single rating per user, which can be changed and can carry a comment.
+        $table = new xmldb_table('local_jedomi_feedback');
+        $fields = [
+            new xmldb_field('messageid', XMLDB_TYPE_CHAR, '64', null, null, null, null, 'timecreated'),
+            new xmldb_field('feedbackcomment', XMLDB_TYPE_TEXT, null, null, null, null, null, 'messageid'),
+            new xmldb_field('timemodified', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0', 'feedbackcomment'),
+        ];
+        foreach ($fields as $field) {
+            if (!$dbman->field_exists($table, $field)) {
+                $dbman->add_field($table, $field);
+            }
+        }
+        $index = new xmldb_index('usermessage_idx', XMLDB_INDEX_NOTUNIQUE, ['userid', 'messageid']);
+        if (!$dbman->index_exists($table, $index)) {
+            $dbman->add_index($table, $index);
+        }
+        // Older ratings have no message id: repeated clicks on the same answer are kept once, the latest one.
+        require_once($CFG->dirroot . '/local/jedomi/db/upgradelib.php');
+        local_jedomi_deduplicate_feedback();
+        upgrade_plugin_savepoint(true, 2026111203, 'local', 'jedomi');
+    }
+
+    if ($oldversion < 2026111204) {
+        // Sites installed from an install.xml without the iteration column skipped the step that adds it.
+        $table = new xmldb_table('local_jedomi_telegram_sessions');
+        $field = new xmldb_field('iteration', XMLDB_TYPE_INTEGER, '10', null, null, null, null, 'usercontext');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+        // The training data and "Hide from guest users" options had no effect and were removed.
+        unset_config('collect_training_data', 'local_jedomi');
+        unset_config('hide_from_guests', 'local_jedomi');
+        upgrade_plugin_savepoint(true, 2026111204, 'local', 'jedomi');
+    }
+
+    if ($oldversion < 2026111206) {
+        // The query profiler records the queries of every channel (web chat, Telegram, companion and agent previews).
+        $table = new xmldb_table('local_jedomi_query_log');
+        $fields = [
+            new xmldb_field('channel', XMLDB_TYPE_CHAR, '20', null, XMLDB_NOTNULL, null, 'agent', 'agentid'),
+            new xmldb_field('userid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0', 'channel'),
+        ];
+        foreach ($fields as $field) {
+            if (!$dbman->field_exists($table, $field)) {
+                $dbman->add_field($table, $field);
+            }
+        }
+        $index = new xmldb_index('channel_idx', XMLDB_INDEX_NOTUNIQUE, ['channel']);
+        if (!$dbman->index_exists($table, $index)) {
+            $dbman->add_index($table, $index);
+        }
+        // Queries of a preview were stored with agent 0 before the channel existed.
+        $DB->set_field('local_jedomi_query_log', 'channel', 'preview', ['agentid' => 0]);
+        upgrade_plugin_savepoint(true, 2026111206, 'local', 'jedomi');
+    }
+
     return true;
 }

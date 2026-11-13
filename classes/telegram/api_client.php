@@ -76,61 +76,55 @@ class api_client {
     }
 
     /**
-     * Split long text into chunks ≤ 4000 chars for Telegram's limit.
-     * Tries to split on \n\n boundaries first, falls back to last space before 4000.
+     * Tags of a text fragment that are still open at its end, as the opening tags written (attributes included),
+     * outermost first. Only the tags Telegram supports with parse_mode=HTML are tracked.
      *
-     * @param string $text The text to split.
-     * @param bool $truncate If true, return single chunk truncated to 4000 + "… (truncated)".
-     * @return array Array of text chunks.
+     * @param string $text Fragment of Telegram HTML.
+     * @return string[]
      */
-    /**
-     * Close any open HTML tags in a text fragment so Telegram's parser
-     * doesn't reject it. Works by tracking which tags from an allowlist
-     * are open and appending closing tags at the end.
-     *
-     * Non-element tags (self-closing, comments, etc.) are ignored.
-     *
-     * @param string $text
-     * @return string
-     */
-    private function close_open_html_tags(string $text): string {
-        // Only close tags that Telegram supports with parse_mode=HTML.
-        $allowed = ['b', 'i', 'u', 's', 'a', 'code', 'pre', 'em', 'strong'];
+    private function open_tags(string $text): array {
+        $allowed = ['b', 'i', 'u', 's', 'a', 'code', 'pre', 'blockquote', 'tg-spoiler', 'tg-emoji', 'span', 'em', 'strong'];
         $open = [];
-
-        // Remove all attributes inside tags for matching purposes.
-        $stripped = preg_replace('/<(\w+)\s[^>]*>/', '<$1>', $text);
-
-        // Find all <tag> and </tag> occurrences.
-        preg_match_all('/<\/?(\w+)[^>]*>/', $stripped, $matches, PREG_SET_ORDER);
-
+        preg_match_all('/<(\/?)([a-zA-Z][a-zA-Z0-9-]*)\b[^<>]*>/', $text, $matches, PREG_SET_ORDER);
         foreach ($matches as $m) {
-            $tag = strtolower($m[1]);
-            if (!in_array($tag, $allowed, true)) {
+            $tag = strtolower($m[2]);
+            if (!in_array($tag, $allowed, true) || substr($m[0], -2) === '/>') {
                 continue;
             }
-            if ($m[0][1] === '/') { // Closing tag </tag>.
-                $idx = array_search($tag, $open, true);
-                if ($idx !== false) {
-                    array_splice($open, $idx, 1);
+            if ($m[1] === '/') {
+                for ($i = count($open) - 1; $i >= 0; $i--) {
+                    if ($open[$i][0] === $tag) {
+                        array_splice($open, $i, 1);
+                        break;
+                    }
                 }
-            } else if (substr($m[0], -2) !== '/>') { // Opening tag (not self-closing).
-                $open[] = $tag;
+            } else {
+                $open[] = [$tag, $m[0]];
             }
         }
+        return array_column($open, 1);
+    }
 
-        // Append closing tags in reverse order.
-        foreach (array_reverse($open) as $tag) {
-            $text .= '</' . $tag . '>';
+    /**
+     * Closing tags for the opening tags given, innermost first.
+     *
+     * @param string[] $openings Opening tags, outermost first.
+     * @return string
+     */
+    private function closing_tags(array $openings): string {
+        $closing = '';
+        foreach (array_reverse($openings) as $opening) {
+            preg_match('/^<([a-zA-Z][a-zA-Z0-9-]*)/', $opening, $m);
+            $closing .= '</' . strtolower($m[1]) . '>';
         }
-
-        return $text;
+        return $closing;
     }
 
     /**
      * Split long text into chunks ≤ 4000 chars for Telegram's limit.
-     * Tries to split on \n\n boundaries first, falls back to last space before 4000.
-     * Each chunk (except the last) has open HTML tags closed to prevent 400 errors.
+     * Tries to split on \n\n boundaries first, falls back to last space before 4000; a tag or an entity is never cut.
+     * Each chunk closes the tags still open at its end and the next chunk opens them again, so every chunk is valid
+     * Telegram HTML on its own.
      *
      * Internal: exposed as a testable entry point; not a stable plugin API.
      *
@@ -151,32 +145,60 @@ class api_client {
         }
 
         $chunks = [];
+        $reopen = [];
         $remaining = $text;
 
-        while (mb_strlen($remaining) > $max) {
-            $chunk = mb_substr($remaining, 0, $max);
-
-            // Try to split at \n\n.
-            $lastdoublenl = mb_strrpos($chunk, "\n\n");
-            if ($lastdoublenl !== false && $lastdoublenl > $max * 0.5) {
-                $splitat = $lastdoublenl + 2;
-            } else {
-                // Fallback: last space.
-                $lastspace = mb_strrpos($chunk, ' ');
-                $splitat = ($lastspace !== false && $lastspace > 0) ? $lastspace + 1 : $max;
-            }
-
-            $fragment = mb_substr($remaining, 0, $splitat);
-            // Close any HTML tags that were opened but not closed in this fragment.
-            $chunks[] = $this->close_open_html_tags($fragment);
-            $remaining = trim(mb_substr($remaining, $splitat));
+        while (mb_strlen(implode('', $reopen) . $remaining) > $max) {
+            $prefix = implode('', $reopen);
+            $limit = $max - mb_strlen($prefix);
+            do {
+                $fragment = $this->fragment($remaining, $limit);
+                $open = $this->open_tags($prefix . $fragment);
+                $chunk = $prefix . $fragment . $this->closing_tags($open);
+                $limit -= max(1, mb_strlen($chunk) - $max);
+            } while (mb_strlen($chunk) > $max && $limit > 1);
+            $chunks[] = $chunk;
+            $reopen = $open;
+            $remaining = trim(mb_substr($remaining, mb_strlen($fragment)));
         }
 
         if (mb_strlen($remaining) > 0) {
-            $chunks[] = $remaining;
+            $chunks[] = implode('', $reopen) . $remaining;
         }
 
         return $chunks;
+    }
+
+    /**
+     * Start of a text up to a length, cut between paragraphs, else at a space, else at the length, and never
+     * inside a tag or an entity.
+     *
+     * @param string $text Text.
+     * @param int $limit Maximum length.
+     * @return string
+     */
+    private function fragment(string $text, int $limit): string {
+        $limit = max(1, $limit);
+        $chunk = mb_substr($text, 0, $limit);
+        $lastdoublenl = mb_strrpos($chunk, "\n\n");
+        if ($lastdoublenl !== false && $lastdoublenl > $limit * 0.5) {
+            $splitat = $lastdoublenl + 2;
+        } else {
+            $lastspace = mb_strrpos($chunk, ' ');
+            $splitat = ($lastspace !== false && $lastspace > 0) ? $lastspace + 1 : $limit;
+        }
+        $fragment = mb_substr($text, 0, $splitat);
+
+        // A tag or an entity cut in half would be rejected: cut before it.
+        $lt = mb_strrpos($fragment, '<');
+        $gt = mb_strrpos($fragment, '>');
+        if ($lt !== false && $lt > 0 && ($gt === false || $gt < $lt)) {
+            $fragment = mb_substr($fragment, 0, $lt);
+        }
+        if (preg_match('/&[#a-zA-Z0-9]{0,10}$/', $fragment, $m) && mb_strlen($fragment) > mb_strlen($m[0])) {
+            $fragment = mb_substr($fragment, 0, mb_strlen($fragment) - mb_strlen($m[0]));
+        }
+        return $fragment;
     }
 
     /**

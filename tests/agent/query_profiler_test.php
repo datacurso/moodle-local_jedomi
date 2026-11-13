@@ -122,13 +122,73 @@ final class query_profiler_test extends \advanced_testcase {
     }
 
     /**
-     * MDL-INT-037: every query is recorded with its origin and agent, the slow threshold is configurable, the indicators
-     * follow the filters, there is pagination and old records are removed.
-     * [Pendiente:skip]
+     * MDL-INT-037: every query is recorded with its origin and agent, the indicators follow the filters and there is
+     * pagination. (The configurable threshold and the purge are covered by the two tests above.)
+     *
+     * @return void
      */
     public function test_profiler_records_every_query_and_has_retention(): void {
-        $this->markTestSkipped('Pending fix: chat and Telegram queries are not recorded, preview queries show as Agent #0, '
-            . 'the slow threshold is fixed, the indicator and the list differ at the limit, the indicators ignore the '
-            . 'filters, there is no pagination and the record grows without limit.');
+        global $DB, $PAGE;
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $adminid = (int) get_admin()->id;
+
+        // The web chat and Telegram queries are recorded with their channel and user.
+        \local_jedomi\local\query_runner::run('SELECT id FROM {course}', [], $adminid, 5, 'web');
+        \local_jedomi\local\query_runner::run('SELECT shortname FROM {course}', [], $adminid, 5, 'telegram');
+        $channels = $DB->get_fieldset_select('local_jedomi_query_log', 'channel', '1 = 1');
+        $this->assertEqualsCanonicalizing(['web', 'telegram'], $channels);
+        $this->assertSame([$adminid], array_map('intval', array_unique(
+            $DB->get_fieldset_select('local_jedomi_query_log', 'userid', '1 = 1')
+        )));
+
+        // A preview is recorded as a preview (of the agent being edited, if any), never as "Agent #0".
+        (new tool\sql_tool(0, $adminid, 'preview'))->execute((object) ['query' => 'SELECT fullname FROM {course}']);
+        (new tool\sql_tool(7, $adminid, 'preview'))->execute((object) ['query' => 'SELECT summary FROM {course}']);
+        $origins = array_map(
+            fn(array $entry): string => profiler_tab::origin($entry)[0],
+            admin_settings_service::get_recent_profiler_entries(0, 'timecreated', 20, 'preview')
+        );
+        $this->assertEqualsCanonicalizing([
+            get_string('query_profiler_origin_preview', 'local_jedomi'),
+            get_string('query_profiler_origin_preview_agent', 'local_jedomi', 7),
+        ], $origins);
+        $this->assertNotContains(get_string('agent_number', 'local_jedomi', 0), $origins);
+        $this->assertSame(
+            get_string('query_profiler_origin_web', 'local_jedomi'),
+            profiler_tab::origin(['agentid' => 0, 'channel' => 'web'])[0]
+        );
+
+        // The indicators follow the filters of the list.
+        $this->record(3, 'SELECT AGENT', 4000, 1, time());
+        $all = query_profiler::get_aggregate(1000);
+        $web = query_profiler::get_aggregate(1000, ['channel' => 'web']);
+        $agent = query_profiler::get_aggregate(1000, ['channel' => 'agent']);
+        $this->assertSame(5, $all->total_queries);
+        $this->assertSame(1, $web->total_queries);
+        $this->assertSame(1, $agent->total_queries);
+        $this->assertSame(1, $agent->slow_queries);
+        $this->assertSame(4000.0, $agent->max_duration_ms);
+        $this->assertSame(['SELECT AGENT'], array_column($agent->slowest, 'query'));
+        $this->assertSame(1, query_profiler::get_aggregate(1000, ['min_duration_ms' => 3000])->total_queries);
+
+        // The list is paginated, and the tab shows a paging bar when the queries do not fit in one page.
+        for ($i = 0; $i < 3; $i++) {
+            $this->record(3, "SELECT PAGE {$i}", 10, 1, time() - 100 - $i);
+        }
+        $first = admin_settings_service::get_profiler_page([], 'timecreated', 1, 5);
+        $second = admin_settings_service::get_profiler_page([], 'timecreated', 2, 5);
+        $this->assertSame(8, $first['total']);
+        $this->assertCount(5, $first['entries']);
+        $this->assertCount(3, $second['entries']);
+        $this->assertSame([], array_intersect(
+            array_column($first['entries'], 'query'),
+            array_column($second['entries'], 'query')
+        ));
+        $PAGE->set_url(new \moodle_url('/local/jedomi/admin_settings.php'));
+        $data = (new profiler_tab(query_profiler::get_aggregate(), $second['entries'], 0, 'timecreated', '', 8, 2, 5))
+            ->export_for_template($PAGE->get_renderer('local_jedomi'));
+        $this->assertStringContainsString('qp_page=0', $data['pagingbar']);
+        $this->assertSame(['', 'agent', 'preview', 'web', 'telegram', 'companion'], array_column($data['channels'], 'value'));
     }
 }

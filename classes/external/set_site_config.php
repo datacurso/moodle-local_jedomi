@@ -169,12 +169,12 @@ class set_site_config extends external_api {
 
         $executionms = (int) ((microtime(true) - $start) * 1000);
 
+        // A successful change is not a security failure: its source address is not kept.
         \local_jedomi_log(sprintf(
-            '[local_jedomi] set_site_config: plugin=%s name=%s execution_ms=%d ip=%s',
+            '[local_jedomi] set_site_config: plugin=%s name=%s execution_ms=%d',
             $plugin,
             $name,
-            $executionms,
-            getremoteaddr()
+            $executionms
         ));
 
         return [

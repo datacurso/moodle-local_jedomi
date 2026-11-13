@@ -90,22 +90,20 @@ class ws_tool implements agent_tool {
     }
 
     /**
-     * Resolve and invoke the named external function as the agent creator.
+     * Run the named external function as the agent creator, with the same gate and validation as the other channels.
      *
-     * Checks the role allowlist first (admins without an explicit allowlist have
-     * full access), maps caller parameters onto the method signature by name via
-     * reflection, and temporarily switches $USER so capability checks apply to
-     * the agent creator.
+     * The role list of the creator is checked first, then the parameters are decoded (the AI sends them as a JSON
+     * string, as the tool definition asks; an object is accepted too) and the call goes through ws_runner::call(), which
+     * validates them with the Moodle parameter description of the function. $USER is switched to the creator during
+     * the call so the capability checks of the function apply to the agent creator.
      *
-     * @param \stdClass $params Decoded tool arguments; expects 'function' (or legacy 'wsname') and optional 'params' object.
+     * @param \stdClass $params Decoded tool arguments; expects 'wsname' (or 'function') and 'params'.
      * @return string JSON-encoded function result, or an error message.
      */
     public function execute(\stdClass $params): string {
-        global $DB;
-
-        // Accept both 'function' (this class's definition) and 'wsname' (lib.php definition — web chat compat).
-        $function = trim($params->function ?? $params->wsname ?? '');
-        if (empty($function)) {
+        // Accept 'wsname' (lib.php definition, shared with the web chat) and 'function' (this class's definition).
+        $function = trim((string) ($params->wsname ?? $params->ws_name ?? $params->function ?? ''));
+        if ($function === '') {
             return json_encode(['error' => 'Empty function name']);
         }
 
@@ -115,70 +113,58 @@ class ws_tool implements agent_tool {
             return json_encode(['error' => 'WS not in allowlist for role: ' . $role]);
         }
 
-        // ... ── Prepare params ───────────────────────────────────────────────────
-        $callerparams = $params->params ?? new \stdClass();
-        $callerparams = (array) $callerparams;
+        $args = self::decode_params($params->params ?? null);
+        if ($args === null) {
+            return json_encode([
+                'error' => get_string('ws_invalid_parameters', 'local_jedomi', 'params must be a JSON object'),
+                'function' => $function,
+            ]);
+        }
 
-        // ... ── Resolve target class + method (same approach as web chat handler) ──
-        // Do NOT use call_external_function — it requires a registered web service
-        // with a token. The agent runner is a cron task, not a WS client.
-        // Directly resolve and call the external function's class::method().
+        global $USER;
+        $origuser = $USER;
         try {
-            $funcrecord = $DB->get_record(
-                'external_functions',
-                ['name' => $function],
-                'classname, classpath, component, methodname'
-            );
-            if (!$funcrecord) {
-                return json_encode(['error' => "Web service function '{$function}' not found"]);
-            }
-
-            $classname = \local_jedomi_resolve_ws_classname($function);
-            if (!$classname || !class_exists($classname)) {
-                return json_encode(['error' => "Class '{$classname}' not found"]);
-            }
-
-            $methodname = $funcrecord->methodname;
-            if (!method_exists($classname, $methodname)) {
-                return json_encode(['error' => "Method '{$classname}::{$methodname}()' not found"]);
-            }
-
-            // ... ── Map params by name via reflection ────────────────────────────
-            $ref = new \ReflectionMethod($classname, $methodname);
-            $callargs = [];
-            foreach ($ref->getParameters() as $param) {
-                $name = $param->getName();
-                if (array_key_exists($name, $callerparams)) {
-                    $callargs[] = $callerparams[$name];
-                } else if ($param->isDefaultValueAvailable()) {
-                    $callargs[] = $param->getDefaultValue();
-                } else {
-                    return json_encode(['error' => "Missing required parameter: {$name}"]);
-                }
-            }
-
-            // ... ── Temporarily override $USER for capability checks ─────────────
-            global $USER;
-            $origuser = $USER;
+            $method = \local_jedomi\local\ws_runner::resolve($function);
             if ($this->userid > 0) {
                 $USER = \core_user::get_user($this->userid, '*', MUST_EXIST);
             }
-
-            try {
-                $result = $ref->invokeArgs(null, $callargs);
-            } finally {
-                $USER = $origuser;
-            }
-
+            // Writes run in a transaction committed only when the call succeeds, as in Telegram.
+            $result = \local_jedomi\local\ws_runner::call($method, $args, true);
             return json_encode([
                 'success' => true,
                 'data' => $result,
             ], JSON_UNESCAPED_UNICODE);
         } catch (\Exception $e) {
+            $detail = $e->getMessage();
+            if ($e instanceof \moodle_exception && !empty($e->debuginfo) && strpos($detail, (string) $e->debuginfo) === false) {
+                $detail .= ' | debug: ' . $e->debuginfo;
+            }
             return json_encode([
-                'error' => $e->getMessage(),
+                'error' => $detail,
                 'function' => $function,
             ]);
+        } finally {
+            $USER = $origuser;
         }
+    }
+
+    /**
+     * Arguments of the function from the "params" argument of the AI: a JSON string (as the tool definition asks), an
+     * object or nothing.
+     *
+     * @param mixed $raw Value of the "params" argument.
+     * @return array|null Arguments by name, or null when they are not a JSON object.
+     */
+    public static function decode_params($raw): ?array {
+        if ($raw === null || $raw === '') {
+            return [];
+        }
+        if (is_string($raw)) {
+            $decoded = json_decode($raw, true);
+            return is_array($decoded) ? $decoded : null;
+        }
+        // Nested objects become arrays, as Moodle expects for the structures of a web service.
+        $decoded = json_decode(json_encode($raw), true);
+        return is_array($decoded) ? $decoded : null;
     }
 }

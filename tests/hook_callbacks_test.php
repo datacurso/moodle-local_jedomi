@@ -141,8 +141,8 @@ final class hook_callbacks_test extends \advanced_testcase {
     }
 
     /**
-     * MDL-UNIT-086: guests and users not logged in never see the panel, with the "Hide from guest users" option on and off,
-     * and the help of the option says that they are always excluded.
+     * MDL-UNIT-086: guests and users not logged in never see the panel, the "Hide from guest users" option without
+     * effect is gone, and the role visibility help says that guests never see it.
      *
      * @return void
      */
@@ -150,26 +150,16 @@ final class hook_callbacks_test extends \advanced_testcase {
         [$course] = $this->student_in_course_with_quiz();
         $url = new \moodle_url('/course/view.php', ['id' => $course->id]);
 
-        foreach (['1', '0'] as $hidefromguests) {
-            set_config('hide_from_guests', $hidefromguests, 'local_jedomi');
-            $this->setGuestUser();
-            $this->assertFalse(
-                $this->panel_injected($url, 'course-view-topics', 'course', $course),
-                "A guest never sees the panel (option {$hidefromguests})"
-            );
-            $this->setUser(null);
-            $this->assertFalse(
-                $this->panel_injected($url, 'course-view-topics', 'course', $course),
-                "A user not logged in never sees the panel (option {$hidefromguests})"
-            );
-        }
-
-        $help = get_string('hide_from_guests_help', 'local_jedomi');
-        $this->assertStringContainsStringIgnoringCase(
-            'always',
-            $help,
-            'The help must not promise an effect the option does not have: guests are always excluded'
+        $this->setGuestUser();
+        $this->assertFalse($this->panel_injected($url, 'course-view-topics', 'course', $course), 'A guest never sees the panel');
+        $this->setUser(null);
+        $this->assertFalse(
+            $this->panel_injected($url, 'course-view-topics', 'course', $course),
+            'A user not logged in never sees the panel'
         );
+
+        $this->assertFalse(get_string_manager()->string_exists('hide_from_guests', 'local_jedomi'));
+        $this->assertStringContainsStringIgnoringCase('guests', get_string('role_visibility_help', 'local_jedomi'));
     }
 
     /**

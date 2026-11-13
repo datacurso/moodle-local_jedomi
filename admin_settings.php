@@ -95,14 +95,13 @@ switch ($tab) {
         if ($data = $form->get_data()) {
             require_sesskey();
             admin_settings_service::save_privacy_settings(
-                !empty($data->hide_from_guests),
                 $data->anonymization_level,
                 privacy_settings_form::visible_role_ids($data, $roles)
             );
             redirect($pageurl, $saved, null, notification::NOTIFY_SUCCESS);
         }
         $privacy = admin_settings_service::get_privacy_settings();
-        $defaults = ['hide_from_guests' => $privacy['hide_from_guests'], 'anonymization_level' => $privacy['anonymization_level']];
+        $defaults = ['anonymization_level' => $privacy['anonymization_level']];
         foreach ($roles as $role) {
             $defaults['role_visible_' . $role['id']] = (int) !in_array($role['id'], $privacy['hidden_role_ids'], true);
         }
@@ -114,15 +113,31 @@ switch ($tab) {
         $roles = admin_settings_service::get_roles();
         $telegram = admin_settings_service::get_telegram_settings();
         $form = new telegram_settings_form($pageurl, ['roles' => $roles, 'tokenset' => $telegram['bot_token_set']]);
+        if ($form->no_submit_button_pressed() && optional_param('regeneratesecret', '', PARAM_RAW) !== '') {
+            // Regenerate secret is independent of the form: nothing else typed in the form is saved.
+            require_sesskey();
+            \local_jedomi\telegram\manager::regenerate_webhook_secret();
+            $registered = \local_jedomi\telegram\manager::get_last_webhook_error() === '';
+            $key = $registered ? 'telegram_secret_regenerated' : 'telegram_secret_regenerated_unregistered';
+            redirect(
+                $pageurl,
+                get_string($key, 'local_jedomi'),
+                null,
+                $registered ? notification::NOTIFY_SUCCESS : notification::NOTIFY_WARNING
+            );
+        }
         if ($data = $form->get_data()) {
             require_sesskey();
+            $message = $saved;
+            $type = notification::NOTIFY_SUCCESS;
             $token = trim((string) ($data->telegram_bot_token ?? ''));
-            if ($token !== '' && !admin_settings_service::verify_and_save_telegram_token($token)) {
-                redirect($pageurl, get_string('telegram_msg_token_invalid', 'local_jedomi'), null, notification::NOTIFY_ERROR);
-            }
-            if (!empty($data->regeneratesecret)) {
-                // Rotates the secret and registers the new webhook URL in Telegram.
-                \local_jedomi\telegram\manager::regenerate_webhook_secret();
+            if (!empty($data->telegram_remove_token)) {
+                admin_settings_service::remove_telegram_token();
+                $message = get_string('telegram_msg_token_removed', 'local_jedomi');
+            } else if ($token !== '' && !admin_settings_service::verify_and_save_telegram_token($token)) {
+                // The rejected token does not leave the previous one in use; the other changes are still saved.
+                $message = get_string('telegram_msg_token_invalid', 'local_jedomi');
+                $type = notification::NOTIFY_ERROR;
             }
             admin_settings_service::save_telegram_settings(
                 (int) $data->telegram_rate_limit,
@@ -131,7 +146,7 @@ switch ($tab) {
                 (int) $data->telegram_gateway_timeout,
                 telegram_settings_form::visible_role_ids($data, $roles)
             );
-            redirect($pageurl, $saved, null, notification::NOTIFY_SUCCESS);
+            redirect($pageurl, $message, null, $type);
         }
         $defaults = [
             'telegram_rate_limit' => $telegram['rate_limit'],
@@ -182,11 +197,22 @@ switch ($tab) {
     case 'profiler':
         $minms = max(0, optional_param('qp_min_ms', 0, PARAM_INT));
         $sort = optional_param('qp_sort', 'timecreated', PARAM_ALPHAEXT) === 'duration_ms' ? 'duration_ms' : 'timecreated';
+        $channel = optional_param('qp_channel', '', PARAM_ALPHA);
+        $channel = in_array($channel, \local_jedomi\agent\query_profiler::CHANNELS, true) ? $channel : '';
+        $page = max(0, optional_param('qp_page', 0, PARAM_INT)) + 1;
+        $perpage = 20;
+        // The indicators, the slowest queries and the list follow the same filters.
+        $filters = ['min_duration_ms' => $minms, 'channel' => $channel];
+        $list = admin_settings_service::get_profiler_page($filters, $sort, $page, $perpage);
         $content = new profiler_tab(
-            \local_jedomi\agent\query_profiler::get_aggregate(),
-            admin_settings_service::get_recent_profiler_entries($minms, $sort),
+            \local_jedomi\agent\query_profiler::get_aggregate(null, $filters),
+            $list['entries'],
             $minms,
-            $sort
+            $sort,
+            $channel,
+            $list['total'],
+            $page,
+            $perpage
         );
         break;
 
@@ -194,7 +220,11 @@ switch ($tab) {
         $form = new general_settings_form($pageurl);
         if ($data = $form->get_data()) {
             require_sesskey();
-            admin_settings_service::save_general_settings($data->spt_secret, !empty($data->collect_training_data));
+            admin_settings_service::save_general_settings(
+                $data->spt_secret,
+                (int) $data->profiler_slow_ms,
+                (int) $data->profiler_retention_days
+            );
             redirect($pageurl, $saved, null, notification::NOTIFY_SUCCESS);
         }
         $form->set_data(admin_settings_service::get_general_settings());

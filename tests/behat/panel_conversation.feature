@@ -238,10 +238,9 @@ Feature: Conversation in the Jedomi panel
     And I should not see "Describe my course" in the "#jedomi-messages" "css_element"
     And I should see "Hi, Sam Student!" in the "#jedomi-messages" "css_element"
 
-  # [Pendiente:skip] Edit appears on every message but only edits the last one, removed messages come back after
-  # reloading, and after reloading the user messages show the full text sent to the AI. Asserts the expected behaviour.
+  # Only the last question can be edited, and the removed messages do not come back after reloading.
   @MDL-E2E-011
-  Scenario: Editing an earlier message edits that message and the removed messages do not come back after reloading
+  Scenario: Only the last question can be edited and the removed messages do not come back after reloading
     Given I log in as "student1"
     And I am on homepage
     And I click on "#jedomi-trigger" "css_element"
@@ -251,16 +250,19 @@ Feature: Conversation in the Jedomi panel
     And the Jedomi AI answers "Second answer."
     And I send "Second question" to Jedomi
     And I should see "Second answer." in the "#jedomi-messages" "css_element"
-    When I click on "(//button[@data-action='local_jedomi/sidebar/edit'])[1]" "xpath_element"
-    Then the Jedomi message field should contain "First question"
-    And I should not see "First answer." in the "#jedomi-messages" "css_element"
+    And "//button[@data-action='local_jedomi/sidebar/edit']" "xpath_element" should exist
+    And "(//button[@data-action='local_jedomi/sidebar/edit'])[2]" "xpath_element" should not exist
+    When I click on "//button[@data-action='local_jedomi/sidebar/edit']" "xpath_element"
+    Then the Jedomi message field should contain "Second question"
+    And I should not see "Second answer." in the "#jedomi-messages" "css_element"
+    And I should see "First answer." in the "#jedomi-messages" "css_element"
     And I reload the page
     And I click on "#jedomi-trigger" "css_element"
-    And I should not see "First answer." in the "#jedomi-messages" "css_element"
+    And I should see "First answer." in the "#jedomi-messages" "css_element"
     And I should not see "Second answer." in the "#jedomi-messages" "css_element"
+    And I should not see "Second question" in the "#jedomi-messages" "css_element"
 
-  # [Pendiente:skip] There is no button to stop an answer and a message whose answer failed stays in the history
-  # without an answer. Asserts the expected behaviour.
+  # The stop button ends a written answer in progress and the user can write again.
   @MDL-E2E-012
   Scenario: An answer in progress can be stopped and the user can write again
     Given I log in as "student1"
@@ -272,7 +274,7 @@ Feature: Conversation in the Jedomi panel
     Then the "#jedomi-send" "css_element" should be enabled
     And I should not see "A very long answer." in the "#jedomi-messages" "css_element"
 
-  # [Pendiente:skip] See the scenario above.
+  # A message whose answer failed leaves the history, so it is not sent again as if it had been answered.
   @MDL-E2E-012
   Scenario: A message whose answer failed does not stay in the history without an answer
     Given I log in as "student1"
@@ -283,8 +285,6 @@ Feature: Conversation in the Jedomi panel
     Then I should see "Jedomi could not answer this time." in the "#jedomi-messages" "css_element"
     And the stored Jedomi conversation should not include the message "Question that fails"
 
-  # [Pendiente:skip] After reloading the page the confirmation card disappears and the pending action can no longer
-  # be confirmed. Asserts the expected behaviour.
   @MDL-E2E-014
   Scenario: An action waiting for confirmation is still offered after reloading the page
     Given I log in as "student1"

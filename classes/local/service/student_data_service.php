@@ -296,9 +296,16 @@ class student_data_service {
                 if (!$instance) {
                     continue;
                 }
-                // The dates the user sees, with the user and group overrides applied.
+                // The dates the user sees: get_instance() only applies the relative dates of the course, so the user and
+                // group overrides are applied with update_effective_access(), and the extension comes from the flags.
                 $assign = new \assign($cm->context, $cm->get_course_module_record(), $modinfo->get_course());
+                $assign->update_effective_access($userid);
                 $dates = $assign->get_instance($userid);
+                $extension = (int) $DB->get_field(
+                    'assign_user_flags',
+                    'extensionduedate',
+                    ['assignment' => $instance->id, 'userid' => $userid]
+                );
                 $submission = $DB->get_record('assign_submission', ['assignment' => $instance->id, 'userid' => $userid,
                     'latest' => 1], 'status');
                 $assignments[] = [
@@ -307,6 +314,7 @@ class student_data_service {
                     'duedate' => self::date((int) $dates->duedate, $user),
                     'cutoffdate' => self::date((int) $dates->cutoffdate, $user),
                     'opens' => self::date((int) $dates->allowsubmissionsfromdate, $user),
+                    'extensionduedate' => self::date($extension, $user),
                     'submission' => $submission ? $submission->status : 'new',
                 ];
             }

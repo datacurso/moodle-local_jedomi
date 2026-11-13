@@ -16,6 +16,7 @@
 
 namespace local_jedomi\task;
 
+use local_jedomi\agent\agent_manager;
 use local_jedomi\ai\client;
 use local_jedomi\ai\fake_ai_client;
 use local_jedomi\ai\fake_curl;
@@ -655,50 +656,310 @@ final class agent_runner_test extends \advanced_testcase {
     }
 
     /**
-     * MDL-INT-033: every run of an agent produces a new result with the data of the moment.
-     * [Pendiente:skip]
+     * Cache key the runner uses for an agent.
+     *
+     * @param \stdClass $agent Agent record as stored.
+     * @return string
+     */
+    private function agent_context_hash(\stdClass $agent): string {
+        global $DB;
+        $agent = $DB->get_record('local_jedomi_agents', ['id' => $agent->id]);
+        return hash('sha256', serialize([
+            'prompt' => $agent->prompt,
+            'context_type' => $agent->context_type,
+            'context_id' => $agent->context_id,
+            'role_filter' => $agent->role_filter,
+        ]));
+    }
+
+    /**
+     * Make an agent due again.
+     *
+     * @param \stdClass $agent Agent record.
+     */
+    private function make_due(\stdClass $agent): void {
+        global $DB;
+        $DB->set_field('local_jedomi_agents', 'nextrun', time() - 60, ['id' => $agent->id]);
+    }
+
+    /**
+     * MDL-INT-109: the technical log of an agent run keeps the agent id and a pseudonym of its creator, never the user id
+     * of the creator nor the name of the agent.
+     */
+    public function test_agent_log_keeps_pseudonyms_instead_of_ids(): void {
+        global $CFG;
+        $this->resetAfterTest();
+        set_config('telegram_enabled', 0, 'local_jedomi');
+        $creator = $this->getDataGenerator()->create_user();
+        $agent = $this->create_due_agent((int) $creator->id);
+        $fake = new fake_ai_client();
+        $fake->enqueue_text('There are 3 users.');
+        client::set_instance_for_testing($fake);
+        $logfile = $CFG->dataroot . '/local/jedomi/jedomi.log';
+        @unlink($logfile);
+
+        $this->run_task();
+
+        $log = (string) @file_get_contents($logfile);
+        $this->assertStringContainsString("Agent #{$agent->id}", $log);
+        $this->assertStringContainsString(\local_jedomi_log_pseudonym('user', $creator->id), $log);
+        $this->assertDoesNotMatchRegularExpression('/user ' . (int) $creator->id . '\b/', $log);
+        $this->assertStringNotContainsString('Daily report', $log);
+    }
+
+    /**
+     * MDL-INT-033: every run of an agent produces a new result with the data of the moment: an agent without tools asks
+     * the AI again instead of resending its first answer.
      */
     public function test_each_run_reflects_the_data_of_the_moment(): void {
-        $this->markTestSkipped('Pending fix: agents without tools or with a writing action resend the answer saved on '
-            . 'their first run, and a failed query resends the previous result.');
+        global $DB;
+        $this->resetAfterTest();
+        $creator = $this->getDataGenerator()->create_user();
+        $agent = $this->create_due_agent((int) $creator->id);
+        $fake = new fake_ai_client();
+        $fake->enqueue_text('There are 3 users.');
+        $fake->enqueue_text('There are 4 users.');
+        client::set_instance_for_testing($fake);
+
+        $this->run_task();
+        $this->assertSame('There are 3 users.', $DB->get_field('local_jedomi_agents', 'lastresult', ['id' => $agent->id]));
+        $this->make_due($agent);
+        $this->run_task();
+
+        $this->assertCount(2, $fake->calls, 'The second run asks the AI again');
+        $this->assertSame('There are 4 users.', $DB->get_field('local_jedomi_agents', 'lastresult', ['id' => $agent->id]));
+        $this->assertSame(
+            0,
+            $DB->count_records('local_jedomi_agent_cache', ['agentid' => $agent->id]),
+            'An answer without tools is never kept to be sent again'
+        );
     }
 
     /**
-     * MDL-INT-034: failures follow the schedule, are visible and disable the agent when they repeat.
-     * [Pendiente:skip]
+     * MDL-INT-033: when the AI fails while answering from a replayed plan, the run is reported as failed and the
+     * previous answer is not sent again.
+     */
+    public function test_a_failed_replay_does_not_resend_the_previous_answer(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $admin = get_admin();
+        $agent = $this->create_due_agent((int) $admin->id);
+        $plan = [['tool' => 'execute_sql', 'arguments' => json_encode(['query' => 'SELECT COUNT(id) AS total FROM {course}'])]];
+        \local_jedomi\agent\agent_manager::set_cached_plan(
+            (int) $agent->id,
+            $this->agent_context_hash($agent),
+            $plan,
+            'Old answer'
+        );
+        $fake = new fake_ai_client();
+        $fake->enqueue_exception(new \moodle_exception('generalexceptionmessage', 'error', '', 'AI down'));
+        client::set_instance_for_testing($fake);
+
+        $output = $this->run_task();
+
+        $after = $DB->get_record('local_jedomi_agents', ['id' => $agent->id]);
+        $this->assertCount(1, $fake->calls, 'The plan is replayed with one AI call');
+        $this->assertStringNotContainsString('using cached text', $output);
+        $this->assertSame(1, (int) $after->failcount, 'The failure is reported as a failure');
+        $this->assertNotEmpty($after->lasterror);
+        $this->assertNull($after->lastresult, 'The previous answer is not delivered as a new one');
+        $this->assertEmpty($after->lastrun);
+    }
+
+    /**
+     * MDL-INT-033: when a tool of a replayed plan fails, the plan is discarded and the agent runs again from the start.
+     */
+    public function test_a_failed_replay_tool_runs_the_agent_again(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $admin = get_admin();
+        $agent = $this->create_due_agent((int) $admin->id);
+        $plan = [['tool' => 'execute_sql', 'arguments' => json_encode(['query' => 'SELECT nosuchcolumn FROM {course}'])]];
+        \local_jedomi\agent\agent_manager::set_cached_plan(
+            (int) $agent->id,
+            $this->agent_context_hash($agent),
+            $plan,
+            'Old answer'
+        );
+        $fake = new fake_ai_client();
+        $fake->enqueue_text('Fresh answer.');
+        client::set_instance_for_testing($fake);
+
+        $this->run_task();
+
+        $this->assertCount(1, $fake->calls);
+        $this->assertSame(
+            'How many users are there?',
+            $fake->calls[0]['messages'][1]['content'],
+            'The agent runs again from its instruction'
+        );
+        $this->assertSame('Fresh answer.', $DB->get_field('local_jedomi_agents', 'lastresult', ['id' => $agent->id]));
+        $this->assertNull(\local_jedomi\agent\agent_manager::get_cached_plan((int) $agent->id, $this->agent_context_hash($agent)));
+    }
+
+    /**
+     * MDL-INT-034: a failed run is retried after a wait and not in the next minute, the failure is visible in the Agents
+     * tab, and repeated failures disable the agent.
      */
     public function test_repeated_failures_follow_the_schedule_and_disable_the_agent(): void {
-        $this->markTestSkipped('Pending fix: a failing agent is retried every minute forever, never disabled for repeated '
-            . 'failures, and the Failing state is not shown anywhere.');
+        global $DB, $OUTPUT, $PAGE;
+        $this->resetAfterTest();
+        $creator = $this->getDataGenerator()->create_user();
+        $agent = $this->create_due_agent((int) $creator->id);
+        $fake = new fake_ai_client();
+        client::set_instance_for_testing($fake);
+
+        $fake->enqueue_exception(new \moodle_exception('generalexceptionmessage', 'error', '', 'AI down'));
+        $before = time();
+        $this->run_task();
+        $after = $DB->get_record('local_jedomi_agents', ['id' => $agent->id]);
+        $this->assertSame(1, (int) $after->failcount);
+        $this->assertGreaterThanOrEqual($before + agent_manager::FAIL_BACKOFF_BASE, (int) $after->nextrun);
+
+        // The next minute nothing runs.
+        $this->run_task();
+        $this->assertCount(1, $fake->calls, 'A failed agent is not retried in the next minute');
+
+        // The Agents tab shows it as failing, with the reason.
+        $PAGE->set_url('/local/jedomi/admin.php');
+        $html = $OUTPUT->render_from_template('local_jedomi/admin/agent_details', [
+            'id' => (int) $after->id, 'name' => $after->name, 'enabled' => true, 'failcount' => (int) $after->failcount,
+            'lasterror' => $after->lasterror, 'lastresult' => '', 'prompthidden' => false,
+        ]);
+        $this->assertStringContainsString(get_string('agent_failing', 'local_jedomi'), $html);
+        $this->assertStringContainsString(s($after->lasterror), $html);
+
+        for ($i = 2; $i <= agent_manager::MAX_FAILURES; $i++) {
+            $this->make_due($agent);
+            $fake->enqueue_exception(new \moodle_exception('generalexceptionmessage', 'error', '', 'AI down'));
+            $this->run_task();
+        }
+        $after = $DB->get_record('local_jedomi_agents', ['id' => $agent->id]);
+        $this->assertSame(0, (int) $after->enabled, 'Repeated failures disable the agent');
+        $this->assertSame(agent_manager::MAX_FAILURES, (int) $after->failcount);
     }
 
     /**
-     * MDL-INT-035: the result of every agent can be consulted in Moodle.
-     * [Pendiente:skip]
+     * MDL-INT-035: the result of every agent can be consulted in Moodle, whether or not it is delivered by Telegram,
+     * and only by the users who may read its instruction.
      */
     public function test_agent_result_can_be_consulted_in_moodle(): void {
-        $this->markTestSkipped('Pending feature: the agent result is not shown anywhere in Moodle, so without a linked '
-            . 'Telegram, with the integration disabled or with the role blocked for Telegram it never reaches its creator.');
+        global $OUTPUT, $PAGE;
+        $this->resetAfterTest();
+        set_config('telegram_enabled', 0, 'local_jedomi');
+        $creator = $this->getDataGenerator()->create_user();
+        $peer = $this->getDataGenerator()->create_user();
+        $agent = $this->create_due_agent((int) $creator->id);
+        $fake = new fake_ai_client();
+        $fake->enqueue_text('Three students are at risk.');
+        client::set_instance_for_testing($fake);
+
+        $this->run_task();
+
+        $stored = agent_manager::get_agent((int) $agent->id);
+        $own = agent_manager::agent_for_actor($stored, (int) $creator->id);
+        $this->assertSame('Three students are at risk.', $own->lastresult);
+        $PAGE->set_url('/local/jedomi/admin.php');
+        $html = $OUTPUT->render_from_template('local_jedomi/admin/agent_details', [
+            'id' => (int) $own->id, 'enabled' => true, 'failcount' => 0, 'lastresult' => $own->lastresult,
+            'prompthidden' => false,
+        ]);
+        $this->assertStringContainsString(get_string('agent_lastresult', 'local_jedomi'), $html);
+        $this->assertStringContainsString('Three students are at risk.', $html);
+
+        $this->assertNull(
+            agent_manager::agent_for_actor($stored, (int) $peer->id)->lastresult,
+            'A user who may not read the instruction does not get the answer either'
+        );
     }
 
     /**
      * MDL-UNIT-120: the description of the query given to the AI in Telegram and in the agents tells the limits that
      * are really applied there, and the parameters offered to an agent are applied or not offered.
-     * [Pendiente:skip]
      */
     public function test_ai_is_told_the_real_query_limits_of_its_channel(): void {
-        $this->markTestSkipped('Pending fix: Telegram and the agents get the query description of the web chat (its row '
-            . 'and time limits and a parameters field), while Telegram applies fewer rows and the agents apply larger '
-            . 'limits and ignore the parameters.');
+        global $CFG;
+        require_once($CFG->dirroot . '/local/jedomi/lib.php');
+        $this->resetAfterTest();
+        $describe = static function (string $channel): string {
+            foreach (\local_jedomi_get_tool_definitions('admin', (int) get_admin()->id, $channel) as $tool) {
+                if ($tool['function']['name'] === 'execute_sql') {
+                    return $tool['function']['description'];
+                }
+            }
+            return '';
+        };
+        $expected = ['web' => [100, 5], 'telegram' => [50, 5], 'agent' => [1000, 30]];
+        foreach ($expected as $channel => [$rows, $seconds]) {
+            $this->assertSame($rows, \local_jedomi\local\query_runner::row_limit($channel));
+            $this->assertSame($seconds * 1000, \local_jedomi\local\query_runner::time_limit_ms($channel));
+            $this->assertStringContainsString(
+                get_string('tool_execute_sql_desc', 'local_jedomi', ['rows' => $rows, 'seconds' => $seconds]),
+                $describe($channel),
+                "The {$channel} channel is told its own limits"
+            );
+        }
+
+        // The query tool of the agents tells the same agent limits and offers the parameters field.
+        $definition = (new \local_jedomi\agent\tool\sql_tool(0, (int) get_admin()->id))->get_definition()['function'];
+        $this->assertSame(
+            get_string('tool_execute_sql_desc', 'local_jedomi', ['rows' => 1000, 'seconds' => 30]),
+            $definition['description']
+        );
+        $this->assertArrayHasKey('params', $definition['parameters']['properties']);
+
+        // The parameters field offered to the agents is applied to the query.
+        $this->setAdminUser();
+        $course = $this->getDataGenerator()->create_course(['shortname' => 'PARAMQ']);
+        $tool = new \local_jedomi\agent\tool\sql_tool(0, (int) get_admin()->id);
+        $answer = json_decode($tool->execute((object) [
+            'query' => 'SELECT id, shortname FROM {course} WHERE shortname = ?',
+            'params' => ['PARAMQ'],
+        ]), true);
+        $this->assertTrue($answer['success'] ?? false, json_encode($answer));
+        $this->assertSame([(string) $course->id], array_map('strval', array_column($answer['rows'], 'id')));
     }
 
     /**
-     * MDL-INT-044: agents run web services with the same format and validation as the other channels.
-     * [Pendiente:skip]
+     * MDL-INT-044: agents run web services with the same format and validation as the other channels: the parameters
+     * arrive as the JSON text the AI is told to send, required ones reach the function, and invalid ones are refused
+     * by the Moodle parameter validation.
      */
     public function test_agents_run_web_services_with_the_standard_format_and_validation(): void {
-        $this->markTestSkipped('Pending fix: in agents the parameters arrive in another format than the one given to the AI '
-            . 'and the Moodle parameter validation is skipped.');
+        global $USER;
+        $this->resetAfterTest();
+        $course = $this->getDataGenerator()->create_course(['shortname' => 'WS-AGENT-1']);
+        $admin = get_admin();
+        \local_jedomi\agent\tool_executor::get_definitions(0, (int) $admin->id);
+        $before = (int) $USER->id;
+
+        $ok = json_decode(\local_jedomi\agent\tool_executor::execute('ws_execute', json_encode([
+            'wsname' => 'core_course_get_courses_by_field',
+            'params' => json_encode(['field' => 'id', 'value' => (string) $course->id]),
+        ])), true);
+        $this->assertTrue($ok['success'] ?? false, json_encode($ok));
+        $this->assertSame('WS-AGENT-1', $ok['data']['courses'][0]['shortname']);
+        $this->assertSame($before, (int) $USER->id, 'The session user is restored after the call');
+
+        $asobject = json_decode(\local_jedomi\agent\tool_executor::execute('ws_execute', json_encode([
+            'wsname' => 'core_course_get_courses_by_field',
+            'params' => ['field' => 'id', 'value' => (string) $course->id],
+        ])), true);
+        $this->assertTrue($asobject['success'] ?? false, 'Parameters sent as an object are accepted too');
+
+        $invalid = json_decode(\local_jedomi\agent\tool_executor::execute('ws_execute', json_encode([
+            'wsname' => 'core_course_get_courses_by_field',
+            'params' => json_encode(['field' => 'id', 'value' => (string) $course->id, 'unexpected' => 1]),
+        ])), true);
+        $this->assertArrayHasKey('error', $invalid);
+        $this->assertStringContainsString('unexpected', $invalid['error'], 'Moodle rejects the unknown key');
+
+        $wrongtype = json_decode(\local_jedomi\agent\tool_executor::execute('ws_execute', json_encode([
+            'wsname' => 'core_webservice_get_site_info',
+            'params' => json_encode(['serviceshortnames' => 'not-a-list']),
+        ])), true);
+        $this->assertArrayHasKey('error', $wrongtype, 'A value of the wrong type is refused');
+        $this->assertStringStartsWith(get_string('ws_invalid_parameters', 'local_jedomi', ''), $wrongtype['error']);
     }
     /**
      * Run the due agent of a creator linked to Telegram and return what the technical log says about its delivery.
@@ -810,13 +1071,43 @@ final class agent_runner_test extends \advanced_testcase {
 
     /**
      * MDL-INT-102: a Category or User context agent created by a teacher is not disabled on its first run for lack of
-     * a permission the teacher role does not have, or the form does not offer those contexts.
-     * [Pendiente:skip]
+     * a permission the teacher role does not have; a user context of an unrelated user is still refused.
      *
      * @return void
      */
     public function test_teacher_category_or_user_agents_are_not_disabled_by_an_incoherent_check(): void {
-        $this->markTestSkipped('Pending fix: Category and User context agents of a teacher are disabled on their first '
-            . 'run because the access check needs the permission to view courses.');
+        global $DB;
+        $this->resetAfterTest();
+        $course = $this->getDataGenerator()->create_course();
+        $teacher = $this->getDataGenerator()->create_and_enrol($course, 'editingteacher');
+        $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
+        $stranger = $this->getDataGenerator()->create_user();
+        $contexts = [
+            'category' => ['coursecat', \context_coursecat::instance((int) $course->category)->id],
+            'own user' => ['user', \context_user::instance((int) $teacher->id)->id],
+            'student of the course' => ['user', \context_user::instance((int) $student->id)->id],
+        ];
+        $agents = [];
+        foreach ($contexts as $label => [$type, $contextid]) {
+            $agents[$label] = $this->create_due_agent((int) $teacher->id);
+            $DB->update_record('local_jedomi_agents', (object) ['id' => $agents[$label]->id,
+                'context_type' => $type === 'coursecat' ? 'category' : 'user', 'context_id' => $contextid]);
+        }
+        $fake = new fake_ai_client();
+        foreach ($agents as $unused) {
+            $fake->enqueue_text('Summary.');
+        }
+        client::set_instance_for_testing($fake);
+
+        $this->run_task();
+
+        $this->assertCount(count($agents), $fake->calls);
+        foreach ($agents as $label => $agent) {
+            $this->assertSame(1, (int) $DB->get_field('local_jedomi_agents', 'enabled', ['id' => $agent->id]), $label);
+        }
+        $this->assertFalse(agent_runner::creator_can_access_context(
+            \core_user::get_user((int) $teacher->id),
+            (int) \context_user::instance((int) $stranger->id)->id
+        ), 'A user the teacher shares no course with stays out of reach');
     }
 }

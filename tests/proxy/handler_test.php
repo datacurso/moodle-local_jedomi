@@ -315,7 +315,10 @@ final class handler_test extends \advanced_testcase {
         $this->setAdminUser();
         $fake = new fake_ai_client();
 
-        $events = $this->run_with_tool_call('send_messages', ['user_ids' => [3, 4], 'message' => 'Hello class'], $fake);
+        $one = (int) $this->getDataGenerator()->create_user()->id;
+        $two = (int) $this->getDataGenerator()->create_user()->id;
+
+        $events = $this->run_with_tool_call('send_messages', ['user_ids' => [$one, $two], 'message' => 'Hello class'], $fake);
 
         $this->assertContains('send_messages', $this->tool_names($fake->calls[0]));
         $pendingevents = array_values(array_filter($events, static fn($e) => is_array($e) && isset($e['_jedomi_pending_action'])));
@@ -890,11 +893,78 @@ final class handler_test extends \advanced_testcase {
     /**
      * MDL-INT-039: the chat knows the type, id and course of the activity of the page, the header shows the section, and
      * outside a course a teacher gets the same role in the web chat, Telegram and the confirmation of actions.
-     * [Pendiente:skip]
+     *
+     * @covers ::local_jedomi_get_page_context
+     * @covers ::local_jedomi_user_role
+     * @return void
      */
     public function test_chat_uses_the_real_role_course_and_activity_of_the_page(): void {
-        $this->markTestSkipped('Pending fix: on an activity page the AI only knows it is in an activity (no type, id or '
-            . 'course), the header never shows the section, and outside a course a teacher is a student in the web chat.');
+        global $PAGE;
+        $this->resetAfterTest();
+        $gen = $this->getDataGenerator();
+        $course = $gen->create_course(['fullname' => 'Context Course']);
+        $other = $gen->create_course();
+        $resource = $gen->create_module('resource', ['course' => $course->id, 'name' => 'Syllabus PDF']);
+        $hidden = $gen->create_module('page', ['course' => $course->id, 'visible' => 0]);
+        $foreign = $gen->create_module('page', ['course' => $other->id]);
+        $teacher = $gen->create_and_enrol($course, 'editingteacher');
+        $student = $gen->create_and_enrol($course, 'student');
+
+        $this->setUser($student);
+        $PAGE = new \moodle_page();
+        $PAGE->set_course($course);
+        $context = \local_jedomi_get_page_context(['cmid' => $resource->cmid, 'pagetype' => 'mod-resource-view',
+            'path' => '/mod/resource/view.php']);
+        $this->assertSame('activity', $context['location'], 'The header shows the activity section');
+        $this->assertSame((int) $resource->cmid, $context['activity_id']);
+        $this->assertSame('resource', $context['activity_type']);
+        $this->assertSame('Syllabus PDF', $context['activity_name']);
+        $this->assertSame((int) $course->id, $context['course_id']);
+
+        foreach (['hidden' => $hidden->cmid, 'of another course' => $foreign->cmid, 'missing' => 999999] as $label => $cmid) {
+            $context = \local_jedomi_get_page_context(['cmid' => $cmid, 'path' => '/mod/page/view.php']);
+            $this->assertSame(0, $context['activity_id'], "An activity {$label} is never sent");
+            $this->assertSame('course', $context['location'], "An activity {$label} is never sent");
+        }
+
+        $this->setUser($teacher);
+        $PAGE = new \moodle_page();
+        $PAGE->set_course(get_site());
+        $this->assertSame('teacher', \local_jedomi_get_user_role(), 'Web chat outside a course');
+        $this->assertSame('teacher', \local_jedomi_get_user_role_for_user((int) $teacher->id), 'Telegram and confirmations');
+        $this->assertSame('teacher', \local_jedomi_effective_chat_role('teacher', (int) $teacher->id, 0), 'Chat request');
+        $this->assertSame('student', \local_jedomi_user_role((int) $student->id, 0), 'A student stays a student');
+    }
+
+    /**
+     * MDL-INT-039: the AI receives the id, type, name and course of the activity of the page, checked against the signed
+     * course, so it can read the activity when asked.
+     *
+     * @return void
+     */
+    public function test_activity_of_the_page_reaches_the_ai_with_its_course(): void {
+        $this->require_provider();
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $course = $this->getDataGenerator()->create_course();
+        $resource = $this->getDataGenerator()->create_module('resource', ['course' => $course->id, 'name' => 'Syllabus PDF']);
+
+        $fake = new fake_ai_client();
+        $fake->enqueue_text('ok');
+        client::set_instance_for_testing($fake);
+        $input = [
+            'messages' => [['role' => 'user', 'content' => 'Summarise the PDF of this activity']],
+            'context' => ['course_id' => (int) $course->id, 'location' => 'activity', 'activity_id' => (int) $resource->cmid,
+                'activity_type' => 'forum'],
+        ];
+        $spt = ['course_id' => (int) $course->id];
+        $this->capture(fn() => handler::run_from_request($input, 'admin', $spt, (int) get_admin()->id));
+        $system = $fake->calls[0]['messages'][0]['content'];
+
+        $this->assertStringContainsString('- Activity cmid: ' . $resource->cmid, $system);
+        $this->assertStringContainsString('"resource"', $system, 'The type comes from the activity, not the browser');
+        $this->assertStringContainsString('- Activity name: Syllabus PDF', $system);
+        $this->assertStringContainsString('- Activity course id: ' . $course->id, $system);
     }
 
     /**
@@ -1166,10 +1236,39 @@ final class handler_test extends \advanced_testcase {
     /**
      * MDL-INT-048: when the AI proposes several actions in one answer, each one gets its own confirmation or the user is
      * told about the discarded ones.
-     * [Pendiente:skip]
+     *
+     * @return void
      */
     public function test_every_proposed_action_gets_a_confirmation_or_a_notice(): void {
-        $this->markTestSkipped('Pending fix: only the first proposed action is kept; the others are dropped without notice.');
+        global $DB;
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $fake = new fake_ai_client();
+        $fake->enqueue_tool_calls([
+            ['id' => 'call_1', 'type' => 'function', 'function' => ['name' => 'create_agent',
+                'arguments' => json_encode(['name' => 'First', 'prompt' => 'One', 'schedule_cron' => '0 8 * * *'])]],
+            ['id' => 'call_2', 'type' => 'function', 'function' => ['name' => 'create_agent',
+                'arguments' => json_encode(['name' => 'Second', 'prompt' => 'Two', 'schedule_cron' => '0 9 * * *'])]],
+            ['id' => 'call_3', 'type' => 'function', 'function' => ['name' => 'search_tables',
+                'arguments' => json_encode(['query' => 'user'])]],
+        ]);
+        client::set_instance_for_testing($fake);
+
+        $events = $this->events($this->capture(fn() => handler::run(
+            [['role' => 'user', 'content' => 'Create two agents']],
+            'admin',
+            (int) get_admin()->id
+        )));
+
+        $pending = array_values(array_filter($events, static fn($e) => is_array($e) && isset($e['_jedomi_pending_action'])));
+        $this->assertCount(1, $pending, 'The first action waits for its confirmation');
+        $this->assertSame(1, $DB->count_records(\local_jedomi\local\service\pending_action_service::TABLE));
+        $chunks = array_filter($events, static fn($e) => is_array($e) && isset($e['choices']));
+        $text = implode('', array_map(static fn($e) => $e['choices'][0]['delta']['content'], $chunks));
+        $this->assertSame(get_string('pending_action_needed', 'local_jedomi') . ' '
+            . get_string('pending_action_others_not_run', 'local_jedomi', 2), $text, 'The user and the model are told');
+        $executing = array_filter($events, static fn($e) => is_array($e) && isset($e['_jedomi_tool_executing']));
+        $this->assertSame([], $executing, 'The later calls are not run');
     }
 
     /**
@@ -1285,16 +1384,64 @@ final class handler_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-043: in the web chat a failed query gives the model the message of the database (an unknown column), so it
+     * can fix its query instead of guessing.
+     *
+     * @return void
+     */
+    public function test_web_chat_query_error_gives_the_message_of_the_database(): void {
+        $this->require_provider();
+        $this->resetAfterTest();
+        $this->setAdminUser();
+
+        $answer = json_decode(handler::run_tool('execute_sql', ['sql' => 'SELECT nosuchcolumn FROM {course}'], 'admin'), true);
+
+        $this->assertArrayHasKey('error', $answer);
+        $this->assertStringContainsString(get_string('execute_sql_error', 'local_jedomi'), $answer['error']);
+        $this->assertStringContainsString(' | DBG: ', $answer['error']);
+        $this->assertStringContainsString('nosuchcolumn', $answer['error'], 'The database detail reaches the model');
+    }
+
+    /**
      * MDL-INT-103: a manager without the site configuration permission is only offered the administration operations
-     * they can run, or is told before the confirmation.
-     * [Pendiente:skip]
+     * they can run: none of the three (search, describe, execute) is offered to them, in the web chat, Telegram or an
+     * agent; a manager given that permission gets them.
      *
      * @return void
      */
     public function test_managers_are_only_offered_the_administration_operations_they_can_run(): void {
-        $this->markTestSkipped('Pending fix: the administration operations are offered to managers but their execution '
-            . 'needs the site configuration permission, so after confirming a manager always gets the '
-            . 'missing permission message.');
+        global $DB;
+        $this->resetAfterTest();
+        $managerroleid = (int) $DB->get_field('role', 'id', ['shortname' => 'manager']);
+        $manager = $this->getDataGenerator()->create_user();
+        role_assign($managerroleid, $manager->id, \context_system::instance());
+        $admintools = ['admin_search', 'admin_describe', 'admin_execute'];
+        $names = static fn(array $tools): array => array_column(array_column($tools, 'function'), 'name');
+
+        $this->setUser($manager);
+        $this->assertFalse(has_capability('moodle/site:config', \context_system::instance()), 'Precondition');
+        $this->assertSame(
+            [],
+            array_intersect($admintools, $names(\local_jedomi_get_tool_definitions('manager'))),
+            'The web chat does not offer them'
+        );
+        $this->setUser(null);
+        $this->assertSame([], array_intersect(
+            $admintools,
+            $names(\local_jedomi_get_tool_definitions('manager', (int) $manager->id))
+        ), 'Telegram and agents do not either');
+        $this->assertContains(
+            'create_agent',
+            $names(\local_jedomi_get_tool_definitions('manager', (int) $manager->id)),
+            'The other manager tools stay'
+        );
+
+        assign_capability('moodle/site:config', CAP_ALLOW, $managerroleid, \context_system::instance()->id, true);
+        accesslib_clear_all_caches_for_unit_testing();
+        $this->assertSame($admintools, array_values(array_intersect(
+            $admintools,
+            $names(\local_jedomi_get_tool_definitions('manager', (int) $manager->id))
+        )), 'Who can run them gets them');
     }
 
     /**
@@ -1394,18 +1541,19 @@ final class handler_test extends \advanced_testcase {
         $this->assertSame([], $this->error_events($events), 'The site home request is accepted, as on the site home');
         $this->assertCount(1, $fake->calls);
         $this->assertSame((int) SITEID, (int) $sitespt['course_id'], 'The signed course is the site home');
-        $this->assertSame('student', $sitespt['role'], 'Outside a course a teacher gets the site-level role');
+        // Outside a course a teacher is a teacher in every channel (MDL-INT-039): the same role as on the site home.
+        $this->assertSame('teacher', $sitespt['role'], 'Outside a course a teacher gets the site-level role');
         $this->assertFalse($sitespt['capabilities']['can_view_all_grades'], 'No grade capability of the excluded course');
         $this->assertFalse($sitespt['capabilities']['can_manage_courses'], 'No course capability of the excluded course');
-        $studenttools = array_column(array_column(\local_jedomi_get_tool_definitions('student'), 'function'), 'name');
         $teachertools = array_column(array_column(\local_jedomi_get_tool_definitions('teacher'), 'function'), 'name');
-        $this->assertNotEmpty(array_diff($teachertools, $studenttools), 'Precondition: the teacher has more tools');
         $offered = $this->tool_names($fake->calls[0]);
-        $this->assertEqualsCanonicalizing($studenttools, array_values(array_diff($offered, ['send_messages'])));
+        $this->assertEqualsCanonicalizing(
+            array_values(array_diff($teachertools, ['send_messages'])),
+            array_values(array_diff($offered, ['send_messages']))
+        );
         $system = $fake->calls[0]['messages'][0];
         $this->assertSame('system', $system['role']);
-        $this->assertStringContainsString('Role: student.', $system['content']);
-        $this->assertStringNotContainsString('Role: teacher.', $system['content']);
+        $this->assertStringContainsString('Role: teacher.', $system['content']);
     }
 
     /**
@@ -1493,7 +1641,7 @@ final class handler_test extends \advanced_testcase {
 
     /**
      * MDL-CTR-004: the page context the browser sends reaches the AI only with safe values: the address without its
-     * query string and fragment, a known location, an activity type that is a plugin name and a numeric activity id.
+     * query string and fragment, a known location, and only an activity of the signed course the user can see.
      *
      * @return void
      */
@@ -1515,7 +1663,7 @@ final class handler_test extends \advanced_testcase {
         $this->assertStringNotContainsString('privatefragment', $system);
         $this->assertStringNotContainsString('Ignore the rules', $system);
         $this->assertStringContainsString('- Location: unknown', $system);
-        $this->assertStringContainsString('- Activity cmid: 42', $system);
+        $this->assertStringNotContainsString('- Activity cmid:', $system, 'An activity missing from the course is dropped');
     }
 
     /**

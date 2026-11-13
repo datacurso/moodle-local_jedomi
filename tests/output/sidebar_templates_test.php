@@ -58,9 +58,9 @@ final class sidebar_templates_test extends \advanced_testcase {
                 'jedomi-close', 'jedomi-export', 'jedomi-expand-half', 'jedomi-expand-full', 'jedomi-quick-actions',
                 'jedomi-thinking-wrapper', 'jedomi-thinking-toggle-btn', 'jedomi-attach-btn', 'jedomi-attach-menu',
                 'jedomi-image-input', 'jedomi-file-input', 'jedomi-image-preview', 'jedomi-preview-img',
-                'jedomi-remove-image', 'jedomi-file-preview', 'jedomi-file-preview-name', 'jedomi-remove-file',
-                'jedomi-overlay', 'jedomi-dropzone', 'jedomi-context-label', 'jedomi-voice-btn', 'jedomi-audio-input',
-                'jedomi-voice-bar'] as $id
+                'jedomi-remove-image', 'jedomi-file-preview',
+                'jedomi-dropzone', 'jedomi-context-label', 'jedomi-voice-btn', 'jedomi-audio-input',
+                'jedomi-voice-bar', 'jedomi-stop'] as $id
         ) {
             $this->assertStringContainsString('id="' . $id . '"', $html, $id);
         }
@@ -250,88 +250,264 @@ final class sidebar_templates_test extends \advanced_testcase {
 
     /**
      * MDL-UNIT-042: names with underscores stay intact and headings and numbered lists are formatted.
-     * [Pendiente:skip]
+     *
+     * The format runs in the browser; the rules of local_jedomi/sidebar are checked here.
+     *
+     * @return void
      */
     public function test_answer_keeps_underscores_and_formats_headings_and_lists(): void {
-        $this->markTestSkipped('Pending fix: the italic format alters names with underscores'
-            . ' and headings and numbered lists are not supported.');
+        $source = file_get_contents(__DIR__ . '/../../amd/src/sidebar.js');
+
+        $this->assertStringNotContainsString(".replace(/_(.+?)_/g, '<em>$1</em>')", $source, 'Underscores inside names');
+        $this->assertStringContainsString(
+            'const ITALIC_PATTERN = /(^|[^\w',
+            $source,
+            'Italics only when the underscores are not part of a word'
+        );
+        $this->assertStringContainsString(
+            'keep(' . chr(96) . '<code>${code}</code>' . chr(96) . ')',
+            $source,
+            'Code is never formatted'
+        );
+        $this->assertStringContainsString('keep(url)', $source, 'Addresses keep their underscores');
+        $this->assertStringContainsString('class="jedomi-md-heading"', $source, 'Headings');
+        $this->assertStringContainsString(
+            '<ol${start !== 1 ? ' . chr(96) . ' start="${start}"' . chr(96),
+            $source,
+            'Numbered lists'
+        );
     }
 
     /**
      * MDL-UNIT-044: link type labels, the CSV file name and the export header and labels are in the user language.
-     * [Pendiente:skip]
+     *
+     * @return void
      */
     public function test_panel_texts_are_in_the_user_language(): void {
-        $this->markTestSkipped('Pending fix: link labels, CSV name and export texts are fixed in one language.');
+        global $CFG;
+        require_once($CFG->dirroot . '/local/jedomi/lib.php');
+        $source = file_get_contents(__DIR__ . '/../../amd/src/sidebar.js');
+        $fixedtexts = ["type: 'Curso'", "type: 'Notas'", "type: 'Quiz'", "'jedomi_datos.csv'", 'JEDOMI — Conversation',
+            'm.role.toUpperCase()'];
+        foreach ($fixedtexts as $fixed) {
+            $this->assertStringNotContainsString($fixed, $source, "'{$fixed}' is no longer fixed in the panel");
+        }
+
+        $keys = ['export_csv_filename', 'export_filename', 'export_role_user', 'export_title', 'link_type_admin',
+            'link_type_assign', 'link_type_course', 'link_type_grades', 'link_type_messages', 'link_type_profile',
+            'link_type_quiz'];
+        $manager = get_string_manager();
+        foreach ($keys as $key) {
+            $this->assertStringContainsString("L.{$key}", str_replace('cfg.strings?.', 'L.', $source), "{$key} is used");
+            $this->assertNotSame(
+                $manager->get_string($key, 'local_jedomi', null, 'en'),
+                $manager->get_string($key, 'local_jedomi', null, 'es'),
+                "{$key} is translated"
+            );
+        }
+        $this->assertStringContainsString("'link_type_course'", file_get_contents($CFG->dirroot . '/local/jedomi/lib.php'));
     }
 
     /**
      * MDL-UNIT-073: the location of the page sent as context is recognised for every kind of page, including the
      * private files page. Behat: panel_location.feature.
-     * [Pendiente:skip] The private files page is detected as "profile" instead of "files".
+     *
+     * @return void
      */
     public function test_page_location_is_recognised_for_every_kind_of_page(): void {
-        $this->markTestSkipped('Pending fix: the private files page is detected as "profile" instead of "files".');
+        $this->resetAfterTest();
+        $cases = [
+            'course' => ['/course/view.php', 'course-view-topics', true, false],
+            'activity' => ['/mod/page/view.php', 'mod-page-view', true, true],
+            'grades' => ['/grade/report/grader/index.php', 'grade-report-grader-index', true, false],
+            'admin' => ['/admin/search.php', 'admin-search', false, false],
+            'dashboard' => ['/my/', 'my-index', false, false],
+            'messages' => ['/message/index.php', 'message-index', false, false],
+            'profile' => ['/user/profile.php', 'user-profile', false, false],
+            'calendar' => ['/calendar/view.php', 'calendar-view', false, false],
+            'files' => ['/user/files.php', 'user-files', false, false],
+            'unknown' => ['/tag/search.php', 'tag-search', false, false],
+        ];
+        foreach ($cases as $expected => [$path, $pagetype, $incourse, $inactivity]) {
+            $this->assertSame($expected, \local_jedomi_page_location($path, $pagetype, $incourse, $inactivity), $path);
+        }
+        $this->assertSame('', \local_jedomi_clean_page_path('/user/../admin/x.php'), 'A path with dots is dropped');
+        $this->assertSame('/user/files.php', \local_jedomi_clean_page_path('/user/files.php?id=3#top'));
+        $this->assertSame('', \local_jedomi_clean_page_path('https://evil.example/x.php'));
     }
 
     /**
      * MDL-E2E-004: the panel is hidden from the keyboard while closed, keeps and gives back the focus, announces the
-     * answers, names every button and closes when touching outside on mobile. Behat: panel_navigation.feature.
-     * [Pendiente:skip]
+     * answers and names every button. The panel fills the screen on mobile, so there is no backdrop to touch: it was
+     * removed. Behat: panel_navigation.feature.
+     *
+     * @return void
      */
     public function test_panel_meets_the_basic_accessibility_criteria(): void {
-        $this->markTestSkipped('Pending fix: the closed panel is reachable with Tab, the focus is not kept nor given back, '
-            . 'answers are not announced, some buttons have no accessible name and the backdrop never appears.');
+        $this->resetAfterTest();
+        $strings = ['open_sidebar' => 'Open Jedomi', 'new_conversation' => 'New conversation', 'close' => 'Close',
+            'export_conversation' => 'Export', 'half_width' => 'Half', 'full_width' => 'Full', 'attach' => 'Attach',
+            'send' => 'Send', 'stop_answer' => 'Stop the answer', 'keyboard_shortcuts' => 'Keyboard shortcuts: Alt+Shift+J',
+            'image' => 'Image', 'file' => 'File', 'audio_file' => 'Audio file'];
+        $html = $this->render('sidebar', ['greeting' => 'Hi', 'strings' => $strings, 'files_enabled' => true,
+            'audio_enabled' => true, 'attach_enabled' => true, 'voice_enabled' => true]);
+
+        $this->assertMatchesRegularExpression(
+            '~<div id="jedomi-sidebar"[^>]*aria-hidden="true"[^>]*\sinert>~',
+            $html,
+            'The closed panel is out of the Tab order and hidden from screen readers'
+        );
+        $this->assertMatchesRegularExpression(
+            '~id="jedomi-messages"[^>]*role="log"[^>]*aria-live="polite"~',
+            $html,
+            'New answers are announced'
+        );
+        $this->assertStringNotContainsString('jedomi-overlay', $html, 'No backdrop that never appears');
+        $this->assertStringContainsString('aria-label="New conversation" aria-keyshortcuts="Alt+Shift+N"', $html);
+        $this->assertStringContainsString('<span aria-hidden="true">+</span>', $html, 'The "+" sign is not its name');
+
+        // Every button has a name: a text of its own or an aria-label.
+        preg_match_all('~<button\b([^>]*)>(.*?)</button>~s', $html, $buttons, PREG_SET_ORDER);
+        $this->assertNotEmpty($buttons);
+        foreach ($buttons as [$button, $attributes, $content]) {
+            $content = preg_replace(['~<svg\b.*?</svg>~s', '~<span aria-hidden="true">.*?</span>~s'], '', $content);
+            $text = trim(strip_tags($content));
+            $this->assertTrue($text !== '' || str_contains($attributes, 'aria-label="'), 'Button without a name: ' . $button);
+        }
+
+        $source = file_get_contents(__DIR__ . '/../../amd/src/sidebar.js');
+        $this->assertStringContainsString("panel.setAttribute('inert', '')", $source, 'Closing hides the panel again');
+        $this->assertStringContainsString("panel.removeAttribute('inert')", $source, 'Opening makes it reachable');
+        $this->assertStringContainsString("addEventListener('keydown', trapFocus)", $source, 'The focus stays in the panel');
+        $this->assertStringContainsString('back?.focus()', $source, 'The focus goes back when the panel closes');
+        $this->assertStringContainsString("setAttribute('aria-busy', 'true')", $source, 'Answers are announced once complete');
     }
 
     /**
      * MDL-E2E-005: the shortcuts of the panel do not clash with the browser and the new conversation shortcut asks
      * for confirmation. Behat: panel_navigation.feature.
-     * [Pendiente:skip]
+     *
+     * @return void
      */
     public function test_shortcuts_do_not_clash_with_the_browser_nor_lose_the_conversation(): void {
-        $this->markTestSkipped('Pending fix: the shortcuts match browser shortcuts and the new conversation shortcut '
-            . 'clears the conversation without confirmation.');
+        $source = file_get_contents(__DIR__ . '/../../amd/src/sidebar.js');
+
+        $this->assertStringNotContainsString("e.key === 'J'", $source, 'Ctrl+Shift+J opens the browser console');
+        $this->assertStringNotContainsString("e.key === 'N'", $source, 'Ctrl+Shift+N opens a private window');
+        $this->assertStringContainsString("if (!e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) return;", $source);
+        $this->assertStringContainsString("e.code === 'KeyJ'", $source);
+        $this->assertStringContainsString("e.code === 'KeyN'", $source);
+        $this->assertStringContainsString('Notification.saveCancelPromise(', $source, 'The new conversation is confirmed');
+        $this->assertStringContainsString("S.new_conversation_confirm", $source);
+        $this->assertStringContainsString('Alt+Shift+N', get_string('keyboard_shortcuts', 'local_jedomi'));
     }
 
     /**
-     * MDL-E2E-011: editing acts on the chosen message and the conversation looks the same after reloading.
+     * MDL-E2E-011: only the last question can be edited, the removed messages do not come back after reloading and
+     * the reloaded conversation shows the text the user wrote and the buttons of the answers.
      * Behat: panel_conversation.feature.
-     * [Pendiente:skip]
+     *
+     * Images are not kept in the history (it lives in the session), so they are not shown again after a reload.
+     *
+     * @return void
      */
     public function test_editing_acts_on_the_chosen_message_and_reloading_keeps_the_conversation(): void {
-        $this->markTestSkipped('Pending fix: Edit only edits the last message, removed messages come back after '
-            . 'reloading and reloaded user messages show the full text sent to the AI without images or buttons.');
+        $source = file_get_contents(__DIR__ . '/../../amd/src/sidebar.js');
+
+        $this->assertStringContainsString(
+            "msgs.querySelectorAll('.jedomi-user-actions').forEach(node => node.remove())",
+            $source,
+            'The Edit button is only under the last question'
+        );
+        $this->assertStringContainsString(
+            "_historyRequest({action: 'undolast'})",
+            $source,
+            'The edited question leaves the history on the server'
+        );
+        $this->assertStringContainsString("msg.display", $source, 'The reloaded question shows what the user wrote');
+        $this->assertStringContainsString(
+            "addMessageActions(wrap, content, msg.id || '')",
+            $source,
+            'The reloaded answers keep their Copy and rating buttons'
+        );
+
+        $conversation = file_get_contents(__DIR__ . '/../../conversation.php');
+        $this->assertStringContainsString("case 'undolast':", $conversation);
+        $this->assertStringContainsString("\$message['display'] = \$display;", $conversation);
     }
 
     /**
-     * MDL-E2E-012: an answer in progress can be stopped and a failed answer leaves no orphan message in the history.
-     * Behat: panel_conversation.feature.
-     * [Pendiente:skip]
+     * MDL-E2E-012: an answer in progress can be stopped, a new conversation stops it too and a failed answer leaves
+     * no orphan message in the history. Behat: panel_conversation.feature.
+     *
+     * @return void
      */
     public function test_an_answer_can_be_stopped_and_failures_leave_no_orphan_message(): void {
-        $this->markTestSkipped('Pending implementation: the written chat has no stop button (only speaking over Jedomi '
-            . 'cancels it in the voice conversation), a new conversation does not stop it and a failed answer leaves its '
-            . 'question in the history without an answer.');
+        $source = file_get_contents(__DIR__ . '/../../amd/src/sidebar.js');
+
+        $this->assertStringContainsString("on('jedomi-stop',         'click',  stopAnswer)", $source, 'Stop button');
+        $this->assertStringContainsString(
+            'voiceHooks?.signal || controller?.signal',
+            $source,
+            'The written answer can be cancelled'
+        );
+        $this->assertStringContainsString('controller.cleared = true;', $source, 'A new conversation stops the answer');
+        $this->assertStringContainsString('cfg.strings?.answer_stopped', $source, 'The kept text is marked as stopped');
+        $this->assertStringContainsString(
+            "if (userWrap) userWrap.dataset.orphan = '1';",
+            $source,
+            'A failed question leaves the history'
+        );
+
+        $proxy = file_get_contents(__DIR__ . '/../../chatproxy.php');
+        $this->assertStringContainsString('ignore_user_abort(true);', $proxy, 'A stopped answer never stops a tool halfway');
+        $handler = file_get_contents(__DIR__ . '/../../classes/proxy/handler.php');
+        $this->assertStringContainsString('if (connection_aborted()) {', $handler, 'No AI round after the answer is stopped');
     }
 
     /**
      * MDL-E2E-013: the user is told when the panel configuration cannot be loaded. Behat: panel_navigation.feature.
-     * [Pendiente:skip]
+     *
+     * @return void
      */
     public function test_user_is_told_when_the_panel_configuration_cannot_load(): void {
-        $this->markTestSkipped('Pending fix: without its configuration the panel is shown empty and does not work, '
-            . 'without a notice.');
+        $this->resetAfterTest();
+        $source = file_get_contents(__DIR__ . '/../../amd/src/sidebar.js');
+        $this->assertStringContainsString('showConfigError', $source);
+        $this->assertStringNotContainsString('bootstrap with empty config', $source, 'The panel never starts empty');
+        $this->assertStringContainsString("setAttribute('role', 'alert')", $source);
+        foreach (['config_load_error', 'config_load_retry'] as $key) {
+            $this->assertStringContainsString($key, $source, $key);
+            $this->assertNotEmpty(get_string($key, 'local_jedomi'), $key);
+        }
+        $hook = file_get_contents(__DIR__ . '/../../classes/hook_callbacks.php');
+        $expected = "'config_load_error' => get_string('config_load_error', 'local_jedomi')";
+        $this->assertStringContainsString($expected, $hook, 'The notice texts are given with the page, before the configuration');
     }
 
     /**
      * MDL-E2E-014: an action waiting for confirmation can still be confirmed or cancelled after reloading the page.
-     * Behat: panel_conversation.feature.
-     * [Pendiente:skip]
+     * Behat: panel_conversation.feature. The panel loads the cards with the conversation (conversation.php, action get).
+     *
+     * @return void
      */
     public function test_pending_action_survives_a_page_reload(): void {
-        $this->markTestSkipped('Pending fix: after reloading the page the confirmation card disappears and the pending '
-            . 'action cannot be confirmed.');
+        global $DB;
+        $this->resetAfterTest();
+        $user = $this->getDataGenerator()->create_user();
+        $other = $this->getDataGenerator()->create_user();
+        $service = \local_jedomi\local\service\pending_action_service::class;
+        $kept = $service::hold((int) $user->id, 'create_agent', ['name' => 'Reload agent', 'prompt' => 'Daily summary']);
+        $expired = $service::hold((int) $user->id, 'delete_agent', ['id' => 3]);
+        $DB->set_field($service::TABLE, 'timecreated', time() - $service::EXPIRY - 1, ['id' => $expired['id']]);
+        $service::hold((int) $other->id, 'delete_agent', ['id' => 4]);
+
+        $cards = $service::cards_for_user((int) $user->id);
+
+        $this->assertSame([$kept], $cards, 'Only the own action still in time comes back, with the same card');
+        $this->setUser($user);
+        $result = $service::resolve($kept['id'], (int) $user->id, false);
+        $this->assertSame($service::STATUS_CANCELLED, $result['status'], 'The restored action can still be resolved');
     }
 
     /**
@@ -468,52 +644,135 @@ final class sidebar_templates_test extends \advanced_testcase {
     /**
      * MDL-UNIT-051: the audio file selector accepts the same formats as the server and recording stops or warns at the
      * maximum duration that can be transcribed.
-     * [Pendiente:skip]
      *
      * @return void
      */
     public function test_audio_selector_formats_and_recording_duration_match_the_server(): void {
-        $this->markTestSkipped('Pending fix: the audio selector accepts fewer formats than the server and recording has no '
-            . 'duration limit in the browser.');
+        $this->resetAfterTest();
+        $html = $this->render('sidebar', ['strings' => [], 'files_enabled' => true, 'audio_enabled' => true,
+            'attach_enabled' => true]);
+        $this->assertMatchesRegularExpression('/id="jedomi-audio-input" accept="([^"]+)"/', $html);
+        preg_match('/id="jedomi-audio-input" accept="([^"]+)"/', $html, $match);
+        $accepted = array_map(fn($extension) => ltrim($extension, '.'), explode(',', $match[1]));
+        $server = \local_jedomi\local\service\audio_service::EXTENSIONS;
+        $this->assertEqualsCanonicalizing($server, $accepted, 'The selector accepts the formats of the server');
+
+        $source = file_get_contents(__DIR__ . '/../../amd/src/sidebar.js');
+        $this->assertSame(1, preg_match("/const AUDIO_EXTENSIONS = \\[([^\\]]+)\\];/", $source, $js));
+        $dropped = array_map(fn($extension) => trim($extension, " '"), explode(',', $js[1]));
+        $this->assertEqualsCanonicalizing($server, $dropped, 'Dropped audio files use the formats of the server');
+        $this->assertStringContainsString('const VOICE_MESSAGE_MAX_MS = 300000;', $source, 'A recording stops at 5 minutes');
+        $this->assertStringContainsString('voice_too_long', $source, 'The user is told why the recording stopped');
     }
 
     /**
      * MDL-UNIT-117: pressing the voice conversation button while a message is sent, during a recording or with a voice
      * message pending tells the user why, and the automatic exit after the silence is announced.
-     * [Pendiente:skip]
      *
      * @return void
      */
     public function test_voice_conversation_button_never_fails_silently(): void {
-        $this->markTestSkipped('Pending fix: the voice conversation button does nothing without telling the user while a '
-            . 'message is sent, a recording is in progress or a voice message is pending, and the '
-            . 'automatic exit after the silence is not announced.');
+        $this->resetAfterTest();
+        $source = file_get_contents(__DIR__ . '/../../amd/src/sidebar.js');
+        $this->assertStringContainsString("if (sending) return 'sending';", $source);
+        $this->assertStringContainsString("if (recorder) return 'recording';", $source);
+        $this->assertStringContainsString("if (voice) return 'pending';", $source);
+        $this->assertStringContainsString('voice_mode_busy_${busy}', $source, 'Each busy reason has its notice');
+        $silent = 'sending || recorder || voice || !cfg.speech_url) return;';
+        $this->assertStringNotContainsString($silent, $source, 'The button no longer returns silently while busy');
+        $this->assertStringContainsString('voice_mode_idle_exit', $source, 'The exit after the silence is announced');
+        $spoken = '/voice_mode_idle_exit[\\s\\S]{0,400}speakVoiceNotice\\(notice/';
+        $this->assertMatchesRegularExpression($spoken, $source, 'The exit notice is also spoken with the voice of the browser');
+
+        $manager = get_string_manager();
+        $lib = file_get_contents(__DIR__ . '/../../lib.php');
+        $keys = ['voice_mode_busy_sending', 'voice_mode_busy_recording', 'voice_mode_busy_pending', 'voice_mode_idle_exit'];
+        foreach ($keys as $key) {
+            $this->assertNotSame(
+                $manager->get_string($key, 'local_jedomi', null, 'en'),
+                $manager->get_string($key, 'local_jedomi', null, 'es'),
+                "{$key} is translated"
+            );
+            $this->assertStringContainsString("get_string('{$key}', 'local_jedomi')", $lib, "{$key} reaches the sidebar");
+        }
     }
 
     /**
      * MDL-INT-052: several dropped files are all kept, a cut text is announced and GIF images or disabled types get a
      * clear notice in the browser. Behat: chat_system.feature.
-     * [Pendiente:skip] Only the last dropped file is kept, the cut is not announced, a dropped GIF is accepted in the
-     * browser and refused by the server, and dropped files of a disabled type are ignored silently.
      *
      * @return void
      */
     public function test_dropped_files_are_all_kept_with_clear_notices(): void {
-        $this->markTestSkipped('Pending fix: only the last dropped file is kept, the cut text is not announced, dropped GIF '
-            . 'images are accepted by the browser and refused by the server, and disabled types are ignored silently.');
+        $this->resetAfterTest();
+        $html = $this->render('local/sidebar/file_chips', ['files' => [
+            ['index' => 0, 'name' => 'first.txt', 'removelabel' => 'Remove first.txt'],
+            ['index' => 1, 'name' => '<b>second</b>.txt', 'removelabel' => 'Remove second.txt'],
+        ]]);
+        $this->assertSame(2, substr_count($html, 'data-action="local_jedomi/sidebar/remove-file"'), 'One chip per file');
+        $this->assertStringContainsString('data-index="1"', $html);
+        $this->assertStringContainsString('first.txt', $html);
+        $this->assertStringContainsString('&lt;b&gt;second&lt;/b&gt;.txt', $html, 'File names are escaped');
+
+        $source = file_get_contents(__DIR__ . '/../../amd/src/sidebar.js');
+        $this->assertStringContainsString('const MAX_ATTACHMENTS = 5;', $source);
+        $imagetypes = "const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];";
+        $this->assertStringContainsString($imagetypes, $source, 'A dropped GIF is refused in the browser, as on the server');
+        $notices = ['file_attach_limit', 'file_truncated', 'image_error_unsupported', 'files_error_disabled',
+            'audio_error_disabled', 'image_attach_limit'];
+        foreach ($notices as $key) {
+            $this->assertStringContainsString("S.{$key}", $source, "Notice {$key}");
+        }
+        $this->assertStringContainsString('attachment.controller?.abort()', $source, 'Removing a file cancels its reading');
     }
 
     /**
      * MDL-INT-112: in the voice conversation only what the user says is transcribed and charged: an utterance has a
      * maximum duration, failures do not fill the chat and a failed transcription is also said aloud.
      * Behat: voice_conversation.feature.
-     * [Pendiente:skip] Sustained background voices are transcribed and charged, an utterance has no maximum duration,
-     * each unreadable utterance adds a notice and the failure is only written.
      *
      * @return void
      */
     public function test_voice_conversation_only_transcribes_what_the_user_says(): void {
-        $this->markTestSkipped('Pending fix: sustained background voices are transcribed and charged, an utterance has no '
-            . 'maximum duration, each unreadable utterance adds a notice to the chat and the failure is not said aloud.');
+        $source = file_get_contents(__DIR__ . '/../../amd/src/sidebar.js');
+
+        $this->assertMatchesRegularExpression(
+            '~const VOICE_MODE_MAX_UTTERANCE_MS = 30000;~',
+            $source,
+            'An utterance has a maximum duration'
+        );
+        $this->assertStringContainsString(
+            'lastMessage.dataset.voiceNotice === notice',
+            $source,
+            'The same notice right after itself is not repeated'
+        );
+        $this->assertStringContainsString('speakVoiceNotice(notice, () => {', $source, 'The failure is said aloud');
+        $this->assertStringContainsString(
+            'window.speechSynthesis?.cancel();',
+            $source,
+            'Ending the conversation stops a notice read aloud'
+        );
+    }
+
+    /**
+     * MDL-E2E-011 (images after a reload): the history keeps how many images a question had, never the images, and the
+     * chat shows a translated note in their place after a reload.
+     */
+    public function test_images_of_a_question_leave_a_note_after_a_reload(): void {
+        $source = file_get_contents(__DIR__ . '/../../amd/src/sidebar.js');
+        $this->assertStringContainsString('if (image) userMessage.images = 1;', $source);
+        $this->assertStringContainsString('fields.images = String(last.images)', $source);
+        $this->assertMatchesRegularExpression('/msg\.images > 0\) addImagePlaceholder\(wrap, msg\.images\)/', $source);
+        $this->assertStringContainsString('image_not_kept', $source);
+
+        $endpoint = file_get_contents(__DIR__ . '/../../conversation.php');
+        $this->assertStringContainsString("\$message['images'] = \$images;", $endpoint);
+        $this->assertStringNotContainsString('base64', $endpoint, 'The images themselves are never stored');
+
+        $manager = get_string_manager();
+        $this->assertNotSame(
+            $manager->get_string('image_not_kept', 'local_jedomi', null, 'en'),
+            $manager->get_string('image_not_kept', 'local_jedomi', null, 'es')
+        );
     }
 }

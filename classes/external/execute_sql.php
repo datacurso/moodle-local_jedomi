@@ -20,8 +20,8 @@
  * Requirement CWS-SQL-01 / CWS-01 (query-security spec):
  *  - Validates HMAC-SHA256 before touching the DB
  *  - Enforces SELECT-only (second layer after QueryGovernor)
- *  - Returns at most 100 rows
- *  - Enforces 5-second hard timeout via SET STATEMENT max_statement_time
+ *  - Returns at most the companion row limit (query_runner::CHANNEL_LIMITS, 100 rows)
+ *  - Enforces a 5-second time limit on MySQL, MariaDB and PostgreSQL (none on SQL Server and Oracle)
  *  - Never logs raw row data; masks PII column names in log
  *
  * @package    local_jedomi
@@ -49,9 +49,6 @@ use local_jedomi\companion_hmac;
  */
 class execute_sql extends external_api {
     use companion_hmac;
-
-    /** Maximum rows the function will ever return. */
-    private const MAX_ROWS = 100;
 
     // -------------------------------------------------------------------------
     // Parameter / return definitions
@@ -158,7 +155,13 @@ class execute_sql extends external_api {
         }
 
         // ... --- SELECT only, guard and execution with row cap and timeout (shared with the chat channels) ---
-        $result = \local_jedomi\local\query_runner::run($sql, $params, (int) $USER->id, self::MAX_ROWS);
+        $result = \local_jedomi\local\query_runner::run(
+            $sql,
+            $params,
+            (int) $USER->id,
+            \local_jedomi\local\query_runner::row_limit('companion'),
+            'companion'
+        );
 
         // Rows are returned as JSON strings so the external API does not have to describe every possible column.
         $rows = array_map(

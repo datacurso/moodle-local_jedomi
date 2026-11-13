@@ -37,7 +37,6 @@ final class privacy_settings_form_test extends \advanced_testcase {
         $roles = [['id' => 3, 'shortname' => 'editingteacher', 'name' => 'Teacher'],
             ['id' => 5, 'shortname' => 'student', 'name' => 'Student']];
         privacy_settings_form::mock_submit([
-            'hide_from_guests' => 1,
             'anonymization_level' => 'strict',
             'role_visible_3' => 1,
             'role_visible_5' => 0,
@@ -46,7 +45,7 @@ final class privacy_settings_form_test extends \advanced_testcase {
         $form = new privacy_settings_form(null, ['roles' => $roles]);
         $data = $form->get_data();
 
-        $this->assertSame(1, (int) $data->hide_from_guests);
+        $this->assertObjectNotHasProperty('hide_from_guests', $data);
         $this->assertSame('strict', $data->anonymization_level);
         $this->assertSame([3], privacy_settings_form::visible_role_ids($data, $roles));
     }

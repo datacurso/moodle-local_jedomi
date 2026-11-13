@@ -54,12 +54,13 @@ function local_jedomi_before_footer(): string {
  *
  * Never includes AI service URLs or keys: every AI call is made server-side.
  *
+ * @param array $page Page the panel is on, as read when the page was rendered: see local_jedomi_get_page_context().
  * @return array
  */
-function local_jedomi_get_sidebar_config(): array {
+function local_jedomi_get_sidebar_config(array $page = []): array {
     global $USER, $CFG;
 
-    $context = local_jedomi_get_page_context();
+    $context = local_jedomi_get_page_context($page);
     $voiceenabled = \local_jedomi\ai\model_settings::is_voice_enabled();
 
     $config = [
@@ -76,6 +77,9 @@ function local_jedomi_get_sidebar_config(): array {
         'wwwroot'       => $CFG->wwwroot,
         'context'       => $context,
         'sesskey'       => sesskey(),
+        // Time of the server, so the panel knows when its signed permissions expire on its own clock and renews them
+        // before they do.
+        'server_time'   => time(),
         'strings'       => [
             // UI chrome.
             'title'             => get_string('sidebar_title', 'local_jedomi'),
@@ -94,6 +98,7 @@ function local_jedomi_get_sidebar_config(): array {
             'attach_image'      => get_string('attach_image', 'local_jedomi'),
             'file'              => get_string('file', 'local_jedomi'),
             'image'             => get_string('image', 'local_jedomi'),
+            'image_not_kept'    => get_string('image_not_kept', 'local_jedomi'),
             'message_input'     => get_string('message_input', 'local_jedomi'),
             'placeholder'       => get_string('chat_placeholder', 'local_jedomi'),
             'send'              => get_string('send', 'local_jedomi'),
@@ -103,15 +108,40 @@ function local_jedomi_get_sidebar_config(): array {
             'hello'             => get_string('hello', 'local_jedomi'),
             'thinking'          => get_string('thinking', 'local_jedomi'),
             'new_conversation_msg' => get_string('new_conversation_msg', 'local_jedomi'),
+            'new_conversation_confirm' => get_string('new_conversation_confirm', 'local_jedomi'),
+            'keyboard_shortcuts'   => get_string('keyboard_shortcuts', 'local_jedomi'),
+            'stop_answer'          => get_string('stop_answer', 'local_jedomi'),
+            'answer_stopped'       => get_string('answer_stopped', 'local_jedomi'),
             // Files.
             'analyze_file'         => get_string('analyze_file', 'local_jedomi'),
             'analyze_image'        => get_string('analyze_image', 'local_jedomi'),
             'attached_file_info'   => get_string('attached_file_info', 'local_jedomi'),
             'attached_image'       => get_string('attached_image', 'local_jedomi'),
             'csv_download'         => get_string('csv_download', 'local_jedomi'),
+            // Export of the conversation and of the tables, and the labels of the Moodle links.
+            'export_csv_filename'    => get_string('export_csv_filename', 'local_jedomi'),
+            'export_filename'        => get_string('export_filename', 'local_jedomi'),
+            'export_role_assistant'  => get_string('export_role_assistant', 'local_jedomi'),
+            'export_role_user'       => get_string('export_role_user', 'local_jedomi'),
+            'export_title'           => get_string('export_title', 'local_jedomi'),
+            'link_type_admin'        => get_string('link_type_admin', 'local_jedomi'),
+            'link_type_assign'       => get_string('link_type_assign', 'local_jedomi'),
+            'link_type_course'       => get_string('link_type_course', 'local_jedomi'),
+            'link_type_grades'       => get_string('link_type_grades', 'local_jedomi'),
+            'link_type_messages'     => get_string('link_type_messages', 'local_jedomi'),
+            'link_type_moodle'       => get_string('link_type_moodle', 'local_jedomi'),
+            'link_type_profile'      => get_string('link_type_profile', 'local_jedomi'),
+            'link_type_quiz'         => get_string('link_type_quiz', 'local_jedomi'),
             'file_audio'           => get_string('file_audio', 'local_jedomi'),
             'file_csv'             => get_string('file_csv', 'local_jedomi'),
+            'audio_error_disabled'   => get_string('audio_error_disabled', 'local_jedomi'),
+            'file_attach_limit'      => get_string('file_attach_limit', 'local_jedomi'),
             'file_error_unsupported' => get_string('file_error_unsupported', 'local_jedomi'),
+            'file_remove'            => get_string('file_remove', 'local_jedomi'),
+            'file_truncated'         => get_string('file_truncated', 'local_jedomi'),
+            'files_error_disabled'   => get_string('files_error_disabled', 'local_jedomi'),
+            'image_attach_limit'     => get_string('image_attach_limit', 'local_jedomi'),
+            'image_error_unsupported' => get_string('image_error_unsupported', 'local_jedomi'),
             'file_pdf'             => get_string('file_pdf', 'local_jedomi'),
             'file_process_error'   => get_string('file_process_error', 'local_jedomi'),
             'file_text'            => get_string('file_text', 'local_jedomi'),
@@ -144,6 +174,9 @@ function local_jedomi_get_sidebar_config(): array {
             'action_improve_title' => get_string('action_improve_title', 'local_jedomi'),
             'action_edit'          => get_string('action_edit', 'local_jedomi'),
             'action_edit_title'    => get_string('action_edit_title', 'local_jedomi'),
+            'feedback_comment'       => get_string('feedback_comment', 'local_jedomi'),
+            'feedback_comment_saved' => get_string('feedback_comment_saved', 'local_jedomi'),
+            'feedback_comment_send'  => get_string('feedback_comment_send', 'local_jedomi'),
             // Bulk message.
             'confirm_send_bulk'        => get_string('confirm_send_bulk', 'local_jedomi'),
             'yes_send'                 => get_string('yes_send', 'local_jedomi'),
@@ -182,16 +215,30 @@ function local_jedomi_get_sidebar_config(): array {
             'voice_recording'       => get_string('voice_recording', 'local_jedomi'),
             'voice_send'            => get_string('voice_send', 'local_jedomi'),
             'voice_stop'            => get_string('voice_stop', 'local_jedomi'),
+            'voice_too_long'        => get_string('voice_too_long', 'local_jedomi'),
             'voice_too_short'       => get_string('voice_too_short', 'local_jedomi'),
             'waiting_voice'         => get_string('waiting_voice', 'local_jedomi'),
             // Voice conversation.
             'voice_mode'                     => get_string('voice_mode', 'local_jedomi'),
+            'voice_mode_busy_pending'        => get_string('voice_mode_busy_pending', 'local_jedomi'),
+            'voice_mode_busy_recording'      => get_string('voice_mode_busy_recording', 'local_jedomi'),
+            'voice_mode_busy_sending'        => get_string('voice_mode_busy_sending', 'local_jedomi'),
             'voice_mode_confirm_notice'      => get_string('voice_mode_confirm_notice', 'local_jedomi'),
             'voice_mode_exit'                => get_string('voice_mode_exit', 'local_jedomi'),
+            'voice_mode_idle_exit'           => get_string('voice_mode_idle_exit', 'local_jedomi'),
             'voice_mode_listening'           => get_string('voice_mode_listening', 'local_jedomi'),
             'voice_mode_paused'              => get_string('voice_mode_paused', 'local_jedomi'),
             'voice_mode_speaking'            => get_string('voice_mode_speaking', 'local_jedomi'),
             'voice_mode_speech_error'        => get_string('voice_mode_speech_error', 'local_jedomi'),
+            // Reasons a reading aloud is refused, by the code of speech.php (shown when its answer has no message).
+            'speech_error_disabled'          => get_string('speech_error_disabled', 'local_jedomi'),
+            'speech_error_empty'             => get_string('speech_error_empty', 'local_jedomi'),
+            'speech_error_rate_limited'      => get_string('speech_error_rate_limited', 'local_jedomi'),
+            'speech_error_too_long'          => get_string(
+                'speech_error_too_long',
+                'local_jedomi',
+                \local_jedomi\local\service\speech_service::MAX_CHARS
+            ),
             'voice_mode_thinking'            => get_string('voice_mode_thinking', 'local_jedomi'),
             'voice_mode_transcription_error' => get_string('voice_mode_transcription_error', 'local_jedomi'),
             // Confirmation system.
@@ -331,7 +378,9 @@ function local_jedomi_myprofile_navigation(\core_user\output\myprofile\tree $tre
         return;
     }
 
-    if (!local_jedomi_is_telegram_role_allowed()) {
+    // A linked user keeps the way to the link page, where the link can always be removed.
+    $linked = \local_jedomi\local\service\telegram_link_service::get_confirmed_link((int) $USER->id) !== null;
+    if (!$linked && !local_jedomi_is_telegram_role_allowed()) {
         return;
     }
 
@@ -355,25 +404,27 @@ function local_jedomi_myprofile_navigation(\core_user\output\myprofile\tree $tre
 }
 
 /**
- * Detect the context of the current page.
+ * Context of the page the panel is on, sent to the AI with every question.
  *
+ * The configuration of the panel is requested by AJAX, where the current page is the endpoint, so the page is described
+ * by the values read when it was rendered (see \local_jedomi\hook_callbacks::before_footer()). They come back from the
+ * browser, so they are checked: the activity must belong to the course of the request and be visible to the user,
+ * the page type is a Moodle page type name and the path a plain path of the site. The course is the current course,
+ * already checked by the caller.
+ *
+ * @param array $page Page data: cmid (course module), pagetype (Moodle page type) and path (path relative to the site).
  * @return array Page context: location, course and activity details.
  */
-function local_jedomi_get_page_context(): array {
-    global $PAGE, $COURSE, $USER;
+function local_jedomi_get_page_context(array $page = []): array {
+    global $COURSE, $USER;
 
-    $url = '';
-    try {
-        $url = $PAGE->url->out(false);
-    } catch (Exception $e) {
-        $url = $_SERVER['REQUEST_URI'] ?? '';
-    }
-
-    $pagetype = $PAGE->pagetype ?? '';
+    $courseid = (int) ($COURSE->id ?? 0);
+    $path = local_jedomi_clean_page_path((string) ($page['path'] ?? ''));
+    $pagetype = clean_param((string) ($page['pagetype'] ?? ''), PARAM_ALPHANUMEXT);
     $context  = [
-        'page_url'      => $url,
+        'page_url'      => $path,
         'page_type'     => $pagetype,
-        'page_title'    => $PAGE->title ?? '',
+        'page_title'    => '',
         'user_id'       => $USER->id ?? 0,
         'user_fullname' => fullname($USER),
         'user_role'     => local_jedomi_get_user_role(),
@@ -381,41 +432,98 @@ function local_jedomi_get_page_context(): array {
         'course_name'   => '',
         'activity_id'   => 0,
         'activity_type' => '',
+        'activity_name' => '',
         'location'      => 'unknown',
     ];
 
-    if (!empty($COURSE->id) && $COURSE->id > 1) {
-        $context['course_id']   = $COURSE->id;
-        $context['course_name'] = $COURSE->fullname ?? '';
-        $context['location']    = 'course';
+    if ($courseid > SITEID) {
+        $context['course_id']   = $courseid;
+        $context['course_name'] = format_string($COURSE->fullname ?? '', true, ['context' => context_course::instance($courseid)]);
     }
 
-    if (preg_match('/[?&]id=(\d+)/', $url, $m) && strpos($url, '/mod/') !== false) {
-        $context['activity_id'] = (int)$m[1];
-        $context['location']    = 'activity';
-        if (preg_match('/^mod-(\w+)-/', $pagetype, $mt)) {
-            $context['activity_type'] = $mt[1];
-        }
+    $cm = local_jedomi_page_activity($courseid, (int) ($page['cmid'] ?? 0));
+    if ($cm !== null) {
+        $context['activity_id']   = (int) $cm->id;
+        $context['activity_type'] = $cm->modname;
+        $context['activity_name'] = $cm->get_formatted_name();
     }
 
-    $locationmap = [
-        '/admin/'   => 'admin',
-        '/my/'      => 'dashboard',
-        '/grade/'   => 'grades',
-        '/message/' => 'messages',
-        '/user/'    => 'profile',
-    ];
-    foreach ($locationmap as $path => $loc) {
-        if (strpos($url, $path) !== false) {
-            $context['location'] = $loc;
-            break;
-        }
-    }
-    if ($pagetype === 'my-index') {
-        $context['location'] = 'dashboard';
-    }
-
+    $context['location'] = local_jedomi_page_location($path, $pagetype, $courseid > SITEID, $cm !== null);
     return $context;
+}
+
+/**
+ * An activity of a page, when it belongs to the course of the request and the user can see it.
+ *
+ * @param int $courseid Course of the request (the site course on the site home).
+ * @param int $cmid Course module of the page; 0 for none.
+ * @return cm_info|null The activity, or null when there is none or it cannot be used.
+ */
+function local_jedomi_page_activity(int $courseid, int $cmid): ?cm_info {
+    if ($cmid <= 0) {
+        return null;
+    }
+    try {
+        $cm = get_fast_modinfo($courseid > SITEID ? $courseid : SITEID)->get_cm($cmid);
+    } catch (\moodle_exception $e) {
+        return null;
+    }
+    return $cm->uservisible ? $cm : null;
+}
+
+/**
+ * Path of a page of the site, cleaned: only a plain path such as "/user/files.php", without query string or fragment.
+ *
+ * @param string $path Path sent with the request.
+ * @return string The path, or '' when it is not a plain path of the site.
+ */
+function local_jedomi_clean_page_path(string $path): string {
+    $path = (string) preg_replace('/[?#].*$/s', '', trim($path));
+    if (strlen($path) > 255 || !preg_match('#^/[A-Za-z0-9_./-]*$#', $path) || strpos($path, '..') !== false) {
+        return '';
+    }
+    return $path;
+}
+
+/**
+ * Location of a page for the AI and the quick actions of the panel.
+ *
+ * The sections of the site win (administration, grades, private files, calendar, messages, dashboard and profile),
+ * then the activity and then the course. Any other page is "unknown".
+ *
+ * @param string $path Path of the page relative to the site, already cleaned.
+ * @param string $pagetype Moodle page type, already cleaned.
+ * @param bool $incourse Whether the page is inside a course (not the site home).
+ * @param bool $inactivity Whether the page is an activity the user can see.
+ * @return string course, activity, grades, admin, dashboard, messages, profile, calendar, files or unknown.
+ */
+function local_jedomi_page_location(string $path, string $pagetype, bool $incourse, bool $inactivity): string {
+    $sections = [
+        'admin'     => ['paths' => ['/admin/'], 'types' => ['admin-']],
+        'grades'    => ['paths' => ['/grade/'], 'types' => ['grade-']],
+        'files'     => ['paths' => ['/user/files.php'], 'types' => ['user-files']],
+        'calendar'  => ['paths' => ['/calendar/'], 'types' => ['calendar-']],
+        'messages'  => ['paths' => ['/message/'], 'types' => ['message-']],
+        'dashboard' => ['paths' => ['/my/'], 'types' => ['my-']],
+        'profile'   => ['paths' => ['/user/profile.php', '/user/view.php', '/user/edit.php', '/user/editadvanced.php',
+            '/user/preferences.php'], 'types' => ['user-profile', 'user-view', 'user-edit', 'user-preferences']],
+    ];
+    foreach ($sections as $location => $rules) {
+        foreach ($rules['paths'] as $prefix) {
+            if ($path !== '' && strpos($path, $prefix) === 0) {
+                return $location;
+            }
+        }
+        foreach ($rules['types'] as $prefix) {
+            if ($pagetype !== '' && strpos($pagetype, $prefix) === 0) {
+                return $location;
+            }
+        }
+    }
+    if ($inactivity) {
+        return 'activity';
+    }
+    return $incourse ? 'course' : 'unknown';
 }
 
 /**
@@ -642,18 +750,7 @@ function local_jedomi_is_same_course(int $first, int $second): bool {
  */
 function local_jedomi_effective_chat_role(string $presented, int $userid, int $courseid): string {
     $rank = ['student' => 1, 'teacher' => 2, 'manager' => 3, 'admin' => 4];
-
-    if (is_siteadmin($userid)) {
-        $real = 'admin';
-    } else if (has_capability('moodle/user:update', context_system::instance(), $userid)) {
-        $real = 'manager';
-    } else {
-        $real = 'student';
-        $context = $courseid > SITEID ? context_course::instance($courseid, IGNORE_MISSING) : false;
-        if ($context && has_capability('moodle/course:manageactivities', $context, $userid)) {
-            $real = 'teacher';
-        }
-    }
+    $real = local_jedomi_user_role($userid, $courseid);
 
     if (!isset($rank[$presented]) || $rank[$presented] > $rank[$real]) {
         return $real;
@@ -665,11 +762,19 @@ function local_jedomi_effective_chat_role(string $presented, int $userid, int $c
  * Get tool definitions for a given role in OpenAI function-calling format.
  * These are embedded in the SPT so the gateway can configure the model.
  *
- * @param  string $role User role: admin, manager, teacher, student.
+ * The administration operations (admin_search, admin_describe, admin_execute) are offered only to a user who can run
+ * them (see \local_jedomi\schema\cli_registry::can_execute()); searching and describing operations that cannot be run
+ * would only lead to an action refused after its confirmation.
+ *
+ * @param  string   $role User role: admin, manager, teacher, student.
+ * @param  int|null $userid User the tools are offered to; null for the current user.
+ * @param  string   $channel Channel the tools are offered in (web, telegram or agent): the query tool tells its limits.
  * @return array        Array of OpenAI-style tool definitions.
  */
-function local_jedomi_get_tool_definitions(string $role): array {
+function local_jedomi_get_tool_definitions(string $role, ?int $userid = null, string $channel = 'web'): array {
+    global $USER;
     $tools = [];
+    $userid = $userid ?? (int) ($USER->id ?? 0);
 
     // Describe_table — every role.
     $tools[] = [
@@ -719,7 +824,10 @@ function local_jedomi_get_tool_definitions(string $role): array {
             'type' => 'function',
             'function' => [
                 'name'        => 'execute_sql',
-                'description' => get_string('tool_execute_sql_desc', 'local_jedomi'),
+                'description' => get_string('tool_execute_sql_desc', 'local_jedomi', [
+                    'rows' => \local_jedomi\local\query_runner::row_limit($channel),
+                    'seconds' => (int) (\local_jedomi\local\query_runner::time_limit_ms($channel) / 1000),
+                ]),
                 'parameters'  => [
                     'type'       => 'object',
                     'properties' => [
@@ -907,8 +1015,8 @@ function local_jedomi_get_tool_definitions(string $role): array {
         ];
     }
 
-    // Admin CLI tools — search, describe, execute admin operations not exposed via WS.
-    if (in_array($role, ['admin', 'manager'], true)) {
+    // Admin CLI tools — search, describe, execute admin operations not exposed via WS; only for who can run them.
+    if (in_array($role, ['admin', 'manager'], true) && \local_jedomi\schema\cli_registry::can_execute($userid)) {
         $tools[] = [
             'type' => 'function',
             'function' => [
@@ -1148,7 +1256,7 @@ function local_jedomi_generate_spt_for_user(int $userid, string $role): array {
     }
     // Admin: no course list (full access).
 
-    $tools = local_jedomi_get_tool_definitions($role);
+    $tools = local_jedomi_get_tool_definitions($role, (int) $userid);
 
     $payload = [
         'userid'              => $userid,
@@ -1174,141 +1282,153 @@ function local_jedomi_generate_spt_for_user(int $userid, string $role): array {
 }
 
 /**
- * Determine the Jedomi role of the current user from Moodle capabilities.
+ * The Jedomi role of a user, the same in every channel (web chat, Telegram, confirmation of actions and agents).
  *
- * Site admins map to 'admin', system-level user managers to 'manager',
- * users who can manage activities in the current course to 'teacher',
- * and everyone else to 'student'.
+ * Site admins are 'admin' and users who can update users at system level 'manager'. Inside a course a user who can
+ * manage its activities is 'teacher'; outside a course (the site home, the dashboard, a profile, Telegram) a user who
+ * can manage the activities of any course they are enrolled in is 'teacher'. Everyone else is 'student'.
+ *
+ * @param int $userid User.
+ * @param int $courseid Course of the request; 0 or the site course outside a course.
+ * @return string 'admin', 'manager', 'teacher' or 'student'.
+ */
+function local_jedomi_user_role(int $userid, int $courseid): string {
+    if ($userid <= 0) {
+        return 'student';
+    }
+    if (is_siteadmin($userid)) {
+        return 'admin';
+    }
+    if (has_capability('moodle/user:update', context_system::instance(), $userid)) {
+        return 'manager';
+    }
+
+    if ($courseid > SITEID) {
+        $context = context_course::instance($courseid, IGNORE_MISSING);
+        return $context && has_capability('moodle/course:manageactivities', $context, $userid) ? 'teacher' : 'student';
+    }
+
+    foreach (enrol_get_users_courses($userid, true, ['id']) as $course) {
+        if (has_capability('moodle/course:manageactivities', context_course::instance($course->id), $userid)) {
+            return 'teacher';
+        }
+    }
+    return 'student';
+}
+
+/**
+ * Determine the Jedomi role of the current user in the current course: see local_jedomi_user_role().
  *
  * @return string 'admin', 'manager', 'teacher', or 'student'.
  */
 function local_jedomi_get_user_role(): string {
     global $USER, $COURSE;
-
-    // 1. Siteadmin → acceso total (arquetipo: admin)
-    if (is_siteadmin()) {
-        return 'admin';
-    }
-
-    $sysctx = context_system::instance();
-
-    // 2. Manager: has moodle/user:update at system level but is NOT a site admin.
-    // This covers Moodle's 'manager' archetype and any custom role
-    // with equivalent privileges (managing users/courses without being an admin).
-    if (has_capability('moodle/user:update', $sysctx)) {
-        return 'manager';
-    }
-
-    // 3. Teacher: can manage activities in the current course.
-    // Covers the 'editingteacher' archetype and any custom role with that capability.
-    if (!empty($COURSE->id) && $COURSE->id > 1) {
-        $ctx = context_course::instance($COURSE->id);
-        if (has_capability('moodle/course:manageactivities', $ctx)) {
-            return 'teacher';
-        }
-        return 'student';
-    }
-
-    // 4. Outside a specific course: student with their own tools (grades, calendar, enrolled courses).
-    // A teacher browsing outside a course gets student access, which is safe and acceptable.
-    return 'student';
+    return local_jedomi_user_role((int) ($USER->id ?? 0), (int) ($COURSE->id ?? 0));
 }
 
 /**
- * Determine a user's Jedomi role WITHOUT depending on $COURSE or $PAGE globals.
+ * Determine a user's Jedomi role outside a course, without depending on $COURSE or $PAGE globals.
  *
- * Used by the Telegram webhook where there is no page context or current course.
- * Checks admin status via get_admins(), manager via system-level capability,
- * teacher via manageactivities in any enrolled course, and falls back to student.
+ * Used by the Telegram webhook, the confirmation of actions and the agents, where there is no current course: see
+ * local_jedomi_user_role().
  *
  * @param  int    $userid The user ID to check.
  * @return string         'admin', 'manager', 'teacher', or 'student'.
  */
 function local_jedomi_get_user_role_for_user(int $userid): string {
-
-    // 1. Check if user is site admin via get_admins().
-    $admins = get_admins();
-    foreach ($admins as $admin) {
-        if ((int) $admin->id === $userid) {
-            return 'admin';
-        }
-    }
-
-    $sysctx = context_system::instance();
-
-    // 2. Manager: has moodle/user:update at system level.
-    if (has_capability('moodle/user:update', $sysctx, $userid)) {
-        return 'manager';
-    }
-
-    // 3. Teacher: has moodle/course:manageactivities in ANY of their enrolled courses.
-    $courses = enrol_get_users_courses($userid, true, ['id']);
-    foreach ($courses as $c) {
-        $ctx = context_course::instance($c->id);
-        if (has_capability('moodle/course:manageactivities', $ctx, $userid)) {
-            return 'teacher';
-        }
-    }
-
-    // 4. Fallback: student.
-    return 'student';
+    return local_jedomi_user_role($userid, 0);
 }
 
 /**
- * Returns true when the Telegram integration should be shown/available to the current user.
- * Reuses the same per-role visibility config pattern as the sidebar (hidden_roles),
- * but with a separate config key: telegram_hidden_roles.
+ * Whether the Telegram role rule lets the current user link the account and use the bot.
  *
- * Site admins always see it.
+ * The profile link and the bot apply the same rule: see local_jedomi_telegram_role_allowed_for().
  *
  * @return bool
  */
 function local_jedomi_is_telegram_role_allowed(): bool {
-    global $USER, $PAGE;
+    global $USER;
+    return local_jedomi_telegram_role_allowed_for((int) ($USER->id ?? 0));
+}
 
-    // Site admins always have access.
-    if (is_siteadmin()) {
+/**
+ * Whether the Telegram role rule lets a user use the bot and receive its notifications.
+ *
+ * Site administrators are always allowed. Otherwise the user is blocked only when every role they hold, at system
+ * level or in any course they are enrolled in, is in the telegram_hidden_roles setting. A user without roles is
+ * allowed. The profile link, the bot and the notifications all use this rule.
+ *
+ * @param int $userid Moodle user id.
+ * @return bool
+ */
+function local_jedomi_telegram_role_allowed_for(int $userid): bool {
+    if ($userid <= 0) {
+        return false;
+    }
+    if (is_siteadmin($userid)) {
         return true;
     }
 
-    $hidden = get_config('local_jedomi', 'telegram_hidden_roles') ?: '';
-    if (empty($hidden)) {
-        return true; // No restrictions configured yet.
-    }
-
+    $hidden = (string) (get_config('local_jedomi', 'telegram_hidden_roles') ?: '');
     $hiddenids = array_filter(array_map('intval', explode(',', $hidden)));
     if (empty($hiddenids)) {
-        return true;
+        return true; // No restriction configured.
     }
 
-    // Collect the user's roles in the current page context + system context.
-    $contextstocheck = [context_system::instance()];
-    if (!empty($PAGE->context)) {
-        $contextstocheck[] = $PAGE->context;
+    $contexts = [context_system::instance()];
+    foreach (enrol_get_all_users_courses($userid) as $course) {
+        $contexts[] = context_course::instance($course->id);
     }
-
-    $userroleids = [];
-    foreach ($contextstocheck as $ctx) {
-        $roles = get_user_roles($ctx, $USER->id, false);
-        foreach ($roles as $r) {
-            $userroleids[] = (int) $r->roleid;
+    $roleids = [];
+    foreach ($contexts as $context) {
+        foreach (get_user_roles($context, $userid, false) as $role) {
+            $roleids[(int) $role->roleid] = true;
         }
     }
-    $userroleids = array_unique($userroleids);
-
-    if (empty($userroleids)) {
-        return true; // No roles assigned — allow by default.
+    if (empty($roleids)) {
+        return true; // No role anywhere: allowed.
     }
 
-    // If EVERY role the user has is in the hidden list → block.
-    // If AT LEAST ONE role is not hidden → allow.
-    foreach ($userroleids as $rid) {
-        if (!in_array($rid, $hiddenids, true)) {
-            return true; // Has at least one non-hidden role.
-        }
-    }
+    // Allowed when at least one of the roles is not hidden.
+    return !empty(array_diff(array_keys($roleids), $hiddenids));
+}
 
-    return false; // All roles are hidden.
+/**
+ * The account of a linked Telegram user when it can still be served: it exists, is not suspended or deleted, can log
+ * in and is not the guest user.
+ *
+ * @param int $userid Moodle user id.
+ * @return stdClass|null The user record, or null when the account can no longer be served.
+ */
+function local_jedomi_telegram_active_user(int $userid): ?stdClass {
+    global $DB;
+    $user = $DB->get_record('user', ['id' => $userid, 'deleted' => 0]);
+    if (!$user || !empty($user->suspended) || $user->auth === 'nologin' || isguestuser($user)) {
+        return null;
+    }
+    return $user;
+}
+
+/**
+ * The confirmed Telegram link of a user who may use the bot and receive its notifications now.
+ *
+ * Jedomi and the Telegram integration must be enabled, the user must have a confirmed link, an active account and a
+ * role allowed by the Telegram role rule. The bot checks it on every message and during a request in progress, and
+ * the notifications check it before each message.
+ *
+ * @param int $userid Moodle user id.
+ * @return stdClass|null The confirmed link, or null when the user may not be served.
+ */
+function local_jedomi_telegram_recipient(int $userid): ?stdClass {
+    global $DB;
+    if (local_jedomi_plugin_disabled_error() !== null || !\local_jedomi\telegram\manager::is_enabled()) {
+        return null;
+    }
+    $link = $DB->get_record('local_jedomi_telegram_links', ['userid' => $userid, 'confirmed' => 1]);
+    if (!$link || local_jedomi_telegram_active_user($userid) === null || !local_jedomi_telegram_role_allowed_for($userid)) {
+        return null;
+    }
+    return $link;
 }
 
 if (!function_exists('local_jedomi_get_role_allowlist')) {
@@ -1537,6 +1657,39 @@ if (!function_exists('local_jedomi_rotate_log')) {
 }
 
 /**
+ * Pseudonym of a personal identifier for the technical log.
+ *
+ * The log never keeps Moodle user ids or Telegram chat ids: it keeps a keyed hash of them (HMAC-SHA256 with a random
+ * key of the site, truncated), so the entries of one user or chat can still be followed in the log but cannot be
+ * linked back to a person from the log alone, nor matched between sites. Every log entry uses this one helper.
+ *
+ * @param string $kind What the identifier is ("user" or "chat"), part of the hash and of the result.
+ * @param int|string|null $value The identifier.
+ * @return string Pseudonym such as "user#3f9a0c12b7de".
+ */
+function local_jedomi_log_pseudonym(string $kind, int|string|null $value): string {
+    $value = trim((string) $value);
+    if ($value === '' || $value === '0') {
+        return $kind . '#none';
+    }
+    return $kind . '#' . substr(hash_hmac('sha256', $kind . '|' . $value, local_jedomi_log_key()), 0, 12);
+}
+
+/**
+ * Random key of the site used to pseudonymise the identifiers of the technical log, created the first time it is needed.
+ *
+ * @return string
+ */
+function local_jedomi_log_key(): string {
+    $key = (string) get_config('local_jedomi', 'log_key');
+    if ($key === '') {
+        $key = bin2hex(random_bytes(32));
+        set_config('log_key', $key, 'local_jedomi');
+    }
+    return $key;
+}
+
+/**
  * Remove from the data of a log entry the values that can hold personal data.
  *
  * Tool arguments, queries, web service parameters, prompts and messages are replaced by their size, so the
@@ -1566,9 +1719,11 @@ if (!function_exists('local_jedomi_log')) {
      * Write an entry to the Jedomi debug log.
      *
      * WHAT IS LOGGED: the plugin's operational and security trace — HMAC
-     * authentication failures (with source IP), rejected SQL statements and
-     * blocked file paths, plugin configuration writes, and Telegram webhook
-     * activity (chat ids, tool-loop checkpoints, gateway errors).
+     * authentication failures, rejected SQL statements and blocked file paths
+     * (these security failures keep the source IP), plugin configuration
+     * writes, agent runs and Telegram webhook activity (tool-loop checkpoints,
+     * gateway errors). Moodle user ids and Telegram chat ids are never written:
+     * callers pass them through local_jedomi_log_pseudonym().
      *
      * WHERE AND RETENTION: entries go to {$CFG->dataroot}/local/jedomi/jedomi.log
      * in a human-readable format with timestamp and structured context. The
@@ -1742,7 +1897,7 @@ function local_jedomi_send_agent_notification(int|string $chatid, string $agent,
     // Header with agent name + status + date.
     $agentlabel = strip_tags($agent);
     $datestr = userdate(time(), '', $timezone);
-    $header = "🤖 {$agentlabel}\n✅ Executed successfully\n📅 {$datestr}\n\n";
+    $header = "🤖 {$agentlabel}\n✅ " . get_string('agent_notice_success', 'local_jedomi') . "\n📅 {$datestr}\n\n";
 
     // Plain-text summary (no HTML) — truncate so header + wrapper fits ≤ 1024.
     $summary = mb_substr(strip_tags($content), 0, 1500);
@@ -1801,16 +1956,10 @@ function local_jedomi_send_agent_notification(int|string $chatid, string $agent,
     $filename = 'agent_' . time() . '_' . bin2hex(random_bytes(4)) . '.txt';
     $filepath = $tmpdir . '/' . $filename;
 
-    // If the response has a fenced code block (```csv, ```sql, ```, etc.) or a
-    // <pre> block, extract just the content inside it for the file.
-    // Otherwise use the full stripped content.
-    $filecontent = strip_tags($content);
-    // phpcs:ignore moodle.Strings.ForbiddenStrings.Found -- literal Markdown fences.
-    if (preg_match('/```(?:\w+)?\s*\n(.+?)\n```/s', $content, $m)) {
-        $filecontent = trim($m[1]);
-    } else if (preg_match('/<pre>(.+?)<\/pre>/s', $content, $m)) {
-        $filecontent = trim($m[1]);
-    }
+    // The file keeps the whole answer in order: every code or preformatted block and the text between them.
+    // Only HTML tags are removed, so a comparison such as "x <5" stays.
+    $filecontent = preg_replace('/<\/?[a-zA-Z][^<>]*>/', '', $content) ?? strip_tags($content);
+    $filecontent = trim(html_entity_decode($filecontent, ENT_QUOTES | ENT_HTML5, 'UTF-8'));
     $bytes = file_put_contents($filepath, $filecontent);
 
     $sent = $client->send_document($chatid, $filepath, $caption);

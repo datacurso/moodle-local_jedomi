@@ -119,14 +119,98 @@ final class anonymizer_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-CTR-011: the text of an attached file that already holds placeholder-shaped tokens (an export anonymised
+     * before) reaches the AI with distinct tokens, so the answer gives back the original tokens and never turns them
+     * into the real data of another placeholder; the real data of the file is still anonymised and restored.
+     *
+     * @return void
+     */
+    public function test_placeholders_already_in_an_attachment_are_not_restored_into_real_data(): void {
+        $this->resetAfterTest();
+        $this->create_named_user();
+        $anonymizer = new anonymizer(anonymizer::LEVEL_BASIC);
+        // The sidebar sends the extracted text of the file inside the user message.
+        $attachment = "Summarise it\n\nAttached file export.txt — 1 page\n\n"
+            . "Row 1: [person_1] wrote to [email_1].\nRow 2: ximena.quintanilla@example.com is Ximena.";
+
+        $messages = $anonymizer->anonymize_messages([
+            ['role' => 'user', 'content' => 'Hello Quintanilla'],
+            ['role' => 'user', 'content' => $attachment],
+        ]);
+
+        $sent = $messages[1]['content'];
+        $this->assertStringNotContainsString('ximena.quintanilla@example.com', $sent);
+        $this->assertStringNotContainsString('Row 1: [person_1]', $sent, 'The token of the file is not a placeholder');
+        $this->assertStringNotContainsString('[email_1].', $sent);
+        preg_match('/Row 1: (\[literal_\d+\]) wrote to (\[literal_\d+\])/', $sent, $tokens);
+        $this->assertCount(3, $tokens, $sent);
+
+        // The AI quotes both rows: each token comes back as it was written.
+        preg_match('/Row 2: (\[email_\d+\]) is (\[person_\d+\])/', $sent, $real);
+        $answer = "Row 1: {$tokens[1]} wrote to {$tokens[2]}. Row 2: {$real[1]} is {$real[2]}.";
+        $this->assertSame(
+            'Row 1: [person_1] wrote to [email_1]. Row 2: ximena.quintanilla@example.com is Ximena.',
+            $anonymizer->restore($answer)
+        );
+    }
+
+    /**
+     * MDL-CTR-011: data anonymised twice (the rows of a query and then the whole tool result) keeps its placeholders,
+     * and a conversation continued with its placeholders keeps the ones of the AI, so the user always gets the real
+     * values back.
+     *
+     * @return void
+     */
+    public function test_data_anonymised_twice_is_still_restored(): void {
+        $this->resetAfterTest();
+        $anonymizer = new anonymizer(anonymizer::LEVEL_BASIC);
+
+        $row = $anonymizer->anonymize_row(['firstname' => 'Ximena', 'email' => 'ximena.quintanilla@example.com']);
+        $twice = $anonymizer->anonymize_tool_result(json_encode($row));
+        $this->assertSame(json_encode($row), $twice);
+        $this->assertStringContainsString('ximena.quintanilla@example.com', $anonymizer->restore($twice));
+
+        $continued = anonymizer::from_map($anonymizer->export_map(), anonymizer::LEVEL_BASIC);
+        $assistant = $continued->anonymize_messages([['role' => 'assistant', 'content' => "I found {$row['firstname']}."]]);
+        $this->assertSame('I found Ximena.', $continued->restore($assistant[0]['content']));
+    }
+
+    /**
      * MDL-CTR-011: the help of the anonymisation level explains what the AI receives with each level, and the user never
      * sees a placeholder the AI altered instead of the real value.
-     * [Pendiente:skip] The help still speaks only of stored conversations, and an altered placeholder is shown as is.
      *
      * @return void
      */
     public function test_help_explains_the_levels_and_altered_placeholders_are_restored(): void {
-        $this->markTestSkipped('Pending fix: the help of the anonymisation level only mentions stored conversations, and a '
-            . 'placeholder altered by the AI is shown to the user as is.');
+        $this->resetAfterTest();
+        $manager = get_string_manager();
+        $english = $manager->get_string('anonymization_level_help', 'local_jedomi', null, 'en');
+        $spanish = $manager->get_string('anonymization_level_help', 'local_jedomi', null, 'es');
+        $this->assertStringNotContainsString('stored conversations', $english);
+        $this->assertStringNotContainsString('conversaciones guardadas', $spanish);
+        foreach (['Telegram', 'agent preview', 'Basic', 'Strict', 'Feedback only', 'real values'] as $part) {
+            $this->assertStringContainsString($part, $english);
+        }
+        foreach (['Telegram', 'vista previa', 'Básico', 'Estricto', 'Solo comentarios', 'datos reales'] as $part) {
+            $this->assertStringContainsString($part, $spanish);
+        }
+
+        $anonymizer = new anonymizer(anonymizer::LEVEL_BASIC);
+        $sent = $anonymizer->anonymize_messages([['role' => 'user', 'content' => 'Write to ana.diaz@example.com']]);
+        $this->assertStringContainsString('[email_1]', $sent[0]['content']);
+        foreach (['[email_1]', '[Email 1]', '[EMAIL_1]', '[email-1]', '[ email_1 ]', '\\[email\\_1\\]'] as $altered) {
+            $this->assertSame(
+                'Sent to ana.diaz@example.com.',
+                $anonymizer->restore("Sent to {$altered}."),
+                "The altered placeholder {$altered} gets the real value back"
+            );
+        }
+        $this->assertSame('Unknown [email_7].', $anonymizer->restore('Unknown [email_7].'), 'No value is invented');
+
+        // A loose token that came from the user text is not taken for a placeholder: it comes back as written.
+        $other = new anonymizer(anonymizer::LEVEL_BASIC);
+        $sent = $other->anonymize_messages([['role' => 'user', 'content' => 'Mail ana.diaz@example.com about [Email 1]']]);
+        $this->assertStringNotContainsString('[Email 1]', $sent[0]['content']);
+        $this->assertSame('Mail ana.diaz@example.com about [Email 1]', $other->restore($sent[0]['content']));
     }
 }

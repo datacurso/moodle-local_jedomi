@@ -43,7 +43,7 @@ try {
     require_login(null, false);
     plugin_settings::require_enabled('local_jedomi');
 
-    // Set page URL to prevent Moodle debugging notice in lib.php::local_jedomi_get_page_context().
+    // Set page URL to prevent a Moodle debugging notice; the page context comes from the parameters below.
     $PAGE->set_url('/local/jedomi/ajax/sidebar_config.php');
 
     // The course of the page the panel is on: the chat permissions are bound to it. It comes from the browser, so
@@ -83,7 +83,13 @@ try {
         $spt = local_jedomi_generate_spt(local_jedomi_get_user_role());
     }
 
-    $config = local_jedomi_get_sidebar_config();
+    // The page the panel is on, as the page gave it when it was rendered: checked and cleaned before it is used (an
+    // activity of another course or hidden from the user is ignored).
+    $config = local_jedomi_get_sidebar_config([
+        'cmid' => optional_param('cmid', 0, PARAM_INT),
+        'pagetype' => optional_param('pagetype', '', PARAM_ALPHANUMEXT),
+        'path' => optional_param('pagepath', '', PARAM_RAW),
+    ]);
     $config['spt'] = $spt;
 
     echo json_encode($config);

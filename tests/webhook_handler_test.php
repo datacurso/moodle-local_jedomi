@@ -95,20 +95,21 @@ final class webhook_handler_test extends \advanced_testcase {
      */
     public static function looks_like_link_code_provider(): array {
         return [
-            // Each case maps an input string to the expected boolean.
-            'valid 6-char code'              => ['ABC123', true],
-            'valid 4-char code'              => ['XY78', true],
-            'valid 8-char code'              => ['ABCD1234', true],
-            'lowercase input returns true'   => ['abc123', true],
-            'mixed case'                     => ['AbC123', true],
-            'code with numbers'              => ['123456', true],
+            // Each case maps an input string to the expected boolean. A code has six characters of the code alphabet
+            // (no 0, 1, I or O) and at least one digit.
+            'valid 6-char code'              => ['ABC234', true],
+            'lowercase input returns true'   => ['abc234', true],
+            'mixed case'                     => ['AbC234', true],
+            'code with numbers'              => ['234567', true],
 
             'empty string'                   => ['', false],
-            'too short (3 chars)'            => ['ABC', false],
-            'too long (9 chars)'             => ['ABCD12345', false],
-            'contains special chars'         => ['ABC-12', false],
-            'contains spaces'                => ['ABC 12', false],
-            'contains lowercase letters too short' => ['ab1', false],
+            'too short (4 chars)'            => ['XY78', false],
+            'too long (8 chars)'             => ['ABCD2345', false],
+            'greeting'                       => ['Hola', false],
+            'six-letter word without digits' => ['BUENAS', false],
+            'character outside the alphabet' => ['ABC123', false],
+            'contains special chars'         => ['ABC-23', false],
+            'contains spaces'                => ['ABC 23', false],
             'symbols only'                   => ['!@#$%', false],
         ];
     }
@@ -930,20 +931,32 @@ final class webhook_handler_test extends \advanced_testcase {
     }
 
     /**
-     * Test the dedup advisory lock keeps working with a bound parameter (MySQL only).
+     * The per-chat lock uses the Moodle lock API, so it works on every supported database (MDL-INT-078).
      */
     public function test_dedup_lock_normal_flow(): void {
-        global $DB, $CFG;
+        $lock = \local_jedomi\telegram\webhook_handler::acquire_chat_lock('999999');
+        $this->assertInstanceOf(\core\lock\lock::class, $lock, 'The first worker of a chat takes the lock');
 
-        if (!in_array($CFG->dbtype, ['mysqli', 'mariadb'], true)) {
-            $this->markTestSkipped('GET_LOCK is MySQL/MariaDB specific');
-        }
+        $second = \local_jedomi\telegram\webhook_handler::acquire_chat_lock('999999');
+        $this->assertFalse($second, 'A second worker of the same chat is refused');
+        $other = \local_jedomi\telegram\webhook_handler::acquire_chat_lock('888888');
+        $this->assertInstanceOf(\core\lock\lock::class, $other, 'Another chat is not blocked');
+        $other->release();
 
-        $acquired = (int) $DB->get_field_sql('SELECT GET_LOCK(?, 0)', ['jedomi_chat_999999']);
-        $this->assertSame(1, $acquired, 'Bound-parameter GET_LOCK should acquire the lock');
+        $lock->release();
+        $again = \local_jedomi\telegram\webhook_handler::acquire_chat_lock('999999');
+        $this->assertInstanceOf(\core\lock\lock::class, $again, 'The lock is free again once released');
+        $again->release();
+    }
 
-        $released = (int) $DB->get_field_sql('SELECT RELEASE_LOCK(?)', ['jedomi_chat_999999']);
-        $this->assertSame(1, $released, 'RELEASE_LOCK should release the lock we hold');
+    /**
+     * The handler no longer uses the MySQL-only GET_LOCK (MDL-INT-078).
+     */
+    public function test_handler_does_not_use_mysql_get_lock(): void {
+        global $CFG;
+        $source = file_get_contents($CFG->dirroot . '/local/jedomi/classes/telegram/webhook_handler.php');
+        $this->assertStringNotContainsString('GET_LOCK', $source);
+        $this->assertStringContainsString('lock_config::get_lock_factory', $source);
     }
 
     // ... ========================
@@ -1308,10 +1321,33 @@ final class webhook_handler_test extends \advanced_testcase {
 
     /**
      * MDL-UNIT-033: the file sent for a long agent result keeps every code block and the text between them, in order.
-     * [Pendiente:skip]
      */
     public function test_agent_result_file_keeps_every_block(): void {
-        $this->markTestSkipped('Pending fix: the file of a long agent result keeps only the first code or preformatted block.');
+        $telegram = new fake_telegram_api_client();
+        api_client::set_instance_for_testing($telegram);
+        $fence = str_repeat(chr(96), 3);
+        $parts = [
+            'Introduction of the report',
+            $fence . "sql\nSELECT id FROM {user} WHERE id < 5\n" . $fence,
+            'Text between the blocks',
+            '<pre>first | second &amp; third</pre>',
+            $fence . "\nsecond code block\n" . $fence,
+            'Closing words ' . str_repeat('padding ', 500),
+        ];
+
+        $this->assertTrue(local_jedomi_send_agent_notification('700000133', 'Weekly report', implode("\n\n", $parts)));
+
+        $this->assertCount(1, $telegram->documents);
+        $file = $telegram->documents[0]['content'];
+        $expected = ['Introduction of the report', 'SELECT id FROM {user} WHERE id < 5', 'Text between the blocks',
+            'first | second & third', 'second code block', 'Closing words'];
+        $position = -1;
+        foreach ($expected as $text) {
+            $found = strpos($file, $text);
+            $this->assertNotFalse($found, "The file keeps: {$text}");
+            $this->assertGreaterThan($position, $found, "The order is kept: {$text}");
+            $position = $found;
+        }
     }
 
     /**
@@ -1353,10 +1389,23 @@ final class webhook_handler_test extends \advanced_testcase {
 
     /**
      * MDL-UNIT-036: only a text with the exact link code format is treated as a code; a greeting asks to link the account.
-     * [Pendiente:skip]
      */
     public function test_only_the_exact_code_format_is_treated_as_a_link_code(): void {
-        $this->markTestSkipped('Pending fix: any word of 4 to 8 letters or digits (a greeting) is treated as a link code.');
+        $telegram = $this->use_fake_telegram();
+        $user = $this->getDataGenerator()->create_user();
+
+        $this->send_text('700000136', 'Hola');
+        $this->send_text('700000136', 'BUENAS');
+        $this->assertSame(
+            array_fill(0, 2, get_string('telegram_msg_link_first', 'local_jedomi')),
+            array_column($telegram->sent, 'text'),
+            'A greeting or a short word is asked to link the account'
+        );
+
+        $code = \local_jedomi\telegram\manager::generate_link_code((int) $user->id);
+        $this->assertTrue(\local_jedomi\telegram\webhook_handler::looks_like_link_code($code), 'Every code has the code format');
+        $this->send_text('700000136', strtolower($code));
+        $this->assertTrue($this->chat_is_linked('700000136', (int) $user->id), 'A text with the code format links the chat');
     }
 
     /**
@@ -1395,14 +1444,85 @@ final class webhook_handler_test extends \advanced_testcase {
     }
 
     /**
-     * MDL-UNIT-038: the bot messages, the reasons for disabling agents and the notifications are shown in the
-     * language of the user, in English and in Spanish.
-     * [Pendiente:skip]
+     * MDL-UNIT-038: the button answers, the notices sent before the user is identified and the agent disabled notice
+     * are written in the language of the recipient; the site language is used only while the chat is not linked.
+     *
+     * @return void
      */
     public function test_bot_messages_and_notifications_are_in_the_user_language(): void {
-        $this->markTestSkipped('Pending fix: several bot messages and tool progress texts are fixed in Spanish, button '
-            . 'answers and notices before identifying the user use the site language, and the agent notices, the grade '
-            . 'notification and the assignment alert are fixed in English.');
+        global $CFG;
+        $telegram = $this->use_fake_telegram();
+        $dir = $CFG->dataroot . '/lang/es';
+        check_dir_exists($dir);
+        file_put_contents($dir . '/langconfig.php', "<?php\n\$string['thislanguage'] = 'Español';\n");
+        get_string_manager()->reset_caches();
+        $strings = get_string_manager();
+
+        $spanish = $this->getDataGenerator()->create_user(['lang' => 'es']);
+        $english = $this->getDataGenerator()->create_user(['lang' => 'en']);
+        $this->create_telegram_link((int) $spanish->id, '700000381');
+        $this->create_telegram_link((int) $english->id, '700000382');
+
+        // Commands and buttons of a linked chat: the language of the user.
+        $this->send_text('700000381', '/help');
+        $this->send_text('700000382', '/help');
+        \local_jedomi\telegram\webhook_handler::handle(['callback_query' => [
+            'id' => 'cb1', 'data' => 'cmd:new', 'message' => ['chat' => ['id' => '700000381'], 'message_id' => 5],
+        ]]);
+        $sent = array_column($telegram->sent, 'text', 'chatid');
+        $heading = fn(string $lang): string => $strings->get_string('telegram_help_heading', 'local_jedomi', null, $lang);
+        $this->assertStringStartsWith($heading('es'), $sent['700000381']);
+        $this->assertStringStartsWith($heading('en'), $sent['700000382']);
+        $this->assertSame(
+            $strings->get_string('telegram_msg_new_conversation', 'local_jedomi', null, 'es'),
+            $telegram->edited[0]['text']
+        );
+
+        // A chat that is not linked: the site language.
+        $telegram->sent = [];
+        $this->send_text('700000383', 'Hola');
+        $this->assertSame(
+            [$strings->get_string('telegram_msg_link_first', 'local_jedomi', null, $CFG->lang)],
+            array_column($telegram->sent, 'text')
+        );
+
+        // The agent disabled notice: the language of the creator, not the one of the scheduled task.
+        $agent = (object) ['userid' => $spanish->id];
+        $notice = \local_jedomi\task\agent_runner::disabled_notice_text($agent, 'Daily', 'agent_disabled_reason_no_access');
+        $this->assertStringContainsString($strings->get_string('agent_disabled_notice', 'local_jedomi', null, 'es'), $notice);
+        $this->assertStringContainsString(
+            s($strings->get_string('agent_disabled_reason_no_access', 'local_jedomi', null, 'es')),
+            $notice
+        );
+        $this->assertNotSame(
+            $strings->get_string('agent_disabled_notice', 'local_jedomi', null, 'en'),
+            $strings->get_string('agent_disabled_notice', 'local_jedomi', null, 'es')
+        );
+
+        // The language of the request is restored afterwards.
+        $this->assertSame($CFG->lang, current_language());
+    }
+
+    /**
+     * MDL-UNIT-038 (part): the keep-alive, the progress labels of the tools, the failed save notice, the empty answer and
+     * the greeting of a new conversation come from the language strings, in English and in Spanish.
+     *
+     * @return void
+     */
+    public function test_bot_texts_come_from_the_language_strings(): void {
+        global $CFG;
+        $source = file_get_contents($CFG->dirroot . '/local/jedomi/classes/telegram/webhook_handler.php');
+        foreach (['Sigamos', 'Listo.', 'Hola, soy', 'Lo siento', 'Crear cursos', 'Matricular usuarios'] as $fixed) {
+            $this->assertStringNotContainsString($fixed, $source, "'{$fixed}' is no longer fixed in the code");
+        }
+        $manager = get_string_manager();
+        $keys = ['telegram_msg_keepalive', 'telegram_msg_done', 'telegram_msg_state_save_failed',
+            'telegram_new_conversation_greeting', 'tool_progress_create_courses', 'tool_progress_enrol_users'];
+        foreach ($keys as $key) {
+            $english = $manager->get_string($key, 'local_jedomi', 'Ana', 'en');
+            $spanish = $manager->get_string($key, 'local_jedomi', 'Ana', 'es');
+            $this->assertNotSame($english, $spanish, "{$key} is translated");
+        }
     }
 
     /**
@@ -1790,13 +1910,45 @@ final class webhook_handler_test extends \advanced_testcase {
     /**
      * MDL-UNIT-118: text that looks like a tag is shown literally in Telegram and every chunk of a long formatted
      * answer opens and closes its own formatting.
-     * [Pendiente:skip]
      *
      * @return void
      */
     public function test_text_that_looks_like_tags_reaches_telegram_as_written(): void {
-        $this->markTestSkipped('Pending fix: text between less-than and greater-than signs disappears or opens a format, '
-            . 'tags inside code blocks are not shown, and the chunk after a cut does not reopen its '
-            . 'format, so Telegram refuses it.');
+        $fence = str_repeat(chr(96), 3);
+        $answer = "Write <student name> and x <b and c> here.\n"
+            . $fence . "html\n<div><b>bold</b></div>\n" . $fence . "\n"
+            . "Inline " . chr(96) . "<i>tag</i>" . chr(96) . " and <code><span>x</span></code>.";
+
+        $html = \local_jedomi\telegram\formatter::to_html($answer);
+
+        $this->assertStringContainsString('Write &lt;student name&gt; and x &lt;b and c&gt; here.', $html);
+        $this->assertStringContainsString('&lt;div&gt;&lt;b&gt;bold&lt;/b&gt;&lt;/div&gt;', $html, 'Tags in a code block are text');
+        $this->assertStringContainsString('<code>&lt;i&gt;tag&lt;/i&gt;</code>', $html);
+        $this->assertStringContainsString('<code>&lt;span&gt;x&lt;/span&gt;</code>', $html);
+        $this->assertStringNotContainsString('<b>', $html, 'Nothing opens a format by mistake');
+
+        $long = '<b>' . trim(str_repeat('bold word ', 600)) . '</b> <pre>' . str_repeat("line &lt;x&gt;\n", 400) . '</pre>';
+        $chunks = (new api_client(''))->chunk_text($long);
+        $this->assertGreaterThan(2, count($chunks));
+        foreach ($chunks as $index => $chunk) {
+            $this->assertLessThanOrEqual(4000, mb_strlen($chunk));
+            $this->assertDoesNotMatchRegularExpression('/<[^>]*$|&[a-z#0-9]*$/i', $chunk, "Chunk {$index} cuts no tag or entity");
+            preg_match_all('/<(\/?)([a-z-]+)[^>]*>/', $chunk, $tags, PREG_SET_ORDER);
+            $open = [];
+            foreach ($tags as [, $closing, $name]) {
+                if ($closing === '') {
+                    $open[] = $name;
+                } else {
+                    $this->assertSame(array_pop($open), $name, "Chunk {$index} has balanced tags");
+                }
+            }
+            $this->assertSame([], $open, "Chunk {$index} closes its format");
+        }
+        $this->assertStringStartsWith('<b>', $chunks[1], 'The chunk after a cut reopens its format');
+        $this->assertSame(
+            preg_replace('/\s+/', '', strip_tags($long)),
+            preg_replace('/\s+/', '', implode('', array_map('strip_tags', $chunks))),
+            'No text is lost'
+        );
     }
 }

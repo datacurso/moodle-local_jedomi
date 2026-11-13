@@ -17,7 +17,8 @@
 {{!
     @template local_jedomi/admin/profiler_tab
 
-    Profiler tab of the Jedomi settings: statistics, slowest queries and recent queries run by agents.
+    Profiler tab of the Jedomi settings: statistics, slowest queries and recent queries of every channel, filtered
+    and paginated.
 
     Classes required for JS:
     * none
@@ -34,19 +35,22 @@
     * minms int|string - Current minimum duration filter; empty for none
     * sortduration bool - Whether recent queries are sorted by duration
     * sorttime bool - Whether recent queries are sorted by time
+    * channels array - Channel filter options: value string, label string, selected bool
+    * pagingbar string - HTML of the paging bar; empty when every query fits in one page
     * hasslowest bool - Whether there are slow queries
     * slowest array - Slowest queries: query string, avg float, max float, count int
     * hasrecent bool - Whether there are recent queries
-    * recent array - Recent queries: agentid int, agenturl string, userfullname string, query string, duration float,
-      slow bool, rowcount int, timecreated int
+    * recent array - Recent queries: agentid int, origin string, agenturl string (empty when there is no agent to
+      open), userfullname string, query string, duration float, slow bool, rowcount int, timecreated int
 
     Example context (json):
     {
         "total": 12, "slow": 2, "avg": 3.5, "max": 1500, "actionurl": "https://example.com/local/jedomi/admin_settings.php",
-        "minms": "", "sortduration": true, "sorttime": false,
+        "minms": "", "sortduration": true, "sorttime": false, "pagingbar": "",
+        "channels": [{"value": "", "label": "All channels", "selected": true}, {"value": "web", "label": "Web chat", "selected": false}],
         "hasslowest": true, "slowest": [{"query": "SELECT * FROM {user}", "avg": 12.3, "max": 20.1, "count": 4}],
         "hasrecent": true,
-        "recent": [{"agentid": 9, "agenturl": "#", "userfullname": "Admin User", "query": "SELECT 1", "duration": 5.2,
+        "recent": [{"agentid": 9, "origin": "Agent #9", "agenturl": "#", "userfullname": "Admin User", "query": "SELECT 1", "duration": 5.2,
             "slow": false, "rowcount": 1, "timecreated": 1700000000}]
     }
 }}
@@ -80,10 +84,18 @@
             <form method="get" action="{{actionurl}}" class="mb-3">
                 <input type="hidden" name="tab" value="profiler">
                 <div class="row">
-                    <div class="col-md-4 mb-2">
+                    <div class="col-md-3 mb-2">
                         <label class="sr-only visually-hidden" for="{{uniqid}}-qp-min">{{#str}} query_profiler_min_ms, local_jedomi {{/str}}</label>
                         <input type="number" id="{{uniqid}}-qp-min" name="qp_min_ms" class="form-control form-control-sm" min="0"
                                placeholder="{{#str}} query_profiler_min_ms, local_jedomi {{/str}}" value="{{minms}}">
+                    </div>
+                    <div class="col-md-3 mb-2">
+                        <label class="sr-only visually-hidden" for="{{uniqid}}-qp-channel">{{#str}} query_profiler_channel, local_jedomi {{/str}}</label>
+                        <select id="{{uniqid}}-qp-channel" name="qp_channel" class="custom-select custom-select-sm form-select form-select-sm w-100">
+                            {{#channels}}
+                            <option value="{{value}}"{{#selected}} selected{{/selected}}>{{label}}</option>
+                            {{/channels}}
+                        </select>
                     </div>
                     <div class="col-md-3 mb-2">
                         <label class="sr-only visually-hidden" for="{{uniqid}}-qp-sort">{{#str}} sortby, moodle {{/str}}</label>
@@ -133,8 +145,8 @@
                 <table class="table table-sm table-hover small">
                     <thead>
                         <tr>
-                            <th scope="col">{{#str}} agent, local_jedomi {{/str}}</th>
-                            <th scope="col">{{#str}} agent_creator, local_jedomi {{/str}}</th>
+                            <th scope="col">{{#str}} query_profiler_origin, local_jedomi {{/str}}</th>
+                            <th scope="col">{{#str}} query_profiler_user, local_jedomi {{/str}}</th>
                             <th scope="col">{{#str}} query_profiler_sort_query, local_jedomi {{/str}}</th>
                             <th scope="col">{{#str}} query_profiler_sort_duration, local_jedomi {{/str}}</th>
                             <th scope="col">{{#str}} query_profiler_rows, local_jedomi {{/str}}</th>
@@ -144,7 +156,7 @@
                     <tbody>
                         {{#recent}}
                         <tr>
-                            <td><a href="{{agenturl}}" class="badge badge-info bg-info">{{#str}} agent_number, local_jedomi, {{agentid}} {{/str}}</a></td>
+                            <td>{{#agenturl}}<a href="{{agenturl}}" class="badge badge-info bg-info">{{origin}}</a>{{/agenturl}}{{^agenturl}}<span class="badge badge-secondary bg-secondary">{{origin}}</span>{{/agenturl}}</td>
                             <td>{{#userfullname}}{{userfullname}}{{/userfullname}}{{^userfullname}}?{{/userfullname}}</td>
                             <td><code class="local_jedomi-admin-break">{{query}}</code></td>
                             <td class="text-nowrap{{#slow}} text-danger{{/slow}}">{{#str}} query_profiler_ms, local_jedomi, {{duration}} {{/str}}</td>
@@ -155,6 +167,7 @@
                     </tbody>
                 </table>
             </div>
+            {{{pagingbar}}}
             {{/hasrecent}}
             {{^hasrecent}}
             <div class="alert alert-info mt-3">{{#str}} query_profiler_empty, local_jedomi {{/str}}</div>

@@ -24,6 +24,7 @@
                 <FIELD NAME="chatid" TYPE="char" LENGTH="32" NOTNULL="true" SEQUENCE="false"/>
                 <FIELD NAME="messages" TYPE="text" NOTNULL="false" SEQUENCE="false"/>
                 <FIELD NAME="usercontext" TYPE="text" NOTNULL="false" SEQUENCE="false"/>
+                <FIELD NAME="iteration" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false" COMMENT="Tool loop iteration of the saved state, to reject stale writes"/>
                 <FIELD NAME="lastactivity" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
             </FIELDS>
             <KEYS>
@@ -81,6 +82,8 @@
                 <FIELD NAME="lastrun" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false"/>
                 <FIELD NAME="nextrun" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
                 <FIELD NAME="failcount" TYPE="int" LENGTH="3" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+                <FIELD NAME="lastresult" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="Answer of the last successful run"/>
+                <FIELD NAME="lasterror" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="Reason of the last failed run, empty after a success"/>
                 <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
                 <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
             </FIELDS>
@@ -108,10 +111,12 @@
                 <INDEX NAME="agentid_context_hash_idx" UNIQUE="true" FIELDS="agentid, context_hash"/>
             </INDEXES>
         </TABLE>
-        <TABLE NAME="local_jedomi_query_log" COMMENT="Log of SQL queries executed by agents for the profiler">
+        <TABLE NAME="local_jedomi_query_log" COMMENT="Log of SQL queries run by every channel for the profiler">
             <FIELDS>
                 <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
                 <FIELD NAME="agentid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+                <FIELD NAME="channel" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="agent" SEQUENCE="false" COMMENT="agent, preview, web, telegram or companion"/>
+                <FIELD NAME="userid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="User the query ran for; 0 when unknown"/>
                 <FIELD NAME="query" TYPE="text" NOTNULL="true" SEQUENCE="false"/>
                 <FIELD NAME="duration_ms" TYPE="number" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" DECIMALS="2"/>
                 <FIELD NAME="rowcount" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
@@ -123,6 +128,7 @@
             <INDEXES>
                 <INDEX NAME="duration_idx" UNIQUE="false" FIELDS="duration_ms"/>
                 <INDEX NAME="timecreated_idx" UNIQUE="false" FIELDS="timecreated"/>
+                <INDEX NAME="channel_idx" UNIQUE="false" FIELDS="channel"/>
             </INDEXES>
         </TABLE>
         <TABLE NAME="local_jedomi_feedback" COMMENT="Ratings users give to Jedomi answers">
@@ -133,11 +139,17 @@
                 <FIELD NAME="sessionid" TYPE="char" LENGTH="64" NOTNULL="false" SEQUENCE="false" COMMENT="Browser chat session id"/>
                 <FIELD NAME="messagetext" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="Excerpt of the rated answer"/>
                 <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+                <FIELD NAME="messageid" TYPE="char" LENGTH="64" NOTNULL="false" SEQUENCE="false" COMMENT="Id the browser gives to the rated answer: one rating per answer and user"/>
+                <FIELD NAME="feedbackcomment" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="Optional comment of an answer rated as in need of improvement"/>
+                <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="When the rating or its comment last changed"/>
             </FIELDS>
             <KEYS>
                 <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
                 <KEY NAME="userid" TYPE="foreign" FIELDS="userid" REFTABLE="user" REFFIELDS="id"/>
             </KEYS>
+            <INDEXES>
+                <INDEX NAME="usermessage_idx" UNIQUE="false" FIELDS="userid, messageid" COMMENT="Not unique: older ratings have no message id"/>
+            </INDEXES>
         </TABLE>
         <TABLE NAME="local_jedomi_pending_actions" COMMENT="Web chat actions waiting for the user's confirmation">
             <FIELDS>

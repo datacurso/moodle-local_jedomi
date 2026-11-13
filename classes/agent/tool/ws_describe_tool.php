@@ -36,6 +36,18 @@ use local_jedomi\schema\ws_indexer;
  * for a single Moodle web service function via the WS indexer.
  */
 class ws_describe_tool implements agent_tool {
+    /** @var int Agent creator's user id, whose role list limits the functions. */
+    private int $userid;
+
+    /**
+     * Constructor.
+     *
+     * @param int $userid Agent creator's user id; its role list limits the functions (0: none).
+     */
+    public function __construct(int $userid = 0) {
+        $this->userid = $userid;
+    }
+
     /**
      * Get the tool name used in AI tool calls.
      *
@@ -87,6 +99,10 @@ class ws_describe_tool implements agent_tool {
         $start = microtime(true);
 
         try {
+            $role = \local_jedomi_get_user_role_for_user($this->userid);
+            if (!\local_jedomi\local\ws_runner::role_allows($role, $wsname)) {
+                return json_encode(['error' => 'WS not in allowlist for role: ' . $role]);
+            }
             $info = ws_indexer::describe($wsname);
 
             if (isset($info['error'])) {

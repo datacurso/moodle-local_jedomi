@@ -77,31 +77,53 @@ final class admin_settings_service_test extends \advanced_testcase {
     }
 
     /**
-     * MDL-UNIT-012: general settings default to an empty secret and training data collection on.
+     * MDL-UNIT-012: general settings default to an empty secret and no longer carry a training data option.
      *
      * @return void
      */
     public function test_general_settings_defaults(): void {
         $this->resetAfterTest();
         unset_config('spt_secret', 'local_jedomi');
-        unset_config('collect_training_data', 'local_jedomi');
 
-        $this->assertSame(['spt_secret' => '', 'collect_training_data' => 1], admin_settings_service::get_general_settings());
+        $this->assertSame(
+            ['spt_secret' => '', 'profiler_slow_ms' => 1000, 'profiler_retention_days' => 30],
+            admin_settings_service::get_general_settings()
+        );
     }
 
     /**
-     * MDL-UNIT-012: saving the general settings stores the secret and an unchecked training data flag as off.
+     * MDL-UNIT-012: saving the general settings stores the secret and nothing about training data.
      *
      * @return void
      */
     public function test_save_general_settings(): void {
         $this->resetAfterTest();
 
-        admin_settings_service::save_general_settings('s3cret', false);
+        admin_settings_service::save_general_settings('s3cret');
 
         $this->assertSame('s3cret', get_config('local_jedomi', 'spt_secret'));
-        $this->assertSame('0', get_config('local_jedomi', 'collect_training_data'));
-        $this->assertSame(['spt_secret' => 's3cret', 'collect_training_data' => 0], admin_settings_service::get_general_settings());
+        $this->assertFalse(get_config('local_jedomi', 'collect_training_data'));
+        $this->assertSame(
+            ['spt_secret' => 's3cret', 'profiler_slow_ms' => 1000, 'profiler_retention_days' => 30],
+            admin_settings_service::get_general_settings()
+        );
+    }
+
+    /**
+     * MDL-INT-037: the slow query threshold and the profiler retention are settings of the General tab.
+     *
+     * @return void
+     */
+    public function test_save_general_settings_stores_the_profiler_settings(): void {
+        $this->resetAfterTest();
+
+        admin_settings_service::save_general_settings('s3cret', 250, 7);
+
+        $settings = admin_settings_service::get_general_settings();
+        $this->assertSame(250, $settings['profiler_slow_ms']);
+        $this->assertSame(7, $settings['profiler_retention_days']);
+        $this->assertSame(250, \local_jedomi\agent\query_profiler::slow_threshold_ms());
+        $this->assertSame(7, \local_jedomi\agent\query_profiler::retention_days());
     }
 
     /**
@@ -126,15 +148,14 @@ final class admin_settings_service_test extends \advanced_testcase {
      * @return void
      */
     public function test_save_privacy_settings_hides_roles_not_visible(): void {
-        global $DB;
         $this->resetAfterTest();
-        $roleids = array_map('intval', array_keys($DB->get_records('role', null, 'sortorder ASC', 'id')));
+        $roleids = array_column(admin_settings_service::get_roles(), 'id');
         $visible = array_slice($roleids, 1);
 
-        admin_settings_service::save_privacy_settings(true, 'strict', $visible);
+        admin_settings_service::save_privacy_settings('strict', $visible);
 
         $settings = admin_settings_service::get_privacy_settings();
-        $this->assertSame(1, $settings['hide_from_guests']);
+        $this->assertArrayNotHasKey('hide_from_guests', $settings);
         $this->assertSame('strict', $settings['anonymization_level']);
         $this->assertSame([$roleids[0]], $settings['hidden_role_ids']);
     }
@@ -147,24 +168,30 @@ final class admin_settings_service_test extends \advanced_testcase {
     public function test_save_privacy_settings_rejects_unknown_level(): void {
         $this->resetAfterTest();
 
-        admin_settings_service::save_privacy_settings(false, 'everything', []);
+        admin_settings_service::save_privacy_settings('everything', []);
 
         $this->assertSame('basic', get_config('local_jedomi', 'anonymization_level'));
-        $this->assertSame('0', get_config('local_jedomi', 'hide_from_guests'));
+        $this->assertFalse(get_config('local_jedomi', 'hide_from_guests'));
     }
 
     /**
-     * Roles are listed with a display name and their short name.
+     * MDL-INT-096: roles are listed with a display name and their short name, except the guest role and the role of
+     * authenticated users on the site home, whose switches would have no effect.
      *
      * @return void
      */
     public function test_get_roles_lists_every_role_with_a_label(): void {
-        global $DB;
+        global $CFG, $DB;
         $this->resetAfterTest();
 
         $roles = admin_settings_service::get_roles();
 
-        $this->assertCount($DB->count_records('role'), $roles);
+        $ids = array_column($roles, 'id');
+        $this->assertNotContains((int) $CFG->guestroleid, $ids);
+        $this->assertNotContains((int) $CFG->defaultfrontpageroleid, $ids);
+        $this->assertNotContains('guest', array_column($roles, 'shortname'));
+        $this->assertNotContains('frontpage', array_column($roles, 'shortname'));
+        $this->assertCount($DB->count_records('role') - 2, $roles);
         foreach ($roles as $role) {
             $this->assertIsInt($role['id']);
             $this->assertNotSame('', $role['name']);
@@ -238,13 +265,13 @@ final class admin_settings_service_test extends \advanced_testcase {
         $this->resetAfterTest();
         $roleids = array_map('intval', array_keys($DB->get_records('role', null, 'sortorder ASC', 'id')));
 
-        admin_settings_service::save_telegram_settings(40, 6, 12, 90, [$roleids[0]]);
+        admin_settings_service::save_telegram_settings(40, 6, 12, 45, [$roleids[0]]);
 
         $settings = admin_settings_service::get_telegram_settings();
         $this->assertSame(40, $settings['rate_limit']);
         $this->assertSame(6, $settings['cooldown']);
         $this->assertSame(12, $settings['max_turns']);
-        $this->assertSame(90, $settings['gateway_timeout']);
+        $this->assertSame(45, $settings['gateway_timeout']);
         $this->assertSame(array_slice($roleids, 1), $settings['hidden_role_ids']);
     }
 
@@ -265,7 +292,7 @@ final class admin_settings_service_test extends \advanced_testcase {
         $this->assertTrue($settings['is_configured']);
         $this->assertTrue($settings['bot_token_set']);
         $this->assertSame(10, $settings['max_turns']);
-        $this->assertSame(120, $settings['gateway_timeout']);
+        $this->assertSame(\local_jedomi\telegram\webhook_handler::MAX_AI_TIMEOUT, $settings['gateway_timeout']);
         $this->assertStringContainsString('/local/jedomi/telegram_webhook.php?secret=', $settings['webhook_url']);
     }
 
@@ -455,11 +482,46 @@ final class admin_settings_service_test extends \advanced_testcase {
     /**
      * MDL-INT-015: the administrator can remove the stored token, the shown state matches the token in use and the other
      * changes of the form are kept when a token is rejected.
-     * [Pendiente:skip]
+     *
+     * @return void
      */
     public function test_token_can_be_removed_and_state_matches_the_token_in_use(): void {
-        $this->markTestSkipped('Pending fix: there is no way to remove the token, the previous token keeps working after an '
-            . 'invalid one is rejected and the other changes of the form are lost.');
+        $this->resetAfterTest();
+        $this->assertTrue(admin_settings_service::verify_and_save_telegram_token(
+            '123:abc',
+            $this->fake_client(['id' => 1, 'username' => 'jedomibot', 'first_name' => 'Jedomi'])
+        ));
+        $previous = $this->fake_client(null);
+
+        // A rejected token does not leave the previous one in use, and the other changes are saved as usual.
+        $this->assertFalse(admin_settings_service::verify_and_save_telegram_token('bad', $this->fake_client(null), $previous));
+        admin_settings_service::save_telegram_settings(12, 3, 10, 45, []);
+
+        $this->assertSame(['deleteWebhook'], $previous->calls, 'The webhook of the previous token is deleted');
+        $this->assertNull(\local_jedomi\telegram\manager::get_bot_token());
+        $settings = admin_settings_service::get_telegram_settings();
+        $this->assertFalse($settings['bot_token_set']);
+        $this->assertSame(0, $settings['bot_verified']);
+        $this->assertSame('', $settings['bot_username']);
+        $this->assertSame(0, $settings['webhook_ok_time']);
+        $this->assertSame(12, $settings['rate_limit']);
+        $this->assertSame(3, $settings['cooldown']);
+
+        // A stored token can be removed on purpose.
+        $this->assertTrue(admin_settings_service::verify_and_save_telegram_token(
+            '123:abc',
+            $this->fake_client(['id' => 1, 'username' => 'jedomibot', 'first_name' => 'Jedomi'])
+        ));
+        $this->assertGreaterThan(0, admin_settings_service::get_telegram_settings()['webhook_ok_time']);
+        $client = $this->fake_client(null);
+        admin_settings_service::remove_telegram_token($client);
+
+        $this->assertSame(['deleteWebhook'], $client->calls);
+        $this->assertNull(\local_jedomi\telegram\manager::get_bot_token());
+        $settings = admin_settings_service::get_telegram_settings();
+        $this->assertFalse($settings['is_configured']);
+        $this->assertSame('', $settings['last_error']);
+        $this->assertSame(0, $settings['webhook_ok_time']);
     }
 
     /**

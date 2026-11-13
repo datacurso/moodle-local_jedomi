@@ -36,19 +36,34 @@ class feedback_service {
     /** @var int Longest stored answer excerpt, in characters. */
     public const MAX_TEXT_LENGTH = 1000;
 
+    /** @var int Longest stored comment, in characters. */
+    public const MAX_COMMENT_LENGTH = 1000;
+
     /**
-     * Store a rating.
+     * Store the rating of an answer, or change it.
      *
-     * The answer excerpt is anonymised with the level of the Privacy tab; with "Feedback only" it is not stored.
+     * Each answer keeps a single rating per user: rating it again, with the same or the other value, or adding a
+     * comment updates that rating instead of adding another one. Ratings without a message id (older clients) are
+     * always added. The answer excerpt is anonymised with the level of the Privacy tab (with "Feedback only" it is not
+     * stored); the comment keeps the user's words with e-mails and names of site users replaced.
      *
      * @param int $userid User who rates.
      * @param string $rating {@see RATING_GOOD} or {@see RATING_BAD}.
      * @param string $sessionid Browser chat session id.
      * @param string $messagetext Rated answer.
-     * @return int New record id.
+     * @param string $messageid Id the browser gives to the rated answer; empty when unknown.
+     * @param string|null $comment Optional comment; null keeps the stored one, '' removes it.
+     * @return int Id of the stored rating.
      * @throws \invalid_parameter_exception When the rating is unknown.
      */
-    public static function record(int $userid, string $rating, string $sessionid, string $messagetext): int {
+    public static function record(
+        int $userid,
+        string $rating,
+        string $sessionid,
+        string $messagetext,
+        string $messageid = '',
+        ?string $comment = null
+    ): int {
         global $DB;
 
         if (!in_array($rating, [self::RATING_GOOD, self::RATING_BAD], true)) {
@@ -57,15 +72,43 @@ class feedback_service {
 
         // The anonymisation level of the Privacy tab applies to the stored answer: "Feedback only" keeps no text,
         // Basic replaces names and e-mails, Strict replaces identifiers and free text as well.
+        $anonymizer = new \local_jedomi\local\anonymizer();
         $text = \core_text::substr(trim($messagetext), 0, self::MAX_TEXT_LENGTH);
-        $text = (new \local_jedomi\local\anonymizer())->anonymize_stored_text($text);
-        return (int) $DB->insert_record(self::TABLE, (object) [
+        $text = \core_text::substr($anonymizer->anonymize_stored_text($text), 0, self::MAX_TEXT_LENGTH);
+        $messageid = \core_text::substr(trim($messageid), 0, 64);
+        $now = time();
+
+        $record = (object) [
             'userid' => $userid,
             'rating' => $rating,
             'sessionid' => \core_text::substr($sessionid, 0, 64),
-            'messagetext' => \core_text::substr($text, 0, self::MAX_TEXT_LENGTH),
-            'timecreated' => time(),
-        ]);
+            'messagetext' => $text,
+            'timemodified' => $now,
+        ];
+        if ($comment !== null) {
+            // Only an answer that needs improvement carries a comment.
+            $comment = $rating === self::RATING_BAD ? \core_text::substr(trim($comment), 0, self::MAX_COMMENT_LENGTH) : '';
+            // The comment is the user's own text: it stays readable, with e-mails and names of site users replaced.
+            $record->feedbackcomment = $comment === '' ? null : $anonymizer->anonymize_text($comment);
+        } else if ($rating === self::RATING_GOOD) {
+            $record->feedbackcomment = null;
+        }
+
+        $existing = $messageid === '' ? false : $DB->get_record(
+            self::TABLE,
+            ['userid' => $userid, 'messageid' => $messageid],
+            'id',
+            IGNORE_MULTIPLE
+        );
+        if ($existing) {
+            $record->id = (int) $existing->id;
+            $DB->update_record(self::TABLE, $record);
+            return $record->id;
+        }
+
+        $record->messageid = $messageid === '' ? null : $messageid;
+        $record->timecreated = $now;
+        return (int) $DB->insert_record(self::TABLE, $record);
     }
 
     /**

@@ -94,6 +94,26 @@ final class sql_tool_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-043: a database error reaches the agent with the message of the database (an unknown column), so it can
+     * fix its query.
+     */
+    public function test_database_error_gives_the_message_of_the_database(): void {
+        $this->resetAfterTest();
+        $failure = new \dml_read_exception("Unknown column 'nope' in 'field list'", 'SELECT nope FROM mdl_course', []);
+
+        [$answer] = $this->run_with_database('mysql', 'SELECT nope FROM {course}', $failure);
+
+        $this->assertStringContainsString("Unknown column 'nope' in 'field list'", $answer['error']);
+        $this->assertStringContainsString(get_string('execute_sql_error', 'local_jedomi'), $answer['error']);
+
+        // The same on the real database, whatever its engine words the error.
+        $real = json_decode((new sql_tool(0, (int) get_admin()->id))->execute(
+            (object) ['query' => 'SELECT nosuchcolumn FROM {course}']
+        ), true);
+        $this->assertStringContainsString('nosuchcolumn', $real['error']);
+    }
+
+    /**
      * MDL-INT-043: Statements whose time and rows cannot be bounded are refused.
      */
     public function test_statement_without_select_is_refused(): void {

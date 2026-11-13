@@ -72,12 +72,24 @@ final class form_tabs_test extends \advanced_testcase {
     /**
      * MDL-UNIT-106: the AI service card of the General tab lists every setting configured in the provider, including
      * the voice conversation, the voice model and the voice.
-     * [Pendiente:skip]
      *
      * @return void
      */
     public function test_ai_service_card_lists_the_voice_settings(): void {
-        $this->markTestSkipped('Pending fix: the AI service card does not mention that the voice conversation, the voice '
-            . 'model and the voice are also configured in the provider.');
+        global $OUTPUT, $PAGE;
+        $this->resetAfterTest();
+        $PAGE->set_url(new \moodle_url('/local/jedomi/admin_settings.php'));
+
+        $html = $OUTPUT->render_from_template('local_jedomi/provider_settings_link', ['url' => 'https://example.com/x']);
+
+        foreach (['Enabled switch', 'chat model', 'audio processing', 'voice conversation', 'voice model', 'the voice'] as $part) {
+            $this->assertStringContainsString($part, $html, $part);
+        }
+        force_current_language('es');
+        $this->assertStringContainsString(
+            'la conversación por voz, el modelo de voz, la voz',
+            get_string('provider_settings_info', 'local_jedomi')
+        );
+        force_current_language('en');
     }
 }

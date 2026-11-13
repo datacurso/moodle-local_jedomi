@@ -110,10 +110,24 @@ final class system_message_test extends \advanced_testcase {
 
     /**
      * MDL-UNIT-047: the agent and preview instructions describe how actions that change data are really handled in those channels.
-     * [Pendiente:skip]
      */
     public function test_agent_and_preview_instructions_match_their_channel(): void {
-        $this->markTestSkipped('Pending fix: agent and preview instructions say actions wait for a confirmation'
-            . ' that does not happen there.');
+        global $CFG;
+        require_once($CFG->dirroot . '/local/jedomi/lib.php');
+        $this->resetAfterTest();
+        $user = $this->getDataGenerator()->create_user();
+
+        // The scheduled run and the preview share these conditions.
+        [, $system] = \local_jedomi\task\agent_runner::run_conditions((int) $user->id, 'site', null);
+        $agent = $system['content'];
+        $this->assertStringNotContainsString("wait for the user's confirmation", $agent);
+        $this->assertStringContainsString('nothing is confirmed', $agent);
+        $this->assertStringContainsString('never ask for a confirmation', $agent);
+        $this->assertStringContainsString('an agent preview does not run them', $agent);
+
+        // The chat keeps its confirmation card.
+        $chat = system_message::build('admin', [])['content'];
+        $this->assertStringContainsString("wait for the user's confirmation in the chat", $chat);
+        $this->assertStringNotContainsString('This is a scheduled agent', $chat);
     }
 }

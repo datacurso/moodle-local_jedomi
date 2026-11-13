@@ -27,34 +27,18 @@ namespace local_jedomi\form;
  */
 final class general_settings_form_test extends \advanced_testcase {
     /**
-     * MDL-UNIT-012: a submitted form returns the permission token secret and the training data flag as sent.
+     * MDL-UNIT-012: a submitted form returns the permission token secret as sent.
      *
      * @return void
      */
     public function test_submitted_values_are_returned(): void {
         $this->resetAfterTest();
         $this->setAdminUser();
-        general_settings_form::mock_submit(['spt_secret' => 's3cret', 'collect_training_data' => 1]);
+        general_settings_form::mock_submit(['spt_secret' => 's3cret']);
 
         $data = (new general_settings_form())->get_data();
 
         $this->assertSame('s3cret', $data->spt_secret);
-        $this->assertSame(1, (int) $data->collect_training_data);
-    }
-
-    /**
-     * MDL-UNIT-012: an unchecked training data box is returned as 0 (off).
-     *
-     * @return void
-     */
-    public function test_unchecked_training_data_is_zero(): void {
-        $this->resetAfterTest();
-        $this->setAdminUser();
-        general_settings_form::mock_submit(['spt_secret' => '']);
-
-        $data = (new general_settings_form())->get_data();
-
-        $this->assertSame(0, (int) $data->collect_training_data);
     }
 
     /**
@@ -90,10 +74,26 @@ final class general_settings_form_test extends \advanced_testcase {
     }
 
     /**
-     * MDL-INT-008: the training data option is off on a new site and has a real effect, or it is not shown.
-     * [Pendiente:skip]
+     * MDL-INT-008: the training data option had no effect, so it is no longer shown nor saved, and the upgrade removes
+     * its stored value.
+     *
+     * @return void
      */
-    public function test_training_data_option_has_effect_and_is_off_by_default(): void {
-        $this->markTestSkipped('Pending fix: the training data option is saved but has no effect, and it is on by default.');
+    public function test_training_data_option_is_not_shown(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        general_settings_form::mock_submit(['spt_secret' => 's3cret', 'collect_training_data' => 1]);
+
+        $form = new general_settings_form();
+        ob_start();
+        $form->display();
+        $html = ob_get_clean();
+        $data = $form->get_data();
+
+        $this->assertStringNotContainsString('collect_training_data', $html);
+        $this->assertObjectNotHasProperty('collect_training_data', $data);
+        $this->assertFalse(get_string_manager()->string_exists('collect_training_data', 'local_jedomi'));
+        $upgrade = file_get_contents(__DIR__ . '/../../db/upgrade.php');
+        $this->assertStringContainsString("unset_config('collect_training_data', 'local_jedomi')", $upgrade);
     }
 }

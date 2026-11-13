@@ -43,6 +43,14 @@ class save_feedback extends external_api {
             'rating' => new external_value(PARAM_ALPHA, 'Rating: good or bad'),
             'sessionid' => new external_value(PARAM_ALPHANUMEXT, 'Browser chat session id', VALUE_DEFAULT, ''),
             'messagetext' => new external_value(PARAM_RAW, 'Rated answer', VALUE_DEFAULT, ''),
+            'messageid' => new external_value(PARAM_ALPHANUMEXT, 'Id the browser gives to the rated answer', VALUE_DEFAULT, ''),
+            'comment' => new external_value(
+                PARAM_TEXT,
+                'Optional comment of an answer that needs improvement',
+                VALUE_DEFAULT,
+                null,
+                NULL_ALLOWED
+            ),
         ]);
     }
 
@@ -52,15 +60,25 @@ class save_feedback extends external_api {
      * @param string $rating Rating: good or bad.
      * @param string $sessionid Browser chat session id.
      * @param string $messagetext Rated answer.
+     * @param string $messageid Id the browser gives to the rated answer: one rating per answer, which can change.
+     * @param string|null $comment Optional comment of an answer that needs improvement; null keeps the stored one.
      * @return array
      */
-    public static function execute(string $rating, string $sessionid = '', string $messagetext = ''): array {
+    public static function execute(
+        string $rating,
+        string $sessionid = '',
+        string $messagetext = '',
+        string $messageid = '',
+        ?string $comment = null
+    ): array {
         global $USER;
 
         $params = self::validate_parameters(self::execute_parameters(), [
             'rating' => $rating,
             'sessionid' => $sessionid,
             'messagetext' => $messagetext,
+            'messageid' => $messageid,
+            'comment' => $comment,
         ]);
 
         plugin_settings::require_enabled('local_jedomi');
@@ -71,7 +89,14 @@ class save_feedback extends external_api {
             throw new \require_login_exception('Guests cannot rate answers');
         }
 
-        feedback_service::record((int) $USER->id, $params['rating'], $params['sessionid'], $params['messagetext']);
+        feedback_service::record(
+            (int) $USER->id,
+            $params['rating'],
+            $params['sessionid'],
+            $params['messagetext'],
+            $params['messageid'],
+            $params['comment']
+        );
         return ['saved' => true];
     }
 

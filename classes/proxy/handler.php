@@ -39,10 +39,7 @@ use local_jedomi\local\service\pending_action_service;
  * AI chat proxy handler: runs the tool-calling loop, dispatches tool executions and streams SSE.
  */
 class handler {
-    /** @var int Maximum rows a database query returns to the web chat. */
-    private const MAX_SQL_ROWS = 100;
-
-    /** @var string[] Locations the panel sends for its page (see getCurrentLocation in amd/src/sidebar.js). */
+    /** @var string[] Locations the panel sends for its page (see local_jedomi_page_location()). */
     private const PAGE_LOCATIONS = ['course', 'activity', 'grades', 'admin', 'dashboard', 'messages', 'profile', 'calendar',
         'files', 'unknown'];
 
@@ -92,6 +89,10 @@ class handler {
         // The role is computed from the session user: the presented one can never be above it.
         $role = \local_jedomi_effective_chat_role($role, $userid, $courseid);
 
+        // The activity of the page is used only when it belongs to the signed course and the user can see it; its type
+        // and name are read from it, never from the browser.
+        $context = self::with_checked_activity($context, $courseid);
+
         // Images are read by the vision model before they are sent (read_file.php), so the chat model
         // only gets text. A new image part means the browser skipped that step.
         $last = end($messages);
@@ -108,7 +109,13 @@ class handler {
 
         $voicemode = !empty($input['voice_mode']) && \local_jedomi\ai\model_settings::is_voice_enabled();
         $system = system_message::build($role, $spt, $context, $voicemode);
-        self::run(array_merge([$system], $messages), $role, $userid, $anonymizer);
+        if (self::run(array_merge([$system], $messages), $role, $userid, $anonymizer)) {
+            // Audit trail without the conversation: who was answered, where and through which channel.
+            $eventcontext = $courseid > SITEID
+                ? (\context_course::instance($courseid, IGNORE_MISSING) ?: \context_system::instance())
+                : \context_system::instance();
+            \local_jedomi\event\chat_answered::create_for_channel('web', $eventcontext, $userid)->trigger();
+        }
     }
 
     /**
@@ -138,10 +145,30 @@ class handler {
         if (isset($context['activity_id'])) {
             $context['activity_id'] = is_numeric($context['activity_id']) ? (int) $context['activity_id'] : 0;
         }
-        foreach (['page_title', 'course_name', 'page_url'] as $key) {
+        foreach (['page_title', 'course_name', 'page_url', 'activity_name'] as $key) {
             if (isset($context[$key]) && is_string($context[$key])) {
                 $context[$key] = $anonymizer->anonymize_text($context[$key]);
             }
+        }
+        return $context;
+    }
+
+    /**
+     * Page context with its activity checked against the signed course: an activity of another course, missing or
+     * hidden from the user is dropped, and the type and name of a valid one come from the activity itself.
+     *
+     * @param array $context Page context sent by the browser.
+     * @param int $courseid Course signed in the permissions (0 or the site course outside a course).
+     * @return array Context with activity_id, activity_type and activity_name checked.
+     */
+    private static function with_checked_activity(array $context, int $courseid): array {
+        $cmid = is_numeric($context['activity_id'] ?? null) ? (int) $context['activity_id'] : 0;
+        $cm = \local_jedomi_page_activity($courseid, $cmid);
+        $context['activity_id'] = $cm ? (int) $cm->id : 0;
+        $context['activity_type'] = $cm ? $cm->modname : '';
+        $context['activity_name'] = $cm ? $cm->get_formatted_name() : '';
+        if (!$cm && ($context['location'] ?? '') === 'activity') {
+            $context['location'] = $courseid > SITEID ? 'course' : 'unknown';
         }
         return $context;
     }
@@ -212,13 +239,14 @@ class handler {
      * @param string $role     User role (already validated).
      * @param int    $userid   Moodle user the AI calls are made for.
      * @param \local_jedomi\local\anonymizer|null $anonymizer Anonymiser of the request; null for a new one.
+     * @return bool True when an answer of the AI was sent to the user, false on an error or a stopped answer.
      */
     public static function run(
         array $messages,
         string $role,
         int $userid,
         ?\local_jedomi\local\anonymizer $anonymizer = null
-    ): void {
+    ): bool {
         require_once(__DIR__ . '/../../lib.php');
         \local_jedomi_log('RUN_START', ['role' => $role, 'user_message_count' => count($messages)]);
 
@@ -239,6 +267,12 @@ class handler {
                 ob_flush();
             }
             flush();
+            // The user stopped the answer (the browser closed the request): no further AI round is asked for, so
+            // nothing more is charged. A tool already run or an action already held stays as it is.
+            if (connection_aborted()) {
+                \local_jedomi_log('CLIENT_ABORTED', ['iteration' => $i]);
+                return false;
+            }
 
             $response = self::call_ai($messages, $tools, $userid);
 
@@ -248,14 +282,14 @@ class handler {
                     ob_flush();
                 }
                 flush();
-                return;
+                return false;
             }
 
             if ($response['type'] === 'text') {
                 \local_jedomi_log('AI_RESPONSE_TEXT', ['iteration' => $i, 'length' => mb_strlen($response['content'])]);
                 // No tool calls — stream the final response to the client.
                 self::stream_sse_content($anonymizer->restore($response['content']));
-                return;
+                return true;
             }
 
             // Type === 'tool_calls': execute each one and collect results.
@@ -273,7 +307,7 @@ class handler {
                 'tool_calls' => $toolcalls,
             ];
 
-            foreach ($toolcalls as $tc) {
+            foreach (array_values($toolcalls) as $position => $tc) {
                 $name = $tc['function']['name'];
                 $tcid = $tc['id'];
                 $argsraw = $tc['function']['arguments'];
@@ -291,8 +325,16 @@ class handler {
                         ob_flush();
                     }
                     flush();
-                    self::stream_sse_content(get_string('pending_action_needed', 'local_jedomi'));
-                    return;
+                    // The turn ends here: the next calls of this answer are not run, and the user and the model
+                    // (through the saved answer) are told so, so they can be asked for again.
+                    $notrun = count($toolcalls) - $position - 1;
+                    $text = get_string('pending_action_needed', 'local_jedomi');
+                    if ($notrun > 0) {
+                        $text .= ' ' . get_string('pending_action_others_not_run', 'local_jedomi', $notrun);
+                        \local_jedomi_log('TOOLS_NOT_RUN', ['count' => $notrun]);
+                    }
+                    self::stream_sse_content($text);
+                    return true;
                 }
 
                 $callkey = $name . '|' . self::stable_tool_args_signature($args);
@@ -351,6 +393,7 @@ class handler {
 
         \local_jedomi_log('RUN_FALLBACK_ITERATIONS_EXCEEDED', ['iteration_count' => 10]);
         self::stream_sse_content(get_string('error_fallback_iterations', 'local_jedomi'));
+        return false;
     }
 
     /**
@@ -511,7 +554,13 @@ class handler {
 
         try {
             self::require_enabled();
-            $result = \local_jedomi\local\query_runner::run($sql, $params, (int) $USER->id, self::MAX_SQL_ROWS);
+            $result = \local_jedomi\local\query_runner::run(
+                $sql,
+                $params,
+                (int) $USER->id,
+                \local_jedomi\local\query_runner::row_limit('web'),
+                'web'
+            );
             return json_encode([
                 'rows' => array_map(
                     static fn(array $row): array => ['json_row' => json_encode($row, JSON_UNESCAPED_UNICODE)],
@@ -667,14 +716,12 @@ class handler {
                 return json_encode(['error' => 'query is required']);
             }
 
-            $allowlist = \local_jedomi_get_role_allowlist($role);
-            $fullaccess = \local_jedomi_role_has_full_ws_access($role);
-
-            if (empty($allowlist) && !$fullaccess) {
+            $allowed = \local_jedomi\local\ws_runner::searchable_functions($role);
+            if ($allowed === []) {
                 return json_encode(['results' => [], 'note' => get_string('note_ws_none_configured', 'local_jedomi')]);
             }
 
-            $wsnames = $fullaccess ? [] : $allowlist;
+            $wsnames = $allowed ?? [];
 
             $results = \local_jedomi\schema\ws_indexer::search($query, $wsnames, $limit);
 
@@ -714,11 +761,9 @@ class handler {
                 return json_encode(['error' => 'wsname is required']);
             }
 
-            if (!\local_jedomi_role_has_full_ws_access($role)) {
-                $allowlist = \local_jedomi_get_role_allowlist($role);
-                if (!empty($allowlist) && !in_array($wsname, $allowlist, true)) {
-                    return json_encode(['error' => 'permission_denied: function not in allowlist']);
-                }
+            // The same list that gates the execution: an empty list allows no description at all.
+            if (!\local_jedomi\local\ws_runner::role_allows($role, $wsname)) {
+                return json_encode(['error' => 'permission_denied: function not in allowlist']);
             }
 
             return json_encode(\local_jedomi\schema\ws_indexer::describe($wsname));
@@ -855,10 +900,6 @@ class handler {
         if (empty($prompt) || empty($schedule)) {
             return json_encode(['error' => 'Both prompt and schedule_cron are required.']);
         }
-        $parts = preg_split('/\s+/', $schedule);
-        if (count($parts) !== 5) {
-            return json_encode(['error' => 'Invalid cron expression. Use 5 fields.']);
-        }
         global $USER;
         $data = new \stdClass();
         $data->userid = (int) ($args['userid'] ?? $USER->id);
@@ -872,15 +913,20 @@ class handler {
         $data->context_type = $args['context_type'] ?? 'site';
         $data->context_id = isset($args['context_id']) ? (int) $args['context_id'] : null;
         $data->enabled = isset($args['enabled']) ? (int) $args['enabled'] : 1;
+        // The schedule and the context (a Moodle context id of the chosen type) are validated as in the form.
+        $invalid = \local_jedomi\agent\agent_manager::validation_error($data);
+        if ($invalid !== null) {
+            return json_encode(['error' => $invalid]);
+        }
         $id = \local_jedomi\agent\agent_manager::create_agent($data);
         $agent = \local_jedomi\agent\agent_manager::get_agent($id);
-        $label = $agent->name ?? "Agent #{$id}";
+        $label = (string) ($agent->name ?? '') !== '' ? $agent->name : get_string('agent_unnamed', 'local_jedomi');
         return json_encode([
             'success' => true,
             'agent_id' => $id,
             'name' => $agent->name ?? '',
-            'message' => "✅ {$label} created successfully.",
-        ]);
+            'message' => get_string('agent_created_message', 'local_jedomi', $label),
+        ], JSON_UNESCAPED_UNICODE);
     }
 
     /**
@@ -948,8 +994,8 @@ class handler {
         \local_jedomi\agent\agent_manager::delete_agent($id);
         return json_encode([
             'success' => true,
-            'message' => "Agent #{$id} deleted.",
-        ]);
+            'message' => get_string('agent_deleted_message', 'local_jedomi', $id),
+        ], JSON_UNESCAPED_UNICODE);
     }
 
     /**

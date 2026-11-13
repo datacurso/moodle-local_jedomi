@@ -122,7 +122,9 @@ class speech_service {
         if (!isloggedin() || isguestuser()) {
             return self::error(403, 'guest_not_allowed', get_string('chat_error_guest', 'local_jedomi'));
         }
-        if (!confirm_sesskey((string) ($input['sesskey'] ?? ''))) {
+        // An empty key is refused here: confirm_sesskey('') would look for a sesskey parameter and throw instead.
+        $sesskey = (string) ($input['sesskey'] ?? '');
+        if ($sesskey === '' || !confirm_sesskey($sesskey)) {
             return self::error(403, 'invalid_sesskey', get_string('invalidsesskey', 'error'));
         }
         $spt = $input['spt'] ?? null;

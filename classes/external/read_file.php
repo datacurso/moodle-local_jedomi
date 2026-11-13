@@ -263,12 +263,12 @@ class read_file extends external_api {
             $numbered[] = sprintf('%4d: %s', $linestart + $i, $line);
         }
 
+        // A permitted read is not a security failure: its source address is not kept.
         \local_jedomi_log(sprintf(
-            '[local_jedomi] read_file: path=%s lines=%d-%d ip=%s',
+            '[local_jedomi] read_file: path=%s lines=%d-%d',
             $cleanpath,
             $linestart,
-            $lineend,
-            getremoteaddr()
+            $lineend
         ));
 
         return [

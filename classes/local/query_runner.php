@@ -45,6 +45,40 @@ class query_runner {
     public const TIMEOUT_MS = 5000;
 
     /**
+     * @var array<string, array{0: int, 1: int}> Row limit and time limit (ms) of the queries of each channel.
+     *
+     * The chat channels answer a person who waits, so they keep few rows and a short time; Telegram shows fewer rows
+     * because its messages are short; the agents run unattended, so they get more rows and more time. The AI is told
+     * the limits of its channel (see local_jedomi_get_tool_definitions()).
+     */
+    public const CHANNEL_LIMITS = [
+        'web' => [100, self::TIMEOUT_MS],
+        'telegram' => [50, self::TIMEOUT_MS],
+        'companion' => [100, self::TIMEOUT_MS],
+        'agent' => [1000, 30000],
+    ];
+
+    /**
+     * Maximum rows a query returns in a channel.
+     *
+     * @param string $channel web, telegram, companion or agent; anything else gets the web chat limit.
+     * @return int
+     */
+    public static function row_limit(string $channel): int {
+        return (self::CHANNEL_LIMITS[$channel] ?? self::CHANNEL_LIMITS['web'])[0];
+    }
+
+    /**
+     * Time limit of a query in a channel, in milliseconds.
+     *
+     * @param string $channel web, telegram, companion or agent; anything else gets the web chat limit.
+     * @return int
+     */
+    public static function time_limit_ms(string $channel): int {
+        return (self::CHANNEL_LIMITS[$channel] ?? self::CHANNEL_LIMITS['web'])[1];
+    }
+
+    /**
      * Tell whether a chat role may run database queries (the students never can).
      *
      * @param string $role Chat role of the user (admin, manager, teacher or student).
@@ -61,10 +95,12 @@ class query_runner {
      * @param array $params Bound parameters.
      * @param int $userid User the query runs for: courses they do not manage are refused unless they manage every one.
      * @param int $maxrows Maximum rows returned.
+     * @param string $channel web, telegram or companion: the query that reaches the database is recorded in the query
+     *     profiler with its channel; empty for none.
      * @return array Rows (arrays), truncated (bool: more rows exist) and execution_ms (int).
      * @throws \moodle_exception non_select_rejected, a sql_guard reason, query_timeout or execute_sql_error.
      */
-    public static function run(string $sql, array $params, int $userid, int $maxrows): array {
+    public static function run(string $sql, array $params, int $userid, int $maxrows, string $channel = ''): array {
         $firsttoken = strtoupper((string) strtok(trim($sql), " \t\n\r"));
         if ($firsttoken !== 'SELECT') {
             // A security event: only the hash of the query is logged, never its text.
@@ -94,6 +130,10 @@ class query_runner {
             $rows = $result['rows'];
             $truncated = $result['truncated'];
         } catch (\dml_exception $e) {
+            if ($channel !== '') {
+                $failedms = (microtime(true) - $start) * 1000;
+                \local_jedomi\agent\query_profiler::log_channel_query($channel, $userid, $sql, $failedms, 0);
+            }
             $istimeout = self::is_timeout($e);
             \local_jedomi_log(sprintf(
                 '[local_jedomi] DB error: %s sql_hash=%s execution_ms=%d',
@@ -102,9 +142,10 @@ class query_runner {
                 (int) ((microtime(true) - $start) * 1000)
             ));
             $code = $istimeout ? 'query_timeout' : 'execute_sql_error';
-            // The debug info of a database exception holds the database's own message (an unknown column, a syntax
-            // error), which the model needs to fix its query; it is returned to the model, never logged here.
-            throw new \moodle_exception($code, 'local_jedomi', '', null, $e->debuginfo ?: $e->getMessage());
+            // The database's own message (an unknown column, a syntax error) is what the model needs to fix its query; it
+            // is returned to the model as debug info, never logged here. A read or write exception keeps it apart from
+            // the query and its parameters, which the debug info of the exception repeats.
+            throw new \moodle_exception($code, 'local_jedomi', '', null, self::database_message($e));
         } catch (\Exception $e) {
             if ($e instanceof \moodle_exception && $e->errorcode === 'sql_construct_rejected') {
                 // A limit that cannot be capped: refused before reaching the database.
@@ -126,7 +167,11 @@ class query_runner {
             throw new \moodle_exception('execute_sql_error', 'local_jedomi', '', null, $e->getMessage());
         }
 
-        $executionms = (int) ((microtime(true) - $start) * 1000);
+        $elapsedms = (microtime(true) - $start) * 1000;
+        if ($channel !== '') {
+            \local_jedomi\agent\query_profiler::log_channel_query($channel, $userid, $sql, $elapsedms, count($rows));
+        }
+        $executionms = (int) $elapsedms;
         \local_jedomi_log(sprintf(
             '[local_jedomi] execute_sql: sql_hash=%s row_count=%d truncated=%s execution_ms=%d',
             hash('sha256', $sql),
@@ -293,6 +338,19 @@ class query_runner {
             $sql = 'SET STATEMENT max_statement_time=' . sprintf('%.3F', $timeoutms / 1000) . ' FOR ' . $sql;
         }
         return ['sql' => $sql, 'limitnum' => $limitnum];
+    }
+
+    /**
+     * The message of the database in a database exception, without the query and the parameters.
+     *
+     * @param \dml_exception $e Database exception.
+     * @return string
+     */
+    public static function database_message(\dml_exception $e): string {
+        if (($e instanceof \dml_read_exception || $e instanceof \dml_write_exception) && trim((string) $e->error) !== '') {
+            return trim((string) $e->error);
+        }
+        return (string) ($e->debuginfo ?: $e->getMessage());
     }
 
     /**

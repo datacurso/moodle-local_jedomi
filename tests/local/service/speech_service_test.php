@@ -175,13 +175,10 @@ final class speech_service_test extends \advanced_testcase {
 
     /**
      * MDL-INT-116: a request without a session key is refused with a JSON error, without calling the AI.
-     * [Pendiente:skip]
      *
      * @return void
      */
     public function test_missing_sesskey_is_refused_with_a_json_error(): void {
-        $this->markTestSkipped('Pending fix: a read-aloud request without a session key throws a missing parameter '
-            . 'exception instead of the JSON 403 refusal.');
         $this->setup_user();
 
         try {
@@ -632,12 +629,47 @@ final class speech_service_test extends \advanced_testcase {
     /**
      * MDL-UNIT-116: each reason a reading aloud is refused (per minute limit, text too long, voice disabled, expired
      * permissions, no credit) is shown to the user in their language.
-     * [Pendiente:skip]
      *
      * @return void
      */
     public function test_user_sees_the_real_reason_of_a_refused_reading(): void {
-        $this->markTestSkipped('Pending fix: the per minute limit, the text too long and the missing credit refusals still '
-            . 'show the generic message that the answer could not be read aloud, not their reason.');
+        $this->setup_user();
+        $message = fn(array $response): string => (string) json_decode($response['body'], true)['error']['message'];
+
+        // Each refusal answers its own message, ready to show.
+        $toolong = $this->request(['text' => str_repeat('a', speech_service::MAX_CHARS + 1)]);
+        $this->assertSame(get_string('speech_error_too_long', 'local_jedomi', speech_service::MAX_CHARS), $message($toolong));
+        $this->assertSame(get_string('invalid_session', 'local_jedomi'), $message($this->request(['spt' => 'expired'])));
+        $this->curl->enqueue(json_encode(['detail' => 'tokens_not_sufficient', 'current_balance' => 0]), 403);
+        $nocredit = $message($this->request());
+        $this->assertNotSame(get_string('voice_mode_speech_error', 'local_jedomi'), $nocredit);
+        $this->assertNotSame('', $nocredit);
+        $this->resetDebugging();
+        for ($i = 0; $i <= speech_service::RATE_LIMIT_PER_MINUTE; $i++) {
+            $this->curl->enqueue(self::MP3);
+            $response = $this->request();
+        }
+        $this->assertSame(get_string('speech_error_rate_limited', 'local_jedomi'), $message($response));
+        set_config('voice_enabled', 0, 'local_jedomi');
+        $this->assertSame(get_string('speech_error_disabled', 'local_jedomi'), $message($this->request()));
+
+        // The sidebar shows the message of the refusal, or the string of its code, not the generic notice.
+        $source = file_get_contents(__DIR__ . '/../../../amd/src/sidebar.js');
+        $this->assertStringContainsString("error.reason = data.error?.message || '';", $source);
+        $this->assertStringContainsString('${voiceSpeechErrorReason(err)}', $source, 'The notice shows the reason');
+        $codes = [
+            'voice_disabled' => 'speech_error_disabled',
+            'speech_empty' => 'speech_error_empty',
+            'speech_rate_limited' => 'speech_error_rate_limited',
+            'speech_too_long' => 'speech_error_too_long',
+        ];
+        foreach ($codes as $code => $key) {
+            $this->assertStringContainsString("'{$code}': '{$key}',", $source, "{$code} has its string in the sidebar");
+            $this->assertNotSame(
+                get_string_manager()->get_string($key, 'local_jedomi', 5, 'en'),
+                get_string_manager()->get_string($key, 'local_jedomi', 5, 'es'),
+                "{$key} is translated"
+            );
+        }
     }
 }

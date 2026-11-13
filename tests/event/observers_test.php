@@ -127,14 +127,20 @@ final class observers_test extends \advanced_testcase {
     }
 
     /**
-     * Fire the graded event for a student.
+     * Fire the graded event for a student, with the given grade when one is given.
      *
      * @param \assign $assign Assignment.
      * @param \stdClass $student Student.
+     * @param float|null $value Grade given to the student; null keeps the current one.
      * @return void
      */
-    private function grade(\assign $assign, \stdClass $student): void {
+    private function grade(\assign $assign, \stdClass $student, ?float $value = null): void {
+        global $DB;
         $grade = $assign->get_user_grade((int) $student->id, true);
+        if ($value !== null) {
+            $DB->set_field('assign_grades', 'grade', $value, ['id' => $grade->id]);
+            $grade->grade = $value;
+        }
         observers::submission_graded(\mod_assign\event\submission_graded::create_from_grade($assign, $grade));
     }
 
@@ -169,7 +175,7 @@ final class observers_test extends \advanced_testcase {
         $this->assertCount(1, $this->telegram->sent);
 
         $this->set_last_sent(time() - self::INTERVAL * 2);
-        $this->grade($assign, $student);
+        $this->grade($assign, $student, 75.0);
         $this->assertCount(2, $this->telegram->sent);
     }
 
@@ -301,13 +307,48 @@ final class observers_test extends \advanced_testcase {
 
     /**
      * MDL-UNIT-092: tasks disabled on purpose are not in the alert, and the alert asks for no answer the bot ignores.
-     * [Pendiente:skip]
      *
      * @return void
      */
     public function test_alert_excludes_tasks_disabled_on_purpose(): void {
-        $this->markTestSkipped('Pending fix: the alert lists tasks disabled on purpose, is fixed in English and asks '
-            . 'for a FIX answer the bot does not handle.');
+        global $DB;
+        $this->link_chat((int) get_admin()->id);
+        $this->all_tasks_healthy();
+        $failing = $this->failing_tasks(2);
+        $disabled = $DB->get_records('task_scheduled', ['faildelay' => 0], 'id', 'id, classname', 0, 1);
+        $disabledtask = reset($disabled);
+        $DB->set_field('task_scheduled', 'disabled', 1, ['id' => $disabledtask->id]);
+        $DB->set_field('task_scheduled', 'faildelay', 60, ['id' => $disabledtask->id]);
+
+        $texts = $this->admin_logs_in();
+
+        $this->assertCount(1, $texts);
+        $this->assertSame(2, substr_count($texts[0], '•'), 'Only the enabled failing tasks are listed');
+        foreach ($failing as $name) {
+            $this->assertStringContainsString($name, $texts[0]);
+        }
+        $this->assertStringNotContainsString(basename(str_replace('\\', '/', $disabledtask->classname)) . ':', $texts[0]);
+        $this->assertStringNotContainsString('FIX', $texts[0], 'No answer the bot does not handle is asked for');
+        $this->assertStringContainsString('/admin/tool/task/scheduledtasks.php', $texts[0]);
+
+        // Only tasks disabled on purpose: no alert.
+        $this->telegram->sent = [];
+        $this->set_last_sent(0);
+        $this->all_tasks_healthy();
+        $DB->set_field('task_scheduled', 'disabled', 1, ['id' => $disabledtask->id]);
+        $this->assertSame([], $this->admin_logs_in());
+    }
+
+    /**
+     * MDL-UNIT-038 (grade notification part): the grade notification is a string of the plugin, not a fixed English text.
+     *
+     * @return void
+     */
+    public function test_grade_notification_uses_the_string_of_the_plugin(): void {
+        [$student, $assign] = $this->linked_student_with_assignment();
+        $this->grade($assign, $student);
+        $expected = get_string('telegram_notify_graded', 'local_jedomi', ['assignment' => 'Cell essay', 'course' => 'Biology 101']);
+        $this->assertSame($expected, $this->telegram->sent[0]['text']);
     }
     /**
      * Create a linked student and an assignment with the given settings, and grade the student.
@@ -391,37 +432,50 @@ final class observers_test extends \advanced_testcase {
         $this->assertCount(2, $texts, 'Each assignment gets its notification');
         $this->assertStringContainsString('Lab report', $texts[1]);
     }
-    /**
-     * MDL-INT-081: queries, confirmed actions, agent creation and deletion and Telegram linking are logged as Moodle
-     * events with user, context and time.
-     * [Pendiente:skip]
-     *
-     * @return void
-     */
-    public function test_assistant_activity_is_logged_as_events(): void {
-        $this->markTestSkipped('Pending implementation: the plugin triggers no Moodle events.');
-    }
 
     /**
      * MDL-INT-105: a linked student whose role is blocked for Telegram or whose account is suspended gets no grade
      * notification.
-     * [Pendiente:skip]
      *
      * @return void
      */
     public function test_grade_notification_follows_the_role_and_account_rules(): void {
-        $this->markTestSkipped('Pending fix: a student with the role blocked for Telegram or the account suspended still '
-            . 'gets the grade notification.');
+        global $DB;
+        [$student, $assign] = $this->linked_student_with_assignment();
+        $studentrole = (int) $DB->get_field('role', 'id', ['shortname' => 'student']);
+
+        set_config('telegram_hidden_roles', (string) $studentrole, 'local_jedomi');
+        $this->grade($assign, $student, 60.0);
+        $this->assertSame([], $this->telegram->sent, 'A role blocked for Telegram gets no notification');
+
+        unset_config('telegram_hidden_roles', 'local_jedomi');
+        $DB->set_field('user', 'suspended', 1, ['id' => $student->id]);
+        $this->grade($assign, $student, 70.0);
+        $this->assertSame([], $this->telegram->sent, 'A suspended account gets no notification');
+
+        $DB->set_field('user', 'suspended', 0, ['id' => $student->id]);
+        $this->grade($assign, $student, 80.0);
+        $this->assertCount(1, $this->telegram->sent, 'An active student with an allowed role gets it');
     }
 
     /**
      * MDL-INT-107: regrading a submission several times after the minimum interval does not repeat the grade
      * notification.
-     * [Pendiente:skip]
      *
      * @return void
      */
     public function test_grade_notification_is_not_repeated_on_each_regrade(): void {
-        $this->markTestSkipped('Pending fix: each regrade notifies again once the minimum interval has passed.');
+        [$student, $assign] = $this->linked_student_with_assignment();
+
+        $this->grade($assign, $student, 85.0);
+        $this->set_last_sent(time() - self::INTERVAL * 2);
+        $this->grade($assign, $student, 85.0);
+        $this->set_last_sent(time() - self::INTERVAL * 2);
+        $this->grade($assign, $student, 85.0);
+        $this->assertCount(1, $this->telegram->sent, 'A regrade with the same grade is not notified again');
+
+        $this->set_last_sent(time() - self::INTERVAL * 2);
+        $this->grade($assign, $student, 90.0);
+        $this->assertCount(2, $this->telegram->sent, 'A changed grade is notified');
     }
 }

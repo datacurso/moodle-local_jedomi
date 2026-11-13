@@ -232,9 +232,8 @@ Feature: Web chat of Jedomi from the question to the answer, the actions and the
     And I should see "archive.zip" in the "#jedomi-messages" "css_element"
     And "//div[@id='jedomi-file-preview' and not(contains(@class, 'jedomi-hidden'))]" "xpath_element" should not exist
 
-  # [Pendiente:skip] When several files are dropped only the last one is kept. The reading is answered in the browser.
-  # Fails until fixed.
-  @MDL-INT-052 @skip
+  # Every dropped file gets its own chip (up to five), and each one can be removed. Nothing is read until sending.
+  @MDL-INT-052
   Scenario: Several dropped files are all attached
     Given I log in as "admin"
     And I am on homepage
@@ -251,7 +250,7 @@ Feature: Web chat of Jedomi from the question to the answer, the actions and the
     And I click on "#jedomi-trigger" "css_element"
     And I drop the files "notes.txt" on the Jedomi panel
     And I should see "notes.txt" in the "#jedomi-file-preview" "css_element"
-    When I click on "#jedomi-remove-file" "css_element"
+    When I click on "[data-action='local_jedomi/sidebar/remove-file']" "css_element"
     Then "0" Jedomi file readings should have been requested
 
   # The browser of the Behat site has no microphone permission, as when a user denies it.

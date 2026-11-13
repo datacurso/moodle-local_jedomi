@@ -58,8 +58,19 @@ if (!in_array($contexttype, ['site', 'course', 'category', 'user'], true)) {
     $contexttype = 'site';
 }
 $contextid = optional_param('context_id', 0, PARAM_INT);
+// The agent being edited, if any: the query profiler shows the queries as a preview of that agent.
+$agentid = optional_param('agent_id', 0, PARAM_INT);
+if ($agentid > 0 && !$DB->record_exists('local_jedomi_agents', ['id' => $agentid])) {
+    $agentid = 0;
+}
 
 echo json_encode(
-    \local_jedomi\agent\preview_runner::run($prompt, (int) $USER->id, $contexttype, $contextid > 0 ? $contextid : null),
+    \local_jedomi\agent\preview_runner::run(
+        $prompt,
+        (int) $USER->id,
+        $contexttype,
+        $contextid > 0 ? $contextid : null,
+        max(0, $agentid)
+    ),
     JSON_UNESCAPED_UNICODE
 );

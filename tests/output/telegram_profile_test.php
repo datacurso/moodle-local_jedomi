@@ -186,12 +186,23 @@ final class telegram_profile_test extends \advanced_testcase {
     /**
      * MDL-UNIT-110: the subtitle of the Telegram link page is addressed to the user, explains what linking the account
      * is for and uses neutral Spanish with usted.
-     * [Pendiente:skip]
      *
      * @return void
      */
     public function test_link_page_subtitle_is_addressed_to_the_user(): void {
-        $this->markTestSkipped('Pending fix: the link page shows the subtitle meant for the administrator about '
-            . 'connecting Jedomi to a Telegram bot (now without voseo).');
+        global $PAGE;
+        $this->resetAfterTest();
+        $PAGE->set_url(new \moodle_url('/local/jedomi/telegram_profile.php'));
+        $renderer = $PAGE->get_renderer('local_jedomi');
+
+        $html = $renderer->render($this->profile(telegram_profile::STATE_NOT_LINKED, null, 'ABC123'));
+        $this->assertStringContainsString(get_string('telegram_link_subtitle', 'local_jedomi'), $html);
+        $this->assertStringNotContainsString(get_string('telegram_heading_help', 'local_jedomi'), $html);
+
+        $manager = get_string_manager();
+        $spanish = $manager->get_string('telegram_link_subtitle', 'local_jedomi', null, 'es');
+        $this->assertStringContainsString('Vincule su cuenta', $spanish);
+        $this->assertDoesNotMatchRegularExpression('/\b(tu|tus|vincula|vinculá|puedes|podés)\b/iu', $spanish);
+        $this->assertStringNotContainsString('bot de Telegram para que los usuarios', $spanish, 'Not the administrator text');
     }
 }

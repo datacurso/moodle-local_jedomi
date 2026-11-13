@@ -51,6 +51,9 @@ class provider implements
             'sessionid' => 'privacy:metadata:local_jedomi_feedback:sessionid',
             'messagetext' => 'privacy:metadata:local_jedomi_feedback:messagetext',
             'timecreated' => 'privacy:metadata:local_jedomi_feedback:timecreated',
+            'messageid' => 'privacy:metadata:local_jedomi_feedback:messageid',
+            'feedbackcomment' => 'privacy:metadata:local_jedomi_feedback:feedbackcomment',
+            'timemodified' => 'privacy:metadata:local_jedomi_feedback:timemodified',
         ], 'privacy:metadata:local_jedomi_feedback');
 
         $collection->add_database_table(pending_action_service::TABLE, [
@@ -90,6 +93,8 @@ class provider implements
             'name' => 'privacy:metadata:local_jedomi_agents:name',
             'prompt' => 'privacy:metadata:local_jedomi_agents:prompt',
             'schedule_cron' => 'privacy:metadata:local_jedomi_agents:schedule_cron',
+            'lastresult' => 'privacy:metadata:local_jedomi_agents:lastresult',
+            'lasterror' => 'privacy:metadata:local_jedomi_agents:lasterror',
             'timecreated' => 'privacy:metadata:local_jedomi_agents:timecreated',
         ], 'privacy:metadata:local_jedomi_agents');
 
@@ -101,9 +106,15 @@ class provider implements
 
         $collection->add_database_table('local_jedomi_query_log', [
             'agentid' => 'privacy:metadata:local_jedomi_query_log:agentid',
+            'userid' => 'privacy:metadata:local_jedomi_query_log:userid',
+            'channel' => 'privacy:metadata:local_jedomi_query_log:channel',
             'query' => 'privacy:metadata:local_jedomi_query_log:query',
             'timecreated' => 'privacy:metadata:local_jedomi_query_log:timecreated',
         ], 'privacy:metadata:local_jedomi_query_log');
+
+        // The technical log (a file in the data directory) keeps pseudonyms instead of user and chat ids, and the
+        // source address of security failures only.
+        $collection->add_type(new technical_log());
 
         $collection->add_user_preference(
             'local_jedomi_grade_notifications',
@@ -154,6 +165,7 @@ class provider implements
 
     #[\Override]
     public static function export_user_data(approved_contextlist $contextlist): void {
+        global $DB;
         $userid = (int) $contextlist->get_user()->id;
         foreach ($contextlist->get_contexts() as $context) {
             if (!$context instanceof \context_user || (int) $context->instanceid !== $userid) {
@@ -165,7 +177,9 @@ class provider implements
                 'rating' => $record->rating,
                 'sessionid' => $record->sessionid,
                 'messagetext' => $record->messagetext,
+                'comment' => $record->feedbackcomment,
                 'timecreated' => transform::datetime($record->timecreated),
+                'timemodified' => transform::datetime($record->timemodified ?: $record->timecreated),
             ], feedback_service::get_for_user($userid));
             if (!empty($feedback)) {
                 $writer->export_data([get_string('privacy_feedback', 'local_jedomi')], (object) ['feedback' => $feedback]);
@@ -189,6 +203,16 @@ class provider implements
             $agents = self::export_agents($userid);
             if (!empty($agents)) {
                 $writer->export_data([get_string('privacy_agents', 'local_jedomi')], (object) ['agents' => $agents]);
+            }
+
+            // Queries the AI ran for the user in the chat channels and the previews of agents.
+            $queries = array_values(array_map(static fn(\stdClass $query): array => [
+                'channel' => $query->channel,
+                'query' => $query->query,
+                'timecreated' => transform::datetime($query->timecreated),
+            ], $DB->get_records('local_jedomi_query_log', ['userid' => $userid], 'timecreated ASC, id ASC')));
+            if (!empty($queries)) {
+                $writer->export_data([get_string('privacy_queries', 'local_jedomi')], (object) ['queries' => $queries]);
             }
         }
     }
@@ -246,7 +270,8 @@ class provider implements
         return feedback_service::user_has_feedback($userid)
             || pending_action_service::user_has_actions($userid)
             || $DB->record_exists('local_jedomi_telegram_links', ['userid' => $userid])
-            || $DB->record_exists('local_jedomi_agents', ['userid' => $userid]);
+            || $DB->record_exists('local_jedomi_agents', ['userid' => $userid])
+            || $DB->record_exists('local_jedomi_query_log', ['userid' => $userid]);
     }
 
     /**
@@ -310,6 +335,8 @@ class provider implements
                 'contexttype' => $agent->context_type,
                 'enabled' => transform::yesno((bool) $agent->enabled),
                 'lastrun' => $agent->lastrun ? transform::datetime($agent->lastrun) : null,
+                'lastresult' => $agent->lastresult,
+                'lasterror' => $agent->lasterror,
                 'timecreated' => transform::datetime($agent->timecreated),
                 'results' => array_values(array_map(static fn(\stdClass $result): array => [
                     'result' => $result->result_json,
@@ -340,5 +367,6 @@ class provider implements
             $DB->delete_records('local_jedomi_query_log', ['agentid' => $agentid]);
             agent_manager::delete_agent((int) $agentid);
         }
+        $DB->delete_records('local_jedomi_query_log', ['userid' => $userid]);
     }
 }

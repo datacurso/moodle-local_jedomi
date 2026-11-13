@@ -122,10 +122,37 @@ final class cleanup_telegram_sessions_test extends \advanced_testcase {
     }
 
     /**
-     * MDL-INT-085: the cleanup removes the old message limit records and reports the real amounts.
-     * [Pendiente:skip]
+     * MDL-INT-085: the cleanup removes the old message limit records, keeps the recent and the blocked ones, and reports
+     * the real amounts.
      */
     public function test_old_message_limit_records_are_removed_and_reported(): void {
-        $this->markTestSkipped('Pending fix: the cleanup never removes the message limit records and reports wrong amounts.');
+        global $DB;
+        $this->resetAfterTest();
+        $now = time();
+        $old = $now - cleanup_telegram_sessions::RATE_LIMIT_TTL - 60;
+        $limits = [
+            '775000020' => [$old, 0],
+            '775000021' => [$old, $now - 60],
+            '775000022' => [$now - 30, 0],
+            '775000023' => [$old, $now + HOURSECS],
+        ];
+        foreach ($limits as $chatid => [$windowstart, $blockeduntil]) {
+            $DB->insert_record('local_jedomi_telegram_rate_limit', (object) ['chatid' => (string) $chatid,
+                'windowstart' => $windowstart, 'msgcount' => 3, 'blockeduntil' => $blockeduntil]);
+        }
+        $this->conversation('775000030', $now - self::SESSION_TTL - 60);
+        $this->conversation('775000031', $now - self::SESSION_TTL - 60);
+        $this->conversation('775000032', $now);
+        $this->telegram_action('expired-one', $now - self::TELEGRAM_ACTION_TTL - 60);
+
+        $output = $this->run_cleanup();
+
+        $left = $DB->get_fieldset_select('local_jedomi_telegram_rate_limit', 'chatid', '1 = 1');
+        sort($left);
+        $this->assertSame(['775000022', '775000023'], $left, 'Recent and blocked records are kept');
+        $this->assertStringContainsString('Deleted 2 expired Telegram message limit record(s).', $output);
+        $this->assertStringContainsString('Deleted 2 expired Telegram session(s).', $output);
+        $this->assertStringContainsString('Deleted 1 expired pending action(s).', $output);
+        $this->assertStringContainsString('Deleted 0 expired web chat pending action(s).', $output);
     }
 }

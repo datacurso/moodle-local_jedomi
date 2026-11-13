@@ -31,7 +31,7 @@
     * data-region="local_jedomi/admin/agents/table-message", "table-wrap", "table-body" and "pagination"
       (the table wrapper holds local_jedomi/admin/agent_table)
     * data-form="local_jedomi/admin/agents/create" on the agent form and data-form="local_jedomi/admin/agents/purge" on the purge form
-    * data-region="local_jedomi/admin/agents/form-heading", "form-message", "edit-id", "submit-label", "custom-cron",
+    * data-region="local_jedomi/admin/agents/form-heading", "form-message", "edit-id", "submit-label", "custom-cron", "enabled",
       "context-id-wrap", "preview-panel", "preview-spinner", "preview-body", "purge-id-wrap", "purge-role-wrap" and
       "purge-message"
     * data-action="local_jedomi/admin/agents/schedule", "context-type", "preview", "cancel-edit" and "purge-context"
@@ -87,8 +87,8 @@
                     <label class="font-weight-bold fw-bold" for="{{uniqid}}-filter-status">{{#str}} agent_filter_status, local_jedomi {{/str}}</label>
                     <select id="{{uniqid}}-filter-status" class="custom-select custom-select-sm form-select form-select-sm w-100" data-region="local_jedomi/admin/agents/filter-status">
                         <option value="">{{#str}} agent_status_all, local_jedomi {{/str}}</option>
-                        <option value="1">{{#str}} agent_enabled, local_jedomi {{/str}}</option>
-                        <option value="0">{{#str}} agent_disabled, local_jedomi {{/str}}</option>
+                        <option value="enabled">{{#str}} agent_enabled, local_jedomi {{/str}}</option>
+                        <option value="disabled">{{#str}} agent_disabled, local_jedomi {{/str}}</option>
                     </select>
                 </div>
                 <div class="col-md-2">
@@ -176,14 +176,19 @@
                     <div class="col-md-4 d-none" data-region="local_jedomi/admin/agents/context-id-wrap">
                         <div class="form-group mb-3">
                             <label class="font-weight-bold fw-bold" for="{{uniqid}}-agent-context-id">{{#str}} agent_context_id, local_jedomi {{/str}}</label>
-                            <input type="text" id="{{uniqid}}-agent-context-id" name="context_id" class="form-control"
+                            <input type="text" id="{{uniqid}}-agent-context-id" name="context_id" class="form-control" inputmode="numeric"
+                                   aria-describedby="{{uniqid}}-agent-context-id-help"
                                    placeholder="{{#str}} agent_context_id_placeholder, local_jedomi {{/str}}">
+                            <small id="{{uniqid}}-agent-context-id-help" class="form-text text-muted">{{#str}} agent_context_id_help, local_jedomi {{/str}}</small>
                         </div>
                     </div>
                 </div>
 
-                <fieldset class="form-group mb-3">
+                <fieldset class="form-group mb-3" aria-describedby="{{uniqid}}-agent-roles-help">
                     <legend class="font-weight-bold fw-bold col-form-label p-0">{{#str}} agent_filter_role, local_jedomi {{/str}}</legend>
+                    <small id="{{uniqid}}-agent-roles-help" class="form-text text-muted mt-0 mb-1">{{#str}} agent_roles_help, local_jedomi {{/str}}</small>
+                    {{! A hidden 0 is always sent, so unchecking every box clears the roles of the agent. }}
+                    <input type="hidden" name="role_filter[]" value="0">
                     <div class="local_jedomi-admin-role-scroll">
                         {{#roles}}
                         <div class="form-check">
@@ -193,6 +198,15 @@
                         {{/roles}}
                     </div>
                 </fieldset>
+
+                <div class="form-check mb-3">
+                    {{! A hidden 0 is sent before the box, so an unchecked box disables the agent. }}
+                    <input type="hidden" name="enabled" value="0">
+                    <input class="form-check-input" type="checkbox" name="enabled" value="1" id="{{uniqid}}-agent-enabled" checked
+                           data-region="local_jedomi/admin/agents/enabled" aria-describedby="{{uniqid}}-agent-enabled-help">
+                    <label class="form-check-label font-weight-bold fw-bold" for="{{uniqid}}-agent-enabled">{{#str}} agent_enabled, local_jedomi {{/str}}</label>
+                    <small id="{{uniqid}}-agent-enabled-help" class="form-text text-muted">{{#str}} agent_enabled_help, local_jedomi {{/str}}</small>
+                </div>
 
                 <div class="local_jedomi-admin-save-row d-flex align-items-center flex-wrap">
                     <button type="submit" class="btn btn-primary mr-2">

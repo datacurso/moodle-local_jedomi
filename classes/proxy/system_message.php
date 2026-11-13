@@ -35,7 +35,7 @@ class system_message {
      *
      * @param  string $role    The user's resolved role.
      * @param  array  $spt     The validated SPT payload.
-     * @param  array  $context The current page context.
+     * @param  array  $context The current page context; "channel" => "agent" for scheduled agents and their preview.
      * @param  bool   $voicemode Whether the answer is read aloud in the voice conversation of the sidebar.
      * @return array           ['role' => 'system', 'content' => '...']
      */
@@ -50,6 +50,8 @@ class system_message {
         $pageurl    = self::page_path((string) ($context['page_url'] ?? ''));
         $pagetitle  = $context['page_title'] ?? '';
         $output     = $context['output'] ?? 'web';  // Either web or telegram.
+        // The channel decides how actions that change data are handled: "agent" for scheduled agents and their preview.
+        $channel    = $context['channel'] ?? 'chat';
 
         $loclabels = [
             'course'    => get_string('ctx_loc_course', 'local_jedomi')
@@ -141,9 +143,18 @@ class system_message {
             . " answer them with the read tools. If a query fails, fix the query or report it; never try an action instead.\n";
         $content .= "- Never call send_messages to answer a question or analyse data;"
             . " use it only when the user asks to send or notify a message.\n";
-        $content .= "- create_agent, delete_agent, admin_execute, ws_execute with a write function and send_messages"
-            . " wait for the user's confirmation in the chat before they run."
-            . " Call the tool once with the final arguments; do not ask for confirmation in text first.\n";
+        if ($channel === 'agent') {
+            // A scheduled agent has nobody to confirm an action, and its preview never runs one.
+            $content .= "- This is a scheduled agent: nobody reads the answer while it runs and nothing is confirmed."
+                . " create_agent, delete_agent, admin_execute, ws_execute with a write function and send_messages run"
+                . " immediately when the agent runs (an agent preview does not run them and returns an error instead)."
+                . " Call them only when the instruction asks for that action, once, with the final arguments;"
+                . " never ask for a confirmation.\n";
+        } else {
+            $content .= "- create_agent, delete_agent, admin_execute, ws_execute with a write function and send_messages"
+                . " wait for the user's confirmation in the chat before they run."
+                . " Call the tool once with the final arguments; do not ask for confirmation in text first.\n";
+        }
         $content .= "- send_messages(user_ids, message), when available, sends Moodle internal messages:"
             . " find the recipients' user ids first.\n\n";
 
@@ -156,7 +167,14 @@ class system_message {
 
         $content .= "RESPONSE RULES:\n";
         $content .= "- Be concise and action-oriented.\n";
-        $content .= "- Use the user's language.\n";
+        // The history, tool results and context labels can be in another language than the question: the latest
+        // user message decides, so a user who switches language gets the answer in the new one.
+        // In the voice conversation the language is the page's one instead (see VOICE CONVERSATION below): a
+        // transcription can come out in another language by mistake, so two rules would contradict each other.
+        if (!$voicemode) {
+            $content .= "- Answer in the language of the user's latest message, even when earlier messages, tool results"
+                . " or these instructions use another language.\n";
+        }
         $content .= "- Respect permissions and privacy.\n";
         $content .= "- If something cannot be done, say why and propose the next best step.\n\n";
 
@@ -164,6 +182,12 @@ class system_message {
             // The full answer is still shown in the chat; these rules keep the spoken part short and readable.
             $content .= "VOICE CONVERSATION:\n";
             $content .= "- The user is talking to you by voice and your answer is read aloud, sentence by sentence.\n";
+            // The speech is transcribed in the language of the page (see audio_service::language_code()), so a
+            // transcription in another language is a recognition error, not the user switching language.
+            $voicelanguage = get_string('thislanguageint', 'langconfig');
+            $content .= "- Answer in {$voicelanguage}, the language the user speaks. If the transcribed message looks like"
+                . " another language or is garbled, it is a speech recognition error: still answer in {$voicelanguage},"
+                . " and ask the user to repeat it if the meaning is unclear.\n";
             $content .= "- Answer in a few short, complete sentences in plain spoken language.\n";
             $content .= "- Do NOT use tables, lists, code, links, emojis or markdown (no asterisks, hashes or backticks).\n";
             $content .= "- Say numbers and dates as they are spoken.\n";
@@ -196,6 +220,9 @@ class system_message {
         $cmid = (int) ($context['activity_id'] ?? 0);
         if ($cmid > 0) {
             $content .= "- Activity cmid: {$cmid}\n";
+            $activityname = (string) ($context['activity_name'] ?? '');
+            $content .= $activityname !== '' ? "- Activity name: {$activityname}\n" : '';
+            $content .= (int) $courseid > SITEID ? "- Activity course id: {$courseid}\n" : '';
         }
 
         $content .= "- User role: {$role}\n";

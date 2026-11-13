@@ -268,10 +268,12 @@ final class webhook_conversation_test extends \advanced_testcase {
     }
 
     /**
-     * Hold the deletion of a new agent from a linked admin chat and return the agent id and the button data.
+     * Hold the deletion of a new agent from a linked admin chat and return the agent id and the cancel button data.
+     *
+     * Deleting an agent is critical: it has no confirm button, it runs only with the confirmation word.
      *
      * @param string $chatid Chat id.
-     * @return array{0: int, 1: string, 2: string} Agent id, confirm data and cancel data.
+     * @return array{0: int, 1: string} Agent id and cancel data.
      */
     private function held_agent_deletion(string $chatid): array {
         $owner = $this->fresh_user();
@@ -292,38 +294,62 @@ final class webhook_conversation_test extends \advanced_testcase {
         }
         $confirm = array_values(array_filter($buttons, static fn(string $d): bool => str_starts_with($d, 'confirm:')));
         $cancel = array_values(array_filter($buttons, static fn(string $d): bool => str_starts_with($d, 'cancel:')));
-        $this->assertCount(1, $confirm);
+        $this->assertCount(0, $confirm, 'A critical action has no confirm button');
         $this->assertCount(1, $cancel);
-        return [$agentid, $confirm[0], $cancel[0]];
+        return [$agentid, $cancel[0]];
     }
 
     /**
-     * MDL-INT-065: confirming with the button runs the held action once; cancelling or letting it expire never runs it.
+     * Confirmation word of critical actions, as the user types it.
+     *
+     * @return string
+     */
+    private function keyword(): string {
+        return \core_text::strtoupper(get_string('confirm_btn_yes', 'local_jedomi'));
+    }
+
+    /**
+     * MDL-INT-065: confirming runs the held action once; cancelling or letting it expire never runs it.
      */
     public function test_held_action_runs_only_when_confirmed_in_time(): void {
         global $DB;
-        [$agentid, $confirm, $cancel] = $this->held_agent_deletion('779000020');
+        [$agentid, $cancel] = $this->held_agent_deletion('779000020');
         $this->press('779000020', $cancel);
-        $this->press('779000020', $confirm);
+        $this->ai->enqueue_text('There is nothing to confirm.');
+        $this->say('779000020', $this->keyword());
         $this->assertTrue($DB->record_exists('local_jedomi_agents', ['id' => $agentid]), 'A cancelled action never runs');
 
-        [$agentid, $confirm] = $this->held_agent_deletion('779000020');
+        [$agentid] = $this->held_agent_deletion('779000020');
         $DB->set_field('local_jedomi_telegram_pending_actions', 'timecreated', time() - 3600, []);
-        $this->press('779000020', $confirm);
+        $this->ai->enqueue_text('There is nothing to confirm.');
+        $this->say('779000020', $this->keyword());
         $this->assertTrue($DB->record_exists('local_jedomi_agents', ['id' => $agentid]), 'An expired action never runs');
 
-        [$agentid, $confirm] = $this->held_agent_deletion('779000020');
-        $this->press('779000020', $confirm);
+        [$agentid] = $this->held_agent_deletion('779000020');
+        $this->say('779000020', $this->keyword());
         $this->assertFalse($DB->record_exists('local_jedomi_agents', ['id' => $agentid]), 'A confirmed action runs');
-        $this->assertSame(get_string('confirm_done', 'local_jedomi'), end($this->telegram->edited)['text']);
+        $this->assertSame(get_string('confirm_done', 'local_jedomi'), end($this->telegram->sent)['text']);
     }
 
     /**
      * MDL-INT-066: the history sent to the AI includes the answers of the bot and the maximum turns count both sides.
-     * [Pendiente:skip]
      */
     public function test_history_includes_the_answers_of_the_bot(): void {
-        $this->markTestSkipped('Pending fix: the bot does not store its own answers in the conversation.');
+        set_config('telegram_max_turns', 3, 'local_jedomi');
+        $user = $this->fresh_user();
+        $this->link((int) $user->id, '779000030');
+        $this->ai->enqueue_text('The first answer of the bot.');
+        $this->ai->enqueue_text('The second answer of the bot.');
+
+        $this->say('779000030', 'First question');
+        $this->say('779000030', 'Second question');
+
+        $contents = array_column($this->ai->calls[1]['messages'], 'content');
+        $this->assertContains('First question', $contents);
+        $this->assertContains('The first answer of the bot.', $contents, 'The AI sees the earlier answer of the bot');
+        $history = session::get('779000030');
+        $this->assertSame(['assistant', 'user', 'assistant'], array_column($history, 'role'), 'The turns count both sides');
+        $this->assertSame('The second answer of the bot.', end($history)['content']);
     }
 
     /**
@@ -507,11 +533,40 @@ final class webhook_conversation_test extends \advanced_testcase {
     /**
      * MDL-INT-068: a message sent while another is processed is not lost without notice, a linked chat can move to
      * another account with a valid code and the New conversation button equals the command.
-     * [Pendiente:skip]
      */
     public function test_concurrent_messages_and_account_changes(): void {
-        $this->markTestSkipped('Pending fix: concurrent messages are dropped, a linked chat cannot change account and the '
-            . 'New conversation button differs from the command.');
+        global $DB;
+        $first = $this->fresh_user();
+        $second = $this->fresh_user(['firstname' => 'Grace', 'lastname' => 'Hopper']);
+        $chatid = '779000031';
+        $this->link((int) $first->id, $chatid);
+
+        // A message while another one is processed gets a notice.
+        session::set_context('tool_loop_' . $chatid, ['is_locked' => true, 'locked_at' => time(), 'iteration' => 1,
+            'userid' => (int) $first->id, 'messages' => [['role' => 'user', 'content' => 'Earlier request']]]);
+        $this->say($chatid, 'Another question');
+        $this->assertSame([], $this->ai->calls);
+        $notice = get_string('telegram_msg_still_processing', 'local_jedomi');
+        $this->assertSame([$notice], array_column($this->telegram->sent, 'text'));
+
+        // The New conversation button resets the conversation and the task as /new does.
+        session::append($chatid, 'user', 'Old question');
+        $this->press($chatid, 'cmd:new');
+        $this->assertSame([], session::get($chatid), 'The history is cleared');
+        $state = session::get_context('tool_loop_' . $chatid);
+        $this->assertEmpty($state['is_locked'] ?? null, 'The task in progress is reset');
+        $this->assertGreaterThan(0, (int) ($state['session_gen'] ?? 0), 'A new session generation stops old continuations');
+
+        // A linked chat moves to another account with a valid code.
+        $this->say($chatid, '/start ' . manager::generate_link_code((int) $second->id));
+        $this->assertSame([(string) $second->id], array_values($DB->get_fieldset_select(
+            'local_jedomi_telegram_links',
+            'userid',
+            'chatid = ?',
+            [$chatid]
+        )));
+        $this->assertFalse($DB->record_exists('local_jedomi_telegram_links', ['userid' => $first->id]));
+        $this->assertStringContainsString('Grace Hopper', end($this->telegram->sent)['text']);
     }
 
     /**
@@ -641,19 +696,64 @@ final class webhook_conversation_test extends \advanced_testcase {
 
     /**
      * MDL-INT-089: the bot waits for the AI up to the configured response time, or the offered range is the real one.
-     * [Pendiente:skip]
      */
     public function test_ai_response_time_follows_the_setting(): void {
-        $this->markTestSkipped('Pending fix: values above about 50 seconds have no effect because each call is cut earlier.');
+        $max = webhook_handler::MAX_AI_TIMEOUT;
+        set_config('telegram_gateway_timeout', 30, 'local_jedomi');
+        $this->assertSame(30, webhook_handler::get_ai_timeout(), 'A value inside the range is applied as it is');
+
+        // A value saved by an older version above the real cut is capped to it, and the form offers the real range.
+        set_config('telegram_gateway_timeout', 300, 'local_jedomi');
+        $this->assertSame($max, webhook_handler::get_ai_timeout());
+        $this->assertSame($max, \local_jedomi\local\service\admin_settings_service::get_telegram_settings()['gateway_timeout']);
+        $this->assertStringContainsString('5-' . $max, get_string_manager()->get_string(
+            'telegram_gateway_timeout_help',
+            'local_jedomi',
+            null,
+            'en'
+        ));
+        $this->setAdminUser();
+        \local_jedomi\form\telegram_settings_form::mock_submit(['telegram_bot_token' => '', 'telegram_rate_limit' => 30,
+            'telegram_cooldown' => 5, 'telegram_max_turns' => 10, 'telegram_gateway_timeout' => $max + 1]);
+        $this->assertNull((new \local_jedomi\form\telegram_settings_form(null, ['roles' => []]))->get_data());
     }
 
     /**
      * MDL-INT-090: the web service list of the role applies equally to search, description and execution.
-     * [Pendiente:skip]
      */
     public function test_web_service_list_applies_to_search_description_and_execution(): void {
-        $this->markTestSkipped('Pending fix: in the web chat the description of a function is given for any role whose '
-            . 'list is empty, and in Telegram and the agents search and description ignore the role list.');
+        $student = $this->fresh_user();
+        $this->setUser($student);
+        $userid = (int) $student->id;
+        $outside = 'core_course_get_courses';
+        $listed = 'core_webservice_get_site_info';
+        $denied = static fn(string $json): bool => str_contains($json, 'allowlist');
+        $search = new \local_jedomi\agent\tool\ws_search_tool($userid);
+        $describe = new \local_jedomi\agent\tool\ws_describe_tool($userid);
+
+        // Empty list: nothing is searched nor described, in any channel.
+        unset_config('ws_allowlist_student', 'local_jedomi');
+        $web = json_decode(\local_jedomi\proxy\handler::run_tool('ws_describe', ['wsname' => $listed], 'student'), true);
+        $this->assertArrayHasKey('error', $web, 'Web chat: no description with an empty list');
+        $this->assertSame(
+            get_string('note_ws_none_configured', 'local_jedomi'),
+            webhook_handler::execute_tool('ws_search', ['query' => 'site info'], $userid)
+        );
+        $this->assertTrue($denied(webhook_handler::execute_tool('ws_describe', ['wsname' => $listed], $userid)));
+        $this->assertSame([], json_decode($search->execute((object) ['query' => 'site info']), true)['functions']);
+        $this->assertTrue($denied($describe->execute((object) ['wsname' => $listed])));
+
+        // Saved list: only its functions are found and described.
+        \local_jedomi\local\service\admin_settings_service::save_ws_allowlist('student', [$listed]);
+        $web = json_decode(\local_jedomi\proxy\handler::run_tool('ws_describe', ['wsname' => $outside], 'student'), true);
+        $this->assertArrayHasKey('error', $web);
+        $this->assertTrue($denied(webhook_handler::execute_tool('ws_describe', ['wsname' => $outside], $userid)));
+        $this->assertTrue($denied($describe->execute((object) ['wsname' => $outside])));
+        $this->assertFalse($denied($describe->execute((object) ['wsname' => $listed])), 'A listed function is described');
+        $this->assertStringNotContainsString($outside, webhook_handler::execute_tool('ws_search', ['query' => 'courses'], $userid));
+        foreach (json_decode($search->execute((object) ['query' => 'courses site info']), true)['functions'] as $function) {
+            $this->assertSame($listed, $function['name']);
+        }
     }
 
     /**
@@ -768,37 +868,134 @@ final class webhook_conversation_test extends \advanced_testcase {
     /**
      * MDL-INT-097: with the integration disabled a message of a linked chat gets a notice that the bot is not
      * available, without calling the AI.
-     * [Pendiente:skip]
      *
      * @return void
      */
     public function test_bot_tells_the_user_it_is_unavailable_while_disabled(): void {
-        $this->markTestSkipped('Pending fix: with the integration disabled the messages of linked users are dropped '
-            . 'without any answer or notice.');
+        $user = $this->fresh_user();
+        $this->link((int) $user->id, '779000032');
+        set_config('telegram_enabled', 0, 'local_jedomi');
+        $this->ai->enqueue_text('Never sent.');
+
+        $this->say('779000032', 'What are my courses?');
+        $this->say('779000033', 'Hello');
+
+        $this->assertSame([], $this->ai->calls, 'The AI is not called');
+        $this->assertSame([get_string('telegram_msg_unavailable', 'local_jedomi')], array_column($this->telegram->sent, 'text'));
+        $this->assertSame('779000032', (string) $this->telegram->sent[0]['chatid'], 'Only the linked chat gets the notice');
     }
 
     /**
      * MDL-INT-106: the Telegram confirmation describes the action in readable language and the critical actions need
      * the confirmation word.
-     * [Pendiente:skip]
      *
      * @return void
      */
     public function test_telegram_confirmation_is_readable_and_asks_for_the_word(): void {
-        $this->markTestSkipped('Pending fix: the Telegram confirmation shows the technical tool name and its raw data '
-            . 'and never asks for the confirmation word.');
+        global $DB;
+        $this->link((int) get_admin()->id, '779000040');
+
+        // A medium action: readable description and data, confirm and cancel buttons.
+        $this->ai_uses('create_agent', ['name' => 'Weekly digest', 'prompt' => 'Summarise the week',
+            'schedule_cron' => '0 8 * * 1'], 'It waits for your confirmation.');
+        $this->say('779000040', 'Create a weekly digest agent');
+        $card = array_values(array_filter($this->telegram->sent, static fn(array $m): bool =>
+            !empty($m['replymarkup']['inline_keyboard'])))[0];
+        $this->assertStringContainsString(
+            s(get_string('pending_desc_create_agent', 'local_jedomi', 'Weekly digest')),
+            $card['text']
+        );
+        $this->assertStringContainsString('Schedule cron: 0 8 * * 1', $card['text']);
+        $this->assertStringNotContainsString('create_agent', $card['text'], 'No technical tool name');
+        $this->assertStringNotContainsString('{"', $card['text'], 'No raw data');
+        $this->assertCount(2, $card['replymarkup']['inline_keyboard'][0]);
+
+        // A critical action: the word is asked, the confirm button of an older message does not run it.
+        [$agentid, $cancel] = $this->held_agent_deletion('779000040');
+        $message = end($this->telegram->sent)['text'] ?? '';
+        $asked = array_filter(array_column($this->telegram->sent, 'text'), fn(string $t): bool =>
+            str_contains($t, s(get_string('telegram_confirm_keyword', 'local_jedomi', $this->keyword()))));
+        $this->assertNotEmpty($asked, 'The confirmation word is asked: ' . $message);
+        $this->press('779000040', 'confirm:' . substr($cancel, strlen('cancel:')));
+        $this->assertTrue($DB->record_exists('local_jedomi_agents', ['id' => $agentid]), 'A button does not run it');
+        $this->say('779000040', \core_text::strtolower($this->keyword()));
+        $this->assertFalse($DB->record_exists('local_jedomi_agents', ['id' => $agentid]), 'The word runs it');
     }
 
     /**
      * MDL-INT-114: unlinking, suspending the account, blocking the role or disabling the integration while the bot
      * works stops the run before the next tool, sends no result and does not save the task state again.
-     * [Pendiente:skip]
      *
+     * @dataProvider access_change_provider
+     * @param string $change Change made while the AI answers.
      * @return void
      */
-    public function test_a_running_request_stops_when_the_access_changes(): void {
-        $this->markTestSkipped('Pending fix: the link, the account, the role and the integration are only checked when a '
-            . 'message arrives and on each automatic continuation, so a run in progress goes on with '
-            . 'the previous permissions.');
+    public function test_a_running_request_stops_when_the_access_changes(string $change): void {
+        global $DB;
+        $course = $this->getDataGenerator()->create_course();
+        $user = $this->fresh_user();
+        $this->getDataGenerator()->enrol_user($user->id, $course->id, 'student');
+        $chatid = '779000034';
+        $this->link((int) $user->id, $chatid);
+        $ai = new class extends fake_ai_client {
+            /** @var \Closure|null Change made during the first call. */
+            public ?\Closure $during = null;
+
+            #[\Override]
+            public function complete(
+                array $messages,
+                int $userid,
+                array $tools = [],
+                ?int $timeout = null,
+                ?float $temperature = null
+            ): array {
+                if ($this->during !== null) {
+                    ($this->during)();
+                    $this->during = null;
+                }
+                return parent::complete($messages, $userid, $tools, $timeout, $temperature);
+            }
+        };
+        $studentrole = (string) $DB->get_field('role', 'id', ['shortname' => 'student']);
+        $ai->during = function () use ($change, $user, $studentrole, $DB): void {
+            if ($change === 'unlink') {
+                \local_jedomi\local\service\telegram_link_service::unlink((int) $user->id);
+            } else if ($change === 'suspend') {
+                $DB->set_field('user', 'suspended', 1, ['id' => $user->id]);
+            } else if ($change === 'role') {
+                set_config('telegram_hidden_roles', $studentrole, 'local_jedomi');
+            } else {
+                set_config('telegram_enabled', 0, 'local_jedomi');
+            }
+        };
+        $ai->enqueue_tool_calls([['id' => 'call_courses', 'type' => 'function',
+            'function' => ['name' => 'my_courses', 'arguments' => '{}']]]);
+        $ai->enqueue_text('Your courses.');
+        client::set_instance_for_testing($ai);
+
+        $this->say($chatid, 'What are my courses?');
+
+        $this->assertCount(1, $ai->calls, 'The run stops before the next tool and the next AI call');
+        $this->assertSame([], $this->telegram->sent, 'No result or progress is sent');
+        $state = $DB->get_field('local_jedomi_telegram_sessions', 'usercontext', ['chatid' => 'tool_loop_' . $chatid]);
+        if ($change === 'unlink') {
+            $this->assertFalse($state, 'The task state removed by unlinking is not written again');
+        } else {
+            $this->assertEmpty(json_decode((string) $state, true)['is_locked'] ?? null, 'The task is released');
+        }
+    }
+
+    /**
+     * Changes of access made while the bot works.
+     *
+     * @return array
+     */
+    public static function access_change_provider(): array {
+        return [
+            'unlinking' => ['unlink'],
+            'suspending the account' => ['suspend'],
+            'blocking the role' => ['role'],
+            'disabling the integration' => ['integration'],
+        ];
     }
 }

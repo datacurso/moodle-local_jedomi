@@ -51,69 +51,16 @@ $action = required_param('action', PARAM_ALPHA);
 try {
     switch ($action) {
         case 'create':
-            $data = new \stdClass();
-
-            $prompt = required_param('prompt', PARAM_RAW);
-            if (trim($prompt) === '') {
-                echo json_encode([
-                    'ok'    => false,
-                    'error' => get_string('required'),
-                ]);
-                exit;
-            }
-            $data->prompt = $prompt;
-            $data->name = optional_param('name', '', PARAM_RAW);
+            $data = local_jedomi_agent_form_data(false);
             $data->userid = $USER->id;
-
-            // Schedule: support both preset select and custom cron.
-            $schedule = required_param('schedule_cron', PARAM_RAW);
-            if ($schedule === 'custom') {
-                $schedule = required_param('custom_cron', PARAM_RAW);
-            }
-            // Validate basic cron expression format (5 fields).
-            $parts = preg_split('/\s+/', trim($schedule));
-            if (count($parts) !== 5) {
+            $error = agent_manager::validation_error($data);
+            if ($error !== null) {
                 echo json_encode([
                     'ok'    => false,
-                    'error' => get_string('agent_error_create', 'local_jedomi', get_string('agent_invalid_cron', 'local_jedomi')),
+                    'error' => get_string('agent_error_create', 'local_jedomi', $error),
                 ]);
                 exit;
             }
-            $data->schedule_cron = $schedule;
-
-            $contexttype = required_param('context_type', PARAM_ALPHA);
-            $validcontexts = ['site', 'course', 'category', 'user'];
-            if (!in_array($contexttype, $validcontexts, true)) {
-                echo json_encode([
-                    'ok'    => false,
-                    'error' => get_string(
-                        'agent_error_create',
-                        'local_jedomi',
-                        get_string('agent_invalid_context_type', 'local_jedomi')
-                    ),
-                ]);
-                exit;
-            }
-            $data->context_type = $contexttype;
-            $data->context_id = optional_param('context_id', null, PARAM_INT);
-
-            // Role filter: array of role IDs.
-            $roleids = optional_param_array('role_filter', [], PARAM_INT);
-            if (!empty($roleids)) {
-                // Resolve role IDs to shortnames.
-                $shortnames = [];
-                foreach ($roleids as $rid) {
-                    $sn = $DB->get_field('role', 'shortname', ['id' => $rid]);
-                    if ($sn) {
-                        $shortnames[] = $sn;
-                    }
-                }
-                $data->role_filter = json_encode($shortnames);
-            } else {
-                $data->role_filter = null;
-            }
-
-            $data->enabled = optional_param('enabled', 0, PARAM_INT);
 
             $id = agent_manager::create_agent($data);
 
@@ -130,49 +77,16 @@ try {
 
         case 'update':
             $id = required_param('id', PARAM_INT);
-            agent_manager::require_manageable_agent($id, (int) $USER->id);
-            $data = new \stdClass();
-
-            $prompt = optional_param('prompt', '', PARAM_RAW);
-            if ($prompt !== '') {
-                $data->prompt = $prompt;
-            }
-
-            $schedule = optional_param('schedule_cron', '', PARAM_RAW);
-            if ($schedule !== '') {
-                if ($schedule === 'custom') {
-                    $schedule = optional_param('custom_cron', '', PARAM_RAW);
-                }
-                $parts = preg_split('/\s+/', trim($schedule));
-                if (count($parts) === 5) {
-                    $data->schedule_cron = $schedule;
-                }
-            }
-
-            $contexttype = optional_param('context_type', '', PARAM_ALPHA);
-            if ($contexttype !== '') {
-                $data->context_type = $contexttype;
-            }
-            $ctxid = optional_param('context_id', null, PARAM_INT);
-            if ($ctxid !== null) {
-                $data->context_id = $ctxid;
-            }
-
-            $roleids = optional_param_array('role_filter', [], PARAM_INT);
-            if (!empty($roleids)) {
-                $shortnames = [];
-                foreach ($roleids as $rid) {
-                    $sn = $DB->get_field('role', 'shortname', ['id' => $rid]);
-                    if ($sn) {
-                        $shortnames[] = $sn;
-                    }
-                }
-                $data->role_filter = json_encode($shortnames);
-            }
-
-            $enabled = optional_param('enabled', null, PARAM_INT);
-            if ($enabled !== null) {
-                $data->enabled = $enabled;
+            $current = agent_manager::require_manageable_agent($id, (int) $USER->id);
+            // The fields sent are saved with the same validation as the creation; the form sends all of them.
+            $data = local_jedomi_agent_form_data(true);
+            $error = agent_manager::validation_error((object) array_merge((array) $current, (array) $data));
+            if ($error !== null) {
+                echo json_encode([
+                    'ok'    => false,
+                    'error' => get_string('agent_error_update', 'local_jedomi', $error),
+                ]);
+                exit;
             }
 
             agent_manager::update_agent($id, $data);
@@ -212,7 +126,15 @@ try {
 
         case 'run':
             $id = required_param('id', PARAM_INT);
-            agent_manager::require_manageable_agent($id, (int) $USER->id);
+            $agent = agent_manager::require_manageable_agent($id, (int) $USER->id);
+            // The scheduled task only runs enabled agents: a disabled one is not queued, and the user is told why.
+            if (empty($agent->enabled)) {
+                echo json_encode([
+                    'ok'    => false,
+                    'error' => get_string('agent_run_disabled', 'local_jedomi'),
+                ]);
+                exit;
+            }
             if (!agent_manager::queue_for_run($id)) {
                 echo json_encode([
                     'ok'    => false,
@@ -246,4 +168,59 @@ try {
         'ok'    => false,
         'error' => $e->getMessage(),
     ]);
+}
+
+/**
+ * Agent fields sent by the form of the Agents tab.
+ *
+ * The schedule is the chosen preset or, with "custom", the custom expression. The context id is the id of the Moodle
+ * context (course, category or user context). The form always sends role_filter[] (a hidden 0 when no box is checked,
+ * which clears the roles) and enabled (a hidden 0 before the Enabled box). Nothing is validated here: see
+ * agent_manager::validation_error().
+ *
+ * @param bool $onlysent Whether to return only the fields present in the request (update) instead of every field with its
+ *     default (create).
+ * @return stdClass Fields name, prompt, schedule_cron, context_type, context_id, role_filter and enabled.
+ */
+function local_jedomi_agent_form_data(bool $onlysent): stdClass {
+    global $DB;
+    $default = $onlysent ? null : '';
+    $data = new stdClass();
+
+    $name = optional_param('name', $default, PARAM_TEXT);
+    if ($name !== null) {
+        $data->name = trim($name);
+    }
+    $prompt = optional_param('prompt', $default, PARAM_RAW);
+    if ($prompt !== null) {
+        $data->prompt = $prompt;
+    }
+    $schedule = optional_param('schedule_cron', $default, PARAM_RAW);
+    if ($schedule !== null) {
+        $schedule = trim($schedule);
+        $data->schedule_cron = $schedule === 'custom' ? trim(optional_param('custom_cron', '', PARAM_RAW)) : $schedule;
+    }
+    $contexttype = optional_param('context_type', $onlysent ? null : 'site', PARAM_ALPHA);
+    if ($contexttype !== null) {
+        $data->context_type = $contexttype;
+        $contextid = optional_param('context_id', 0, PARAM_INT);
+        $data->context_id = ($contexttype !== 'site' && $contextid > 0) ? $contextid : null;
+    }
+
+    $roleids = optional_param_array('role_filter', $onlysent ? null : [], PARAM_INT);
+    if ($roleids !== null) {
+        $shortnames = [];
+        foreach ($roleids as $roleid) {
+            $shortname = $roleid > 0 ? $DB->get_field('role', 'shortname', ['id' => $roleid]) : false;
+            if ($shortname) {
+                $shortnames[] = $shortname;
+            }
+        }
+        $data->role_filter = empty($shortnames) ? null : json_encode(array_values(array_unique($shortnames)));
+    }
+    $enabled = optional_param('enabled', $onlysent ? null : 0, PARAM_INT);
+    if ($enabled !== null) {
+        $data->enabled = $enabled ? 1 : 0;
+    }
+    return $data;
 }

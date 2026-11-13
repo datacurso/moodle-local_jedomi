@@ -25,20 +25,6 @@
 defined('MOODLE_INTERNAL') || die();
 
 $capabilities = [
-    'local/jedomi:viewtrainingdata' => [
-        'captype'      => 'read',
-        'contextlevel' => CONTEXT_SYSTEM,
-        'archetypes'   => [
-            'manager' => CAP_ALLOW,
-        ],
-    ],
-    'local/jedomi:managetrainingdata' => [
-        'captype'      => 'write',
-        'contextlevel' => CONTEXT_SYSTEM,
-        'archetypes'   => [
-            'manager' => CAP_ALLOW,
-        ],
-    ],
     'local/jedomi:manageagents' => [
         'captype'      => 'write',
         'contextlevel' => CONTEXT_SYSTEM,

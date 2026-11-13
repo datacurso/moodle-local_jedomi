@@ -61,7 +61,7 @@ if ($pingchatid !== '' && !preg_match('/^-?\d{1,20}$/', $pingchatid)) {
 }
 
 if ($internalping && !empty($pingchatid)) {
-    local_jedomi_log('SELF-PING: continuing for chat ' . $pingchatid);
+    local_jedomi_log('SELF-PING: continuing for chat ' . local_jedomi_log_pseudonym('chat', $pingchatid));
     // Send 200 OK immediately so the caller cURL returns fast.
     webhook_handler::acknowledge();
 
@@ -84,10 +84,11 @@ if (!is_array($update)) {
 }
 
 // Log incoming webhook request for debugging. The chat id is attacker
-// controllable, so only numeric values are logged verbatim.
+// controllable and personal data, so only a pseudonym of a numeric value is logged.
 $rawchatid = (string) ($update['message']['chat']['id'] ?? $update['callback_query']['message']['chat']['id'] ?? '');
 local_jedomi_log('Telegram webhook: update arrived', [
-    'chat_id' => preg_match('/^-?\d{1,20}$/', $rawchatid) ? $rawchatid : 'invalid(len=' . strlen($rawchatid) . ')',
+    'chat' => preg_match('/^-?\d{1,20}$/', $rawchatid) ? local_jedomi_log_pseudonym('chat', $rawchatid)
+        : 'invalid(len=' . strlen($rawchatid) . ')',
     'type' => isset($update['message']) ? 'message' : (isset($update['callback_query']) ? 'callback_query' : 'unknown'),
     'length' => strlen($input),
 ]);

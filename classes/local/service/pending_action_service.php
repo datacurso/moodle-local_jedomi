@@ -60,6 +60,9 @@ class pending_action_service {
     /** @var int Characters of the arguments shown in the card. */
     private const DETAILS_LENGTH = 500;
 
+    /** @var int Lines of the arguments shown in the card; the rest is replaced by an ellipsis. */
+    private const DETAIL_LINES = 12;
+
     /** @var string[] Words in a web service function name that mark it as destructive. */
     private const DESTRUCTIVE_WORDS = ['delete', 'remove', 'unenrol'];
 
@@ -144,19 +147,28 @@ class pending_action_service {
             'timecreated' => time(),
         ]);
 
+        return ['id' => $id] + self::card($userid, $tool, $args, $severity);
+    }
+
+    /**
+     * Data of the confirmation card of an action, in readable language: what it does, its data as "field: value"
+     * lines and, for send_messages, the recipients that will really get the message and a preview of it.
+     *
+     * @param int $userid User who would run the action.
+     * @param string $tool Tool name.
+     * @param array $args Tool arguments.
+     * @param string $severity One of the SEVERITY_* constants.
+     * @return array Keys tool, severity, description and details, plus count and preview for send_messages.
+     */
+    public static function card(int $userid, string $tool, array $args, string $severity): array {
         $card = [
-            'id' => $id,
             'tool' => $tool,
             'severity' => $severity,
-            'description' => self::describe($tool, $args),
-            'details' => \core_text::substr(
-                json_encode($args, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-                0,
-                self::DETAILS_LENGTH
-            ),
+            'description' => self::describe($userid, $tool, $args),
+            'details' => self::readable_details($tool, $args),
         ];
         if ($tool === 'send_messages') {
-            $card['count'] = count(message_service::recipients($args['user_ids'] ?? []));
+            $card['count'] = count(message_service::contactable($userid, $args['user_ids'] ?? []));
             $card['preview'] = \core_text::substr(trim((string) ($args['message'] ?? '')), 0, self::PREVIEW_LENGTH);
             $card['details'] = '';
         }
@@ -164,13 +176,89 @@ class pending_action_service {
     }
 
     /**
+     * Cards of the actions a user still has to confirm in the web chat, oldest first, so the panel shows them again
+     * after a page reload. Expired actions are left out.
+     *
+     * @param int $userid User id.
+     * @return array[] Cards as hold() returns them.
+     */
+    public static function cards_for_user(int $userid): array {
+        $cards = [];
+        foreach (self::get_for_user($userid) as $record) {
+            if ((int) $record->timecreated < time() - self::EXPIRY) {
+                continue;
+            }
+            $args = json_decode((string) $record->argsjson, true);
+            $cards[] = ['id' => (int) $record->id]
+                + self::card($userid, (string) $record->tool, is_array($args) ? $args : [], (string) $record->severity);
+        }
+        return $cards;
+    }
+
+    /**
+     * Data of an action as readable "field: value" lines: the parameters of a web service or administration
+     * operation, or the arguments of the other tools, without JSON. Lists are numbered and long values shortened.
+     *
+     * @param string $tool Tool name.
+     * @param array $args Tool arguments.
+     * @return string Lines separated by new lines; empty when there is nothing to show.
+     */
+    public static function readable_details(string $tool, array $args): string {
+        $values = $args;
+        if ($tool === 'ws_execute' || $tool === 'admin_execute') {
+            // The function or operation name is already in the description: only its parameters are listed.
+            $params = $args['params'] ?? [];
+            if (is_string($params)) {
+                $decoded = json_decode($params, true);
+                $params = is_array($decoded) ? $decoded : ($params === '' ? [] : ['params' => $params]);
+            }
+            $values = is_array($params) ? $params : [];
+        }
+        $lines = [];
+        self::detail_lines($values, '', $lines);
+        if (count($lines) > self::DETAIL_LINES) {
+            $lines = array_slice($lines, 0, self::DETAIL_LINES);
+            $lines[] = '…';
+        }
+        return \core_text::substr(implode("\n", $lines), 0, self::DETAILS_LENGTH);
+    }
+
+    /**
+     * Add the "field: value" lines of a value to a list, walking into nested lists and objects.
+     *
+     * @param mixed $value Value to describe.
+     * @param string $label Label of the value; empty at the top level.
+     * @param string[] $lines Lines collected so far.
+     * @return void
+     */
+    private static function detail_lines($value, string $label, array &$lines): void {
+        if (is_array($value)) {
+            $islist = array_is_list($value);
+            foreach ($value as $key => $item) {
+                $name = $islist ? '#' . ((int) $key + 1) : ucfirst(str_replace('_', ' ', (string) $key));
+                self::detail_lines($item, $label === '' ? $name : $label . ' › ' . $name, $lines);
+            }
+            return;
+        }
+        if (is_bool($value)) {
+            $text = get_string($value ? 'yes' : 'no');
+        } else if ($value === null) {
+            $text = '-';
+        } else {
+            $text = shorten_text(trim((string) $value), 80);
+        }
+        $lines[] = $label === '' ? $text : $label . ': ' . $text;
+    }
+
+    /**
      * Short description of a held action, in the user's language.
      *
+     * @param int $userid User who would run the action.
      * @param string $tool Tool name.
      * @param array $args Tool arguments.
      * @return string
      */
-    private static function describe(string $tool, array $args): string {
+    private static function describe(int $userid, string $tool, array $args): string {
         switch ($tool) {
             case 'delete_agent':
             case 'delete_agents':
@@ -185,7 +273,7 @@ class pending_action_service {
                 return get_string(
                     'pending_desc_send_messages',
                     'local_jedomi',
-                    count(message_service::recipients($args['user_ids'] ?? []))
+                    count(message_service::contactable($userid, $args['user_ids'] ?? []))
                 );
             default:
                 return get_string(
@@ -228,6 +316,7 @@ class pending_action_service {
             throw new \moodle_exception('confirm_keyword_required', 'local_jedomi');
         }
         $DB->delete_records(self::TABLE, ['id' => $record->id]);
+        self::action_event($confirm, (string) $record->tool, 'web', $userid);
         if (!$confirm) {
             return self::result(self::STATUS_CANCELLED, get_string('confirm_cancelled', 'local_jedomi'));
         }
@@ -240,6 +329,24 @@ class pending_action_service {
             $decoded = ['error' => 'tool_failed'];
         }
         return self::summarise($record->tool, is_array($decoded) ? $decoded : ['error' => 'invalid_result']);
+    }
+
+    /**
+     * Trigger the event of a confirmed or cancelled action; its arguments are never part of the event.
+     *
+     * @param bool $confirm True when the action was confirmed, false when it was cancelled.
+     * @param string $tool Name of the action (tool).
+     * @param string $channel Channel of the conversation: web or telegram.
+     * @param int $userid User who resolved the action.
+     * @return void
+     */
+    public static function action_event(bool $confirm, string $tool, string $channel, int $userid): void {
+        $class = $confirm ? \local_jedomi\event\action_confirmed::class : \local_jedomi\event\action_cancelled::class;
+        $class::create([
+            'context' => \context_system::instance(),
+            'userid' => $userid,
+            'other' => ['action' => $tool, 'channel' => $channel],
+        ])->trigger();
     }
 
     /**

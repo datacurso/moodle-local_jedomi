@@ -17,7 +17,8 @@
 {{!
     @template local_jedomi/local/sidebar/message_actions
 
-    Copy and feedback buttons under an assistant answer.
+    Copy and feedback buttons under an assistant answer. The answer keeps a single rating: the pressed rating button
+    has aria-pressed="true", and rating it as in need of improvement offers local_jedomi/local/sidebar/feedback_comment.
 
     Classes required for JS:
     * none
@@ -33,6 +34,6 @@
         "strings": {"action_copy": "Copy", "action_helpful": "Helpful", "action_improve": "Improve", "action_improve_title": "Needs work"}
     }
 }}
-<button class="jedomi-action-btn" data-action="local_jedomi/sidebar/copy" title="{{strings.action_copy}}"><svg aria-hidden="true" focusable="false" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> {{strings.action_copy}}</button>
-<button class="jedomi-action-btn" data-action="local_jedomi/sidebar/good" title="{{strings.action_helpful}}"><svg aria-hidden="true" focusable="false" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg> {{strings.action_helpful}}</button>
-<button class="jedomi-action-btn" data-action="local_jedomi/sidebar/bad" title="{{strings.action_improve_title}}"><svg aria-hidden="true" focusable="false" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3H10z"/><path d="M17 2h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17"/></svg> {{strings.action_improve}}</button>
+<button type="button" class="jedomi-action-btn" data-action="local_jedomi/sidebar/copy" title="{{strings.action_copy}}"><svg aria-hidden="true" focusable="false" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> {{strings.action_copy}}</button>
+<button type="button" class="jedomi-action-btn" data-action="local_jedomi/sidebar/good" aria-pressed="false" title="{{strings.action_helpful}}"><svg aria-hidden="true" focusable="false" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg> {{strings.action_helpful}}</button>
+<button type="button" class="jedomi-action-btn" data-action="local_jedomi/sidebar/bad" aria-pressed="false" title="{{strings.action_improve_title}}"><svg aria-hidden="true" focusable="false" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3H10z"/><path d="M17 2h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17"/></svg> {{strings.action_improve}}</button>

@@ -133,10 +133,11 @@ export const agentAction = (data) => postJson('agent_create.php', data);
  * @param {string} prompt Agent prompt.
  * @param {string} contexttype Context type of the agent.
  * @param {string} contextid Context instance of the agent.
+ * @param {string} agentid Agent being edited; empty for a new agent.
  * @returns {Promise<Object>}
  */
-export const previewAgent = (prompt, contexttype, contextid) =>
-    postJson('agent_preview.php', {prompt, context_type: contexttype, context_id: contextid});
+export const previewAgent = (prompt, contexttype, contextid, agentid = '') =>
+    postJson('agent_preview.php', {prompt, context_type: contexttype, context_id: contextid, agent_id: agentid});
 
 /**
  * Delete a cached preview.

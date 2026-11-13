@@ -336,14 +336,40 @@ final class provider_test extends provider_testcase {
     }
 
     /**
-     * MDL-INT-109: the privacy declaration includes the technical log with the data it keeps (Telegram chat numbers
-     * and IP addresses), its retention and its deletion.
-     * [Pendiente:skip]
+     * MDL-INT-109: the privacy declaration includes the technical log with the data it keeps (pseudonyms of users and
+     * Telegram chats, and IP addresses of security failures), its retention and its deletion; the log keeps pseudonyms,
+     * never the ids.
      *
      * @return void
      */
     public function test_metadata_declares_the_technical_log(): void {
-        $this->markTestSkipped('Pending fix: the technical log keeps Telegram chat numbers and IP addresses of rejected '
-            . 'requests but is not declared in the privacy API.');
+        global $CFG;
+        require_once($CFG->dirroot . '/local/jedomi/lib.php');
+        $this->resetAfterTest();
+
+        $items = provider::get_metadata(new collection('local_jedomi'))->get_collection();
+        $logs = array_values(array_filter($items, static fn($item): bool =>
+            $item->get_name() === \local_jedomi\privacy\technical_log::NAME));
+        $this->assertCount(1, $logs, 'The technical log is declared');
+        $log = $logs[0];
+        $this->assertSame(['user', 'chat', 'ipaddress'], array_keys($log->get_privacy_fields()));
+        $summary = get_string($log->get_summary(), 'local_jedomi');
+        foreach (['jedomi.log', 'pseudonyms', '5 MB', '30 MB', 'oldest entries are deleted', 'delete the files'] as $fact) {
+            $this->assertStringContainsString($fact, $summary, 'The summary tells what is kept, how long and how it is deleted');
+        }
+        foreach ($log->get_privacy_fields() as $identifier) {
+            $this->assertNotEmpty(get_string($identifier, 'local_jedomi'));
+        }
+
+        // The log keeps a pseudonym: stable, different per kind of identifier, without the id itself.
+        $chat = \local_jedomi_log_pseudonym('chat', '880000777');
+        $this->assertSame($chat, \local_jedomi_log_pseudonym('chat', '880000777'));
+        $this->assertStringNotContainsString('880000777', $chat);
+        $this->assertNotSame(substr($chat, 5), substr(\local_jedomi_log_pseudonym('user', '880000777'), 5));
+        $this->assertMatchesRegularExpression('/^chat#[0-9a-f]{12}$/', $chat);
+
+        // The key is random per site: another key gives another pseudonym.
+        set_config('log_key', str_repeat('a', 64), 'local_jedomi');
+        $this->assertNotSame($chat, \local_jedomi_log_pseudonym('chat', '880000777'));
     }
 }

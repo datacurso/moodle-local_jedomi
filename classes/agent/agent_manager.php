@@ -34,6 +34,97 @@ class agent_manager {
     /** @var array<string, int> Privilege rank of each Jedomi role, from the least to the most privileged. */
     private const ROLE_RANK = ['student' => 0, 'teacher' => 1, 'manager' => 2, 'admin' => 3];
 
+    /** @var int Consecutive failures after which an agent is disabled. */
+    public const MAX_FAILURES = 5;
+
+    /** @var int Seconds before the first retry of a failed agent; doubled on each consecutive failure. */
+    public const FAIL_BACKOFF_BASE = 300;
+
+    /** @var int Longest wait, in seconds, before retrying a failed agent. */
+    public const FAIL_BACKOFF_MAX = DAYSECS;
+
+    /** @var string[] Context types an agent can run in. */
+    public const CONTEXT_TYPES = ['site', 'course', 'category', 'user'];
+
+    /** @var array<string, int> Moodle context level that the context id of each context type must have. */
+    private const CONTEXT_LEVELS = ['course' => CONTEXT_COURSE, 'category' => CONTEXT_COURSECAT, 'user' => CONTEXT_USER];
+
+    /** @var int[][] Lowest and highest value of each field of a schedule: minute, hour, day, month, weekday. */
+    private const CRON_RANGES = [[0, 59], [0, 23], [1, 31], [1, 12], [0, 7]];
+
+    // ... ── Validation ───────────────────────────────────────────────────────────
+
+    /**
+     * Whether a schedule is a valid five-field cron expression with every value in range.
+     *
+     * Each field is a list of "*", "*\/step", a number, or a range "a-b" with an optional "/step", where every number is
+     * within the range of the field and a range does not go backwards.
+     *
+     * @param string $cronexpr Schedule.
+     * @return bool
+     */
+    public static function is_valid_cron(string $cronexpr): bool {
+        $parts = preg_split('/\s+/', trim($cronexpr));
+        if (count($parts) !== 5) {
+            return false;
+        }
+        try {
+            foreach ($parts as $i => $part) {
+                self::parse_cron_field($part, self::CRON_RANGES[$i][0], self::CRON_RANGES[$i][1]);
+            }
+        } catch (\invalid_parameter_exception $e) {
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Reason why an agent cannot be saved, or null when it can.
+     *
+     * The instruction must have text, the schedule must be valid, the context type must be known and, except for the
+     * site, the context id must be the id of an existing Moodle context of that type (a course, category or user
+     * context id, not the id of the course, category or user).
+     *
+     * @param \stdClass $agent Agent fields as they will be stored (prompt, schedule_cron, context_type, context_id).
+     * @return string|null Translated reason, or null when the agent is valid.
+     */
+    public static function validation_error(\stdClass $agent): ?string {
+        if (trim((string) ($agent->prompt ?? '')) === '') {
+            return get_string('agent_invalid_prompt', 'local_jedomi');
+        }
+        if (!self::is_valid_cron((string) ($agent->schedule_cron ?? ''))) {
+            return get_string('agent_invalid_cron', 'local_jedomi');
+        }
+        $type = (string) ($agent->context_type ?? 'site');
+        if (!in_array($type, self::CONTEXT_TYPES, true)) {
+            return get_string('agent_invalid_context_type', 'local_jedomi');
+        }
+        if ($type === 'site') {
+            return null;
+        }
+        $contextid = (int) ($agent->context_id ?? 0);
+        $context = $contextid > 0 ? \context::instance_by_id($contextid, IGNORE_MISSING) : false;
+        if (!$context || (int) $context->contextlevel !== self::CONTEXT_LEVELS[$type]) {
+            $typename = get_string('agent_context_type_' . $type, 'local_jedomi');
+            return get_string('agent_invalid_context_id', 'local_jedomi', $typename);
+        }
+        return null;
+    }
+
+    /**
+     * Throw the reason why an agent cannot be saved, if any.
+     *
+     * @param \stdClass $agent Agent fields as they will be stored.
+     * @return void
+     * @throws \moodle_exception When the agent is not valid; its message is the translated reason.
+     */
+    private static function require_valid(\stdClass $agent): void {
+        $error = self::validation_error($agent);
+        if ($error !== null) {
+            throw new \moodle_exception('agent_invalid', 'local_jedomi', '', $error);
+        }
+    }
+
     // ... ── Permissions ──────────────────────────────────────────────────────────
 
     /**
@@ -102,6 +193,8 @@ class agent_manager {
                 $copy->name = '';
             }
             $copy->prompt = null;
+            // The answer of the agent reveals what its instruction asks for.
+            $copy->lastresult = null;
         }
         return $copy;
     }
@@ -184,7 +277,8 @@ class agent_manager {
      *
      * Supported filters:
      *  - role_filter (string): match role shortname in the role_filter JSON.
-     *  - status ('enabled'|'disabled'): filter by enabled flag.
+     *  - role (int): id of a role, matched like role_filter with its shortname (the Agents tab sends it).
+     *  - status ('enabled'|'disabled', or 1|0): filter by enabled flag.
      *  - context_type (string): filter by context_type value.
      *  - search (string): LIKE match on the prompt field.
      *  - actorid (int): user that searches; the search then only matches the agents whose instruction they may read.
@@ -197,16 +291,44 @@ class agent_manager {
     public static function get_agents(array $filters = []): array {
         global $DB;
 
+        [$wheresql, $params] = self::filter_where($filters);
+
+        // Count total matching records.
+        $countsql = "SELECT COUNT(1) FROM {local_jedomi_agents} {$wheresql}";
+        $total = $DB->count_records_sql($countsql, $params);
+
+        // Pagination.
+        $page = max(1, (int) ($filters['page'] ?? 1));
+        $perpage = max(1, min(100, (int) ($filters['perpage'] ?? 20)));
+        $offset = ($page - 1) * $perpage;
+
+        $selectsql = "SELECT * FROM {local_jedomi_agents} {$wheresql} ORDER BY id ASC";
+        $items = $DB->get_records_sql($selectsql, $params, $offset, $perpage);
+
+        return [
+            'items' => array_values($items),
+            'total' => (int) $total,
+        ];
+    }
+
+    /**
+     * WHERE clause of the agents that match the filters of get_agents().
+     *
+     * @param array $filters Filters, see get_agents().
+     * @return array [string $wheresql (empty or starting with WHERE), array $params]
+     */
+    private static function filter_where(array $filters): array {
+        global $DB;
+
         $params = [];
         $wheres = [];
 
-        // Status filter.
-        if (!empty($filters['status'])) {
-            if ($filters['status'] === 'enabled') {
-                $wheres[] = 'enabled = 1';
-            } else if ($filters['status'] === 'disabled') {
-                $wheres[] = 'enabled = 0';
-            }
+        // Status filter: the Agents tab may send it as enabled/disabled or as 1/0.
+        $status = (string) ($filters['status'] ?? '');
+        if ($status === 'enabled' || $status === '1') {
+            $wheres[] = 'enabled = 1';
+        } else if ($status === 'disabled' || $status === '0') {
+            $wheres[] = 'enabled = 0';
         }
 
         // Context type filter.
@@ -236,33 +358,20 @@ class agent_manager {
 
         // Role filter — match role shortname inside role_filter JSON.
         // Uses LIKE with JSON fragment to find the role shortname.
-        if (!empty($filters['role_filter'])) {
-            $role = $filters['role_filter'];
+        $role = (string) ($filters['role_filter'] ?? '');
+        if ($role === '' && !empty($filters['role'])) {
+            $role = (string) $DB->get_field('role', 'shortname', ['id' => (int) $filters['role']]);
+            if ($role === '') {
+                $wheres[] = '1 = 0';
+            }
+        }
+        if ($role !== '') {
             $wheres[] = $DB->sql_like('role_filter', ':rolefilter', false, false);
             $params['rolefilter'] = '%"' . $DB->sql_like_escape($role) . '"%';
         }
 
-        $wheresql = '';
-        if (!empty($wheres)) {
-            $wheresql = 'WHERE ' . implode(' AND ', $wheres);
-        }
-
-        // Count total matching records.
-        $countsql = "SELECT COUNT(1) FROM {local_jedomi_agents} {$wheresql}";
-        $total = $DB->count_records_sql($countsql, $params);
-
-        // Pagination.
-        $page = max(1, (int) ($filters['page'] ?? 1));
-        $perpage = max(1, min(100, (int) ($filters['perpage'] ?? 20)));
-        $offset = ($page - 1) * $perpage;
-
-        $selectsql = "SELECT * FROM {local_jedomi_agents} {$wheresql} ORDER BY id ASC";
-        $items = $DB->get_records_sql($selectsql, $params, $offset, $perpage);
-
-        return [
-            'items' => array_values($items),
-            'total' => (int) $total,
-        ];
+        $wheresql = empty($wheres) ? '' : 'WHERE ' . implode(' AND ', $wheres);
+        return [$wheresql, $params];
     }
 
     // ... ── CRUD: Create ─────────────────────────────────────────────────────────
@@ -271,8 +380,9 @@ class agent_manager {
      * Create a new agent record.
      *
      * @param  \stdClass $data Fields: userid, prompt, schedule_cron, context_type,
-     *                         context_id, role_filter, enabled.
+     *                         context_id (Moodle context id), role_filter, enabled.
      * @return int New record id.
+     * @throws \moodle_exception When the agent is not valid, see validation_error().
      */
     public static function create_agent(\stdClass $data): int {
         global $DB;
@@ -284,9 +394,11 @@ class agent_manager {
         $record->prompt = $data->prompt ?? '';
         $record->schedule_cron = $data->schedule_cron ?? '* * * * *';
         $record->context_type = $data->context_type ?? 'site';
-        $record->context_id = isset($data->context_id) ? (int) $data->context_id : null;
+        // The context id is the id of the Moodle context (course, category or user context); the site needs none.
+        $record->context_id = ($record->context_type !== 'site' && !empty($data->context_id)) ? (int) $data->context_id : null;
         $record->role_filter = $data->role_filter ?? null;
         $record->enabled = isset($data->enabled) ? (int) $data->enabled : 1;
+        self::require_valid($record);
         $record->lastrun = null;
         // A new agent waits for its scheduled hour, in the time zone of its creator.
         $record->nextrun = isset($data->nextrun) ? (int) $data->nextrun
@@ -295,7 +407,26 @@ class agent_manager {
         $record->timecreated = $now;
         $record->timemodified = $now;
 
-        return $DB->insert_record('local_jedomi_agents', $record);
+        $id = (int) $DB->insert_record('local_jedomi_agents', $record);
+        self::agent_event(\local_jedomi\event\agent_created::class, $id, (int) $record->userid);
+        return $id;
+    }
+
+    /**
+     * Trigger an agent event (created, updated, deleted); the prompt and the results are never part of it.
+     *
+     * @param string $class Event class.
+     * @param int $id Agent id.
+     * @param int $ownerid Creator of the agent, stored as the related user.
+     * @param array $other Extra event data.
+     * @return void
+     */
+    private static function agent_event(string $class, int $id, int $ownerid, array $other = []): void {
+        $data = ['context' => \context_system::instance(), 'objectid' => $id, 'other' => $other];
+        if ($ownerid > 0) {
+            $data['relateduserid'] = $ownerid;
+        }
+        $class::create($data)->trigger();
     }
 
     /**
@@ -341,6 +472,8 @@ class agent_manager {
      *
      * @param  int       $id
      * @param  \stdClass $data Fields to update.
+     * @return void
+     * @throws \moodle_exception When the agent would not be valid, see validation_error().
      */
     public static function update_agent(int $id, \stdClass $data): void {
         global $DB;
@@ -356,12 +489,28 @@ class agent_manager {
             }
         }
 
+        if (property_exists($record, 'context_type') && $record->context_type === 'site') {
+            $record->context_id = null;
+        }
+        if (property_exists($record, 'name')) {
+            $record->name = trim((string) $record->name);
+        }
+
         // Enabling an agent or changing its schedule or owner moves its next run to its next scheduled hour.
         $current = self::get_agent($id);
         if ($current) {
+            self::require_valid((object) array_merge((array) $current, (array) $record));
+            if (property_exists($record, 'name') && $record->name === '') {
+                $record->name = self::generate_name_from_prompt((string) ($record->prompt ?? $current->prompt));
+            }
             $enabling = property_exists($record, 'enabled') && (int) $record->enabled === 1 && (int) $current->enabled === 0;
             $rescheduled = property_exists($record, 'schedule_cron') && $record->schedule_cron !== $current->schedule_cron;
             $newowner = property_exists($record, 'userid') && (int) $record->userid !== (int) $current->userid;
+            if ($enabling) {
+                // A re-enabled agent starts again without the failures that disabled it.
+                $record->failcount = 0;
+                $record->lasterror = null;
+            }
             if ($enabling || $rescheduled || $newowner) {
                 $record->nextrun = self::calculate_next_run(
                     $record->schedule_cron ?? $current->schedule_cron,
@@ -373,6 +522,8 @@ class agent_manager {
 
         $record->timemodified = time();
         $DB->update_record('local_jedomi_agents', $record);
+        $ownerid = (int) ($record->userid ?? ($current->userid ?? 0));
+        self::agent_event(\local_jedomi\event\agent_updated::class, $id, $ownerid);
     }
 
     // ... ── CRUD: Delete ─────────────────────────────────────────────────────────
@@ -384,8 +535,12 @@ class agent_manager {
      */
     public static function delete_agent(int $id): void {
         global $DB;
+        $ownerid = (int) $DB->get_field('local_jedomi_agents', 'userid', ['id' => $id]);
         self::clear_agent_cache($id);
         $DB->delete_records('local_jedomi_agents', ['id' => $id]);
+        if ($ownerid > 0) {
+            self::agent_event(\local_jedomi\event\agent_deleted::class, $id, $ownerid);
+        }
     }
 
     // ... ── CRUD: Queue for immediate run ────────────────────────────────────────
@@ -436,35 +591,63 @@ class agent_manager {
     /**
      * Record an execution result for an agent.
      *
-     * On success: updates lastrun, calculates nextrun, resets failcount.
-     * On failure: increments failcount, does not change lastrun.
+     * On success: updates lastrun, keeps the answer as the last result, calculates nextrun and resets failcount.
+     * On failure: increments failcount, keeps the reason as the last error and moves nextrun with an exponential backoff
+     * (FAIL_BACKOFF_BASE seconds doubled on each consecutive failure, at most FAIL_BACKOFF_MAX), so a failing agent does
+     * not call the AI service every minute. After MAX_FAILURES consecutive failures the agent is disabled.
      * Both cases update timemodified.
      *
-     * @param int  $id
-     * @param bool $success
+     * @param int $id Agent id.
+     * @param bool $success Whether the run produced an answer.
+     * @param string $detail Answer of the run on success, reason of the failure otherwise.
+     * @return bool True when this failure disabled the agent.
      */
-    public static function mark_run(int $id, bool $success): void {
+    public static function mark_run(int $id, bool $success, string $detail = ''): bool {
         global $DB;
 
         $agent = self::get_agent($id);
         if (!$agent) {
-            return;
+            return false;
         }
 
         $now = time();
         $update = new \stdClass();
         $update->id = $id;
         $update->timemodified = $now;
+        $disabled = false;
 
         if ($success) {
             $update->lastrun = $now;
             $update->nextrun = self::calculate_next_run($agent->schedule_cron, $now, self::creator_timezone((int) $agent->userid));
             $update->failcount = 0;
+            $update->lastresult = $detail;
+            $update->lasterror = null;
         } else {
             $update->failcount = (int) $agent->failcount + 1;
+            $update->nextrun = $now + self::failure_backoff($update->failcount);
+            $update->lasterror = \core_text::substr($detail, 0, 1000);
+            if ($update->failcount >= self::MAX_FAILURES && (int) $agent->enabled === 1) {
+                $update->enabled = 0;
+                $disabled = true;
+            }
         }
 
         $DB->update_record('local_jedomi_agents', $update);
+        if ((int) $agent->userid > 0) {
+            self::agent_event(\local_jedomi\event\agent_run::class, $id, (int) $agent->userid, ['success' => $success]);
+        }
+        return $disabled;
+    }
+
+    /**
+     * Seconds to wait before retrying an agent after a number of consecutive failures.
+     *
+     * @param int $failcount Consecutive failures, at least 1.
+     * @return int
+     */
+    public static function failure_backoff(int $failcount): int {
+        $exponent = min(max($failcount, 1) - 1, 20);
+        return (int) min(self::FAIL_BACKOFF_BASE * (2 ** $exponent), self::FAIL_BACKOFF_MAX);
     }
 
     /**
@@ -486,7 +669,8 @@ class agent_manager {
      * Supports standard cron fields: minute, hour, day-of-month, month, day-of-week.
      * Handles star, star/N, single N, N-M, and comma-separated lists.
      *
-     * Falls back to $from + 300 seconds if the expression cannot be parsed.
+     * Falls back to $from + 300 seconds if the expression cannot be parsed. New and edited agents are validated with
+     * is_valid_cron() and validation_error(), so only schedules stored before that validation can fall back.
      *
      * @param  string   $cronexpr Five-field cron expression (e.g. every-5-minutes).
      * @param  int|null $from      Base timestamp (defaults to time()).
@@ -503,10 +687,9 @@ class agent_manager {
 
         try {
             // Field ranges: minute, hour, day-of-month, month, day-of-week.
-            $ranges = [[0, 59], [0, 23], [1, 31], [1, 12], [0, 7]];
             $fields = [];
             foreach ($parts as $i => $part) {
-                $fields[$i] = self::parse_cron_field($part, $ranges[$i][0], $ranges[$i][1]);
+                $fields[$i] = self::parse_cron_field($part, self::CRON_RANGES[$i][0], self::CRON_RANGES[$i][1]);
             }
 
             // Normalise day-of-week: 7 (some cron dialects) → 0 (Sunday).
@@ -556,49 +739,35 @@ class agent_manager {
     /**
      * Parse a single cron field expression into an array of matching values.
      *
+     * Accepts a list of "*", "*\/step", a number, "a-b" and "a-b/step". Every number must be within the range of the
+     * field, a range must not go backwards and a step must be positive.
+     *
      * @param  string $expr The field expression (e.g. star/5, 1-5, 1,3,5).
      * @param  int    $min  Minimum valid value.
      * @param  int    $max  Maximum valid value.
      * @return int[]
+     * @throws \invalid_parameter_exception When the expression is not valid for the field.
      */
     private static function parse_cron_field(string $expr, int $min, int $max): array {
-        $expr = trim($expr);
-
-        // Comma-separated list: "1,3,5".
-        if (strpos($expr, ',') !== false) {
-            $result = [];
-            foreach (explode(',', $expr) as $part) {
-                $result = array_merge($result, self::parse_cron_field(trim($part), $min, $max));
+        $result = [];
+        foreach (explode(',', trim($expr)) as $part) {
+            if (!preg_match('~^(\*|(\d+)(?:-(\d+))?)(?:/(\d+))?$~', $part, $match)) {
+                throw new \invalid_parameter_exception("Invalid cron field '{$expr}'");
             }
-            return array_values(array_unique($result));
-        }
-
-        // Step value: "*/5".
-        if (strpos($expr, '*/') === 0) {
-            $step = (int) substr($expr, 2);
-            if ($step <= 0) {
-                return range($min, $max);
+            if ($match[1] === '*') {
+                [$from, $to] = [$min, $max];
+            } else {
+                $from = (int) $match[2];
+                $to = isset($match[3]) && $match[3] !== '' ? (int) $match[3] : $from;
             }
-            $result = [];
-            for ($i = $min; $i <= $max; $i += $step) {
-                $result[] = $i;
+            $step = isset($match[4]) ? (int) $match[4] : 1;
+            $single = $match[1] !== '*' && (!isset($match[3]) || $match[3] === '');
+            if ($from < $min || $to > $max || $from > $to || $step < 1 || ($single && isset($match[4]))) {
+                throw new \invalid_parameter_exception("Cron field '{$expr}' out of range {$min}-{$max}");
             }
-            return $result;
+            $result = array_merge($result, range($from, $to, $step));
         }
-
-        // Range: "1-5".
-        if (strpos($expr, '-') !== false) {
-            $parts = explode('-', $expr, 2);
-            return range((int) $parts[0], (int) $parts[1]);
-        }
-
-        // Wildcard: "*".
-        if ($expr === '*') {
-            return range($min, $max);
-        }
-
-        // Single value.
-        return [(int) $expr];
+        return array_values(array_unique($result));
     }
 
     // ... ── Cache: Read ──────────────────────────────────────────────────────────
@@ -799,6 +968,96 @@ class agent_manager {
         return false;
     }
 
+    // ... ── Readable labels ─────────────────────────────────────────────────────────
+
+    /** @var array<string, string> Schedules of the presets of the form described by their own string. */
+    public const SCHEDULE_PRESETS = [
+        '*/5 * * * *' => 'agent_every_5min',
+        '*/15 * * * *' => 'agent_every_15min',
+        '*/30 * * * *' => 'agent_every_30min',
+        '0 * * * *' => 'agent_every_1h',
+        '0 */6 * * *' => 'agent_every_6h',
+    ];
+
+    /**
+     * Human description of a schedule, in the language of the current user: "Every day at 08:00", "Every Monday at
+     * 07:30", "Every month on day 1 at 06:00", "Every hour at minute 15", the name of a preset, or the expression.
+     *
+     * @param string $cron Cron expression of the agent.
+     * @return string
+     */
+    public static function describe_schedule(string $cron): string {
+        $cron = trim(preg_replace('/\s+/', ' ', $cron));
+        if ($cron === '') {
+            return '-';
+        }
+        if (isset(self::SCHEDULE_PRESETS[$cron])) {
+            return get_string(self::SCHEDULE_PRESETS[$cron], 'local_jedomi');
+        }
+        $parts = explode(' ', $cron);
+        if (count($parts) === 5 && ctype_digit($parts[0]) && (int) $parts[0] <= 59) {
+            [$minute, $hour, $day, $month, $weekday] = $parts;
+            if ($hour === '*' && $day === '*' && $month === '*' && $weekday === '*') {
+                return get_string('agent_cron_hourly_at', 'local_jedomi', (int) $minute);
+            }
+            if (ctype_digit($hour) && (int) $hour <= 23 && $month === '*') {
+                $time = sprintf('%02d:%02d', (int) $hour, (int) $minute);
+                if ($day === '*' && $weekday === '*') {
+                    return get_string('agent_cron_daily_at', 'local_jedomi', $time);
+                }
+                $days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+                if ($day === '*' && ctype_digit($weekday) && (int) $weekday <= 7) {
+                    $a = ['day' => get_string($days[(int) $weekday], 'calendar'), 'time' => $time];
+                    return get_string('agent_cron_weekly_at', 'local_jedomi', $a);
+                }
+                if ($weekday === '*' && ctype_digit($day) && (int) $day >= 1 && (int) $day <= 31) {
+                    return get_string('agent_cron_monthly_at', 'local_jedomi', ['day' => (int) $day, 'time' => $time]);
+                }
+            }
+        }
+        return get_string('agent_cron_custom', 'local_jedomi', $cron);
+    }
+
+    /**
+     * Readable context of an agent: its type and the name of the course, category or user, in the current language.
+     *
+     * @param string $type Context type (site, course, category or user).
+     * @param int|null $contextid Moodle context id of the agent.
+     * @return string
+     */
+    public static function describe_context(string $type, ?int $contextid): string {
+        $type = in_array($type, self::CONTEXT_TYPES, true) ? $type : 'site';
+        $typelabel = get_string('agent_context_type_' . $type, 'local_jedomi');
+        if ($type === 'site' || empty($contextid)) {
+            return $typelabel;
+        }
+        $context = \context::instance_by_id((int) $contextid, IGNORE_MISSING);
+        $name = $context ? $context->get_context_name(false) : '';
+        if ($name === '') {
+            return get_string('agent_context_missing', 'local_jedomi', ['type' => $typelabel, 'id' => (int) $contextid]);
+        }
+        return get_string('agent_context_label', 'local_jedomi', ['type' => $typelabel, 'name' => $name]);
+    }
+
+    /**
+     * Localised names of roles given by their short names (custom names of the site included).
+     *
+     * @param string[] $shortnames Role short names.
+     * @return array<string, string> Name by short name; an unknown short name keeps itself as name.
+     */
+    public static function role_labels(array $shortnames): array {
+        global $DB;
+        $labels = [];
+        $roles = empty($shortnames) ? [] : $DB->get_records_list('role', 'shortname', array_values($shortnames));
+        foreach ($roles as $role) {
+            $labels[$role->shortname] = role_get_name($role, \context_system::instance(), ROLENAME_ALIAS);
+        }
+        foreach ($shortnames as $shortname) {
+            $labels[$shortname] = $labels[$shortname] ?? $shortname;
+        }
+        return $labels;
+    }
+
     // ... ── Stats ─────────────────────────────────────────────────────────────────
 
     /**
@@ -808,7 +1067,7 @@ class agent_manager {
      *  - charts->by_role:    array of role shortname → count
      *  - charts->by_status:  object {enabled: N, disabled: N}
      *  - charts->executions_30d: array of {day: string, count: int}
-     *  - rows:               paginated agent records (same as get_agents()).
+     *  - rows:               paginated agent records (same as get_agents()) with user_fullname, the name of the creator.
      *  - total:              total matching count.
      *  - page:               current page number.
      *
@@ -818,47 +1077,43 @@ class agent_manager {
     public static function get_stats(array $filters): \stdClass {
         global $DB;
 
+        // Every chart counts the agents that match the filters of the table.
+        [$wheresql, $params] = self::filter_where($filters);
+        $matching = $DB->get_records_sql(
+            "SELECT id, role_filter, enabled, lastrun FROM {local_jedomi_agents} {$wheresql}",
+            $params
+        );
+
         // ... ── By role: decode role_filter JSON and count per shortname. ────────
-        $allagents = $DB->get_records('local_jedomi_agents', null, '', 'id, role_filter');
         $byrole = [];
-        foreach ($allagents as $a) {
-            if (!empty($a->role_filter)) {
-                $roles = json_decode($a->role_filter, true);
-                if (is_array($roles)) {
-                    foreach ($roles as $role) {
-                        $role = trim($role);
-                        if (!isset($byrole[$role])) {
-                            $byrole[$role] = 0;
-                        }
-                        $byrole[$role]++;
-                    }
-                }
+        foreach ($matching as $a) {
+            $roles = !empty($a->role_filter) ? json_decode($a->role_filter, true) : null;
+            foreach (is_array($roles) ? $roles : [] as $role) {
+                $role = trim((string) $role);
+                $byrole[$role] = ($byrole[$role] ?? 0) + 1;
             }
         }
         arsort($byrole);
 
         // ... ── By status: aggregate enabled vs disabled. ────────────────────────
-        $enabled = $DB->count_records('local_jedomi_agents', ['enabled' => 1]);
-        $disabled = $DB->count_records('local_jedomi_agents', ['enabled' => 0]);
+        $enabled = count(array_filter($matching, fn(\stdClass $a): bool => (int) $a->enabled === 1));
         $bystatus = (object) [
-            'enabled' => (int) $enabled,
-            'disabled' => (int) $disabled,
+            'enabled' => $enabled,
+            'disabled' => count($matching) - $enabled,
         ];
 
         // ... ── Executions per day (last 30 days, DB-agnostic). ──────────────────
-        $thirtydaysago = time() - (30 * 86400);
-        $runs = $DB->get_records_select(
-            'local_jedomi_agents',
-            'lastrun IS NOT NULL AND lastrun >= :since',
-            ['since' => $thirtydaysago],
-            '',
-            'id, lastrun'
-        );
-
-        $perday = [];
-        foreach ($runs as $run) {
-            $day = date('Y-m-d', $run->lastrun);
-            $perday[$day] = ($perday[$day] ?? 0) + 1;
+        $thirtydaysago = time() - (30 * DAYSECS);
+        $perday = self::runs_per_day_from_log(array_keys($matching), $thirtydaysago);
+        if ($perday === null) {
+            // Without the standard log only the last run of each agent is stored: each agent counts once, on that day.
+            $perday = [];
+            foreach ($matching as $run) {
+                if (!empty($run->lastrun) && (int) $run->lastrun >= $thirtydaysago) {
+                    $day = date('Y-m-d', (int) $run->lastrun);
+                    $perday[$day] = ($perday[$day] ?? 0) + 1;
+                }
+            }
         }
 
         // Build a zero-filled array for all 30 days.
@@ -871,20 +1126,73 @@ class agent_manager {
             ];
         }
 
-        // ... ── Paginated rows (same as get_agents). ────────────────────────────
+        // ... ── Paginated rows (same as get_agents), with the name of their creator. ──
         $result = self::get_agents($filters);
         $page = max(1, (int) ($filters['page'] ?? 1));
+        $userids = array_unique(array_map(fn(\stdClass $row): int => (int) $row->userid, $result['items']));
+        $namefields = 'id, ' . implode(', ', \core_user\fields::get_name_fields());
+        $users = empty($userids) ? [] : $DB->get_records_list('user', 'id', $userids, '', $namefields);
+        foreach ($result['items'] as $row) {
+            $row->user_fullname = isset($users[$row->userid]) ? fullname($users[$row->userid]) : '';
+            // Readable names for the table and the details; the raw values stay for the form.
+            $row->schedule_label = self::describe_schedule((string) $row->schedule_cron);
+            $row->context_label = self::describe_context(
+                (string) ($row->context_type ?? 'site'),
+                empty($row->context_id) ? null : (int) $row->context_id
+            );
+        }
 
         return (object) [
             'charts' => (object) [
                 'by_role' => $byrole,
                 'by_status' => $bystatus,
                 'executions_30d' => $executions30d,
+                // Readable names of the chart keys, in the language of the user.
+                'role_labels' => (object) self::role_labels(array_keys($byrole)),
+                'status_labels' => (object) [
+                    'enabled' => get_string('agent_enabled', 'local_jedomi'),
+                    'disabled' => get_string('agent_disabled', 'local_jedomi'),
+                ],
             ],
             'rows' => $result['items'],
             'total' => $result['total'],
             'page' => $page,
         ];
+    }
+
+    /**
+     * Runs per day of some agents since a moment, counted from the agent_run events of the standard log.
+     *
+     * @param int[] $agentids Agents to count.
+     * @param int $since Earliest moment counted.
+     * @return array<string, int>|null Runs keyed by day (Y-m-d); null when the standard log is not enabled.
+     */
+    public static function runs_per_day_from_log(array $agentids, int $since): ?array {
+        global $DB;
+
+        $stores = explode(',', (string) get_config('tool_log', 'enabled_stores'));
+        if (!in_array('logstore_standard', $stores, true)) {
+            return null;
+        }
+        $perday = [];
+        foreach (array_chunk($agentids, 1000) as $chunk) {
+            [$insql, $params] = $DB->get_in_or_equal($chunk, SQL_PARAMS_NAMED, 'agent');
+            $params['eventname'] = '\\' . \local_jedomi\event\agent_run::class;
+            $params['since'] = $since;
+            $runs = $DB->get_recordset_select(
+                'logstore_standard_log',
+                "eventname = :eventname AND timecreated >= :since AND objectid {$insql}",
+                $params,
+                '',
+                'id, timecreated'
+            );
+            foreach ($runs as $run) {
+                $day = date('Y-m-d', (int) $run->timecreated);
+                $perday[$day] = ($perday[$day] ?? 0) + 1;
+            }
+            $runs->close();
+        }
+        return $perday;
     }
 
     // ... ── Purge ─────────────────────────────────────────────────────────────────

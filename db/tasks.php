@@ -43,4 +43,13 @@ $tasks = [
         'month'     => '*',
         'dayofweek' => '*',
     ],
+    [
+        'classname' => \local_jedomi\task\purge_query_profiler::class,
+        'blocking'  => 0,
+        'minute'    => 'R',
+        'hour'      => '3', // Once a day.
+        'day'       => '*',
+        'month'     => '*',
+        'dayofweek' => '*',
+    ],
 ];

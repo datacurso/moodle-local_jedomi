@@ -93,6 +93,30 @@ class message_service {
     }
 
     /**
+     * Recipients the sender can really reach: existing, not deleted, not the sender and allowed by the messaging
+     * preferences, blocks and capabilities. They are the ones send() delivers to.
+     *
+     * @param int $senderid User who sends.
+     * @param mixed $userids Recipients as sent by the model.
+     * @return int[]
+     */
+    public static function contactable(int $senderid, $userids): array {
+        global $CFG, $DB;
+        require_once($CFG->dirroot . '/message/lib.php');
+
+        $contactable = [];
+        foreach (self::recipients($userids) as $recipientid) {
+            if (
+                $recipientid !== $senderid && $DB->record_exists('user', ['id' => $recipientid, 'deleted' => 0])
+                    && \core_message\api::can_send_message($recipientid, $senderid)
+            ) {
+                $contactable[] = $recipientid;
+            }
+        }
+        return $contactable;
+    }
+
+    /**
      * Send a Moodle internal message to each recipient the sender may contact.
      *
      * A recipient that does not exist, is deleted, is the sender, or cannot be contacted by the
@@ -115,12 +139,9 @@ class message_service {
         }
 
         $sent = 0;
-        foreach ($recipients as $recipientid) {
+        foreach (self::contactable($senderid, $recipients) as $recipientid) {
             $recipient = $DB->get_record('user', ['id' => $recipientid, 'deleted' => 0]);
-            if (
-                !$recipient || $recipientid === $senderid
-                    || !\core_message\api::can_send_message($recipientid, $senderid)
-            ) {
+            if (!$recipient) {
                 continue;
             }
             try {

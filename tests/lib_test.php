@@ -284,7 +284,8 @@ final class lib_test extends \advanced_testcase {
     /**
      * MDL-UNIT-016: in the web panel the role follows the permission in the current course.
      *
-     * A user who is teacher in one course and student in another is 'teacher' only in the first one.
+     * A user who is teacher in one course and student in another is 'teacher' only in the first one, and 'teacher'
+     * outside a course.
      */
     public function test_get_user_role_follows_the_current_course(): void {
         global $COURSE;
@@ -301,8 +302,9 @@ final class lib_test extends \advanced_testcase {
         $COURSE = $learning;
         $this->assertSame('student', local_jedomi_get_user_role());
 
+        // Outside a course the role is the same as in Telegram and the confirmation of actions (MDL-INT-039).
         $COURSE = get_site();
-        $this->assertSame('student', local_jedomi_get_user_role());
+        $this->assertSame('teacher', local_jedomi_get_user_role());
     }
 
     /**
@@ -622,13 +624,32 @@ final class lib_test extends \advanced_testcase {
 
     /**
      * MDL-UNIT-090: the profile link and the bot apply the same Telegram role rule, also for roles given in a course.
-     * [Pendiente:skip]
      *
      * @return void
      */
     public function test_telegram_role_rule_is_the_same_on_the_profile_and_the_bot(): void {
-        $this->markTestSkipped('Pending fix: the profile only reads system and page roles while the bot also reads course '
-            . 'roles, and a linked user with a blocked role loses the profile link to the link page.');
+        global $PAGE;
+        $this->resetAfterTest();
+        $course = $this->getDataGenerator()->create_course();
+        $user = $this->getDataGenerator()->create_and_enrol($course, 'student');
+        $this->setUser($user);
+        $PAGE->set_context(\context_system::instance());
+        $bot = static fn(int $userid): bool => \local_jedomi\telegram\webhook_handler::is_user_role_allowed($userid);
+
+        // The student role is given in a course, not on the page the profile is shown.
+        set_config('telegram_hidden_roles', (string) $this->role_id('student'), 'local_jedomi');
+        $this->assertFalse(local_jedomi_is_telegram_role_allowed());
+        $this->assertFalse($bot((int) $user->id));
+
+        set_config('telegram_hidden_roles', (string) $this->role_id('manager'), 'local_jedomi');
+        $this->assertTrue(local_jedomi_is_telegram_role_allowed());
+        $this->assertTrue($bot((int) $user->id));
+
+        // Administrators always have access on both.
+        $this->setAdminUser();
+        set_config('telegram_hidden_roles', $this->role_id('student') . ',' . $this->role_id('manager'), 'local_jedomi');
+        $this->assertTrue(local_jedomi_is_telegram_role_allowed());
+        $this->assertTrue($bot((int) get_admin()->id));
     }
 
     /**
@@ -665,6 +686,8 @@ final class lib_test extends \advanced_testcase {
     public function test_each_role_receives_exactly_its_tools(string $role, array $expected): void {
         $this->resetAfterTest();
         set_config('files_enabled', 1, 'local_jedomi');
+        // The administration operations are offered only to who can run them; the administrator can.
+        $this->setAdminUser();
 
         $names = array_map(static fn(array $tool): string => $tool['function']['name'], local_jedomi_get_tool_definitions($role));
         sort($names);

@@ -108,11 +108,6 @@ class create_agent_tool implements agent_tool {
             return json_encode(['error' => 'Both prompt and schedule_cron are required.']);
         }
 
-        $parts = preg_split('/\s+/', $schedule);
-        if (count($parts) !== 5) {
-            return json_encode(['error' => 'Invalid cron expression. Use 5 fields.']);
-        }
-
         $data = new \stdClass();
         $data->userid       = (int) ($params->userid ?? $this->actor_id());
         if (!\local_jedomi\agent\agent_manager::can_create_for($data->userid, $this->actor_id())) {
@@ -124,16 +119,21 @@ class create_agent_tool implements agent_tool {
         $data->context_type = $params->context_type ?? 'site';
         $data->context_id   = isset($params->context_id) ? (int) $params->context_id : null;
         $data->enabled      = isset($params->enabled) ? (int) $params->enabled : 1;
+        // The schedule and the context (a Moodle context id of the chosen type) are validated as in the form.
+        $invalid = \local_jedomi\agent\agent_manager::validation_error($data);
+        if ($invalid !== null) {
+            return json_encode(['error' => $invalid]);
+        }
 
         $id    = \local_jedomi\agent\agent_manager::create_agent($data);
         $agent = \local_jedomi\agent\agent_manager::get_agent($id);
-        $label = $agent->name ?? "Agent #{$id}";
+        $label = (string) ($agent->name ?? '') !== '' ? $agent->name : get_string('agent_unnamed', 'local_jedomi');
 
         return json_encode([
             'success'  => true,
             'agent_id' => $id,
             'name'     => $agent->name ?? '',
-            'message'  => "✅ {$label} created successfully.",
-        ]);
+            'message'  => get_string('agent_created_message', 'local_jedomi', $label),
+        ], JSON_UNESCAPED_UNICODE);
     }
 }

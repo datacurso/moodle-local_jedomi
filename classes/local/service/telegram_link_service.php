@@ -69,5 +69,11 @@ class telegram_link_service {
         }
         $DB->delete_records('local_jedomi_telegram_links', ['userid' => $userid]);
         $transaction->allow_commit();
+        if ($chatids) {
+            \local_jedomi\event\telegram_unlinked::create([
+                'context' => \context_system::instance(),
+                'relateduserid' => $userid,
+            ])->trigger();
+        }
     }
 }

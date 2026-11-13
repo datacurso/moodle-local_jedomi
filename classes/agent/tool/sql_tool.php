@@ -35,27 +35,26 @@ namespace local_jedomi\agent\tool;
  * role gating, the shared sensitive-data guard, row limits, and profiler logging.
  */
 class sql_tool implements agent_tool {
-    /** @var int Maximum rows returned to an agent (larger than the 100 of the chat channels: agents run unattended). */
-    private const MAX_ROWS = 1000;
-
-    /** @var int Time limit of an agent query in milliseconds (longer than the 5 s of the chat channels, see above). */
-    private const TIMEOUT_MS = 30000;
-
     /** @var int Agent ID being executed (for profiling). */
     private int $agentid;
 
     /** @var int Agent creator userid (for permission check). */
     private int $userid;
 
+    /** @var string Channel recorded with each profiled query: agent (scheduled run) or preview. */
+    private string $channel;
+
     /**
      * Constructor.
      *
-     * @param int $agentid Agent ID recorded with each profiled query.
+     * @param int $agentid Agent ID recorded with each profiled query; 0 for the preview of a new agent.
      * @param int $userid  Agent creator's user ID, used for the role permission check.
+     * @param string $channel agent for a scheduled run, preview for a preview.
      */
-    public function __construct(int $agentid = 0, int $userid = 0) {
+    public function __construct(int $agentid = 0, int $userid = 0, string $channel = 'agent') {
         $this->agentid = $agentid;
         $this->userid = $userid;
+        $this->channel = $channel === 'preview' ? 'preview' : 'agent';
     }
 
     /**
@@ -70,21 +69,28 @@ class sql_tool implements agent_tool {
     /**
      * Build the OpenAI-compatible function definition for this tool.
      *
-     * @return array Tool definition with the SQL query as the only required parameter.
+     * @return array Tool definition: the SQL query (required) and its parameters, with the limits of the agents.
      */
     public function get_definition(): array {
         return [
             'type' => 'function',
             'function' => [
                 'name' => 'execute_sql',
-                'description' => 'Execute a read-only SQL query on the Moodle database. Returns'
-                    . ' results as JSON array. Only SELECT and WITH queries are allowed.',
+                'description' => get_string('tool_execute_sql_desc', 'local_jedomi', [
+                    'rows' => \local_jedomi\local\query_runner::row_limit('agent'),
+                    'seconds' => (int) (\local_jedomi\local\query_runner::time_limit_ms('agent') / 1000),
+                ]),
                 'parameters' => [
                     'type' => 'object',
                     'properties' => [
                         'query' => [
                             'type' => 'string',
-                            'description' => 'The SQL query to execute — must start with SELECT or WITH.',
+                            'description' => get_string('tool_execute_sql_sql', 'local_jedomi'),
+                        ],
+                        'params' => [
+                            'type' => 'array',
+                            'items' => ['type' => 'string'],
+                            'description' => get_string('tool_execute_sql_params', 'local_jedomi'),
                         ],
                     ],
                     'required' => ['query'],
@@ -136,7 +142,12 @@ class sql_tool implements agent_tool {
         $start = microtime(true);
 
         try {
-            $result = \local_jedomi\local\query_runner::fetch($query, [], self::MAX_ROWS, self::TIMEOUT_MS);
+            $result = \local_jedomi\local\query_runner::fetch(
+                $query,
+                self::query_params($params),
+                \local_jedomi\local\query_runner::row_limit('agent'),
+                \local_jedomi\local\query_runner::time_limit_ms('agent')
+            );
 
             $elapsedms = (microtime(true) - $start) * 1000;
             $rowcount = count($result['rows']);
@@ -146,7 +157,9 @@ class sql_tool implements agent_tool {
                 $this->agentid,
                 $query,
                 $elapsedms,
-                $rowcount
+                $rowcount,
+                $this->channel,
+                $this->userid
             );
 
             // ... ── Format result for AI (rows already without sensitive columns) ──
@@ -164,7 +177,9 @@ class sql_tool implements agent_tool {
                 $this->agentid,
                 $query,
                 $elapsedms,
-                0
+                0,
+                $this->channel,
+                $this->userid
             );
 
             // The database message (an unknown column, a syntax error) lets the agent fix its query.
@@ -177,5 +192,25 @@ class sql_tool implements agent_tool {
                 'duration_ms' => round($elapsedms, 2),
             ]);
         }
+    }
+
+    /**
+     * Parameters of the query sent by the AI (the "params" list of the tool), as positional values.
+     *
+     * @param \stdClass $params Decoded tool arguments.
+     * @return array Positional parameters; empty when none were sent.
+     */
+    public static function query_params(\stdClass $params): array {
+        $values = $params->params ?? [];
+        if (is_object($values)) {
+            $values = (array) $values;
+        }
+        if (!is_array($values)) {
+            $values = [$values];
+        }
+        return array_values(array_map(
+            static fn($value) => is_scalar($value) || $value === null ? $value : json_encode($value),
+            $values
+        ));
     }
 }

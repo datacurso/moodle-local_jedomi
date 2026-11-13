@@ -33,14 +33,17 @@
 
     Context variables required for this template:
     * hasrows bool - Whether there are agents
-    * rows array - Agents: id int, userid int, creator string, name string, schedule string, enabled bool,
-      lastrun int (0 when never run), canmanage bool (whether the user may edit, run, toggle or delete it)
+    * rows array - Agents: id int, userid int, creator string, name string, schedule string (cron expression),
+      schedulelabel string (readable schedule), enabled bool,
+      lastrun int (0 when never run), failcount int (consecutive failed runs), canmanage bool (whether the user may edit, run,
+      toggle or delete it)
 
     Example context (json):
     {
         "hasrows": true,
         "rows": [{"id": 3, "userid": 2, "creator": "Admin User", "name": "Daily report", "schedule": "0 0 * * *",
-            "enabled": true, "lastrun": 1700000000, "canmanage": true}]
+            "schedulelabel": "Every day at 00:00",
+            "enabled": true, "lastrun": 1700000000, "failcount": 0, "canmanage": true}]
     }
 }}
 <table class="table table-sm table-hover small">
@@ -61,10 +64,11 @@
             <tr>
                 <td>{{#creator}}{{creator}}{{/creator}}{{^creator}}{{#str}} agent_user_id, local_jedomi, {{userid}} {{/str}}{{/creator}}</td>
                 <td><strong>{{#name}}{{name}}{{/name}}{{^name}}{{#str}} agent_unnamed, local_jedomi {{/str}} #{{id}}{{/name}}</strong></td>
-                <td><code>{{schedule}}</code></td>
+                <td title="{{schedule}}">{{schedulelabel}}</td>
                 <td>
                     {{#enabled}}<span class="badge badge-success bg-success">{{#str}} agent_enabled, local_jedomi {{/str}}</span>{{/enabled}}
                     {{^enabled}}<span class="badge badge-secondary bg-secondary">{{#str}} agent_disabled, local_jedomi {{/str}}</span>{{/enabled}}
+                    {{#failcount}}<span class="badge badge-danger bg-danger" title="{{#str}} agent_failing_count, local_jedomi, {{failcount}} {{/str}}">{{#str}} agent_failing, local_jedomi {{/str}}</span>{{/failcount}}
                 </td>
                 <td>{{#lastrun}}{{#userdate}} {{lastrun}}, {{#str}} strftimedatetimeshort, core_langconfig {{/str}} {{/userdate}}{{/lastrun}}{{^lastrun}}-{{/lastrun}}</td>
                 <td>

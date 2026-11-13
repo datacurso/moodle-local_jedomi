@@ -50,6 +50,8 @@ class integrations_tab extends form_tab {
         $verified = (bool) $tg['bot_verified'];
         $lasterror = (string) $tg['last_error'];
         $errortime = (int) $tg['last_error_time'];
+        // A registration that succeeded and was not followed by an error means the webhook works.
+        $webhookok = $tokenset && $lasterror === '' && (int) ($tg['webhook_ok_time'] ?? 0) > 0;
 
         $adminsteps = [];
         foreach ([1, 2, 3, 4] as $step) {
@@ -68,7 +70,8 @@ class integrations_tab extends form_tab {
                 'number' => 'U' . $step,
                 'titlekey' => 'telegram_stepU' . $step . '_title',
                 'title' => get_string('telegram_stepU' . $step . '_title', 'local_jedomi'),
-                'desc' => get_string('telegram_stepU' . $step . '_desc', 'local_jedomi'),
+                // The profile section is named after the plugin, as the profile page shows it.
+                'desc' => get_string('telegram_stepU' . $step . '_desc', 'local_jedomi', get_string('pluginname', 'local_jedomi')),
             ];
         }
 
@@ -84,8 +87,8 @@ class integrations_tab extends form_tab {
             'lasterror' => $lasterror,
             'lasterrortime' => $errortime,
             'haslasterrortime' => $errortime > 0,
-            'webhookok' => $lasterror === '' && $errortime > 0,
-            'webhooknotchecked' => $lasterror === '' && $errortime === 0,
+            'webhookok' => $webhookok,
+            'webhooknotchecked' => $lasterror === '' && !$webhookok,
             'isconfigured' => (bool) $tg['is_configured'],
             'showerroralert' => $tokenset && !empty($tg['webhook_error']),
             'adminsteps' => $adminsteps,

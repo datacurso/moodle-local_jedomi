@@ -165,23 +165,70 @@ final class plugin_state_test extends \advanced_testcase {
     /**
      * MDL-INT-087: a new installation has the same data structure as an updated one and the protection against
      * overwrites between processes works in both.
-     * [Pendiente:skip]
+     *
+     * The test site is installed from db/install.xml, so its columns are the ones of a new installation; every field
+     * that an upgrade step adds must be among them.
      *
      * @return void
      */
     public function test_new_installation_matches_an_updated_one(): void {
-        $this->markTestSkipped('Pending fix: a new installation lacks a field of the Telegram conversations that only the '
-            . 'update adds.');
+        global $DB;
+        $this->resetAfterTest();
+        $added = [
+            'local_jedomi_telegram_sessions' => ['iteration'],
+            'local_jedomi_agents' => ['lastresult', 'lasterror'],
+        ];
+        foreach ($added as $table => $fields) {
+            $columns = $DB->get_columns($table);
+            foreach ($fields as $field) {
+                $this->assertArrayHasKey($field, $columns, "{$table}.{$field} is created by a new installation");
+            }
+        }
+
+        // The protection against stale writes works: an older iteration does not overwrite a newer one.
+        \local_jedomi\telegram\session::set_context('776000001', ['step' => 'newer', 'iteration' => 3]);
+        \local_jedomi\telegram\session::set_context('776000001', ['step' => 'stale', 'iteration' => 2]);
+        $this->assertSame('newer', \local_jedomi\telegram\session::get_context('776000001')['step']);
+        \local_jedomi\telegram\session::set_context('776000001', ['step' => 'reset', 'iteration' => 0]);
+        $this->assertSame('reset', \local_jedomi\telegram\session::get_context('776000001')['step']);
     }
     /**
      * MDL-INT-078: the Telegram processing, the task alert, the profiler and the chat and agent queries work the same on
-     * every database supported by Moodle, with their time limits applied.
-     * [Pendiente:skip]
+     * every database supported by Moodle, with their time limits applied. SQL Server and Oracle have no per-query
+     * time limit: that is documented (README) and the AI is told the time limit only for MySQL, MariaDB and PostgreSQL.
      *
      * @return void
      */
     public function test_features_work_on_every_supported_database(): void {
-        $this->markTestSkipped('Pending fix: the query time limit is not applied on SQL Server and Oracle, the Telegram '
-            . 'lock only works on MySQL or MariaDB and the alert and the profiler use non portable SQL.');
+        global $CFG;
+        $this->resetAfterTest();
+
+        // The Telegram lock uses the Moodle lock API, never the MySQL-only GET_LOCK.
+        $lock = \local_jedomi\telegram\webhook_handler::acquire_chat_lock('778000001');
+        $this->assertInstanceOf(\core\lock\lock::class, $lock);
+        $lock->release();
+
+        // No query of the plugin writes a LIMIT clause: the limits go through the $DB limit parameters.
+        $iterator = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($CFG->dirroot . '/local/jedomi/classes'));
+        foreach ($iterator as $file) {
+            if ($file->isFile() && $file->getExtension() === 'php') {
+                $source = file_get_contents($file->getPathname());
+                $this->assertDoesNotMatchRegularExpression('/\bGET_LOCK\s*\(/', $source, $file->getFilename());
+                $this->assertDoesNotMatchRegularExpression('/^\s*LIMIT\s+\d+/mi', $source, $file->getFilename());
+            }
+        }
+
+        // The profiler statistics run on the current database.
+        \local_jedomi\agent\query_profiler::log_query(1, 'SELECT 1', 12.5, 1);
+        $aggregate = \local_jedomi\agent\query_profiler::get_aggregate();
+        $this->assertSame(1, $aggregate->total_queries);
+        $this->assertCount(1, $aggregate->slowest);
+
+        // Each channel has a time limit, and the README documents the databases without one.
+        foreach (['web', 'telegram', 'companion', 'agent'] as $channel) {
+            $this->assertGreaterThan(0, \local_jedomi\local\query_runner::time_limit_ms($channel));
+        }
+        $readme = file_get_contents($CFG->dirroot . '/local/jedomi/README.md');
+        $this->assertStringContainsString('SQL Server and Oracle have no per-query time limit', $readme);
     }
 }

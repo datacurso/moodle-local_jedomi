@@ -317,13 +317,10 @@ final class own_data_tools_test extends \advanced_testcase {
     /**
      * MDL-INT-115: My tasks applies the user and the group overrides of the dates; another student keeps the original
      * dates.
-     * [Pendiente:skip]
      *
      * @return void
      */
     public function test_my_tasks_apply_the_user_and_group_overrides(): void {
-        $this->markTestSkipped('Pending fix: My tasks ignores the user and group overrides of the assignment dates and '
-            . 'shows the original due and cut-off dates.');
         $data = $this->dated_assignment();
 
         $own = self::only_task($data['student']);
@@ -371,13 +368,23 @@ final class own_data_tools_test extends \advanced_testcase {
 
     /**
      * MDL-INT-113: My tasks shows the extended due date granted to a student, and other students keep the original
-     * date, in the web chat and in Telegram.
-     * [Pendiente:skip]
+     * date, in the web chat and in Telegram (both use the same tool).
      *
      * @return void
      */
     public function test_my_tasks_apply_the_extensions_of_the_student(): void {
-        $this->markTestSkipped('Pending fix: My tasks applies the user and group overrides but not the due date '
-            . 'extensions granted to the student.');
+        global $DB;
+        $data = $this->dated_assignment();
+        $assignid = (int) $DB->get_field('assign', 'id', ['name' => 'Dated assignment marker']);
+        $extended = time() + 9 * DAYSECS;
+        $DB->insert_record('assign_user_flags', (object) ['assignment' => $assignid, 'userid' => $data['plain']->id,
+            'locked' => 0, 'mailed' => 0, 'extensionduedate' => $extended, 'workflowstate' => '', 'allocatedmarker' => 0]);
+
+        $withextension = self::only_task($data['plain']);
+        $other = self::only_task($data['grouped']);
+
+        $this->assertSame(self::user_date($extended, $data['plain']), $withextension['extensionduedate']);
+        $this->assertSame(self::user_date($data['due'], $data['plain']), $withextension['duedate'], 'The due date is kept');
+        $this->assertNull($other['extensionduedate'], 'Other students keep the original date');
     }
 }

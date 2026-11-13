@@ -502,6 +502,48 @@ final class agent_manager_test extends \advanced_testcase {
         $this->assertEquals(1, (int) $agent->failcount);
     }
 
+    /**
+     * MDL-INT-034: each consecutive failure doubles the wait before the next attempt, up to one day, keeps the reason,
+     * and the fifth one disables the agent; a success clears the failures and keeps the answer.
+     */
+    public function test_mark_run_failures_back_off_and_disable_the_agent(): void {
+        $created = $this->create_agent_record(['nextrun' => time() - 60, 'failcount' => 0, 'enabled' => 1]);
+
+        $waits = [];
+        for ($i = 1; $i < agent_manager::MAX_FAILURES; $i++) {
+            $before = time();
+            $this->assertFalse(agent_manager::mark_run($created->id, false, 'AI service unavailable'));
+            $agent = agent_manager::get_agent($created->id);
+            $this->assertSame($i, (int) $agent->failcount);
+            $this->assertSame(1, (int) $agent->enabled, 'The agent stays enabled before the limit');
+            $this->assertSame('AI service unavailable', $agent->lasterror);
+            $waits[] = (int) $agent->nextrun - $before;
+        }
+        $this->assertEqualsWithDelta(300, $waits[0], 2, 'The first retry waits five minutes, not one');
+        $this->assertEqualsWithDelta(600, $waits[1], 2);
+        $this->assertEqualsWithDelta(1200, $waits[2], 2);
+
+        $this->assertTrue(agent_manager::mark_run($created->id, false, 'AI service unavailable'));
+        $agent = agent_manager::get_agent($created->id);
+        $this->assertSame(0, (int) $agent->enabled, 'Repeated failures disable the agent');
+        $this->assertSame(agent_manager::MAX_FAILURES, (int) $agent->failcount);
+
+        $this->assertSame(agent_manager::FAIL_BACKOFF_MAX, agent_manager::failure_backoff(30), 'The wait is capped');
+
+        // Enabling it again starts without the failures.
+        agent_manager::update_agent($created->id, (object) ['enabled' => 1]);
+        $agent = agent_manager::get_agent($created->id);
+        $this->assertSame(0, (int) $agent->failcount);
+        $this->assertNull($agent->lasterror);
+
+        agent_manager::mark_run($created->id, false, 'Timeout');
+        agent_manager::mark_run($created->id, true, 'There are 3 users.');
+        $agent = agent_manager::get_agent($created->id);
+        $this->assertSame(0, (int) $agent->failcount);
+        $this->assertSame('There are 3 users.', $agent->lastresult);
+        $this->assertNull($agent->lasterror);
+    }
+
     // ... ========================
     // CRUD — calculate_next_run
     // ========================
@@ -920,12 +962,43 @@ final class agent_manager_test extends \advanced_testcase {
 
     /**
      * MDL-UNIT-026: a custom schedule with a wrong number of parts or values out of range is rejected with an error message.
-     * [Pendiente:skip]
      */
     public function test_invalid_custom_schedule_is_rejected(): void {
-        $this->markTestSkipped('Pending fix: only the five parts are checked; values out of range are accepted and the '
-            . 'agent runs every 5 minutes, a non numeric text is read as zero, and editing with an expression without five '
-            . 'parts silently keeps the previous schedule.');
+        $invalid = ['', '* * * *', '* * * * * *', '60 * * * *', '0 24 * * *', '0 8 0 * *', '0 8 32 * *', '0 8 * 13 *',
+            '0 8 * * 8', 'a * * * *', '0 8 * * mon', '*/0 * * * *', '10-5 * * * *', '5/2 * * * *', '-1 * * * *'];
+        foreach ($invalid as $cron) {
+            $this->assertFalse(agent_manager::is_valid_cron($cron), "'{$cron}' must be rejected");
+            $this->assertSame(
+                get_string('agent_invalid_cron', 'local_jedomi'),
+                agent_manager::validation_error((object) ['prompt' => 'Report', 'schedule_cron' => $cron]),
+                "'{$cron}' gives the error message"
+            );
+        }
+        foreach (['* * * * *', '*/15 * * * *', '30 6 * * 1-5', '0 8,20 1-15/2 * 0', '0 0 * * 7'] as $cron) {
+            $this->assertTrue(agent_manager::is_valid_cron($cron), "'{$cron}' is valid");
+        }
+        // A valid expression gives the run it describes.
+        $from = (new \DateTimeImmutable('2026-06-10 07:00:00', new \DateTimeZone('UTC')))->getTimestamp();
+        $next = agent_manager::calculate_next_run('30 6 * * 1-5', $from);
+        $this->assertSame('2026-06-11 06:30', (new \DateTimeImmutable('@' . $next))->format('Y-m-d H:i'));
+
+        $this->expectException(\moodle_exception::class);
+        agent_manager::create_agent((object) ['userid' => 2, 'prompt' => 'Report', 'schedule_cron' => '0 25 * * *']);
+    }
+
+    /**
+     * MDL-UNIT-026: editing an agent with an invalid schedule is rejected and keeps the previous schedule.
+     */
+    public function test_invalid_schedule_is_rejected_when_editing(): void {
+        $id = agent_manager::create_agent((object) ['userid' => 2, 'prompt' => 'Report', 'schedule_cron' => '0 8 * * *']);
+
+        try {
+            agent_manager::update_agent($id, (object) ['schedule_cron' => '0 8 * *']);
+            $this->fail('An invalid schedule must be rejected');
+        } catch (\moodle_exception $e) {
+            $this->assertSame(get_string('agent_invalid_cron', 'local_jedomi'), $e->getMessage());
+        }
+        $this->assertSame('0 8 * * *', agent_manager::get_agent($id)->schedule_cron);
     }
 
     /**
@@ -1034,12 +1107,49 @@ final class agent_manager_test extends \advanced_testcase {
 
     /**
      * MDL-UNIT-028: the agent context id has one meaning per context type and an unknown or mismatched id is rejected when saving.
-     * [Pendiente:skip]
      */
     public function test_context_id_is_validated_when_saving(): void {
-        $this->markTestSkipped('Pending fix: the context id and type are not validated when saving, editing or creating '
-            . 'agents from the chat or Telegram; the run reads a Moodle context id while the purge and the chat ask for '
-            . 'the course, category or user id.');
+        global $DB;
+        $course = $this->getDataGenerator()->create_course();
+        $category = $this->getDataGenerator()->create_category();
+        $user = $this->getDataGenerator()->create_user();
+        $valid = [
+            'course' => \context_course::instance($course->id)->id,
+            'category' => \context_coursecat::instance($category->id)->id,
+            'user' => \context_user::instance($user->id)->id,
+        ];
+        $base = ['userid' => 2, 'prompt' => 'Report', 'schedule_cron' => '0 8 * * *'];
+
+        foreach ($valid as $type => $contextid) {
+            $this->assertNull(agent_manager::validation_error((object) ($base + ['context_type' => $type,
+                'context_id' => $contextid])), "A {$type} context id is valid for {$type}");
+            foreach ($valid as $othertype => $otherid) {
+                if ($othertype !== $type) {
+                    $this->assertNotNull(agent_manager::validation_error((object) ($base + ['context_type' => $type,
+                        'context_id' => $otherid])), "A {$othertype} context id is rejected for {$type}");
+                }
+            }
+            $this->assertNotNull(agent_manager::validation_error((object) ($base + ['context_type' => $type,
+                'context_id' => 0])), "{$type} needs a context id");
+        }
+        // An id that is not the id of any context is rejected.
+        $missing = (int) $DB->get_field_sql('SELECT MAX(id) FROM {context}') + 1000;
+        $this->assertNotNull(agent_manager::validation_error((object) ($base + ['context_type' => 'course',
+            'context_id' => $missing])));
+        $this->assertNotNull(agent_manager::validation_error((object) ($base + ['context_type' => 'galaxy'])));
+        $this->assertNull(agent_manager::validation_error((object) ($base + ['context_type' => 'site'])));
+
+        // The context is validated when editing too, and the purge uses the same Moodle context id.
+        $id = agent_manager::create_agent((object) ($base + ['context_type' => 'course', 'context_id' => $valid['course']]));
+        try {
+            agent_manager::update_agent($id, (object) ['context_type' => 'user']);
+            $this->fail('A course context id must not be kept for a user agent');
+        } catch (\moodle_exception $e) {
+            $this->assertNotSame('', $e->getMessage());
+        }
+        $this->assertSame(1, agent_manager::purge_by_context('course', $valid['course']));
+        $this->assertStringContainsString('context', get_string('agent_purge_id_required', 'local_jedomi'));
+        $this->assertStringContainsString('Moodle context', get_string('tool_create_agent_context_id', 'local_jedomi'));
     }
 
     /**
@@ -1067,21 +1177,70 @@ final class agent_manager_test extends \advanced_testcase {
     /**
      * MDL-INT-023: agents can be created active, and enabling them or changing the schedule calculates the next run from the
      * schedule; "Run now" on a disabled agent runs it or says it will not run.
-     * [Pendiente:skip]
      */
     public function test_activation_and_next_run_follow_the_schedule(): void {
-        $this->markTestSkipped('Pending fix: the form has no Active field, so the agents created from the tab are disabled '
-            . '(the ones created from the chat, Telegram or an agent are enabled), and "Run now" on a disabled agent '
-            . 'reports a queue that never runs.');
+        global $CFG;
+        $this->setTimezone('UTC', 'UTC');
+        $active = agent_manager::create_agent((object) ['userid' => 2, 'prompt' => 'Report', 'schedule_cron' => '0 8 * * *',
+            'enabled' => 1]);
+        $this->assertSame(1, (int) agent_manager::get_agent($active)->enabled);
+        $default = agent_manager::create_agent((object) ['userid' => 2, 'prompt' => 'Default', 'schedule_cron' => '0 8 * * *']);
+        $this->assertSame(1, (int) agent_manager::get_agent($default)->enabled, 'Like the chat and Telegram, active by default');
+
+        $disabled = agent_manager::create_agent((object) ['userid' => 2, 'prompt' => 'Report', 'schedule_cron' => '0 8 * * *',
+            'enabled' => 0]);
+        agent_manager::update_agent($disabled, (object) ['enabled' => 1]);
+        $local = (new \DateTimeImmutable('@' . (int) agent_manager::get_agent($disabled)->nextrun));
+        $this->assertSame('08:00', $local->format('H:i'), 'Enabling calculates the next run from the schedule');
+
+        // The tab form shows an Enabled box and "Run now" says that a disabled agent is not run.
+        $template = file_get_contents($CFG->dirroot . '/local/jedomi/templates/admin/agents_tab.mustache');
+        $this->assertStringContainsString('name="enabled" value="1"', $template);
+        $endpoint = file_get_contents($CFG->dirroot . '/local/jedomi/ajax/agent_create.php');
+        $this->assertStringContainsString("get_string('agent_run_disabled', 'local_jedomi')", $endpoint);
+        $this->assertStringContainsString('disabled', get_string('agent_run_disabled', 'local_jedomi'));
     }
 
     /**
      * MDL-INT-024: editing an agent keeps and shows its name, custom schedule and roles.
-     * [Pendiente:skip]
      */
     public function test_editing_keeps_name_schedule_and_roles(): void {
-        $this->markTestSkipped('Pending fix: editing ignores the new name, silently drops an invalid or empty custom '
-            . 'schedule, saves an instruction of only spaces and cannot remove every role; the role boxes have no effect.');
+        global $CFG;
+        $id = agent_manager::create_agent((object) ['userid' => 2, 'name' => 'Old', 'prompt' => 'Report',
+            'schedule_cron' => '0 8 * * *', 'role_filter' => json_encode(['editingteacher'])]);
+
+        agent_manager::update_agent($id, (object) ['name' => 'New name', 'schedule_cron' => '15 7 * * 1-5',
+            'role_filter' => null]);
+        $agent = agent_manager::get_agent($id);
+        $this->assertSame('New name', $agent->name);
+        $this->assertSame('15 7 * * 1-5', $agent->schedule_cron);
+        $this->assertNull($agent->role_filter, 'Every role can be removed');
+
+        try {
+            agent_manager::update_agent($id, (object) ['prompt' => "   \n "]);
+            $this->fail('An instruction of only spaces must be rejected');
+        } catch (\moodle_exception $e) {
+            $this->assertSame(get_string('agent_invalid_prompt', 'local_jedomi'), $e->getMessage());
+        }
+        $this->assertSame('Report', agent_manager::get_agent($id)->prompt);
+
+        // The form shows a custom schedule as "Custom" with its expression.
+        $js = file_get_contents($CFG->dirroot . '/local/jedomi/amd/src/admin/agents.js');
+        $this->assertStringContainsString("schedule.value = preset ? cron : 'custom';", $js);
+
+        // The role boxes have an effect: the agent only runs while its creator holds one of them.
+        $creator = $this->getDataGenerator()->create_user();
+        $course = $this->getDataGenerator()->create_course();
+        $this->getDataGenerator()->enrol_user($creator->id, $course->id, 'editingteacher');
+        $agent = (object) ['role_filter' => json_encode(['student']),
+            'context_id' => \context_course::instance($course->id)->id];
+        $this->assertFalse(\local_jedomi\task\agent_runner::creator_has_agent_role($creator, $agent));
+        $agent->role_filter = json_encode(['student', 'editingteacher']);
+        $this->assertTrue(\local_jedomi\task\agent_runner::creator_has_agent_role($creator, $agent));
+        $agent->role_filter = null;
+        $this->assertTrue(\local_jedomi\task\agent_runner::creator_has_agent_role($creator, $agent));
+        $this->assertTrue(\local_jedomi\task\agent_runner::creator_has_agent_role(get_admin(), (object) [
+            'role_filter' => json_encode(['student']), 'context_id' => null]));
     }
 
     /**

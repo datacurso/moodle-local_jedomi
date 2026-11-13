@@ -73,14 +73,14 @@
             {{$subtitle}}{{#str}} tab_apis_heading_help, local_jedomi {{/str}}{{/subtitle}}
             {{$body}}
                 <div class="mb-3 d-flex align-items-center flex-wrap">
-                    <span class="local_jedomi-admin-filter-label">{{#str}} filter_type, local_jedomi {{/str}}</span>
+                    <span class="local_jedomi-admin-filter-label">{{#str}} ws_role_filter, local_jedomi {{/str}}</span>
                     {{#roles}}
                     <a href="{{url}}" class="btn btn-sm rounded-pill mr-2 mb-1 {{#active}}btn-primary{{/active}}{{^active}}btn-outline-secondary{{/active}}">{{label}}</a>
                     {{/roles}}
                 </div>
 
                 <div class="mb-3 d-flex align-items-center flex-wrap">
-                    <span class="local_jedomi-admin-filter-label">{{#str}} ws_type, local_jedomi {{/str}}</span>
+                    <span class="local_jedomi-admin-filter-label">{{#str}} filter_type, local_jedomi {{/str}}</span>
                     {{#types}}
                     <button type="button" class="btn btn-sm rounded-pill mr-2 mb-1 {{#active}}btn-primary{{/active}}{{^active}}btn-outline-secondary{{/active}}"
                             data-action="local_jedomi/admin/apis/type" data-type="{{type}}"

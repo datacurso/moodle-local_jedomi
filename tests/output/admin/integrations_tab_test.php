@@ -206,27 +206,102 @@ final class integrations_tab_test extends \advanced_testcase {
     }
 
     /**
+     * Fake Telegram client that answers getMe with a bot and the webhook registration with the given result.
+     *
+     * @param bool $webhookok Result of set_webhook().
+     * @return \local_jedomi\telegram\api_client
+     */
+    private function fake_client(bool $webhookok): \local_jedomi\telegram\api_client {
+        return new class ($webhookok) extends \local_jedomi\telegram\api_client {
+            /** @var bool Result of set_webhook(). */
+            private bool $webhookok;
+
+            /**
+             * Store the canned answer.
+             *
+             * @param bool $webhookok Result of set_webhook().
+             */
+            public function __construct(bool $webhookok) {
+                parent::__construct('123:abc');
+                $this->webhookok = $webhookok;
+            }
+
+            #[\Override]
+            public function get_me(): ?array {
+                return ['id' => 1, 'username' => 'jedomibot', 'first_name' => 'Jedomi'];
+            }
+
+            #[\Override]
+            public function delete_webhook(): bool {
+                return true;
+            }
+
+            #[\Override]
+            public function set_webhook(string $url): bool {
+                return $this->webhookok;
+            }
+        };
+    }
+
+    /**
      * MDL-UNIT-056: the setup guide describes the automatic webhook registration and the real steps, each group and
      * field has a Telegram title and a name that describes it, and no help mentions retired components.
-     * [Pendiente:skip]
      *
      * @return void
      */
     public function test_guide_help_and_labels_describe_the_real_behaviour(): void {
-        $this->markTestSkipped('Pending fix: the guide still asks to save the switch that saves itself and misnames the '
-            . 'profile section, the section titles do not match their fields and the block time is labelled Wait time.');
+        global $PAGE;
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $PAGE->set_url(new \moodle_url('/local/jedomi/admin_settings.php'));
+        $form = new \local_jedomi\form\telegram_settings_form(null, ['roles' => [], 'tokenset' => true]);
+
+        $data = (new integrations_tab(admin_settings_service::get_telegram_settings(), $form->render()))
+            ->export_for_template($PAGE->get_renderer('local_jedomi'));
+        $html = $data['form'];
+
+        $userstep1 = $data['usersteps'][0]['desc'];
+        $this->assertStringContainsString(get_string('pluginname', 'local_jedomi'), $userstep1, 'Profile section named as shown');
+        $strings = get_string_manager();
+        foreach (['telegram_bot_heading', 'telegram_limits_heading', 'telegram_access_heading'] as $heading) {
+            $this->assertStringContainsString(get_string($heading, 'local_jedomi'), $html);
+            $this->assertStringContainsString('Telegram', $strings->get_string($heading, 'local_jedomi', null, 'en'));
+        }
+        $this->assertStringNotContainsString(get_string('security_heading', 'local_jedomi'), $html);
+        $this->assertNotSame(
+            $strings->get_string('telegram_cooldown', 'local_jedomi', null, 'en'),
+            $strings->get_string('telegram_gateway_timeout', 'local_jedomi', null, 'en')
+        );
+        $this->assertSame('Block time (minutes)', $strings->get_string('telegram_cooldown', 'local_jedomi', null, 'en'));
+        $this->assertStringNotContainsString('toggle', $strings->get_string('telegram_step2_desc', 'local_jedomi', null, 'en'));
     }
 
     /**
      * MDL-UNIT-087: after a successful registration the webhook box shows the webhook as configured and working, and
      * after a failed one the last error with its date.
-     * [Pendiente:skip]
      *
      * @return void
      */
     public function test_webhook_box_reflects_the_last_registration(): void {
-        $this->markTestSkipped('Pending fix: after a successful registration the box shows Not verified instead of '
-            . 'configured and working.');
+        global $PAGE;
+        $this->resetAfterTest();
+        $PAGE->set_url(new \moodle_url('/local/jedomi/admin_settings.php'));
+        $renderer = $PAGE->get_renderer('local_jedomi');
+
+        $this->assertTrue(admin_settings_service::verify_and_save_telegram_token('123:abc', $this->fake_client(true)));
+        $ok = (new integrations_tab(admin_settings_service::get_telegram_settings(), ''))->export_for_template($renderer);
+
+        $this->assertTrue($ok['webhookok']);
+        $this->assertFalse($ok['webhooknotchecked']);
+        $this->assertFalse($ok['haslasterror']);
+
+        $before = time();
+        $this->assertTrue(admin_settings_service::verify_and_save_telegram_token('123:abc', $this->fake_client(false)));
+        $failed = (new integrations_tab(admin_settings_service::get_telegram_settings(), ''))->export_for_template($renderer);
+
+        $this->assertFalse($failed['webhookok']);
+        $this->assertTrue($failed['haslasterror']);
+        $this->assertGreaterThanOrEqual($before, $failed['lasterrortime']);
     }
 
     /**
@@ -269,13 +344,33 @@ final class integrations_tab_test extends \advanced_testcase {
     /**
      * MDL-INT-098: Regenerate secret regenerates the webhook secret and registers the webhook again without saving the
      * other fields of the form.
-     * [Pendiente:skip]
      *
      * @return void
      */
     public function test_regenerating_the_secret_does_not_save_the_form(): void {
-        $this->markTestSkipped('Pending fix: Regenerate secret also saves the token and the limits of the form, and with '
-            . 'an invalid token the secret is not regenerated.');
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        admin_settings_service::save_telegram_settings(30, 5, 10, 45, []);
+        $oldsecret = \local_jedomi\telegram\manager::get_webhook_secret();
+        \local_jedomi\form\telegram_settings_form::mock_submit([
+            'telegram_bot_token' => 'not-a-valid-token',
+            'telegram_rate_limit' => 99999,
+            'telegram_cooldown' => 9,
+            'telegram_max_turns' => 10,
+            'telegram_gateway_timeout' => 45,
+            'regeneratesecret' => get_string('regenerate', 'local_jedomi'),
+        ]);
+
+        $form = new \local_jedomi\form\telegram_settings_form(null, ['roles' => [], 'tokenset' => false]);
+
+        $this->assertNull($form->get_data(), 'The rest of the form is neither validated nor saved');
+        $this->assertTrue($form->no_submit_button_pressed());
+        \local_jedomi\telegram\manager::regenerate_webhook_secret();
+        $this->assertNotSame($oldsecret, \local_jedomi\telegram\manager::get_webhook_secret());
+        $settings = admin_settings_service::get_telegram_settings();
+        $this->assertSame(30, $settings['rate_limit']);
+        $this->assertSame(5, $settings['cooldown']);
+        $this->assertNull(\local_jedomi\telegram\manager::get_bot_token(), 'The typed token is not saved');
     }
 
     /**

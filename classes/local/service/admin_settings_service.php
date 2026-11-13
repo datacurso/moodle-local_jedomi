@@ -45,13 +45,13 @@ class admin_settings_service {
     /**
      * Settings of the General tab.
      *
-     * @return array{spt_secret: string, collect_training_data: int} Training data collection defaults to on.
+     * @return array{spt_secret: string}
      */
     public static function get_general_settings(): array {
-        $collect = get_config('local_jedomi', 'collect_training_data');
         return [
             'spt_secret' => (string) (get_config('local_jedomi', 'spt_secret') ?: ''),
-            'collect_training_data' => ($collect === false) ? 1 : (int) $collect,
+            'profiler_slow_ms' => \local_jedomi\agent\query_profiler::slow_threshold_ms(),
+            'profiler_retention_days' => \local_jedomi\agent\query_profiler::retention_days(),
         ];
     }
 
@@ -59,12 +59,19 @@ class admin_settings_service {
      * Save the settings of the General tab.
      *
      * @param string $sptsecret Shared secret used to sign session tokens.
-     * @param bool $collecttrainingdata Whether anonymised conversations are kept to improve the service.
+     * @param int|null $slowms Slow query threshold in milliseconds; null keeps the current value.
+     * @param int|null $retentiondays Days the profiler records are kept; null keeps the current value.
      * @return void
      */
-    public static function save_general_settings(string $sptsecret, bool $collecttrainingdata): void {
+    public static function save_general_settings(string $sptsecret, ?int $slowms = null, ?int $retentiondays = null): void {
         set_config('spt_secret', $sptsecret, 'local_jedomi');
-        set_config('collect_training_data', (int) $collecttrainingdata, 'local_jedomi');
+        if ($slowms !== null) {
+            set_config('profiler_slow_ms', max(1, $slowms), 'local_jedomi');
+        }
+        if ($retentiondays !== null) {
+            set_config('profiler_retention_days', max(1, $retentiondays), 'local_jedomi');
+        }
+        \local_jedomi\event\settings_updated::create_for_tab('general')->trigger();
     }
 
     /**
@@ -93,16 +100,16 @@ class admin_settings_service {
         set_config('course_mode', $mode, 'local_jedomi');
         $ids = array_values(array_filter(array_map('intval', $courseids)));
         set_config('course_list', implode(',', $ids), 'local_jedomi');
+        \local_jedomi\event\settings_updated::create_for_tab('course')->trigger();
     }
 
     /**
      * Settings of the Privacy tab.
      *
-     * @return array{hide_from_guests: int, anonymization_level: string, hidden_role_ids: int[]}
+     * @return array{anonymization_level: string, hidden_role_ids: int[]}
      */
     public static function get_privacy_settings(): array {
         return [
-            'hide_from_guests' => (int) get_config('local_jedomi', 'hide_from_guests'),
             'anonymization_level' => (string) (get_config('local_jedomi', 'anonymization_level') ?: 'basic'),
             'hidden_role_ids' => self::parse_ids((string) (get_config('local_jedomi', 'hidden_roles') ?: '')),
         ];
@@ -111,30 +118,36 @@ class admin_settings_service {
     /**
      * Save the settings of the Privacy tab.
      *
-     * @param bool $hidefromguests Whether the chat is hidden from guests.
      * @param string $level One of {@see self::ANONYMIZATION_LEVELS}; anything else is stored as "basic".
      * @param int[] $visibleroleids Roles that can use the chat; every other role is hidden.
      * @return void
      */
-    public static function save_privacy_settings(bool $hidefromguests, string $level, array $visibleroleids): void {
+    public static function save_privacy_settings(string $level, array $visibleroleids): void {
         if (!in_array($level, self::ANONYMIZATION_LEVELS, true)) {
             $level = 'basic';
         }
-        set_config('hide_from_guests', (int) $hidefromguests, 'local_jedomi');
         set_config('anonymization_level', $level, 'local_jedomi');
         set_config('hidden_roles', implode(',', self::hidden_role_ids($visibleroleids)), 'local_jedomi');
+        \local_jedomi\event\settings_updated::create_for_tab('privacy')->trigger();
     }
 
     /**
-     * Every role of the site, in sort order, with its display name.
+     * Roles of the site that can use Jedomi, in sort order, with their display name.
+     *
+     * The guest role and the role of authenticated users on the site home are left out: guests never use Jedomi and the
+     * site home role is never assigned to a user, so a visibility switch for them would have no effect.
      *
      * @return array<int, array{id: int, shortname: string, name: string}>
      */
     public static function get_roles(): array {
-        global $DB;
+        global $CFG, $DB;
         $context = \context_system::instance();
+        $excluded = [(int) ($CFG->guestroleid ?? 0), (int) ($CFG->defaultfrontpageroleid ?? 0)];
         $roles = [];
         foreach ($DB->get_records('role', null, 'sortorder ASC', 'id, shortname, name, description, archetype') as $role) {
+            if (in_array((int) $role->id, $excluded, true) || in_array($role->archetype, ['guest', 'frontpage'], true)) {
+                continue;
+            }
             $name = role_get_name($role, $context);
             $roles[] = [
                 'id' => (int) $role->id,
@@ -151,7 +164,7 @@ class admin_settings_service {
      * @return array{enabled: int, bot_token_set: bool, bot_username: string, bot_firstname: string,
      *     bot_verified: int, webhook_error: int, webhook_url: string, rate_limit: int, cooldown: int,
      *     max_turns: int, gateway_timeout: int, hidden_role_ids: int[], last_error: string,
-     *     last_error_time: int, is_configured: bool}
+     *     last_error_time: int, webhook_ok_time: int, is_configured: bool}
      */
     public static function get_telegram_settings(): array {
         $maxturns = get_config('local_jedomi', 'telegram_max_turns');
@@ -166,10 +179,11 @@ class admin_settings_service {
             'rate_limit' => manager::get_rate_limit(),
             'cooldown' => manager::get_cooldown(),
             'max_turns' => ($maxturns === false) ? 10 : (int) $maxturns,
-            'gateway_timeout' => (int) (get_config('local_jedomi', 'telegram_gateway_timeout') ?: 120),
+            'gateway_timeout' => \local_jedomi\telegram\webhook_handler::get_ai_timeout(),
             'hidden_role_ids' => self::parse_ids((string) (get_config('local_jedomi', 'telegram_hidden_roles') ?: '')),
             'last_error' => manager::get_last_webhook_error(),
             'last_error_time' => manager::get_last_webhook_error_time(),
+            'webhook_ok_time' => manager::get_webhook_ok_time(),
         ];
         $settings['is_configured'] = $settings['enabled'] && $settings['bot_token_set'] && $settings['bot_verified'];
         return $settings;
@@ -178,17 +192,23 @@ class admin_settings_service {
     /**
      * Check a bot token with getMe and, when it is valid, store it and register the webhook.
      *
-     * An invalid token is not stored; the bot is marked as not verified.
+     * An invalid token is not stored and the previous token is removed with its webhook, so no token stays in use
+     * while the card shows the bot as disconnected.
      *
      * @param string $token Bot token from @BotFather.
      * @param api_client|null $client Client to use; a client for the given token when null.
+     * @param api_client|null $previousclient Client of the stored token, used to remove its webhook; built when null.
      * @return bool Whether the token was valid and stored.
      */
-    public static function verify_and_save_telegram_token(string $token, ?api_client $client = null): bool {
+    public static function verify_and_save_telegram_token(
+        string $token,
+        ?api_client $client = null,
+        ?api_client $previousclient = null
+    ): bool {
         $client = $client ?? new api_client($token);
         $botinfo = $client->get_me();
         if (!$botinfo) {
-            set_config('telegram_bot_verified', 0, 'local_jedomi');
+            self::remove_telegram_token($previousclient);
             return false;
         }
 
@@ -205,6 +225,30 @@ class admin_settings_service {
             manager::set_last_webhook_error('setWebhook failed after token save — check the URL is HTTPS and reachable');
         }
         return true;
+    }
+
+    /**
+     * Remove the stored bot token: its webhook is deleted in Telegram, so the bot stops receiving messages, and the
+     * bot details, the verified flag and the webhook state are forgotten.
+     *
+     * @param api_client|null $client Client of the stored token; built from the stored token when null.
+     * @return void
+     */
+    public static function remove_telegram_token(?api_client $client = null): void {
+        global $CFG;
+        require_once($CFG->dirroot . '/local/jedomi/lib.php');
+        $token = manager::get_bot_token();
+        if ($token !== null) {
+            $client = $client ?? new api_client($token);
+            if (!$client->delete_webhook()) {
+                \local_jedomi_log('[local_jedomi] Telegram webhook could not be deleted while removing the bot token');
+            }
+        }
+        foreach (['telegram_bot_token', 'telegram_bot_username', 'telegram_bot_firstname'] as $name) {
+            unset_config($name, 'local_jedomi');
+        }
+        set_config('telegram_bot_verified', 0, 'local_jedomi');
+        manager::forget_webhook_state();
     }
 
     /**
@@ -229,6 +273,7 @@ class admin_settings_service {
         set_config('telegram_max_turns', $maxturns, 'local_jedomi');
         set_config('telegram_gateway_timeout', $gatewaytimeout, 'local_jedomi');
         set_config('telegram_hidden_roles', implode(',', self::hidden_role_ids($visibleroleids)), 'local_jedomi');
+        \local_jedomi\event\settings_updated::create_for_tab('telegram')->trigger();
     }
 
     /**
@@ -265,6 +310,7 @@ class admin_settings_service {
             $wsnames = array_merge(array_diff($current, $shown), $wsnames);
         }
         set_config('ws_allowlist_' . $role, json_encode(array_values(array_unique($wsnames))), 'local_jedomi');
+        \local_jedomi\event\settings_updated::create_for_tab('apis')->trigger();
     }
 
     /**
@@ -323,20 +369,23 @@ class admin_settings_service {
             $params
         );
 
-        // The access type comes from the function name, so it is filtered here and not in SQL.
+        // The type and the description are declared in the db/services.php of each component, so the type is
+        // filtered here and not in SQL. Every function is either read or write.
+        $declarations = self::ws_declarations(array_unique(array_column($functions, 'component')));
         $filtered = [];
         $countread = 0;
         $countwrite = 0;
         foreach ($functions as $function) {
-            $access = \local_jedomi_classify_ws_access($function->name);
-            if ($access === 'Lectura') {
-                $countread++;
-            } else if ($access === 'Escritura') {
+            $declared = $declarations[$function->name] ?? [];
+            $access = self::ws_access((string) $function->name, (string) ($declared['type'] ?? ''));
+            if ($access === 'Escritura') {
                 $countwrite++;
+            } else {
+                $countread++;
             }
             if ($type === 'all' || $access === $type) {
                 $filtered[] = ['name' => (string) $function->name, 'component' => (string) $function->component,
-                    'iswrite' => $access === 'Escritura'];
+                    'iswrite' => $access === 'Escritura', 'description' => (string) ($declared['description'] ?? '')];
             }
         }
 
@@ -351,7 +400,7 @@ class admin_settings_service {
         foreach (array_slice($filtered, ($page - 1) * $perpage, $perpage) as $function) {
             $rows[] = [
                 'name' => $function['name'],
-                'description' => '',
+                'description' => shorten_text($function['description'], 160),
                 'component' => $function['component'],
                 'iswrite' => $function['iswrite'],
                 'checked' => $fullaccess || in_array($function['name'], $allowlist, true),
@@ -370,41 +419,117 @@ class admin_settings_service {
     }
 
     /**
+     * Type and description of the web service functions declared by some components.
+     *
+     * Read from the db/services.php of each component, where Moodle reads them too.
+     *
+     * @param string[] $components Component names (moodle for core).
+     * @return array<string, array{type: string, description: string}> Keyed by function name.
+     */
+    private static function ws_declarations(array $components): array {
+        $declarations = [];
+        foreach ($components as $component) {
+            $dir = \core_component::get_component_directory((string) $component);
+            $file = $dir ? $dir . '/db/services.php' : '';
+            if ($file === '' || !is_readable($file)) {
+                continue;
+            }
+            $functions = [];
+            include($file);
+            foreach ((array) $functions as $name => $definition) {
+                $declarations[$name] = [
+                    'type' => (string) ($definition['type'] ?? ''),
+                    'description' => trim((string) ($definition['description'] ?? '')),
+                ];
+            }
+        }
+        return $declarations;
+    }
+
+    /**
+     * Access type of a web service function: its declared type, or a guess from its name when it declares none.
+     *
+     * @param string $name Function name.
+     * @param string $declared Type declared in db/services.php ("read" or "write"), or empty.
+     * @return string "Lectura" or "Escritura", see {@see self::WS_TYPES}.
+     */
+    public static function ws_access(string $name, string $declared): string {
+        if ($declared === 'write') {
+            return 'Escritura';
+        }
+        if ($declared === 'read') {
+            return 'Lectura';
+        }
+        return \local_jedomi_classify_ws_access($name) === 'Escritura' ? 'Escritura' : 'Lectura';
+    }
+
+    /**
      * Recent queries run by agents, with the full name of the user who owns each agent.
      *
      * @param int $mindurationms Only queries that took at least this many milliseconds; 0 for all.
      * @param string $sort "duration_ms" or "timecreated", always newest or slowest first.
      * @param int $limit Maximum number of entries.
-     * @return array<int, array{agentid: int, userfullname: string, query: string, duration_ms: float,
+     * @param string $channel Only the queries of this channel; empty for every channel.
+     * @return array<int, array{agentid: int, channel: string, userfullname: string, query: string, duration_ms: float,
      *     rowcount: int, timecreated: int}> The user name is empty when the agent no longer exists.
      */
-    public static function get_recent_profiler_entries(int $mindurationms, string $sort, int $limit = 20): array {
+    public static function get_recent_profiler_entries(
+        int $mindurationms,
+        string $sort,
+        int $limit = 20,
+        string $channel = ''
+    ): array {
+        return self::get_profiler_page(['min_duration_ms' => $mindurationms, 'channel' => $channel], $sort, 1, $limit)['entries'];
+    }
+
+    /**
+     * A page of the profiled queries that match the filters, with the user of each one.
+     *
+     * The user is the one the query ran for (web chat, Telegram, companion, preview) or, for a scheduled run, the owner
+     * of the agent.
+     *
+     * @param array $filters Filters of query_profiler::get_log(): min_duration_ms, channel, agentid, search.
+     * @param string $sort "duration_ms" or "timecreated", always newest or slowest first.
+     * @param int $page Page, from 1.
+     * @param int $perpage Entries per page.
+     * @return array{entries: array, total: int} Entries as in get_recent_profiler_entries() and the number of matches.
+     */
+    public static function get_profiler_page(array $filters, string $sort, int $page, int $perpage): array {
         global $DB;
-        $log = \local_jedomi\agent\query_profiler::get_log([
-            'min_duration_ms' => $mindurationms,
+        $log = \local_jedomi\agent\query_profiler::get_log($filters + [
             'sort' => $sort === 'duration_ms' ? 'duration_ms' : 'timecreated',
             'dir' => 'DESC',
-            'perpage' => $limit,
+            'page' => $page,
+            'perpage' => $perpage,
         ]);
+        $owners = [];
         $names = [];
         $entries = [];
         foreach ($log['entries'] as $entry) {
             $agentid = (int) $entry->agentid;
-            if (!array_key_exists($agentid, $names)) {
-                $userid = $DB->get_field('local_jedomi_agents', 'userid', ['id' => $agentid]);
-                $user = $userid ? \core_user::get_user((int) $userid) : false;
-                $names[$agentid] = $user ? fullname($user) : '';
+            $channel = (string) ($entry->channel ?? 'agent');
+            $userid = (int) ($entry->userid ?? 0);
+            if (($channel === 'agent' || $userid === 0) && $agentid > 0) {
+                if (!array_key_exists($agentid, $owners)) {
+                    $owners[$agentid] = (int) $DB->get_field('local_jedomi_agents', 'userid', ['id' => $agentid]);
+                }
+                $userid = $owners[$agentid];
+            }
+            if (!array_key_exists($userid, $names)) {
+                $user = $userid ? \core_user::get_user($userid) : false;
+                $names[$userid] = $user ? fullname($user) : '';
             }
             $entries[] = [
                 'agentid' => $agentid,
-                'userfullname' => $names[$agentid],
+                'channel' => $channel,
+                'userfullname' => $names[$userid],
                 'query' => (string) $entry->query,
                 'duration_ms' => (float) $entry->duration_ms,
                 'rowcount' => (int) $entry->rowcount,
                 'timecreated' => (int) $entry->timecreated,
             ];
         }
-        return $entries;
+        return ['entries' => $entries, 'total' => (int) $log['total']];
     }
 
     /**
@@ -424,12 +549,11 @@ class admin_settings_service {
      * @return int[]
      */
     private static function hidden_role_ids(array $visibleroleids): array {
-        global $DB;
         $visible = array_map('intval', $visibleroleids);
         $hidden = [];
-        foreach ($DB->get_records('role', null, 'sortorder ASC', 'id') as $role) {
-            if (!in_array((int) $role->id, $visible, true)) {
-                $hidden[] = (int) $role->id;
+        foreach (self::get_roles() as $role) {
+            if (!in_array($role['id'], $visible, true)) {
+                $hidden[] = $role['id'];
             }
         }
         return $hidden;

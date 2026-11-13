@@ -60,15 +60,23 @@ class preview_runner {
      * @param int $userid User the preview runs for (the future creator of the agent; the AI calls are made for this user).
      * @param string $contexttype Context type of the agent (site, course, category or user).
      * @param int|null $contextid Context instance of the agent.
+     * @param int $agentid Agent being edited, recorded with the queries of the preview; 0 for a new agent.
      * @return array Response for the preview page: ok, answer, rounds, profiler, conversation, total_time_ms,
      *               and cached/cached_at/cache_hash/reformulated for cache hits; or ok=false with error and error_code.
      */
-    public static function run(string $prompt, int $userid, string $contexttype = 'site', ?int $contextid = null): array {
+    public static function run(
+        string $prompt,
+        int $userid,
+        string $contexttype = 'site',
+        ?int $contextid = null,
+        int $agentid = 0
+    ): array {
         global $DB;
 
         [, $system, $tools] = agent_runner::run_conditions($userid, $contexttype, $contextid);
-        // The tools run with the permissions of the user, as in the scheduled run of the agent.
-        tool_executor::get_definitions(0, $userid);
+        // The tools run with the permissions of the user, as in the scheduled run of the agent; the profiler records
+        // their queries as a preview (of the agent being edited, if any), never as a run of the agent.
+        tool_executor::get_definitions($agentid, $userid, 'preview');
         $maxrounds = agent_runner::MAX_TOOL_ITERATIONS;
 
         $messages = [
@@ -156,7 +164,7 @@ class preview_runner {
                     $toolresult = json_encode([
                         'error' => 'loop_detected',
                         'tool' => $funcname,
-                        'detail' => 'Same tool with same arguments called ' . $toolcallcounts[$callkey] . ' times.',
+                        'detail' => get_string('preview_detail_loop', 'local_jedomi', $toolcallcounts[$callkey]),
                     ]);
                     $loopbroken = true;
                 } else if (pending_action_service::severity($funcname, is_array($decodedargs) ? $decodedargs : []) !== null) {
@@ -164,7 +172,7 @@ class preview_runner {
                     $toolresult = json_encode([
                         'error' => 'confirmation_required',
                         'tool' => $funcname,
-                        'detail' => 'The preview does not run actions that change data without confirmation.',
+                        'detail' => get_string('preview_detail_confirmation', 'local_jedomi'),
                     ]);
                 } else {
                     $plan[] = [
@@ -208,7 +216,7 @@ class preview_runner {
         // ... ── Safety net + cleanup ─────────────────────────────────────────────────
         if (empty($finalanswer)) {
             if ($loopbroken) {
-                $finalanswer = 'The agent encountered an issue while fetching data. Please try again later.';
+                $finalanswer = get_string('preview_error_fetch_failed', 'local_jedomi');
             } else if (!empty($content)) {
                 $finalanswer = $content;
             } else {
@@ -226,7 +234,7 @@ class preview_runner {
         $finalanswer = $anonymizer->restore($finalanswer);
 
         if ($finalanswer === '') {
-            return ['ok' => false, 'error' => 'No response from AI'];
+            return ['ok' => false, 'error' => get_string('preview_error_no_answer', 'local_jedomi')];
         }
 
         // ... ── Save to cache ─────────────────────────────────────────────────────────

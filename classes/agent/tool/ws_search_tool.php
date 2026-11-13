@@ -36,6 +36,18 @@ use local_jedomi\schema\ws_indexer;
  * the WS indexer and returns compact per-function summaries.
  */
 class ws_search_tool implements agent_tool {
+    /** @var int Agent creator's user id, whose role list limits the functions. */
+    private int $userid;
+
+    /**
+     * Constructor.
+     *
+     * @param int $userid Agent creator's user id; its role list limits the functions (0: none).
+     */
+    public function __construct(int $userid = 0) {
+        $this->userid = $userid;
+    }
+
     /**
      * Get the tool name used in AI tool calls.
      *
@@ -92,7 +104,15 @@ class ws_search_tool implements agent_tool {
         $limit = isset($params->limit) ? min((int) $params->limit, 20) : 8;
 
         try {
-            $entries = ws_indexer::search($query, [], $limit);
+            // Only the functions of the list of the role of the creator, the same list that gates the execution.
+            $allowed = \local_jedomi\local\ws_runner::searchable_functions(
+                \local_jedomi_get_user_role_for_user($this->userid)
+            );
+            if ($allowed === []) {
+                return json_encode(['success' => true, 'count' => 0, 'row_count' => 0, 'functions' => [],
+                    'message' => 'No web services are allowed for the role of the agent creator.']);
+            }
+            $entries = ws_indexer::search($query, $allowed ?? [], $limit);
 
             if (empty($entries)) {
                 return json_encode([

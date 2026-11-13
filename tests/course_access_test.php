@@ -17,6 +17,7 @@
 namespace local_jedomi;
 
 use core\hook\output\before_footer_html_generation;
+use local_jedomi\local\service\admin_settings_service;
 
 /**
  * Tests for the per-course availability of the Jedomi panel.
@@ -132,13 +133,26 @@ final class course_access_test extends \advanced_testcase {
     }
 
     /**
-     * MDL-UNIT-009: with "Show only in the selected courses" the panel must not appear on pages outside a course.
-     * [Pendiente:skip]
+     * MDL-UNIT-009: with "Show only in the selected courses" the panel stays available on the pages that do not belong to
+     * a course (decision: site-level availability is kept), and the description of the mode says so.
      *
      * @return void
      */
     public function test_include_mode_hides_the_panel_outside_courses(): void {
-        $this->markTestSkipped('Pending fix: the "only selected courses" mode still shows the panel on pages outside a course.');
+        $this->resetAfterTest();
+        $selected = $this->getDataGenerator()->create_course();
+        $other = $this->getDataGenerator()->create_course();
+        $this->set_availability('include', [(int) $selected->id]);
+
+        $this->assertTrue(course_access::is_enabled(SITEID), 'Pages outside a course keep the panel');
+        $this->assertTrue(course_access::is_enabled(0), 'Pages without a course keep the panel');
+        $this->assertTrue(course_access::is_enabled((int) $selected->id));
+        $this->assertFalse(course_access::is_enabled((int) $other->id));
+        $this->assertStringContainsString(
+            'do not belong to a course',
+            get_string('course_mode_include_desc', 'local_jedomi'),
+            'The description of the mode explains the behaviour outside a course'
+        );
     }
 
     /**
@@ -196,15 +210,51 @@ final class course_access_test extends \advanced_testcase {
     }
 
     /**
-     * MDL-INT-096: hiding the Authenticated user role hides the panel from every user whose other roles are hidden
-     * too, it also works on the site home, and the server evaluates the rule on the activity of the page.
-     * [Pendiente:skip]
+     * MDL-INT-096: the role visibility follows the rule its help describes: a user is blocked only when every role they hold
+     * is hidden, a user without roles is judged by the Authenticated user role, and the guest and site home roles, whose
+     * switches had no effect, are no longer offered.
      *
      * @return void
      */
     public function test_authenticated_user_and_guest_roles_have_a_real_effect(): void {
-        $this->markTestSkipped('Pending fix: hiding Authenticated user only affects users without other roles, hiding '
-            . 'Guest or Authenticated user on the site home has no effect, and the server evaluates the '
-            . 'rule on the course sent by the browser.');
+        global $CFG;
+        require_once($CFG->dirroot . '/local/jedomi/lib.php');
+        $this->resetAfterTest();
+        $course = $this->getDataGenerator()->create_course();
+        $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
+        $noroles = $this->getDataGenerator()->create_user();
+        $studentrole = (int) $this->get_role_id('student');
+        $authrole = (int) $CFG->defaultuserroleid;
+        $coursecontext = \context_course::instance($course->id);
+
+        $visible = array_diff(array_column(admin_settings_service::get_roles(), 'id'), [$authrole]);
+        admin_settings_service::save_privacy_settings('basic', $visible);
+        $this->assertFalse(local_jedomi_is_role_allowed_for_user((int) $noroles->id, \context_system::instance()));
+        $this->assertTrue(
+            local_jedomi_is_role_allowed_for_user((int) $student->id, $coursecontext),
+            'A student keeps the panel while the Student role is visible'
+        );
+
+        admin_settings_service::save_privacy_settings('basic', array_diff($visible, [$studentrole]));
+        $this->assertFalse(
+            local_jedomi_is_role_allowed_for_user((int) $student->id, $coursecontext),
+            'Every role of the student is hidden'
+        );
+
+        $hidden = array_map('intval', explode(',', (string) get_config('local_jedomi', 'hidden_roles')));
+        $this->assertNotContains((int) $CFG->guestroleid, $hidden, 'The guest role is not offered nor stored');
+        $this->assertNotContains((int) $CFG->defaultfrontpageroleid, $hidden, 'The site home role is not offered nor stored');
+        $this->assertStringContainsString('every role', get_string('role_visibility_help', 'local_jedomi'));
+    }
+
+    /**
+     * Id of a standard role.
+     *
+     * @param string $shortname Role short name.
+     * @return int
+     */
+    private function get_role_id(string $shortname): int {
+        global $DB;
+        return (int) $DB->get_field('role', 'id', ['shortname' => $shortname], MUST_EXIST);
     }
 }

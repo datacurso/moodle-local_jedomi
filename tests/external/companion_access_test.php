@@ -132,12 +132,11 @@ final class companion_access_test extends \advanced_testcase {
     }
 
     /**
-     * MDL-INT-075: the agents, training data and companion service permissions are declared and granted by default only
-     * to the Manager role.
+     * MDL-INT-075: the agents and companion service permissions are declared and granted by default only to the Manager
+     * role.
      */
     public function test_permissions_are_declared_with_their_default_roles(): void {
-        $capabilities = ['local/jedomi:manageagents', 'local/jedomi:viewtrainingdata', 'local/jedomi:managetrainingdata',
-            'local/jedomi:companion_api'];
+        $capabilities = ['local/jedomi:manageagents', 'local/jedomi:companion_api'];
         foreach ($capabilities as $capability) {
             $this->assertNotEmpty(get_capability_info($capability), $capability);
             $this->assertSame(CAP_ALLOW, get_default_capabilities('manager')[$capability] ?? null, $capability);
@@ -204,12 +203,46 @@ final class companion_access_test extends \advanced_testcase {
     }
 
     /**
-     * MDL-INT-077: every declared permission controls a screen or an action, and the chat has its own permission that the
-     * server checks.
-     * [Pendiente:skip]
+     * MDL-INT-077: every declared permission controls a screen or an action: the unused training data permissions are
+     * gone. By decision there is no chat permission: the per-role visibility controls the use of the chat.
      */
     public function test_every_permission_is_used_and_the_chat_has_its_own(): void {
-        $this->markTestSkipped('Pending fix: the training data permissions are unused and there is no permission to use '
-            . 'the chat.');
+        global $CFG;
+        $capabilities = [];
+        require($CFG->dirroot . '/local/jedomi/db/access.php');
+        $this->assertEqualsCanonicalizing(
+            ['local/jedomi:manageagents', 'local/jedomi:companion_api'],
+            array_keys($capabilities)
+        );
+        $this->assertNull(get_capability_info('local/jedomi:viewtrainingdata'));
+        $this->assertNull(get_capability_info('local/jedomi:managetrainingdata'));
+        foreach (array_keys($capabilities) as $capability) {
+            $uses = 0;
+            foreach (['ajax', 'classes', 'settings.php', 'admin_settings.php', 'lib.php'] as $path) {
+                $uses += $this->count_uses($CFG->dirroot . '/local/jedomi/' . $path, $capability);
+            }
+            $this->assertGreaterThan(0, $uses, "{$capability} is checked somewhere");
+        }
+    }
+
+    /**
+     * Number of PHP files under a path that mention a capability.
+     *
+     * @param string $path File or directory.
+     * @param string $capability Capability name.
+     * @return int
+     */
+    private function count_uses(string $path, string $capability): int {
+        if (is_file($path)) {
+            return (int) str_contains((string) file_get_contents($path), "'{$capability}'");
+        }
+        $count = 0;
+        $files = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($path, \FilesystemIterator::SKIP_DOTS));
+        foreach ($files as $file) {
+            if ($file->getExtension() === 'php') {
+                $count += (int) str_contains((string) file_get_contents($file->getPathname()), "'{$capability}'");
+            }
+        }
+        return $count;
     }
 }

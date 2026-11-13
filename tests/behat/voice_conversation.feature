@@ -345,6 +345,25 @@ Feature: Voice conversation with Jedomi in the web chat
     And I wait "3" seconds
     Then "0" Jedomi transcriptions should have been requested
 
+  # A failed transcription is also said aloud, and the same notice right after itself is not repeated in the chat.
+  @MDL-INT-112
+  Scenario: Repeated failed transcriptions do not fill the chat and the failure is said aloud
+    Given I log in as "student1"
+    And I am on homepage
+    And I click on "#jedomi-trigger" "css_element"
+    And the Jedomi browser has a microphone that grants access
+    And the Jedomi transcription fails with the message "The audio could not be read."
+    And the Jedomi transcription fails with the message "The audio could not be read."
+    And I click on "#jedomi-voice-mode-btn" "css_element"
+    When I speak to Jedomi for "800" milliseconds
+    And Jedomi should have said "The audio could not be read." aloud "1" time
+    And the Jedomi voice conversation should be listening
+    And I speak to Jedomi for "800" milliseconds
+    And "2" Jedomi transcriptions should have been requested
+    And the Jedomi voice conversation should be listening
+    Then I should see "The audio could not be read." "1" time in the Jedomi chat
+    And Jedomi should have said "The audio could not be read." aloud "1" time
+
   @SYS-E2E-014
   Scenario: Speaking over the confirm on screen notice keeps the wait, and an unresolved wait ends after 60 seconds
     Given the following Jedomi agents exist:

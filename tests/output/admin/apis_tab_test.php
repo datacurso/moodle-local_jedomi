@@ -89,12 +89,46 @@ final class apis_tab_test extends \advanced_testcase {
     /**
      * MDL-UNIT-053: each function shows its description and declared type, every function appears in its type filter,
      * and the role row has its own label with translated role buttons.
-     * [Pendiente:skip]
      *
      * @return void
      */
     public function test_functions_are_described_and_classified_with_translated_labels(): void {
-        $this->markTestSkipped('Pending fix: empty description column, type guessed from the function name, role row '
-            . 'labelled Type and role buttons in English.');
+        global $CFG, $PAGE;
+        $this->resetAfterTest();
+        $PAGE->set_url(new \moodle_url('/local/jedomi/admin_settings.php'));
+        $functions = [];
+        require($CFG->dirroot . '/lib/db/services.php');
+
+        $table = \local_jedomi\local\service\admin_settings_service::get_ws_table('admin', 'core_course_', '', 'all', 1, 200);
+        $this->assertSame($table['count_all'], $table['count_read'] + $table['count_write'], 'Every function has a type');
+        foreach ($table['rows'] as $row) {
+            $declared = $functions[$row['name']] ?? [];
+            if (!empty($declared['description'])) {
+                $this->assertNotSame('', $row['description'], "{$row['name']} shows its description");
+            }
+            if (isset($declared['type'])) {
+                $this->assertSame($declared['type'] === 'write', $row['iswrite'], "{$row['name']} has its declared type");
+            }
+        }
+
+        $html = $PAGE->get_renderer('local_jedomi')->render($this->tab());
+        $this->assertStringContainsString(get_string('ws_role_filter', 'local_jedomi'), $html);
+        $this->assertSame(1, substr_count($html, get_string('filter_type', 'local_jedomi')), 'Only the type row is labelled Type');
+
+        // The test dataroot has no language packs: a minimal langconfig lets the string manager read lang/es.
+        check_dir_exists($CFG->dataroot . '/lang/es');
+        file_put_contents(
+            $CFG->dataroot . '/lang/es/langconfig.php',
+            "<?php\n\$string['thislanguage'] = 'Español';\n\$string['parentlanguage'] = '';\n"
+        );
+        $strings = get_string_manager();
+        $strings->reset_caches();
+        foreach (['admin', 'manager', 'teacher', 'student'] as $role) {
+            $this->assertNotSame(
+                $strings->get_string('api_role_' . $role, 'local_jedomi', null, 'en'),
+                $strings->get_string('api_role_' . $role, 'local_jedomi', null, 'es'),
+                "The {$role} button is translated"
+            );
+        }
     }
 }

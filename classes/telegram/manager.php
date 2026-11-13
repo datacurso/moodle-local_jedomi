@@ -50,6 +50,12 @@ class manager {
     /** TTL for linking codes (seconds). */
     private const CODE_TTL = 600; // 10 minutes
 
+    /** Characters of a link code: no 0, O, 1 or I, which are easy to confuse. */
+    private const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+
+    /** Length of a link code. */
+    private const CODE_LENGTH = 6;
+
     /**
      * Derive the encryption key from site secret + pepper.
      *
@@ -218,15 +224,40 @@ class manager {
         set_config('telegram_webhook_last_error', $message, 'local_jedomi');
         set_config('telegram_webhook_error', 1, 'local_jedomi');
         set_config('telegram_webhook_error_time', time(), 'local_jedomi');
+        set_config('telegram_webhook_ok_time', 0, 'local_jedomi');
     }
 
     /**
-     * Clear the last webhook error (marks as healthy).
+     * Clear the last webhook error and record the time of the successful registration (marks as healthy).
      */
     public static function clear_last_webhook_error(): void {
         set_config('telegram_webhook_last_error', '', 'local_jedomi');
         set_config('telegram_webhook_error', 0, 'local_jedomi');
         set_config('telegram_webhook_error_time', 0, 'local_jedomi');
+        set_config('telegram_webhook_ok_time', time(), 'local_jedomi');
+    }
+
+    /**
+     * Forget every registration result: the webhook is neither working nor failing, as with no bot token.
+     *
+     * @return void
+     */
+    public static function forget_webhook_state(): void {
+        foreach (
+            ['telegram_webhook_last_error', 'telegram_webhook_error', 'telegram_webhook_error_time',
+                'telegram_webhook_ok_time'] as $name
+        ) {
+            unset_config($name, 'local_jedomi');
+        }
+    }
+
+    /**
+     * Get the time of the last successful webhook registration (0 if the last one failed or none was made).
+     *
+     * @return int
+     */
+    public static function get_webhook_ok_time(): int {
+        return (int) get_config('local_jedomi', 'telegram_webhook_ok_time');
     }
 
     /**
@@ -349,12 +380,29 @@ class manager {
      * @return string Random code.
      */
     private static function generate_random_code(): string {
-        $chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // No 0, O, 1, I.
+        $max = strlen(self::CODE_ALPHABET) - 1;
         $code = '';
-        $max = strlen($chars) - 1;
-        for ($i = 0; $i < 6; $i++) {
-            $code .= $chars[random_int(0, $max)];
+        for ($i = 0; $i < self::CODE_LENGTH; $i++) {
+            $code .= self::CODE_ALPHABET[random_int(0, $max)];
+        }
+        if (!preg_match('/[2-9]/', $code)) {
+            // Every code has a digit, so a word sent to the bot is never taken as a code.
+            $code[random_int(0, self::CODE_LENGTH - 1)] = (string) random_int(2, 9);
         }
         return $code;
+    }
+
+    /**
+     * Whether a text has the exact format of a link code: six characters of the code alphabet, at least one of them a
+     * digit. Letters may be written in lower case.
+     *
+     * @param string $text Text to check.
+     * @return bool
+     */
+    public static function is_link_code_format(string $text): bool {
+        $code = strtoupper($text);
+        return strlen($code) === self::CODE_LENGTH
+            && strspn($code, self::CODE_ALPHABET) === self::CODE_LENGTH
+            && (bool) preg_match('/[2-9]/', $code);
     }
 }
