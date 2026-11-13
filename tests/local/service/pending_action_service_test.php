@@ -16,6 +16,11 @@
 
 namespace local_jedomi\local\service;
 
+defined('MOODLE_INTERNAL') || die();
+
+global $CFG;
+require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/plugin_tools/fake_tool_plugin.php');
+
 /**
  * Tests for the actions the web chat holds until the user confirms them.
  *
@@ -470,5 +475,95 @@ final class pending_action_service_test extends \advanced_testcase {
 
         $result = pending_action_service::resolve($reassigned, (int) $creator->id, false);
         $this->assertSame(pending_action_service::STATUS_CANCELLED, $result['status']);
+    }
+
+    /**
+     * Make the test plugin the only one that answers the tool registry hook, with these tools.
+     *
+     * @param \local_jedomi\agent\tool\agent_tool[] $tools Tools the test plugin registers.
+     */
+    private function register_plugin_tools(array $tools): void {
+        \local_jedomi\fixtures\fake_tool_plugin::reset();
+        \local_jedomi\fixtures\fake_tool_plugin::$tools = $tools;
+        \core\di::set(\core\hook\manager::class, \core\hook\manager::phpunit_get_instance([
+            'fake_toolplugin' => __DIR__ . '/../../fixtures/plugin_tools/hooks.php',
+        ]));
+    }
+
+    /**
+     * A held plugin tool runs only once the user confirms it, as that user, in the context it was held in; the context
+     * is never shown on the card.
+     */
+    public function test_confirmed_plugin_tool_runs_as_the_user_in_its_context(): void {
+        $this->resetAfterTest();
+        $course = $this->getDataGenerator()->create_course();
+        $teacher = $this->getDataGenerator()->create_and_enrol($course, 'editingteacher');
+        $this->setUser($teacher);
+        $context = \context_course::instance($course->id);
+        $seen = [];
+        $tool = new \local_jedomi\fixtures\fake_plugin_tool('demo_writer', function (int $userid, \context $c) use (&$seen) {
+            $seen[] = $c->id;
+            return true;
+        }, null, null, false);
+        $this->register_plugin_tools([$tool]);
+
+        $pending = pending_action_service::hold_plugin_tool((int) $teacher->id, 'demo_writer', ['q' => 'go'], $context);
+
+        $this->assertSame('high', $pending['severity']);
+        $this->assertStringNotContainsString((string) $context->id, $pending['details']);
+        $this->assertSame(get_string('pending_desc_plugin_tool', 'local_jedomi', 'demo_writer'), $pending['description']);
+        $this->assertSame([], \local_jedomi\fixtures\fake_plugin_tool::$runs);
+
+        $result = pending_action_service::resolve($pending['id'], (int) $teacher->id, true);
+
+        $this->assertSame(pending_action_service::STATUS_EXECUTED, $result['status']);
+        $this->assertSame(['demo_writer'], \local_jedomi\fixtures\fake_plugin_tool::$runs);
+        $this->assertSame([$context->id], $seen);
+    }
+
+    /**
+     * A cancelled plugin tool never runs.
+     */
+    public function test_cancelled_plugin_tool_does_not_run(): void {
+        $this->resetAfterTest();
+        $user = $this->getDataGenerator()->create_user();
+        $this->setUser($user);
+        $this->register_plugin_tools([new \local_jedomi\fixtures\fake_plugin_tool('demo_writer', true, null, null, false)]);
+        $pending = pending_action_service::hold_plugin_tool((int) $user->id, 'demo_writer', [], \context_system::instance());
+
+        $result = pending_action_service::resolve($pending['id'], (int) $user->id, false);
+
+        $this->assertSame(pending_action_service::STATUS_CANCELLED, $result['status']);
+        $this->assertSame([], \local_jedomi\fixtures\fake_plugin_tool::$runs);
+    }
+
+    /**
+     * A plugin tool no longer offered to the user when it is confirmed does not run.
+     */
+    public function test_confirmed_plugin_tool_no_longer_offered_does_not_run(): void {
+        $this->resetAfterTest();
+        $user = $this->getDataGenerator()->create_user();
+        $this->setUser($user);
+        $this->register_plugin_tools([new \local_jedomi\fixtures\fake_plugin_tool('demo_writer', false, null, null, false)]);
+        $pending = pending_action_service::hold_plugin_tool((int) $user->id, 'demo_writer', [], \context_system::instance());
+
+        $result = pending_action_service::resolve($pending['id'], (int) $user->id, true);
+
+        $this->assertSame(pending_action_service::STATUS_FAILED, $result['status']);
+        $this->assertSame([], \local_jedomi\fixtures\fake_plugin_tool::$runs);
+    }
+
+    /**
+     * The AI cannot pass a plugin context to a Jedomi action: the key is dropped when a Jedomi action is held.
+     */
+    public function test_jedomi_action_never_keeps_a_plugin_context_from_the_ai(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $args = ['id' => 4, pending_action_service::PLUGIN_CONTEXT_KEY => 1];
+
+        $pending = pending_action_service::hold(2, 'delete_agent', $args);
+
+        $record = $DB->get_record(pending_action_service::TABLE, ['id' => $pending['id']]);
+        $this->assertSame(['id' => 4], json_decode($record->argsjson, true));
     }
 }

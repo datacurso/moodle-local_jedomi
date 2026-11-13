@@ -32,7 +32,9 @@ use local_jedomi\agent\tool\agent_tool;
  * - it has is_available(); a tool without it is ignored;
  * - its name matches /^[a-z][a-z0-9_]{2,63}$/, is the name of its definition and is not a name
  *   of Jedomi's own tools; otherwise it is ignored;
- * - it only reads: Jedomi runs it without asking the user for confirmation;
+ * - it declares with a public method `is_read_only(): bool` whether it only reads. Jedomi runs a
+ *   reading tool at once; a tool that changes something, or does not declare it, waits for the
+ *   user's confirmation like Jedomi's own actions and runs only when the user confirms it;
  * - it runs as the current user ($USER) and checks every permission again on its own: being
  *   offered is never a permission;
  * - its result goes through Jedomi's anonymiser before it reaches the AI service.

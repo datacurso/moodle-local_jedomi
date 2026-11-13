@@ -78,4 +78,20 @@ final class plugin_tools_heatmap_test extends \advanced_testcase {
 
         $this->assertContains('heatmap_get_institutional_summary', $tools);
     }
+
+    /**
+     * Every Heatmap tool declares that it only reads, so Jedomi runs it without asking for confirmation.
+     */
+    public function test_heatmap_tools_only_read(): void {
+        $course = $this->getDataGenerator()->create_course();
+        $admin = (int) get_admin()->id;
+        $tools = plugin_tools::available($admin, \context_course::instance($course->id), 'web')
+            + plugin_tools::available($admin, \context_system::instance(), 'web');
+        $heatmap = array_filter($tools, static fn(string $name): bool => str_starts_with($name, 'heatmap_'), ARRAY_FILTER_USE_KEY);
+
+        $this->assertCount(7, $heatmap);
+        foreach ($heatmap as $name => $tool) {
+            $this->assertTrue(plugin_tools::is_read_only($tool), "$name must only read");
+        }
+    }
 }

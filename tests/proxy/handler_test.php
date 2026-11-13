@@ -2129,4 +2129,37 @@ final class handler_test extends \advanced_testcase {
         $offered = array_column(array_column($fake->calls[0]['tools'], 'function'), 'name');
         $this->assertContains('demo_report', $offered);
     }
+
+    /**
+     * A plugin tool that changes something is held for the user's confirmation and does not run; the AI gets nothing
+     * from it and the turn ends with the confirmation card.
+     */
+    public function test_plugin_tool_that_changes_something_waits_for_confirmation(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $course = $this->getDataGenerator()->create_course();
+        $teacher = $this->getDataGenerator()->create_and_enrol($course, 'editingteacher');
+        $this->setUser($teacher);
+        $this->register_plugin_tools([new \local_jedomi\fixtures\fake_plugin_tool('demo_writer', true, null, null, false)]);
+        $fake = new fake_ai_client();
+        $fake->enqueue_tool_calls([
+            ['id' => 'call_1', 'type' => 'function', 'function' => ['name' => 'demo_writer', 'arguments' => '{"q":"go"}']],
+        ]);
+        client::set_instance_for_testing($fake);
+
+        $events = $this->events($this->capture(fn() => handler::run(
+            [['role' => 'user', 'content' => 'hi']],
+            'teacher',
+            (int) $teacher->id,
+            null,
+            \context_course::instance($course->id)
+        )));
+
+        $this->assertSame([], \local_jedomi\fixtures\fake_plugin_tool::$runs);
+        $this->assertCount(1, $fake->calls);
+        $this->assertSame('demo_writer', $events[0]['_jedomi_pending_action']['tool']);
+        $this->assertSame('high', $events[0]['_jedomi_pending_action']['severity']);
+        $held = ['userid' => $teacher->id, 'tool' => 'demo_writer'];
+        $this->assertSame(1, $DB->count_records(\local_jedomi\local\service\pending_action_service::TABLE, $held));
+    }
 }

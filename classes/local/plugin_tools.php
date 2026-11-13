@@ -79,6 +79,45 @@ final class plugin_tools {
     }
 
     /**
+     * Whether a tool only reads, as its plugin declares with is_read_only(). A tool that does not declare it, declares
+     * false or fails to answer is taken as changing something: Jedomi asks the user to confirm it before it runs.
+     *
+     * @param agent_tool $tool The tool.
+     * @return bool
+     */
+    public static function is_read_only(agent_tool $tool): bool {
+        if (!method_exists($tool, 'is_read_only')) {
+            return false;
+        }
+        try {
+            return $tool->is_read_only() === true;
+        } catch (\Throwable $e) {
+            debugging('Jedomi takes the plugin tool ' . s($tool->get_name()) . ' as changing data: is_read_only() failed: '
+                . $e->getMessage(), DEBUG_DEVELOPER);
+            return false;
+        }
+    }
+
+    /**
+     * Run a plugin tool the user confirmed, as the current user: only when its plugin still offers it to the user in
+     * the context it was held in.
+     *
+     * @param string $name Tool name.
+     * @param array $args Arguments of the tool call.
+     * @param int $userid User who confirmed it.
+     * @param int $contextid Context the tool was offered in.
+     * @return string The result of the tool, or {"error": "permission_denied: ..."} when it is not offered any more.
+     */
+    public static function run_confirmed(string $name, array $args, int $userid, int $contextid): string {
+        $context = \context::instance_by_id($contextid, IGNORE_MISSING);
+        $tools = $context ? self::available($userid, $context, 'web') : [];
+        if (!isset($tools[$name])) {
+            return json_encode(['error' => 'permission_denied: the tool is not offered', 'tool' => $name]);
+        }
+        return self::execute($tools[$name], $args);
+    }
+
+    /**
      * Run a tool as the current user with the arguments of the AI.
      *
      * A failure never stops the conversation: the AI gets {"error": "tool_failed", "tool": name}, with the message

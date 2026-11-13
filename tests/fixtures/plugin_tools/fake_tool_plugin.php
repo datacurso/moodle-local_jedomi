@@ -67,5 +67,6 @@ final class fake_tool_plugin {
     public static function reset(): void {
         self::$tools = [];
         self::$lasthook = null;
+        fake_plugin_tool::$runs = [];
     }
 }

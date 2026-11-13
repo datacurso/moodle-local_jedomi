@@ -402,7 +402,14 @@ class handler {
 
                 // A tool that changes data does not run now: it waits for the user's confirmation
                 // and the turn ends, so the model cannot act on a result that does not exist yet.
-                $pending = $offered ? pending_action_service::hold($userid, $name, $args) : null;
+                // A plugin tool that does not declare it only reads waits for the confirmation too.
+                if (!$offered) {
+                    $pending = null;
+                } else if (isset($plugintools[$name]) && !\local_jedomi\local\plugin_tools::is_read_only($plugintools[$name])) {
+                    $pending = pending_action_service::hold_plugin_tool($userid, $name, $args, $toolcontext);
+                } else {
+                    $pending = pending_action_service::hold($userid, $name, $args);
+                }
                 if ($pending !== null) {
                     \local_jedomi_log('TOOL_HELD', ['tool' => $name, 'severity' => $pending['severity']]);
                     echo "data: " . json_encode(['_jedomi_pending_action' => $pending], JSON_UNESCAPED_UNICODE) . "\n\n";

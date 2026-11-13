@@ -35,6 +35,9 @@ use local_jedomi\agent\tool\agent_tool;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 final class fake_plugin_tool implements agent_tool {
+    /** @var string[] Names of the tools run so far, in order. */
+    public static array $runs = [];
+
     /**
      * Create the tool.
      *
@@ -42,6 +45,7 @@ final class fake_plugin_tool implements agent_tool {
      * @param bool|\Closure $available Whether it is offered, or fn(int $userid, \context $context): bool.
      * @param string|null $definitionname Name written in the definition, when it must differ from $name.
      * @param \Throwable|null $failure Exception execute() throws, if any.
+     * @param bool $readonly What is_read_only() answers.
      */
     public function __construct(
         /** @var string Tool name. */
@@ -51,7 +55,9 @@ final class fake_plugin_tool implements agent_tool {
         /** @var string|null Name in the definition. */
         private ?string $definitionname = null,
         /** @var \Throwable|null Exception of execute(). */
-        private ?\Throwable $failure = null
+        private ?\Throwable $failure = null,
+        /** @var bool Whether the tool only reads. */
+        private bool $readonly = true
     ) {
     }
 
@@ -86,9 +92,19 @@ final class fake_plugin_tool implements agent_tool {
         return (bool) $this->available;
     }
 
+    /**
+     * Whether the tool only reads.
+     *
+     * @return bool
+     */
+    public function is_read_only(): bool {
+        return $this->readonly;
+    }
+
     #[\Override]
     public function execute(\stdClass $params): string {
         global $USER;
+        self::$runs[] = $this->name;
         if ($this->failure) {
             throw $this->failure;
         }

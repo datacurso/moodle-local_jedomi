@@ -245,4 +245,52 @@ final class plugin_tools_test extends \advanced_testcase {
         $this->assertSame('demo_big', $result['tool']);
         $this->assertDebuggingCalled();
     }
+
+    /**
+     * A tool only reads when it says so; a tool that does not say it, says no or fails to answer changes something.
+     */
+    public function test_only_a_tool_that_declares_it_is_read_only(): void {
+        $undeclared = new class implements \local_jedomi\agent\tool\agent_tool {
+            #[\Override]
+            public function get_name(): string {
+                return 'demo_undeclared';
+            }
+            #[\Override]
+            public function get_definition(): array {
+                return ['type' => 'function', 'function' => ['name' => 'demo_undeclared', 'parameters' => []]];
+            }
+            #[\Override]
+            public function execute(\stdClass $params): string {
+                return '{}';
+            }
+        };
+        $broken = new class implements \local_jedomi\agent\tool\agent_tool {
+            #[\Override]
+            public function get_name(): string {
+                return 'demo_broken';
+            }
+            #[\Override]
+            public function get_definition(): array {
+                return ['type' => 'function', 'function' => ['name' => 'demo_broken', 'parameters' => []]];
+            }
+            #[\Override]
+            public function execute(\stdClass $params): string {
+                return '{}';
+            }
+            /**
+             * Fails to answer.
+             *
+             * @return bool
+             */
+            public function is_read_only(): bool {
+                throw new \coding_exception('boom');
+            }
+        };
+
+        $this->assertTrue(plugin_tools::is_read_only(new fake_plugin_tool('demo_reader')));
+        $this->assertFalse(plugin_tools::is_read_only(new fake_plugin_tool('demo_writer', true, null, null, false)));
+        $this->assertFalse(plugin_tools::is_read_only($undeclared));
+        $this->assertFalse(plugin_tools::is_read_only($broken));
+        $this->assertDebuggingCalled();
+    }
 }

@@ -32,6 +32,8 @@ use local_jedomi\proxy\handler;
 class pending_action_service {
     /** @var string Table name. */
     public const TABLE = 'local_jedomi_pending_actions';
+    /** @var string Key of the stored arguments that holds the context of a held plugin tool. */
+    public const PLUGIN_CONTEXT_KEY = '_jedomi_plugin_contextid';
 
     /** @var int Seconds an action can wait for confirmation. */
     public const EXPIRY = 900;
@@ -154,6 +156,21 @@ class pending_action_service {
     }
 
     /**
+     * Hold a call to a tool of another plugin that changes something (see plugin_tools::is_read_only()), with the
+     * context it was offered in, so it runs only once the user confirms it.
+     *
+     * @param int $userid User who must confirm it.
+     * @param string $tool Tool name.
+     * @param array $args Tool arguments.
+     * @param \context $context Context the tool was offered in.
+     * @return array Data for the confirmation card, as hold() returns it.
+     */
+    public static function hold_plugin_tool(int $userid, string $tool, array $args, \context $context): array {
+        unset($args[self::PLUGIN_CONTEXT_KEY]);
+        return self::store($userid, $tool, $args + [self::PLUGIN_CONTEXT_KEY => (int) $context->id], self::SEVERITY_HIGH);
+    }
+
+    /**
      * Hold a tool call that needs confirmation.
      *
      * The action is stored in its canonical form (see normalise()), so it runs through the same tool when it is
@@ -167,13 +184,28 @@ class pending_action_service {
      *                    count and preview for send_messages), or null when the tool needs no confirmation.
      */
     public static function hold(int $userid, string $tool, array $args, int $agentid = 0): ?array {
-        global $DB;
-
         [$tool, $args] = self::normalise($tool, $args);
         $severity = self::severity($tool, $args);
         if ($severity === null) {
             return null;
         }
+        // Only hold_plugin_tool() sets the context of a plugin tool: the AI can never choose it.
+        unset($args[self::PLUGIN_CONTEXT_KEY]);
+        return self::store($userid, $tool, $args, $severity, $agentid);
+    }
+
+    /**
+     * Store a held action and answer its card.
+     *
+     * @param int $userid User who must confirm it.
+     * @param string $tool Tool name.
+     * @param array $args Tool arguments (with the plugin context for a plugin tool).
+     * @param string $severity One of the SEVERITY_* constants.
+     * @param int $agentid Scheduled agent that proposed it; 0 for the chat.
+     * @return array Data for the confirmation card, with the id of the action.
+     */
+    private static function store(int $userid, string $tool, array $args, string $severity, int $agentid = 0): array {
+        global $DB;
 
         $id = (int) $DB->insert_record(self::TABLE, (object) [
             'userid' => $userid,
@@ -273,6 +305,7 @@ class pending_action_service {
             }
             $values = is_array($params) ? $params : [];
         }
+        unset($values[self::PLUGIN_CONTEXT_KEY]);
         $lines = [];
         self::detail_lines($values, '', $lines);
         if (count($lines) > self::DETAIL_LINES) {
@@ -318,6 +351,9 @@ class pending_action_service {
      * @return string
      */
     private static function describe(int $userid, string $tool, array $args): string {
+        if (isset($args[self::PLUGIN_CONTEXT_KEY])) {
+            return get_string('pending_desc_plugin_tool', 'local_jedomi', $tool);
+        }
         switch ($tool) {
             case 'delete_agent':
             case 'delete_agents':
@@ -396,9 +432,18 @@ class pending_action_service {
         }
 
         $args = json_decode($record->argsjson, true);
+        $args = is_array($args) ? $args : [];
         $role = \local_jedomi_get_user_role_for_user($userid);
         try {
-            $decoded = json_decode(handler::run_tool($record->tool, is_array($args) ? $args : [], $role), true);
+            if (isset($args[self::PLUGIN_CONTEXT_KEY])) {
+                // A tool of another plugin: run again only if its plugin still offers it to the user there.
+                $contextid = (int) $args[self::PLUGIN_CONTEXT_KEY];
+                unset($args[self::PLUGIN_CONTEXT_KEY]);
+                $output = \local_jedomi\local\plugin_tools::run_confirmed((string) $record->tool, $args, $userid, $contextid);
+            } else {
+                $output = handler::run_tool($record->tool, $args, $role);
+            }
+            $decoded = json_decode($output, true);
         } catch (\Throwable $e) {
             $decoded = ['error' => 'tool_failed'];
         }
