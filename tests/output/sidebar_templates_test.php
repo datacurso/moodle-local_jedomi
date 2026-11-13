@@ -366,7 +366,11 @@ final class sidebar_templates_test extends \advanced_testcase {
         );
         $this->assertStringNotContainsString('jedomi-overlay', $html, 'No backdrop that never appears');
         $this->assertStringContainsString('aria-label="New conversation" aria-keyshortcuts="Alt+Shift+N"', $html);
-        $this->assertStringContainsString('<span aria-hidden="true">+</span>', $html, 'The "+" sign is not its name');
+        $this->assertMatchesRegularExpression(
+            '~aria-keyshortcuts="Alt\+Shift\+N"><svg aria-hidden="true"~',
+            $html,
+            'The "+" icon is not its name'
+        );
 
         // Every button has a name: a text of its own or an aria-label.
         preg_match_all('~<button\b([^>]*)>(.*?)</button>~s', $html, $buttons, PREG_SET_ORDER);
