@@ -33,8 +33,14 @@ const MAX_SUGGESTION_LENGTH = 4000;
 /** @type {number} How long a suggestion waits for the panel to finish loading, in milliseconds. */
 const PANEL_WAIT_MS = 15000;
 
+/** @type {string} Mark the server writes in the footer of a page where the panel is going to start. */
+const PANEL_MARK = '[data-region="local_jedomi-panel"]';
+
 /** @type {boolean} Whether the panel was started on this page for this user. */
 let present = false;
+
+/** @type {boolean} Whether the panel failed to load on this page. */
+let failed = false;
 
 /** @type {?function(string): boolean} Writes a suggestion in the loaded panel; null until the panel is loaded. */
 let suggestionHandler = null;
@@ -58,11 +64,11 @@ const cleanText = (value) => {
 };
 
 /**
- * Whether the Jedomi panel is on this page for the current user.
+ * Whether the Jedomi panel is on this page for the current user, already started or still loading.
  *
  * @returns {boolean}
  */
-export const isAvailable = () => present;
+export const isAvailable = () => !failed && (present || document.querySelector(PANEL_MARK) !== null);
 
 /**
  * Open the Jedomi panel with a suggested message in its message field, ready to be changed and sent by the user.
@@ -74,7 +80,7 @@ export const isAvailable = () => present;
  */
 export const openWithSuggestion = (suggestion) => {
     const text = cleanText(typeof suggestion === 'object' && suggestion !== null ? suggestion.prompt : suggestion);
-    if (!present || text === '') {
+    if (!isAvailable() || text === '') {
         return Promise.resolve(false);
     }
     if (suggestionHandler) {
@@ -123,6 +129,7 @@ export const panelReady = (handler) => {
  */
 export const panelFailed = () => {
     present = false;
+    failed = true;
     const pending = waiting;
     waiting = [];
     pending.forEach((entry) => {
