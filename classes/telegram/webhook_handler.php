@@ -996,24 +996,9 @@ class webhook_handler {
      * @param string $chatid Telegram chat id whose tool loop continues
      */
     private static function self_ping(string $chatid): void {
-        global $CFG;
-        $secret = \local_jedomi\telegram\manager::get_webhook_secret();
-        $callback = $CFG->wwwroot . '/local/jedomi/telegram_webhook.php';
-        $stateself = session::get_context('tool_loop_' . $chatid);
-        $sessiongen = $stateself['session_gen'] ?? 0;
-        $url = $callback . '?secret=' . urlencode($secret)
-             . '&internal_ping=1&chat_id=' . urlencode($chatid)
-             . '&session_gen=' . $sessiongen;
-
-        $ch = curl_init($url);
-        curl_setopt_array($ch, [
-            CURLOPT_TIMEOUT        => 5,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_SSL_VERIFYPEER => false,
-            CURLOPT_POST           => true,
-            CURLOPT_POSTFIELDS     => '{}',
-            CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
-        ]);
+        $request = self::self_ping_request($chatid);
+        $ch = curl_init($request['url']);
+        curl_setopt_array($ch, $request['options']);
         curl_exec($ch);
         $err = curl_error($ch);
         curl_close($ch);
@@ -1021,6 +1006,39 @@ class webhook_handler {
         if ($err) {
             \local_jedomi_log('[TELEGRAM SELF-PING] cURL error: ' . $err . ' for chat=' . self::chatref($chatid));
         }
+    }
+
+    /**
+     * Address and cURL options of the self-ping to our own webhook.
+     *
+     * The secret goes in the same header Telegram uses, never in the address, and TLS is verified (JEDOMI-SEC-004).
+     *
+     * @param string $chatid Telegram chat id whose tool loop continues.
+     * @return array ['url' => string, 'options' => array of cURL options].
+     */
+    public static function self_ping_request(string $chatid): array {
+        global $CFG;
+        $secret = \local_jedomi\telegram\manager::get_webhook_secret();
+        $stateself = session::get_context('tool_loop_' . $chatid);
+        $sessiongen = (int) ($stateself['session_gen'] ?? 0);
+        $url = $CFG->wwwroot . '/local/jedomi/telegram_webhook.php?internal_ping=1&chat_id=' . urlencode($chatid)
+            . '&session_gen=' . $sessiongen;
+        $options = [
+            CURLOPT_TIMEOUT        => 5,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => '{}',
+            CURLOPT_HTTPHEADER     => ['Content-Type: application/json', 'X-Telegram-Bot-Api-Secret-Token: ' . $secret],
+        ];
+        // The certificate authorities Moodle uses for its own requests, when the site has them.
+        require_once($CFG->libdir . '/filelib.php');
+        $cacert = \curl::get_cacert();
+        if (!empty($cacert)) {
+            $options[CURLOPT_CAINFO] = $cacert;
+        }
+        return ['url' => $url, 'options' => $options];
     }
 
     /**

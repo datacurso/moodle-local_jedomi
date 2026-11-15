@@ -659,4 +659,77 @@ final class sql_guard_test extends \advanced_testcase {
             'accesstokenurl' => 'https://example.com', 'confirmtokenexpires' => 0];
         $this->assertSame($row, sql_guard::filter_row($row));
     }
+
+    /**
+     * Every table of Jedomi declared in db/install.xml, plus one that a future version could add.
+     *
+     * @return array Table name keyed by itself.
+     */
+    public static function jedomi_table_provider(): array {
+        $xml = file_get_contents(__DIR__ . '/../../db/install.xml');
+        preg_match_all('/<TABLE NAME="(local_jedomi_[a-z0-9_]+)"/', $xml, $matches);
+        $tables = array_merge($matches[1], ['local_jedomi_future_table']);
+        return array_combine($tables, array_map(static fn(string $table): array => [$table], $tables));
+    }
+
+    /**
+     * JEDOMI-SEC-003: every table of Jedomi, present or future, is sensitive: its rows (Telegram sessions, pending
+     * actions, agent instructions, feedback, query log...) are rejected for every user, administrators included.
+     *
+     * @dataProvider jedomi_table_provider
+     * @param string $table Table.
+     */
+    public function test_every_jedomi_table_is_rejected_for_every_user(string $table): void {
+        [$teacher] = $this->teacher();
+        $manager = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->role_assign('manager', $manager->id);
+
+        $this->assertTrue(sql_guard::is_sensitive_table($table), $table);
+        $this->assertTrue(sql_guard::is_sensitive_table(strtoupper($table)), $table);
+        foreach ([(int) get_admin()->id, (int) $manager->id, $teacher] as $userid) {
+            $this->assertSame(
+                'sql_sensitive_rejected',
+                sql_guard::rejection_reason("SELECT id FROM {{$table}}", $userid),
+                "{$table} for {$userid}"
+            );
+        }
+    }
+
+    /**
+     * JEDOMI-SEC-003: the tables of Jedomi feedback and agents are among the sensitive ones, and the existing list
+     * of sensitive site tables is kept.
+     */
+    public function test_feedback_and_agents_tables_are_sensitive(): void {
+        $tables = array_keys(self::jedomi_table_provider());
+        $this->assertContains('local_jedomi_feedback', $tables);
+        $this->assertContains('local_jedomi_agents', $tables);
+        $this->assertContains('local_jedomi_pending_actions', $tables);
+        $this->assertContains('local_jedomi_telegram_sessions', $tables);
+        foreach (['config', 'sessions', 'external_tokens', 'oauth2_issuer', 'local_jedomi_telegram_links'] as $table) {
+            $this->assertTrue(sql_guard::is_sensitive_table($table), $table);
+        }
+        $this->assertFalse(sql_guard::is_sensitive_table('course'));
+        $this->assertFalse(sql_guard::is_sensitive_table('local_jedomiextra'));
+    }
+
+    /**
+     * JEDOMI-SEC-003: a manager cannot read the hidden instruction of an agent of the administrator with a query.
+     */
+    public function test_manager_cannot_read_the_instruction_of_an_admin_agent(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $manager = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->role_assign('manager', $manager->id);
+        $DB->insert_record('local_jedomi_agents', (object) [
+            'userid' => (int) get_admin()->id, 'name' => 'Admin agent', 'prompt' => 'SECRET ADMIN INSTRUCTION',
+            'timecreated' => time(), 'timemodified' => time(),
+        ]);
+
+        try {
+            \local_jedomi\local\query_runner::run('SELECT prompt FROM {local_jedomi_agents}', [], (int) $manager->id, 10);
+            $this->fail('The instruction of the agent was read');
+        } catch (\moodle_exception $e) {
+            $this->assertSame('sql_sensitive_rejected', $e->errorcode);
+        }
+    }
 }

@@ -43,6 +43,12 @@ class handler {
     private const PAGE_LOCATIONS = ['course', 'activity', 'grades', 'admin', 'dashboard', 'messages', 'profile', 'calendar',
         'files', 'unknown'];
 
+    /** @var int Messages of the browser history kept for a request: the panel sends at most this many. */
+    public const MAX_BROWSER_MESSAGES = 30;
+
+    /** @var string[] Roles the browser may send: tool calls, tool results and system rules come only from the server. */
+    private const BROWSER_ROLES = ['user', 'assistant'];
+
     /**
      * Refuse the database and web service tools when Jedomi is disabled in the Datacurso AI provider (when installed:
      * without it the chat cannot reach the AI at all).
@@ -64,7 +70,11 @@ class handler {
      */
     public static function run_from_request(array $input, string $role, array $spt, int $userid): void {
         $context = is_array($input['context'] ?? null) ? $input['context'] : [];
-        $messages = is_array($input['messages'] ?? null) ? array_values($input['messages']) : [];
+        // Only user questions and assistant texts come from the browser (JEDOMI-SEC-002); the channel and the output
+        // of the system message are fixed by the server for the web chat, never taken from the browser.
+        $messages = self::browser_messages(is_array($input['messages'] ?? null) ? $input['messages'] : []);
+        $context['channel'] = 'chat';
+        $context['output'] = 'web';
 
         // Disabled in the Datacurso AI provider: answer its message and make no AI call.
         $disabled = \local_jedomi_plugin_disabled_error();
@@ -116,6 +126,38 @@ class handler {
                 : \context_system::instance();
             \local_jedomi\event\chat_answered::create_for_channel('web', $eventcontext, $userid)->trigger();
         }
+    }
+
+    /**
+     * Chat history sent by the browser, rebuilt with the messages it may send (JEDOMI-SEC-002).
+     *
+     * The panel sends only the questions of the user and the texts of the answers. Everything else is dropped rather
+     * than refused, so a forged message never reaches the AI and a valid conversation still gets its answer: system
+     * messages (the only one is the server's), tool results, assistant messages with tool calls and messages with an
+     * unknown role or shape. Kept messages carry only their role and content: other keys (tool_calls, tool_call_id,
+     * name, id) are dropped. An assistant message must be text; a user message may also be a list of parts, whose
+     * images are handled later. Only the latest MAX_BROWSER_MESSAGES are kept.
+     *
+     * @param array $messages Messages decoded from the browser payload.
+     * @return array List of ['role' => 'user'|'assistant', 'content' => string|array].
+     */
+    public static function browser_messages(array $messages): array {
+        $kept = [];
+        foreach ($messages as $message) {
+            if (!is_array($message) || !in_array($message['role'] ?? null, self::BROWSER_ROLES, true)) {
+                continue;
+            }
+            $role = $message['role'];
+            $content = $message['content'] ?? null;
+            if ($role === 'assistant' && (!empty($message['tool_calls']) || !is_string($content))) {
+                continue;
+            }
+            if (!is_string($content) && !($role === 'user' && is_array($content))) {
+                continue;
+            }
+            $kept[] = ['role' => $role, 'content' => $content];
+        }
+        return array_slice($kept, -self::MAX_BROWSER_MESSAGES);
     }
 
     /**
@@ -315,9 +357,12 @@ class handler {
                 // The AI only knows the placeholders of the anonymised data; the tools need the real values.
                 $args = $anonymizer->restore_value($args);
 
+                // JEDOMI-SEC-008: a tool that was not offered to the role is neither held nor run.
+                $offered = self::is_offered_tool($name, $tools);
+
                 // A tool that changes data does not run now: it waits for the user's confirmation
                 // and the turn ends, so the model cannot act on a result that does not exist yet.
-                $pending = pending_action_service::hold($userid, $name, $args);
+                $pending = $offered ? pending_action_service::hold($userid, $name, $args) : null;
                 if ($pending !== null) {
                     \local_jedomi_log('TOOL_HELD', ['tool' => $name, 'severity' => $pending['severity']]);
                     echo "data: " . json_encode(['_jedomi_pending_action' => $pending], JSON_UNESCAPED_UNICODE) . "\n\n";
@@ -356,6 +401,9 @@ class handler {
                         'detail' => get_string('error_tool_loop_detected', 'local_jedomi'),
                     ]);
                     \local_jedomi_log('LOOP_DETECTED', ['tool' => $name, 'count' => $toolrepeatcounts[$callkey]]);
+                } else if (!$offered) {
+                    \local_jedomi_log('TOOL_NOT_OFFERED', ['tool' => $name]);
+                    $result = json_encode(['error' => get_string('error_unknown_tool', 'local_jedomi', $name)]);
                 } else {
                     try {
                         $result = self::execute_tool_by_name($name, $args, $role);
@@ -393,6 +441,23 @@ class handler {
 
         \local_jedomi_log('RUN_FALLBACK_ITERATIONS_EXCEEDED', ['iteration_count' => 10]);
         self::stream_sse_content(get_string('error_fallback_iterations', 'local_jedomi'));
+        return false;
+    }
+
+    /**
+     * Whether a tool, by any of its names (plural forms are resolved first), is one of the tools offered in this turn.
+     *
+     * @param string $name Tool name as the model called it.
+     * @param array $tools Tool definitions offered to the model.
+     * @return bool
+     */
+    private static function is_offered_tool(string $name, array $tools): bool {
+        [$resolved] = pending_action_service::normalise($name, []);
+        foreach ($tools as $tool) {
+            if (($tool['function']['name'] ?? null) === $resolved) {
+                return true;
+            }
+        }
         return false;
     }
 

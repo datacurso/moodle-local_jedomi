@@ -43,6 +43,7 @@
     * nextrun int - Next run time (0 when unknown)
     * prompt string - Agent prompt (empty when hidden)
     * prompthidden bool - Whether the user may not read the prompt
+    * approvedwrites array - Web service functions the agent may run without confirmation (strings)
 
     Example context (json):
     {
@@ -50,7 +51,7 @@
         "contextid": 4, "contextlabel": "Course: Algebra", "schedule": "0 0 * * *",
         "schedulelabel": "Every day at 00:00", "lastrun": 1700000000, "nextrun": 1700086400, "prompt": "Summarise new enrolments.",
         "prompthidden": false, "failcount": 2, "lasterror": "The AI service did not answer in time.",
-        "lastresult": "There were 12 new enrolments."
+        "lastresult": "There were 12 new enrolments.", "approvedwrites": ["core_message_send_instant_messages"]
     }
 }}
 <table class="table table-sm mb-0 local_jedomi-admin-agent-details">
@@ -75,6 +76,8 @@
             <td>{{#lastrun}}{{#userdate}} {{lastrun}}, {{#str}} strftimedatetime, core_langconfig {{/str}} {{/userdate}}{{/lastrun}}{{^lastrun}}-{{/lastrun}}</td></tr>
         <tr><th scope="row" class="text-nowrap align-top">{{#str}} agent_nextrun, local_jedomi {{/str}}</th>
             <td>{{#nextrun}}{{#userdate}} {{nextrun}}, {{#str}} strftimedatetime, core_langconfig {{/str}} {{/userdate}}{{/nextrun}}{{^nextrun}}-{{/nextrun}}</td></tr>
+        <tr><th scope="row" class="text-nowrap align-top">{{#str}} agent_approved_writes, local_jedomi {{/str}}</th>
+            <td>{{#approvedwrites}}<code class="d-block">{{.}}</code>{{/approvedwrites}}{{^approvedwrites}}<span class="text-muted">{{#str}} agent_approved_writes_empty, local_jedomi {{/str}}</span>{{/approvedwrites}}</td></tr>
         <tr><th scope="row" class="text-nowrap align-top">{{#str}} agent_prompt, local_jedomi {{/str}}</th>
             <td>{{#prompthidden}}<span class="text-muted font-italic fst-italic">{{#str}} agent_prompt_hidden, local_jedomi {{/str}}</span>{{/prompthidden}}{{^prompthidden}}<pre class="mb-0 p-2 bg-light border rounded local_jedomi-admin-pre">{{#prompt}}{{prompt}}{{/prompt}}{{^prompt}}-{{/prompt}}</pre>{{/prompthidden}}</td></tr>
         {{^prompthidden}}

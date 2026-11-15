@@ -333,4 +333,60 @@ final class pending_action_service_test extends \advanced_testcase {
         $this->assertTrue($DB->record_exists(pending_action_service::TABLE, ['id' => $atlimit['id']]));
         $this->assertFalse($DB->record_exists(pending_action_service::TABLE, ['id' => $justafter['id']]));
     }
+
+    /**
+     * Agent preview bug: call_webservice with "function" is the same write as ws_execute with "wsname".
+     */
+    public function test_call_webservice_with_function_is_classified_like_ws_execute(): void {
+        $this->assertSame(
+            'high',
+            pending_action_service::severity('call_webservice', ['function' => 'core_course_create_categories'])
+        );
+        $this->assertSame(
+            'high',
+            pending_action_service::severity('ws_execute', ['function' => 'core_course_create_categories'])
+        );
+        $this->assertNull(pending_action_service::severity('call_webservice', ['function' => 'core_course_get_categories']));
+        $this->assertSame(
+            ['ws_execute', ['params' => '{}', 'wsname' => 'core_course_create_categories']],
+            pending_action_service::normalise('call_webservice', ['function' => 'core_course_create_categories', 'params' => '{}'])
+        );
+        $this->assertSame(['delete_agent', ['id' => 3]], pending_action_service::normalise('delete_agents', ['id' => 3]));
+    }
+
+    /**
+     * JEDOMI-SEC-001: an action held by a scheduled agent is stored normalised, names its agent and waits for days, not
+     * minutes, for its creator.
+     */
+    public function test_action_held_by_an_agent_waits_for_its_creator(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $creator = $this->getDataGenerator()->create_user();
+        $agentid = (int) $DB->insert_record('local_jedomi_agents', (object) ['userid' => $creator->id, 'name' => 'Night watch',
+            'prompt' => 'p', 'schedule_cron' => '0 8 * * *', 'timecreated' => time(), 'timemodified' => time()]);
+        $chat = pending_action_service::hold((int) $creator->id, 'delete_agent', ['id' => 1]);
+        $held = pending_action_service::hold(
+            (int) $creator->id,
+            'call_webservice',
+            ['function' => 'core_course_create_categories', 'params' => '{}'],
+            $agentid
+        );
+        $DB->set_field(pending_action_service::TABLE, 'timecreated', time() - pending_action_service::EXPIRY - 1, []);
+
+        $record = $DB->get_record(pending_action_service::TABLE, ['id' => $held['id']]);
+        $this->assertSame('ws_execute', $record->tool);
+        $this->assertSame($agentid, (int) $record->agentid);
+        $this->assertSame('core_course_create_categories', json_decode($record->argsjson, true)['wsname']);
+
+        $cards = pending_action_service::cards_for_user((int) $creator->id);
+        $this->assertSame([$held['id']], array_column($cards, 'id'), 'Only the agent action is still valid');
+        $this->assertStringContainsString('Night watch', $cards[0]['description']);
+
+        $this->assertSame(1, pending_action_service::purge_expired());
+        $this->assertFalse($DB->record_exists(pending_action_service::TABLE, ['id' => $chat['id']]));
+        $this->assertTrue($DB->record_exists(pending_action_service::TABLE, ['id' => $held['id']]));
+
+        $DB->set_field(pending_action_service::TABLE, 'timecreated', time() - pending_action_service::AGENT_EXPIRY - 1, []);
+        $this->assertSame(1, pending_action_service::purge_expired());
+    }
 }

@@ -236,4 +236,46 @@ final class agents_test extends \advanced_testcase {
         $this->assertSame(0, $enabled->by_status->disabled);
         $this->assertSame(['editingteacher' => 1], $enabled->by_role);
     }
+
+    /**
+     * MDL-INT-022: ajax/agent_stats.php counts only the agents that match the filters each user saved in the agents
+     * report, and the prompt search of a manager never counts an agent whose instruction the manager may not read.
+     */
+    public function test_agent_stats_endpoint_follows_the_saved_filters(): void {
+        $this->resetAfterTest();
+        $this->preventResetByRollback();
+        $admin = (int) get_admin()->id;
+        $manager = $this->getDataGenerator()->create_user(['username' => 'statsmanager']);
+        $this->getDataGenerator()->role_assign('manager', $manager->id);
+        $this->agent($admin, ['name' => 'On', 'prompt' => 'Secret admin marker', 'role_filter' => json_encode(['editingteacher'])]);
+        $this->agent($admin, ['name' => 'Off one', 'enabled' => 0, 'role_filter' => json_encode(['student'])]);
+        $this->agent($admin, ['name' => 'Off two', 'enabled' => 0, 'role_filter' => json_encode(['student'])]);
+        $this->agent((int) $manager->id, ['name' => 'Own', 'prompt' => 'Secret own report', 'enabled' => 0]);
+
+        $this->setAdminUser();
+        $this->report(['agent:enabled_operator' => select::EQUAL_TO, 'agent:enabled_value' => 0]);
+        $this->setUser($manager);
+        $this->report(['agent:prompt_operator' => text::CONTAINS, 'agent:prompt_value' => 'Secret']);
+
+        $request = static function (string $username): array {
+            global $CFG;
+            $runner = $CFG->dirroot . '/local/jedomi/tests/fixtures/page_runner.php';
+            $output = (string) shell_exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($runner) . ' '
+                . escapeshellarg($username) . ' ajax/agent_stats.php {} 2>&1');
+            return (array) json_decode(trim($output), true);
+        };
+
+        $adminanswer = $request('admin');
+        $this->assertTrue($adminanswer['ok'] ?? false, json_encode($adminanswer));
+        $this->assertSame(['enabled' => 0, 'disabled' => 3], $adminanswer['charts']['by_status']);
+        $this->assertSame(['student' => 2], $adminanswer['charts']['by_role']);
+
+        $manageranswer = $request('statsmanager');
+        $this->assertTrue($manageranswer['ok'] ?? false, json_encode($manageranswer));
+        $this->assertSame(
+            ['enabled' => 0, 'disabled' => 1],
+            $manageranswer['charts']['by_status'],
+            'Only the own agent: the instruction of the administrator agent is not searched'
+        );
+    }
 }

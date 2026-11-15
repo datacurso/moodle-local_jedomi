@@ -27,6 +27,37 @@ Feature: Scheduled agents and their queries in the Jedomi settings
     And the field "Prompt" matches value ""
     And I should see "Create agent" in the "[data-region='local_jedomi/admin/agents/form-heading']" "css_element"
 
+  @MDL-E2E-007 @JEDOMI-SEC-001
+  Scenario: The writes an agent may run without confirmation are chosen in its form and shown in its details
+    Given the following config values are set as admin:
+      | config             | value                                                                     | plugin       |
+      | ws_allowlist_admin | ["core_message_send_instant_messages","core_course_get_courses_by_field"] | local_jedomi |
+    And the following Jedomi agents exist:
+      | name       |
+      | Old report |
+    And I log in as "admin"
+    And I visit "/local/jedomi/admin_settings.php?tab=agents"
+    And I should see "Existing agents have no approved writes"
+    And I should see "at most 20 approved writes to at most 50 different users"
+    And I should not see "core_course_get_courses_by_field" in the "[data-region='local_jedomi/admin/agents/approved-writes']" "css_element"
+    When I set the field "Prompt" to "Remind the students of Course 1 to submit their work."
+    And I set the field "Name" to "Reminder"
+    And I set the field "core_message_send_instant_messages" to "1"
+    And I press "Create agent"
+    Then I should see "Agent \"Reminder\" created successfully."
+    And I press "View details" action in the "Reminder" report row
+    And I should see "core_message_send_instant_messages" in the ".modal-dialog" "css_element"
+    And I click on "Close" "button" in the ".modal-dialog" "css_element"
+    And I press "View details" action in the "Old report" report row
+    And I should see "None: every write waits for the approval of the creator" in the ".modal-dialog" "css_element"
+    And I click on "Close" "button" in the ".modal-dialog" "css_element"
+    And I press "Edit" action in the "Reminder" report row
+    And the field "core_message_send_instant_messages" matches value "1"
+    And I set the field "core_message_send_instant_messages" to "0"
+    And I click on "[data-form='local_jedomi/admin/agents/create'] button[type='submit']" "css_element"
+    And I press "View details" action in the "Reminder" report row
+    And I should see "None: every write waits for the approval of the creator" in the ".modal-dialog" "css_element"
+
   @MDL-E2E-007
   Scenario: An agent is enabled, queued to run now and deleted after confirming
     Given the following Jedomi agents exist:

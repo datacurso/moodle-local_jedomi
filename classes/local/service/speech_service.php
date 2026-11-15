@@ -226,7 +226,7 @@ class speech_service {
                 'code' => $e->errorcode,
                 'component' => $e->module,
                 'duration_ms' => (int) round((microtime(true) - $start) * 1000),
-            ]);
+            ] + error_message::log_detail($e));
             throw $e;
         }
         \local_jedomi_log('SPEECH_RESPONSE', [

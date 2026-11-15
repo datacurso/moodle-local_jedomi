@@ -15,11 +15,11 @@
 // along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
 
 /**
- * AJAX endpoint — drops pending Telegram updates via deleteWebhook.
+ * AJAX endpoint — drops pending Telegram updates via setWebhook.
  *
- * Re-registers the webhook, which first calls deleteWebhook with
- * drop_pending_updates=true. This clears the Telegram update queue so stale
- * messages aren't processed, and keeps the webhook URL registered.
+ * Re-registers the webhook with drop_pending_updates=true. This clears the
+ * Telegram update queue so stale messages aren't processed, and keeps the
+ * webhook URL registered.
  *
  * Requires admin capability.
  *
@@ -46,8 +46,8 @@ if (!$token) {
     exit;
 }
 
-// Deleting the webhook drops the queue but also unregisters the URL, so register it again.
-$result = manager::register_webhook();
+// The setWebhook call drops the queue itself and keeps the URL registered, so the webhook is never deleted.
+$result = manager::register_webhook(null, true);
 
 if ($result) {
     echo json_encode([

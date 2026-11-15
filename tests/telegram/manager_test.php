@@ -239,7 +239,8 @@ final class manager_test extends \advanced_testcase {
     }
 
     /**
-     * MDL-INT-016: the webhook address carries a secret generated the first time it is needed and kept afterwards.
+     * MDL-INT-016: the webhook secret is generated the first time it is needed and kept afterwards; the webhook address
+     * never carries it (JEDOMI-SEC-004: Telegram sends it in a header).
      */
     public function test_webhook_address_has_a_secret_generated_once(): void {
         global $CFG;
@@ -247,16 +248,17 @@ final class manager_test extends \advanced_testcase {
         unset_config('telegram_webhook_secret', 'local_jedomi');
 
         $url = manager::get_webhook_url();
+        $secret = manager::get_webhook_secret();
 
-        $secret = (string) get_config('local_jedomi', 'telegram_webhook_secret');
         $this->assertNotSame('', $secret);
-        $this->assertSame($CFG->wwwroot . '/local/jedomi/telegram_webhook.php?secret=' . $secret, $url);
-        $this->assertSame($url, manager::get_webhook_url(), 'The secret is kept once generated');
+        $this->assertSame($secret, (string) get_config('local_jedomi', 'telegram_webhook_secret'));
+        $this->assertSame($CFG->wwwroot . '/local/jedomi/telegram_webhook.php', $url);
+        $this->assertSame($secret, manager::get_webhook_secret(), 'The secret is kept once generated');
     }
 
     /**
-     * MDL-INT-016: regenerating the secret changes the address, registers it again and the previous secret is no longer
-     * the one the webhook accepts.
+     * MDL-INT-016: regenerating the secret registers the webhook again and the previous secret is no longer the one the
+     * webhook accepts; the address stays the same.
      */
     public function test_regenerating_the_secret_changes_the_address_and_registers_it_again(): void {
         $this->resetAfterTest();
@@ -267,7 +269,7 @@ final class manager_test extends \advanced_testcase {
         $newsecret = manager::regenerate_webhook_secret();
 
         $this->assertNotSame($oldsecret, $newsecret);
-        $this->assertNotSame($oldurl, manager::get_webhook_url());
+        $this->assertSame($oldurl, manager::get_webhook_url());
         $this->assertSame($newsecret, manager::get_webhook_secret(), 'Only the new secret is accepted');
         $this->assertFalse(hash_equals(manager::get_webhook_secret(), $oldsecret));
         // Without a bot token the registration is attempted and its result recorded for the administrator.

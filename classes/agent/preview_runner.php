@@ -109,6 +109,8 @@ class preview_runner {
         // As in the scheduled run, personal data returned by the tools reaches the AI anonymised with the level of the
         // Privacy tab; the arguments it proposes and what the preview shows get the real values back.
         $anonymizer = new anonymizer();
+        // As in the scheduled run, tool results reach the AI as untrusted data.
+        $untrusted = new \local_jedomi\local\untrusted();
 
         for ($round = 1; $round <= $maxrounds; $round++) {
             try {
@@ -204,7 +206,7 @@ class preview_runner {
                 $messages[] = [
                     'role' => 'tool',
                     'tool_call_id' => $tcid,
-                    'content' => $anonymizer->anonymize_tool_result($toolresult),
+                    'content' => $untrusted->wrap('tool ' . $funcname, $anonymizer->anonymize_tool_result($toolresult)),
                 ];
             }
 
@@ -220,7 +222,7 @@ class preview_runner {
             } else if (!empty($content)) {
                 $finalanswer = $content;
             } else {
-                $finalanswer = self::last_tool_result($messages);
+                $finalanswer = self::last_tool_result($messages, $untrusted);
             }
         }
 
@@ -240,10 +242,10 @@ class preview_runner {
         // ... ── Save to cache ─────────────────────────────────────────────────────────
         // Strip tool payload from messages before caching (not needed for display), and show the real values.
         $cachablemessages = $messages;
-        array_walk($cachablemessages, function (&$msg) use ($anonymizer) {
+        array_walk($cachablemessages, function (&$msg) use ($anonymizer, $untrusted) {
             unset($msg['tool_calls']);
             if (is_string($msg['content'] ?? null)) {
-                $msg['content'] = $anonymizer->restore($msg['content']);
+                $msg['content'] = $anonymizer->restore($untrusted->unwrap($msg['content']));
             }
         });
         self::save_cache($cachehash, $userid, $finalanswer, $profilerentries, $cachablemessages, $plan);
@@ -363,18 +365,18 @@ class preview_runner {
      * Content of the last tool result that is not an error.
      *
      * @param array $messages Conversation.
+     * @param \local_jedomi\local\untrusted $untrusted Delimiters of the run, removed from the result.
      * @return string
      */
-    private static function last_tool_result(array $messages): string {
+    private static function last_tool_result(array $messages, \local_jedomi\local\untrusted $untrusted): string {
         foreach (array_reverse($messages) as $msg) {
             if (($msg['role'] ?? '') === 'tool' && !empty($msg['content'])) {
-                $decoded = json_decode($msg['content'], true);
+                $content = $untrusted->unwrap((string) $msg['content']);
+                $decoded = json_decode($content, true);
                 if (!empty($decoded['error'])) {
                     continue;
                 }
-                return is_string($msg['content'])
-                    ? $msg['content']
-                    : json_encode($msg['content'], JSON_UNESCAPED_UNICODE);
+                return $content;
             }
         }
         return '';

@@ -88,15 +88,35 @@ final class personalization_test extends \advanced_testcase {
         set_config('avatar', '03', 'local_jedomi');
         $this->assertStringEndsWith('/local/jedomi/pix/avatars/avatar_03.png', personalization::avatar_url());
 
-        $this->store_custom_avatar();
+        $file = $this->store_custom_avatar();
         $url = personalization::avatar_url();
         $contextid = \context_system::instance()->id;
-        $this->assertStringContainsString('/pluginfile.php/' . $contextid . '/local_jedomi/customavatar/0/me.png', $url);
+        $this->assertStringContainsString('/pluginfile.php/' . $contextid . '/local_jedomi/customavatar/'
+            . $file->get_timemodified() . '/me.png', $url);
 
         set_config('avatar', 'missing', 'local_jedomi');
         get_file_storage()->delete_area_files(\context_system::instance()->id, 'local_jedomi', personalization::FILEAREA);
         $this->assertSame(personalization::AVATAR_DEFAULT, personalization::avatar());
         $this->assertNull(personalization::avatar_url());
+    }
+
+    /**
+     * The address of the custom avatar carries the moment of the image as its revision, so replacing the image with
+     * one of the same name changes the address and browsers and proxies do not keep showing the old one.
+     *
+     * @return void
+     */
+    public function test_custom_avatar_url_changes_when_the_image_is_replaced(): void {
+        $this->resetAfterTest();
+        $file = $this->store_custom_avatar();
+        $file->set_timemodified(1700000000);
+        $before = personalization::custom_avatar_url()->out(false);
+
+        $file->set_timemodified(1700000100);
+        $after = personalization::custom_avatar_url()->out(false);
+
+        $this->assertStringEndsWith('/local_jedomi/customavatar/1700000000/me.png', $before);
+        $this->assertStringEndsWith('/local_jedomi/customavatar/1700000100/me.png', $after);
     }
 
     /**
@@ -109,6 +129,25 @@ final class personalization_test extends \advanced_testcase {
         $this->assertCount(10, personalization::AVATARS);
         foreach (personalization::AVATARS as $avatar) {
             $this->assertFileExists($CFG->dirroot . '/local/jedomi/pix/avatars/avatar_' . $avatar . '.png', $avatar);
+        }
+    }
+
+    /**
+     * The preset avatars are small: at most 256 px (four times the 56 px of the button), with transparency, and far
+     * under the size allowed for a custom avatar, so the panel does not download large images.
+     *
+     * @return void
+     */
+    public function test_preset_avatars_are_small_transparent_images(): void {
+        global $CFG;
+        foreach (personalization::AVATARS as $avatar) {
+            $path = $CFG->dirroot . '/local/jedomi/pix/avatars/avatar_' . $avatar . '.png';
+            [$width, $height, $type] = getimagesize($path);
+            $this->assertSame(IMAGETYPE_PNG, $type, $avatar);
+            $this->assertSame([256, 256], [$width, $height], $avatar);
+            $this->assertLessThan(personalization::AVATAR_MAXBYTES / 4, filesize($path), $avatar);
+            // PNG colour type 6 (RGBA): the corners stay transparent.
+            $this->assertSame(6, ord(file_get_contents($path, false, null, 25, 1)), $avatar);
         }
     }
 

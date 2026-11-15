@@ -31,12 +31,15 @@
       on the report, whose row actions have data-agent-action (details, edit, run, toggle, delete) and data-agent-id
     * data-form="local_jedomi/admin/agents/create" on the agent form and data-form="local_jedomi/admin/agents/purge" on the purge form
     * data-region="local_jedomi/admin/agents/form-heading", "form-message", "edit-id", "submit-label", "custom-cron", "enabled",
+      "approved-writes",
       "context-id-wrap", "preview-panel", "preview-spinner", "preview-body", "purge-id-wrap", "purge-role-wrap" and
       "purge-message"
     * data-action="local_jedomi/admin/agents/schedule", "context-type", "preview", "cancel-edit" and "purge-context"
 
     Context variables required for this template:
     * roles array - Roles: id int, name string
+    * approvablewrites array - Write functions the current user may approve for a new agent: name string, checked bool
+    * approvedwriteshelp string - Help of the approved writes, with the caps of one run
     * schedules array - Schedule options: value string, label string
     * contexttypes array - Context types: value string, label string
     * editagentid int - Agent to open in the form when the page loads; 0 for none
@@ -45,6 +48,8 @@
     Example context (json):
     {
         "roles": [{"id": 5, "name": "Student"}],
+        "approvablewrites": [{"name": "core_message_send_instant_messages", "checked": false}],
+        "approvedwriteshelp": "Web service functions that change data and that this agent may run without your confirmation.",
         "schedules": [{"value": "0 * * * *", "label": "Every hour"}, {"value": "custom", "label": "Custom"}],
         "contexttypes": [{"value": "site", "label": "Site"}],
         "editagentid": 0,
@@ -90,6 +95,7 @@
             <h5 class="mb-0" data-region="local_jedomi/admin/agents/form-heading">{{#str}} agent_create, local_jedomi {{/str}}</h5>
         </div>
         <div class="card-body">
+            <div class="alert alert-info small" role="status">{{#str}} agent_approved_writes_notice, local_jedomi {{/str}}</div>
             <div class="alert d-none" role="alert" data-region="local_jedomi/admin/agents/form-message"></div>
             <form data-form="local_jedomi/admin/agents/create">
                 <input type="hidden" name="id" value="" data-region="local_jedomi/admin/agents/edit-id">
@@ -151,6 +157,14 @@
                             <label class="form-check-label" for="{{uniqid}}-agent-role-{{id}}">{{name}}</label>
                         </div>
                         {{/roles}}
+                    </div>
+                </fieldset>
+
+                <fieldset class="form-group mb-3" aria-describedby="{{uniqid}}-agent-writes-help">
+                    <legend class="font-weight-bold fw-bold col-form-label p-0">{{#str}} agent_approved_writes, local_jedomi {{/str}}</legend>
+                    <small id="{{uniqid}}-agent-writes-help" class="form-text text-muted mt-0 mb-1">{{approvedwriteshelp}}</small>
+                    <div class="local_jedomi-admin-role-scroll" data-region="local_jedomi/admin/agents/approved-writes">
+                        {{> local_jedomi/admin/agent_approved_writes }}
                     </div>
                 </fieldset>
 

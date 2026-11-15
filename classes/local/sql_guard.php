@@ -64,8 +64,12 @@ class sql_guard {
         'local_jedomi_telegram_links',
     ];
 
-    /** @var string[] Table name prefixes (without the database prefix) that are always sensitive. */
-    private const SENSITIVE_TABLE_PREFIXES = ['oauth2_'];
+    /**
+     * @var string[] Table name prefixes (without the database prefix) that are always sensitive. Every table of Jedomi,
+     *      present or future, is one: they hold Telegram sessions, pending actions, the hidden instructions of agents,
+     *      feedback and the query log, which are read only through their own tools and pages.
+     */
+    private const SENSITIVE_TABLE_PREFIXES = ['oauth2_', 'local_jedomi_'];
 
     /** @var string[] Column names that hold credentials or secrets in any table. */
     private const SENSITIVE_COLUMNS = [

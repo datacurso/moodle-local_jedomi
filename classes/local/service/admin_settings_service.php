@@ -165,7 +165,7 @@ class admin_settings_service {
      * @return array{enabled: int, bot_token_set: bool, bot_username: string, bot_firstname: string,
      *     bot_verified: int, webhook_error: int, webhook_url: string, rate_limit: int, cooldown: int,
      *     max_turns: int, gateway_timeout: int, hidden_role_ids: int[], last_error: string,
-     *     last_error_time: int, webhook_ok_time: int, is_configured: bool}
+     *     last_error_time: int, webhook_ok_time: int, needs_registration: bool, is_configured: bool}
      */
     public static function get_telegram_settings(): array {
         $maxturns = get_config('local_jedomi', 'telegram_max_turns');
@@ -185,6 +185,7 @@ class admin_settings_service {
             'last_error' => manager::get_last_webhook_error(),
             'last_error_time' => manager::get_last_webhook_error_time(),
             'webhook_ok_time' => manager::get_webhook_ok_time(),
+            'needs_registration' => manager::needs_webhook_registration(),
         ];
         $settings['is_configured'] = $settings['enabled'] && $settings['bot_token_set'] && $settings['bot_verified'];
         return $settings;
@@ -218,9 +219,15 @@ class admin_settings_service {
         set_config('telegram_bot_firstname', $botinfo['first_name'], 'local_jedomi');
         set_config('telegram_bot_verified', 1, 'local_jedomi');
 
-        // Register the webhook again: delete the old one first, then set the new URL.
+        // Register the webhook again: delete the old one first, then set the new URL with the secret. Saving the token
+        // answers the warning of a registration the update could not make; a failure here shows its own error.
+        if (manager::needs_webhook_registration()) {
+            // The secret kept by a failed update was in the webhook address of earlier versions: use a new one.
+            manager::replace_webhook_secret();
+        }
+        manager::clear_webhook_registration_need();
         $client->delete_webhook();
-        if ($client->set_webhook(manager::get_webhook_url())) {
+        if ($client->set_webhook(manager::get_webhook_url(), manager::get_webhook_secret())) {
             manager::clear_last_webhook_error();
         } else {
             manager::set_last_webhook_error('setWebhook failed after token save — check the URL is HTTPS and reachable');

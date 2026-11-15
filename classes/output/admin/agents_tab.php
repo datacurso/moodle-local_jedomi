@@ -65,6 +65,9 @@ class agents_tab implements \core\output\named_templatable, \renderable, \templa
     /**
      * Export the options of the forms and the agents report for the template.
      *
+     * The approved writes offered are the write functions the current user may approve for a new agent; the form loads
+     * those of the owner when it edits an agent.
+     *
      * @param \renderer_base $output Renderer used to render the tab.
      * @return array
      */
@@ -81,8 +84,18 @@ class agents_tab implements \core\output\named_templatable, \renderable, \templa
         foreach ($this->roles as $role) {
             $roles[] = ['id' => (int) $role['id'], 'name' => (string) $role['name']];
         }
+        global $USER;
+        $approvablewrites = [];
+        foreach (\local_jedomi\agent\agent_manager::approvable_writes((int) $USER->id) as $function) {
+            $approvablewrites[] = ['name' => $function, 'checked' => false];
+        }
         return [
             'roles' => $roles,
+            'approvablewrites' => $approvablewrites,
+            'approvedwriteshelp' => get_string('agent_approved_writes_help', 'local_jedomi', [
+                'writes' => \local_jedomi\agent\write_guard::MAX_WRITES_PER_RUN,
+                'recipients' => \local_jedomi\agent\write_guard::MAX_RECIPIENTS_PER_RUN,
+            ]),
             'schedules' => $schedules,
             'contexttypes' => $contexttypes,
             'editagentid' => $this->editagentid,

@@ -34,6 +34,10 @@ require_once(__DIR__ . '/../../lib.php');
  * Thin HTTP client for the Telegram Bot API: sending and editing messages, callbacks and file downloads.
  */
 class api_client {
+    /** @var int Seconds a request may take to connect to Telegram. */
+    public const CONNECT_TIMEOUT = 5;
+    /** @var int Seconds a request may take in total, connection included. */
+    private int $timeout = 30;
     /** @var string Telegram bot token used to authenticate API calls. */
     private string $token;
     /** @var string Base URL for the bot's Telegram API endpoints. */
@@ -360,11 +364,22 @@ class api_client {
     /**
      * Set the webhook URL for this bot.
      *
-     * @param string $url  Full HTTPS URL including the secret query param
+     * The secret is never part of the address: Telegram sends it back in the X-Telegram-Bot-Api-Secret-Token header of
+     * every update, where it does not reach access logs or proxies.
+     *
+     * setWebhook replaces the webhook registered before at once, so the webhook is never deleted first.
+     *
+     * @param string $url Full HTTPS URL of the webhook, without secret.
+     * @param string $secrettoken Secret Telegram sends in the header of every update (1-256 of A-Z, a-z, 0-9, _ and -).
+     * @param bool $droppending Whether Telegram drops the updates waiting to be delivered.
      * @return bool
      */
-    public function set_webhook(string $url): bool {
-        $result = $this->post('setWebhook', ['url' => $url]);
+    public function set_webhook(string $url, string $secrettoken, bool $droppending = false): bool {
+        $params = ['url' => $url, 'secret_token' => $secrettoken];
+        if ($droppending) {
+            $params['drop_pending_updates'] = 'true';
+        }
+        $result = $this->post('setWebhook', $params);
         return $result !== null && ($result['ok'] ?? false);
     }
 
@@ -392,13 +407,40 @@ class api_client {
     }
 
     /**
+     * Limit the total time of each request, for callers that must not wait long (the site upgrade).
+     *
+     * @param int $seconds Seconds a request may take in total; the connect timeout never exceeds it.
+     * @return void
+     */
+    public function set_timeout(int $seconds): void {
+        $this->timeout = max(1, $seconds);
+    }
+
+    /**
+     * cURL options of a POST request with the given body.
+     *
+     * @param string $body Form-encoded request body.
+     * @return array cURL options keyed by CURLOPT_* constant.
+     */
+    public function curl_options(string $body): array {
+        return [
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => $body,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_CONNECTTIMEOUT => min(self::CONNECT_TIMEOUT, $this->timeout),
+            CURLOPT_TIMEOUT => $this->timeout,
+            CURLOPT_HTTPHEADER => ['Content-Type: application/x-www-form-urlencoded'],
+        ];
+    }
+
+    /**
      * Send a POST request to the Telegram Bot API.
      *
      * @param string $method  API method name, e.g. "sendMessage"
      * @param array  $params
      * @return array|null  Decoded JSON response, or null on failure
      */
-    private function post(string $method, array $params): ?array {
+    protected function post(string $method, array $params): ?array {
         if (empty($this->token)) {
             \local_jedomi_log('E001: no token configured');
             return null;
@@ -406,11 +448,7 @@ class api_client {
 
         $url = $this->baseurl . '/' . $method;
         $ch = curl_init($url);
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, self::build_body($params));
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/x-www-form-urlencoded']);
+        curl_setopt_array($ch, $this->curl_options(self::build_body($params)));
 
         $response = curl_exec($ch);
         $httpcode = curl_getinfo($ch, CURLINFO_HTTP_CODE);

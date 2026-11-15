@@ -18,9 +18,9 @@
  * WebService tool — calls Moodle external functions via the internal API.
  *
  * Authorization uses a two-layer gate (matching Telegram webhook_handler):
- *   1. Role allowlist: the user's role (admin/manager/teacher) must be
- *      allowlisted for the specific WS function, OR be a bare admin with
- *      no explicit allowlist (full access).
+ *   1. Role allowlist: the web service list saved for the role of the agent
+ *      creator (admin/manager/teacher) must contain the function. Unlike the
+ *      chat, an administrator without a saved list runs no function.
  *   2. Moodle's core permission system: the agent creator's userid is
  *      passed so the WS function checks capabilities as that user.
  *
@@ -109,6 +109,11 @@ class ws_tool implements agent_tool {
 
         // ... ── Role list shared with the web chat and Telegram ──
         $role = \local_jedomi_get_user_role_for_user($this->userid);
+        if (\local_jedomi_role_has_full_ws_access($role)) {
+            // An agent runs unattended: it never gets the "every function" access of an administrator without a saved
+            // list (JEDOMI-SEC-001). The list must be saved in the Web services tab first.
+            return json_encode(['error' => get_string('ws_agent_allowlist_required', 'local_jedomi')]);
+        }
         if (!\local_jedomi\local\ws_runner::role_allows($role, $function)) {
             return json_encode(['error' => 'WS not in allowlist for role: ' . $role]);
         }

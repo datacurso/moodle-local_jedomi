@@ -30,6 +30,12 @@ namespace local_jedomi\proxy;
  * Builds the role- and context-aware system prompt for the AI chat proxy.
  */
 class system_message {
+    /** @var string[] Channels of the system message: the chat confirms actions, scheduled agents and previews do not. */
+    private const CHANNELS = ['chat', 'agent'];
+
+    /** @var string[] Output formats of the answer. */
+    private const OUTPUTS = ['web', 'telegram'];
+
     /**
      * Build the system message for the AI model.
      *
@@ -49,9 +55,11 @@ class system_message {
         $location   = $context['location'] ?? 'unknown';
         $pageurl    = self::page_path((string) ($context['page_url'] ?? ''));
         $pagetitle  = $context['page_title'] ?? '';
-        $output     = $context['output'] ?? 'web';  // Either web or telegram.
+        // Either web or telegram; any other value is the web chat.
+        $output     = in_array($context['output'] ?? null, self::OUTPUTS, true) ? $context['output'] : 'web';
         // The channel decides how actions that change data are handled: "agent" for scheduled agents and their preview.
-        $channel    = $context['channel'] ?? 'chat';
+        // Any other value is the chat, where actions wait for a confirmation.
+        $channel    = in_array($context['channel'] ?? null, self::CHANNELS, true) ? $context['channel'] : 'chat';
 
         $loclabels = [
             'course'    => get_string('ctx_loc_course', 'local_jedomi')
@@ -145,12 +153,16 @@ class system_message {
         $content .= "- Never call send_messages to answer a question or analyse data;"
             . " use it only when the user asks to send or notify a message.\n";
         if ($channel === 'agent') {
-            // A scheduled agent has nobody to confirm an action, and its preview never runs one.
-            $content .= "- This is a scheduled agent: nobody reads the answer while it runs and nothing is confirmed."
-                . " create_agent, delete_agent, admin_execute, ws_execute with a write function and send_messages run"
-                . " immediately when the agent runs (an agent preview does not run them and returns an error instead)."
-                . " Call them only when the instruction asks for that action, once, with the final arguments;"
-                . " never ask for a confirmation.\n";
+            // A scheduled agent runs only the writes its creator approved, inside its scope (JEDOMI-SEC-001); the rest
+            // wait for the creator, and its preview never runs a write.
+            $content .= "- This is a scheduled agent: nobody reads the answer while it runs."
+                . " A write runs only when the agent creator approved that web service function for this agent and its"
+                . " arguments stay inside the course or context of the agent and its users; any other write is not run"
+                . " and waits for the approval of the agent creator, and a write outside the scope is rejected"
+                . " (an agent preview never runs a write). Call a write only when the instruction asks for that action,"
+                . " once, with the final arguments; never ask for a confirmation in text, and do not repeat a write"
+                . " that was held or rejected.\n";
+            $content .= "- " . \local_jedomi\local\untrusted::rule() . "\n";
         } else {
             $content .= "- create_agent, delete_agent, admin_execute, ws_execute with a write function and send_messages"
                 . " wait for the user's confirmation in the chat before they run."

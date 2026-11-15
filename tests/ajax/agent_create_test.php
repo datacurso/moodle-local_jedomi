@@ -344,6 +344,28 @@ final class agent_create_test extends \advanced_testcase {
     }
 
     /**
+     * RISK-I3: the details of the Agents tab never give a manager the last error of an agent whose instruction they may
+     * not read; they say only that the last run failed.
+     *
+     * @return void
+     */
+    public function test_manager_does_not_see_the_last_error_of_an_administrator_agent(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $this->create_manager('agentmanager');
+        $id = $this->create_agent_of((int) get_admin()->id, 'Administrator instruction');
+        $DB->update_record('local_jedomi_agents', (object) ['id' => $id, 'failcount' => 1,
+            'lasterror' => 'Last error marker']);
+
+        $details = $this->post_as('agentmanager', 'ajax/agent_create.php', ['action' => 'details', 'id' => $id]);
+
+        $this->assertTrue($details['ok'], $details['error'] ?? '');
+        $this->assertStringNotContainsString('Last error marker', json_encode($details));
+        $this->assertSame(get_string('agent_lasterror_hidden', 'local_jedomi'), $details['agent']['lasterror']);
+        $this->assertSame(1, (int) $details['agent']['failcount']);
+    }
+
+    /**
      * MDL-INT-101: a manager cannot change the instruction of the agent of another manager, which keeps running only the
      * instruction of its creator.
      *
@@ -431,5 +453,21 @@ final class agent_create_test extends \advanced_testcase {
         $this->assertSame('My report', $get['agent']['prompt'] ?? null);
         $this->assertTrue($updated['ok'], $updated['error'] ?? '');
         $this->assertSame('My new report', agent_manager::get_agent($id)->prompt);
+    }
+
+    /**
+     * JEDOMI-SEC-001: the form cannot approve a write that the owner may not run (here, an administrator without a saved
+     * web service list).
+     */
+    public function test_approved_writes_must_be_allowed_for_the_owner(): void {
+        $this->resetAfterTest();
+
+        $answer = $this->submit_form($this->valid_form() + ['approved_writes' => ['', 'core_course_create_categories']]);
+
+        $this->assertFalse($answer['ok']);
+        $this->assertStringContainsString(
+            get_string('agent_invalid_approved_write', 'local_jedomi', 'core_course_create_categories'),
+            $answer['error']
+        );
     }
 }

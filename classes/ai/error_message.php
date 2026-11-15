@@ -157,6 +157,29 @@ class error_message {
     }
 
     /**
+     * Detail of a failure of the custom AI service for the technical log of the administrator.
+     *
+     * The HTTP status (custom_error_http), the cURL error number (custom_error_unreachable) or the reason the address
+     * was refused (custom_error_url) is kept, so the failures can be told apart in the log. These parameters never
+     * contain the key, the answer, the address or the text of libcurl; the user message is unchanged
+     * ({@see self::classify_custom_service()}). Any other failure, such as a Datacurso provider error whose parameter
+     * may be a free text, adds nothing.
+     *
+     * @param \Throwable $e Failure raised by the AI client.
+     * @return array ['detail' => string] for a custom service failure, else empty.
+     */
+    public static function log_detail(\Throwable $e): array {
+        $codes = ['custom_error_http', 'custom_error_unreachable', 'custom_error_url'];
+        if (
+            !$e instanceof \moodle_exception || $e->module !== 'local_jedomi'
+            || !in_array($e->errorcode, $codes, true) || !is_scalar($e->a)
+        ) {
+            return [];
+        }
+        return ['detail' => (string) $e->a];
+    }
+
+    /**
      * Whether a failure is a request timeout (cURL error 28).
      *
      * A timed-out request must not be resent: the AI service may have processed and billed it.

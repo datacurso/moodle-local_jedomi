@@ -713,7 +713,8 @@ JS;
     /**
      * Send a request to the Telegram webhook from the browser and keep its status, body and declared length.
      *
-     * The body is an update from a chat that is not linked, so a processed request only answers the link notice.
+     * The body is an update from a chat that is not linked, so a processed request only answers the link notice. The
+     * secret goes in the header Telegram uses.
      *
      * @When /^I send a (?P<method>GET|POST) request to the Jedomi Telegram webhook with (?P<secret>the right|a wrong) secret and (?P<body>a valid update|an invalid JSON body)$/
      * @param string $method HTTP method.
@@ -726,17 +727,47 @@ JS;
         $payload = $body === 'a valid update'
             ? json_encode(['update_id' => 1, 'message' => ['chat' => ['id' => 783000001], 'text' => '/help']])
             : '{not json';
+        $this->send_webhook_request($method, '', ['X-Telegram-Bot-Api-Secret-Token' => $value], $payload);
+    }
+    // phpcs:enable moodle.Files.LineLength.TooLong
+
+    /**
+     * Send a valid update to the Telegram webhook with the right secret in the query string instead of the header, as
+     * versions before 1.6.1 registered it.
+     *
+     * @When I send a valid update to the Jedomi Telegram webhook with the right secret in the address
+     * @return void
+     */
+    public function i_send_an_update_with_the_secret_in_the_address(): void {
+        $payload = json_encode(['update_id' => 1, 'message' => ['chat' => ['id' => 783000001], 'text' => '/help']]);
+        $query = '?secret=' . rawurlencode(\local_jedomi\telegram\manager::get_webhook_secret());
+        $this->send_webhook_request('POST', $query, [], $payload);
+    }
+
+    /**
+     * Send a request to the Telegram webhook from the browser and keep its status, body and declared length.
+     *
+     * @param string $method HTTP method.
+     * @param string $query Query string of the address, with its "?", or empty.
+     * @param array $headers Extra request headers, keyed by name.
+     * @param string $payload Body sent with a POST request.
+     * @return void
+     */
+    protected function send_webhook_request(string $method, string $query, array $headers, string $payload): void {
+        $setheaders = '';
+        foreach ($headers as $name => $value) {
+            $setheaders .= ' x.setRequestHeader(' . json_encode($name) . ', ' . json_encode($value) . ');';
+        }
         $script = "(function() { var x = new XMLHttpRequest();"
-            . " x.open(" . json_encode($method) . ", M.cfg.wwwroot + '/local/jedomi/telegram_webhook.php?secret='"
-            . " + " . json_encode($value) . ", false);"
-            . " x.setRequestHeader('Content-Type', 'application/json');"
+            . " x.open(" . json_encode($method) . ", M.cfg.wwwroot + "
+            . json_encode('/local/jedomi/telegram_webhook.php' . $query) . ", false);"
+            . " x.setRequestHeader('Content-Type', 'application/json');" . $setheaders
             . " x.send(" . ($method === 'POST' ? json_encode($payload) : 'null') . ");"
             . " window.jedomiLastRequest = {status: x.status, body: x.responseText,"
             . " length: x.getResponseHeader('Content-Length'), bytes: new TextEncoder().encode(x.responseText).length};"
             . " })();";
         $this->execute_script($script);
     }
-    // phpcs:enable moodle.Files.LineLength.TooLong
 
     /**
      * Check the status of the last Telegram webhook request.
@@ -1139,9 +1170,11 @@ JS;
             'chat' => ['id' => (int) $chatid, 'type' => 'private'],
             'from' => ['id' => (int) $chatid, 'is_bot' => false, 'first_name' => 'Behat', 'username' => 'behat' . $chatid],
         ]]);
-        $url = '/local/jedomi/telegram_webhook.php?secret=' . \local_jedomi\telegram\manager::get_webhook_secret();
+        $secret = \local_jedomi\telegram\manager::get_webhook_secret();
         $this->execute_script("(function() { var x = new XMLHttpRequest(); x.open('POST', M.cfg.wwwroot + "
-            . json_encode($url) . ", false); x.setRequestHeader('Content-Type', 'application/json'); x.send("
+            . json_encode('/local/jedomi/telegram_webhook.php') . ", false);"
+            . " x.setRequestHeader('Content-Type', 'application/json');"
+            . " x.setRequestHeader('X-Telegram-Bot-Api-Secret-Token', " . json_encode($secret) . "); x.send("
             . json_encode($update) . "); })();");
     }
 

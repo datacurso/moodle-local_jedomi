@@ -22,13 +22,16 @@ global $CFG;
 require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/fake_curl.php');
 
 /**
- * Tests for the choice of destination of the Jedomi AI client: Datacurso, the custom service or none.
+ * Tests for the choice of destination of the Jedomi AI client (the Datacurso or the custom service) and the log of its
+ * failures.
  *
  * @package    local_jedomi
  * @category   test
  * @copyright  2026 Jedomi Project
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @covers     \local_jedomi\ai\client
+ * @covers     \local_jedomi\ai\error_message
+ * @covers     \local_jedomi\local\service\speech_service
  */
 final class client_custom_service_test extends \advanced_testcase {
     /** @var fake_curl Transport double of the custom service. */
@@ -151,5 +154,120 @@ final class client_custom_service_test extends \advanced_testcase {
             new \moodle_exception('custom_error_unreachable', 'local_jedomi', '', CURLE_OPERATION_TIMEDOUT)
         ));
         $this->assertFalse(error_message::is_timeout(new \moodle_exception('custom_error_unreachable', 'local_jedomi', '', 7)));
+    }
+
+    /**
+     * Read the Jedomi log written since it was emptied, as one string.
+     *
+     * @return string
+     */
+    private function read_log(): string {
+        global $CFG;
+        $path = $CFG->dataroot . '/local/jedomi/jedomi.log';
+        return is_file($path) ? (string) file_get_contents($path) : '';
+    }
+
+    /**
+     * Empty the Jedomi log.
+     *
+     * @return void
+     */
+    private function empty_log(): void {
+        global $CFG;
+        @unlink($CFG->dataroot . '/local/jedomi/jedomi.log');
+    }
+
+    /**
+     * RES-001: a failed chat with the custom service logs its HTTP status, cURL error number or refusal reason, never
+     * the key or the answer, and the user still gets the same message.
+     *
+     * @dataProvider failure_provider
+     * @param array $response Body, HTTP status, cURL error text and number of the answer.
+     * @param string $config Service URL, when it differs from the valid one.
+     * @param string $code Expected error code in the log.
+     * @param string $detail Expected detail in the log.
+     * @param string $userkey Expected message string of the user.
+     * @return void
+     */
+    public function test_chat_failure_logs_its_detail(
+        array $response,
+        string $config,
+        string $code,
+        string $detail,
+        string $userkey
+    ): void {
+        if ($config !== '') {
+            set_config('custom_gateway_url', $config, 'local_jedomi');
+        }
+        $this->curl->enqueue(...$response);
+        $this->empty_log();
+
+        try {
+            $this->make_client()->complete([['role' => 'user', 'content' => 'Hi']], 5);
+            $this->fail('The failure must reach the caller');
+        } catch (\moodle_exception $e) {
+            $this->assertSame(get_string($userkey, 'local_jedomi'), error_message::from_exception($e)['message']);
+        }
+
+        $log = $this->read_log();
+        $this->assertMatchesRegularExpression('/AI_ERROR \| \{"code":"' . $code . '"[^\n]*"detail":"' . $detail . '"/', $log);
+        $this->assertStringNotContainsString('sk-test', $log, 'The key is never logged');
+        $this->assertStringNotContainsString('Body marker', $log, 'The answer is never logged');
+    }
+
+    /**
+     * Failures of the custom service and what the log keeps of them.
+     *
+     * @return array
+     */
+    public static function failure_provider(): array {
+        return [
+            'key refused' => [['{"error":"Body marker"}', 401], '', 'custom_error_http', '401', 'ai_error_unavailable'],
+            'server error' => [['Body marker', 503], '', 'custom_error_http', '503', 'ai_error_unavailable'],
+            'no answer' => [['', 0, 'Body marker connection refused', 7], '', 'custom_error_unreachable', '7',
+                'ai_error_unavailable'],
+            'address refused' => [['Body marker'], 'http://api.example.com', 'custom_error_url', 'http_not_allowed',
+                'ai_error_unavailable'],
+        ];
+    }
+
+    /**
+     * RES-001: a failed spoken answer with the custom service logs its HTTP status, never the key or the answer.
+     *
+     * @return void
+     */
+    public function test_speech_failure_logs_its_detail(): void {
+        set_config('custom_speech_model', 'tts-1', 'local_jedomi');
+        set_config('custom_speech_voice', 'alloy', 'local_jedomi');
+        $this->curl->enqueue('{"error":"Body marker"}', 403);
+        $this->empty_log();
+
+        try {
+            \local_jedomi\local\service\speech_service::synthesise((int) get_admin()->id, 'Hello');
+            $this->fail('The failure must reach the caller');
+        } catch (\moodle_exception $e) {
+            $this->assertSame('custom_error_http', $e->errorcode);
+        }
+
+        $log = $this->read_log();
+        $this->assertMatchesRegularExpression('/SPEECH_ERROR \| \{"code":"custom_error_http"[^\n]*"detail":"403"/', $log);
+        $this->assertStringNotContainsString('sk-test', $log);
+        $this->assertStringNotContainsString('Body marker', $log);
+    }
+
+    /**
+     * RES-001: only the failures of the custom service add a detail to the log, so the parameter of a Datacurso
+     * provider error is never written.
+     *
+     * @return void
+     */
+    public function test_log_detail_is_only_for_custom_service_failures(): void {
+        $this->assertSame(['detail' => '401'], error_message::log_detail(
+            new \moodle_exception('custom_error_http', 'local_jedomi', '', 401)
+        ));
+        $this->assertSame([], error_message::log_detail(new \moodle_exception('ai_error_generic', 'local_jedomi', '', 'x')));
+        $this->assertSame([], error_message::log_detail(
+            new \moodle_exception('custom_error_http', 'aiprovider_datacurso', '', 'Provider text')
+        ));
     }
 }

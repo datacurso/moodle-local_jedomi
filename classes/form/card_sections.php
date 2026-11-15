@@ -26,6 +26,10 @@ namespace local_jedomi\form;
  * The renderer closes one element when the next section starts or the buttons come, so a card, which opens two
  * (the card and its body), is closed with {@see self::add_card_end()} before the next section.
  *
+ * The header templates are registered on the default QuickForm renderer, which is one global object for the whole
+ * request, keyed by the name of the header element. A template therefore applies to any element with that name in any
+ * form rendered later in the same request, so the header names must be unique in the request, not only in the form.
+ *
  * @package    local_jedomi
  * @copyright  2026 Jedomi Project
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
@@ -34,7 +38,7 @@ trait card_sections {
     /**
      * Start a card section: icon, title and subtitle in the header, the following fields in its body.
      *
-     * @param string $name Name of the header element, unique on the page.
+     * @param string $name Name of the header element, unique in the request (see the class description).
      * @param string $title Card title.
      * @param string $subtitle Card subtitle.
      * @param string $icon Core pix icon key, for example i/lock.
@@ -68,7 +72,7 @@ trait card_sections {
     /**
      * Start a subsection with a plain title, for the sections of a form that is already inside a card.
      *
-     * @param string $name Name of the header element, unique on the page.
+     * @param string $name Name of the header element, unique in the request (see the class description).
      * @param string $title Subsection title.
      * @return void
      */
@@ -83,7 +87,8 @@ trait card_sections {
     /**
      * Add a non-collapsible header drawn with the given markup, after a legend for screen readers.
      *
-     * @param string $name Name of the header element.
+     * @param string $name Name of the header element, unique in the request: the template is registered on the global
+     *     default renderer of QuickForm under this name.
      * @param string $title Section title, used as the legend of the fieldset.
      * @param string $markup Markup after the legend; it must leave exactly one element open more than it closes for
      *     a subsection, or two for a card.

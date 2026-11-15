@@ -25,7 +25,10 @@
 defined('MOODLE_INTERNAL') || die();
 
 $capabilities = [
+    // Agents run with the permissions of their creator: they read personal data, change data, send messages and run
+    // site administration operations.
     'local/jedomi:manageagents' => [
+        'riskbitmask'  => RISK_CONFIG | RISK_DATALOSS | RISK_PERSONAL | RISK_SPAM,
         'captype'      => 'write',
         'contextlevel' => CONTEXT_SYSTEM,
         'archetypes'   => [
@@ -37,7 +40,9 @@ $capabilities = [
     // It is meant for managers and for the jedomi_companion service account, to which an administrator grants it.
     // Other roles do not have it unless an administrator grants it. There is no CAP_PROHIBIT on any archetype: the
     // authenticated user role is held by every logged-in user, so a prohibit there would remove it from managers too.
+    // It runs database queries, web services and writes site configuration.
     'local/jedomi:companion_api' => [
+        'riskbitmask'  => RISK_CONFIG | RISK_DATALOSS | RISK_PERSONAL,
         'captype'      => 'read',
         'contextlevel' => CONTEXT_SYSTEM,
         'archetypes'   => [

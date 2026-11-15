@@ -36,6 +36,17 @@ class pending_action_service {
     /** @var int Seconds an action can wait for confirmation. */
     public const EXPIRY = 900;
 
+    /** @var int Seconds an action held by a scheduled agent waits for its creator, who is told by a notification. */
+    public const AGENT_EXPIRY = 7 * DAYSECS;
+
+    /** @var string[] Tool names the models use for the same tool, and the name Jedomi uses. */
+    private const TOOL_ALIASES = [
+        'create_agents' => 'create_agent',
+        'delete_agents' => 'delete_agent',
+        'list_agent' => 'list_agents',
+        'call_webservice' => 'ws_execute',
+    ];
+
     /** @var string Severity: the user must type the confirmation keyword. */
     public const SEVERITY_CRITICAL = 'critical';
 
@@ -74,6 +85,7 @@ class pending_action_service {
      * @return string|null One of the SEVERITY_* constants, or null for reading tools.
      */
     public static function severity(string $tool, array $args): ?string {
+        [$tool, $args] = self::normalise($tool, $args);
         switch ($tool) {
             case 'delete_agent':
             case 'delete_agents':
@@ -89,6 +101,25 @@ class pending_action_service {
             default:
                 return null;
         }
+    }
+
+    /**
+     * Canonical name and arguments of a tool call: plural or alternative names become the tool name Jedomi uses
+     * (call_webservice is ws_execute), and the web service function, sent as "function", "ws_name" or "wsname", is
+     * always in "wsname". Every check (offered tools, severity, approval, scope) works on this form.
+     *
+     * @param string $tool Tool name as the model called it.
+     * @param array $args Tool arguments.
+     * @return array Tool name and arguments, in that order.
+     */
+    public static function normalise(string $tool, array $args): array {
+        $tool = self::TOOL_ALIASES[$tool] ?? $tool;
+        if ($tool === 'ws_execute') {
+            $wsname = $args['wsname'] ?? $args['ws_name'] ?? $args['function'] ?? '';
+            unset($args['wsname'], $args['ws_name'], $args['function']);
+            $args['wsname'] = is_string($wsname) ? trim($wsname) : '';
+        }
+        return [$tool, $args];
     }
 
     /**
@@ -125,15 +156,20 @@ class pending_action_service {
     /**
      * Hold a tool call that needs confirmation.
      *
+     * The action is stored in its canonical form (see normalise()), so it runs through the same tool when it is
+     * confirmed.
+     *
      * @param int $userid User who must confirm it.
      * @param string $tool Tool name.
      * @param array $args Tool arguments.
+     * @param int $agentid Scheduled agent that proposed it (its creator confirms it in the web chat); 0 for the chat.
      * @return array|null Data for the confirmation card (id, tool, severity, description, details, and
      *                    count and preview for send_messages), or null when the tool needs no confirmation.
      */
-    public static function hold(int $userid, string $tool, array $args): ?array {
+    public static function hold(int $userid, string $tool, array $args, int $agentid = 0): ?array {
         global $DB;
 
+        [$tool, $args] = self::normalise($tool, $args);
         $severity = self::severity($tool, $args);
         if ($severity === null) {
             return null;
@@ -141,6 +177,7 @@ class pending_action_service {
 
         $id = (int) $DB->insert_record(self::TABLE, (object) [
             'userid' => $userid,
+            'agentid' => $agentid,
             'tool' => \core_text::substr($tool, 0, 64),
             'argsjson' => json_encode($args, JSON_UNESCAPED_UNICODE),
             'severity' => $severity,
@@ -183,16 +220,38 @@ class pending_action_service {
      * @return array[] Cards as hold() returns them.
      */
     public static function cards_for_user(int $userid): array {
+        global $DB;
         $cards = [];
         foreach (self::get_for_user($userid) as $record) {
-            if ((int) $record->timecreated < time() - self::EXPIRY) {
+            if (self::is_expired($record)) {
                 continue;
             }
             $args = json_decode((string) $record->argsjson, true);
-            $cards[] = ['id' => (int) $record->id]
+            $card = ['id' => (int) $record->id]
                 + self::card($userid, (string) $record->tool, is_array($args) ? $args : [], (string) $record->severity);
+            if (!empty($record->agentid)) {
+                // The creator is told which of their agents proposed the action.
+                $name = (string) $DB->get_field('local_jedomi_agents', 'name', ['id' => (int) $record->agentid]);
+                $card['description'] = get_string('pending_from_agent', 'local_jedomi', [
+                    'agent' => $name !== '' ? $name : '#' . (int) $record->agentid,
+                    'description' => $card['description'],
+                ]);
+            }
+            $cards[] = $card;
         }
         return $cards;
+    }
+
+    /**
+     * Whether a held action can no longer be confirmed: actions of the chat wait EXPIRY seconds, actions held by a
+     * scheduled agent wait AGENT_EXPIRY seconds.
+     *
+     * @param \stdClass $record Pending action record.
+     * @return bool
+     */
+    public static function is_expired(\stdClass $record): bool {
+        $expiry = empty($record->agentid) ? self::EXPIRY : self::AGENT_EXPIRY;
+        return (int) $record->timecreated < time() - $expiry;
     }
 
     /**
@@ -308,7 +367,7 @@ class pending_action_service {
             throw new \moodle_exception('pending_action_not_found', 'local_jedomi');
         }
 
-        if ((int) $record->timecreated < time() - self::EXPIRY) {
+        if (self::is_expired($record)) {
             $DB->delete_records(self::TABLE, ['id' => $record->id]);
             throw new \moodle_exception('pending_action_expired', 'local_jedomi');
         }
@@ -411,8 +470,8 @@ class pending_action_service {
      */
     public static function purge_expired(): int {
         global $DB;
-        $where = 'timecreated < :cutoff';
-        $params = ['cutoff' => time() - self::EXPIRY];
+        $where = '(agentid = 0 AND timecreated < :cutoff) OR (agentid > 0 AND timecreated < :agentcutoff)';
+        $params = ['cutoff' => time() - self::EXPIRY, 'agentcutoff' => time() - self::AGENT_EXPIRY];
         $count = $DB->count_records_select(self::TABLE, $where, $params);
         $DB->delete_records_select(self::TABLE, $where, $params);
         return $count;

@@ -56,7 +56,7 @@ function local_jedomi_before_footer(): string {
  * @param stdClass|null $cm Course module of the request (unused).
  * @param context $context Context of the file; only the system context has files.
  * @param string $filearea File area; only "customavatar" is served.
- * @param array $args Item id followed by the path and name of the file.
+ * @param array $args Revision (in place of the item id, ignored) followed by the path and name of the file.
  * @param bool $forcedownload Whether the file must be downloaded.
  * @param array $options Options for send_stored_file().
  * @return bool False when the file is not served.
@@ -69,10 +69,12 @@ function local_jedomi_pluginfile($course, $cm, $context, $filearea, $args, $forc
     if (!isloggedin() || isguestuser()) {
         return false;
     }
-    $itemid = (int) array_shift($args);
+    // The item id of the address is the revision of the avatar (see personalization::custom_avatar_url()): it is
+    // ignored, as the file is always stored with item id 0, so an address written before a change still works.
+    array_shift($args);
     $filename = (string) array_pop($args);
     $filepath = $args ? '/' . implode('/', $args) . '/' : '/';
-    $file = get_file_storage()->get_file($context->id, 'local_jedomi', $filearea, $itemid, $filepath, $filename);
+    $file = get_file_storage()->get_file($context->id, 'local_jedomi', $filearea, 0, $filepath, $filename);
     if (!$file || $file->is_directory()) {
         return false;
     }

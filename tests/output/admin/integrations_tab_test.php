@@ -36,7 +36,7 @@ final class integrations_tab_test extends \advanced_testcase {
     private function telegram_settings(): array {
         return [
             'enabled' => 1, 'bot_token_set' => true, 'bot_username' => 'jedomibot', 'bot_firstname' => 'Jedomi',
-            'bot_verified' => 1, 'webhook_error' => 1, 'webhook_url' => 'https://example.com/hook?secret=x',
+            'bot_verified' => 1, 'webhook_error' => 1, 'webhook_url' => 'https://example.com/hook',
             'rate_limit' => 30, 'cooldown' => 5, 'max_turns' => 10, 'gateway_timeout' => 120,
             'hidden_role_ids' => [], 'last_error' => 'setWebhook failed', 'last_error_time' => 1700000000,
             'is_configured' => true,
@@ -266,7 +266,7 @@ final class integrations_tab_test extends \advanced_testcase {
             }
 
             #[\Override]
-            public function set_webhook(string $url): bool {
+            public function set_webhook(string $url, string $secrettoken, bool $droppending = false): bool {
                 return $this->webhookok;
             }
         };
@@ -352,7 +352,7 @@ final class integrations_tab_test extends \advanced_testcase {
                 return true;
             }
             #[\Override]
-            public function set_webhook(string $url): bool {
+            public function set_webhook(string $url, string $secrettoken, bool $droppending = false): bool {
                 return false;
             }
         };
@@ -424,5 +424,20 @@ final class integrations_tab_test extends \advanced_testcase {
                 $this->assertDoesNotMatchRegularExpression($informal, $text, "es/{$key}");
             }
         }
+    }
+
+    /**
+     * JEDOMI-SEC-004: when the update could not register the webhook again, the tab warns until the bot token is
+     * saved again; otherwise the warning is not shown.
+     *
+     * @return void
+     */
+    public function test_failed_registration_during_the_update_shows_a_warning(): void {
+        $this->resetAfterTest();
+        $warning = get_string('telegram_webhook_needs_registration', 'local_jedomi');
+
+        $this->assertStringContainsString($warning, $this->render_with(['needs_registration' => true]));
+        $this->assertStringNotContainsString($warning, $this->render_with(['needs_registration' => false]));
+        $this->assertStringNotContainsString($warning, $this->render_with([]));
     }
 }

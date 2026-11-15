@@ -83,6 +83,7 @@ export default {
         contextType: '[data-action="local_jedomi/admin/agents/context-type"]',
         contextIdWrap: '[data-region="local_jedomi/admin/agents/context-id-wrap"]',
         roleCheckboxes: 'input[type="checkbox"][name="role_filter[]"]',
+        approvedWrites: '[data-region="local_jedomi/admin/agents/approved-writes"]',
         enabled: '[data-region="local_jedomi/admin/agents/enabled"]',
         preview: '[data-action="local_jedomi/admin/agents/preview"]',
         cancelEdit: '[data-action="local_jedomi/admin/agents/cancel-edit"]',

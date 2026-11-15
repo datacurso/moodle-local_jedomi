@@ -494,5 +494,27 @@ function xmldb_local_jedomi_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2026111302, 'local', 'jedomi');
     }
 
+    if ($oldversion < 2026111303) {
+        // The Telegram webhook secret leaves the webhook address (JEDOMI-SEC-004): it is rotated and the webhook is
+        // registered again with it as secret_token. A failure leaves a warning in the Integrations tab, prints a line
+        // and queues a task that retries the registration (RES-001).
+        require_once($CFG->dirroot . '/local/jedomi/db/upgradelib.php');
+        local_jedomi_upgrade_telegram_webhook();
+        upgrade_plugin_savepoint(true, 2026111303, 'local', 'jedomi');
+    }
+
+    if ($oldversion < 2026111304) {
+        // Agents run only the writes approved for them (JEDOMI-SEC-001): existing agents start with none, and the
+        // actions they hold name the agent.
+        require_once($CFG->dirroot . '/local/jedomi/db/upgradelib.php');
+        local_jedomi_upgrade_agent_write_approvals();
+        upgrade_plugin_savepoint(true, 2026111304, 'local', 'jedomi');
+    }
+
+    if ($oldversion < 2026111305) {
+        // New message provider "telegramwebhook" for failed Telegram webhook registrations (RES-001); no data changes.
+        upgrade_plugin_savepoint(true, 2026111305, 'local', 'jedomi');
+    }
+
     return true;
 }

@@ -86,6 +86,22 @@ final class pluginfile_test extends \advanced_testcase {
     }
 
     /**
+     * The item id of the address is the revision of the avatar: any revision serves the stored image, so addresses
+     * written before the image was replaced still work.
+     *
+     * @return void
+     */
+    public function test_custom_avatar_is_served_with_any_revision(): void {
+        $this->resetAfterTest();
+        $this->store_avatar();
+        $this->setUser($this->getDataGenerator()->create_user());
+
+        $this->assertTrue($this->serve(\context_system::instance(), 'customavatar', [1700000000, 'robo.png']));
+        $this->assertTrue($this->serve(\context_system::instance(), 'customavatar', ['1700000100', 'robo.png']));
+        $this->assertFalse($this->serve(\context_system::instance(), 'customavatar', [1700000000, 'missing.png']));
+    }
+
+    /**
      * Visitors without a session and guests do not get the avatar, nor any other area or context.
      *
      * @return void

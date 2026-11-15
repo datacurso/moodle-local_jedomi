@@ -227,7 +227,7 @@ final class telegram_webhook_test extends \advanced_testcase {
         global $CFG;
         $source = file_get_contents($CFG->dirroot . '/local/jedomi/ajax/telegram_drop_pending.php');
 
-        $this->assertStringContainsString('manager::register_webhook()', $source);
+        $this->assertStringContainsString('manager::register_webhook(null, true)', $source);
         $this->assertStringNotContainsString('->delete_webhook()', $source);
     }
 }

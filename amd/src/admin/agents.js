@@ -47,6 +47,9 @@ const STRING_KEYS = [
 /** @type {Object<string, string>} Loaded strings, by key. */
 let strings = {};
 
+/** @type {string} Approved writes options of the form as the page rendered them, for the current user. */
+let initialApprovedWrites = '';
+
 /**
  * Escape text for places that take HTML, such as the modal title.
  *
@@ -136,6 +139,7 @@ const rowContext = (row) => ({
     prompt: row.prompt || '',
     prompthidden: row.prompthidden === true,
     canmanage: row.canmanage === true,
+    approvedwrites: Array.isArray(row.approved_writes) ? row.approved_writes : [],
 });
 
 /**
@@ -175,6 +179,8 @@ const updateOptionalFields = (root) => {
  */
 const resetForm = (root) => {
     root.querySelector(Selectors.agents.createForm).reset();
+    // The options of a new agent are the write functions of the current user.
+    root.querySelector(Selectors.agents.approvedWrites).innerHTML = initialApprovedWrites;
     root.querySelector(Selectors.agents.editId).value = '';
     root.querySelector(Selectors.agents.cancelEdit).classList.add('d-none');
     root.querySelector(Selectors.agents.formHeading).textContent = strings.agent_create;
@@ -215,6 +221,12 @@ const editAgent = async(root, id) => {
         form.querySelectorAll(Selectors.agents.roleCheckboxes).forEach((box) => {
             box.checked = roleids.includes(parseInt(box.value, 10));
         });
+        // The writes the owner of the agent may approve, with those approved for the agent checked.
+        const approved = agent.approved_writes || [];
+        const {html, js} = await Templates.renderForPromise('local_jedomi/admin/agent_approved_writes', {
+            approvablewrites: (agent.approvable_writes || []).map((name) => ({name, checked: approved.includes(name)})),
+        });
+        Templates.replaceNodeContents(root.querySelector(Selectors.agents.approvedWrites), html, js);
         root.querySelector(Selectors.agents.editId).value = agent.id;
         root.querySelector(Selectors.agents.cancelEdit).classList.remove('d-none');
         const heading = root.querySelector(Selectors.agents.formHeading);
@@ -591,6 +603,7 @@ export const init = async() => {
         return;
     }
     root.dataset.initialised = '1';
+    initialApprovedWrites = root.querySelector(Selectors.agents.approvedWrites).innerHTML;
     const values = await getStrings(STRING_KEYS.map((key) => ({key, component: 'local_jedomi'})));
     strings = Object.fromEntries(STRING_KEYS.map((key, i) => [key, values[i]]));
     registerEventListeners(root);

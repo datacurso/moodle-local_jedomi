@@ -17,7 +17,7 @@
 /**
  * Telegram webhook public endpoint.
  *
- * Validates secret, decodes JSON body, and delegates to webhook_handler.
+ * Validates the secret header, decodes JSON body, and delegates to webhook_handler.
  *
  * @package    local_jedomi
  * @copyright  2026 Jedomi Project
@@ -40,10 +40,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 // ... ── Validate webhook secret ──────────────────────────────────────────────────
-$secretparam = optional_param('secret', '', PARAM_ALPHANUMEXT);
-$expectedsecret = manager::get_webhook_secret();
-
-if (!hash_equals($expectedsecret, $secretparam)) {
+// Telegram sends it in the X-Telegram-Bot-Api-Secret-Token header; a secret in the address is never accepted.
+if (!manager::is_valid_webhook_request($_SERVER)) {
     http_response_code(403);
     header('Content-Type: application/json');
     echo json_encode(['ok' => false, 'error' => 'Invalid webhook secret (E007)']);

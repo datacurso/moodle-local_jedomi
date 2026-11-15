@@ -91,6 +91,8 @@ class integrations_tab extends form_tab {
             'webhooknotchecked' => $lasterror === '' && !$webhookok,
             'isconfigured' => (bool) $tg['is_configured'],
             'showerroralert' => $tokenset && !empty($tg['webhook_error']),
+            // The update could not register the webhook with its new secret: the bot is silent until the token is saved.
+            'needsregistration' => !empty($tg['needs_registration']),
             'adminsteps' => $adminsteps,
             'usersteps' => $usersteps,
         ];

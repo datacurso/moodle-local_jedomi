@@ -115,3 +115,63 @@ function local_jedomi_deduplicate_feedback(): int {
     }
     return count($duplicates);
 }
+
+/**
+ * Rotate the Telegram webhook secret and register the webhook again with it as secret_token (JEDOMI-SEC-004).
+ *
+ * Earlier versions sent the secret in the webhook address, where access logs and proxies could keep it, and the
+ * webhook no longer accepts it there. Without a bot token the secret is only rotated. With a bot token setWebhook is
+ * called alone (it replaces the previous webhook at once) with a new secret, stored only once Telegram accepted it,
+ * and with a short timeout so the upgrade never waits long (RES-001). When Telegram cannot be reached the update still
+ * finishes: the webhook refuses every request, the Integrations tab warns, a line is printed and an adhoc task retries
+ * the registration and notifies the site administrators.
+ *
+ * @param \local_jedomi\telegram\api_client|null $client Client of the stored token; built from it when null.
+ * @return bool Whether the webhook is ready: registered again, or no bot token is configured.
+ */
+function local_jedomi_upgrade_telegram_webhook(?\local_jedomi\telegram\api_client $client = null): bool {
+    $token = \local_jedomi\telegram\manager::get_bot_token();
+    if ($token === null) {
+        \local_jedomi\telegram\manager::replace_webhook_secret();
+        \local_jedomi\telegram\manager::clear_webhook_registration_need();
+        return true;
+    }
+    $client = $client ?? new \local_jedomi\telegram\api_client($token);
+    $client->set_timeout(\local_jedomi\task\register_telegram_webhook::TIMEOUT);
+    if (\local_jedomi\telegram\manager::register_webhook_with_new_secret($client)) {
+        \local_jedomi\telegram\manager::clear_webhook_registration_need();
+        return true;
+    }
+    \local_jedomi\telegram\manager::require_webhook_registration();
+    \local_jedomi\task\register_telegram_webhook::queue();
+    mtrace('local_jedomi: the Telegram webhook could not be registered with its new secret, so the bot does not '
+        . 'receive messages. A background task retries it and notifies the site administrators; you can also save '
+        . 'the bot token again in the Integrations tab of Jedomi.');
+    return false;
+}
+
+/**
+ * Add the approved writes of the agents and the agent of the held actions (JEDOMI-SEC-001).
+ *
+ * Every existing agent is left without approved writes: from now on all its writes wait for the approval of its
+ * creator until the creator approves some of them in the agent form.
+ *
+ * @return void
+ */
+function local_jedomi_upgrade_agent_write_approvals(): void {
+    global $DB;
+    $dbman = $DB->get_manager();
+
+    $agents = new xmldb_table('local_jedomi_agents');
+    $approved = new xmldb_field('approvedwrites', XMLDB_TYPE_TEXT, null, null, null, null, null, 'lasterror');
+    if (!$dbman->field_exists($agents, $approved)) {
+        $dbman->add_field($agents, $approved);
+    }
+    $DB->set_field('local_jedomi_agents', 'approvedwrites', null);
+
+    $pending = new xmldb_table('local_jedomi_pending_actions');
+    $agentid = new xmldb_field('agentid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0', 'userid');
+    if (!$dbman->field_exists($pending, $agentid)) {
+        $dbman->add_field($pending, $agentid);
+    }
+}

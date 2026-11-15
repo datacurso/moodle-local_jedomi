@@ -69,7 +69,7 @@ final class admin_settings_service_test extends \advanced_testcase {
             }
 
             #[\Override]
-            public function set_webhook(string $url): bool {
+            public function set_webhook(string $url, string $secrettoken, bool $droppending = false): bool {
                 $this->calls[] = 'setWebhook';
                 return $this->webhookok;
             }
@@ -295,7 +295,8 @@ final class admin_settings_service_test extends \advanced_testcase {
         $this->assertTrue($settings['bot_token_set']);
         $this->assertSame(10, $settings['max_turns']);
         $this->assertSame(\local_jedomi\telegram\webhook_handler::MAX_AI_TIMEOUT, $settings['gateway_timeout']);
-        $this->assertStringContainsString('/local/jedomi/telegram_webhook.php?secret=', $settings['webhook_url']);
+        $this->assertStringEndsWith('/local/jedomi/telegram_webhook.php', $settings['webhook_url']);
+        $this->assertFalse($settings['needs_registration']);
     }
 
     /**
@@ -652,6 +653,7 @@ final class admin_settings_service_test extends \advanced_testcase {
         $files = $fs->get_area_files(\context_system::instance()->id, 'local_jedomi', 'customavatar', 0, 'id', false);
         $this->assertSame(['robo.png'], array_values(array_map(fn($file) => $file->get_filename(), $files)));
         $url = \local_jedomi\local\personalization::avatar_url();
-        $this->assertStringContainsString('/local_jedomi/customavatar/0/robo.png', $url);
+        $revision = reset($files)->get_timemodified();
+        $this->assertStringContainsString('/local_jedomi/customavatar/' . $revision . '/robo.png', $url);
     }
 }

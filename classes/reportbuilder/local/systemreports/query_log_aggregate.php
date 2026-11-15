@@ -18,14 +18,16 @@ namespace local_jedomi\reportbuilder\local\systemreports;
 
 use core_reportbuilder\local\report\column;
 use lang_string;
+use local_jedomi\agent\query_profiler;
 use local_jedomi\reportbuilder\local\entities\query_log as query_log_entity;
 
 /**
  * Slowest queries system report of the Query profiler tab.
  *
  * Groups {local_jedomi_query_log} by query text with the native column aggregation of system reports (Moodle 4.5),
- * showing the average and maximum duration and the number of runs of each query, slowest average first. It has the
- * same filters as the recent queries report.
+ * showing the average and maximum duration and the number of runs of each query, slowest average first. The average
+ * is red at or above the slow query threshold, like the duration of the recent queries report. It has the same
+ * filters as the recent queries report.
  *
  * @package    local_jedomi
  * @copyright  2026 Jedomi Project
@@ -51,7 +53,10 @@ class query_log_aggregate extends query_log {
             ->add_field("{$mainalias}.duration_ms")
             ->set_is_sortable(true)
             ->set_aggregation('avg')
-            ->add_callback(static fn($value): string => query_log_entity::format_duration((float) $value, true)));
+            ->add_callback(static fn($value): string => query_log_entity::format_duration(
+                (float) $value,
+                (float) $value >= query_profiler::slow_threshold_ms()
+            )));
 
         $this->add_column((new column(
             'maxduration',

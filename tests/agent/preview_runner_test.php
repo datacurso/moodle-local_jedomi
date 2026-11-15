@@ -442,4 +442,27 @@ final class preview_runner_test extends \advanced_testcase {
             );
         }
     }
+
+    /**
+     * Agent preview bug: a preview never runs a web service write called through call_webservice with "function".
+     */
+    public function test_preview_does_not_run_a_call_webservice_write(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        set_config('ws_allowlist_admin', json_encode(['core_course_create_categories']), 'local_jedomi');
+        $fake = new fake_ai_client();
+        $fake->enqueue_tool_calls([
+            ['id' => 'call_1', 'type' => 'function', 'function' => ['name' => 'call_webservice',
+                'arguments' => json_encode(['function' => 'core_course_create_categories',
+                    'params' => ['categories' => [['name' => 'Preview category', 'parent' => 0]]]])]],
+        ]);
+        $fake->enqueue_text('Created.');
+        client::set_instance_for_testing($fake);
+
+        $result = preview_runner::run('Create a category', (int) get_admin()->id);
+
+        $this->assertFalse($DB->record_exists('course_categories', ['name' => 'Preview category']));
+        $this->assertSame('confirmation_required', $result['profiler'][0]['error'] ?? null);
+    }
 }

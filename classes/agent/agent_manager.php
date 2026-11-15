@@ -85,7 +85,10 @@ class agent_manager {
      * site, the context id must be the id of an existing Moodle context of that type (a course, category or user
      * context id, not the id of the course, category or user).
      *
-     * @param \stdClass $agent Agent fields as they will be stored (prompt, schedule_cron, context_type, context_id).
+     * The approved writes must be writes the owner may approve, see approvable_writes().
+     *
+     * @param \stdClass $agent Agent fields as they will be stored (prompt, schedule_cron, context_type, context_id, userid,
+     *     approvedwrites).
      * @return string|null Translated reason, or null when the agent is valid.
      */
     public static function validation_error(\stdClass $agent): ?string {
@@ -98,6 +101,15 @@ class agent_manager {
         $type = (string) ($agent->context_type ?? 'site');
         if (!in_array($type, self::CONTEXT_TYPES, true)) {
             return get_string('agent_invalid_context_type', 'local_jedomi');
+        }
+        $approved = self::approved_writes($agent);
+        if (!empty($approved)) {
+            $approvable = self::approvable_writes((int) ($agent->userid ?? 0));
+            foreach ($approved as $function) {
+                if (!in_array($function, $approvable, true)) {
+                    return get_string('agent_invalid_approved_write', 'local_jedomi', $function);
+                }
+            }
         }
         if ($type === 'site') {
             return null;
@@ -123,6 +135,70 @@ class agent_manager {
         if ($error !== null) {
             throw new \moodle_exception('agent_invalid', 'local_jedomi', '', $error);
         }
+    }
+
+    // ... ── Approved writes ──────────────────────────────────────────────────────
+
+    /**
+     * Web service functions that an agent may run without confirmation, as approved by its creator in the agent form.
+     *
+     * @param \stdClass $agent Agent record or fields (approvedwrites: JSON list, list, or empty).
+     * @return string[] Function names; empty when none is approved.
+     */
+    public static function approved_writes(\stdClass $agent): array {
+        $value = $agent->approvedwrites ?? null;
+        if (is_string($value)) {
+            $value = json_decode($value, true);
+        }
+        if (!is_array($value)) {
+            return [];
+        }
+        $functions = array_filter(array_map('strval', $value), static fn(string $name): bool => $name !== '');
+        return array_values(array_unique($functions));
+    }
+
+    /**
+     * Web service functions that change data and that the agents of a user may be approved to run without confirmation:
+     * the functions of the web service list saved for the Jedomi role of the user that are not declared as reading.
+     *
+     * An administrator without a saved list gets none: agents never get the "every function" access.
+     *
+     * @param int $userid Owner of the agent.
+     * @return string[] Function names, sorted.
+     */
+    public static function approvable_writes(int $userid): array {
+        global $CFG;
+        require_once($CFG->dirroot . '/local/jedomi/lib.php');
+        if ($userid <= 0) {
+            return [];
+        }
+        $role = \local_jedomi_get_user_role_for_user($userid);
+        if (\local_jedomi_role_has_full_ws_access($role)) {
+            return [];
+        }
+        $functions = [];
+        foreach (\local_jedomi_get_role_allowlist($role) as $function) {
+            // An unknown function or one declared as reading has no severity.
+            $args = ['wsname' => (string) $function];
+            $severity = \local_jedomi\local\service\pending_action_service::severity('ws_execute', $args);
+            if (is_string($function) && $severity !== null) {
+                $functions[] = $function;
+            }
+        }
+        $functions = array_values(array_unique($functions));
+        sort($functions);
+        return $functions;
+    }
+
+    /**
+     * Stored form of the approved writes: a JSON list, or null for none.
+     *
+     * @param mixed $value List of function names, its JSON, or empty.
+     * @return string|null
+     */
+    private static function encode_approved_writes($value): ?string {
+        $functions = self::approved_writes((object) ['approvedwrites' => $value]);
+        return empty($functions) ? null : json_encode($functions);
     }
 
     // ... ── Permissions ──────────────────────────────────────────────────────────
@@ -182,7 +258,8 @@ class agent_manager {
      *
      * @param \stdClass $agent Agent record (needs ->userid, ->prompt and ->name).
      * @param int $actorid User that reads the agent.
-     * @return \stdClass Copy with ->prompt (null when hidden), ->name, ->prompthidden and ->canmanage.
+     * @return \stdClass Copy with ->prompt (null when hidden), ->name, ->prompthidden and ->canmanage; when hidden,
+     *     ->lastresult is null and ->lasterror only says that the last run failed.
      */
     public static function agent_for_actor(\stdClass $agent, int $actorid): \stdClass {
         $copy = clone $agent;
@@ -193,8 +270,12 @@ class agent_manager {
                 $copy->name = '';
             }
             $copy->prompt = null;
-            // The answer of the agent reveals what its instruction asks for.
+            // The answer of the agent reveals what its instruction asks for, and so can the reason of a failed run:
+            // only the fact that it failed is kept, with the failure count.
             $copy->lastresult = null;
+            if (!empty($agent->lasterror)) {
+                $copy->lasterror = get_string('agent_lasterror_hidden', 'local_jedomi');
+            }
         }
         return $copy;
     }
@@ -389,7 +470,8 @@ class agent_manager {
      * Create a new agent record.
      *
      * @param  \stdClass $data Fields: userid, prompt, schedule_cron, context_type,
-     *                         context_id (Moodle context id), role_filter, enabled.
+     *                         context_id (Moodle context id), role_filter, enabled, approvedwrites (list of web service
+     *                         functions; none when missing).
      * @return int New record id.
      * @throws \moodle_exception When the agent is not valid, see validation_error().
      */
@@ -407,6 +489,8 @@ class agent_manager {
         $record->context_id = ($record->context_type !== 'site' && !empty($data->context_id)) ? (int) $data->context_id : null;
         $record->role_filter = $data->role_filter ?? null;
         $record->enabled = isset($data->enabled) ? (int) $data->enabled : 1;
+        // Only the agent form approves writes; an agent created by the chat, Telegram or another agent has none.
+        $record->approvedwrites = self::encode_approved_writes($data->approvedwrites ?? null);
         self::require_valid($record);
         $record->lastrun = null;
         // A new agent waits for its scheduled hour, in the time zone of its creator.
@@ -491,11 +575,14 @@ class agent_manager {
         $record->id = $id;
 
         $allowed = ['userid', 'name', 'prompt', 'schedule_cron', 'context_type', 'context_id',
-            'role_filter', 'enabled'];
+            'role_filter', 'enabled', 'approvedwrites'];
         foreach ($allowed as $field) {
             if (property_exists($data, $field)) {
                 $record->$field = $data->$field;
             }
+        }
+        if (property_exists($record, 'approvedwrites')) {
+            $record->approvedwrites = self::encode_approved_writes($record->approvedwrites);
         }
 
         if (property_exists($record, 'context_type') && $record->context_type === 'site') {
@@ -515,6 +602,10 @@ class agent_manager {
             $enabling = property_exists($record, 'enabled') && (int) $record->enabled === 1 && (int) $current->enabled === 0;
             $rescheduled = property_exists($record, 'schedule_cron') && $record->schedule_cron !== $current->schedule_cron;
             $newowner = property_exists($record, 'userid') && (int) $record->userid !== (int) $current->userid;
+            if ($newowner && !property_exists($record, 'approvedwrites')) {
+                // The writes were approved for the permissions of the previous owner.
+                $record->approvedwrites = null;
+            }
             if ($enabling) {
                 // A re-enabled agent starts again without the failures that disabled it.
                 $record->failcount = 0;
@@ -1153,7 +1244,7 @@ class agent_manager {
      *
      * @param \stdClass $agent Agent record.
      * @param int $actorid User that reads the agent.
-     * @return \stdClass Copy with ->user_fullname, ->schedule_label and ->context_label added.
+     * @return \stdClass Copy with ->user_fullname, ->schedule_label, ->context_label and ->approved_writes added.
      */
     public static function agent_details_for_actor(\stdClass $agent, int $actorid): \stdClass {
         $copy = self::agent_for_actor($agent, $actorid);
@@ -1164,6 +1255,7 @@ class agent_manager {
             (string) ($agent->context_type ?? 'site'),
             empty($agent->context_id) ? null : (int) $agent->context_id
         );
+        $copy->approved_writes = self::approved_writes($agent);
         return $copy;
     }
 

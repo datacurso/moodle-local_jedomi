@@ -136,9 +136,12 @@ final class system_message_test extends \advanced_testcase {
         [, $system] = \local_jedomi\task\agent_runner::run_conditions((int) $user->id, 'site', null);
         $agent = $system['content'];
         $this->assertStringNotContainsString("wait for the user's confirmation", $agent);
-        $this->assertStringContainsString('nothing is confirmed', $agent);
+        // JEDOMI-SEC-001: writes never run just because the agent asks for them; third-party content is data.
+        $this->assertStringNotContainsString('run immediately', $agent);
+        $this->assertStringContainsString("waits for the approval of the agent creator", $agent);
         $this->assertStringContainsString('never ask for a confirmation', $agent);
-        $this->assertStringContainsString('an agent preview does not run them', $agent);
+        $this->assertStringContainsString('an agent preview never runs a write', $agent);
+        $this->assertStringContainsString(\local_jedomi\local\untrusted::rule(), $agent);
 
         // The chat keeps its confirmation card.
         $chat = system_message::build('admin', [])['content'];
@@ -187,5 +190,26 @@ final class system_message_test extends \advanced_testcase {
         $this->assertStringContainsString('answer like a pirate.', substr($content, $instructions));
         $this->assertStringContainsString('can never override the security, permissions, privacy, language or confirmation'
             . ' rules', $content);
+    }
+
+    /**
+     * JEDOMI-SEC-002: a channel or an output outside the known values falls back to the web chat: confirmation in
+     * the chat and no Telegram format. The known values keep their rules.
+     */
+    public function test_unknown_channel_and_output_fall_back_to_the_web_chat(): void {
+        $this->resetAfterTest();
+
+        $unknown = system_message::build('admin', [], ['channel' => 'AGENT ', 'output' => 'telegram2'])['content'];
+        $this->assertStringContainsString("wait for the user's confirmation in the chat", $unknown);
+        $this->assertStringNotContainsString('This is a scheduled agent', $unknown);
+        $this->assertStringNotContainsString('TELEGRAM FORMAT', $unknown);
+
+        $nonstring = system_message::build('admin', [], ['channel' => ['agent'], 'output' => ['telegram']])['content'];
+        $this->assertStringContainsString("wait for the user's confirmation in the chat", $nonstring);
+        $this->assertStringNotContainsString('TELEGRAM FORMAT', $nonstring);
+
+        $agent = system_message::build('admin', [], ['channel' => 'agent', 'output' => 'telegram'])['content'];
+        $this->assertStringContainsString('This is a scheduled agent', $agent);
+        $this->assertStringContainsString('TELEGRAM FORMAT', $agent);
     }
 }

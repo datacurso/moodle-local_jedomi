@@ -117,6 +117,10 @@ final class personalization {
     /**
      * Address of the custom avatar, when one was uploaded.
      *
+     * The file is always stored with item id 0, so the item id of the address carries the moment of the image as its
+     * revision: replacing the image changes the address, and the copy that browsers and proxies keep for a day
+     * ({@see local_jedomi_pluginfile()}) is never shown after a change. The revision is ignored when serving.
+     *
      * @return \moodle_url|null
      */
     public static function custom_avatar_url(): ?\moodle_url {
@@ -136,7 +140,7 @@ final class personalization {
             $file->get_contextid(),
             $file->get_component(),
             $file->get_filearea(),
-            $file->get_itemid(),
+            $file->get_timemodified(),
             $file->get_filepath(),
             $file->get_filename()
         );

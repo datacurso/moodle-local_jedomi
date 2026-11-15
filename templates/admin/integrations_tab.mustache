@@ -48,6 +48,7 @@
     * webhooknotchecked bool - Whether the webhook was never checked
     * isconfigured bool - Whether the bot is enabled, has a token and was verified
     * showerroralert bool - Whether to show the webhook error alert below the card
+    * needsregistration bool - Whether the update could not register the webhook again
     * form string - HTML of the Telegram settings form, rendered by moodleform
     * adminsteps array - Admin setup steps: number string, titlekey string, title string, desc string (trusted HTML from
       the language pack), showwebhookstate bool
@@ -56,9 +57,10 @@
     Example context (json):
     {
         "enabled": true, "tokenset": true, "verified": true, "botusername": "jedomibot", "botfirstname": "Jedomi",
-        "showbadge": true, "webhookurl": "https://example.com/local/jedomi/telegram_webhook.php?secret=abc",
+        "showbadge": true, "webhookurl": "https://example.com/local/jedomi/telegram_webhook.php",
         "haslasterror": false, "lasterror": "", "lasterrortime": 1700000000, "haslasterrortime": true,
         "webhookok": true, "webhooknotchecked": false, "isconfigured": true, "showerroralert": false,
+        "needsregistration": false,
         "form": "<form></form>",
         "adminsteps": [{"number": "1", "titlekey": "telegram_step1_title", "title": "Create the bot", "desc": "Open @BotFather.",
             "showwebhookstate": false}],
@@ -214,6 +216,12 @@
         {{/body}}
     {{/ local_jedomi/admin/card }}
 
+    {{#needsregistration}}
+    <div class="alert alert-warning d-flex align-items-start mt-3" role="alert">
+        {{#pix}} i/warning, core {{/pix}}
+        <div>{{#str}} telegram_webhook_needs_registration, local_jedomi {{/str}}</div>
+    </div>
+    {{/needsregistration}}
     {{#showerroralert}}
     <div class="alert alert-warning d-flex align-items-start mt-3" role="alert">
         {{#pix}} i/warning, core {{/pix}}

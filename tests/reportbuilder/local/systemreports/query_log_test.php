@@ -191,8 +191,29 @@ final class query_log_test extends \advanced_testcase {
         $this->assertSame(get_string('query_profiler_ms', 'local_jedomi', '200.00'), $this->texts($rows, 1)[1]);
         $this->assertSame(get_string('query_profiler_ms', 'local_jedomi', '300.00'), $this->texts($rows, 2)[1]);
         $this->assertSame('2', $this->texts($rows, 3)[1]);
-        $this->assertStringContainsString('text-danger', $rows[1][1], 'The average is red');
+        $this->assertStringContainsString('text-danger', $rows[0][1], 'An average at or above the threshold is red');
+        $this->assertStringNotContainsString('text-danger', $rows[1][1], 'An average below the threshold is not red');
         $this->assertSame(['SELECT WEB'], $this->texts($web, 0));
+    }
+
+    /**
+     * MDL-INT-036: the average of the slowest queries report is red exactly from the slow query threshold, like the
+     * duration of the recent queries report, and follows a changed threshold.
+     */
+    public function test_slowest_queries_average_follows_the_slow_threshold(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $now = time();
+        $this->record(1, 'SELECT AT', 600, $now - 200);
+        $this->record(1, 'SELECT AT', 400, $now - 100);
+        $this->record(1, 'SELECT BELOW', 499.99, $now);
+        set_config('profiler_slow_ms', 500, 'local_jedomi');
+
+        $rows = $this->rows(query_log_aggregate::class);
+
+        $this->assertSame(['SELECT AT', 'SELECT BELOW'], $this->texts($rows, 0));
+        $this->assertStringContainsString('text-danger', $rows[0][1], 'At the threshold the average is red');
+        $this->assertStringNotContainsString('text-danger', $rows[1][1]);
     }
 
     /**

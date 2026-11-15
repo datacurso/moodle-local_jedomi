@@ -1350,6 +1350,26 @@ final class agent_manager_test extends \advanced_testcase {
     }
 
     /**
+     * RISK-I3: the reason of the last failed run is replaced by a generic text for a user who may not read the
+     * instruction, keeping the failure count; the owner still gets it, and an agent without errors shows none.
+     */
+    public function test_agent_for_actor_hides_the_last_error_with_the_instruction(): void {
+        $users = $this->create_rank_users();
+        $admin = $this->create_agent_record(['userid' => $users['admin'], 'prompt' => 'Admin instruction',
+            'failcount' => 2, 'lasterror' => 'Error marker from the admin instruction']);
+        $clean = $this->create_agent_record(['userid' => $users['admin'], 'prompt' => 'Admin instruction']);
+
+        $hidden = agent_manager::agent_for_actor($admin, $users['managera']);
+        $own = agent_manager::agent_for_actor($admin, $users['admin']);
+
+        $this->assertSame(get_string('agent_lasterror_hidden', 'local_jedomi'), $hidden->lasterror);
+        $this->assertSame(2, (int) $hidden->failcount);
+        $this->assertSame('Error marker from the admin instruction', $own->lasterror);
+        $stored = agent_manager::get_agent((int) $clean->id);
+        $this->assertEmpty(agent_manager::agent_for_actor($stored, $users['managera'])->lasterror);
+    }
+
+    /**
      * MDL-INT-099: searching by instruction never matches the agents whose instruction the user may not see.
      */
     public function test_search_by_instruction_skips_hidden_instructions(): void {
@@ -1363,5 +1383,49 @@ final class agent_manager_test extends \advanced_testcase {
         $this->assertSame(1, $asmanager['total']);
         $this->assertSame((string) $users['managera'], (string) $asmanager['items'][0]->userid);
         $this->assertSame(2, $asadmin['total']);
+    }
+
+    /**
+     * JEDOMI-SEC-001: the writes an agent may run without confirmation are the write functions of the web service list
+     * saved for the role of its owner; an administrator without a saved list has none.
+     */
+    public function test_approvable_writes_are_the_write_functions_of_the_owner_list(): void {
+        $course = $this->getDataGenerator()->create_course();
+        $teacher = $this->getDataGenerator()->create_and_enrol($course, 'editingteacher');
+        set_config('ws_allowlist_teacher', json_encode(['core_message_send_instant_messages',
+            'core_course_get_courses_by_field', 'core_no_such_function']), 'local_jedomi');
+        unset_config('ws_allowlist_admin', 'local_jedomi');
+
+        $this->assertSame(['core_message_send_instant_messages'], agent_manager::approvable_writes((int) $teacher->id));
+        $this->assertSame([], agent_manager::approvable_writes((int) get_admin()->id));
+    }
+
+    /**
+     * JEDOMI-SEC-001: an agent keeps only writes its owner may approve; the details show them; an agent created without
+     * them (by the chat, Telegram or an old version) has none.
+     */
+    public function test_agent_stores_only_approvable_writes(): void {
+        $course = $this->getDataGenerator()->create_course();
+        $teacher = $this->getDataGenerator()->create_and_enrol($course, 'editingteacher');
+        set_config('ws_allowlist_teacher', json_encode(['core_message_send_instant_messages']), 'local_jedomi');
+        $base = ['userid' => (int) $teacher->id, 'prompt' => 'Remind', 'schedule_cron' => '0 8 * * *'];
+
+        $id = agent_manager::create_agent((object) ($base + ['approvedwrites' => ['core_message_send_instant_messages']]));
+        $agent = agent_manager::get_agent($id);
+        $this->assertSame(['core_message_send_instant_messages'], agent_manager::approved_writes($agent));
+        $this->assertSame(
+            ['core_message_send_instant_messages'],
+            agent_manager::agent_details_for_actor($agent, (int) get_admin()->id)->approved_writes
+        );
+
+        $this->assertSame(
+            get_string('agent_invalid_approved_write', 'local_jedomi', 'core_course_create_categories'),
+            agent_manager::validation_error((object) ($base + ['approvedwrites' => ['core_course_create_categories']]))
+        );
+        $plain = agent_manager::get_agent(agent_manager::create_agent((object) $base));
+        $this->assertSame([], agent_manager::approved_writes($plain));
+
+        agent_manager::update_agent($id, (object) ['approvedwrites' => []]);
+        $this->assertSame([], agent_manager::approved_writes(agent_manager::get_agent($id)));
     }
 }

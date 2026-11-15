@@ -56,6 +56,12 @@ class manager {
     /** Length of a link code. */
     private const CODE_LENGTH = 6;
 
+    /** @var string Server key of the header in which Telegram sends the webhook secret. */
+    private const SECRET_HEADER_KEY = 'HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN';
+
+    /** @var string Setting that records a webhook the update could not register again with the new secret. */
+    private const NEEDS_REGISTRATION_KEY = 'telegram_webhook_needs_registration';
+
     /**
      * Derive the encryption key from site secret + pepper.
      *
@@ -147,19 +153,36 @@ class manager {
     public static function get_webhook_secret(): string {
         $secret = get_config('local_jedomi', 'telegram_webhook_secret');
         if (empty($secret)) {
-            $secret = bin2hex(random_bytes(16));
+            $secret = self::new_webhook_secret();
             set_config('telegram_webhook_secret', $secret, 'local_jedomi');
         }
         return $secret;
     }
 
     /**
+     * New random webhook secret, not stored.
+     *
+     * @return string 32-char hex random secret
+     */
+    public static function new_webhook_secret(): string {
+        return bin2hex(random_bytes(16));
+    }
+
+    /**
+     * Replace the stored webhook secret with a new one without registering it in Telegram.
+     *
+     * @return void
+     */
+    public static function replace_webhook_secret(): void {
+        set_config('telegram_webhook_secret', self::new_webhook_secret(), 'local_jedomi');
+    }
+
+    /**
      * Regenerate the webhook secret (invalidates old webhooks)
      * AND automatically updates the webhook URL in Telegram.
      *
-     * After changing the secret locally, this method:
-     *  1. Deletes the old webhook (drops pending updates)
-     *  2. Sets the new webhook URL with the fresh secret
+     * After changing the secret locally, this method sets the webhook again with the fresh secret and drops the
+     * pending updates.
      *
      * If the bot token is not configured, only the local secret is rotated
      * (the webhook registration will happen when the token is saved later).
@@ -167,11 +190,11 @@ class manager {
      * @return string The new secret
      */
     public static function regenerate_webhook_secret(): string {
-        $secret = bin2hex(random_bytes(16));
+        $secret = self::new_webhook_secret();
         set_config('telegram_webhook_secret', $secret, 'local_jedomi');
 
         // Update Telegram webhook with the new secret.
-        self::register_webhook();
+        self::register_webhook(null, true);
 
         return $secret;
     }
@@ -180,32 +203,24 @@ class manager {
      * Register (or re-register) the webhook URL in Telegram using the current
      * bot token and current webhook secret.
      *
-     * Deletes any existing webhook first (with drop_pending_updates=true) so
-     * Telegram retries pending updates with the new URL immediately.
+     * setWebhook replaces the previous webhook at once, so it is never deleted first: a failed registration leaves
+     * the previous webhook working. Pending updates are dropped by setWebhook itself when asked.
      *
      * Stores the result (success/error) in config for UI visibility.
      *
+     * @param api_client|null $client Client of the stored token; built from it when null.
+     * @param bool $droppending Whether Telegram drops the updates waiting to be delivered.
      * @return bool Whether the webhook was registered successfully
      */
-    public static function register_webhook(): bool {
+    public static function register_webhook(?api_client $client = null, bool $droppending = false): bool {
         $token = self::get_bot_token();
         if (!$token) {
             self::set_last_webhook_error('No bot token configured — webhook not registered');
             return false;
         }
 
-        $client = new api_client($token);
-        $webhookurl = self::get_webhook_url();
-
-        // Delete old webhook first (clears stale pending updates).
-        $deleted = $client->delete_webhook();
-        if (!$deleted) {
-            self::set_last_webhook_error('Failed to delete previous webhook — token may be invalid');
-            return false;
-        }
-
-        // Set the new webhook URL.
-        $ok = $client->set_webhook($webhookurl);
+        $client = $client ?? new api_client($token);
+        $ok = $client->set_webhook(self::get_webhook_url(), self::get_webhook_secret(), $droppending);
         if ($ok) {
             self::clear_last_webhook_error();
         } else {
@@ -213,6 +228,33 @@ class manager {
         }
 
         return $ok;
+    }
+
+    /**
+     * Register the webhook with a new secret, stored only once Telegram accepted it.
+     *
+     * The stored secret is therefore always the one Telegram sends: when setWebhook fails, the stored secret and the
+     * webhook registered before stay as they were and the error is recorded.
+     *
+     * @param api_client|null $client Client of the stored token; built from it when null.
+     * @return bool Whether Telegram accepted the new secret.
+     */
+    public static function register_webhook_with_new_secret(?api_client $client = null): bool {
+        $token = self::get_bot_token();
+        if (!$token) {
+            self::set_last_webhook_error('No bot token configured — webhook not registered');
+            return false;
+        }
+
+        $client = $client ?? new api_client($token);
+        $secret = self::new_webhook_secret();
+        if (!$client->set_webhook(self::get_webhook_url(), $secret)) {
+            self::set_last_webhook_error('setWebhook failed — check the URL is HTTPS and reachable');
+            return false;
+        }
+        set_config('telegram_webhook_secret', $secret, 'local_jedomi');
+        self::clear_last_webhook_error();
+        return true;
     }
 
     /**
@@ -231,6 +273,7 @@ class manager {
      * Clear the last webhook error and record the time of the successful registration (marks as healthy).
      */
     public static function clear_last_webhook_error(): void {
+        self::clear_webhook_registration_need();
         set_config('telegram_webhook_last_error', '', 'local_jedomi');
         set_config('telegram_webhook_error', 0, 'local_jedomi');
         set_config('telegram_webhook_error_time', 0, 'local_jedomi');
@@ -245,10 +288,39 @@ class manager {
     public static function forget_webhook_state(): void {
         foreach (
             ['telegram_webhook_last_error', 'telegram_webhook_error', 'telegram_webhook_error_time',
-                'telegram_webhook_ok_time'] as $name
+                'telegram_webhook_ok_time', self::NEEDS_REGISTRATION_KEY] as $name
         ) {
             unset_config($name, 'local_jedomi');
         }
+    }
+
+    /**
+     * Record that the webhook must be registered again: the update could not register it with the new secret, so the
+     * Integrations tab warns and the webhook refuses every request until the bot token is saved again or a
+     * registration succeeds.
+     *
+     * @return void
+     */
+    public static function require_webhook_registration(): void {
+        set_config(self::NEEDS_REGISTRATION_KEY, 1, 'local_jedomi');
+    }
+
+    /**
+     * Forget that the webhook must be registered again.
+     *
+     * @return void
+     */
+    public static function clear_webhook_registration_need(): void {
+        unset_config(self::NEEDS_REGISTRATION_KEY, 'local_jedomi');
+    }
+
+    /**
+     * Whether the webhook must be registered again (see require_webhook_registration()).
+     *
+     * @return bool
+     */
+    public static function needs_webhook_registration(): bool {
+        return !empty(get_config('local_jedomi', self::NEEDS_REGISTRATION_KEY));
     }
 
     /**
@@ -308,14 +380,34 @@ class manager {
     }
 
     /**
-     * Build the full webhook URL for @BotFather.
+     * Build the webhook URL registered in Telegram. It carries no secret: Telegram sends it in a header.
      *
-     * @return string Webhook URL with the secret.
+     * @return string Webhook URL.
      */
     public static function get_webhook_url(): string {
         global $CFG;
-        $secret = self::get_webhook_secret();
-        return $CFG->wwwroot . '/local/jedomi/telegram_webhook.php?secret=' . $secret;
+        return $CFG->wwwroot . '/local/jedomi/telegram_webhook.php';
+    }
+
+    /**
+     * Whether a webhook request carries the secret in the header Telegram sends (X-Telegram-Bot-Api-Secret-Token).
+     *
+     * Only the header is read: a secret in the address of the request is never accepted (JEDOMI-SEC-004). While the
+     * webhook must be registered again (RES-001) every request is refused.
+     *
+     * @param array $server Server variables of the request ($_SERVER).
+     * @return bool
+     */
+    public static function is_valid_webhook_request(array $server): bool {
+        $header = $server[self::SECRET_HEADER_KEY] ?? '';
+        if (!is_string($header) || $header === '') {
+            return false;
+        }
+        if (self::needs_webhook_registration()) {
+            // The kept secret was in the webhook address of earlier versions, where logs could keep it.
+            return false;
+        }
+        return hash_equals(self::get_webhook_secret(), $header);
     }
 
     /**

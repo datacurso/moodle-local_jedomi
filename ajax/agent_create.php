@@ -113,6 +113,9 @@ try {
                     }
                 }
             }
+            // The writes approved for the agent and those its owner may approve, for the form.
+            $agent->approved_writes = agent_manager::approved_writes($agent);
+            $agent->approvable_writes = agent_manager::approvable_writes((int) $agent->userid);
             echo json_encode(['ok' => true, 'agent' => $agent]);
             break;
 
@@ -185,12 +188,12 @@ try {
  *
  * The schedule is the chosen preset or, with "custom", the custom expression. The context id is the id of the Moodle
  * context (course, category or user context). The form always sends role_filter[] (a hidden 0 when no box is checked,
- * which clears the roles) and enabled (a hidden 0 before the Enabled box). Nothing is validated here: see
- * agent_manager::validation_error().
+ * which clears the roles), approved_writes[] (a hidden empty value when no box is checked, which clears them) and
+ * enabled (a hidden 0 before the Enabled box). Nothing is validated here: see agent_manager::validation_error().
  *
  * @param bool $onlysent Whether to return only the fields present in the request (update) instead of every field with its
  *     default (create).
- * @return stdClass Fields name, prompt, schedule_cron, context_type, context_id, role_filter and enabled.
+ * @return stdClass Fields name, prompt, schedule_cron, context_type, context_id, role_filter, approvedwrites and enabled.
  */
 function local_jedomi_agent_form_data(bool $onlysent): stdClass {
     global $DB;
@@ -227,6 +230,10 @@ function local_jedomi_agent_form_data(bool $onlysent): stdClass {
             }
         }
         $data->role_filter = empty($shortnames) ? null : json_encode(array_values(array_unique($shortnames)));
+    }
+    $approved = optional_param_array('approved_writes', $onlysent ? null : [], PARAM_ALPHANUMEXT);
+    if ($approved !== null) {
+        $data->approvedwrites = array_values(array_filter($approved, static fn($name): bool => $name !== ''));
     }
     $enabled = optional_param('enabled', $onlysent ? null : 0, PARAM_INT);
     if ($enabled !== null) {

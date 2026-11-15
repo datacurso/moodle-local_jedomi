@@ -14,6 +14,11 @@ Feature: Contract of the Telegram webhook
     Then the Jedomi Telegram webhook should answer with status "403"
 
   @MDL-CTR-008
+  Scenario: The secret in the address of the webhook is no longer accepted
+    When I send a valid update to the Jedomi Telegram webhook with the right secret in the address
+    Then the Jedomi Telegram webhook should answer with status "403"
+
+  @MDL-CTR-008
   Scenario: Only POST requests with a valid JSON body are accepted
     When I send a GET request to the Jedomi Telegram webhook with the right secret and a valid update
     Then the Jedomi Telegram webhook should answer with status "405"

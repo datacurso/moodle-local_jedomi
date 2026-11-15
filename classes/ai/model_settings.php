@@ -25,8 +25,8 @@ namespace local_jedomi\ai;
  * each of them.
  *
  * The getters Jedomi uses (get_model(), is_files_enabled()...) follow the service in use ({@see ai_service}): with
- * the custom service they answer its free-text models, and a feature is on only while its model is set; without a
- * service every feature is off. The get_configured_*() methods always answer the Datacurso settings.
+ * the custom service they answer its free-text models, and a feature is on only while its model is set. The
+ * get_configured_*() methods always answer the Datacurso settings.
  *
  * @package    local_jedomi
  * @copyright  2026 Jedomi Project
