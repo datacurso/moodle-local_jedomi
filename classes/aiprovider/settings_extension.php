@@ -66,7 +66,7 @@ class settings_extension implements plugin_settings_extension {
     ];
 
     /** @var string Pattern of a model or voice id of the custom service: no spaces or markup, up to 200 characters. */
-    private const CUSTOM_ID_PATTERN = '~^[A-Za-z0-9._:/@+\-]{1,200}$~';
+    public const CUSTOM_ID_PATTERN = '~^[A-Za-z0-9._:/@+\-]{1,200}\z~';
 
     /** @var string[] Model fields of the custom service, shown once the connection is verified. */
     private const CUSTOM_MODEL_FIELDS = [

@@ -66,8 +66,10 @@ Choose the service on the Jedomi page of the Datacurso AI Provider settings, wit
   `http://localhost:11434` for Ollama) and the API key, then press "Verify connection". A URL without a path gets
   `/v1`; a URL with a path is used as given, and each route (`/models`, `/chat/completions`, `/audio/transcriptions`,
   `/audio/speech`) is added to it. Jedomi calls `GET {url}/models` and, once the endpoint answers with an OpenAI
-  model list, shows the model fields (chat, image, audio, voice and voice name) as free text. The settings can only be
-  saved while the address and key are the last pair verified. A feature is on only while its model is set.
+  model list, shows the model fields (chat, image, audio, voice and voice name) as free text. The verification lists
+  the ids of the models of the service (up to 100, sorted, only ids the fields accept) and offers them as suggestions
+  in the model fields; an id that is not listed can still be typed. The settings can only be saved while the address
+  and key are the last pair verified. A feature is on only while its model is set.
 
 About the custom service:
 

@@ -21,6 +21,10 @@
  * address, the key or "Allow HTTP for local models" hides them again until the connection is verified again. The
  * server checks the verified pair on saving.
  *
+ * A successful verification lists the ids of the models of the service under its message and offers them as
+ * suggestions (one datalist) in the model fields, which stay free text. The ids come from an external service, so
+ * they are only ever set as text or as DOM properties, never as HTML.
+ *
  * @module     local_jedomi/admin/custom_service
  * @copyright  2026 Jedomi Project
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
@@ -46,6 +50,76 @@ const notifyChange = (field) => {
  * @returns {HTMLInputElement|null}
  */
 const checkbox = (form, name) => form.querySelector(`input[type="checkbox"][name="${name}"]`);
+
+/** @var {string} Id of the datalist with the model ids of the service. */
+const DATALIST_ID = 'local_jedomi-custom-models';
+
+/** @var {string[]} Model fields of the custom service that get the suggestions. */
+const MODEL_FIELDS = ['custom_model', 'custom_vision_model', 'custom_audio_model', 'custom_speech_model'];
+
+/**
+ * Offer model ids as suggestions in the model fields, or remove the suggestions when there are none.
+ *
+ * @param {HTMLFormElement} form Form.
+ * @param {string[]} ids Model ids.
+ */
+const suggestModels = (form, ids) => {
+    let datalist = document.getElementById(DATALIST_ID);
+    if (!datalist) {
+        datalist = document.createElement('datalist');
+        datalist.id = DATALIST_ID;
+        form.append(datalist);
+    }
+    datalist.replaceChildren(...ids.map((id) => {
+        const option = document.createElement('option');
+        option.value = id;
+        return option;
+    }));
+    MODEL_FIELDS.forEach((name) => {
+        const field = form.querySelector(`input[name="${name}"]`);
+        if (field && ids.length) {
+            field.setAttribute('list', DATALIST_ID);
+        } else if (field) {
+            field.removeAttribute('list');
+        }
+    });
+};
+
+/**
+ * List model ids under the result of a verification.
+ *
+ * @param {HTMLElement|null} region Result region.
+ * @param {string[]} ids Model ids shown.
+ * @param {number} total Number of valid model ids.
+ */
+const showModels = async(region, ids, total) => {
+    if (!region || !ids.length) {
+        return;
+    }
+    const box = document.createElement('div');
+    box.className = 'small mt-2';
+    box.style.maxHeight = '12rem';
+    box.style.overflowY = 'auto';
+    const title = document.createElement('div');
+    title.textContent = await getString('custom_verify_models', 'local_jedomi');
+    const list = document.createElement('ul');
+    list.className = 'list-inline mb-0';
+    ids.forEach((id) => {
+        const item = document.createElement('li');
+        item.className = 'list-inline-item';
+        const code = document.createElement('code');
+        code.textContent = id;
+        item.append(code);
+        list.append(item);
+    });
+    box.append(title, list);
+    if (ids.length < total) {
+        const shown = document.createElement('div');
+        shown.textContent = await getString('custom_verify_models_shown', 'local_jedomi', {shown: ids.length, total});
+        box.append(shown);
+    }
+    region.append(box);
+};
 
 /**
  * Show the result of a verification.
@@ -95,6 +169,7 @@ export const init = () => {
         field?.addEventListener('input', () => {
             setVerified('0');
             showStatus(region, '', 'info');
+            suggestModels(form, []);
         });
         field?.addEventListener('change', () => setVerified('0'));
     });
@@ -109,9 +184,13 @@ export const init = () => {
             }])[0];
             setVerified(result.valid ? '1' : '0');
             showStatus(region, result.message, result.valid ? 'success' : 'danger');
+            const ids = result.valid ? result.models : [];
+            suggestModels(form, ids);
+            await showModels(region, ids, result.modeltotal);
         } catch (error) {
             setVerified('0');
             showStatus(region, error.message || '', 'danger');
+            suggestModels(form, []);
         } finally {
             button.disabled = false;
         }

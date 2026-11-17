@@ -84,6 +84,8 @@ final class verify_custom_service_test extends \advanced_testcase {
         $this->assertTrue($result['valid']);
         $this->assertSame('ok', $result['reason']);
         $this->assertSame(2, $result['modelcount']);
+        $this->assertSame(['a', 'b'], $result['models']);
+        $this->assertSame(2, $result['modeltotal']);
         $this->assertSame(get_string('custom_verify_ok', 'local_jedomi', 2), $result['message']);
         $this->assertSame('https://203.0.113.10/v1/models', $this->curl->calls[0]['url']);
         $this->assertTrue(ai_service::is_verified('https://203.0.113.10', 'sk-test'));
@@ -111,9 +113,63 @@ final class verify_custom_service_test extends \advanced_testcase {
         $this->assertSame($reason, $result['reason']);
         $this->assertSame(get_string('custom_verify_' . $reason, 'local_jedomi', $answer[1] ?? null), $result['message']);
         $this->assertFalse(ai_service::is_verified($url, 'sk-test'));
+        $this->assertSame([], $result['models'], 'A failed verification lists no models');
+        $this->assertSame(0, $result['modeltotal']);
         if ($answer === null) {
             $this->assertSame([], $this->curl->calls, 'Nothing is sent to a refused address');
         }
+    }
+
+    /**
+     * The ids the service lists come back as suggestions: only those the form accepts, without repetitions and sorted.
+     * The answer comes from an untrusted service, so markup or spaces never pass.
+     *
+     * @return void
+     */
+    public function test_model_ids_are_filtered_deduplicated_and_sorted(): void {
+        $ids = ['z-model', 'meta-llama/Llama-3.3-70B-Instruct', 'bad id', '<img src=x onerror=alert(1)>', 'a/b:1', 'z-model',
+            'm@v+1', str_repeat('x', 201), '"quoted"', "newline\n"];
+        $this->curl->enqueue(json_encode(['object' => 'list', 'data' => array_map(fn($id) => ['id' => $id], $ids)]));
+
+        $result = $this->call('https://203.0.113.10/v1');
+
+        $this->assertTrue($result['valid']);
+        $this->assertSame(['a/b:1', 'm@v+1', 'meta-llama/Llama-3.3-70B-Instruct', 'z-model'], $result['models']);
+        $this->assertSame(4, $result['modeltotal']);
+        $this->assertSame(count($ids), $result['modelcount'], 'The message keeps counting every model the service lists');
+    }
+
+    /**
+     * At most 100 ids are returned, the first ones in order, with the total of valid ids.
+     *
+     * @return void
+     */
+    public function test_model_ids_are_capped(): void {
+        $ids = array_map(fn(int $i): string => sprintf('model-%03d', $i), range(149, 0));
+        $this->curl->enqueue(json_encode(['object' => 'list', 'data' => array_map(fn($id) => ['id' => $id], $ids)]));
+
+        $result = $this->call('https://203.0.113.10/v1');
+
+        $this->assertCount(verify_custom_service::MAX_MODELS, $result['models']);
+        $this->assertSame(100, verify_custom_service::MAX_MODELS);
+        $this->assertSame('model-000', $result['models'][0]);
+        $this->assertSame('model-099', $result['models'][99]);
+        $this->assertSame(150, $result['modeltotal']);
+        $this->assertSame(150, $result['modelcount']);
+    }
+
+    /**
+     * The model ids are declared as a list of raw values, which the AJAX layer validates.
+     *
+     * @return void
+     */
+    public function test_returns_declare_the_model_ids(): void {
+        $returns = verify_custom_service::execute_returns();
+
+        $this->assertInstanceOf(\core_external\external_multiple_structure::class, $returns->keys['models']);
+        $this->assertInstanceOf(\core_external\external_value::class, $returns->keys['models']->content);
+        $this->assertSame(PARAM_RAW, $returns->keys['models']->content->type);
+        $this->assertSame(PARAM_INT, $returns->keys['modeltotal']->type);
     }
 
     /**

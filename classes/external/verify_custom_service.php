@@ -18,11 +18,13 @@ namespace local_jedomi\external;
 
 use core_external\external_api;
 use core_external\external_function_parameters;
+use core_external\external_multiple_structure;
 use core_external\external_single_structure;
 use core_external\external_value;
 use local_jedomi\ai\ai_service;
 use local_jedomi\ai\custom_api;
 use local_jedomi\ai\custom_endpoint;
+use local_jedomi\aiprovider\settings_extension;
 
 /**
  * Verifies a custom OpenAI-compatible AI service (local_jedomi_verify_custom_service).
@@ -31,7 +33,8 @@ use local_jedomi\ai\custom_endpoint;
  * GET {root}/models, where {root} is the root of the API ({@see custom_endpoint::normalise()}), with the key as a
  * Bearer token and accepts an OpenAI model list ({"object": "list", "data": [{"id": ...}]}). On success the address
  * and key are remembered as verified (a keyed fingerprint, never the values), which saving the custom service
- * requires.
+ * requires. The ids of the listed models come back as suggestions for the model fields: only ids the form accepts
+ * (settings_extension::CUSTOM_ID_PATTERN), without repetitions, sorted and at most MAX_MODELS, with their total.
  *
  * Only administrators who can change the site configuration may call it, with the session key (AJAX). The address
  * follows {@see custom_endpoint}; the request has a short timeout and never follows redirects, and each
@@ -45,6 +48,9 @@ use local_jedomi\ai\custom_endpoint;
 class verify_custom_service extends external_api {
     /** @var int Verifications an administrator can make in one minute. */
     public const RATE_LIMIT_PER_MINUTE = 10;
+
+    /** @var int Most model ids returned as suggestions. */
+    public const MAX_MODELS = 100;
 
     /** @var int Total request timeout, in seconds. */
     private const TIMEOUT = 10;
@@ -102,7 +108,13 @@ class verify_custom_service extends external_api {
             return self::failure($e);
         }
         ai_service::remember_verified($url, $key);
-        return self::result('ok', count($models));
+        $ids = array_values(array_unique(array_filter(
+            $models,
+            static fn(string $id): bool => (bool) preg_match(settings_extension::CUSTOM_ID_PATTERN, $id)
+        )));
+        sort($ids, SORT_STRING);
+        return ['models' => array_slice($ids, 0, self::MAX_MODELS), 'modeltotal' => count($ids)]
+            + self::result('ok', count($models));
     }
 
     /**
@@ -116,6 +128,11 @@ class verify_custom_service extends external_api {
             'reason' => new external_value(PARAM_ALPHANUMEXT, 'ok, or why the service was not accepted'),
             'message' => new external_value(PARAM_TEXT, 'Message for the administrator'),
             'modelcount' => new external_value(PARAM_INT, 'Number of models the service lists'),
+            'models' => new external_multiple_structure(
+                new external_value(PARAM_RAW, 'Id of a listed model that the model fields accept'),
+                'Ids of the listed models the model fields accept, sorted, at most ' . self::MAX_MODELS
+            ),
+            'modeltotal' => new external_value(PARAM_INT, 'Number of listed models the model fields accept'),
         ]);
     }
 
@@ -152,6 +169,8 @@ class verify_custom_service extends external_api {
             'reason' => $reason,
             'message' => get_string('custom_verify_' . $reason, 'local_jedomi', $number),
             'modelcount' => $reason === 'ok' ? $number : 0,
+            'models' => [],
+            'modeltotal' => 0,
         ];
     }
 
