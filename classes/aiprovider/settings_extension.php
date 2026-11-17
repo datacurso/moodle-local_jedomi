@@ -155,7 +155,7 @@ class settings_extension implements plugin_settings_extension {
     private static function add_custom_fields(\MoodleQuickForm $mform): void {
         $mform->addElement('text', 'custom_gateway_url', get_string('custom_gateway_url', self::COMPONENT), [
             'size' => 60,
-            'placeholder' => 'https://api.example.com/v1',
+            'placeholder' => 'https://api.openai.com/v1',
         ]);
         $mform->setType('custom_gateway_url', PARAM_RAW_TRIMMED);
         $mform->addHelpButton('custom_gateway_url', 'custom_gateway_url', self::COMPONENT);

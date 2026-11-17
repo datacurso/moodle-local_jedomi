@@ -22,8 +22,8 @@ global $CFG;
 require_once($CFG->libdir . '/filelib.php');
 
 /**
- * HTTP client of the custom OpenAI-compatible AI service: GET /v1/models, POST /v1/chat/completions,
- * /v1/audio/transcriptions and /v1/audio/speech, with the key as a Bearer token.
+ * HTTP client of the custom OpenAI-compatible AI service: GET /models, POST /chat/completions, /audio/transcriptions
+ * and /audio/speech under the root of its API ({@see custom_endpoint::normalise()}), with the key as a Bearer token.
  *
  * Nothing goes through the Datacurso provider: no licence, no Token Manager credits, no consumption history and no
  * Datacurso rate limit. The Moodle user id and site are never sent. Every request follows {@see custom_endpoint}
@@ -38,7 +38,7 @@ class custom_api {
     /** @var \Closure|null Builds the transport in PHPUnit tests: fn(bool $bypass): \curl. */
     private static ?\Closure $testcurlfactory = null;
 
-    /** @var string Base address. */
+    /** @var string Root of the API, normalised. */
     private string $baseurl;
 
     /** @var string API key; empty for none. */
@@ -50,7 +50,7 @@ class custom_api {
     /**
      * Constructor.
      *
-     * @param string $baseurl Base address of the service.
+     * @param string $baseurl Base address of the service, as the provider documents it.
      * @param string $apikey API key; empty to send no Authorization header.
      * @param bool $allowhttp Whether "Allow HTTP for local models" is on.
      */
@@ -84,7 +84,7 @@ class custom_api {
     }
 
     /**
-     * Ids of the models the service lists (GET /v1/models), which proves it is OpenAI-compatible.
+     * Ids of the models the service lists (GET /models), which proves it is OpenAI-compatible.
      *
      * @param int $timeout Total request timeout, in seconds.
      * @return string[]
@@ -138,7 +138,7 @@ class custom_api {
     }
 
     /**
-     * Transcribe an audio file (multipart POST /v1/audio/transcriptions).
+     * Transcribe an audio file (multipart POST /audio/transcriptions).
      *
      * @param string $path Path of the file on disk.
      * @param string $filename File name, already clean.
@@ -158,7 +158,7 @@ class custom_api {
     }
 
     /**
-     * Read a text aloud (POST /v1/audio/speech) and return the MP3 audio.
+     * Read a text aloud (POST /audio/speech) and return the MP3 audio.
      *
      * @param array $body Model, input and voice.
      * @param int $timeout Total request timeout, in seconds.
@@ -186,7 +186,7 @@ class custom_api {
      * Send a request that passes the address policy and return its status and body.
      *
      * @param string $method GET or POST.
-     * @param string $route Route under /v1.
+     * @param string $route Route under the root of the API.
      * @param string|array|null $params Raw body, multipart fields, or null for none.
      * @param string[] $headers Extra header lines.
      * @param int $timeout Total request timeout, in seconds.

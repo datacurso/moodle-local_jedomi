@@ -38,45 +38,77 @@ final class custom_endpoint_test extends \advanced_testcase {
     }
 
     /**
-     * The base address is kept without trailing slashes and without a trailing /v1.
+     * The base address becomes the root of the API: without a path /v1 is added, with a path it is kept as given.
      *
      * @dataProvider normalise_provider
      * @param string $url Address typed by the administrator.
-     * @param string $expected Normalised address.
+     * @param string $expected Root of the API.
      * @return void
      */
     public function test_normalise(string $url, string $expected): void {
         $this->assertSame($expected, custom_endpoint::normalise($url));
+        $this->assertSame($expected, custom_endpoint::normalise($expected), 'Normalising twice changes nothing');
     }
 
     /**
-     * Addresses and their normalised form.
+     * Addresses and the root of their API.
      *
      * @return array
      */
     public static function normalise_provider(): array {
         return [
-            'plain' => ['https://api.example.com', 'https://api.example.com'],
-            'trailing slash' => ['https://api.example.com/', 'https://api.example.com'],
-            'with v1' => ['https://api.example.com/v1', 'https://api.example.com'],
-            'with v1 and slash' => ['  https://api.example.com/v1/  ', 'https://api.example.com'],
-            'with path and v1' => ['https://api.example.com/openai/v1/', 'https://api.example.com/openai'],
-            'upper case v1' => ['https://api.example.com/V1', 'https://api.example.com'],
-            'v1 inside a word is kept' => ['https://api.example.com/apiv1', 'https://api.example.com/apiv1'],
+            'no path' => ['https://api.openai.com', 'https://api.openai.com/v1'],
+            'only a slash' => ['https://api.openai.com/', 'https://api.openai.com/v1'],
+            'local without path' => ['http://localhost:11434', 'http://localhost:11434/v1'],
+            'local without path and slashes' => [' http://localhost:11434// ', 'http://localhost:11434/v1'],
+            'openai with v1' => ['https://api.openai.com/v1', 'https://api.openai.com/v1'],
+            'spaces and slash' => ['  https://api.openai.com/v1/  ', 'https://api.openai.com/v1'],
+            'deepinfra' => ['https://api.deepinfra.com/v1/openai', 'https://api.deepinfra.com/v1/openai'],
+            'groq' => ['https://api.groq.com/openai/v1', 'https://api.groq.com/openai/v1'],
+            'openrouter' => ['https://openrouter.ai/api/v1', 'https://openrouter.ai/api/v1'],
+            'local with v1' => ['http://localhost:11434/v1', 'http://localhost:11434/v1'],
+            'custom path' => ['https://gw.example.com/custom/path/', 'https://gw.example.com/custom/path'],
+            'upper case V1 is kept' => ['https://api.example.com/V1', 'https://api.example.com/V1'],
+            'query is left for the check' => ['https://api.example.com/?a=1', 'https://api.example.com/?a=1'],
+            'fragment is left for the check' => ['https://api.example.com#x', 'https://api.example.com#x'],
+            'empty' => ['  ', ''],
         ];
     }
 
     /**
-     * Routes are built under /v1 of the normalised base address.
+     * Routes are added to the root of the API.
      *
+     * @dataProvider url_provider
+     * @param string $base Address typed by the administrator.
+     * @param string $route Route of the OpenAI API.
+     * @param string $expected Full address of the request.
      * @return void
      */
-    public function test_url_adds_the_v1_route(): void {
-        $this->assertSame('https://api.example.com/v1/models', custom_endpoint::url('https://api.example.com/v1/', '/models'));
-        $this->assertSame(
-            'http://localhost:11434/v1/chat/completions',
-            custom_endpoint::url('http://localhost:11434', '/chat/completions')
-        );
+    public function test_url(string $base, string $route, string $expected): void {
+        $this->assertSame($expected, custom_endpoint::url($base, $route));
+    }
+
+    /**
+     * Addresses of the documented providers and the full address of each route.
+     *
+     * @return array
+     */
+    public static function url_provider(): array {
+        return [
+            'openai without path' => ['https://api.openai.com', '/models', 'https://api.openai.com/v1/models'],
+            'openai with v1' => ['https://api.openai.com/v1', '/chat/completions', 'https://api.openai.com/v1/chat/completions'],
+            'ollama without path' => ['http://localhost:11434', '/chat/completions', 'http://localhost:11434/v1/chat/completions'],
+            'ollama with v1' => ['http://localhost:11434/v1', '/models', 'http://localhost:11434/v1/models'],
+            'deepinfra models' => ['https://api.deepinfra.com/v1/openai', '/models', 'https://api.deepinfra.com/v1/openai/models'],
+            'deepinfra transcriptions' => [
+                'https://api.deepinfra.com/v1/openai',
+                '/audio/transcriptions',
+                'https://api.deepinfra.com/v1/openai/audio/transcriptions',
+            ],
+            'groq' => ['https://api.groq.com/openai/v1', '/audio/speech', 'https://api.groq.com/openai/v1/audio/speech'],
+            'openrouter' => ['https://openrouter.ai/api/v1', '/chat/completions', 'https://openrouter.ai/api/v1/chat/completions'],
+            'custom path' => ['https://gw.example.com/custom/path/', '/models', 'https://gw.example.com/custom/path/models'],
+        ];
     }
 
     /**
@@ -89,6 +121,11 @@ final class custom_endpoint_test extends \advanced_testcase {
     public function test_check_rejects_invalid_urls(string $url): void {
         $this->resetAfterTest();
         $this->assertSame(custom_endpoint::ERROR_INVALID_URL, custom_endpoint::check($url, true));
+        $this->assertSame(
+            custom_endpoint::ERROR_INVALID_URL,
+            custom_endpoint::check(custom_endpoint::normalise($url), true),
+            'Normalising never makes an invalid address valid'
+        );
     }
 
     /**
@@ -105,6 +142,9 @@ final class custom_endpoint_test extends \advanced_testcase {
             'credentials' => ['https://user:secret@api.example.com'],
             'query' => ['https://api.example.com/?a=1'],
             'fragment' => ['https://api.example.com/#x'],
+            'query without path' => ['https://api.example.com?a=1'],
+            'query with path' => ['https://api.deepinfra.com/v1/openai?a=1'],
+            'fragment without path' => ['https://api.example.com#x'],
             'no host' => ['https:///v1'],
             'spaces' => ['https://api example.com'],
         ];

@@ -141,7 +141,7 @@ final class ai_service_test extends \advanced_testcase {
         set_config('custom_gateway_url', ' https://api.example.com/v1/ ', 'local_jedomi');
         set_config('custom_allow_http', 1, 'local_jedomi');
 
-        $this->assertSame('https://api.example.com', ai_service::get_custom_url());
+        $this->assertSame('https://api.example.com/v1', ai_service::get_custom_url());
         $this->assertSame('sk-test-secret', ai_service::get_custom_key());
         $this->assertTrue(ai_service::allows_custom_http());
         $this->assertSame('meta-llama/Llama-3.3-70B-Instruct', ai_service::get_custom_model(model_settings::CAPABILITY_CHAT));
@@ -166,6 +166,24 @@ final class ai_service_test extends \advanced_testcase {
         $this->assertStringNotContainsString('sk-one', $stored);
         $this->assertStringNotContainsString('api.example.com', $stored);
         $this->assertGreaterThan(0, json_decode($stored, true)['time']);
+    }
+
+    /**
+     * The fingerprint follows the address the requests go to: a host and the same host with /v1 are one service,
+     * while a path with and without /v1 are two different services.
+     *
+     * @return void
+     */
+    public function test_verification_fingerprint_follows_the_api_root(): void {
+        $this->resetAfterTest();
+
+        ai_service::remember_verified('http://localhost:11434', 'sk-one');
+        $this->assertTrue(ai_service::is_verified('http://localhost:11434/v1/', 'sk-one'));
+
+        ai_service::remember_verified('https://api.deepinfra.com/v1/openai', 'sk-one');
+        $this->assertTrue(ai_service::is_verified(' https://api.deepinfra.com/v1/openai/ ', 'sk-one'));
+        $this->assertFalse(ai_service::is_verified('https://api.deepinfra.com/v1/openai/v1', 'sk-one'));
+        $this->assertFalse(ai_service::is_verified('https://api.deepinfra.com', 'sk-one'));
     }
 
     /**

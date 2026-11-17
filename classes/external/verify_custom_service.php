@@ -28,9 +28,10 @@ use local_jedomi\ai\custom_endpoint;
  * Verifies a custom OpenAI-compatible AI service (local_jedomi_verify_custom_service).
  *
  * Called by the "Verify connection" button of the Jedomi page in the Datacurso AI provider. It calls
- * GET {url}/v1/models with the key as a Bearer token and accepts an OpenAI model list
- * ({"object": "list", "data": [{"id": ...}]}). On success the address and key are remembered as verified (a keyed
- * fingerprint, never the values), which saving the custom service requires.
+ * GET {root}/models, where {root} is the root of the API ({@see custom_endpoint::normalise()}), with the key as a
+ * Bearer token and accepts an OpenAI model list ({"object": "list", "data": [{"id": ...}]}). On success the address
+ * and key are remembered as verified (a keyed fingerprint, never the values), which saving the custom service
+ * requires.
  *
  * Only administrators who can change the site configuration may call it, with the session key (AJAX). The address
  * follows {@see custom_endpoint}; the request has a short timeout and never follows redirects, and each

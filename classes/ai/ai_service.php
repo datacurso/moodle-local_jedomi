@@ -69,7 +69,7 @@ class ai_service {
     }
 
     /**
-     * Saved base address of the custom service, normalised.
+     * Saved base address of the custom service, normalised to the root of its API (see custom_endpoint::normalise()).
      *
      * @return string Empty when none is saved.
      */
@@ -153,10 +153,11 @@ class ai_service {
      *
      * @param string $url Address that was verified.
      * @param string $key Key that was used; empty for none.
+     * @param int|null $time Moment of the verification; null for now.
      * @return void
      */
-    public static function remember_verified(string $url, string $key): void {
-        $record = json_encode(['hash' => self::fingerprint($url, $key), 'time' => time()]);
+    public static function remember_verified(string $url, string $key, ?int $time = null): void {
+        $record = json_encode(['hash' => self::fingerprint($url, $key), 'time' => $time ?? time()]);
         set_config('custom_verified', $record, self::COMPONENT);
     }
 
@@ -177,6 +178,9 @@ class ai_service {
 
     /**
      * Keyed fingerprint of an address and key, with a random secret of the site created the first time it is needed.
+     *
+     * The address is normalised to the root of its API first, so two addresses of the same root share a fingerprint
+     * and addresses of different roots never do.
      *
      * @param string $url Address; normalised first.
      * @param string $key Key.

@@ -880,7 +880,7 @@ final class settings_extension_test extends \advanced_testcase {
 
         $this->assertSame(ai_service::CUSTOM, get_config('local_jedomi', 'ai_service'));
         $this->assertSame('jedomi/zai-org/GLM-5.3-Flash', get_config('local_jedomi', 'model'));
-        $this->assertSame('https://api.example.com', get_config('local_jedomi', 'custom_gateway_url'));
+        $this->assertSame('https://api.example.com/v1', get_config('local_jedomi', 'custom_gateway_url'));
         $this->assertSame('sk-new-key', get_config('local_jedomi', 'custom_api_key'));
         $this->assertSame('meta-llama/Llama-3.3-70B-Instruct', get_config('local_jedomi', 'custom_model'));
         $this->assertSame('Qwen/Qwen2.5-VL-7B-Instruct', get_config('local_jedomi', 'custom_vision_model'));

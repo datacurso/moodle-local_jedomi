@@ -516,5 +516,13 @@ function xmldb_local_jedomi_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2026111305, 'local', 'jedomi');
     }
 
+    if ($oldversion < 2026111700) {
+        // A custom service URL with a path is used as given from 1.6.2: the saved URL, kept without its /v1 until now,
+        // gets back the /v1 every route added, so it keeps calling the same address and stays verified.
+        require_once($CFG->dirroot . '/local/jedomi/db/upgradelib.php');
+        local_jedomi_upgrade_custom_service_url();
+        upgrade_plugin_savepoint(true, 2026111700, 'local', 'jedomi');
+    }
+
     return true;
 }

@@ -109,6 +109,54 @@ final class custom_api_test extends \advanced_testcase {
     }
 
     /**
+     * Every request goes to the base address as the provider documents it, with /v1 added only when it has no path.
+     *
+     * @dataProvider base_url_provider
+     * @param string $base Service URL typed by the administrator.
+     * @param bool $allowhttp Whether HTTP for local models is on: only for a local IP address, never resolved.
+     * @param string $root Root of the API the routes are added to.
+     * @return void
+     */
+    public function test_requests_follow_the_base_address(string $base, bool $allowhttp, string $root): void {
+        $path = make_request_directory() . '/voice.webm';
+        file_put_contents($path, 'audio');
+        $this->curl->enqueue(json_encode(['object' => 'list', 'data' => [['id' => 'm']]]));
+        $this->curl->enqueue(json_encode(['choices' => [['message' => ['content' => 'Hi'], 'finish_reason' => 'stop']]]));
+        $this->curl->enqueue(json_encode(['text' => 'hola']));
+        $this->curl->enqueue("ID3\x03audio");
+        $api = new custom_api($base, 'sk-test', $allowhttp);
+
+        $api->list_models(5);
+        $api->chat(['model' => 'm', 'messages' => [['role' => 'user', 'content' => 'Hello']]], 5);
+        $api->transcribe($path, 'voice.webm', ['model' => 'whisper'], 5);
+        $api->speech(['model' => 'tts', 'input' => 'Hola', 'voice' => 'af'], 5);
+
+        $this->assertSame(
+            [$root . '/models', $root . '/chat/completions', $root . '/audio/transcriptions', $root . '/audio/speech'],
+            array_column($this->curl->calls, 'url')
+        );
+        $this->assertSame(array_fill(0, 4, $allowhttp), $this->bypassed, 'Only the local address skips the cURL security');
+    }
+
+    /**
+     * Service URLs of the documented providers and the root of their API.
+     *
+     * @return array
+     */
+    public static function base_url_provider(): array {
+        return [
+            'openai without path' => ['https://api.openai.com', false, 'https://api.openai.com/v1'],
+            'openai with v1' => ['https://api.openai.com/v1', false, 'https://api.openai.com/v1'],
+            'deepinfra' => ['https://api.deepinfra.com/v1/openai', false, 'https://api.deepinfra.com/v1/openai'],
+            'groq' => ['https://api.groq.com/openai/v1', false, 'https://api.groq.com/openai/v1'],
+            'openrouter' => ['https://openrouter.ai/api/v1', false, 'https://openrouter.ai/api/v1'],
+            'ollama without path' => ['http://127.0.0.1:11434', true, 'http://127.0.0.1:11434/v1'],
+            'ollama with v1' => ['http://127.0.0.1:11434/v1', true, 'http://127.0.0.1:11434/v1'],
+            'custom path' => ['https://gw.example.com/custom/path/', false, 'https://gw.example.com/custom/path'],
+        ];
+    }
+
+    /**
      * A local host allowed by the checkbox bypasses the blocked hosts, pinned to its checked address.
      *
      * @return void

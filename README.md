@@ -61,10 +61,13 @@ Choose the service on the Jedomi page of the Datacurso AI Provider settings, wit
 
 - **Datacurso service**: the chat, file and image, audio and voice models offered by Datacurso. Each request uses
   Datacurso credits and is recorded in the consumption history of the provider.
-- **Custom service**: enter the service URL (a trailing `/v1` is optional) and the API key, then press "Verify
-  connection". Jedomi calls `GET {url}/v1/models` and, once the endpoint answers with an OpenAI model list, shows the
-  model fields (chat, image, audio, voice and voice name) as free text. The settings can only be saved while the
-  address and key are the last pair verified. A feature is on only while its model is set.
+- **Custom service**: enter the base URL of the OpenAI-compatible API exactly as the provider documents it (for
+  example `https://api.openai.com/v1`, `https://api.deepinfra.com/v1/openai`, `https://api.groq.com/openai/v1` or
+  `http://localhost:11434` for Ollama) and the API key, then press "Verify connection". A URL without a path gets
+  `/v1`; a URL with a path is used as given, and each route (`/models`, `/chat/completions`, `/audio/transcriptions`,
+  `/audio/speech`) is added to it. Jedomi calls `GET {url}/models` and, once the endpoint answers with an OpenAI
+  model list, shows the model fields (chat, image, audio, voice and voice name) as free text. The settings can only be
+  saved while the address and key are the last pair verified. A feature is on only while its model is set.
 
 About the custom service:
 

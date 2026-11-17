@@ -175,3 +175,43 @@ function local_jedomi_upgrade_agent_write_approvals(): void {
         $dbman->add_field($pending, $agentid);
     }
 }
+
+/**
+ * Keep the saved custom service URL calling the same address under the new address rule of 1.6.2.
+ *
+ * Up to 1.6.1 the address was saved without a trailing /v1 and every route added /v1, so the root of its API was always
+ * the saved address plus /v1. From 1.6.2 an address with a path is used as given, so that root is saved instead. The
+ * verification of the saved address and key, a keyed fingerprint of the old saved address, is stored again for the
+ * new address with its original time (or kept when it already matches it); any other verification is dropped, also
+ * when no address is saved, since its address may now mean another root. The step runs once: it records that it ran
+ * (custom_url_rule_upgraded), so running it again never adds /v1 to an address saved with the 1.6.2 rule.
+ *
+ * @return void
+ */
+function local_jedomi_upgrade_custom_service_url(): void {
+    if (get_config('local_jedomi', 'custom_url_rule_upgraded')) {
+        return;
+    }
+    $keep = false;
+    $saved = trim((string) get_config('local_jedomi', 'custom_gateway_url'));
+    if ($saved !== '') {
+        $legacy = rtrim((string) preg_replace('~/v1$~i', '', rtrim($saved, '/')), '/');
+        $url = \local_jedomi\ai\custom_endpoint::normalise($legacy . '/v1');
+        set_config('custom_gateway_url', $url, 'local_jedomi');
+
+        $key = \local_jedomi\ai\ai_service::get_custom_key();
+        $record = json_decode((string) get_config('local_jedomi', 'custom_verified'), true);
+        $secret = (string) get_config('local_jedomi', 'custom_verify_secret');
+        $hash = is_array($record) && is_string($record['hash'] ?? null) ? $record['hash'] : '';
+        if (\local_jedomi\ai\ai_service::is_verified($url, $key)) {
+            $keep = true;
+        } else if ($hash !== '' && $secret !== '' && hash_equals($hash, hash_hmac('sha256', $legacy . "\n" . $key, $secret))) {
+            \local_jedomi\ai\ai_service::remember_verified($url, $key, (int) ($record['time'] ?? time()));
+            $keep = true;
+        }
+    }
+    if (!$keep) {
+        unset_config('custom_verified', 'local_jedomi');
+    }
+    set_config('custom_url_rule_upgraded', 1, 'local_jedomi');
+}

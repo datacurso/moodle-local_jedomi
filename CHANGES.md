@@ -1,5 +1,13 @@
 # Changes
 
+## 1.6.2 (2026-11-17)
+
+- Fixed: the service URL of the custom AI service is used as the provider documents it, with the convention of the `base_url` of the OpenAI SDK. A URL without a path (such as `http://localhost:11434` or `https://api.openai.com`) gets `/v1`; a URL with a path (such as `https://api.openai.com/v1`, `https://api.deepinfra.com/v1/openai`, `https://api.groq.com/openai/v1` or `https://openrouter.ai/api/v1`) is used as given, without trailing slashes, and each route (`/models`, `/chat/completions`, `/audio/transcriptions`, `/audio/speech`) is added to it. Before, `/v1` was always added after removing a trailing `/v1`, so DeepInfra (`https://api.deepinfra.com/v1/openai`) was called at `/v1/openai/v1/models` and answered 404. A URL with a query, a fragment or credentials is still refused
+- The URL is saved as the root of its API (`custom_endpoint::normalise()`), so the field shows `/v1` after a URL without a path, and the verification fingerprint (`custom_verified`) is taken from that root: a host and the same host with `/v1` are the same service, a path with and without `/v1` are two services
+- The help of the "Service URL" field, its placeholder and the README describe the new rule
+- Upgrade (2026111700): the saved `custom_gateway_url`, kept without its `/v1` until now, gets it back, so a saved custom service keeps calling the same addresses; the verification of the saved address and key is kept with its original time, so nothing has to be verified again. A verification of an address and key that were not saved is dropped, also when no address is saved. The step records that it ran (`custom_url_rule_upgraded`), so it never adds `/v1` twice
+- Tests: the root of the API and the address of every route for OpenAI, DeepInfra, Groq, OpenRouter, Ollama and a custom path, the fingerprint of equivalent addresses, and the upgrade of the saved URL and its verification
+
 ## 1.6.1 (2026-11-13)
 
 - Security (JEDOMI-SEC-001): scheduled agents are safe and autonomous. The agent form has a new "Writes run without confirmation" list with the web service functions that change data from the web service list saved for the role of the owner; the approved functions are stored per agent (`local_jedomi_agents.approvedwrites`, a JSON list) and the details of an agent show them. An agent created by the chat, Telegram or another agent has none

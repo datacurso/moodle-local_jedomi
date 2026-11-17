@@ -56,25 +56,38 @@ class custom_endpoint {
     ];
 
     /**
-     * Base address without surrounding spaces, trailing slashes or a trailing /v1, which every route adds.
+     * Root of the API that every route is added to, with the convention of the base_url of the OpenAI SDK.
+     *
+     * Surrounding spaces and trailing slashes are removed. An address without a path (such as http://localhost:11434
+     * or https://api.openai.com) gets /v1; an address with a path (such as https://api.openai.com/v1 or
+     * https://api.deepinfra.com/v1/openai) is kept as the provider documents it. An address with a query, a fragment
+     * or no host is left unchanged, so {@see check()} still refuses it. Normalising twice changes nothing, and two
+     * addresses of the same API root normalise to the same text.
      *
      * @param string $url Address typed by the administrator.
      * @return string
      */
     public static function normalise(string $url): string {
         $url = rtrim(trim($url), '/');
-        return rtrim((string) preg_replace('~/v1$~i', '', $url), '/');
+        $parts = parse_url($url);
+        if (
+            $url === '' || !is_array($parts) || !isset($parts['host'])
+                || isset($parts['query']) || isset($parts['fragment']) || isset($parts['path'])
+        ) {
+            return $url;
+        }
+        return $url . '/v1';
     }
 
     /**
      * Full address of a route of the OpenAI API, such as /chat/completions.
      *
-     * @param string $base Base address.
-     * @param string $route Route under /v1, starting with a slash.
+     * @param string $base Base address, normalised first.
+     * @param string $route Route under the root of the API, starting with a slash.
      * @return string
      */
     public static function url(string $base, string $route): string {
-        return self::normalise($base) . '/v1' . $route;
+        return self::normalise($base) . $route;
     }
 
     /**

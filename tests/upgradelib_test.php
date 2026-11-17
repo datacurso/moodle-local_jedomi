@@ -27,6 +27,7 @@ namespace local_jedomi;
  * @covers     ::local_jedomi_upgrade_ai_service
  * @covers     ::local_jedomi_upgrade_telegram_webhook
  * @covers     ::local_jedomi_upgrade_agent_write_approvals
+ * @covers     ::local_jedomi_upgrade_custom_service_url
  */
 final class upgradelib_test extends \advanced_testcase {
     #[\Override]
@@ -118,6 +119,181 @@ final class upgradelib_test extends \advanced_testcase {
         unset_config('ai_service', 'local_jedomi');
         local_jedomi_upgrade_ai_service();
         $this->assertSame('datacurso', get_config('local_jedomi', 'ai_service'));
+    }
+
+    /**
+     * Verification record as 1.6.1 stored it: a keyed fingerprint of the address without a trailing /v1 and the key.
+     *
+     * @param string $legacyurl Address as 1.6.1 fingerprinted it, without a trailing /v1.
+     * @param string $key Key.
+     * @param int $time Moment of the verification.
+     * @return void
+     */
+    private function remember_legacy_verification(string $legacyurl, string $key, int $time): void {
+        $secret = (string) get_config('local_jedomi', 'custom_verify_secret');
+        if ($secret === '') {
+            $secret = bin2hex(random_bytes(32));
+            set_config('custom_verify_secret', $secret, 'local_jedomi');
+        }
+        $hash = hash_hmac('sha256', $legacyurl . "\n" . $key, $secret);
+        set_config('custom_verified', json_encode(['hash' => $hash, 'time' => $time]), 'local_jedomi');
+    }
+
+    /**
+     * Time of the stored verification, or null when there is none.
+     *
+     * @return int|null
+     */
+    private function verification_time(): ?int {
+        $record = json_decode((string) get_config('local_jedomi', 'custom_verified'), true);
+        return is_array($record) ? (int) $record['time'] : null;
+    }
+
+    /**
+     * A saved service URL keeps calling the same address after the upgrade: 1.6.1 used it without its trailing /v1 and
+     * added /v1 to every route, so /v1 is saved back. A verified saved address and key stay verified, with the
+     * time of their verification.
+     *
+     * @dataProvider custom_service_url_provider
+     * @param string $saved Address as an older version saved it.
+     * @param string $verifiedas Address as 1.6.1 fingerprinted it.
+     * @param string $key Saved key; empty for none.
+     * @param string $expected Address saved by the upgrade.
+     * @return void
+     */
+    public function test_custom_service_url_keeps_its_address_and_verification(
+        string $saved,
+        string $verifiedas,
+        string $key,
+        string $expected
+    ): void {
+        set_config('custom_gateway_url', $saved, 'local_jedomi');
+        set_config('custom_api_key', $key, 'local_jedomi');
+        $this->remember_legacy_verification($verifiedas, $key, 1700000000);
+
+        local_jedomi_upgrade_custom_service_url();
+
+        $this->assertSame($expected, get_config('local_jedomi', 'custom_gateway_url'));
+        $this->assertSame($expected . '/models', \local_jedomi\ai\custom_endpoint::url(
+            \local_jedomi\ai\ai_service::get_custom_url(),
+            '/models'
+        ));
+        $this->assertTrue(\local_jedomi\ai\ai_service::is_verified($expected, $key));
+        $this->assertSame(1700000000, $this->verification_time());
+    }
+
+    /**
+     * Addresses as older versions saved them, as 1.6.1 fingerprinted them, and as the upgrade saves them.
+     *
+     * @return array
+     */
+    public static function custom_service_url_provider(): array {
+        return [
+            'host' => ['https://api.openai.com', 'https://api.openai.com', 'sk-saved', 'https://api.openai.com/v1'],
+            'local host' => ['http://localhost:11434', 'http://localhost:11434', 'sk-saved', 'http://localhost:11434/v1'],
+            'path without v1' => [
+                'https://api.groq.com/openai',
+                'https://api.groq.com/openai',
+                'sk-saved',
+                'https://api.groq.com/openai/v1',
+            ],
+            'trailing v1' => ['https://api.openai.com/v1/', 'https://api.openai.com', 'sk-saved', 'https://api.openai.com/v1'],
+            'trailing upper case V1' => [
+                'https://api.openai.com/V1',
+                'https://api.openai.com',
+                'sk-saved',
+                'https://api.openai.com/v1',
+            ],
+            'empty key' => ['http://localhost:11434', 'http://localhost:11434', '', 'http://localhost:11434/v1'],
+        ];
+    }
+
+    /**
+     * A verification of an address and key that were not saved is dropped, since its address may now mean another
+     * root of the API.
+     *
+     * @return void
+     */
+    public function test_custom_service_url_drops_a_verification_that_was_not_saved(): void {
+        set_config('custom_gateway_url', 'https://api.openai.com', 'local_jedomi');
+        set_config('custom_api_key', 'sk-saved', 'local_jedomi');
+        $this->remember_legacy_verification('https://other.example.com/openai', 'sk-other', 1700000000);
+
+        local_jedomi_upgrade_custom_service_url();
+
+        $this->assertSame('https://api.openai.com/v1', get_config('local_jedomi', 'custom_gateway_url'));
+        $this->assertFalse(get_config('local_jedomi', 'custom_verified'));
+        $this->assertFalse(\local_jedomi\ai\ai_service::is_verified('https://other.example.com/openai', 'sk-other'));
+    }
+
+    /**
+     * Without a saved address, a 1.6.1 verification of a path (checked against that path plus /v1) is dropped, so
+     * the same path, which now means the path without /v1, is not taken as verified.
+     *
+     * @return void
+     */
+    public function test_custom_service_url_without_a_saved_address_drops_the_verification(): void {
+        $this->remember_legacy_verification('https://h.example.com/openai', 'sk-other', 1700000000);
+
+        local_jedomi_upgrade_custom_service_url();
+
+        $this->assertFalse(get_config('local_jedomi', 'custom_gateway_url'));
+        $this->assertFalse(get_config('local_jedomi', 'custom_verified'));
+        $this->assertFalse(\local_jedomi\ai\ai_service::is_verified('https://h.example.com/openai', 'sk-other'));
+    }
+
+    /**
+     * A saved address that was never verified gets its /v1 back and stays unverified.
+     *
+     * @return void
+     */
+    public function test_custom_service_url_saved_but_not_verified(): void {
+        set_config('custom_gateway_url', 'https://api.groq.com/openai', 'local_jedomi');
+        set_config('custom_api_key', 'sk-saved', 'local_jedomi');
+
+        local_jedomi_upgrade_custom_service_url();
+
+        $this->assertSame('https://api.groq.com/openai/v1', get_config('local_jedomi', 'custom_gateway_url'));
+        $this->assertFalse(get_config('local_jedomi', 'custom_verified'));
+        $this->assertFalse(\local_jedomi\ai\ai_service::is_verified('https://api.groq.com/openai/v1', 'sk-saved'));
+    }
+
+    /**
+     * A verification that already matches the new fingerprint of the saved address and key is kept as it is.
+     *
+     * @return void
+     */
+    public function test_custom_service_url_keeps_a_verification_of_the_new_address(): void {
+        set_config('custom_gateway_url', 'https://api.openai.com', 'local_jedomi');
+        set_config('custom_api_key', 'sk-saved', 'local_jedomi');
+        \local_jedomi\ai\ai_service::remember_verified('https://api.openai.com/v1', 'sk-saved', 1600000000);
+
+        local_jedomi_upgrade_custom_service_url();
+
+        $this->assertSame('https://api.openai.com/v1', get_config('local_jedomi', 'custom_gateway_url'));
+        $this->assertTrue(\local_jedomi\ai\ai_service::is_verified('https://api.openai.com/v1', 'sk-saved'));
+        $this->assertSame(1600000000, $this->verification_time());
+    }
+
+    /**
+     * The upgrade runs once: an address saved with the 1.6.2 rule afterwards, such as the DeepInfra one, and its
+     * verification are never changed by running it again.
+     *
+     * @return void
+     */
+    public function test_custom_service_url_runs_only_once(): void {
+        set_config('custom_gateway_url', 'https://api.openai.com', 'local_jedomi');
+        set_config('custom_api_key', 'sk-saved', 'local_jedomi');
+        local_jedomi_upgrade_custom_service_url();
+
+        set_config('custom_gateway_url', 'https://api.deepinfra.com/v1/openai', 'local_jedomi');
+        \local_jedomi\ai\ai_service::remember_verified('https://api.deepinfra.com/v1/openai', 'sk-saved', 1600000000);
+        local_jedomi_upgrade_custom_service_url();
+        local_jedomi_upgrade_custom_service_url();
+
+        $this->assertSame('https://api.deepinfra.com/v1/openai', get_config('local_jedomi', 'custom_gateway_url'));
+        $this->assertTrue(\local_jedomi\ai\ai_service::is_verified('https://api.deepinfra.com/v1/openai', 'sk-saved'));
+        $this->assertSame(1600000000, $this->verification_time());
     }
 
     /**
