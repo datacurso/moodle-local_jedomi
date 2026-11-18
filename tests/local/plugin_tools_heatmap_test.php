@@ -94,4 +94,27 @@ final class plugin_tools_heatmap_test extends \advanced_testcase {
             $this->assertTrue(plugin_tools::is_read_only($tool), "$name must only read");
         }
     }
+
+    /**
+     * The course map of Heatmap, asked while its views are still being prepared, answers in the pending contract of
+     * Jedomi (meta.pending true), so Jedomi runs it again before the AI reads it.
+     */
+    public function test_heatmap_answer_being_prepared_follows_the_pending_contract(): void {
+        $course = $this->getDataGenerator()->create_course();
+        $teacher = $this->getDataGenerator()->create_and_enrol($course, 'editingteacher');
+        set_config('aicourseenabled', 1, 'local_datacurso_heatmap');
+        $this->setUser($teacher);
+        $tools = plugin_tools::available((int) $teacher->id, \context_course::instance($course->id), 'web');
+        // An export request only serves views already built: a missing one is reported as being prepared.
+        \local_datacurso_heatmap\local\snapshot::set_serveonly(true);
+
+        try {
+            $answer = plugin_tools::execute($tools['heatmap_get_course_map'], ['courseid' => (int) $course->id]);
+        } finally {
+            \local_datacurso_heatmap\local\snapshot::reset_request_state();
+        }
+
+        $this->assertTrue(json_decode($answer, true)['meta']['pending']);
+        $this->assertTrue(plugin_tool_retry::is_pending($answer));
+    }
 }

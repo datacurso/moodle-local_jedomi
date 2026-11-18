@@ -46,6 +46,7 @@ final class fake_plugin_tool implements agent_tool {
      * @param string|null $definitionname Name written in the definition, when it must differ from $name.
      * @param \Throwable|null $failure Exception execute() throws, if any.
      * @param bool $readonly What is_read_only() answers.
+     * @param string[] $answers Answers execute() gives in order, the last one repeated; none for the default answer.
      */
     public function __construct(
         /** @var string Tool name. */
@@ -57,7 +58,9 @@ final class fake_plugin_tool implements agent_tool {
         /** @var \Throwable|null Exception of execute(). */
         private ?\Throwable $failure = null,
         /** @var bool Whether the tool only reads. */
-        private bool $readonly = true
+        private bool $readonly = true,
+        /** @var string[] Scripted answers of execute(). */
+        private array $answers = []
     ) {
     }
 
@@ -107,6 +110,12 @@ final class fake_plugin_tool implements agent_tool {
         self::$runs[] = $this->name;
         if ($this->failure) {
             throw $this->failure;
+        }
+        if (count($this->answers) > 1) {
+            return array_shift($this->answers);
+        }
+        if (count($this->answers) === 1) {
+            return $this->answers[0];
         }
         return json_encode(['ran_as' => (int) $USER->id, 'params' => $params]);
     }

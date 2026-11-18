@@ -2162,4 +2162,47 @@ final class handler_test extends \advanced_testcase {
         $held = ['userid' => $teacher->id, 'tool' => 'demo_writer'];
         $this->assertSame(1, $DB->count_records(\local_jedomi\local\service\pending_action_service::TABLE, $held));
     }
+
+    /**
+     * A plugin tool that answers that its data is still being prepared runs again after a short wait in the web chat,
+     * and the AI gets the ready answer instead of the pending one.
+     */
+    public function test_pending_plugin_tool_runs_again_before_the_ai_gets_its_result(): void {
+        $this->resetAfterTest();
+        $course = $this->getDataGenerator()->create_course();
+        $teacher = $this->getDataGenerator()->create_and_enrol($course, 'editingteacher');
+        $this->setUser($teacher);
+        $pending = json_encode(['meta' => ['pending' => true, 'message' => 'The data is being prepared.']]);
+        $ready = json_encode(['meta' => ['pending' => false], 'areas' => [['id' => 7]]]);
+        $this->register_plugin_tools([
+            new \local_jedomi\fixtures\fake_plugin_tool('demo_report', answers: [$pending, $ready]),
+        ]);
+        $waits = [];
+        \local_jedomi\local\plugin_tool_retry::set_sleeper_for_testing(function (int $seconds) use (&$waits): void {
+            $waits[] = $seconds;
+        });
+        $fake = new fake_ai_client();
+        $fake->enqueue_tool_calls([
+            ['id' => 'call_1', 'type' => 'function', 'function' => ['name' => 'demo_report', 'arguments' => '{}']],
+        ]);
+        $fake->enqueue_text('Done.');
+        client::set_instance_for_testing($fake);
+
+        try {
+            $this->capture(fn() => handler::run(
+                [['role' => 'user', 'content' => 'hi']],
+                'teacher',
+                (int) $teacher->id,
+                null,
+                \context_course::instance($course->id)
+            ));
+        } finally {
+            \local_jedomi\local\plugin_tool_retry::set_sleeper_for_testing(null);
+        }
+
+        $this->assertSame(['demo_report', 'demo_report'], \local_jedomi\fixtures\fake_plugin_tool::$runs);
+        $this->assertCount(1, $waits);
+        $result = json_decode($this->untrusted_payload($fake->calls[1]['messages'][2]['content']), true);
+        $this->assertSame([['id' => 7]], $result['areas']);
+    }
 }

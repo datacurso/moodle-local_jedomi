@@ -595,7 +595,8 @@ class handler {
     private static function execute_plugin_tool(\local_jedomi\agent\tool\agent_tool $tool, array $args, string $role): string {
         \local_jedomi_log('TOOL_CALL', ['tool' => $tool->get_name(), 'arg_names' => array_keys($args), 'role' => $role,
             'source' => 'plugin']);
-        return \local_jedomi\local\plugin_tools::execute($tool, $args);
+        // A read-only tool whose data is still being prepared runs again for a short while (see plugin_tool_retry).
+        return \local_jedomi\local\plugin_tool_retry::run($tool, $args);
     }
 
     /**

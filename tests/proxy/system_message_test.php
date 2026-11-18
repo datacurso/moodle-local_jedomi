@@ -364,4 +364,17 @@ final class system_message_test extends \advanced_testcase {
         $this->assertStringContainsString('Read relative dates ("today", "last week", "last month", "since ...")'
             . ' against the date of today in the context below', $content);
     }
+
+    /**
+     * Data a tool still prepares after Jedomi waited for it is not missing data: the model says it will be ready in
+     * about a minute.
+     */
+    public function test_data_still_being_prepared_is_not_reported_as_missing(): void {
+        $this->resetAfterTest();
+
+        $content = system_message::build('teacher', [])['content'];
+
+        $this->assertStringContainsString('If a tool answers that its data is still being prepared', $content);
+        $this->assertStringContainsString('never say that there is no data', $content);
+    }
 }

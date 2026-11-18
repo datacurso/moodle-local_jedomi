@@ -37,7 +37,15 @@ use local_jedomi\agent\tool\agent_tool;
  *   user's confirmation like Jedomi's own actions and runs only when the user confirms it;
  * - it runs as the current user ($USER) and checks every permission again on its own: being
  *   offered is never a permission;
- * - its result goes through Jedomi's anonymiser before it reaches the AI service.
+ * - its result goes through Jedomi's anonymiser before it reaches the AI service;
+ * - a reading tool whose data is not ready yet answers a JSON object with
+ *   "meta": {"pending": true, ...} at its top level (the boolean true, nothing else) and no
+ *   "error" key. Jedomi then waits {@see \local_jedomi\local\plugin_tool_retry::WAIT_SECONDS}
+ *   seconds and runs it again with the same arguments, at most
+ *   {@see \local_jedomi\local\plugin_tool_retry::MAX_ATTEMPTS} runs within
+ *   {@see \local_jedomi\local\plugin_tool_retry::MAX_TOTAL_SECONDS} seconds, and gives the AI
+ *   the last answer, which the AI reports as data that will be ready in about a minute. A tool
+ *   that changes something, an error or any other shape is never run again.
  *
  * @package    local_jedomi
  * @copyright  2026 Jedomi Project

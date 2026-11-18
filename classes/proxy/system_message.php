@@ -181,6 +181,9 @@ class system_message {
         $content .= "- If a tool fails, retry once (adjust params if applicable,"
             . " see WS PATH for WS-specific retry). If it fails again, stop and report.\n";
         $content .= "- If you have enough data, stop and respond.\n";
+        $content .= "- If a tool answers that its data is still being prepared (\"pending\"), Jedomi already waited and asked"
+            . " it again: tell the user that the data will be ready in about a minute and to ask again then;"
+            . " never say that there is no data.\n";
         $content .= "- Read relative dates (\"today\", \"last week\", \"last month\", \"since ...\") against the date of today in"
             . " the context below, never against an earlier year, and give the exact dates you used.\n";
         $content .= "- " . self::no_disclosure_rule() . "\n";
