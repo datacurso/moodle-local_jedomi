@@ -66,10 +66,56 @@ Choose the service on the Jedomi page of the Datacurso AI Provider settings, wit
   `http://localhost:11434` for Ollama) and the API key, then press "Verify connection". A URL without a path gets
   `/v1`; a URL with a path is used as given, and each route (`/models`, `/chat/completions`, `/audio/transcriptions`,
   `/audio/speech`) is added to it. Jedomi calls `GET {url}/models` and, once the endpoint answers with an OpenAI
-  model list, shows the model fields (chat, image, audio, voice and voice name) as free text. The verification lists
-  the ids of the models of the service (up to 100, sorted, only ids the fields accept) and offers them as suggestions
-  in the model fields; an id that is not listed can still be typed. The settings can only be saved while the address
-  and key are the last pair verified. A feature is on only while its model is set.
+  model list, shows the fields of the service. The verification lists the ids of the models of the service (up to
+  100, sorted, only ids the fields accept) and offers them as suggestions in the model fields, which stay free text; an
+  id that is not listed can still be typed. The settings can only be saved while the address and key are the last pair
+  verified.
+
+Once verified, the custom service mirrors the Datacurso fields:
+
+| Field | Default | Notes |
+| --- | --- | --- |
+| Chat model | (required) | Must support tool calling. |
+| Image processing + image model | off | The model is shown, and required, only while the switch is on. |
+| Documents + document service URL | off | Needs image processing; see below. |
+| Audio processing + audio model | off | The model is shown, and required, only while the switch is on. |
+| Voice conversation + voice model and voice | off | Needs audio processing. |
+| Max tokens | 16384, or half the known context window when smaller | Kept free for the answer; must be smaller than the context window. |
+| Context window (tokens) | detected | See below. |
+
+The custom service has its own switches (`custom_files_enabled`, `custom_documents_enabled`, `custom_audio_enabled`,
+`custom_voice_enabled`): the Datacurso switches belong to the Datacurso service, so switching services never turns a
+feature of the other one on or off. A feature is on only while its switch is on and its model is set.
+
+**Documents with the custom service.** With "Documents" on, PDF files (attached in the web chat, sent in Telegram, or
+read by the `document_read` tool from course activities) are sent to the document service, which turns them into page
+images (`POST {url}/api/v1/pdf/to-images?dpi=150&fmt=JPEG`, multipart field `file`; answer
+`{"total_pages": n, "pages": [{"page": 1, "format": "JPEG", "image": "<base64>"}]}`), and each page (at most 20) is read
+by the image model. The document service URL follows the same rules as the service URL (HTTPS, HTTP only for a local
+host with "Allow HTTP for local models", the cURL security of the site, no redirects); its requests have a 5 s
+connection timeout and a 120 s total timeout, and the PDF (20 MB), the answer (32 MB) and each image (10 MB) have a
+size cap. The pages asked (`document_read` with `pages`) are chosen before the 20-page cap. The whole read of a PDF has one
+deadline, the AI request timeout: the pages left when it runs out are skipped, and a page the image model fails on is
+skipped while the others are kept. On a site behind a proxy (Cloudflare closes requests after 100 seconds), ask for
+fewer pages of long documents. Text files (`.txt`, `.csv`, `.md`, up to 2 MB, cut at 200,000 characters) are read on
+the site, also only with "Documents" on and the document service URL. Word and
+PowerPoint files are refused with a message asking for a PDF. With "Documents" off or no document service URL,
+documents are refused as before.
+
+**Context window.** "Verify connection" reads the context length of each model when the service tells it
+(`max_model_len` of vLLM, `context_length` or `context_window`) and shows it for the chosen chat model as the
+placeholder of the field ("16384 (auto)"); a value typed there overrides it. Before each AI request of the web chat,
+Jedomi estimates the tokens (about four characters per token), keeps the max tokens (at most half the window) free
+for the answer, and drops the
+oldest messages that do not fit. The system message and the latest question (with the tool calls of the current
+answer) always stay, an assistant tool call is dropped together with its results, and the kept history starts with a
+user message. The technical log records each trimming (`CONTEXT_TRIMMED`, counts only). Empty and nothing detected
+means no trimming.
+
+**AI request timeout.** "AI request timeout (seconds)", after the fields of either service, sets how long the web chat
+and the CLI wait for each AI answer, for both services: 10 to 600 seconds, 180 by default. Telegram and the scheduled
+agents keep their own timeouts. A proxy in front of the site (Cloudflare closes requests after 100 seconds), the
+`max_execution_time` of PHP or the timeout of the web server can end a request earlier.
 
 About the custom service:
 
@@ -77,8 +123,7 @@ About the custom service:
   a loopback or private network host may use HTTP, with "Allow HTTP for local models" on. Redirects are never followed.
 - The API key never goes back to the browser, the Jedomi log or the events, and is only sent to the saved address:
   changing the address asks for the key again.
-- Documents (PDF, Word, PowerPoint and text files) cannot be read with it; images and audio can, when their models are
-  set.
+- PDF and text files can be read with "Documents" on (see above); Word and PowerPoint files cannot.
 - Its requests use no Datacurso credits and are not recorded in the consumption history of the provider.
 - When a request fails, the user sees the same message as with the Datacurso service, and the technical log keeps the
   HTTP status, cURL error number or refusal reason, never the key or the answer.
@@ -135,7 +180,7 @@ channel it works in:
 
 | Channel | Rows | Time per query |
 | --- | --- | --- |
-| Web chat | 100 | 5 s |
+| Web chat | 100 (setting, 10 to 1000) | 5 s |
 | Telegram | 50 | 5 s |
 | Companion web service (`jedomi_execute_sql`) | 100 | 5 s |
 | Scheduled agents | 1000 | 30 s |
@@ -144,7 +189,9 @@ The row limit is applied by the database on every supported database. The time l
 MySQL, MariaDB and PostgreSQL only: SQL Server and Oracle have no per-query time limit that can be set safely from
 Moodle, so there a slow query runs until the database or PHP stops it. The query profiler (Query profiler tab) records
 the queries of the agents; its slow query threshold and the days its records are kept are set in the General tab, and
-the scheduled task "Purge old query profiler records" removes the old records once a day.
+the scheduled task "Purge old query profiler records" removes the old records once a day. The row limit of the web chat
+is set in the General tab too ("Maximum rows per query (web chat)", `sql_row_limit_web`); the other channels keep their
+fixed limits.
 
 ## Documentation
 

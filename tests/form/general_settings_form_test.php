@@ -34,11 +34,13 @@ final class general_settings_form_test extends \advanced_testcase {
     public function test_submitted_values_are_returned(): void {
         $this->resetAfterTest();
         $this->setAdminUser();
-        general_settings_form::mock_submit(['spt_secret' => 's3cret', 'profiler_slow_ms' => 1000, 'profiler_retention_days' => 30]);
+        general_settings_form::mock_submit(['spt_secret' => 's3cret', 'profiler_slow_ms' => 1000, 'profiler_retention_days' => 30,
+            'sql_row_limit_web' => 250]);
 
         $data = (new general_settings_form())->get_data();
 
         $this->assertSame('s3cret', $data->spt_secret);
+        $this->assertSame(250, $data->sql_row_limit_web);
     }
 
     /**
@@ -100,5 +102,46 @@ final class general_settings_form_test extends \advanced_testcase {
         $this->assertFalse(get_string_manager()->string_exists('collect_training_data', 'local_jedomi'));
         $upgrade = file_get_contents(__DIR__ . '/../../db/upgrade.php');
         $this->assertStringContainsString("unset_config('collect_training_data', 'local_jedomi')", $upgrade);
+    }
+
+    /**
+     * The row limit of the web chat is in the General tab, with a help button, and accepts only 10 to 1000.
+     *
+     * @dataProvider row_limit_provider
+     * @param int $value Submitted value.
+     * @param bool $valid Whether it is accepted.
+     * @return void
+     */
+    public function test_web_row_limit_is_validated(int $value, bool $valid): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $form = new general_settings_form();
+
+        $errors = $form->validation(['spt_secret' => 's', 'profiler_slow_ms' => 1000, 'profiler_retention_days' => 30,
+            'sql_row_limit_web' => $value], []);
+
+        if ($valid) {
+            $this->assertArrayNotHasKey('sql_row_limit_web', $errors);
+        } else {
+            $this->assertSame(get_string('sql_row_limit_web_invalid', 'local_jedomi'), $errors['sql_row_limit_web']);
+        }
+        $html = $form->render();
+        $this->assertStringContainsString('name="sql_row_limit_web"', $html);
+        $this->assertStringContainsString(s(get_string('sql_row_limit_web', 'local_jedomi')), $html);
+    }
+
+    /**
+     * Row limits and whether they are accepted.
+     *
+     * @return array
+     */
+    public static function row_limit_provider(): array {
+        return [
+            'below' => [9, false],
+            'lowest' => [10, true],
+            'default' => [100, true],
+            'highest' => [1000, true],
+            'above' => [1001, false],
+        ];
     }
 }

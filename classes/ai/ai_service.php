@@ -138,11 +138,97 @@ class ai_service {
     /**
      * Saved answer size limit of the custom service.
      *
-     * @return int The saved value, or the default one when it is empty or too small.
+     * @return int The saved value, or the default one ({@see self::default_custom_max_tokens()}) when it is empty or too
+     *         small.
      */
     public static function get_custom_max_tokens(): int {
         $maxtokens = (int) get_config(self::COMPONENT, 'custom_max_tokens');
-        return $maxtokens >= model_settings::MIN_MAX_TOKENS ? $maxtokens : model_settings::DEFAULT_MAX_TOKENS;
+        return $maxtokens >= model_settings::MIN_MAX_TOKENS
+            ? $maxtokens
+            : self::default_custom_max_tokens(self::get_custom_context_window());
+    }
+
+    /**
+     * Default max tokens of the custom service: the default of Jedomi, but at most half the context window when it is
+     * known, so the default answer always fits next to the conversation.
+     *
+     * @param int $window Context window, in tokens; 0 when it is not known.
+     * @return int
+     */
+    public static function default_custom_max_tokens(int $window): int {
+        if ($window <= 0) {
+            return model_settings::DEFAULT_MAX_TOKENS;
+        }
+        return max(model_settings::MIN_MAX_TOKENS, min(model_settings::DEFAULT_MAX_TOKENS, intdiv($window, 2)));
+    }
+
+    /**
+     * Saved address of the document service of the custom service (PDF to page images), without trailing slashes.
+     *
+     * @return string Empty when none is saved.
+     */
+    public static function get_docservice_url(): string {
+        return self::normalise_docservice_url((string) get_config(self::COMPONENT, 'custom_docservice_url'));
+    }
+
+    /**
+     * Address of a document service as it is saved: without surrounding spaces or trailing slashes.
+     *
+     * @param string $url Address typed by the administrator.
+     * @return string
+     */
+    public static function normalise_docservice_url(string $url): string {
+        return rtrim(trim($url), '/');
+    }
+
+    /**
+     * Context window of the chat model of the custom service, in tokens.
+     *
+     * @return int The saved value; otherwise the length the service told for the saved chat model on the last
+     *         verification; otherwise 0, when it is not known (the requests are then never trimmed).
+     */
+    public static function get_custom_context_window(): int {
+        $saved = trim((string) get_config(self::COMPONENT, 'custom_context_window'));
+        if (preg_match('/^\d+$/', $saved) && (int) $saved > 0) {
+            return (int) $saved;
+        }
+        return self::get_detected_context_window(self::get_custom_model(model_settings::CAPABILITY_CHAT));
+    }
+
+    /**
+     * Context length the service told for a model on the last verification.
+     *
+     * @param string $model Model id.
+     * @return int 0 when it is not known.
+     */
+    public static function get_detected_context_window(string $model): int {
+        return self::get_context_lengths()[$model] ?? 0;
+    }
+
+    /**
+     * Context lengths of the models the service told on the last verification.
+     *
+     * @return array<string, int> Model id => tokens.
+     */
+    public static function get_context_lengths(): array {
+        $lengths = json_decode((string) get_config(self::COMPONENT, 'custom_context_lengths'), true);
+        if (!is_array($lengths)) {
+            return [];
+        }
+        return array_filter(
+            array_map('intval', array_filter($lengths, 'is_numeric')),
+            static fn(int $tokens): bool => $tokens > 0
+        );
+    }
+
+    /**
+     * Keep the context lengths a verification found.
+     *
+     * @param int[] $lengths Tokens keyed by model id.
+     * @return void
+     */
+    public static function remember_context_lengths(array $lengths): void {
+        set_config('custom_context_lengths', json_encode($lengths), self::COMPONENT);
     }
 
     /**

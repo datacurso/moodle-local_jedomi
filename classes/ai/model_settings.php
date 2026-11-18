@@ -25,8 +25,9 @@ namespace local_jedomi\ai;
  * each of them.
  *
  * The getters Jedomi uses (get_model(), is_files_enabled()...) follow the service in use ({@see ai_service}): with
- * the custom service they answer its free-text models, and a feature is on only while its model is set. The
- * get_configured_*() methods always answer the Datacurso settings.
+ * the custom service they answer its free-text models, and a feature is on only while its own switch (custom_*_enabled)
+ * is on and its model is set. The get_configured_*() methods always answer the Datacurso settings. Each service keeps
+ * its own switches, so switching services never turns a feature of the other one on or off.
  *
  * @package    local_jedomi
  * @copyright  2026 Jedomi Project
@@ -303,39 +304,48 @@ class model_settings {
     /**
      * Whether images, PDF pages and attached files can be processed.
      *
-     * With the Datacurso service, the switch, on until it is saved; with the custom service, while its vision model is
-     * set (only images then: see {@see self::is_documents_enabled()}).
+     * With the Datacurso service, the switch, on until it is saved; with the custom service, its images switch and its
+     * vision model (documents need more: see {@see self::is_documents_enabled()}).
      *
      * @return bool
      */
     public static function is_files_enabled(): bool {
         return match (ai_service::get_active()) {
-            ai_service::CUSTOM => ai_service::get_custom_model(self::CAPABILITY_VISION) !== '',
+            ai_service::CUSTOM => self::is_custom_feature_on('custom_files_enabled', self::CAPABILITY_VISION),
             default => self::is_switch_on('files_enabled', true),
         };
     }
 
     /**
-     * Whether documents (PDF, Word, PowerPoint, text) can be read: only with the Datacurso service, which reads their
-     * text, and only while file processing is on. A generic OpenAI-compatible service has no such route.
+     * Whether documents (PDF, Word, PowerPoint, text) can be read, always while file processing is on.
+     *
+     * With the Datacurso service, which reads their text, always. With the custom service, only while its documents
+     * switch is on and the address of its document service is saved: PDF files are turned into page images that the
+     * vision model reads, and text files are read on the site (Word and PowerPoint files stay refused).
      *
      * @return bool
      */
     public static function is_documents_enabled(): bool {
-        return ai_service::get_active() === ai_service::DATACURSO && self::is_files_enabled();
+        if (!self::is_files_enabled()) {
+            return false;
+        }
+        if (ai_service::get_active() === ai_service::DATACURSO) {
+            return true;
+        }
+        return self::is_switch_on('custom_documents_enabled', false) && ai_service::get_docservice_url() !== '';
     }
 
     /**
      * Whether audio can be transcribed.
      *
-     * With the Datacurso service, the switch, off until it is saved; with the custom service, while its audio model is
-     * set.
+     * With the Datacurso service, the switch, off until it is saved; with the custom service, its audio switch and its
+     * audio model.
      *
      * @return bool
      */
     public static function is_audio_enabled(): bool {
         return match (ai_service::get_active()) {
-            ai_service::CUSTOM => ai_service::get_custom_model(self::CAPABILITY_AUDIO) !== '',
+            ai_service::CUSTOM => self::is_custom_feature_on('custom_audio_enabled', self::CAPABILITY_AUDIO),
             default => self::is_switch_on('audio_enabled', false),
         };
     }
@@ -344,14 +354,14 @@ class model_settings {
      * Whether the voice conversation of the sidebar can be used. Off while audio processing is off, because what the
      * user says is transcribed by the audio model.
      *
-     * With the Datacurso service, the switch, off until it is saved; with the custom service, while its speech model
-     * and voice are set.
+     * With the Datacurso service, the switch, off until it is saved; with the custom service, its voice switch, its
+     * speech model and its voice.
      *
      * @return bool
      */
     public static function is_voice_enabled(): bool {
         $on = match (ai_service::get_active()) {
-            ai_service::CUSTOM => ai_service::get_custom_model(self::CAPABILITY_SPEECH) !== ''
+            ai_service::CUSTOM => self::is_custom_feature_on('custom_voice_enabled', self::CAPABILITY_SPEECH)
                 && ai_service::get_custom_voice() !== '',
             default => self::is_switch_on('voice_enabled', false),
         };
@@ -359,9 +369,21 @@ class model_settings {
     }
 
     /**
-     * Saved state of a feature switch of the Datacurso service.
+     * Whether a feature of the custom service is on: its model is set and its switch is on. A switch that was never
+     * saved (a site configured before 1.6.3) counts as on, as the feature was on with its model alone.
      *
-     * @param string $name Switch: files_enabled, audio_enabled or voice_enabled.
+     * @param string $switch Switch: custom_files_enabled, custom_audio_enabled or custom_voice_enabled.
+     * @param string $capability Capability of its model.
+     * @return bool
+     */
+    public static function is_custom_feature_on(string $switch, string $capability): bool {
+        return ai_service::get_custom_model($capability) !== '' && self::is_switch_on($switch, true);
+    }
+
+    /**
+     * Saved state of a feature switch.
+     *
+     * @param string $name Switch: files_enabled, audio_enabled, voice_enabled or a custom_*_enabled switch.
      * @param bool $default State until it is saved.
      * @return bool
      */

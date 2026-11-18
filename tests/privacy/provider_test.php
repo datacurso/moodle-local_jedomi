@@ -206,6 +206,20 @@ final class provider_test extends provider_testcase {
         $custom = $this->declared_fields('jedomi_custom_ai_service');
         $this->assertNotNull($custom, 'The data sent to the custom AI service must be declared');
         $this->assertSame(['messages', 'text', 'files'], array_values($custom));
+        $files = get_string('privacy:metadata:jedomi_custom_ai_service:files', 'local_jedomi');
+        $this->assertStringContainsString('page images', $files);
+    }
+
+    /**
+     * The PDF files sent to the document service of the custom AI service, when documents are on, are declared.
+     */
+    public function test_metadata_declares_the_custom_document_service(): void {
+        $docservice = $this->declared_fields('jedomi_custom_document_service');
+        $this->assertNotNull($docservice, 'The files sent to the document service must be declared');
+        $this->assertSame(['files'], array_values($docservice));
+        $this->assertStringContainsString('PDF', get_string('privacy:metadata:jedomi_custom_document_service', 'local_jedomi'));
+        $files = get_string('privacy:metadata:jedomi_custom_document_service:files', 'local_jedomi');
+        $this->assertStringContainsString('images', $files);
     }
 
     /**

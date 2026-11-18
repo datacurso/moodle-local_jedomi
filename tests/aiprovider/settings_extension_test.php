@@ -71,7 +71,7 @@ final class settings_extension_test extends \advanced_testcase {
     }
 
     /**
-     * Values of the form without the service select and the custom service fields.
+     * Values of the form without the service select, the shared fields and the custom service fields.
      *
      * @param array $data Values of get_data().
      * @return array
@@ -79,7 +79,8 @@ final class settings_extension_test extends \advanced_testcase {
     private static function datacurso_values(array $data): array {
         return array_filter(
             $data,
-            static fn(string $name): bool => $name !== ai_service::CONFIG && !str_starts_with($name, 'custom_'),
+            static fn(string $name): bool => !in_array($name, [ai_service::CONFIG, 'ai_timeout'], true)
+                && !str_starts_with($name, 'custom_'),
             ARRAY_FILTER_USE_KEY
         );
     }
@@ -114,7 +115,8 @@ final class settings_extension_test extends \advanced_testcase {
         $this->assertStringContainsString('name="model"', $html);
         $this->assertStringNotContainsString('name="service_datacurso"', $html);
         $this->assertStringNotContainsString('name="service_custom"', $html);
-        $this->assertStringNotContainsString('docservice_url', $html);
+        // The retired Datacurso document service field never comes back (the custom service has its own).
+        $this->assertStringNotContainsString('name="docservice_url"', $html);
         $order = [];
         $fields = ['enabled', 'ai_service', 'model', 'files_enabled', 'vision_model', 'audio_enabled', 'audio_model',
             'voice_enabled', 'speech_model', model_settings::voice_field(self::INWORLD),
@@ -690,11 +692,17 @@ final class settings_extension_test extends \advanced_testcase {
             'custom_allow_http' => 0,
             'custom_verified' => 1,
             'custom_model' => 'meta-llama/Llama-3.3-70B-Instruct',
+            'custom_files_enabled' => 0,
             'custom_vision_model' => '',
+            'custom_documents_enabled' => 0,
+            'custom_docservice_url' => '',
+            'custom_audio_enabled' => 0,
             'custom_audio_model' => '',
+            'custom_voice_enabled' => 0,
             'custom_speech_model' => '',
             'custom_speech_voice' => '',
             'custom_max_tokens' => '',
+            'custom_context_window' => '',
         ], $overrides));
     }
 
@@ -746,8 +754,9 @@ final class settings_extension_test extends \advanced_testcase {
             $this->assertContains($field, $datacurso);
         }
         $custom = $dependencies['ai_service']['neq'][ai_service::CUSTOM][$hide];
-        $models = ['custom_model', 'custom_vision_model', 'custom_audio_model', 'custom_speech_model', 'custom_speech_voice',
-            'custom_max_tokens'];
+        $models = ['custom_model', 'custom_files_enabled', 'custom_vision_model', 'custom_documents_enabled',
+            'custom_docservice_url', 'custom_audio_enabled', 'custom_audio_model', 'custom_voice_enabled', 'custom_speech_model',
+            'custom_speech_voice', 'custom_max_tokens', 'custom_context_window'];
         foreach (array_merge(['custom_gateway_url', 'custom_api_key', 'custom_allow_http', 'custom_verify'], $models) as $field) {
             $this->assertContains($field, $custom);
             $this->assertNotContains($field, $datacurso);
@@ -851,12 +860,37 @@ final class settings_extension_test extends \advanced_testcase {
         return [
             'no chat model' => [['custom_model' => ''], ['custom_model' => 'error_custom_model_required']],
             'spaces in a model' => [['custom_model' => 'my model'], ['custom_model' => 'error_custom_model_invalid']],
-            'markup in a model' => [['custom_vision_model' => '<b>x</b>'], ['custom_vision_model' => 'error_custom_model_invalid']],
-            'speech without audio' => [['custom_speech_model' => 'tts', 'custom_speech_voice' => 'af'],
-                ['custom_speech_model' => 'error_voice_requires_audio']],
-            'speech without voice' => [['custom_audio_model' => 'whisper', 'custom_speech_model' => 'tts'],
+            'markup in a model' => [['custom_files_enabled' => 1, 'custom_vision_model' => '<b>x</b>'],
+                ['custom_vision_model' => 'error_custom_model_invalid']],
+            'images on without a model' => [['custom_files_enabled' => 1],
+                ['custom_vision_model' => 'error_custom_model_required_switch']],
+            'audio on without a model' => [['custom_audio_enabled' => 1],
+                ['custom_audio_model' => 'error_custom_model_required_switch']],
+            'voice without audio' => [['custom_voice_enabled' => 1, 'custom_speech_model' => 'tts', 'custom_speech_voice' => 'af'],
+                ['custom_voice_enabled' => 'error_voice_requires_audio']],
+            'voice without a model' => [['custom_audio_enabled' => 1, 'custom_audio_model' => 'whisper',
+                'custom_voice_enabled' => 1, 'custom_speech_voice' => 'af'],
+                ['custom_speech_model' => 'error_custom_model_required_switch']],
+            'voice without a voice' => [['custom_audio_enabled' => 1, 'custom_audio_model' => 'whisper',
+                'custom_voice_enabled' => 1, 'custom_speech_model' => 'tts'],
                 ['custom_speech_voice' => 'error_custom_voice_required']],
+            'documents without images' => [['custom_documents_enabled' => 1, 'custom_docservice_url' => 'https://docs.example.com'],
+                ['custom_documents_enabled' => 'error_documents_require_vision']],
+            'documents without an address' => [['custom_files_enabled' => 1, 'custom_vision_model' => 'vl',
+                'custom_documents_enabled' => 1], ['custom_docservice_url' => 'error_docservice_url_required']],
+            'documents over public http' => [['custom_files_enabled' => 1, 'custom_vision_model' => 'vl',
+                'custom_documents_enabled' => 1, 'custom_docservice_url' => 'http://docs.example.com'],
+                ['custom_docservice_url' => 'custom_verify_http_not_allowed']],
+            'documents address with a query' => [['custom_files_enabled' => 1, 'custom_vision_model' => 'vl',
+                'custom_documents_enabled' => 1, 'custom_docservice_url' => 'https://docs.example.com/?key=1'],
+                ['custom_docservice_url' => 'custom_verify_invalid_url']],
             'bad max tokens' => [['custom_max_tokens' => '12.5'], ['custom_max_tokens' => 'error_invalid_max_tokens']],
+            'bad context window' => [['custom_context_window' => 'big'],
+                ['custom_context_window' => 'error_invalid_context_window']],
+            'context window too small' => [['custom_context_window' => '512'],
+                ['custom_context_window' => 'error_invalid_context_window']],
+            'context window too large' => [['custom_context_window' => '20000000'],
+                ['custom_context_window' => 'error_invalid_context_window']],
         ];
     }
 
@@ -967,5 +1001,293 @@ final class settings_extension_test extends \advanced_testcase {
         $this->assertArrayNotHasKey('service_custom', $data);
         $this->assertSame(0, $data['custom_verified']);
         $this->assertSame('', $data['custom_gateway_url']);
+    }
+
+    /**
+     * The custom service mirrors the Datacurso pattern: once verified only the chat model is a plain model field; the
+     * image, document, audio and voice fields hang from their own switch and are hidden while it is off.
+     *
+     * @return void
+     */
+    public function test_custom_model_fields_hang_from_their_switches(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+
+        $mform = new \MoodleQuickForm('jedomitest', 'post', '');
+        (new settings_extension())->add_fields($mform);
+
+        [, $dependencies] = $mform->getLockOptionObject();
+        $hide = \MoodleQuickForm::DEP_HIDE;
+        $this->assertSame(['custom_vision_model'], $dependencies['custom_files_enabled']['notchecked']['1'][$hide]);
+        $this->assertSame(['custom_docservice_url'], $dependencies['custom_documents_enabled']['notchecked']['1'][$hide]);
+        $this->assertSame(['custom_audio_model'], $dependencies['custom_audio_enabled']['notchecked']['1'][$hide]);
+        $this->assertSame(
+            ['custom_speech_model', 'custom_speech_voice'],
+            $dependencies['custom_voice_enabled']['notchecked']['1'][$hide]
+        );
+        foreach (['custom_files_enabled', 'custom_documents_enabled', 'custom_audio_enabled', 'custom_voice_enabled'] as $switch) {
+            $element = $mform->getElement($switch);
+            $this->assertSame('advcheckbox', $element->getType());
+            $this->assertNotEmpty($element->getLabel());
+            $this->assertNotEmpty($mform->getElement($switch)->_helpbutton, "{$switch} has a help button");
+        }
+        foreach (['custom_docservice_url', 'custom_context_window', 'custom_max_tokens'] as $field) {
+            $this->assertNotEmpty($mform->getElement($field)->_helpbutton, "{$field} has a help button");
+        }
+        // The chat model, the tokens and the context window depend only on the verification.
+        foreach ($dependencies as $dependon => $conditions) {
+            if ($dependon === 'custom_verified' || $dependon === 'ai_service') {
+                continue;
+            }
+            foreach ($conditions as $values) {
+                foreach ($values as $actions) {
+                    $this->assertNotContains('custom_model', $actions[$hide] ?? []);
+                    $this->assertNotContains('custom_max_tokens', $actions[$hide] ?? []);
+                    $this->assertNotContains('custom_context_window', $actions[$hide] ?? []);
+                }
+            }
+        }
+        // The Datacurso switches stay in the Datacurso section only: each service keeps its own switches.
+        $datacurso = $dependencies['ai_service']['neq'][ai_service::DATACURSO][$hide];
+        foreach (['files_enabled', 'audio_enabled', 'voice_enabled'] as $switch) {
+            $this->assertContains($switch, $datacurso);
+        }
+    }
+
+    /**
+     * Switches that are off need no model, and an invalid id behind a switch that is off is saved empty, never blocking.
+     *
+     * @return void
+     */
+    public function test_custom_switches_off_need_no_model(): void {
+        $this->resetAfterTest();
+        $this->verify_custom_pair();
+        $extension = new settings_extension();
+        $data = $this->custom_data(['custom_vision_model' => 'bad id', 'custom_audio_model' => 'whisper']);
+
+        $this->assertSame([], $extension->validate($data));
+        $extension->save((object) $data);
+
+        $this->assertSame('0', get_config('local_jedomi', 'custom_files_enabled'));
+        $this->assertSame('', get_config('local_jedomi', 'custom_vision_model'));
+        $this->assertSame('whisper', get_config('local_jedomi', 'custom_audio_model'), 'A valid model is kept for later');
+        $this->assertFalse(model_settings::is_audio_enabled() && ai_service::is_custom());
+    }
+
+    /**
+     * Every custom feature switched on with its fields is accepted and saved, the document service address as the root
+     * of the service without trailing slashes.
+     *
+     * @return void
+     */
+    public function test_custom_service_with_every_feature_is_saved(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $this->verify_custom_pair();
+        $extension = new settings_extension();
+        $data = $this->custom_data([
+            'custom_files_enabled' => 1,
+            'custom_vision_model' => 'Qwen/Qwen2.5-VL-7B-Instruct',
+            'custom_documents_enabled' => 1,
+            'custom_docservice_url' => ' https://docs.example.com/ ',
+            'custom_audio_enabled' => 1,
+            'custom_audio_model' => 'whisper-1',
+            'custom_voice_enabled' => 1,
+            'custom_speech_model' => 'tts-1',
+            'custom_speech_voice' => 'alloy',
+            'custom_max_tokens' => '4096',
+            'custom_context_window' => '32768',
+        ]);
+
+        $this->assertSame([], $extension->validate($data));
+        $extension->save((object) $data);
+
+        $expected = [
+            'custom_files_enabled' => '1',
+            'custom_vision_model' => 'Qwen/Qwen2.5-VL-7B-Instruct',
+            'custom_documents_enabled' => '1',
+            'custom_docservice_url' => 'https://docs.example.com',
+            'custom_audio_enabled' => '1',
+            'custom_audio_model' => 'whisper-1',
+            'custom_voice_enabled' => '1',
+            'custom_speech_model' => 'tts-1',
+            'custom_speech_voice' => 'alloy',
+            'custom_max_tokens' => '4096',
+            'custom_context_window' => '32768',
+        ];
+        foreach ($expected as $name => $value) {
+            $this->assertSame($value, get_config('local_jedomi', $name), $name);
+        }
+        $this->assertTrue(model_settings::is_files_enabled());
+        $this->assertTrue(model_settings::is_documents_enabled());
+        $this->assertTrue(model_settings::is_voice_enabled());
+        $this->assertSame(32768, ai_service::get_custom_context_window());
+
+        // Switching a feature off keeps its model for later, but turns the feature off.
+        $extension->save((object) array_merge($data, ['custom_files_enabled' => 0, 'custom_documents_enabled' => 0]));
+        $this->assertSame('Qwen/Qwen2.5-VL-7B-Instruct', get_config('local_jedomi', 'custom_vision_model'));
+        $this->assertFalse(model_settings::is_files_enabled());
+        $this->assertFalse(model_settings::is_documents_enabled());
+    }
+
+    /**
+     * The custom max tokens start on the default (16384) on a new form and when nothing is saved, like the Datacurso
+     * max tokens; an empty or missing context window is left empty.
+     *
+     * @return void
+     */
+    public function test_custom_max_tokens_start_on_the_default(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+
+        $mform = new \MoodleQuickForm('jedomitest', 'post', '');
+        (new settings_extension())->add_fields($mform);
+        $this->assertSame((string) model_settings::DEFAULT_MAX_TOKENS, (string) $mform->_defaultValues['custom_max_tokens']);
+
+        $data = (new settings_extension())->get_data();
+        $this->assertSame((string) model_settings::DEFAULT_MAX_TOKENS, $data['custom_max_tokens']);
+        $this->assertSame('', $data['custom_context_window']);
+        $this->assertSame('', $data['custom_docservice_url']);
+        foreach (['custom_files_enabled', 'custom_documents_enabled', 'custom_audio_enabled', 'custom_voice_enabled'] as $switch) {
+            $this->assertSame(0, $data[$switch], $switch);
+        }
+
+        set_config('custom_max_tokens', '2048', 'local_jedomi');
+        $this->assertSame('2048', (new settings_extension())->get_data()['custom_max_tokens']);
+    }
+
+    /**
+     * A site that saved custom models before the switches existed shows them switched on.
+     *
+     * @return void
+     */
+    public function test_get_data_shows_saved_custom_models_switched_on(): void {
+        $this->resetAfterTest();
+        set_config('custom_vision_model', 'vl', 'local_jedomi');
+        set_config('custom_audio_model', 'whisper', 'local_jedomi');
+        set_config('custom_speech_model', 'tts', 'local_jedomi');
+        set_config('custom_speech_voice', 'alloy', 'local_jedomi');
+
+        $data = (new settings_extension())->get_data();
+
+        $this->assertSame(1, $data['custom_files_enabled']);
+        $this->assertSame(1, $data['custom_audio_enabled']);
+        $this->assertSame(1, $data['custom_voice_enabled']);
+        $this->assertSame(0, $data['custom_documents_enabled']);
+    }
+
+    /**
+     * The answer must fit in the context window: the max tokens must be smaller than the saved window, or than the one
+     * detected for the chat model on verification.
+     *
+     * @return void
+     */
+    public function test_max_tokens_must_fit_in_the_context_window(): void {
+        $this->resetAfterTest();
+        $this->verify_custom_pair();
+        $extension = new settings_extension();
+
+        $this->assertSame(
+            ['custom_max_tokens' => get_string('error_max_tokens_exceed_context', 'local_jedomi', 8192)],
+            $extension->validate($this->custom_data(['custom_max_tokens' => '16384', 'custom_context_window' => '8192']))
+        );
+        $this->assertSame([], $extension->validate($this->custom_data(['custom_max_tokens' => '4096',
+            'custom_context_window' => '8192'])));
+
+        set_config('custom_context_lengths', json_encode(['meta-llama/Llama-3.3-70B-Instruct' => 16384]), 'local_jedomi');
+        $this->assertSame(
+            ['custom_max_tokens' => get_string('error_max_tokens_exceed_context', 'local_jedomi', 16384)],
+            $extension->validate($this->custom_data(['custom_max_tokens' => '16384']))
+        );
+        // An empty max tokens means the default that fits the window: half of it, at most 16384.
+        $this->assertSame([], $extension->validate($this->custom_data()));
+        $extension->save((object) $this->custom_data());
+        $this->assertSame('8192', get_config('local_jedomi', 'custom_max_tokens'));
+        // An explicit window overrides the detected one.
+        $this->assertSame([], $extension->validate($this->custom_data(['custom_max_tokens' => '16384',
+            'custom_context_window' => '65536'])));
+    }
+
+    /**
+     * The context window field shows the length detected for the saved chat model as its placeholder.
+     *
+     * @return void
+     */
+    public function test_context_window_shows_the_detected_length(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        set_config('custom_model', 'chat-model', 'local_jedomi');
+        set_config('custom_context_lengths', json_encode(['chat-model' => 32768]), 'local_jedomi');
+
+        $mform = new \MoodleQuickForm('jedomitest', 'post', '');
+        (new settings_extension())->add_fields($mform);
+
+        $this->assertSame(
+            get_string('custom_context_window_detected', 'local_jedomi', 32768),
+            $mform->getElement('custom_context_window')->getAttribute('placeholder')
+        );
+    }
+
+    /**
+     * The AI request timeout is shared by both services: shown for each of them, validated in its range and saved.
+     *
+     * @return void
+     */
+    public function test_ai_timeout_is_shared_by_both_services(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $this->verify_custom_pair();
+        $extension = new settings_extension();
+
+        $mform = new \MoodleQuickForm('jedomitest', 'post', '');
+        $extension->add_fields($mform);
+        $this->assertSame('text', $mform->getElement('ai_timeout')->getType());
+        $this->assertNotEmpty($mform->getElement('ai_timeout')->_helpbutton);
+        [, $dependencies] = $mform->getLockOptionObject();
+        $hide = \MoodleQuickForm::DEP_HIDE;
+        $this->assertNotContains('ai_timeout', $dependencies['ai_service']['neq'][ai_service::DATACURSO][$hide]);
+        $this->assertNotContains('ai_timeout', $dependencies['ai_service']['neq'][ai_service::CUSTOM][$hide]);
+        $this->assertSame(180, $extension->get_data()['ai_timeout']);
+
+        foreach (['9', '601', 'abc', '30.5'] as $bad) {
+            $error = ['ai_timeout' => get_string('error_invalid_ai_timeout', 'local_jedomi')];
+            $this->assertSame($error, $extension->validate($this->valid_data(['ai_timeout' => $bad])), $bad);
+            $this->assertSame($error, $extension->validate($this->custom_data(['ai_timeout' => $bad])), $bad);
+        }
+        $this->assertSame([], $extension->validate($this->valid_data(['ai_timeout' => '10'])));
+        $this->assertSame([], $extension->validate($this->custom_data(['ai_timeout' => '600'])));
+
+        $extension->save((object) $this->valid_data(['ai_timeout' => '95']));
+        $this->assertSame('95', get_config('local_jedomi', 'ai_timeout'));
+        $extension->save((object) $this->custom_data(['ai_timeout' => '300']));
+        $this->assertSame('300', get_config('local_jedomi', 'ai_timeout'));
+        $this->assertSame(300, $extension->get_data()['ai_timeout']);
+    }
+
+    /**
+     * U4: the default max tokens of the custom service fit the known context window: half of it, at most 16384, on the
+     * form, in the saved values and at runtime; an explicit value is kept.
+     *
+     * @return void
+     */
+    public function test_default_max_tokens_fit_the_known_window(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        set_config('custom_model', 'chat-model', 'local_jedomi');
+        set_config('custom_context_lengths', json_encode(['chat-model' => 8192]), 'local_jedomi');
+
+        $mform = new \MoodleQuickForm('jedomitest', 'post', '');
+        (new settings_extension())->add_fields($mform);
+        $this->assertSame('4096', (string) $mform->_defaultValues['custom_max_tokens']);
+        $this->assertSame('4096', (new settings_extension())->get_data()['custom_max_tokens']);
+        $this->assertSame(4096, ai_service::get_custom_max_tokens());
+        $this->assertSame(4096, ai_service::default_custom_max_tokens(8192));
+        $this->assertSame(model_settings::DEFAULT_MAX_TOKENS, ai_service::default_custom_max_tokens(65536));
+        $this->assertSame(model_settings::DEFAULT_MAX_TOKENS, ai_service::default_custom_max_tokens(0));
+
+        set_config('custom_context_window', '20000', 'local_jedomi');
+        $this->assertSame('10000', (new settings_extension())->get_data()['custom_max_tokens']);
+        set_config('custom_max_tokens', '2048', 'local_jedomi');
+        $this->assertSame('2048', (new settings_extension())->get_data()['custom_max_tokens']);
     }
 }

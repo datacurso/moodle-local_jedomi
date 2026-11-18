@@ -502,4 +502,61 @@ final class model_settings_test extends \advanced_testcase {
         $this->assertSame('jedomi/Qwen/Qwen3-TTS', get_config('local_jedomi', 'speech_model'));
         $this->assertSame('Serena', get_config('local_jedomi', 'speech_voice'));
     }
+
+    /**
+     * With the custom service each feature needs its switch and its model: a model saved before the switches existed
+     * counts as switched on, a switch that is off turns the feature off, and a switch on without a model is off too.
+     *
+     * @return void
+     */
+    public function test_custom_features_need_their_switch_and_their_model(): void {
+        $this->resetAfterTest();
+        set_config('ai_service', ai_service::CUSTOM, 'local_jedomi');
+        set_config('custom_vision_model', 'vl', 'local_jedomi');
+        set_config('custom_audio_model', 'whisper', 'local_jedomi');
+        set_config('custom_speech_model', 'tts', 'local_jedomi');
+        set_config('custom_speech_voice', 'alloy', 'local_jedomi');
+
+        // Saved before 1.6.3: no switches yet.
+        $this->assertTrue(model_settings::is_files_enabled());
+        $this->assertTrue(model_settings::is_audio_enabled());
+        $this->assertTrue(model_settings::is_voice_enabled());
+
+        set_config('custom_files_enabled', 0, 'local_jedomi');
+        set_config('custom_voice_enabled', 0, 'local_jedomi');
+        $this->assertFalse(model_settings::is_files_enabled());
+        $this->assertFalse(model_settings::is_voice_enabled());
+        $this->assertTrue(model_settings::is_audio_enabled());
+
+        set_config('custom_audio_enabled', 1, 'local_jedomi');
+        set_config('custom_audio_model', '', 'local_jedomi');
+        $this->assertFalse(model_settings::is_audio_enabled(), 'A switch on without a model never breaks the runtime');
+
+        // The Datacurso switches never affect the custom service, and the other way round.
+        set_config('files_enabled', 1, 'local_jedomi');
+        $this->assertFalse(model_settings::is_files_enabled());
+        set_config('ai_service', ai_service::DATACURSO, 'local_jedomi');
+        $this->assertTrue(model_settings::is_files_enabled());
+    }
+
+    /**
+     * Documents with the custom service need the documents switch, the address of the document service and image
+     * processing (the pages are read by the vision model); they are off until switched on.
+     *
+     * @return void
+     */
+    public function test_custom_documents_need_the_document_service_and_images(): void {
+        $this->resetAfterTest();
+        set_config('ai_service', ai_service::CUSTOM, 'local_jedomi');
+        set_config('custom_vision_model', 'vl', 'local_jedomi');
+        set_config('custom_files_enabled', 1, 'local_jedomi');
+
+        $this->assertFalse(model_settings::is_documents_enabled(), 'Off until switched on');
+        set_config('custom_documents_enabled', 1, 'local_jedomi');
+        $this->assertFalse(model_settings::is_documents_enabled(), 'Off without the address of the document service');
+        set_config('custom_docservice_url', 'https://docs.example.com', 'local_jedomi');
+        $this->assertTrue(model_settings::is_documents_enabled());
+        set_config('custom_files_enabled', 0, 'local_jedomi');
+        $this->assertFalse(model_settings::is_documents_enabled(), 'Off without image processing');
+    }
 }

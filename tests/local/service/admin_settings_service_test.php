@@ -86,7 +86,7 @@ final class admin_settings_service_test extends \advanced_testcase {
         unset_config('spt_secret', 'local_jedomi');
 
         $this->assertSame(
-            ['spt_secret' => '', 'profiler_slow_ms' => 1000, 'profiler_retention_days' => 30],
+            ['spt_secret' => '', 'profiler_slow_ms' => 1000, 'profiler_retention_days' => 30, 'sql_row_limit_web' => 100],
             admin_settings_service::get_general_settings()
         );
     }
@@ -104,9 +104,29 @@ final class admin_settings_service_test extends \advanced_testcase {
         $this->assertSame('s3cret', get_config('local_jedomi', 'spt_secret'));
         $this->assertFalse(get_config('local_jedomi', 'collect_training_data'));
         $this->assertSame(
-            ['spt_secret' => 's3cret', 'profiler_slow_ms' => 1000, 'profiler_retention_days' => 30],
+            ['spt_secret' => 's3cret', 'profiler_slow_ms' => 1000, 'profiler_retention_days' => 30, 'sql_row_limit_web' => 100],
             admin_settings_service::get_general_settings()
         );
+    }
+
+    /**
+     * The row limit of the web chat is a setting of the General tab, kept within its range.
+     *
+     * @return void
+     */
+    public function test_save_general_settings_stores_the_web_row_limit(): void {
+        $this->resetAfterTest();
+
+        admin_settings_service::save_general_settings('s3cret', null, null, 300);
+        $this->assertSame(300, admin_settings_service::get_general_settings()['sql_row_limit_web']);
+        $this->assertSame(300, \local_jedomi\local\query_runner::row_limit('web'));
+
+        admin_settings_service::save_general_settings('s3cret', null, null, 5000);
+        $this->assertSame(1000, admin_settings_service::get_general_settings()['sql_row_limit_web']);
+
+        // Saving without it keeps the saved value.
+        admin_settings_service::save_general_settings('s3cret', 500, 10);
+        $this->assertSame(1000, admin_settings_service::get_general_settings()['sql_row_limit_web']);
     }
 
     /**

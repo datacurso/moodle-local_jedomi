@@ -524,5 +524,13 @@ function xmldb_local_jedomi_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2026111700, 'local', 'jedomi');
     }
 
+    if ($oldversion < 2026111800) {
+        // The custom service gets its own feature switches (on for each feature whose model was saved, documents off),
+        // and the custom max tokens, the AI request timeout and the row limit of the web chat get their defaults.
+        require_once($CFG->dirroot . '/local/jedomi/db/upgradelib.php');
+        local_jedomi_upgrade_custom_feature_switches();
+        upgrade_plugin_savepoint(true, 2026111800, 'local', 'jedomi');
+    }
+
     return true;
 }

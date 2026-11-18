@@ -16,13 +16,16 @@
 
 namespace local_jedomi\form;
 
+use local_jedomi\local\query_runner;
+
 defined('MOODLE_INTERNAL') || die();
 
 global $CFG;
 require_once($CFG->libdir . '/formslib.php');
 
 /**
- * Form of the General tab of the Jedomi settings: the session token secret and the query profiler settings.
+ * Form of the General tab of the Jedomi settings: the session token secret, the query profiler settings and the row limit
+ * of the queries of the web chat.
  *
  * @package    local_jedomi
  * @copyright  2026 Jedomi Project
@@ -72,6 +75,19 @@ class general_settings_form extends \moodleform {
         $mform->addHelpButton('profiler_retention_days', 'profiler_retention_days', 'local_jedomi');
         $this->add_card_end();
 
+        $this->add_card_start(
+            'sqlheader',
+            get_string('sql_heading', 'local_jedomi'),
+            get_string('sql_heading_help', 'local_jedomi'),
+            'i/report',
+            'blue'
+        );
+        $mform->addElement('text', 'sql_row_limit_web', get_string('sql_row_limit_web', 'local_jedomi'), ['size' => 8]);
+        $mform->setType('sql_row_limit_web', PARAM_INT);
+        $mform->setDefault('sql_row_limit_web', query_runner::CHANNEL_LIMITS['web'][0]);
+        $mform->addHelpButton('sql_row_limit_web', 'sql_row_limit_web', 'local_jedomi');
+        $this->add_card_end();
+
         $this->add_action_buttons(false);
     }
 
@@ -91,6 +107,10 @@ class general_settings_form extends \moodleform {
         $days = (int) ($data['profiler_retention_days'] ?? 0);
         if ($days < 1 || $days > 3650) {
             $errors['profiler_retention_days'] = get_string('profiler_retention_days_invalid', 'local_jedomi');
+        }
+        $rows = (int) ($data['sql_row_limit_web'] ?? 0);
+        if ($rows < query_runner::WEB_ROW_LIMIT_MIN || $rows > query_runner::WEB_ROW_LIMIT_MAX) {
+            $errors['sql_row_limit_web'] = get_string('sql_row_limit_web_invalid', 'local_jedomi');
         }
         return $errors;
     }

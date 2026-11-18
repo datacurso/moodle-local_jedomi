@@ -92,6 +92,21 @@ class custom_api {
      *         when the answer is not an OpenAI model list.
      */
     public function list_models(int $timeout): array {
+        return $this->list_models_with_context($timeout)['ids'];
+    }
+
+    /**
+     * Ids of the models the service lists (GET /models), with the context length of those whose entry tells it.
+     *
+     * The context length is read from max_model_len (vLLM), context_length (OpenRouter, LM Studio), context_window
+     * (Groq) or max_context_length, the first one that is a positive whole number.
+     *
+     * @param int $timeout Total request timeout, in seconds.
+     * @return array{ids: string[], context: array<string, int>} Ids in the order listed, and model id => tokens.
+     * @throws \moodle_exception custom_error_url, custom_error_unreachable, custom_error_http, or ai_error_invalidanswer
+     *         when the answer is not an OpenAI model list.
+     */
+    public function list_models_with_context(int $timeout): array {
         [$status, $body] = $this->send('GET', '/models', null, [], $timeout);
         self::require_success($status);
         $answer = json_decode($body, true);
@@ -99,16 +114,37 @@ class custom_api {
             throw new \moodle_exception('ai_error_invalidanswer', 'local_jedomi');
         }
         $ids = [];
+        $context = [];
         foreach ($answer['data'] as $model) {
             if (!is_array($model) || !is_string($model['id'] ?? null) || $model['id'] === '') {
                 throw new \moodle_exception('ai_error_invalidanswer', 'local_jedomi');
             }
             $ids[] = $model['id'];
+            $tokens = self::context_length($model);
+            if ($tokens !== null) {
+                $context[$model['id']] = $tokens;
+            }
         }
         if (empty($ids)) {
             throw new \moodle_exception('ai_error_invalidanswer', 'local_jedomi');
         }
-        return $ids;
+        return ['ids' => $ids, 'context' => $context];
+    }
+
+    /**
+     * Context length an entry of the model list tells.
+     *
+     * @param array $model Entry of the model list.
+     * @return int|null Tokens, or null when it tells none.
+     */
+    private static function context_length(array $model): ?int {
+        foreach (['max_model_len', 'context_length', 'context_window', 'max_context_length'] as $field) {
+            $value = $model[$field] ?? null;
+            if ((is_int($value) || (is_string($value) && preg_match('/^\d+$/', $value))) && (int) $value > 0) {
+                return (int) $value;
+            }
+        }
+        return null;
     }
 
     /**

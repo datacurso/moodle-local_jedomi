@@ -270,4 +270,75 @@ final class client_custom_service_test extends \advanced_testcase {
             new \moodle_exception('custom_error_http', 'aiprovider_datacurso', '', 'Provider text')
         ));
     }
+
+    /**
+     * Without a timeout of its caller (web chat, CLI), a request waits the AI request timeout of the settings, for the
+     * custom service and for the Datacurso service; a caller with its own timeout (Telegram, agents) keeps it.
+     *
+     * @return void
+     */
+    public function test_requests_use_the_timeout_setting(): void {
+        $answer = json_encode(['choices' => [['message' => ['content' => 'Hi'], 'finish_reason' => 'stop']]]);
+        $messages = [['role' => 'user', 'content' => 'Hi']];
+
+        $this->curl->enqueue($answer);
+        $this->make_client()->complete($messages, 5);
+        $this->assertSame(client::DEFAULT_TIMEOUT, $this->curl->calls[0]['options']['CURLOPT_TIMEOUT']);
+
+        set_config('ai_timeout', '95', 'local_jedomi');
+        $this->curl->enqueue($answer);
+        $this->make_client()->complete($messages, 5);
+        $this->assertSame(95, $this->curl->calls[1]['options']['CURLOPT_TIMEOUT']);
+
+        $this->curl->enqueue($answer);
+        $this->make_client()->complete($messages, 5, [], 30);
+        $this->assertSame(30, $this->curl->calls[2]['options']['CURLOPT_TIMEOUT'], 'A timeout of the caller wins');
+
+        set_config('ai_service', ai_service::DATACURSO, 'local_jedomi');
+        $timeouts = [];
+        $client = new client(function (int $timeout) use (&$timeouts) {
+            $timeouts[] = $timeout;
+            throw new \moodle_exception('ai_error_invalidanswer', 'local_jedomi');
+        });
+        try {
+            $client->complete($messages, 5);
+        } catch (\moodle_exception $e) {
+            $this->assertSame('ai_error_invalidanswer', $e->errorcode);
+        }
+        $this->assertSame([95], $timeouts);
+    }
+
+    /**
+     * The saved timeout is kept within 10 to 600 seconds; an empty or invalid value is the default (180).
+     *
+     * @dataProvider timeout_provider
+     * @param string|null $saved Saved value; null for none.
+     * @param int $expected Timeout used.
+     * @return void
+     */
+    public function test_timeout_setting_is_kept_in_its_range(?string $saved, int $expected): void {
+        if ($saved === null) {
+            unset_config('ai_timeout', 'local_jedomi');
+        } else {
+            set_config('ai_timeout', $saved, 'local_jedomi');
+        }
+
+        $this->assertSame($expected, client::configured_timeout());
+    }
+
+    /**
+     * Saved timeouts and the timeout used.
+     *
+     * @return array
+     */
+    public static function timeout_provider(): array {
+        return [
+            'none' => [null, 180],
+            'empty' => ['', 180],
+            'text' => ['abc', 180],
+            'too small' => ['5', 10],
+            'too large' => ['9999', 600],
+            'valid' => ['240', 240],
+        ];
+    }
 }

@@ -39,8 +39,14 @@ class client {
     /** @var string Chat completions route of plugins-ai for Jedomi. */
     public const PATH = '/jedomi/v1/chat/completions';
 
-    /** @var int Default total request timeout, in seconds. */
+    /** @var int Default total request timeout, in seconds: the default of the ai_timeout setting. */
     public const DEFAULT_TIMEOUT = 180;
+
+    /** @var int Shortest AI request timeout of the ai_timeout setting, in seconds. */
+    public const MIN_TIMEOUT = 10;
+
+    /** @var int Longest AI request timeout of the ai_timeout setting, in seconds. */
+    public const MAX_TIMEOUT = 600;
 
     /** @var client|null Replacement used by tests. */
     private static ?client $testinstance = null;
@@ -89,7 +95,8 @@ class client {
      * @param array $messages Conversation in OpenAI chat format.
      * @param int $userid Moodle user the call is made for (cron and Telegram have no session user).
      * @param array $tools OpenAI-format tool definitions; empty for none.
-     * @param int|null $timeout Total request timeout in seconds; null for {@see DEFAULT_TIMEOUT}.
+     * @param int|null $timeout Total request timeout in seconds; null for the AI request timeout of the settings
+     *        ({@see self::configured_timeout()}), as the web chat and the CLI do.
      * @param float|null $temperature Sampling temperature; null for the model default.
      * @return array{content: string, tool_calls: array, finish_reason: string, reasoning: string}
      * @throws \moodle_exception Provider errors (component aiprovider_datacurso), custom service errors (custom_error_*,
@@ -126,12 +133,13 @@ class client {
             'tools_count' => count($tools),
         ]);
 
+        $timeout = $timeout ?? self::configured_timeout();
         $start = microtime(true);
         try {
             if ($service === ai_service::CUSTOM) {
-                $response = ($this->customfactory)()->chat($payload, $timeout ?? self::DEFAULT_TIMEOUT);
+                $response = ($this->customfactory)()->chat($payload, $timeout);
             } else {
-                $api = ($this->apifactory)($timeout ?? self::DEFAULT_TIMEOUT);
+                $api = ($this->apifactory)($timeout);
                 $response = $api->request('POST', self::PATH, $payload);
             }
         } catch (\moodle_exception $e) {
@@ -157,6 +165,23 @@ class client {
             'duration_ms' => (int) round((microtime(true) - $start) * 1000),
         ]);
         return $result;
+    }
+
+    /**
+     * AI request timeout of the settings (ai_timeout), shared by both services.
+     *
+     * Proxies in front of the site (Cloudflare closes a request after 100 seconds) and the max_execution_time of PHP
+     * can end a request earlier.
+     *
+     * @return int Seconds, within {@see self::MIN_TIMEOUT} and {@see self::MAX_TIMEOUT}; {@see self::DEFAULT_TIMEOUT}
+     *         when nothing valid is saved.
+     */
+    public static function configured_timeout(): int {
+        $saved = trim((string) get_config('local_jedomi', 'ai_timeout'));
+        if (!preg_match('/^\d+$/', $saved)) {
+            return self::DEFAULT_TIMEOUT;
+        }
+        return min(self::MAX_TIMEOUT, max(self::MIN_TIMEOUT, (int) $saved));
     }
 
     /**

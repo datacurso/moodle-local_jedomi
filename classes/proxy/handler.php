@@ -506,6 +506,8 @@ class handler {
      *                         ['type'=>'error', 'error'=>['code'=>'...', 'message'=>'...']]
      */
     private static function call_ai(array $messages, array $tools, int $userid): array {
+        // With the custom service, the oldest history is dropped so the request fits in the context window of its model.
+        $messages = \local_jedomi\ai\context_window::fit_for_custom_service($messages, $tools);
         try {
             $answer = \local_jedomi\ai\client::instance()->complete($messages, $userid, $tools);
         } catch (\Throwable $e) {

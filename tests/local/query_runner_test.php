@@ -382,4 +382,32 @@ final class query_runner_test extends \advanced_testcase {
         $this->assertCount(5, $all['rows']);
         $this->assertFalse($all['truncated']);
     }
+
+    /**
+     * The row limit of the web chat is the setting of the General tab (10 to 1000, 100 by default); the other channels
+     * keep their fixed limits.
+     *
+     * @return void
+     */
+    public function test_web_row_limit_is_a_setting(): void {
+        $this->resetAfterTest();
+
+        unset_config('sql_row_limit_web', 'local_jedomi');
+        $this->assertSame(100, query_runner::row_limit('web'));
+        $this->assertSame(100, query_runner::row_limit('unknown'), 'Any other channel gets the web chat limit');
+
+        set_config('sql_row_limit_web', '250', 'local_jedomi');
+        $this->assertSame(250, query_runner::row_limit('web'));
+        $this->assertSame(250, query_runner::row_limit('unknown'));
+        $this->assertSame(50, query_runner::row_limit('telegram'));
+        $this->assertSame(100, query_runner::row_limit('companion'));
+        $this->assertSame(1000, query_runner::row_limit('agent'));
+
+        set_config('sql_row_limit_web', '5', 'local_jedomi');
+        $this->assertSame(query_runner::WEB_ROW_LIMIT_MIN, query_runner::row_limit('web'));
+        set_config('sql_row_limit_web', '5000', 'local_jedomi');
+        $this->assertSame(query_runner::WEB_ROW_LIMIT_MAX, query_runner::row_limit('web'));
+        set_config('sql_row_limit_web', 'abc', 'local_jedomi');
+        $this->assertSame(100, query_runner::row_limit('web'));
+    }
 }

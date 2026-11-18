@@ -35,7 +35,9 @@ use local_jedomi\local\service\vision_service;
  * Files of submissions, feedback, responses, forum post attachments, questions and users are never read.
  *
  * The AI service returns only text: pages with text are read directly and scanned pages, tables
- * and diagrams are read by the vision model. Offered only while file and image processing is on.
+ * and diagrams are read by the vision model. With the custom AI service, the PDF goes to its document service and each
+ * page image is read by its vision model ({@see vision_service}). Offered only while documents can be read
+ * ({@see model_settings::is_documents_enabled()}).
  */
 class document_read_tool implements agent_tool {
     use acts_for_user;
@@ -151,7 +153,7 @@ class document_read_tool implements agent_tool {
             return json_encode(['error' => get_string('files_error_disabled', 'local_jedomi')]);
         }
         if (!model_settings::is_documents_enabled()) {
-            // The custom AI service cannot read documents.
+            // The custom AI service reads documents only with its documents on.
             return json_encode(['error' => get_string('documents_error_custom', 'local_jedomi')]);
         }
         if ($cmid <= 0) {
@@ -191,6 +193,7 @@ class document_read_tool implements agent_tool {
             'pages_total' => $read['pages_total'],
             'pages_vision' => $read['pages_vision'],
             'pages_skipped' => $read['pages_skipped'],
+        ] + (isset($read['pages_skipped_total']) ? ['pages_skipped_total' => $read['pages_skipped_total']] : []) + [
             'text' => $read['text'],
         ], JSON_UNESCAPED_UNICODE);
     }

@@ -103,7 +103,7 @@ function local_jedomi_get_sidebar_config(array $page = []): array {
         'read_file_url' => $CFG->wwwroot . '/local/jedomi/read_file.php',
         // Hidden features are also refused by the server.
         'files_enabled' => \local_jedomi\ai\model_settings::is_files_enabled(),
-        // Documents need the Datacurso service; with the custom service only images are read.
+        // With the custom service, documents need its documents switch and its document service.
         'documents_enabled' => \local_jedomi\ai\model_settings::is_documents_enabled(),
         'audio_enabled' => \local_jedomi\ai\model_settings::is_audio_enabled(),
         'voice_enabled' => $voiceenabled,

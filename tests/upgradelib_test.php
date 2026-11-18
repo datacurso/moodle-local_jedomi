@@ -28,6 +28,7 @@ namespace local_jedomi;
  * @covers     ::local_jedomi_upgrade_telegram_webhook
  * @covers     ::local_jedomi_upgrade_agent_write_approvals
  * @covers     ::local_jedomi_upgrade_custom_service_url
+ * @covers     ::local_jedomi_upgrade_custom_feature_switches
  */
 final class upgradelib_test extends \advanced_testcase {
     #[\Override]
@@ -425,5 +426,98 @@ final class upgradelib_test extends \advanced_testcase {
         $this->assertTrue($dbman->field_exists('local_jedomi_pending_actions', 'agentid'));
         $agent = \local_jedomi\agent\agent_manager::get_agent($id);
         $this->assertSame([], \local_jedomi\agent\agent_manager::approved_writes($agent));
+    }
+
+    /**
+     * The switches of the custom service (1.6.3) start on for each feature whose model was saved, so a configured site
+     * keeps every feature it had; the documents start off, and the custom max tokens, AI request timeout and web row
+     * limit get their defaults when they are not saved.
+     *
+     * @return void
+     */
+    public function test_custom_feature_switches_follow_the_saved_models(): void {
+        set_config('custom_vision_model', 'vl', 'local_jedomi');
+        set_config('custom_audio_model', '', 'local_jedomi');
+        set_config('custom_speech_model', 'tts', 'local_jedomi');
+        set_config('custom_speech_voice', 'alloy', 'local_jedomi');
+        set_config('custom_max_tokens', '', 'local_jedomi');
+
+        local_jedomi_upgrade_custom_feature_switches();
+
+        $this->assertSame('1', get_config('local_jedomi', 'custom_files_enabled'));
+        $this->assertSame('0', get_config('local_jedomi', 'custom_audio_enabled'));
+        $this->assertSame('1', get_config('local_jedomi', 'custom_voice_enabled'));
+        $this->assertSame('0', get_config('local_jedomi', 'custom_documents_enabled'));
+        $this->assertSame('16384', get_config('local_jedomi', 'custom_max_tokens'));
+        $this->assertSame('180', get_config('local_jedomi', 'ai_timeout'));
+        $this->assertSame('100', get_config('local_jedomi', 'sql_row_limit_web'));
+        // The Datacurso switches are never touched.
+        $this->assertFalse(get_config('local_jedomi', 'audio_enabled'));
+    }
+
+    /**
+     * Empty custom max tokens start on the default that fits the context window of the saved chat model: half the
+     * window when it is known (typed, or detected on the last verification), so the answer never takes the whole window.
+     *
+     * @return void
+     */
+    public function test_custom_max_tokens_default_fits_the_known_window(): void {
+        set_config('custom_model', 'gemma', 'local_jedomi');
+        set_config('custom_context_lengths', json_encode(['gemma' => 16384, 'other' => 4096]), 'local_jedomi');
+        set_config('custom_max_tokens', '', 'local_jedomi');
+
+        local_jedomi_upgrade_custom_feature_switches();
+
+        $this->assertSame('8192', get_config('local_jedomi', 'custom_max_tokens'));
+
+        // A typed window wins over the detected one.
+        set_config('custom_context_window', '4096', 'local_jedomi');
+        set_config('custom_max_tokens', '', 'local_jedomi');
+
+        local_jedomi_upgrade_custom_feature_switches();
+
+        $this->assertSame('2048', get_config('local_jedomi', 'custom_max_tokens'));
+    }
+
+    /**
+     * A voice model without a voice was off before, so its switch starts off; values already saved are kept and the
+     * step can run again.
+     *
+     * @return void
+     */
+    public function test_custom_feature_switches_keep_saved_values(): void {
+        set_config('custom_speech_model', 'tts', 'local_jedomi');
+        set_config('custom_vision_model', 'vl', 'local_jedomi');
+        set_config('custom_files_enabled', '0', 'local_jedomi');
+        set_config('custom_max_tokens', '2048', 'local_jedomi');
+        set_config('ai_timeout', '90', 'local_jedomi');
+        set_config('sql_row_limit_web', '300', 'local_jedomi');
+
+        local_jedomi_upgrade_custom_feature_switches();
+        local_jedomi_upgrade_custom_feature_switches();
+
+        $this->assertSame('0', get_config('local_jedomi', 'custom_voice_enabled'));
+        $this->assertSame('0', get_config('local_jedomi', 'custom_files_enabled'));
+        $this->assertSame('2048', get_config('local_jedomi', 'custom_max_tokens'));
+        $this->assertSame('90', get_config('local_jedomi', 'ai_timeout'));
+        $this->assertSame('300', get_config('local_jedomi', 'sql_row_limit_web'));
+    }
+
+    /**
+     * The 2026111800 step of the upgrade sets the switches of the custom service.
+     *
+     * @return void
+     */
+    public function test_upgrade_step_sets_the_custom_switches(): void {
+        global $CFG;
+        require_once($CFG->libdir . '/upgradelib.php');
+        require_once($CFG->dirroot . '/local/jedomi/db/upgrade.php');
+        set_config('version', 2026111700, 'local_jedomi');
+        set_config('custom_audio_model', 'whisper', 'local_jedomi');
+
+        $this->assertTrue(xmldb_local_jedomi_upgrade(2026111700));
+
+        $this->assertSame('1', get_config('local_jedomi', 'custom_audio_enabled'));
+        $this->assertSame('0', get_config('local_jedomi', 'custom_files_enabled'));
     }
 }

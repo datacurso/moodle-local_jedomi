@@ -58,14 +58,39 @@ class query_runner {
         'agent' => [1000, 30000],
     ];
 
+    /** @var int Smallest row limit of the web chat accepted by the sql_row_limit_web setting. */
+    public const WEB_ROW_LIMIT_MIN = 10;
+
+    /** @var int Largest row limit of the web chat accepted by the sql_row_limit_web setting. */
+    public const WEB_ROW_LIMIT_MAX = 1000;
+
     /**
      * Maximum rows a query returns in a channel.
+     *
+     * The web chat uses the sql_row_limit_web setting of the General tab (its CHANNEL_LIMITS row is the default), kept
+     * within WEB_ROW_LIMIT_MIN and WEB_ROW_LIMIT_MAX; the other channels keep their fixed limits.
      *
      * @param string $channel web, telegram, companion or agent; anything else gets the web chat limit.
      * @return int
      */
     public static function row_limit(string $channel): int {
-        return (self::CHANNEL_LIMITS[$channel] ?? self::CHANNEL_LIMITS['web'])[0];
+        if (!isset(self::CHANNEL_LIMITS[$channel]) || $channel === 'web') {
+            return self::web_row_limit();
+        }
+        return self::CHANNEL_LIMITS[$channel][0];
+    }
+
+    /**
+     * Row limit of the web chat: the saved setting within its range, or the default when nothing valid is saved.
+     *
+     * @return int
+     */
+    public static function web_row_limit(): int {
+        $saved = trim((string) get_config('local_jedomi', 'sql_row_limit_web'));
+        if (!preg_match('/^\d+$/', $saved)) {
+            return self::CHANNEL_LIMITS['web'][0];
+        }
+        return min(self::WEB_ROW_LIMIT_MAX, max(self::WEB_ROW_LIMIT_MIN, (int) $saved));
     }
 
     /**

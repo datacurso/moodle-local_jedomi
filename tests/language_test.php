@@ -120,4 +120,24 @@ final class language_test extends \basic_testcase {
             $this->assertDoesNotMatchRegularExpression($english, $text, "es/{$key} keeps an English term");
         }
     }
+
+    /**
+     * U7: the help of the service select and of the document fields describe the documents of the custom service of
+     * 1.6.3: PDF and text files need the documents switch and the document service; Word and PowerPoint are refused.
+     *
+     * @return void
+     */
+    public function test_custom_documents_help_is_current(): void {
+        $en = get_string('ai_service_help', 'local_jedomi');
+        $this->assertStringNotContainsString('Documents cannot be read', $en);
+        $this->assertStringContainsString('document service', $en);
+        $es = self::plugin_spanish_string('ai_service_help');
+        $this->assertStringNotContainsString('Los documentos no se pueden leer', $es);
+        $this->assertStringContainsString('servicio de documentos', $es);
+        foreach (['custom_docservice_url_help', 'custom_documents_enabled_help'] as $key) {
+            $this->assertStringContainsString('.txt', get_string($key, 'local_jedomi'), $key);
+            $this->assertStringContainsString('.txt', self::plugin_spanish_string($key), $key);
+        }
+        $this->assertStringContainsString('also need', get_string('custom_docservice_url_help', 'local_jedomi'));
+    }
 }

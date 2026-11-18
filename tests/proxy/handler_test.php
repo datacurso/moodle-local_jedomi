@@ -1849,4 +1849,43 @@ final class handler_test extends \advanced_testcase {
             json_decode($result['content'], true)
         );
     }
+
+    /**
+     * With the custom service and a known context window, the oldest history is dropped before each AI call so the
+     * request fits; the system message and the latest question always stay, and the trimming is logged without content.
+     */
+    public function test_custom_service_history_is_trimmed_to_the_context_window(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        set_config('ai_service', \local_jedomi\ai\ai_service::CUSTOM, 'local_jedomi');
+        set_config('custom_model', 'chat-model', 'local_jedomi');
+        set_config('custom_max_tokens', '1024', 'local_jedomi');
+        set_config('custom_context_window', '4096', 'local_jedomi');
+        $fake = new fake_ai_client();
+        $fake->enqueue_text('Answer');
+        client::set_instance_for_testing($fake);
+
+        $this->capture(fn() => handler::run([
+            ['role' => 'system', 'content' => 'You are Jedomi.'],
+            ['role' => 'user', 'content' => 'Old question ' . str_repeat('q', 20000)],
+            ['role' => 'assistant', 'content' => 'Old answer ' . str_repeat('a', 20000)],
+            ['role' => 'user', 'content' => 'Latest question'],
+        ], 'student', (int) get_admin()->id));
+
+        $sent = $fake->calls[0]['messages'];
+        $this->assertSame(['system', 'user'], array_column($sent, 'role'));
+        $this->assertSame('You are Jedomi.', $sent[0]['content']);
+        $this->assertSame('Latest question', $sent[1]['content']);
+
+        // The Datacurso service sends the whole history.
+        set_config('ai_service', \local_jedomi\ai\ai_service::DATACURSO, 'local_jedomi');
+        $fake->enqueue_text('Answer');
+        $this->capture(fn() => handler::run([
+            ['role' => 'system', 'content' => 'You are Jedomi.'],
+            ['role' => 'user', 'content' => 'Old question ' . str_repeat('q', 20000)],
+            ['role' => 'assistant', 'content' => 'Old answer'],
+            ['role' => 'user', 'content' => 'Latest question'],
+        ], 'student', (int) get_admin()->id));
+        $this->assertCount(4, $fake->calls[1]['messages']);
+    }
 }

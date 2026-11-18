@@ -215,3 +215,37 @@ function local_jedomi_upgrade_custom_service_url(): void {
     }
     set_config('custom_url_rule_upgraded', 1, 'local_jedomi');
 }
+
+/**
+ * Give the custom service its own feature switches (1.6.3), and save the defaults of the new settings.
+ *
+ * Up to 1.6.2 a feature of the custom service was on while its model was saved. Each switch that is not saved yet starts
+ * on when that was the case (images with an image model, audio with an audio model, voice with a voice model and a
+ * voice), so a configured site keeps every feature it had; documents, new in 1.6.3, start off. The custom max tokens
+ * start on the default when they are empty: half the context window of the chat model when it is known, otherwise the
+ * Jedomi default (the value they already meant), and the AI request timeout and the row
+ * limit of the web chat get their defaults when not saved. Values already saved are kept, the Datacurso switches are
+ * never touched, and the step can run again.
+ *
+ * @return void
+ */
+function local_jedomi_upgrade_custom_feature_switches(): void {
+    $saved = static fn(string $name): bool => trim((string) get_config('local_jedomi', $name)) !== '';
+    $defaults = [
+        'custom_files_enabled' => $saved('custom_vision_model') ? '1' : '0',
+        'custom_audio_enabled' => $saved('custom_audio_model') ? '1' : '0',
+        'custom_voice_enabled' => $saved('custom_speech_model') && $saved('custom_speech_voice') ? '1' : '0',
+        'custom_documents_enabled' => '0',
+        'ai_timeout' => (string) \local_jedomi\ai\client::DEFAULT_TIMEOUT,
+        'sql_row_limit_web' => (string) \local_jedomi\local\query_runner::CHANNEL_LIMITS['web'][0],
+    ];
+    foreach ($defaults as $name => $value) {
+        if (get_config('local_jedomi', $name) === false) {
+            set_config($name, $value, 'local_jedomi');
+        }
+    }
+    if (!$saved('custom_max_tokens')) {
+        $window = \local_jedomi\ai\ai_service::get_custom_context_window();
+        set_config('custom_max_tokens', (string) \local_jedomi\ai\ai_service::default_custom_max_tokens($window), 'local_jedomi');
+    }
+}

@@ -23,7 +23,9 @@
  *
  * A successful verification lists the ids of the models of the service under its message and offers them as
  * suggestions (one datalist) in the model fields, which stay free text. The ids come from an external service, so
- * they are only ever set as text or as DOM properties, never as HTML.
+ * they are only ever set as text or as DOM properties, never as HTML. It also fills an empty max tokens field with the
+ * default, and shows the context length the service tells for the chosen chat model as the placeholder of the context
+ * window field ("16384 (auto)"), updated while the chat model changes.
  *
  * @module     local_jedomi/admin/custom_service
  * @copyright  2026 Jedomi Project
@@ -122,6 +124,23 @@ const showModels = async(region, ids, total) => {
 };
 
 /**
+ * Show the context length detected for the chosen chat model as the placeholder of the context window field.
+ *
+ * @param {HTMLFormElement} form Form.
+ * @param {Map<string, number>|null} lengths Context length of each model id of the last verification on the page; null
+ *     before any, so the placeholder of the saved settings stays.
+ */
+const showContextWindow = async(form, lengths) => {
+    const field = form.querySelector('input[name="custom_context_window"]');
+    const model = form.querySelector('input[name="custom_model"]');
+    if (!field || !model || lengths === null) {
+        return;
+    }
+    const tokens = lengths.get(model.value.trim());
+    field.placeholder = tokens ? await getString('custom_context_window_detected', 'local_jedomi', tokens) : '';
+};
+
+/**
  * Show the result of a verification.
  *
  * @param {HTMLElement|null} region Result region.
@@ -144,13 +163,20 @@ const showStatus = (region, message, type) => {
 
 /**
  * Wire the verification button of the form.
+ *
+ * @param {Object} config Configuration.
+ * @param {number} config.defaultmaxtokens Default max tokens, set in an empty max tokens field after a verification; at
+ *     most half the context window detected for the chosen chat model, so it fits next to the conversation.
+ * @param {number} config.minmaxtokens Smallest max tokens accepted.
  */
-export const init = () => {
+export const init = ({defaultmaxtokens, minmaxtokens = 0} = {}) => {
     const button = document.querySelector('[name="custom_verify"]');
     const form = button?.closest('form');
     if (!form) {
         return;
     }
+    let lengths = null;
+    form.querySelector('input[name="custom_model"]')?.addEventListener('input', () => showContextWindow(form, lengths));
     const verified = form.querySelector('input[type="hidden"][name="custom_verified"]');
     const region = form.querySelector('[data-region="local_jedomi-custom-verify-status"]');
     const url = form.querySelector('[name="custom_gateway_url"]');
@@ -187,6 +213,18 @@ export const init = () => {
             const ids = result.valid ? result.models : [];
             suggestModels(form, ids);
             await showModels(region, ids, result.modeltotal);
+            if (result.valid) {
+                lengths = new Map((result.contextlengths || []).map(({id, tokens}) => [id, tokens]));
+                const maxtokens = form.querySelector('input[name="custom_max_tokens"]');
+                if (maxtokens && !maxtokens.value.trim() && defaultmaxtokens) {
+                    const typed = parseInt(form.querySelector('input[name="custom_context_window"]')?.value || '', 10);
+                    const model = form.querySelector('input[name="custom_model"]')?.value.trim() || '';
+                    const window = typed > 0 ? typed : (lengths.get(model) || 0);
+                    const fitting = window > 0 ? Math.max(minmaxtokens, Math.min(defaultmaxtokens, Math.floor(window / 2))) : 0;
+                    maxtokens.value = String(fitting || defaultmaxtokens);
+                }
+                await showContextWindow(form, lengths);
+            }
         } catch (error) {
             setVerified('0');
             showStatus(region, error.message || '', 'danger');

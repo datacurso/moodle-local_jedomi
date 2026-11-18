@@ -346,4 +346,29 @@ final class custom_api_test extends \advanced_testcase {
         }
         $this->resetDebugging();
     }
+
+    /**
+     * The model list also gives the context length of each model when the service tells it: max_model_len (vLLM),
+     * context_length (OpenRouter, LM Studio), context_window (Groq) or max_context_length. Other values are ignored.
+     *
+     * @return void
+     */
+    public function test_model_list_gives_the_context_lengths(): void {
+        $this->curl->enqueue(json_encode(['object' => 'list', 'data' => [
+            ['id' => 'vllm', 'max_model_len' => 32768],
+            ['id' => 'openrouter', 'context_length' => 131072],
+            ['id' => 'groq', 'context_window' => 8192],
+            ['id' => 'lmstudio', 'max_context_length' => '4096'],
+            ['id' => 'none'],
+            ['id' => 'negative', 'max_model_len' => -1],
+            ['id' => 'text', 'context_length' => 'large'],
+            ['id' => 'float', 'context_length' => 1.5],
+        ]]));
+        $api = new custom_api('https://api.example.com/v1', 'sk-test', false);
+
+        $result = $api->list_models_with_context(5);
+
+        $this->assertSame(['vllm', 'openrouter', 'groq', 'lmstudio', 'none', 'negative', 'text', 'float'], $result['ids']);
+        $this->assertSame(['vllm' => 32768, 'openrouter' => 131072, 'groq' => 8192, 'lmstudio' => 4096], $result['context']);
+    }
 }

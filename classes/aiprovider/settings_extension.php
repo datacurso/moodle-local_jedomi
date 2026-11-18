@@ -18,6 +18,7 @@ namespace local_jedomi\aiprovider;
 
 use aiprovider_datacurso\local\plugin_settings_extension;
 use local_jedomi\ai\ai_service;
+use local_jedomi\ai\client;
 use local_jedomi\ai\custom_endpoint;
 use local_jedomi\ai\model_settings;
 
@@ -31,8 +32,15 @@ use local_jedomi\ai\model_settings;
  *
  * The custom service has an address, an API key (never sent back to the page: an empty field keeps the saved key),
  * "Allow HTTP for local models" and a "Verify connection" button, which calls local_jedomi_verify_custom_service.
- * Its model fields, free text with no catalogue, appear once the connection is verified (custom_verified), and saving
- * requires the address and key to be the last verified pair.
+ * Its fields appear once the connection is verified (custom_verified), and saving requires the address and key to be
+ * the last verified pair. They mirror the Datacurso ones: the chat model, then a switch per feature (images, documents,
+ * audio and voice) whose fields are shown, and required, only while it is on; then the max tokens and the context
+ * window. The model fields are free text with no catalogue. The custom service has its own switches
+ * (custom_files_enabled, custom_documents_enabled, custom_audio_enabled, custom_voice_enabled) instead of sharing the
+ * Datacurso ones, because each service keeps its own settings: a switch saved for one service never turns a feature of
+ * the other one on or off.
+ *
+ * The AI request timeout (ai_timeout) is shared by both services and shown for either of them, after their fields.
  *
  * The Datacurso fields: the chat model, the file and image switch with its vision model, the audio switch with its
  * audio model, the voice conversation switch with its speech model and voice, and the max tokens. The
@@ -68,15 +76,28 @@ class settings_extension implements plugin_settings_extension {
     /** @var string Pattern of a model or voice id of the custom service: no spaces or markup, up to 200 characters. */
     public const CUSTOM_ID_PATTERN = '~^[A-Za-z0-9._:/@+\-]{1,200}\z~';
 
-    /** @var string[] Model fields of the custom service, shown once the connection is verified. */
-    private const CUSTOM_MODEL_FIELDS = [
-        'custom_model',
-        'custom_vision_model',
-        'custom_audio_model',
-        'custom_speech_model',
-        'custom_speech_voice',
-        'custom_max_tokens',
+    /**
+     * @var array<string, array{label: string, fields: string[]}> Feature switches of the custom service, in the order of
+     *      the page: the string of their label column and the fields shown, and required, only while they are on.
+     */
+    private const CUSTOM_SWITCHES = [
+        'custom_files_enabled' => ['label' => 'custom_files_processing', 'fields' => ['custom_vision_model']],
+        'custom_documents_enabled' => ['label' => 'custom_documents_processing', 'fields' => ['custom_docservice_url']],
+        'custom_audio_enabled' => ['label' => 'custom_audio_processing', 'fields' => ['custom_audio_model']],
+        'custom_voice_enabled' => [
+            'label' => 'custom_voice_conversation',
+            'fields' => ['custom_speech_model', 'custom_speech_voice'],
+        ],
     ];
+
+    /** @var string[] Model and voice id fields of the custom service that hang from a switch. */
+    private const CUSTOM_ID_FIELDS = ['custom_vision_model', 'custom_audio_model', 'custom_speech_model', 'custom_speech_voice'];
+
+    /** @var int Smallest context window accepted, in tokens. */
+    public const MIN_CONTEXT_WINDOW = 1024;
+
+    /** @var int Largest context window accepted, in tokens. */
+    public const MAX_CONTEXT_WINDOW = 10000000;
 
     /**
      * Add the chat model, the feature switches with their models and the max tokens fields.
@@ -110,7 +131,16 @@ class settings_extension implements plugin_settings_extension {
             }
         }
 
-        $PAGE->requires->js_call_amd('local_jedomi/admin/custom_service', 'init');
+        // Shared by both services.
+        $mform->addElement('text', 'ai_timeout', get_string('ai_timeout', self::COMPONENT), ['size' => 6]);
+        $mform->setType('ai_timeout', PARAM_RAW_TRIMMED);
+        $mform->setDefault('ai_timeout', client::DEFAULT_TIMEOUT);
+        $mform->addHelpButton('ai_timeout', 'ai_timeout', self::COMPONENT);
+
+        $PAGE->requires->js_call_amd('local_jedomi/admin/custom_service', 'init', [[
+            'defaultmaxtokens' => model_settings::DEFAULT_MAX_TOKENS,
+            'minmaxtokens' => model_settings::MIN_MAX_TOKENS,
+        ]]);
     }
 
     /**
@@ -145,7 +175,8 @@ class settings_extension implements plugin_settings_extension {
 
     /**
      * Add the fields of the custom service: address, key, HTTP for local models, the verification button and its
-     * result, and the model fields, which are shown once the connection is verified.
+     * result, and, shown once the connection is verified, the chat model, the feature switches with their fields, the
+     * max tokens and the context window.
      *
      * The key field is never filled from the saved value: it shows a placeholder when a key is saved.
      *
@@ -185,21 +216,51 @@ class settings_extension implements plugin_settings_extension {
         $mform->addElement('hidden', 'custom_verified', 0);
         $mform->setType('custom_verified', PARAM_INT);
 
-        foreach (ai_service::CUSTOM_MODEL_SETTINGS as $field) {
-            $mform->addElement('text', $field, get_string($field, self::COMPONENT), ['size' => 40]);
-            $mform->setType($field, PARAM_RAW_TRIMMED);
-            $mform->addHelpButton($field, $field, self::COMPONENT);
+        $before = self::element_names($mform);
+        self::add_custom_text($mform, 'custom_model', 40);
+        foreach (self::CUSTOM_SWITCHES as $switch => $info) {
+            $mform->addElement(
+                'advcheckbox',
+                $switch,
+                get_string($info['label'], self::COMPONENT),
+                get_string($switch, self::COMPONENT)
+            );
+            $mform->setType($switch, PARAM_BOOL);
+            $mform->addHelpButton($switch, $switch, self::COMPONENT);
+            foreach ($info['fields'] as $field) {
+                self::add_custom_text($mform, $field, $field === 'custom_docservice_url' ? 60 : 40);
+                $mform->hideIf($field, $switch, 'notchecked');
+            }
         }
-        $mform->addElement('text', 'custom_speech_voice', get_string('custom_speech_voice', self::COMPONENT), ['size' => 20]);
-        $mform->setType('custom_speech_voice', PARAM_RAW_TRIMMED);
-        $mform->addHelpButton('custom_speech_voice', 'custom_speech_voice', self::COMPONENT);
-        $mform->addElement('text', 'custom_max_tokens', get_string('custom_max_tokens', self::COMPONENT), ['size' => 10]);
-        $mform->setType('custom_max_tokens', PARAM_RAW_TRIMMED);
-        $mform->addHelpButton('custom_max_tokens', 'max_tokens', self::COMPONENT);
+        $mform->getElement('custom_docservice_url')->updateAttributes(['placeholder' => 'https://docs.example.com']);
+        self::add_custom_text($mform, 'custom_max_tokens', 10);
+        $default = ai_service::default_custom_max_tokens(ai_service::get_custom_context_window());
+        $mform->setDefault('custom_max_tokens', (string) $default);
+        $detected = ai_service::get_detected_context_window(ai_service::get_custom_model(model_settings::CAPABILITY_CHAT));
+        self::add_custom_text($mform, 'custom_context_window', 10);
+        if ($detected > 0) {
+            $mform->getElement('custom_context_window')->updateAttributes([
+                'placeholder' => get_string('custom_context_window_detected', self::COMPONENT, $detected),
+            ]);
+        }
 
-        foreach (self::CUSTOM_MODEL_FIELDS as $field) {
+        foreach (array_diff(self::element_names($mform), $before) as $field) {
             $mform->hideIf($field, 'custom_verified', 'neq', '1');
         }
+    }
+
+    /**
+     * Add a free-text field of the custom service with its help button.
+     *
+     * @param \MoodleQuickForm $mform Form to add the field to.
+     * @param string $field Field name; also the string of its label and help.
+     * @param int $size Size of the field.
+     * @return void
+     */
+    private static function add_custom_text(\MoodleQuickForm $mform, string $field, int $size): void {
+        $mform->addElement('text', $field, get_string($field, self::COMPONENT), ['size' => $size]);
+        $mform->setType($field, PARAM_RAW_TRIMMED);
+        $mform->addHelpButton($field, $field, self::COMPONENT);
     }
 
     /**
@@ -247,7 +308,9 @@ class settings_extension implements plugin_settings_extension {
             'speech_model' => $speechmodel,
         ] + $voices + [
             'max_tokens' => model_settings::get_configured_max_tokens(),
-        ] + self::get_custom_data();
+        ] + self::get_custom_data() + [
+            'ai_timeout' => client::configured_timeout(),
+        ];
     }
 
     /**
@@ -266,7 +329,22 @@ class settings_extension implements plugin_settings_extension {
             $data[$field] = ai_service::get_custom_model($capability);
         }
         $data['custom_speech_voice'] = ai_service::get_custom_voice();
-        $data['custom_max_tokens'] = trim((string) get_config(self::COMPONENT, 'custom_max_tokens'));
+        // A switch never saved (a site configured before 1.6.3) shows on while its model is saved, as the runtime does.
+        $vision = $data['custom_vision_model'] !== '';
+        $audio = $data['custom_audio_model'] !== '';
+        $data['custom_files_enabled'] = (int) model_settings::is_switch_on('custom_files_enabled', $vision);
+        $data['custom_audio_enabled'] = (int) model_settings::is_switch_on('custom_audio_enabled', $audio);
+        $data['custom_voice_enabled'] = (int) model_settings::is_switch_on(
+            'custom_voice_enabled',
+            $data['custom_speech_model'] !== '' && $data['custom_speech_voice'] !== ''
+        );
+        $data['custom_documents_enabled'] = (int) model_settings::is_switch_on('custom_documents_enabled', false);
+        $data['custom_docservice_url'] = ai_service::get_docservice_url();
+        $maxtokens = trim((string) get_config(self::COMPONENT, 'custom_max_tokens'));
+        $data['custom_max_tokens'] = $maxtokens !== ''
+            ? $maxtokens
+            : (string) ai_service::default_custom_max_tokens(ai_service::get_custom_context_window());
+        $data['custom_context_window'] = trim((string) get_config(self::COMPONENT, 'custom_context_window'));
         return $data;
     }
 
@@ -278,9 +356,28 @@ class settings_extension implements plugin_settings_extension {
      * @return array<string, string> Error messages keyed by element name; empty when valid.
      */
     public function validate(array $data): array {
-        return self::submitted_service($data) === ai_service::CUSTOM
+        $errors = self::submitted_service($data) === ai_service::CUSTOM
             ? self::validate_custom($data)
             : self::validate_datacurso($data);
+        // Shared by both services; a submission without it (an older caller) keeps the saved value.
+        if (array_key_exists('ai_timeout', $data) && self::parse_timeout($data['ai_timeout']) === null) {
+            $errors['ai_timeout'] = get_string('error_invalid_ai_timeout', self::COMPONENT);
+        }
+        return $errors;
+    }
+
+    /**
+     * AI request timeout of a submission.
+     *
+     * @param mixed $value Submitted value.
+     * @return int|null Seconds, or null when it is not a whole number within the accepted range.
+     */
+    private static function parse_timeout($value): ?int {
+        $value = trim((string) $value);
+        if (!preg_match('/^\d+$/', $value) || (int) $value < client::MIN_TIMEOUT || (int) $value > client::MAX_TIMEOUT) {
+            return null;
+        }
+        return (int) $value;
     }
 
     /**
@@ -344,27 +441,98 @@ class settings_extension implements plugin_settings_extension {
         }
 
         $errors = [];
-        $values = [];
-        $fields = ['custom_model', 'custom_vision_model', 'custom_audio_model', 'custom_speech_model', 'custom_speech_voice'];
-        foreach ($fields as $field) {
-            $values[$field] = trim((string) ($data[$field] ?? ''));
-            if ($values[$field] !== '' && !preg_match(self::CUSTOM_ID_PATTERN, $values[$field])) {
-                $errors[$field] = get_string('error_custom_model_invalid', self::COMPONENT);
+        $model = trim((string) ($data['custom_model'] ?? ''));
+        if ($model === '') {
+            $errors['custom_model'] = get_string('error_custom_model_required', self::COMPONENT);
+        } else if (!preg_match(self::CUSTOM_ID_PATTERN, $model)) {
+            $errors['custom_model'] = get_string('error_custom_model_invalid', self::COMPONENT);
+        }
+
+        // Only the fields of a switch that is on are checked, and they are then required.
+        foreach (self::CUSTOM_SWITCHES as $switch => $info) {
+            if (empty($data[$switch])) {
+                continue;
+            }
+            foreach ($info['fields'] as $field) {
+                if ($field === 'custom_docservice_url') {
+                    $errors += self::validate_docservice_url($data);
+                    continue;
+                }
+                $value = trim((string) ($data[$field] ?? ''));
+                if ($value === '') {
+                    $errors[$field] = get_string(
+                        $field === 'custom_speech_voice' ? 'error_custom_voice_required' : 'error_custom_model_required_switch',
+                        self::COMPONENT
+                    );
+                } else if (!preg_match(self::CUSTOM_ID_PATTERN, $value)) {
+                    $errors[$field] = get_string('error_custom_model_invalid', self::COMPONENT);
+                }
             }
         }
-        if ($values['custom_model'] === '') {
-            $errors['custom_model'] = get_string('error_custom_model_required', self::COMPONENT);
+        if (!empty($data['custom_voice_enabled']) && empty($data['custom_audio_enabled'])) {
+            // What the user says is transcribed by the audio model.
+            $errors = ['custom_voice_enabled' => get_string('error_voice_requires_audio', self::COMPONENT)]
+                + array_diff_key($errors, array_flip(['custom_speech_model', 'custom_speech_voice']));
         }
-        if ($values['custom_speech_model'] !== '' && $values['custom_audio_model'] === '') {
-            $errors['custom_speech_model'] = get_string('error_voice_requires_audio', self::COMPONENT);
-        } else if ($values['custom_speech_model'] !== '' && $values['custom_speech_voice'] === '') {
-            $errors['custom_speech_voice'] = get_string('error_custom_voice_required', self::COMPONENT);
+        if (!empty($data['custom_documents_enabled']) && empty($data['custom_files_enabled'])) {
+            // The pages of a PDF are read by the vision model.
+            $errors = ['custom_documents_enabled' => get_string('error_documents_require_vision', self::COMPONENT)]
+                + array_diff_key($errors, ['custom_docservice_url' => true]);
         }
+
         $maxtokens = trim((string) ($data['custom_max_tokens'] ?? ''));
         if ($maxtokens !== '' && !preg_match('/^-?\d+$/', $maxtokens)) {
             $errors['custom_max_tokens'] = get_string('error_invalid_max_tokens', self::COMPONENT);
         }
+        $window = trim((string) ($data['custom_context_window'] ?? ''));
+        if (
+            $window !== '' && (!preg_match('/^\d+$/', $window) || (int) $window < self::MIN_CONTEXT_WINDOW
+                || (int) $window > self::MAX_CONTEXT_WINDOW)
+        ) {
+            $errors['custom_context_window'] = get_string('error_invalid_context_window', self::COMPONENT);
+        }
+        if (!isset($errors['custom_max_tokens']) && !isset($errors['custom_context_window']) && !isset($errors['custom_model'])) {
+            // The answer must fit in the window: the typed one, or the one detected for the chat model.
+            $window = $window !== '' ? (int) $window : ai_service::get_detected_context_window($model);
+            if ($window > 0 && self::custom_max_tokens($maxtokens, $window) >= $window) {
+                $errors['custom_max_tokens'] = get_string('error_max_tokens_exceed_context', self::COMPONENT, $window);
+            }
+        }
         return $errors;
+    }
+
+    /**
+     * Validate the address of the document service: required while documents are on, with the policy of the address of
+     * the custom service.
+     *
+     * @param array $data Submitted form data.
+     * @return array Error messages keyed by element name; empty when valid.
+     */
+    private static function validate_docservice_url(array $data): array {
+        $url = ai_service::normalise_docservice_url((string) ($data['custom_docservice_url'] ?? ''));
+        if ($url === '') {
+            return ['custom_docservice_url' => get_string('error_docservice_url_required', self::COMPONENT)];
+        }
+        $refused = custom_endpoint::check($url, !empty($data['custom_allow_http']));
+        if ($refused !== null) {
+            return ['custom_docservice_url' => get_string('custom_verify_' . $refused, self::COMPONENT)];
+        }
+        return [];
+    }
+
+    /**
+     * Max tokens of the custom service as they are saved: clamped to the accepted range; when empty, the default that
+     * fits the context window ({@see ai_service::default_custom_max_tokens()}).
+     *
+     * @param string $value Submitted value, already checked to be a whole number or empty.
+     * @param int $window Context window of the submission, in tokens; 0 when it is not known.
+     * @return int
+     */
+    private static function custom_max_tokens(string $value, int $window): int {
+        if ($value === '') {
+            return ai_service::default_custom_max_tokens($window);
+        }
+        return min(model_settings::MAX_MAX_TOKENS, max(model_settings::MIN_MAX_TOKENS, (int) $value));
     }
 
     /**
@@ -383,6 +551,10 @@ class settings_extension implements plugin_settings_extension {
             self::save_custom($data);
         } else {
             self::save_datacurso($data);
+        }
+        $timeout = property_exists($data, 'ai_timeout') ? self::parse_timeout($data->ai_timeout) : null;
+        if ($timeout !== null) {
+            self::save_value('ai_timeout', (string) $timeout);
         }
     }
 
@@ -432,14 +604,27 @@ class settings_extension implements plugin_settings_extension {
         self::save_value('custom_gateway_url', $url);
         self::save_secret('custom_api_key', ai_service::effective_key($url, (string) ($data->custom_api_key ?? '')) ?? '');
         self::save_value('custom_allow_http', empty($data->custom_allow_http) ? '0' : '1');
-        foreach (array_merge(array_values(ai_service::CUSTOM_MODEL_SETTINGS), ['custom_speech_voice']) as $field) {
-            self::save_value($field, trim((string) ($data->{$field} ?? '')));
+        self::save_value('custom_model', trim((string) ($data->custom_model ?? '')));
+        foreach (array_keys(self::CUSTOM_SWITCHES) as $switch) {
+            self::save_value($switch, empty($data->{$switch}) ? '0' : '1');
         }
-        $maxtokens = trim((string) ($data->custom_max_tokens ?? ''));
-        if ($maxtokens !== '') {
-            $maxtokens = (string) min(model_settings::MAX_MAX_TOKENS, max(model_settings::MIN_MAX_TOKENS, (int) $maxtokens));
+        // A model behind a switch that is off was not checked: it is kept for later only when it is a valid id.
+        foreach (self::CUSTOM_ID_FIELDS as $field) {
+            $value = trim((string) ($data->{$field} ?? ''));
+            self::save_value($field, preg_match(self::CUSTOM_ID_PATTERN, $value) ? $value : '');
         }
-        self::save_value('custom_max_tokens', $maxtokens);
+        $docservice = ai_service::normalise_docservice_url((string) ($data->custom_docservice_url ?? ''));
+        if ($docservice !== '' && custom_endpoint::check($docservice, !empty($data->custom_allow_http)) !== null) {
+            $docservice = '';
+        }
+        self::save_value('custom_docservice_url', $docservice);
+        $window = trim((string) ($data->custom_context_window ?? ''));
+        $window = preg_match('/^\d+$/', $window) && (int) $window > 0 ? (string) (int) $window : '';
+        self::save_value('custom_context_window', $window);
+        $known = $window !== '' ? (int) $window
+            : ai_service::get_detected_context_window(trim((string) ($data->custom_model ?? '')));
+        $maxtokens = self::custom_max_tokens(trim((string) ($data->custom_max_tokens ?? '')), $known);
+        self::save_value('custom_max_tokens', (string) $maxtokens);
     }
 
     /**

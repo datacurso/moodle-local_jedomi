@@ -271,4 +271,39 @@ final class verify_custom_service_test extends \advanced_testcase {
         $this->assertSame('moodle/site:config', $function->capabilities);
         $this->assertTrue((bool) $function->loginrequired);
     }
+
+    /**
+     * The context lengths the service tells are returned for the returned model ids and kept for the settings, so the
+     * context window of the chosen chat model is known without typing it.
+     *
+     * @return void
+     */
+    public function test_context_lengths_are_returned_and_kept(): void {
+        $this->curl->enqueue(json_encode(['object' => 'list', 'data' => [
+            ['id' => 'b', 'max_model_len' => 16384],
+            ['id' => 'a', 'context_length' => 131072],
+            ['id' => 'bad id', 'context_length' => 999],
+            ['id' => 'c'],
+        ]]));
+
+        $result = $this->call('https://203.0.113.10/v1');
+
+        $this->assertSame([['id' => 'a', 'tokens' => 131072], ['id' => 'b', 'tokens' => 16384]], $result['contextlengths']);
+        $this->assertSame(['a' => 131072, 'b' => 16384], json_decode(get_config('local_jedomi', 'custom_context_lengths'), true));
+    }
+
+    /**
+     * A failed verification returns no context lengths and keeps the ones of the last verification.
+     *
+     * @return void
+     */
+    public function test_failed_verification_keeps_the_context_lengths(): void {
+        set_config('custom_context_lengths', json_encode(['a' => 4096]), 'local_jedomi');
+        $this->curl->enqueue('{"error":"x"}', 500);
+
+        $result = $this->call('https://203.0.113.10/v1');
+
+        $this->assertSame([], $result['contextlengths']);
+        $this->assertSame(['a' => 4096], json_decode(get_config('local_jedomi', 'custom_context_lengths'), true));
+    }
 }

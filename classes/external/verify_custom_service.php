@@ -35,6 +35,9 @@ use local_jedomi\aiprovider\settings_extension;
  * and key are remembered as verified (a keyed fingerprint, never the values), which saving the custom service
  * requires. The ids of the listed models come back as suggestions for the model fields: only ids the form accepts
  * (settings_extension::CUSTOM_ID_PATTERN), without repetitions, sorted and at most MAX_MODELS, with their total.
+ * When the service tells the context length of its models (max_model_len of vLLM, context_length, context_window),
+ * those of the returned ids come back too and are kept (custom_context_lengths), so the context window of the chosen
+ * chat model is known without typing it.
  *
  * Only administrators who can change the site configuration may call it, with the session key (AJAX). The address
  * follows {@see custom_endpoint}; the request has a short timeout and never follows redirects, and each
@@ -103,18 +106,26 @@ class verify_custom_service extends external_api {
         }
 
         try {
-            $models = (new custom_api($url, $key, $params['allowhttp']))->list_models(self::TIMEOUT);
+            $list = (new custom_api($url, $key, $params['allowhttp']))->list_models_with_context(self::TIMEOUT);
         } catch (\moodle_exception $e) {
             return self::failure($e);
         }
         ai_service::remember_verified($url, $key);
-        $ids = array_values(array_unique(array_filter(
-            $models,
+        $valid = array_values(array_unique(array_filter(
+            $list['ids'],
             static fn(string $id): bool => (bool) preg_match(settings_extension::CUSTOM_ID_PATTERN, $id)
         )));
-        sort($ids, SORT_STRING);
-        return ['models' => array_slice($ids, 0, self::MAX_MODELS), 'modeltotal' => count($ids)]
-            + self::result('ok', count($models));
+        sort($valid, SORT_STRING);
+        $ids = array_slice($valid, 0, self::MAX_MODELS);
+        $lengths = array_intersect_key($list['context'], array_flip($ids));
+        ksort($lengths, SORT_STRING);
+        ai_service::remember_context_lengths($lengths);
+        $contextlengths = [];
+        foreach ($lengths as $id => $tokens) {
+            $contextlengths[] = ['id' => (string) $id, 'tokens' => $tokens];
+        }
+        return ['models' => $ids, 'modeltotal' => count($valid), 'contextlengths' => $contextlengths]
+            + self::result('ok', count($list['ids']));
     }
 
     /**
@@ -133,6 +144,13 @@ class verify_custom_service extends external_api {
                 'Ids of the listed models the model fields accept, sorted, at most ' . self::MAX_MODELS
             ),
             'modeltotal' => new external_value(PARAM_INT, 'Number of listed models the model fields accept'),
+            'contextlengths' => new external_multiple_structure(
+                new external_single_structure([
+                    'id' => new external_value(PARAM_RAW, 'Id of a returned model'),
+                    'tokens' => new external_value(PARAM_INT, 'Context length the service tells for it, in tokens'),
+                ]),
+                'Context lengths the service tells for the returned models, sorted by id'
+            ),
         ]);
     }
 
@@ -171,6 +189,7 @@ class verify_custom_service extends external_api {
             'modelcount' => $reason === 'ok' ? $number : 0,
             'models' => [],
             'modeltotal' => 0,
+            'contextlengths' => [],
         ];
     }
 

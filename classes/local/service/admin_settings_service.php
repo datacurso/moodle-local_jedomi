@@ -46,13 +46,14 @@ class admin_settings_service {
     /**
      * Settings of the General tab.
      *
-     * @return array{spt_secret: string}
+     * @return array{spt_secret: string, profiler_slow_ms: int, profiler_retention_days: int, sql_row_limit_web: int}
      */
     public static function get_general_settings(): array {
         return [
             'spt_secret' => (string) (get_config('local_jedomi', 'spt_secret') ?: ''),
             'profiler_slow_ms' => \local_jedomi\agent\query_profiler::slow_threshold_ms(),
             'profiler_retention_days' => \local_jedomi\agent\query_profiler::retention_days(),
+            'sql_row_limit_web' => \local_jedomi\local\query_runner::web_row_limit(),
         ];
     }
 
@@ -62,15 +63,29 @@ class admin_settings_service {
      * @param string $sptsecret Shared secret used to sign session tokens.
      * @param int|null $slowms Slow query threshold in milliseconds; null keeps the current value.
      * @param int|null $retentiondays Days the profiler records are kept; null keeps the current value.
+     * @param int|null $sqlrowlimitweb Rows a query of the web chat returns at most, kept within the accepted range; null
+     *        keeps the current value.
      * @return void
      */
-    public static function save_general_settings(string $sptsecret, ?int $slowms = null, ?int $retentiondays = null): void {
+    public static function save_general_settings(
+        string $sptsecret,
+        ?int $slowms = null,
+        ?int $retentiondays = null,
+        ?int $sqlrowlimitweb = null
+    ): void {
         set_config('spt_secret', $sptsecret, 'local_jedomi');
         if ($slowms !== null) {
             set_config('profiler_slow_ms', max(1, $slowms), 'local_jedomi');
         }
         if ($retentiondays !== null) {
             set_config('profiler_retention_days', max(1, $retentiondays), 'local_jedomi');
+        }
+        if ($sqlrowlimitweb !== null) {
+            $limit = min(
+                \local_jedomi\local\query_runner::WEB_ROW_LIMIT_MAX,
+                max(\local_jedomi\local\query_runner::WEB_ROW_LIMIT_MIN, $sqlrowlimitweb)
+            );
+            set_config('sql_row_limit_web', $limit, 'local_jedomi');
         }
         \local_jedomi\event\settings_updated::create_for_tab('general')->trigger();
     }

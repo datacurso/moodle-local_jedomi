@@ -144,6 +144,11 @@ class provider implements
             'files' => 'privacy:metadata:jedomi_custom_ai_service:files',
         ], 'privacy:metadata:jedomi_custom_ai_service');
 
+        // Only with the custom AI service and its documents on: the PDF files go to its document service.
+        $collection->add_external_location_link('jedomi_custom_document_service', [
+            'files' => 'privacy:metadata:jedomi_custom_document_service:files',
+        ], 'privacy:metadata:jedomi_custom_document_service');
+
         $collection->add_external_location_link('telegram', [
             'chatid' => 'privacy:metadata:telegram:chatid',
             'messages' => 'privacy:metadata:telegram:messages',
