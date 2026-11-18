@@ -140,6 +140,31 @@ final class resolve_action_test extends \advanced_testcase {
     }
 
     /**
+     * RISK-003: through the web service a site administrator cannot approve a write held by the agent of another user,
+     * but may cancel it.
+     */
+    public function test_administrator_cannot_approve_a_write_held_by_the_agent_of_another_user(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $creator = $this->getDataGenerator()->create_user();
+        $agentid = $this->create_agent((int) $creator->id);
+        $pending = pending_action_service::hold((int) $creator->id, 'delete_agent', ['id' => $agentid], $agentid);
+        $this->setAdminUser();
+
+        try {
+            $this->resolve($pending['id'], true, $this->keyword());
+            $this->fail('An administrator must not approve the held write of another creator');
+        } catch (\moodle_exception $e) {
+            $this->assertSame('pending_action_not_found', $e->errorcode);
+        }
+        $this->assertNotNull(agent_manager::get_agent($agentid));
+
+        $this->assertSame('cancelled', $this->resolve($pending['id'], false)['status']);
+        $this->assertFalse($DB->record_exists(pending_action_service::TABLE, ['id' => $pending['id']]));
+        $this->assertNotNull(agent_manager::get_agent($agentid));
+    }
+
+    /**
      * MDL-UNIT-062: an action past its validity is rejected and not run.
      * A3: an expired action is rejected, removed and not run.
      * MDL-INT-046: an expired action is rejected with its message.

@@ -532,5 +532,16 @@ function xmldb_local_jedomi_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2026111800, 'local', 'jedomi');
     }
 
+    if ($oldversion < 2026111900) {
+        // The writes a scheduled run already attempted are kept across its retries, so a retry never repeats them
+        // (RES-003).
+        $table = new xmldb_table('local_jedomi_agents');
+        $field = new xmldb_field('runwrites', XMLDB_TYPE_TEXT, null, null, null, null, null, 'approvedwrites');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+        upgrade_plugin_savepoint(true, 2026111900, 'local', 'jedomi');
+    }
+
     return true;
 }

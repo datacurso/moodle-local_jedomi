@@ -33,6 +33,20 @@ use local_jedomi\local\service\pending_action_service;
  * rejects it in the Jedomi web chat. Going over a cap stops the run (write_cap_exceeded). Each write is logged without
  * its content and notify_creator() sends the creator a summary of the run.
  *
+ * The parameters of a web service write are validated as Moodle validates them before anything else (R1): the scope is
+ * checked on the validated parameters, a write is held or run with exactly those parameters, and a write Moodle would
+ * reject returns its validation error without being held. Other writes (agent management, administration) are never
+ * approved, so they are always held without a scope check.
+ *
+ * Every approved write that reaches execution counts toward the caps, also when it fails or throws after it was applied
+ * (RES-006). The writes a scheduled run attempts are kept on the agent (agent_manager::get_run_writes()) before they run
+ * and until a run succeeds, with their outcome: true when it succeeded, false when it failed cleanly (an error result),
+ * null when it is unknown (it threw, or the process died before the outcome was kept). In a retry of a failed run
+ * (RES-003) a write with the same function and validated parameters is skipped when it succeeded (the AI is told it was
+ * already made), runs again when it failed cleanly, and is held for the creator when its outcome is unknown. The writes of
+ * the failed attempts count toward the caps of the retry. When the kept writes are corrupt, every write of the run is
+ * held (REL-002).
+ *
  * @package    local_jedomi
  * @copyright  2026 Jedomi Project
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
@@ -68,6 +82,15 @@ class write_guard {
     /** @var bool Whether a cap stopped the run. */
     private bool $stopped = false;
 
+    /** @var array[] Writes of the scheduled run, from its failed attempts and this one: f, ok and r. */
+    private array $runwrites = [];
+
+    /** @var string[] Outcome of the writes of the failed attempts of the run, by fingerprint: done, unknown or failed. */
+    private array $previous = [];
+
+    /** @var bool Whether the writes kept for the run are corrupt, so every write is held. */
+    private bool $corrupt = false;
+
     /**
      * Guard of a run of an agent.
      *
@@ -79,6 +102,23 @@ class write_guard {
         $this->agent = $agent;
         $this->approved = agent_manager::approved_writes($agent);
         $this->scope = new write_scope($agent);
+        $runwrites = empty($agent->id) ? [] : agent_manager::get_run_writes((int) $agent->id);
+        if ($runwrites === null) {
+            $this->corrupt = true;
+            $this->log('WARNING: the writes kept for the run are unreadable; every write of this run is held');
+            return;
+        }
+        $this->runwrites = $runwrites;
+        $rank = ['failed' => 0, 'unknown' => 1, 'done' => 2];
+        foreach ($this->runwrites as $write) {
+            $ok = $write['ok'] ?? null;
+            $outcome = $ok === true ? 'done' : ($ok === false ? 'failed' : 'unknown');
+            $known = $this->previous[$write['f']] ?? 'failed';
+            $this->previous[$write['f']] = $rank[$outcome] >= $rank[$known] ? $outcome : $known;
+            foreach ((array) ($write['r'] ?? []) as $userid) {
+                $this->recipients[(int) $userid] = (int) $userid;
+            }
+        }
     }
 
     /**
@@ -86,7 +126,9 @@ class write_guard {
      *
      * @param string $tool Tool name as the model called it.
      * @param array $args Tool arguments (with the real values).
-     * @param callable $execute Runs the tool and returns its result: function(): string.
+     * @param callable $execute Runs the tool and returns its result: function(?array $args = null): string. An approved
+     *     web service write is run with the canonical arguments whose params are the validated parameters that were
+     *     checked; any other call gets no arguments and runs as the model asked.
      * @return string Tool result for the AI.
      * @throws write_cap_exceeded When this approved write would exceed a cap of the run, or too many writes are held.
      */
@@ -98,11 +140,26 @@ class write_guard {
         }
 
         $function = $tool === 'ws_execute' ? (string) $args['wsname'] : '';
+        if ($function !== '') {
+            // Validate first, check second, execute what was checked (R1): Moodle coerces the parameters (a float or a
+            // boolean becomes an integer), so the scope is checked on the parameters Moodle will use, and those are the
+            // ones held or run.
+            $validated = self::validate($function, $args['params'] ?? null);
+            if (is_string($validated)) {
+                $this->log("write {$function} rejected (invalid parameters)");
+                return $validated;
+            }
+            $args['params'] = $validated;
+        }
+        if ($this->corrupt) {
+            return $this->hold($tool, $args, 'writes of the run unreadable');
+        }
         if ($function === '' || !in_array($function, $this->approved, true)) {
+            // Every other write (agent management, administration, functions not approved) is held, never checked.
             return $this->hold($tool, $args, 'not approved');
         }
-        $params = tool\ws_tool::decode_params($args['params'] ?? null);
-        $scope = $params === null ? ['status' => write_scope::UNKNOWN, 'recipients' => []] : $this->scope->check($params);
+        $params = $args['params'];
+        $scope = $this->scope->check($params);
         if ($scope['status'] === write_scope::OUT) {
             $this->blocked[] = ['function' => $function];
             $this->log("write {$function} rejected (outside the agent scope)");
@@ -116,22 +173,121 @@ class write_guard {
             return $this->hold($tool, $args, 'scope not verified');
         }
 
+        $fingerprint = self::fingerprint($function, $params);
+        $previous = $this->previous[$fingerprint] ?? null;
+        if ($previous === 'unknown') {
+            // A failed attempt may have applied it: the creator decides (RES-003).
+            return $this->hold($tool, $args, 'outcome of a previous attempt unknown');
+        }
+        if ($previous === 'done') {
+            // A failed attempt of this run already made it: a retry never repeats a write (RES-003).
+            $this->log("approved write {$function} skipped (already made by a failed attempt of this run)");
+            return json_encode([
+                'status' => 'already_done',
+                'tool' => $tool,
+                'detail' => get_string('agent_detail_already_done', 'local_jedomi'),
+            ]);
+        }
+
         $recipients = $this->recipients;
         foreach ($scope['recipients'] as $userid) {
             $recipients[$userid] = $userid;
         }
-        if (count($this->done) + 1 > self::MAX_WRITES_PER_RUN || count($recipients) > self::MAX_RECIPIENTS_PER_RUN) {
+        if (count($this->runwrites) + 1 > self::MAX_WRITES_PER_RUN || count($recipients) > self::MAX_RECIPIENTS_PER_RUN) {
             $this->stop("write {$function} over the caps of the run");
         }
         $this->recipients = $recipients;
 
-        $result = $execute();
+        // The write is recorded before it runs, so it counts and is never repeated whatever happens while it runs.
+        $index = count($this->runwrites);
+        $this->runwrites[] = ['f' => $fingerprint, 'ok' => null, 'r' => array_values($scope['recipients'])];
+        $this->save_run_writes();
+        $this->done[] = ['function' => $function, 'recipients' => count($scope['recipients']), 'ok' => false];
+        try {
+            $result = $execute($args);
+        } catch (\Throwable $e) {
+            // It may have been applied before it threw: its outcome stays unknown (null), so a retry holds it.
+            $this->log("approved write {$function} failed (" . get_class($e) . ', ' . count($scope['recipients'])
+                . ' recipients)');
+            throw $e;
+        }
         $decoded = json_decode($result, true);
         $ok = is_array($decoded) && !isset($decoded['error']);
-        $this->done[] = ['function' => $function, 'recipients' => count($scope['recipients']), 'ok' => $ok];
+        $this->done[array_key_last($this->done)]['ok'] = $ok;
+        $this->runwrites[$index]['ok'] = $ok;
+        $this->save_run_writes();
         $this->log("approved write {$function} " . ($ok ? 'ran' : 'failed') . ' (' . count($scope['recipients'])
             . ' recipients)');
         return $result;
+    }
+
+    /**
+     * Fingerprint of an approved write: its function and its validated parameters with their keys sorted (R3). The
+     * values are kept as Moodle validated them, so texts that differ only in white space are different writes, and a
+     * cohort given by idnumber and by id gives two fingerprints.
+     *
+     * @param string $function Web service function.
+     * @param array $params Its validated parameters.
+     * @return string
+     */
+    private static function fingerprint(string $function, array $params): string {
+        return hash('sha256', $function . '|' . json_encode(self::sorted($params), JSON_UNESCAPED_UNICODE));
+    }
+
+    /**
+     * A value with the keys of its objects sorted, recursively; lists keep their order.
+     *
+     * @param mixed $value Value.
+     * @return mixed
+     */
+    private static function sorted($value) {
+        if (!is_array($value)) {
+            return $value;
+        }
+        if (!array_is_list($value)) {
+            ksort($value);
+        }
+        return array_map([self::class, 'sorted'], $value);
+    }
+
+    /**
+     * Parameters of a web service write as Moodle validates them (ws_runner::validate(), the validation of the call),
+     * or the error result for the AI when they are not valid.
+     *
+     * @param string $function Web service function.
+     * @param mixed $raw Value of the params argument.
+     * @return array|string Validated parameters, or the JSON error result.
+     */
+    private static function validate(string $function, $raw) {
+        $params = tool\ws_tool::decode_params($raw);
+        try {
+            if ($params === null) {
+                throw new \moodle_exception('ws_invalid_parameters', 'local_jedomi', '', 'params must be a JSON object');
+            }
+            $method = \local_jedomi\local\ws_runner::resolve($function);
+            $missing = \local_jedomi\local\ws_runner::missing_parameter($method, $params);
+            if ($missing !== null) {
+                throw new \moodle_exception('missingparam', 'error', '', $missing);
+            }
+            return \local_jedomi\local\ws_runner::validate($method, $params);
+        } catch (\moodle_exception $e) {
+            $detail = $e->getMessage();
+            if (!empty($e->debuginfo) && strpos($detail, (string) $e->debuginfo) === false) {
+                $detail .= ' | debug: ' . $e->debuginfo;
+            }
+            return json_encode(['error' => $detail, 'function' => $function]);
+        }
+    }
+
+    /**
+     * Keep the writes of the run on the agent, for its retries.
+     *
+     * @return void
+     */
+    private function save_run_writes(): void {
+        if (!empty($this->agent->id)) {
+            agent_manager::set_run_writes((int) $this->agent->id, $this->runwrites);
+        }
     }
 
     /**

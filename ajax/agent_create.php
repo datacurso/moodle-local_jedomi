@@ -89,7 +89,8 @@ try {
                 exit;
             }
 
-            agent_manager::update_agent($id, $data);
+            // Only the owner may add approved writes (RISK-003).
+            agent_manager::update_agent($id, $data, (int) $USER->id);
 
             echo json_encode([
                 'ok' => true,

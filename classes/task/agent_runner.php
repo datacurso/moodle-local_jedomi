@@ -433,9 +433,9 @@ class agent_runner extends \core\task\scheduled_task {
                         $toolresult = $guard->run(
                             (string) $step['tool'],
                             is_array($stepargs) ? $stepargs : [],
-                            static fn(): string => \local_jedomi\agent\tool_executor::execute(
+                            static fn(?array $checked = null): string => \local_jedomi\agent\tool_executor::execute(
                                 (string) $step['tool'],
-                                (string) $step['arguments']
+                                $checked === null ? (string) $step['arguments'] : json_encode($checked, JSON_UNESCAPED_UNICODE)
                             )
                         );
                         $decoded = json_decode($toolresult, true);
@@ -634,7 +634,11 @@ class agent_runner extends \core\task\scheduled_task {
                                     $toolresult = $guard->run(
                                         $funcname,
                                         is_array($decodedargs) ? $decodedargs : [],
-                                        static fn(): string => \local_jedomi\agent\tool_executor::execute($funcname, $funcargs)
+                                        // An approved write runs with the validated arguments the guard checked.
+                                        static fn(?array $checked = null): string => \local_jedomi\agent\tool_executor::execute(
+                                            $funcname,
+                                            $checked === null ? $funcargs : json_encode($checked, JSON_UNESCAPED_UNICODE)
+                                        )
                                     );
                                 } else {
                                     // A tool that is not offered to the role of the creator is rejected, never held.

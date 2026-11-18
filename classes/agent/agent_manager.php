@@ -563,12 +563,18 @@ class agent_manager {
      * Only the fields present in $data are updated. The timemodified field
      * is always set to the current timestamp.
      *
+     * Only the owner approves writes for an agent (RISK-003): when a user acts on the agent of someone else, the approved
+     * writes may be kept or reduced, never extended, and an agent given to another owner starts without approved writes
+     * unless that new owner is the one who approves them. Without an acting user (an internal update) nothing is checked.
+     *
      * @param  int       $id
      * @param  \stdClass $data Fields to update.
+     * @param  int       $actorid User who makes the change; 0 for an internal update.
      * @return void
-     * @throws \moodle_exception When the agent would not be valid, see validation_error().
+     * @throws \moodle_exception When the agent would not be valid, see validation_error(), or agent_approve_writes_owner_only
+     *     when a user other than the owner adds approved writes.
      */
-    public static function update_agent(int $id, \stdClass $data): void {
+    public static function update_agent(int $id, \stdClass $data, int $actorid = 0): void {
         global $DB;
 
         $record = new \stdClass();
@@ -602,14 +608,26 @@ class agent_manager {
             $enabling = property_exists($record, 'enabled') && (int) $record->enabled === 1 && (int) $current->enabled === 0;
             $rescheduled = property_exists($record, 'schedule_cron') && $record->schedule_cron !== $current->schedule_cron;
             $newowner = property_exists($record, 'userid') && (int) $record->userid !== (int) $current->userid;
-            if ($newowner && !property_exists($record, 'approvedwrites')) {
-                // The writes were approved for the permissions of the previous owner.
+            $owner = (int) ($record->userid ?? $current->userid);
+            if ($newowner && (!property_exists($record, 'approvedwrites') || ($actorid > 0 && $actorid !== $owner))) {
+                // The writes were approved for the permissions of the previous owner, and only the new owner approves
+                // writes for themselves.
                 $record->approvedwrites = null;
+            } else if ($actorid > 0 && $actorid !== $owner && property_exists($record, 'approvedwrites')) {
+                $added = array_diff(self::approved_writes($record), self::approved_writes($current));
+                if (!empty($added)) {
+                    throw new \moodle_exception('agent_approve_writes_owner_only', 'local_jedomi');
+                }
             }
             if ($enabling) {
-                // A re-enabled agent starts again without the failures that disabled it.
+                // A re-enabled agent starts again without the failures that disabled it, nor the writes of their run.
                 $record->failcount = 0;
                 $record->lasterror = null;
+                $record->runwrites = null;
+            }
+            if (self::definition_changed($current, $record)) {
+                // A retry must not skip writes made by a different instruction, schedule or approval (RES-002).
+                $record->runwrites = null;
             }
             if ($enabling || $rescheduled || $newowner) {
                 $record->nextrun = self::calculate_next_run(
@@ -624,6 +642,23 @@ class agent_manager {
         $DB->update_record('local_jedomi_agents', $record);
         $ownerid = (int) ($record->userid ?? ($current->userid ?? 0));
         self::agent_event(\local_jedomi\event\agent_updated::class, $id, $ownerid);
+    }
+
+    /**
+     * Whether an update changes the instruction, the schedule or the approved writes of an agent.
+     *
+     * @param \stdClass $current Agent record as stored.
+     * @param \stdClass $record Fields to update.
+     * @return bool
+     */
+    private static function definition_changed(\stdClass $current, \stdClass $record): bool {
+        foreach (['prompt', 'schedule_cron'] as $field) {
+            if (property_exists($record, $field) && (string) $record->$field !== (string) $current->$field) {
+                return true;
+            }
+        }
+        return property_exists($record, 'approvedwrites')
+            && self::approved_writes($record) !== self::approved_writes($current);
     }
 
     // ... ── CRUD: Delete ─────────────────────────────────────────────────────────
@@ -722,6 +757,8 @@ class agent_manager {
             $update->failcount = 0;
             $update->lastresult = $detail;
             $update->lasterror = null;
+            // The run is over: the next one starts without the writes of this one (see write_guard).
+            $update->runwrites = null;
         } else {
             $update->failcount = (int) $agent->failcount + 1;
             $update->nextrun = $now + self::failure_backoff($update->failcount);
@@ -737,6 +774,48 @@ class agent_manager {
             self::agent_event(\local_jedomi\event\agent_run::class, $id, (int) $agent->userid, ['success' => $success]);
         }
         return $disabled;
+    }
+
+    /**
+     * Writes the current scheduled run of an agent already attempted, in its failed attempts and in the attempt running
+     * now (RES-003). They are kept until a run succeeds, so the retries of a failed run do not repeat them.
+     *
+     * A stored value that is not a list of writes with a fingerprint is corrupt and gives null, so the caller can fail
+     * closed (REL-002) instead of starting the run as if nothing had been written.
+     *
+     * @param int $id Agent id.
+     * @return array[]|null Each with f (fingerprint), ok (true, false, or null when its outcome is unknown) and r
+     *     (recipient ids); null when the stored writes are corrupt.
+     */
+    public static function get_run_writes(int $id): ?array {
+        global $DB;
+        $stored = (string) $DB->get_field('local_jedomi_agents', 'runwrites', ['id' => $id]);
+        if (trim($stored) === '') {
+            return [];
+        }
+        $writes = json_decode($stored, true);
+        if (!is_array($writes) || !array_is_list($writes)) {
+            return null;
+        }
+        foreach ($writes as $write) {
+            if (!is_array($write) || !is_string($write['f'] ?? null) || $write['f'] === '' || !is_array($write['r'] ?? [])) {
+                return null;
+            }
+        }
+        return $writes;
+    }
+
+    /**
+     * Save the writes the current scheduled run of an agent attempted, see get_run_writes().
+     *
+     * @param int $id Agent id.
+     * @param array[] $writes Each with f (fingerprint), ok (true, false or null) and r (recipient ids).
+     * @return void
+     */
+    public static function set_run_writes(int $id, array $writes): void {
+        global $DB;
+        $value = empty($writes) ? null : json_encode(array_values($writes));
+        $DB->set_field('local_jedomi_agents', 'runwrites', $value, ['id' => $id]);
     }
 
     /**

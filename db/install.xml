@@ -85,6 +85,7 @@
                 <FIELD NAME="lastresult" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="Answer of the last successful run"/>
                 <FIELD NAME="lasterror" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="Reason of the last failed run, empty after a success"/>
                 <FIELD NAME="approvedwrites" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="JSON list of the web service functions that write and that the agent may run without confirmation; empty for none"/>
+                <FIELD NAME="runwrites" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="JSON list of the writes the current scheduled run already attempted (fingerprint, outcome, recipients), kept across its retries and cleared when a run succeeds"/>
                 <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
                 <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
             </FIELDS>

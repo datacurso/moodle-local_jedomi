@@ -1428,4 +1428,100 @@ final class agent_manager_test extends \advanced_testcase {
         agent_manager::update_agent($id, (object) ['approvedwrites' => []]);
         $this->assertSame([], agent_manager::approved_writes(agent_manager::get_agent($id)));
     }
+
+    /**
+     * RISK-003: only the owner of an agent approves writes for it. A manager or an administrator who manages the agent of
+     * another user may keep or remove its approved writes, never add one; the owner may.
+     */
+    public function test_only_the_owner_approves_writes_for_an_agent(): void {
+        $users = $this->create_rank_users();
+        $send = 'core_message_send_instant_messages';
+        $both = [$send, 'core_group_add_group_members'];
+        set_config('ws_allowlist_teacher', json_encode($both), 'local_jedomi');
+        $id = agent_manager::create_agent((object) ['userid' => $users['teacher'], 'prompt' => 'Remind',
+            'schedule_cron' => '0 8 * * *', 'approvedwrites' => [$send]]);
+
+        foreach (['managera', 'admin'] as $label) {
+            try {
+                agent_manager::update_agent($id, (object) ['approvedwrites' => $both], $users[$label]);
+                $this->fail("The {$label} must not approve writes for the agent of the teacher");
+            } catch (\moodle_exception $e) {
+                $this->assertSame('agent_approve_writes_owner_only', $e->errorcode);
+            }
+            $this->assertSame([$send], agent_manager::approved_writes(agent_manager::get_agent($id)));
+        }
+
+        agent_manager::update_agent($id, (object) ['approvedwrites' => [$send], 'prompt' => 'Remind again'], $users['managera']);
+        $this->assertSame('Remind again', agent_manager::get_agent($id)->prompt);
+        agent_manager::update_agent($id, (object) ['approvedwrites' => []], $users['managera']);
+        $this->assertSame([], agent_manager::approved_writes(agent_manager::get_agent($id)));
+
+        agent_manager::update_agent($id, (object) ['approvedwrites' => $both], $users['teacher']);
+        $this->assertEqualsCanonicalizing($both, agent_manager::approved_writes(agent_manager::get_agent($id)));
+    }
+
+    /**
+     * RISK-003: an agent given to another owner starts without approved writes, unless the new owner is the one who
+     * approves them.
+     */
+    public function test_new_owner_never_gets_writes_approved_by_someone_else(): void {
+        $send = 'core_message_send_instant_messages';
+        $course = $this->getDataGenerator()->create_course();
+        $teacher = $this->getDataGenerator()->create_and_enrol($course, 'editingteacher');
+        $colleague = $this->getDataGenerator()->create_and_enrol($course, 'editingteacher');
+        set_config('ws_allowlist_teacher', json_encode([$send]), 'local_jedomi');
+        $base = ['userid' => (int) $teacher->id, 'prompt' => 'Remind', 'schedule_cron' => '0 8 * * *', 'approvedwrites' => [$send]];
+        $byadmin = agent_manager::create_agent((object) $base);
+        $byowner = agent_manager::create_agent((object) $base);
+
+        agent_manager::update_agent(
+            $byadmin,
+            (object) ['userid' => (int) $colleague->id, 'approvedwrites' => [$send]],
+            (int) get_admin()->id
+        );
+        agent_manager::update_agent(
+            $byowner,
+            (object) ['userid' => (int) $colleague->id, 'approvedwrites' => [$send]],
+            (int) $colleague->id
+        );
+
+        $this->assertSame([], agent_manager::approved_writes(agent_manager::get_agent($byadmin)));
+        $this->assertSame([$send], agent_manager::approved_writes(agent_manager::get_agent($byowner)));
+    }
+
+    /**
+     * RES-002 (C4): editing the instruction, the schedule or the approved writes of an agent, or enabling it again,
+     * clears the writes kept for its current run, so a retry never skips writes of a different agent definition.
+     * Changing only its name keeps them.
+     */
+    public function test_editing_or_enabling_an_agent_clears_the_writes_of_its_run(): void {
+        global $DB;
+        $send = 'core_message_send_instant_messages';
+        $course = $this->getDataGenerator()->create_course();
+        $teacher = $this->getDataGenerator()->create_and_enrol($course, 'editingteacher');
+        set_config('ws_allowlist_teacher', json_encode([$send]), 'local_jedomi');
+        $id = agent_manager::create_agent((object) ['userid' => (int) $teacher->id, 'prompt' => 'Remind',
+            'schedule_cron' => '0 8 * * *']);
+        $writes = [['f' => str_repeat('a', 64), 'ok' => true, 'r' => []]];
+        $edits = [
+            'instruction' => ['prompt' => 'Remind again'],
+            'schedule' => ['schedule_cron' => '0 9 * * *'],
+            'approved writes' => ['approvedwrites' => [$send]],
+        ];
+
+        foreach ($edits as $label => $edit) {
+            agent_manager::set_run_writes($id, $writes);
+            agent_manager::update_agent($id, (object) $edit);
+            $this->assertSame([], agent_manager::get_run_writes($id), $label);
+        }
+
+        agent_manager::set_run_writes($id, $writes);
+        agent_manager::update_agent($id, (object) ['name' => 'Renamed']);
+        $this->assertSame($writes, agent_manager::get_run_writes($id), 'A new name keeps them');
+
+        agent_manager::update_agent($id, (object) ['enabled' => 0]);
+        $this->assertSame($writes, agent_manager::get_run_writes($id), 'Disabling keeps them');
+        agent_manager::update_agent($id, (object) ['enabled' => 1]);
+        $this->assertNull($DB->get_field('local_jedomi_agents', 'runwrites', ['id' => $id]), 'Enabling again clears them');
+    }
 }

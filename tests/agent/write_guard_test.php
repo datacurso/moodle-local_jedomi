@@ -34,6 +34,9 @@ final class write_guard_test extends \advanced_testcase {
     /** @var int Calls of the spy executor. */
     private int $runs = 0;
 
+    /** @var array[] Arguments the guard passed to the spy executor, one entry per call (null: none passed). */
+    private array $executed = [];
+
     /**
      * Course agent of a teacher that may send messages without confirmation.
      *
@@ -55,8 +58,9 @@ final class write_guard_test extends \advanced_testcase {
      * @return callable
      */
     private function spy(): callable {
-        return function (): string {
+        return function (?array $args = null): string {
             $this->runs++;
+            $this->executed[] = $args;
             return json_encode(['success' => true, 'data' => []]);
         };
     }
@@ -242,6 +246,361 @@ final class write_guard_test extends \advanced_testcase {
 
         $this->assertFalse((new write_guard($agent))->notify_creator());
         $this->assertSame(0, $sink->count());
+    }
+
+    /**
+     * Store an agent record so the guard can keep the writes of its run, and return it with its id.
+     *
+     * @param \stdClass $agent Agent fields.
+     * @return \stdClass
+     */
+    private function store(\stdClass $agent): \stdClass {
+        global $DB;
+        $record = clone $agent;
+        unset($record->id);
+        $record->prompt = 'Remind the students';
+        $record->schedule_cron = '0 8 * * *';
+        $record->enabled = 1;
+        $record->nextrun = time() - 60;
+        $record->failcount = 0;
+        $record->timecreated = time();
+        $record->timemodified = time();
+        $record->id = (int) $DB->insert_record('local_jedomi_agents', $record);
+        return $record;
+    }
+
+    /**
+     * JEDOMI-SEC-014 (RE-POC-2c): an approved write of a site agent whose scope cannot be tied to a concrete target (an
+     * injected category without a parent, or at the top level) is held for the creator instead of running; with a real
+     * parent category it runs.
+     */
+    public function test_site_agent_approved_write_without_a_concrete_target_is_held(): void {
+        $this->resetAfterTest();
+        $category = $this->getDataGenerator()->create_category();
+        $agent = (object) ['id' => 43, 'userid' => (int) get_admin()->id, 'name' => 'Site', 'context_type' => 'site',
+            'context_id' => null, 'approvedwrites' => json_encode(['core_course_create_categories'])];
+        $guard = new write_guard($agent);
+        $create = static fn(array $category): array => ['function' => 'core_course_create_categories',
+            'params' => ['categories' => [$category]]];
+
+        $noparent = json_decode($guard->run('call_webservice', $create(['name' => 'AUDIT-INJECTED']), $this->spy()), true);
+        $toplevel = json_decode($guard->run('call_webservice', $create(['name' => 'x', 'parent' => 0]), $this->spy()), true);
+
+        $this->assertSame('confirmation_required', $noparent['error']);
+        $this->assertSame('confirmation_required', $toplevel['error']);
+        $this->assertSame(0, $this->runs);
+        $this->assertSame(2, $this->count_pending());
+
+        $guard->run('call_webservice', $create(['name' => 'x', 'parent' => (int) $category->id]), $this->spy());
+        $this->assertSame(1, $this->runs);
+    }
+
+    /**
+     * RISK-001: the members of a cohort a write targets count toward the recipient cap of the run.
+     */
+    public function test_cohort_members_count_toward_the_recipient_cap(): void {
+        global $CFG;
+        require_once($CFG->dirroot . '/cohort/lib.php');
+        $this->resetAfterTest();
+        $gen = $this->getDataGenerator();
+        $course = $gen->create_course();
+        $cohort = $gen->create_cohort();
+        for ($i = 0; $i <= write_guard::MAX_RECIPIENTS_PER_RUN; $i++) {
+            $student = $gen->create_and_enrol($course, 'student');
+            cohort_add_member($cohort->id, $student->id);
+        }
+        $agent = (object) ['id' => 44, 'userid' => (int) get_admin()->id, 'name' => 'Site', 'context_type' => 'site',
+            'context_id' => null, 'approvedwrites' => json_encode(['core_cohort_add_cohort_members'])];
+        $guard = new write_guard($agent);
+
+        try {
+            $guard->run('ws_execute', ['wsname' => 'core_cohort_add_cohort_members', 'params' => ['members' => [[
+                'cohorttype' => ['type' => 'id', 'value' => (int) $cohort->id],
+                'usertype' => ['type' => 'username', 'value' => $student->username],
+            ]]]], $this->spy());
+            $this->fail('A write to more members than the recipient cap must stop the run');
+        } catch (write_cap_exceeded $e) {
+            $this->assertSame(0, $this->runs);
+        }
+    }
+
+    /**
+     * RES-006: a write that reached execution counts toward the cap of the run even when it fails with an exception
+     * after it was applied.
+     */
+    public function test_a_write_that_fails_while_running_counts_toward_the_cap(): void {
+        $this->resetAfterTest();
+        [$agent, , $teacher] = $this->course_agent();
+        $guard = new write_guard($agent);
+        $failing = function (): string {
+            $this->runs++;
+            throw new \moodle_exception('generalexceptionmessage', 'error', '', 'Applied, then failed');
+        };
+        for ($i = 0; $i < write_guard::MAX_WRITES_PER_RUN; $i++) {
+            try {
+                $guard->run('ws_execute', $this->message_to([(int) $teacher->id]), $failing);
+                $this->fail('The failure of the write must reach the run');
+            } catch (\moodle_exception $e) {
+                $this->assertSame('generalexceptionmessage', $e->errorcode);
+            }
+        }
+
+        $this->assertCount(write_guard::MAX_WRITES_PER_RUN, $guard->get_done());
+        $this->assertFalse($guard->get_done()[0]['ok']);
+        $this->expectException(write_cap_exceeded::class);
+        $guard->run('ws_execute', $this->message_to([(int) $teacher->id]), $this->spy());
+    }
+
+    /**
+     * Run a callable and return what it threw, or null when it threw nothing.
+     *
+     * @param callable $call Callable to run.
+     * @return \Throwable|null
+     */
+    private function thrown(callable $call): ?\Throwable {
+        try {
+            $call();
+        } catch (\Throwable $e) {
+            return $e;
+        }
+        return null;
+    }
+
+    /**
+     * RES-003 (C2): a retry of a failed run (a new run before a successful one) skips only the writes a failed attempt
+     * made successfully. A write that failed cleanly (an error result) runs again and counts again; a write whose
+     * outcome is unknown (it threw, or the process died before its outcome was recorded) is held for the creator. After
+     * a successful run the writes run again.
+     */
+    public function test_a_retry_skips_only_the_writes_already_made_successfully(): void {
+        $this->resetAfterTest();
+        [$agent, $course, $teacher] = $this->course_agent();
+        $agent = $this->store($agent);
+        $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
+        $first = new write_guard($agent);
+        $first->run('ws_execute', $this->message_to([(int) $student->id]), $this->spy());
+        $first->run('ws_execute', $this->message_to([(int) $teacher->id]), function (): string {
+            $this->runs++;
+            return json_encode(['error' => 'invalid_parameter']);
+        });
+        $throwing = function (): string {
+            $this->runs++;
+            throw new \coding_exception('Applied, then failed');
+        };
+        $both = $this->message_to([(int) $student->id, (int) $teacher->id]);
+        $failure = $this->thrown(fn() => $first->run('ws_execute', $both, $throwing));
+        $this->assertInstanceOf(\coding_exception::class, $failure);
+        $this->assertSame(3, $this->runs);
+
+        $retry = new write_guard($agent);
+        $done = json_decode($retry->run('ws_execute', $this->message_to([(int) $student->id]), $this->spy()), true);
+        $rerun = json_decode($retry->run('ws_execute', $this->message_to([(int) $teacher->id]), $this->spy()), true);
+        $unknown = json_decode(
+            $retry->run('ws_execute', $this->message_to([(int) $student->id, (int) $teacher->id]), $this->spy()),
+            true
+        );
+
+        $this->assertSame('already_done', $done['status']);
+        $this->assertTrue($rerun['success'], 'A write that failed cleanly runs again');
+        $this->assertSame('confirmation_required', $unknown['error'], 'A write of unknown outcome waits for the creator');
+        $this->assertSame(4, $this->runs);
+        $this->assertSame(1, $this->count_pending());
+        $this->assertCount(4, agent_manager::get_run_writes((int) $agent->id), 'The write run again counts again');
+
+        agent_manager::mark_run((int) $agent->id, true, 'Done');
+        (new write_guard($agent))->run('ws_execute', $this->message_to([(int) $student->id]), $this->spy());
+        $this->assertSame(5, $this->runs, 'A new scheduled run starts without the writes of the previous one');
+    }
+
+    /**
+     * RES-003 (C2): a write recorded without an outcome (the process died while it ran) is held in the retry.
+     */
+    public function test_a_write_without_a_recorded_outcome_is_held_in_the_retry(): void {
+        $this->resetAfterTest();
+        [$agent, $course] = $this->course_agent();
+        $agent = $this->store($agent);
+        $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
+        $first = new write_guard($agent);
+        $first->run('ws_execute', $this->message_to([(int) $student->id]), $this->spy());
+        $writes = agent_manager::get_run_writes((int) $agent->id);
+        $writes[0]['ok'] = null;
+        agent_manager::set_run_writes((int) $agent->id, $writes);
+
+        $retry = new write_guard($agent);
+        $result = json_decode($retry->run('ws_execute', $this->message_to([(int) $student->id]), $this->spy()), true);
+
+        $this->assertSame('confirmation_required', $result['error']);
+        $this->assertSame(1, $this->runs);
+    }
+
+    /**
+     * REL-002 (C3): when the writes kept for the run are corrupt (not a JSON list, or rows without a fingerprint) the
+     * guard fails closed: every write of the run is held for the creator, none runs automatically.
+     */
+    public function test_corrupt_run_writes_hold_every_write(): void {
+        global $DB;
+        $this->resetAfterTest();
+        [$agent, $course] = $this->course_agent();
+        $agent = $this->store($agent);
+        $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
+
+        foreach (['not json', '{"f":"x"}', '[{"ok":true,"r":[]}]', '[5]'] as $stored) {
+            $DB->set_field('local_jedomi_agents', 'runwrites', $stored, ['id' => $agent->id]);
+            $guard = new write_guard($agent);
+            $result = json_decode($guard->run('ws_execute', $this->message_to([(int) $student->id]), $this->spy()), true);
+            $this->assertSame('confirmation_required', $result['error'], $stored);
+        }
+        $this->assertSame(0, $this->runs);
+    }
+
+    /**
+     * R3: the fingerprint is taken from the validated parameters with their keys sorted: an id written as text and as a
+     * number is the same write once Moodle validated it, and the order of the keys does not matter. Texts are kept as
+     * they are, so texts that differ only in white space are two different writes (RISK-004).
+     */
+    public function test_fingerprint_of_validated_parameters(): void {
+        $this->resetAfterTest();
+        [$agent, $course] = $this->course_agent();
+        $agent = $this->store($agent);
+        $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
+        $message = static fn($userid, string $text): array => ['wsname' => self::SEND, 'params' => ['messages' => [
+            ['text' => $text, 'touserid' => $userid],
+        ]]];
+        (new write_guard($agent))->run('ws_execute', $message((string) $student->id, 'Please submit'), $this->spy());
+
+        $retry = new write_guard($agent);
+        $same = json_decode($retry->run('ws_execute', ['wsname' => self::SEND, 'params' => json_encode(['messages' => [
+            ['touserid' => (int) $student->id, 'text' => 'Please submit'],
+        ]])], $this->spy()), true);
+        $spaces = json_decode($retry->run('ws_execute', $message((int) $student->id, 'Please  submit '), $this->spy()), true);
+
+        $this->assertSame('already_done', $same['status']);
+        $this->assertTrue($spaces['success'], 'A text with other white space is another write');
+        $this->assertSame(2, $this->runs);
+    }
+
+    /**
+     * RES-003: the writes made by the failed attempts of a run count toward the cap of its retry, so retrying never
+     * makes more writes than one run may make.
+     */
+    public function test_writes_of_a_failed_attempt_count_toward_the_cap_of_the_retry(): void {
+        $this->resetAfterTest();
+        [$agent, , $teacher] = $this->course_agent();
+        $agent = $this->store($agent);
+        $first = new write_guard($agent);
+        for ($i = 0; $i < write_guard::MAX_WRITES_PER_RUN; $i++) {
+            $first->run('ws_execute', ['wsname' => self::SEND, 'params' => json_encode(['messages' => [
+                ['touserid' => (int) $teacher->id, 'text' => 'Note ' . $i],
+            ]])], $this->spy());
+        }
+
+        $this->expectException(write_cap_exceeded::class);
+        (new write_guard($agent))->run('ws_execute', $this->message_to([(int) $teacher->id]), $this->spy());
+    }
+
+    /**
+     * FIX-002 and R3: "007" and "7" in an idnumber (a text for Moodle) are two writes, while a parent category written
+     * as "5" and as 5 is the same write, because Moodle validates it as an integer before the fingerprint is taken.
+     */
+    public function test_only_identifiers_written_as_text_match_numbers(): void {
+        $this->resetAfterTest();
+        $agent = $this->store((object) ['userid' => (int) get_admin()->id, 'name' => 'Site', 'context_type' => 'site',
+            'context_id' => null, 'approvedwrites' => json_encode(['core_course_create_categories'])]);
+        $parent = (int) $this->getDataGenerator()->create_category()->id;
+        $create = static fn($idnumber, $parentid): array => ['wsname' => 'core_course_create_categories',
+            'params' => ['categories' => [['name' => 'x', 'idnumber' => $idnumber, 'parent' => $parentid]]]];
+        (new write_guard($agent))->run('ws_execute', $create('007', (string) $parent), $this->spy());
+
+        $retry = new write_guard($agent);
+        $other = json_decode($retry->run('ws_execute', $create('7', (string) $parent), $this->spy()), true);
+        $same = json_decode($retry->run('ws_execute', $create('007', $parent), $this->spy()), true);
+
+        $this->assertTrue($other['success'], 'Another idnumber is another write');
+        $this->assertSame('already_done', $same['status'], 'The same parent written as a number is the same write');
+        $this->assertSame(2, $this->runs);
+    }
+
+    /**
+     * Agent of the site, or of a category, that may run some writes without confirmation.
+     *
+     * @param array $approved Approved write functions.
+     * @param \core_course_category|null $category Category of the agent; null for a site agent.
+     * @return \stdClass
+     */
+    private function agent_of(array $approved, ?\core_course_category $category = null): \stdClass {
+        return (object) ['id' => 45, 'userid' => (int) get_admin()->id, 'name' => 'Admin',
+            'context_type' => $category ? 'category' : 'site',
+            'context_id' => $category ? (int) \context_coursecat::instance($category->id)->id : null,
+            'approvedwrites' => json_encode($approved)];
+    }
+
+    /**
+     * R1 (RISK-001): the guard checks the parameters Moodle validates, not the raw ones. Identifiers written as a float
+     * or a boolean, which Moodle turns into integers, never run automatically: for a site agent and for a category agent
+     * updating a course outside its category the write is held, and nothing runs.
+     */
+    public function test_coerced_identifiers_never_run_automatically(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $gen = $this->getDataGenerator();
+        $category = $gen->create_category();
+        $outside = $gen->create_course();
+        $course = $gen->create_course(['category' => $category->id]);
+        $student = $gen->create_and_enrol($course, 'student');
+        $functions = ['core_course_update_courses', 'core_course_update_categories', 'core_role_assign_roles'];
+        $update = static fn($id): array => ['wsname' => 'core_course_update_courses',
+            'params' => ['courses' => [['id' => $id, 'categoryid' => (int) $category->id]]]];
+        $calls = [
+            'site: course 99.0' => [null, $update(99.0)],
+            'site: front page 1.0' => [null, $update(1.0)],
+            'site: true' => [null, $update(true)],
+            'site: category 99.0' => [null, ['wsname' => 'core_course_update_categories',
+                'params' => ['categories' => [['id' => 99.0, 'parent' => (int) $category->id]]]]],
+            'site: role 1.0' => [null, ['wsname' => 'core_role_assign_roles', 'params' => ['assignments' => [
+                ['roleid' => 1.0, 'userid' => (int) $student->id, 'contextid' => \context_system::instance()->id],
+            ]]]],
+            'category: course outside' => [$category, $update((float) $outside->id)],
+        ];
+
+        foreach ($calls as $label => [$agentcategory, $args]) {
+            $guard = new write_guard($this->agent_of($functions, $agentcategory));
+            $result = json_decode($guard->run('ws_execute', $args, $this->spy()), true);
+            $this->assertArrayHasKey('error', $result, $label);
+        }
+
+        $this->assertSame(0, $this->runs, 'Nothing runs');
+        $this->assertSame((int) $outside->category, (int) $DB->get_field('course', 'category', ['id' => $outside->id]));
+        $held = $DB->get_records(pending_action_service::TABLE);
+        $this->assertNotEmpty($held);
+        foreach ($held as $record) {
+            $this->assertStringNotContainsString('99.0', $record->argsjson, 'The held write keeps the validated parameters');
+        }
+    }
+
+    /**
+     * R1: a write runs with exactly the parameters the guard checked (validated by Moodle), and a write whose parameters
+     * Moodle rejects returns the validation error: it neither runs nor waits for approval.
+     */
+    public function test_writes_run_with_the_validated_parameters_and_invalid_ones_are_rejected(): void {
+        $this->resetAfterTest();
+        [$agent, $course] = $this->course_agent();
+        $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
+        $guard = new write_guard($agent);
+
+        $guard->run('ws_execute', ['wsname' => self::SEND, 'params' => json_encode(['messages' => [
+            ['touserid' => (string) $student->id, 'text' => 'Reminder'],
+        ]])], $this->spy());
+        $invalid = json_decode($guard->run('ws_execute', ['wsname' => self::SEND, 'params' => ['messages' => [
+            ['text' => 'No recipient'],
+        ]]], $this->spy()), true);
+
+        $this->assertSame(1, $this->runs);
+        $message = $this->executed[0]['params']['messages'][0];
+        $this->assertSame((int) $student->id, $message['touserid'], 'The id runs as the integer Moodle validated');
+        $this->assertSame(self::SEND, $this->executed[0]['wsname']);
+        $this->assertSame(self::SEND, $invalid['function']);
+        $this->assertStringContainsString('touserid', $invalid['error']);
+        $this->assertSame(0, $this->count_pending(), 'An invalid write is not held');
     }
 
     /**

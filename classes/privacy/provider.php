@@ -92,6 +92,7 @@ class provider implements
             'userid' => 'privacy:metadata:local_jedomi_agents:userid',
             'name' => 'privacy:metadata:local_jedomi_agents:name',
             'prompt' => 'privacy:metadata:local_jedomi_agents:prompt',
+            'runwrites' => 'privacy:metadata:local_jedomi_agents:runwrites',
             'schedule_cron' => 'privacy:metadata:local_jedomi_agents:schedule_cron',
             'lastresult' => 'privacy:metadata:local_jedomi_agents:lastresult',
             'lasterror' => 'privacy:metadata:local_jedomi_agents:lasterror',

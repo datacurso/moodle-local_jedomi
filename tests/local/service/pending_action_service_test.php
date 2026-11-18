@@ -389,4 +389,86 @@ final class pending_action_service_test extends \advanced_testcase {
         $DB->set_field(pending_action_service::TABLE, 'timecreated', time() - pending_action_service::AGENT_EXPIRY - 1, []);
         $this->assertSame(1, pending_action_service::purge_expired());
     }
+
+    /**
+     * Hold a write of a scheduled agent for its creator.
+     *
+     * @param int $creatorid Creator of the agent.
+     * @param int $agentid Agent id.
+     * @return int Pending action id.
+     */
+    private function hold_for_agent(int $creatorid, int $agentid): int {
+        return (int) pending_action_service::hold(
+            $creatorid,
+            'ws_execute',
+            ['wsname' => 'core_course_create_categories', 'params' => '{"categories":[{"name":"x"}]}'],
+            $agentid
+        )['id'];
+    }
+
+    /**
+     * Assert that resolving an action fails with an error code and keeps the action.
+     *
+     * @param int $id Pending action id.
+     * @param int $actorid User resolving it.
+     * @param bool $confirm Whether the user confirms it.
+     * @param string $errorcode Expected error code.
+     * @return void
+     */
+    private function assert_refused(int $id, int $actorid, bool $confirm, string $errorcode): void {
+        global $DB;
+        try {
+            pending_action_service::resolve($id, $actorid, $confirm);
+            $this->fail('The action must be refused');
+        } catch (\moodle_exception $e) {
+            $this->assertSame($errorcode, $e->errorcode);
+        }
+        $this->assertTrue($DB->record_exists(pending_action_service::TABLE, ['id' => $id]), 'The action is kept');
+    }
+
+    /**
+     * RISK-003: only the creator of an agent approves the writes it held. A site administrator may cancel them but never
+     * approve them on behalf of the creator, and any other user can do neither.
+     */
+    public function test_only_the_agent_creator_approves_its_held_writes(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $creator = $this->getDataGenerator()->create_user();
+        $other = $this->getDataGenerator()->create_user();
+        $agentid = (int) $DB->insert_record('local_jedomi_agents', (object) ['userid' => $creator->id, 'name' => 'Night watch',
+            'prompt' => 'p', 'schedule_cron' => '0 8 * * *', 'timecreated' => time(), 'timemodified' => time()]);
+        $id = $this->hold_for_agent((int) $creator->id, $agentid);
+
+        $this->assert_refused($id, (int) get_admin()->id, true, 'pending_action_not_found');
+        $this->assert_refused($id, (int) $other->id, true, 'pending_action_not_found');
+        $this->assert_refused($id, (int) $other->id, false, 'pending_action_not_found');
+
+        $result = pending_action_service::resolve($id, (int) get_admin()->id, false);
+        $this->assertSame(pending_action_service::STATUS_CANCELLED, $result['status']);
+        $this->assertFalse($DB->record_exists(pending_action_service::TABLE, ['id' => $id]));
+        $this->assertFalse($DB->record_exists('course_categories', ['name' => 'x']));
+    }
+
+    /**
+     * RISK-003: a write held by an agent that now belongs to another user, or that was deleted, is not approved by its
+     * former creator, who may still cancel it.
+     */
+    public function test_held_write_of_a_reassigned_or_deleted_agent_is_not_approved(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $creator = $this->getDataGenerator()->create_user();
+        $newowner = $this->getDataGenerator()->create_user();
+        $agentid = (int) $DB->insert_record('local_jedomi_agents', (object) ['userid' => $creator->id, 'name' => 'Night watch',
+            'prompt' => 'p', 'schedule_cron' => '0 8 * * *', 'timecreated' => time(), 'timemodified' => time()]);
+        $reassigned = $this->hold_for_agent((int) $creator->id, $agentid);
+        $deleted = $this->hold_for_agent((int) $creator->id, $agentid + 1000);
+        $DB->set_field('local_jedomi_agents', 'userid', $newowner->id, ['id' => $agentid]);
+
+        $this->assert_refused($reassigned, (int) $creator->id, true, 'pending_action_not_creator');
+        $this->assert_refused($reassigned, (int) $newowner->id, true, 'pending_action_not_found');
+        $this->assert_refused($deleted, (int) $creator->id, true, 'pending_action_not_creator');
+
+        $result = pending_action_service::resolve($reassigned, (int) $creator->id, false);
+        $this->assertSame(pending_action_service::STATUS_CANCELLED, $result['status']);
+    }
 }

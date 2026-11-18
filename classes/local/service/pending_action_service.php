@@ -352,19 +352,34 @@ class pending_action_service {
      * A critical action runs only when the confirmation keyword is received; without it the action
      * is rejected and kept, so the user can still confirm it with the keyword.
      *
+     * A write held by a scheduled agent is approved only by the creator of the agent (RISK-003): the user it was held for,
+     * while the agent still exists and still belongs to them. Nobody approves it on their behalf, whatever their rank;
+     * a site administrator may only cancel it. There is no delegation of this approval.
+     *
      * @param int $id Pending action id.
-     * @param int $userid User resolving it (must be its owner).
+     * @param int $userid User resolving it (must be its owner; a site administrator may also cancel a write held by an
+     *     agent).
      * @param bool $confirm True to run it, false to cancel it.
      * @param string $keyword Confirmation keyword typed by the user (critical actions).
      * @return array{status: string, message: string, sent: int, failed: int}
-     * @throws \moodle_exception pending_action_not_found, pending_action_expired or confirm_keyword_required.
+     * @throws \moodle_exception pending_action_not_found, pending_action_not_creator, pending_action_expired or
+     *     confirm_keyword_required.
      */
     public static function resolve(int $id, int $userid, bool $confirm, string $keyword = ''): array {
         global $DB;
 
-        $record = $DB->get_record(self::TABLE, ['id' => $id, 'userid' => $userid]);
-        if (!$record) {
+        $record = $DB->get_record(self::TABLE, ['id' => $id]);
+        $owner = $record && (int) $record->userid === $userid;
+        $admincancel = $record && !$confirm && !empty($record->agentid) && is_siteadmin($userid);
+        if (!$owner && !$admincancel) {
             throw new \moodle_exception('pending_action_not_found', 'local_jedomi');
+        }
+        if ($confirm && !empty($record->agentid)) {
+            $creatorid = $DB->get_field('local_jedomi_agents', 'userid', ['id' => (int) $record->agentid]);
+            if ($creatorid === false || (int) $creatorid !== $userid) {
+                // The agent was deleted or now belongs to someone else: its former creator cannot approve its writes.
+                throw new \moodle_exception('pending_action_not_creator', 'local_jedomi');
+            }
         }
 
         if (self::is_expired($record)) {
