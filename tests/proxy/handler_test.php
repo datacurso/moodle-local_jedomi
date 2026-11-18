@@ -2063,7 +2063,7 @@ final class handler_test extends \advanced_testcase {
         $this->assertSame(0, $DB->count_records(\local_jedomi\local\service\pending_action_service::TABLE));
         $toolmessage = $fake->calls[1]['messages'][2];
         $this->assertSame('tool', $toolmessage['role']);
-        $result = json_decode($toolmessage['content'], true);
+        $result = json_decode($this->untrusted_payload($toolmessage['content']), true);
         $this->assertSame((int) $teacher->id, $result['ran_as']);
         $this->assertSame(['q' => 'map'], $result['params']);
         $hook = \local_jedomi\fixtures\fake_tool_plugin::$lasthook;
@@ -2096,7 +2096,7 @@ final class handler_test extends \advanced_testcase {
 
         $offered = array_column(array_column($fake->calls[0]['tools'], 'function'), 'name');
         $this->assertNotContains('demo_report', $offered);
-        $result = json_decode($fake->calls[1]['messages'][2]['content'], true);
+        $result = json_decode($this->untrusted_payload($fake->calls[1]['messages'][2]['content']), true);
         $this->assertArrayNotHasKey('ran_as', $result);
         $this->assertStringContainsString('demo_report', $result['error']);
     }
