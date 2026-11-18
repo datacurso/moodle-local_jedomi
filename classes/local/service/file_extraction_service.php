@@ -203,6 +203,8 @@ class file_extraction_service {
     /**
      * Message for the chat model with the text of an attached file: the question, the file name and its text.
      *
+     * The name and the text of the file are untrusted data (JEDOMI-SEC-005, RISK-001), see {@see self::untrusted_text()}.
+     *
      * @param string $question Question of the user; without one, a summary is asked.
      * @param string $filename Name of the file.
      * @param string $text Text read from the file.
@@ -210,7 +212,37 @@ class file_extraction_service {
      */
     public static function compose_message(string $question, string $filename, string $text): string {
         $question = trim($question) !== '' ? trim($question) : get_string('analyze_file', 'local_jedomi');
-        return $question . "\n\n" . get_string('attached_file_info', 'local_jedomi', $filename) . "\n" . trim($text);
+        return $question . "\n\n" . self::untrusted_text($filename, $text);
+    }
+
+    /**
+     * Answer of extract_file.php: the fields read from the file plus untrusted_text, the only text the panel sends to
+     * the AI (RES-001).
+     *
+     * @param string $filename Name of the file.
+     * @param array $result Fields returned by {@see self::extract_upload()}.
+     * @return array
+     */
+    public static function extraction_response(string $filename, array $result): array {
+        return $result + ['untrusted_text' => self::untrusted_text($filename, (string) ($result['text'] ?? ''))];
+    }
+
+    /**
+     * Name and text of an attached file, between untrusted data markers (JEDOMI-SEC-005, SEC-JD-006, RISK-001).
+     *
+     * Whoever made the file is not the user, and also chose its name: the rule of the system message tells the AI never
+     * to follow instructions written inside the block, and markers written in the file are neutralised so it cannot
+     * close the block.
+     *
+     * @param string $filename Name of the file.
+     * @param string $text Text read from the file.
+     * @return string
+     */
+    public static function untrusted_text(string $filename, string $text): string {
+        return (new \local_jedomi\local\untrusted())->wrap(
+            'file',
+            get_string('attached_file_info', 'local_jedomi', $filename) . "\n" . trim($text)
+        );
     }
 
     /**

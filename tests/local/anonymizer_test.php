@@ -121,6 +121,29 @@ final class anonymizer_test extends \advanced_testcase {
     }
 
     /**
+     * REL-001: at the Strict level the untrusted data markers of an attachment keep their random id (a code mixing
+     * letters and digits), while the content between them is still anonymised and restored.
+     *
+     * @return void
+     */
+    public function test_untrusted_markers_are_kept_at_the_strict_level(): void {
+        $this->resetAfterTest();
+        $this->create_named_user();
+        $open = '<<<UNTRUSTED_DATA id=Ab12Cd34Ef56Gh78 source="file">>>';
+        $close = '<<<END_UNTRUSTED_DATA id=Ab12Cd34Ef56Gh78>>>';
+        $message = [['role' => 'user', 'content' => "Summarise it\n\n{$open}\nStudent ID-778899 is Ximena.\n{$close}"]];
+        $anonymizer = new anonymizer(anonymizer::LEVEL_STRICT);
+
+        $sent = $anonymizer->anonymize_messages($message)[0]['content'];
+
+        $this->assertStringContainsString("\n{$open}\n", $sent, 'The opening marker keeps its id');
+        $this->assertStringEndsWith("\n{$close}", $sent, 'The closing marker keeps its id');
+        $this->assertStringNotContainsString('778899', $sent);
+        $this->assertStringNotContainsString('Ximena', $sent);
+        $this->assertSame('Student ID-778899 is Ximena.', $anonymizer->restore('Student [id_1] is [person_1].'));
+    }
+
+    /**
      * MDL-CTR-011: the text of an attached file that already holds placeholder-shaped tokens (an export anonymised
      * before) reaches the AI with distinct tokens, so the answer gives back the original tokens and never turns them
      * into the real data of another placeholder; the real data of the file is still anonymised and restored.

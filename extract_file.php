@@ -80,4 +80,6 @@ try {
 } catch (\Throwable $e) {
     local_jedomi_extract_file_error(400, file_extraction_service::error_for($e));
 }
-echo json_encode($result, JSON_UNESCAPED_UNICODE);
+// The panel sends the name and the text of the file to the chat model between untrusted data markers (JEDOMI-SEC-005).
+$filename = clean_param((string) $upload['name'], PARAM_FILE);
+echo json_encode(file_extraction_service::extraction_response($filename, $result), JSON_UNESCAPED_UNICODE);

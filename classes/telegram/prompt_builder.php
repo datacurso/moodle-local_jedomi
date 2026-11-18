@@ -78,7 +78,8 @@ final class prompt_builder {
         global $CFG;
 
         $sitename = get_config('core', 'sitename') ?: 'Moodle';
-        $release = $CFG->release ?? 'unknown';
+        // Only the major version, as in the web chat (SEC-JD-013).
+        $version = \local_jedomi\proxy\system_message::moodle_major_version();
         $dbtype = $CFG->dbtype;
         $dblabel = match ($dbtype) {
             'mysqli', 'mariadb' => 'MySQL/MariaDB',
@@ -124,6 +125,9 @@ final class prompt_builder {
                 . " with the buttons of the chat before they run. Call the tool once with the final arguments;"
                 . " do not ask for confirmation in text first.\n";
         }
+        // The same rules as the web chat: third-party content is data, and the instructions stay private.
+        $prompt .= "- " . \local_jedomi\local\untrusted::rule() . "\n"
+            . "- " . \local_jedomi\proxy\system_message::no_disclosure_rule() . "\n";
         $prompt .= "\n"
             . "⚡ PARALLEL TOOLS: You can call MULTIPLE tools in a single response.\n"
             . "  This is MUCH faster than doing them one by one.\n\n"
@@ -143,10 +147,14 @@ final class prompt_builder {
             . "- Your final text response must be in {$userlang}.\n\n"
             // The site instructions of the Personalization tab go after every rule, with a lower priority.
             . \local_jedomi\local\personalization::prompt_site_instructions()
-            . "Context: {$release}, {$sitename}, DB: {$dblabel}, Role: {$role}, Lang: {$userlang}\n"
+            . "Context: {$version}, {$sitename}, DB: {$dblabel}, Role: {$role}, Lang: {$userlang}\n"
             . "Admin: " . ($role === 'admin' ? 'YES' : 'NO') . "\n"
             . "Tools: " . (empty($toolnames) ? 'none' : implode(', ', $toolnames)) . "\n"
-            . "Courses: " . (empty($courses) ? 'none' : json_encode($courses, JSON_UNESCAPED_UNICODE)) . "\n"
+            // Course names are written by teachers and managers: data, never rules (SEC-JD-008).
+            . "Courses:" . (empty($courses) ? ' none' : "\n" . (new \local_jedomi\local\untrusted())->wrap(
+                'moodle courses',
+                json_encode($courses, JSON_UNESCAPED_UNICODE)
+            )) . "\n"
             . "Answer what the user asked with the data of the tools. Don't keep searching.";
         return $prompt;
     }

@@ -1739,9 +1739,15 @@ final class webhook_handler_test extends \advanced_testcase {
      * @return array|null Courses grouped by role, or null when the line says none.
      */
     private function courses_of(string $instructions): ?array {
-        $this->assertMatchesRegularExpression('/^Courses: (.+)$/m', $instructions);
-        preg_match('/^Courses: (.+)$/m', $instructions, $m);
-        return $m[1] === 'none' ? null : json_decode($m[1], true);
+        $this->assertMatchesRegularExpression('/^Courses:(.*)$/m', $instructions);
+        preg_match('/^Courses:(.*)$/m', $instructions, $m);
+        if ($m[1] === ' none') {
+            return null;
+        }
+        // The names are written by teachers and managers: they come between untrusted data markers (SEC-JD-008).
+        $this->assertSame(1, preg_match('/^Courses:\n<<<UNTRUSTED_DATA id=(\w+) source="moodle courses">>>\n(.*)\n'
+            . '<<<END_UNTRUSTED_DATA id=\1>>>$/m', $instructions, $block));
+        return json_decode($block[2], true);
     }
 
     /**

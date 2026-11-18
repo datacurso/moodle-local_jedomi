@@ -1051,7 +1051,12 @@ define(['core/log', 'core/ajax', 'core/templates', 'core/str', 'core/notificatio
             attachment.controller = new AbortController();
             try {
                 const data = await uploadForText(cfg.extract_file_url, attachment.file, {}, attachment.controller.signal);
-                attachment.extracted = {info: fileInfo(data), text: data.text || ''};
+                // The chat model gets only the name and text of the file between untrusted data markers, so it never
+                // follows what the file says. An answer without them is an error: the text is never sent unwrapped.
+                if (typeof data.untrusted_text !== 'string' || data.untrusted_text === '') {
+                    throw new Error(S.unknown_error || '');
+                }
+                attachment.extracted = {info: fileInfo(data), text: data.untrusted_text};
                 if (data.truncated) {
                     addMessage('assistant', `⚠️ ${(S.file_truncated || '').replace('{$a}', attachment.name)}`);
                 }
@@ -1095,8 +1100,8 @@ define(['core/log', 'core/ajax', 'core/templates', 'core/str', 'core/notificatio
         // The text of each file goes with the question in the same message; the chat shows only their names.
         if (attachments.length) {
             const question = modelText || S.analyze_file || '';
-            const parts = attachments.map(({name, extracted}) =>
-                `${(S.attached_file_info || '').replace('{$a}', name)} — ${extracted.info}\n\n${extracted.text}`);
+            // The name of each file is inside its untrusted block, never outside it.
+            const parts = attachments.map(({extracted}) => extracted.text);
             modelText = [question, ...parts].join('\n\n');
             const names = attachments.map(({name, extracted}) => `📎 ${name} (${extracted.info})`).join('\n');
             displayText = `${text ? text + '\n\n' : ''}${names}`;
@@ -1387,8 +1392,9 @@ define(['core/log', 'core/ajax', 'core/templates', 'core/str', 'core/notificatio
         // the text shown in the chat and the id of an answer stay in the browser.
         const truncated = messages.slice(-30).map(({role, content}) => ({role, content}));
 
-        // The page context (location, course, activity and path) is the one the server read from the page; only the
-        // title comes from the document. The payload is built after a renewal, so it carries the renewed permissions.
+        // The page context (location, course, activity and path) is the one the server read from the page; the server
+        // reads the names again and never uses free text of the browser. The payload is built after a renewal, so it
+        // carries the renewed permissions.
         const request = () => fetch(cfg.chatproxy_url, {
             method:  'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1399,7 +1405,6 @@ define(['core/log', 'core/ajax', 'core/templates', 'core/str', 'core/notificatio
                 context:  {
                     ...cfg.context,
                     course_id:  _pageCourseId(),
-                    page_title: document.title.replace(/\s*[|\-]\s*Moodle.*$/i, '').trim(),
                 },
                 ...extra,
             }),

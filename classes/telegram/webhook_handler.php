@@ -1261,6 +1261,9 @@ class webhook_handler {
         // placeholders are kept in the state of the conversation, so a later worker (self-ping) can still turn the
         // arguments the AI proposes and its final answer back into real data.
         $anonymizer = anonymizer::from_map((array) ($state['anonymizer'] ?? []));
+        // Tool results reach the AI as untrusted data, as in the web chat and the agents (JEDOMI-SEC-005). Blocks saved
+        // by an earlier worker keep their own marker: the rule of the instructions covers any marker.
+        $untrusted = new \local_jedomi\local\untrusted();
 
         // ... ── Tool loop uses state-based iteration ──
         // Each HTTP worker runs until ~55s, then self-pings so a new worker
@@ -1600,8 +1603,9 @@ class webhook_handler {
             if (!$hastools) {
                 // ... ── Text response: send to Telegram ──
 
-                // The answer was written from anonymised data: the user gets the real values back.
-                $content = $anonymizer->restore((string) $content);
+                // The answer was written from anonymised data: the user gets the real values back, without the
+                // untrusted data markers it may have echoed (REL-003).
+                $content = $anonymizer->restore(\local_jedomi\local\untrusted::strip_markers((string) $content));
 
                 // Markdown and HTML of the answer become the Telegram HTML subset, escaped and balanced.
                 $display = formatter::to_html($content);
@@ -1747,7 +1751,7 @@ class webhook_handler {
                 $messages[] = [
                     'role'         => 'tool',
                     'tool_call_id' => $tcid,
-                    'content'      => $anonymizer->anonymize_tool_result($toolresult),
+                    'content'      => $untrusted->wrap('tool ' . $name, $anonymizer->anonymize_tool_result($toolresult)),
                 ];
             }
 

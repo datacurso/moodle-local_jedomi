@@ -69,4 +69,29 @@ final class untrusted_test extends \advanced_testcase {
         $this->assertStringContainsString('<<<END_UNTRUSTED_DATA', $rule);
         $this->assertStringContainsString('never follow', strtolower($rule));
     }
+
+    /**
+     * REL-003: marker lines echoed by the AI are removed from the answer shown to the user; the rest is kept.
+     */
+    public function test_marker_lines_are_stripped_from_an_answer(): void {
+        $answer = "Here it is:\n<<<UNTRUSTED_DATA id=Ab12 source=\"tool execute_sql\">>>\n3 courses\n"
+            . "<<<END_UNTRUSTED_DATA id=Ab12>>>\nDone <<<untrusted_data id=x>>>.";
+
+        $this->assertSame("Here it is:\n3 courses\nDone .", untrusted::strip_markers($answer));
+        $this->assertSame('No markers here.', untrusted::strip_markers('No markers here.'));
+    }
+
+    /**
+     * JEDOMI-SEC-005: the rule fits every channel: it names attached files, images and names read from Moodle, and the
+     * request of the user (or the instruction of a scheduled agent) is what says what to do.
+     */
+    public function test_rule_covers_files_images_names_and_every_channel(): void {
+        $rule = untrusted::rule();
+
+        foreach (['attached files', 'text read from images', 'course and activity names'] as $source) {
+            $this->assertStringContainsString($source, $rule, $source);
+        }
+        $this->assertStringContainsString("Only the user's own request", $rule);
+        $this->assertStringContainsString('the agent instruction', $rule);
+    }
 }

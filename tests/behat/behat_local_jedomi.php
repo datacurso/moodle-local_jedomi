@@ -1569,7 +1569,9 @@ JS;
                 return json({text: next.text, format: 'audio', seconds: 2}, 200);
             }
             state.readings.push(name);
-            return json({text: 'Text of ' + name, format: 'text', chars: 12}, 200);
+            return json({text: 'Text of ' + name, format: 'text', chars: 12,
+                untrusted_text: '<<<UNTRUSTED_DATA id=Behat1 source="file">>>\n[Attached file: ' + name + ']\nText of ' + name
+                    + '\n<<<END_UNTRUSTED_DATA id=Behat1>>>'}, 200);
         }
         return nextfetch(url, options);
     };

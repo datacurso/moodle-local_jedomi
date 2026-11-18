@@ -220,6 +220,35 @@ final class preview_runner_test extends \advanced_testcase {
     }
 
     /**
+     * REL-008 / JEDOMI-SEC-005: a preview answered from its cache replays the saved plan and sends the fresh tool results
+     * to the AI between untrusted data markers, with the rule about them; the reformulated answer gets the real values.
+     */
+    public function test_cached_preview_replay_sends_tool_results_as_untrusted_data(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $fake = new fake_ai_client();
+        $fake->enqueue_tool_calls([
+            ['id' => 'call_1', 'type' => 'function', 'function' => ['name' => 'execute_sql',
+                'arguments' => json_encode(['query' => 'SELECT id FROM {course}'])]],
+        ]);
+        $fake->enqueue_text('There is one course.');
+        $fake->enqueue_text('There is still one course.');
+        client::set_instance_for_testing($fake);
+        \local_jedomi\agent\tool_executor::get_definitions(1, (int) get_admin()->id);
+        preview_runner::run('How many courses are there?', (int) get_admin()->id);
+
+        $again = preview_runner::run('How many courses are there?', (int) get_admin()->id);
+
+        $this->assertTrue($again['reformulated'] ?? false, 'Control: the cached plan was replayed');
+        $this->assertSame('There is still one course.', $again['answer']);
+        $reform = end($fake->calls)['messages'];
+        $this->assertStringContainsString(\local_jedomi\local\untrusted::rule(), $reform[0]['content']);
+        $this->assertMatchesRegularExpression('/<<<UNTRUSTED_DATA id=(\w+) source="tool execute_sql">>>\n.*\n'
+            . '<<<END_UNTRUSTED_DATA id=\1>>>/s', $reform[1]['content']);
+        $this->assertStringNotContainsString('--- execute_sql ---', $reform[1]['content']);
+    }
+
+    /**
      * MDL-INT-026: a preview never runs an action that changes data without confirmation.
      */
     public function test_preview_does_not_run_writing_actions_without_confirmation(): void {

@@ -31,7 +31,12 @@ namespace local_jedomi\telegram;
  * Persists conversational context per Telegram chat id as a JSON message history.
  */
 class session {
-    /** System prompt base — replaced in proxy_to_gateway with full context. */
+    /**
+     * Placeholder system message of a new Telegram conversation.
+     *
+     * webhook_handler always replaces it with {@see prompt_builder::build()} before any AI call, so the rules the AI
+     * gets (untrusted data, no disclosure, language...) live only there and are never copied here (READ-001).
+     */
     public const ANTI_HALLUCINATION_PROMPT = 'You are Jedomi, an educational assistant built into Moodle LMS. '
         . "Follow these rules:\n"
         . "- Do not make up data.\n"

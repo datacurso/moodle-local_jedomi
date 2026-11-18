@@ -186,6 +186,9 @@ class vision_service {
     /**
      * Message for the chat model: the question of the user followed by what the vision model read.
      *
+     * What the vision model read can carry text hidden in the image, and the name of the image is chosen by whoever
+     * made it, so both go between untrusted data markers (JEDOMI-SEC-005, SEC-JD-007, RISK-001).
+     *
      * @param string $question Question of the user; empty for the default "analyze this image" request.
      * @param string $filename Name of the image or file.
      * @param string $text Text returned by the vision model.
@@ -193,7 +196,10 @@ class vision_service {
      */
     public static function compose_message(string $question, string $filename, string $text): string {
         $question = trim($question) !== '' ? trim($question) : get_string('analyze_image', 'local_jedomi');
-        return $question . "\n\n" . get_string('attached_image_content', 'local_jedomi', $filename) . "\n" . trim($text);
+        return $question . "\n\n" . (new \local_jedomi\local\untrusted())->wrap(
+            'image',
+            get_string('attached_image_content', 'local_jedomi', $filename) . "\n" . trim($text)
+        );
     }
 
     /**

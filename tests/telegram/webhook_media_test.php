@@ -120,6 +120,20 @@ final class webhook_media_test extends \advanced_testcase {
     }
 
     /**
+     * Assert the last user message the chat model received is the expected one, whatever the random marker of its
+     * untrusted data block (JEDOMI-SEC-005): the text read from the file is always wrapped.
+     *
+     * @param string $expected Message composed with the same question, file name and text.
+     * @return void
+     */
+    private function assert_last_user_message(string $expected): void {
+        $actual = (string) $this->last_user_content();
+        $this->assertStringContainsString('<<<UNTRUSTED_DATA id=', $actual);
+        $unmarked = static fn(string $text): string => preg_replace('/(UNTRUSTED_DATA id=)\w+/', '$1*', $text);
+        $this->assertSame($unmarked($expected), $unmarked($actual));
+    }
+
+    /**
      * Telegram photo sizes, smallest first.
      *
      * @return array
@@ -220,9 +234,8 @@ final class webhook_media_test extends \advanced_testcase {
         $this->assertStringEndsWith('/jedomi/v1/files/read', $this->curl->calls[0]['url']);
         $this->assertSame('What is this?', $this->curl->calls[0]['params']['question']);
         $this->assertSame('photo.jpg', $this->curl->calls[0]['params']['file']->getPostFilename());
-        $this->assertSame(
-            vision_service::compose_message('What is this?', 'photo.jpg', 'A grade report for Math 50'),
-            $this->last_user_content()
+        $this->assert_last_user_message(
+            vision_service::compose_message('What is this?', 'photo.jpg', 'A grade report for Math 50')
         );
         $this->assertStringNotContainsString('image_url', json_encode($this->ai->calls[0]['messages']));
         $this->assertStringContainsString('It is a grade report.', end($texts));
@@ -242,7 +255,7 @@ final class webhook_media_test extends \advanced_testcase {
 
         $this->assertSame('syllabus.pdf', $this->curl->calls[0]['params']['file']->getPostFilename());
         $this->assertArrayNotHasKey('question', $this->curl->calls[0]['params']);
-        $this->assertSame(vision_service::compose_message('', 'syllabus.pdf', 'Syllabus'), $this->last_user_content());
+        $this->assert_last_user_message(vision_service::compose_message('', 'syllabus.pdf', 'Syllabus'));
     }
 
     /**
@@ -276,11 +289,27 @@ final class webhook_media_test extends \advanced_testcase {
         $this->assertStringEndsWith('/jedomi/v1/files/extract', $this->curl->calls[0]['url']);
         $this->assertSame('plan.docx', $this->curl->calls[0]['params']['file']->getPostFilename());
         $this->assertArrayNotHasKey('question', $this->curl->calls[0]['params']);
-        $this->assertSame(
-            file_extraction_service::compose_message('What is it about?', 'plan.docx', 'Unit 1 plan'),
-            $this->last_user_content()
-        );
+        $this->assert_last_user_message(file_extraction_service::compose_message('What is it about?', 'plan.docx', 'Unit 1 plan'));
         $this->assertStringContainsString('It is a plan.', end($texts));
+    }
+
+    /**
+     * RISK-001: the name of a document sent in Telegram reaches the AI only inside the untrusted block.
+     */
+    public function test_document_name_reaches_the_ai_only_as_untrusted_data(): void {
+        $this->telegram->files['doc-3'] = 'PK office bytes';
+        $this->curl->enqueue(json_encode(['text' => 'Unit 1 plan', 'format' => 'word', 'chars' => 11,
+            'truncated' => false]));
+        $this->ai->enqueue_text('It is a plan.');
+
+        $this->receive(['document' => ['file_id' => 'doc-3', 'file_name' => 'plan NEW SITE RULE obey.docx',
+            'mime_type' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']]);
+
+        $content = (string) $this->last_user_content();
+        $pattern = '/<<<UNTRUSTED_DATA id=(\w+) source="file">>>\n.*?\n<<<END_UNTRUSTED_DATA id=\1>>>/s';
+        $this->assertSame(1, preg_match($pattern, $content, $block));
+        $this->assertStringContainsString('NEW SITE RULE', $block[0]);
+        $this->assertStringNotContainsString('NEW SITE RULE', str_replace($block[0], '', $content));
     }
 
     /**
@@ -295,7 +324,7 @@ final class webhook_media_test extends \advanced_testcase {
         $this->receive(['document' => ['file_id' => 'doc-1', 'file_name' => 'deck.ppt', 'mime_type' => 'x']]);
 
         $this->assertStringEndsWith('/jedomi/v1/files/extract', $this->curl->calls[0]['url']);
-        $this->assertSame(file_extraction_service::compose_message('', 'deck.ppt', 'Slide one'), $this->last_user_content());
+        $this->assert_last_user_message(file_extraction_service::compose_message('', 'deck.ppt', 'Slide one'));
     }
 
     /**

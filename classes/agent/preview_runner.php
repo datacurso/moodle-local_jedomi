@@ -274,6 +274,8 @@ class preview_runner {
             // The AI gets the fresh results and the previous answer anonymised, as in the scheduled run; the profiler
             // and the reformulated answer show the real values.
             $anonymizer = new anonymizer();
+            // The fresh results reach the AI as untrusted data, as in a run that is not cached (REL-008).
+            $untrusted = new \local_jedomi\local\untrusted();
             $replayprofiler = [];
             $replayresults = [];
             $replayfailed = false;
@@ -310,7 +312,7 @@ class preview_runner {
                 // Build fresh context for reformulation.
                 $freshctx = "Updated tool results:\n";
                 foreach ($replayresults as $fr) {
-                    $freshctx .= "\n--- {$fr['tool']} ---\n{$fr['result']}\n";
+                    $freshctx .= "\n" . $untrusted->wrap('tool ' . $fr['tool'], $fr['result']) . "\n";
                 }
 
                 $cachedresult = json_decode($cached->result_json, true);
@@ -318,7 +320,8 @@ class preview_runner {
 
                 $reformmessages = [
                     ['role' => 'system', 'content' => 'You previously answered a question. Below are updated tool results.'
-                        . ' Reformulate your answer using the new data. Keep the same style and structure.'],
+                        . ' Reformulate your answer using the new data. Keep the same style and structure.'
+                        . "\n" . \local_jedomi\local\untrusted::rule()],
                     ['role' => 'user', 'content' => "Previous answer:\n{$cachedanswer}\n\n{$freshctx}"],
                 ];
 

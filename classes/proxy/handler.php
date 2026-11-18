@@ -102,6 +102,10 @@ class handler {
         // The activity of the page is used only when it belongs to the signed course and the user can see it; its type
         // and name are read from it, never from the browser.
         $context = self::with_checked_activity($context, $courseid);
+        // The name of the course is read from the signed course the user can enter; the title of the page and any other
+        // free text of the browser never reach the system message (JEDOMI-SEC-002).
+        $context = self::with_server_course_name($context, $courseid, $userid);
+        unset($context['page_title']);
 
         // Images are read by the vision model before they are sent (read_file.php), so the chat model
         // only gets text. A new image part means the browser skipped that step.
@@ -163,7 +167,7 @@ class handler {
     /**
      * Page context sent by the browser with its free texts anonymised, before they are written in the system message.
      *
-     * The title of the page can name a person (a profile, a grade report of a user), and so can the file name in the
+     * The names of the course and the activity, read on the server, can name a person, and so can the file name in the
      * path of the page. The address keeps only its path: the query string and the fragment (ids, searches, names) are
      * never sent. The instructions of the system message are never anonymised: only these texts of the browser are.
      * The location and the activity type are names, not free text: a location the panel does not use becomes
@@ -187,7 +191,7 @@ class handler {
         if (isset($context['activity_id'])) {
             $context['activity_id'] = is_numeric($context['activity_id']) ? (int) $context['activity_id'] : 0;
         }
-        foreach (['page_title', 'course_name', 'page_url', 'activity_name'] as $key) {
+        foreach (['course_name', 'page_url', 'activity_name'] as $key) {
             if (isset($context[$key]) && is_string($context[$key])) {
                 $context[$key] = $anonymizer->anonymize_text($context[$key]);
             }
@@ -211,6 +215,29 @@ class handler {
         $context['activity_name'] = $cm ? $cm->get_formatted_name() : '';
         if (!$cm && ($context['location'] ?? '') === 'activity') {
             $context['location'] = $courseid > SITEID ? 'course' : 'unknown';
+        }
+        return $context;
+    }
+
+    /**
+     * Page context with the name of its course read on the server (JEDOMI-SEC-002): the name the browser sends is
+     * replaced by the full name of the signed course when the user can enter it, and dropped otherwise.
+     *
+     * @param array $context Page context sent by the browser.
+     * @param int $courseid Course signed in the permissions (0 or the site course outside a course).
+     * @param int $userid Session user.
+     * @return array Context with course_name read from Moodle, or '' for none.
+     */
+    private static function with_server_course_name(array $context, int $courseid, int $userid): array {
+        global $DB;
+        $context['course_name'] = '';
+        if ($courseid <= SITEID) {
+            return $context;
+        }
+        $course = $DB->get_record('course', ['id' => $courseid]);
+        if ($course && can_access_course($course, $userid)) {
+            $coursecontext = \context_course::instance($courseid);
+            $context['course_name'] = format_string($course->fullname, true, ['context' => $coursecontext]);
         }
         return $context;
     }
@@ -302,6 +329,10 @@ class handler {
         // Privacy tab; the answer shown to the user gets the real values back.
         $anonymizer = $anonymizer ?? new \local_jedomi\local\anonymizer();
         $messages = $anonymizer->anonymize_messages($messages);
+        // Tool results reach the AI as untrusted data, as in the agents (JEDOMI-SEC-005): the rule of the system
+        // message tells the AI never to follow what is written inside them. They are anonymised first, so the
+        // placeholders inside the blocks are restored in the answer as before.
+        $untrusted = new \local_jedomi\local\untrusted();
 
         for ($i = 0; $i < 50; $i++) {
             echo ": thinking\n\n";
@@ -329,8 +360,9 @@ class handler {
 
             if ($response['type'] === 'text') {
                 \local_jedomi_log('AI_RESPONSE_TEXT', ['iteration' => $i, 'length' => mb_strlen($response['content'])]);
-                // No tool calls — stream the final response to the client.
-                self::stream_sse_content($anonymizer->restore($response['content']));
+                // No tool calls — stream the final response to the client, without markers it echoed (REL-003).
+                $answer = \local_jedomi\local\untrusted::strip_markers($response['content']);
+                self::stream_sse_content($anonymizer->restore($answer));
                 return true;
             }
 
@@ -428,11 +460,11 @@ class handler {
                 }
                 flush();
 
-                // Inject tool result as role=tool message (OpenAI standard format).
+                // Inject tool result as role=tool message (OpenAI standard format), as untrusted data.
                 $messages[] = [
                     'role'         => 'tool',
                     'tool_call_id' => $tcid,
-                    'content'      => $anonymizer->anonymize_tool_result($result),
+                    'content'      => $untrusted->wrap('tool ' . $name, $anonymizer->anonymize_tool_result($result)),
                 ];
 
                 \local_jedomi_log('TOOL_RESULT', ['tool' => $name, 'summary' => self::summarize_tool_result($name, $result)]);

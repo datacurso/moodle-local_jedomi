@@ -345,6 +345,34 @@ class anonymizer {
      * @return string
      */
     private function anonymize_string(string $text): string {
+        // The untrusted data markers keep their random id (REL-001): only the text around and between them is
+        // anonymised, so the Strict level never turns the id of a marker into a placeholder.
+        return strpos($text, '<<<') === false ? $this->anonymize_plain($text) : $this->anonymize_around_markers($text);
+    }
+
+    /**
+     * Anonymise a text holding untrusted data markers: the markers are kept, the texts between them are anonymised.
+     *
+     * @param string $text Text.
+     * @return string
+     */
+    private function anonymize_around_markers(string $text): string {
+        preg_match_all(untrusted::MARKER_PATTERN, $text, $markers);
+        $texts = preg_split(untrusted::MARKER_PATTERN, $text) ?: [$text];
+        $result = '';
+        foreach ($texts as $index => $part) {
+            $result .= $this->anonymize_plain($part) . ($markers[0][$index] ?? '');
+        }
+        return $result;
+    }
+
+    /**
+     * Replace e-mails, names of site users and, at the Strict level, identifiers inside a text without markers.
+     *
+     * @param string $text Text.
+     * @return string
+     */
+    private function anonymize_plain(string $text): string {
         $text = $this->escape_foreign_placeholders($text);
         $text = (string) preg_replace_callback(
             '/[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}/iu',

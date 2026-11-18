@@ -424,6 +424,35 @@ final class webhook_conversation_test extends \advanced_testcase {
     }
 
     /**
+     * JEDOMI-SEC-005 / SEC-JD-009: in Telegram each tool result reaches the AI between untrusted data markers, the
+     * instructions carry the rule about them, and the answer still gets the real values of the placeholders back.
+     */
+    public function test_tool_results_reach_the_ai_as_untrusted_data(): void {
+        [$result, $answer] = $this->telegram_tool_result_with_level('basic', '779000043');
+
+        $this->assertMatchesRegularExpression('/^<<<UNTRUSTED_DATA id=(\w+) source="tool execute_sql">>>\n.*\n'
+            . '<<<END_UNTRUSTED_DATA id=\1>>>$/s', $result);
+        $this->assertStringContainsString('[person_1]', $result);
+        $this->assertStringContainsString(\local_jedomi\local\untrusted::rule(), $this->system_of($this->ai->calls[1]));
+        $this->assertStringContainsString('Ximena Quintanilla', $answer, 'Placeholders inside the block are restored');
+    }
+
+    /**
+     * REL-003: untrusted data markers the AI echoes in its answer never reach the Telegram user.
+     */
+    public function test_echoed_markers_never_reach_the_user(): void {
+        $this->link((int) get_admin()->id, '779000044');
+        $this->ai->enqueue_text("Result:\n<<<UNTRUSTED_DATA id=Ab12 source=\"tool execute_sql\">>>\n3 courses\n"
+            . "<<<END_UNTRUSTED_DATA id=Ab12>>>");
+
+        $this->say('779000044', 'How many courses?');
+
+        $answer = (string) end($this->telegram->sent)['text'];
+        $this->assertStringNotContainsString('UNTRUSTED_DATA', $answer);
+        $this->assertStringContainsString('3 courses', $answer);
+    }
+
+    /**
      * MDL-CTR-007: in Telegram, with the Strict level identifiers are also replaced in what the AI receives.
      */
     public function test_strict_level_also_replaces_identifiers_sent_to_the_ai(): void {
@@ -791,7 +820,7 @@ final class webhook_conversation_test extends \advanced_testcase {
     }
 
     /**
-     * MDL-CTR-005: the Telegram instructions carry the site name, the Moodle version, the database type, the role, the
+     * MDL-CTR-005: the Telegram instructions carry the site name, the Moodle major version, the database type, the role, the
      * language, the available tools and the courses grouped by role, and no page or location.
      */
     public function test_telegram_instructions_carry_the_channel_context(): void {
@@ -806,9 +835,11 @@ final class webhook_conversation_test extends \advanced_testcase {
         $this->say('779000011', 'Hello');
 
         $system = $this->system_of($this->ai->calls[0]);
-        foreach (['Quantum Academy', $CFG->release, 'Role: student', 'Lang: en', 'Marine Biology 3'] as $expected) {
+        $version = \local_jedomi\proxy\system_message::moodle_major_version();
+        foreach (['Quantum Academy', "Context: {$version},", 'Role: student', 'Lang: en', 'Marine Biology 3'] as $expected) {
             $this->assertStringContainsString($expected, $system);
         }
+        $this->assertStringNotContainsString($CFG->release, $system, 'SEC-JD-013: only the major version');
         $this->assertMatchesRegularExpression('/DB: \S+/', $system);
         foreach ($this->tool_names($this->ai->calls[0]) as $tool) {
             $this->assertStringContainsString($tool, $system);
