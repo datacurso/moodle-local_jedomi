@@ -44,7 +44,9 @@ use local_jedomi\agent\tool\agent_tool;
  *   seconds and runs it again with the same arguments, at most
  *   {@see \local_jedomi\local\plugin_tool_retry::MAX_ATTEMPTS} runs within
  *   {@see \local_jedomi\local\plugin_tool_retry::MAX_TOTAL_SECONDS} seconds, and gives the AI
- *   the last answer, which the AI reports as data that will be ready in about a minute. A tool
+ *   the last answer, which the AI reports as data that will be ready in about a minute; all the
+ *   waits of one request share {@see \local_jedomi\local\plugin_tool_retry::MAX_REQUEST_WAIT_SECONDS}
+ *   seconds. A tool
  *   that changes something, an error or any other shape is never run again.
  *
  * @package    local_jedomi

@@ -111,6 +111,8 @@ final class plugin_tool_retry_test extends \advanced_testcase {
         $this->assertLessThanOrEqual(3, plugin_tool_retry::MAX_ATTEMPTS);
         $this->assertGreaterThan(0, plugin_tool_retry::WAIT_SECONDS);
         $this->assertLessThanOrEqual(30, plugin_tool_retry::MAX_TOTAL_SECONDS);
+        $this->assertGreaterThanOrEqual(plugin_tool_retry::MAX_TOTAL_SECONDS, plugin_tool_retry::MAX_REQUEST_WAIT_SECONDS);
+        $this->assertLessThanOrEqual(30, plugin_tool_retry::MAX_REQUEST_WAIT_SECONDS);
         $this->assertGreaterThanOrEqual(
             (plugin_tool_retry::MAX_ATTEMPTS - 1) * plugin_tool_retry::WAIT_SECONDS,
             plugin_tool_retry::MAX_TOTAL_SECONDS
@@ -135,6 +137,27 @@ final class plugin_tool_retry_test extends \advanced_testcase {
         $this->assertSame($this->pending(), $result);
         $this->assertCount(2, fake_plugin_tool::$runs);
         $this->assertCount(1, $this->waits);
+    }
+
+    /**
+     * All the waits of one request share a budget: after a tool used most of it, the next pending tool waits only what
+     * is left, and then not at all.
+     */
+    public function test_waits_of_one_request_share_a_budget(): void {
+        $first = new fake_plugin_tool('demo_first', answers: [$this->pending()]);
+        $second = new fake_plugin_tool('demo_second', answers: [$this->pending()]);
+        $third = new fake_plugin_tool('demo_third', answers: [$this->pending()]);
+
+        plugin_tool_retry::run($first, []);
+        plugin_tool_retry::run($second, []);
+        plugin_tool_retry::run($third, []);
+
+        $this->assertLessThanOrEqual(plugin_tool_retry::MAX_REQUEST_WAIT_SECONDS, array_sum($this->waits));
+        $this->assertSame(
+            ['demo_first', 'demo_first', 'demo_first', 'demo_second', 'demo_second', 'demo_third'],
+            fake_plugin_tool::$runs
+        );
+        $this->assertSame(array_fill(0, 3, plugin_tool_retry::WAIT_SECONDS), $this->waits);
     }
 
     /**

@@ -24,8 +24,10 @@ use local_jedomi\agent\tool\agent_tool;
  * The contract, for any plugin (see {@see \local_jedomi\hook\tool_registry}): a tool whose data is not ready yet
  * answers a JSON object with "meta": {"pending": true, ...} at its top level. Jedomi then waits WAIT_SECONDS and runs
  * the same tool with the same arguments again, at most MAX_ATTEMPTS runs in all and never past MAX_TOTAL_SECONDS since
- * the first run started, and gives the AI the last answer. Only tools that declare they only read are run again; an
- * answer with an "error" key, a failing tool or any other shape is returned at once.
+ * the first run started, and gives the AI the last answer. All the waits of one PHP request (one turn of the chat)
+ * together never pass MAX_REQUEST_WAIT_SECONDS, so several pending tools in a turn cannot add their waits up. Only
+ * tools that declare they only read are run again; an answer with an "error" key, a failing tool or any other shape is
+ * returned at once.
  *
  * @package    local_jedomi
  * @copyright  2026 Jedomi Project
@@ -40,6 +42,12 @@ final class plugin_tool_retry {
 
     /** @var int Longest time, in seconds since the first run started, at which a wait may still end. */
     public const MAX_TOTAL_SECONDS = 25;
+
+    /** @var int Seconds all the waits of one PHP request may add up to. */
+    public const MAX_REQUEST_WAIT_SECONDS = 30;
+
+    /** @var int Seconds already waited in this PHP request. */
+    private static int $waited = 0;
 
     /** @var \Closure|null Replacement of the wait in PHPUnit tests: fn(int $seconds): void. */
     private static ?\Closure $testsleeper = null;
@@ -67,6 +75,9 @@ final class plugin_tool_retry {
         while ($pending && $attempt < self::MAX_ATTEMPTS) {
             $elapsed = $clock->time() - $start;
             if ($elapsed + self::WAIT_SECONDS > self::MAX_TOTAL_SECONDS) {
+                break;
+            }
+            if (self::$waited + self::WAIT_SECONDS > self::MAX_REQUEST_WAIT_SECONDS) {
                 break;
             }
             $attempt++;
@@ -99,7 +110,7 @@ final class plugin_tool_retry {
     }
 
     /**
-     * Replace the wait in PHPUnit tests, so they never sleep.
+     * Replace the wait in PHPUnit tests, so they never sleep. It also starts a new request: nothing waited before counts.
      *
      * @param \Closure|null $sleeper fn(int $seconds): void, or null to restore the real wait.
      * @return void
@@ -109,6 +120,7 @@ final class plugin_tool_retry {
             throw new \coding_exception('plugin_tool_retry::set_sleeper_for_testing() is only for PHPUnit tests');
         }
         self::$testsleeper = $sleeper;
+        self::$waited = 0;
     }
 
     /**
@@ -118,6 +130,7 @@ final class plugin_tool_retry {
      * @return void
      */
     private static function wait(int $seconds): void {
+        self::$waited += $seconds;
         if (self::$testsleeper !== null) {
             (self::$testsleeper)($seconds);
             return;
