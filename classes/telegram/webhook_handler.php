@@ -1732,10 +1732,18 @@ class webhook_handler {
                 }
 
                 // The AI only knows the placeholders of the anonymised data; the tools need the real values.
-                $args = $anonymizer->restore_value($args);
+                $unrestored = null;
+                try {
+                    $args = $anonymizer->restore_tool_args($name, $args);
+                } catch (\local_jedomi\local\unrestored_placeholder_exception $e) {
+                    // The query is not run against the text of a placeholder: the AI is told how to write it (RISK-001).
+                    $unrestored = $e->tool_result();
+                }
 
                 try {
-                    if (!in_array(self::canonical_tool_name($name), $toolnames, true)) {
+                    if ($unrestored !== null) {
+                        $toolresult = $unrestored;
+                    } else if (!in_array(self::canonical_tool_name($name), $toolnames, true)) {
                         // Only the tools offered to the AI for the role of the user can run.
                         $toolresult = json_encode(['error' => 'permission_denied']);
                     } else {

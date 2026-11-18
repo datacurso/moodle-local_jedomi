@@ -165,6 +165,18 @@ webhook address, and a secret in the query string is refused. Upgrading to 1.6.1
 webhook again when a bot token is configured. If Telegram cannot be reached at that moment, the Integrations tab shows
 a warning until the bot token is saved again.
 
+## Anonymisation
+
+Personal data is replaced by placeholders such as `[person_1]` or `[id_1]` before it reaches the AI service (messages,
+attached texts, page context, history and tool results) in the web chat, Telegram, the scheduled agents and the agent
+preview. The answer shown to the user and the arguments of the tools the AI calls get the real values back, so the user
+never sees a placeholder. The level is set in the Privacy tab:
+
+- **Basic** (default): names of site users, email addresses and identifier columns of tool results (user name, ID
+  number, phones, address, IP address, messaging ids and web page).
+- **Strict**: also free text (descriptions, messages, long texts) and codes mixing letters and digits inside texts.
+- **Feedback only**: the AI receives the same as with Basic, and ratings are saved without the conversation text.
+
 ## Technical log and privacy
 
 The plugin writes an operational and security trace to `{dataroot}/local/jedomi/jedomi.log`. It never keeps user ids,

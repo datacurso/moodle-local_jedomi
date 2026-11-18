@@ -191,14 +191,14 @@ $string['ai_timeout'] = 'AI request timeout (seconds)';
 $string['ai_timeout_help'] = 'How long Jedomi waits for each answer of the AI service in the web chat, for the Datacurso service and the custom service, from 10 to 600 seconds (default: 180). Telegram and the scheduled agents keep their own timeouts. A proxy in front of the site can close the request earlier (Cloudflare closes it after 100 seconds), and so can the max_execution_time of PHP or the timeout of the web server: raise those too, or keep this value below them.';
 $string['analyze_file'] = 'Summarize this file.';
 $string['analyze_image'] = 'Analyze this image.';
-$string['anon_basic'] = 'Basic (names and emails)';
-$string['anon_basic_desc'] = 'Replaces names and emails. Keeps most context intact.';
+$string['anon_basic'] = 'Basic (names, emails and identifiers)';
+$string['anon_basic_desc'] = 'Replaces names, emails and identifiers (user name, ID number, phones, address, IP address, messaging ids, web page URL). Keeps most context intact.';
 $string['anon_feedback_only'] = 'Feedback only (no conversation text stored)';
 $string['anon_feedback_only_desc'] = 'Stores only ratings and feedback buttons. No conversation text.';
-$string['anon_strict'] = 'Strict (names, emails, IDs, free text)';
-$string['anon_strict_desc'] = 'Replaces names, emails, IDs and free text. Maximum privacy.';
+$string['anon_strict'] = 'Strict (names, emails, identifiers, free text and codes)';
+$string['anon_strict_desc'] = 'Replaces what Basic does (names, emails and identifiers), plus long free text and codes mixing letters and digits inside texts. Maximum privacy.';
 $string['anonymization_level'] = 'Anonymization level';
-$string['anonymization_level_help'] = 'Personal data is replaced by placeholders before it reaches the AI service: the messages of the user, the text of attached files, images and audio, the page context, the earlier messages of the conversation and the results of the tools, in the web chat, Telegram, the scheduled agents and the agent preview. The user still sees the real values in the answer.<br>Basic: names of site users and email addresses.<br>Strict: also identifiers (user name, ID number, phone, address, IP address) and long free texts.<br>Feedback only: the AI receives the same as with Basic, and the ratings are saved without the text of the conversation.';
+$string['anonymization_level_help'] = 'Personal data is replaced by placeholders before it reaches the AI service: the messages of the user, the text of attached files, images and audio, the page context, the earlier messages of the conversation and the results of the tools, in the web chat, Telegram, the scheduled agents and the agent preview. The user still sees the real values in the answer.<br>Basic: names of site users, email addresses and identifiers (user name, ID number, phone, address, IP address, messaging ids, web page).<br>Strict: also long free texts and codes mixing letters and digits inside texts.<br>Feedback only: the AI receives the same as with Basic, and the ratings are saved without the text of the conversation.';
 $string['answer_stopped'] = 'Answer stopped.';
 $string['api_role_admin'] = 'Admin';
 $string['api_role_manager'] = 'Manager';
@@ -799,6 +799,8 @@ $string['spt_secret'] = 'Permission token secret';
 $string['spt_secret_help'] = 'Secret used to sign the chat permission tokens. It is generated automatically for this site and '
     . 'stored in Moodle, so it does not need to be set. Changing it invalidates the tokens already issued: users must reload '
     . 'the page to keep chatting.';
+$string['sql_carriage_return_rejected'] = 'The query contains a carriage return (\\r), so it was not run. '
+    . 'Write line breaks as \\n only.';
 $string['sql_construct_rejected'] = 'The query uses syntax outside the allowed read-only subset, so it was not run. Write a single '
     . 'SELECT with FROM, [LEFT] JOIN ... ON, WHERE conditions joined only by AND (=, <>, <, >, IN (numbers), IS [NOT] NULL, '
     . 'LIKE \'text\'), GROUP BY, ORDER BY and LIMIT, and only the functions COUNT, SUM, AVG, MIN, MAX, ROUND and COALESCE. '
@@ -820,6 +822,7 @@ $string['sql_table_not_allowed'] = 'The query reads a table that is not availabl
     . 'notifications, user preferences or the whole user list), so it was not run. Read course tables limited to your courses, '
     . 'and read user names only by joining {user} to the enrolments, roles or grades of one of your courses (for example JOIN '
     . '{user_enrolments} ue ON ue.userid = u.id JOIN {enrol} e ON e.id = ue.enrolid WHERE e.courseid = 12).';
+$string['sql_too_long_rejected'] = 'The query is longer than 8000 characters, so it was not run. Write a shorter query.';
 $string['sql_user_column_rejected'] = 'The query reads user columns other than the id and the names (such as the e-mail, phone, '
     . 'address or last IP), or every column with *, so it was not run. List only u.id, u.firstname, u.lastname, u.middlename, '
     . 'u.alternatename, u.firstnamephonetic or u.lastnamephonetic.';

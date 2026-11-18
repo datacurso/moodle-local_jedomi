@@ -398,14 +398,20 @@ class handler {
                 $argsraw = $tc['function']['arguments'];
                 $args = is_array($argsraw) ? $argsraw : (json_decode($argsraw, true) ?? []);
                 // The AI only knows the placeholders of the anonymised data; the tools need the real values.
-                $args = $anonymizer->restore_value($args);
+                $unrestored = null;
+                try {
+                    $args = $anonymizer->restore_tool_args($name, $args);
+                } catch (\local_jedomi\local\unrestored_placeholder_exception $e) {
+                    // The query is not run against the text of a placeholder: the AI is told how to write it (RISK-001).
+                    $unrestored = $e->tool_result();
+                }
 
                 // JEDOMI-SEC-008: a tool that was not offered to the role is neither held nor run.
                 $offered = self::is_offered_tool($name, $tools);
 
                 // A tool that changes data does not run now: it waits for the user's confirmation
                 // and the turn ends, so the model cannot act on a result that does not exist yet.
-                $pending = $offered ? pending_action_service::hold($userid, $name, $args) : null;
+                $pending = $offered && $unrestored === null ? pending_action_service::hold($userid, $name, $args) : null;
                 if ($pending !== null) {
                     \local_jedomi_log('TOOL_HELD', ['tool' => $name, 'severity' => $pending['severity']]);
                     echo "data: " . json_encode(['_jedomi_pending_action' => $pending], JSON_UNESCAPED_UNICODE) . "\n\n";
@@ -444,6 +450,9 @@ class handler {
                         'detail' => get_string('error_tool_loop_detected', 'local_jedomi'),
                     ]);
                     \local_jedomi_log('LOOP_DETECTED', ['tool' => $name, 'count' => $toolrepeatcounts[$callkey]]);
+                } else if ($unrestored !== null) {
+                    \local_jedomi_log('TOOL_UNRESTORED_PLACEHOLDER', ['tool' => $name]);
+                    $result = $unrestored;
                 } else if (!$offered) {
                     \local_jedomi_log('TOOL_NOT_OFFERED', ['tool' => $name]);
                     $result = json_encode(['error' => get_string('error_unknown_tool', 'local_jedomi', $name)]);

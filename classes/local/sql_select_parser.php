@@ -110,6 +110,7 @@ class sql_select_parser {
      * @param string $sql Query.
      * @param array $params Positional or named parameters.
      * @return array[] Tokens, each with type (word, table, number, string, op, punct, comment or other) and value.
+     * @throws \moodle_exception sql_construct_rejected when the regular expression fails, so no query is read in part.
      */
     public static function tokenize(string $sql, array $params): array {
         $positional = array_values(array_filter($params, static fn($key): bool => is_int($key), ARRAY_FILTER_USE_KEY));
@@ -127,7 +128,15 @@ class sql_select_parser {
         $offset = 0;
         $index = 0;
         $length = strlen($sql);
-        while ($offset < $length && preg_match($pattern, $sql, $m, PREG_UNMATCHED_AS_NULL, $offset)) {
+        while ($offset < $length) {
+            $matched = preg_match($pattern, $sql, $m, PREG_UNMATCHED_AS_NULL, $offset);
+            if ($matched === false) {
+                // A query read only in part could pass for less than it is (RISK-004).
+                throw new \moodle_exception('sql_construct_rejected', 'local_jedomi');
+            }
+            if ($matched === 0) {
+                break;
+            }
             $offset += strlen($m[0]);
             foreach (['space', 'comment', 'table', 'word', 'number', 'string', 'op', 'punct', 'param', 'other'] as $type) {
                 if ($m[$type] !== null) {

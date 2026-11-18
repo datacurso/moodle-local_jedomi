@@ -732,4 +732,113 @@ final class sql_guard_test extends \advanced_testcase {
             $this->assertSame('sql_sensitive_rejected', $e->errorcode);
         }
     }
+
+    /**
+     * Queries with a carriage return, which ends a "--" comment on PostgreSQL and SQL Server but not for the guard.
+     *
+     * @return array<string, array{0: string}>
+     */
+    public static function carriage_return_provider(): array {
+        return [
+            'code after a comment ended by a carriage return' => ["SELECT 1 --x\rFROM {config}"],
+            'sensitive column after a comment ended by a carriage return' => ["SELECT id -- x\r, password FROM {user}"],
+            'carriage return as a line break' => ["SELECT id\rFROM {course}"],
+            'Windows line break' => ["SELECT id\r\nFROM {course}"],
+        ];
+    }
+
+    /**
+     * RISK-003: a carriage return is rejected on every database family with its own reason, so code the database runs
+     * after a "--x\r" comment can never be hidden from the guard.
+     *
+     * @dataProvider carriage_return_provider
+     * @param string $sql Query.
+     */
+    public function test_carriage_return_is_rejected_on_every_family(string $sql): void {
+        $this->resetAfterTest();
+
+        foreach (['postgres', 'mssql', 'oracle', 'mysql', 'sqlite'] as $family) {
+            $this->assertSame('sql_carriage_return_rejected', sql_guard::syntax_rejection($sql, $family), $family);
+        }
+        foreach ([(int) get_admin()->id, 0] as $userid) {
+            $this->assertSame('sql_carriage_return_rejected', sql_guard::rejection_reason($sql, $userid), "User {$userid}");
+        }
+    }
+
+    /**
+     * RISK-003: the reason tells the AI to write line breaks as "\n", so it can write the query again.
+     */
+    public function test_carriage_return_reason_tells_how_to_write_the_query(): void {
+        $this->assertStringContainsString('\n', get_string('sql_carriage_return_rejected', 'local_jedomi'));
+    }
+
+    /**
+     * RISK-004: a query longer than the limit is rejected before it is read, and a query of the limit is still read.
+     */
+    public function test_queries_longer_than_the_limit_are_rejected(): void {
+        $this->resetAfterTest();
+        $head = "SELECT id FROM {course} WHERE fullname = '";
+        $fits = $head . str_repeat('a', sql_guard::MAX_QUERY_LENGTH - strlen($head) - 1) . "'";
+        $this->assertSame(sql_guard::MAX_QUERY_LENGTH, strlen($fits));
+
+        $this->assertNull(sql_guard::rejection_reason($fits, (int) get_admin()->id));
+        $this->assertSame('sql_too_long_rejected', sql_guard::rejection_reason($fits . ' ', (int) get_admin()->id));
+        $this->assertSame('sql_too_long_rejected', sql_guard::syntax_rejection($fits . ' ', 'postgres'));
+    }
+
+    /**
+     * Run a function with a backtracking limit low enough to make the regular expressions of the guard fail on a long
+     * literal, restoring the settings afterwards.
+     *
+     * @param callable $test Function to run.
+     */
+    private static function with_failing_regex(callable $test): void {
+        $jit = ini_get('pcre.jit');
+        $limit = ini_get('pcre.backtrack_limit');
+        ini_set('pcre.jit', '0');
+        ini_set('pcre.backtrack_limit', '10');
+        try {
+            $test();
+        } finally {
+            ini_set('pcre.backtrack_limit', $limit);
+            ini_set('pcre.jit', $jit);
+        }
+    }
+
+    /**
+     * RISK-004: when the regular expression that reads the query fails, the query is rejected instead of being read as
+     * a query without code (fail closed).
+     */
+    public function test_queries_the_guard_cannot_read_are_rejected(): void {
+        $this->resetAfterTest();
+        $sql = "SELECT value FROM {config} WHERE name = '" . str_repeat('a', 2000) . "'";
+        $reasons = [];
+
+        self::with_failing_regex(static function () use ($sql, &$reasons): void {
+            $reasons[] = sql_guard::rejection_reason($sql, (int) get_admin()->id);
+            $reasons[] = sql_guard::syntax_rejection($sql, 'postgres');
+        });
+
+        $this->assertSame(['sql_construct_rejected', 'sql_construct_rejected'], $reasons);
+    }
+
+    /**
+     * RISK-004: the tokenizer of the course check rejects a query it cannot read to the end, instead of returning the
+     * tokens read before the failure.
+     */
+    public function test_tokenizer_rejects_a_query_it_cannot_read(): void {
+        $sql = "SELECT id FROM {course} WHERE fullname = '" . str_repeat('a', 2000) . "'";
+        $code = null;
+
+        self::with_failing_regex(static function () use ($sql, &$code): void {
+            try {
+                sql_select_parser::tokenize($sql, []);
+            } catch (\moodle_exception $e) {
+                $code = $e->errorcode;
+            }
+        });
+
+        $this->assertSame('sql_construct_rejected', $code);
+        $this->assertCount(8, sql_select_parser::tokenize($sql, []), 'The same query is read when the expression works');
+    }
 }

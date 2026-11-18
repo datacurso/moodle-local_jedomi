@@ -599,8 +599,17 @@ class agent_runner extends \core\task\scheduled_task {
                             $funcargs = $tc['function']['arguments'] ?? '{}';
                             $tcid = $tc['id'] ?? 'tc_' . uniqid();
                             $realargs = is_string($funcargs) ? json_decode($funcargs, true) : $funcargs;
+                            $unrestored = null;
                             if (is_array($realargs) && !empty($realargs)) {
-                                $funcargs = json_encode($anonymizer->restore_value($realargs), JSON_UNESCAPED_UNICODE);
+                                try {
+                                    $funcargs = json_encode(
+                                        $anonymizer->restore_tool_args($funcname, $realargs),
+                                        JSON_UNESCAPED_UNICODE
+                                    );
+                                } catch (\local_jedomi\local\unrestored_placeholder_exception $e) {
+                                    // The query is not run against the text of a placeholder (RISK-001).
+                                    $unrestored = $e->tool_result();
+                                }
                             }
 
                             // ... ── Loop detection: hash by tool name + stable args ──
@@ -621,6 +630,8 @@ class agent_runner extends \core\task\scheduled_task {
                                         . $toolcallcounts[$callkey]
                                         . ' times. Try different parameters or a different tool.',
                                 ]);
+                            } else if ($unrestored !== null) {
+                                $toolresult = $unrestored;
                             } else {
                                 mtrace("[AGENT] {$agentlabel} — executing tool: {$funcname}()");
                                 \local_jedomi_log("[AGENT] {$agentlabel} — executing tool: {$funcname}()");

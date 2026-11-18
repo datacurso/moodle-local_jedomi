@@ -372,7 +372,7 @@ final class preview_runner_test extends \advanced_testcase {
      */
     public static function anonymization_level_provider(): array {
         return [
-            'basic' => ['basic', ['ximena.quintanilla@example.com', 'Quintanilla']],
+            'basic' => ['basic', ['ximena.quintanilla@example.com', 'Quintanilla', 'ID-778899']],
             'strict' => ['strict', ['ximena.quintanilla@example.com', 'Quintanilla', 'ID-778899']],
         ];
     }
@@ -446,6 +446,67 @@ final class preview_runner_test extends \advanced_testcase {
         $sent = json_encode(end($fake->calls)['messages'], JSON_UNESCAPED_UNICODE);
         $this->assertStringNotContainsString('Quintanilla', $sent);
         $this->assertStringNotContainsString('ximena.quintanilla@example.com', $sent);
+    }
+
+    /**
+     * Decision 6, REL-005: in the preview, with the Basic level an identifier the AI received as a placeholder is
+     * restored in the arguments of the tool before it runs and in the answer shown to the administrator.
+     *
+     * @return void
+     */
+    public function test_preview_restores_identifier_placeholders_in_tool_arguments_and_answer(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        set_config('anonymization_level', 'basic', 'local_jedomi');
+        $named = $this->getDataGenerator()->create_user(['idnumber' => 'ID-778899', 'city' => 'Cartagena']);
+        $fake = new fake_ai_client();
+        $fake->enqueue_tool_calls([['id' => 'call_1', 'type' => 'function', 'function' => ['name' => 'execute_sql',
+            'arguments' => json_encode(['query' => 'SELECT id, idnumber FROM {user} WHERE id = ' . (int) $named->id])]]]);
+        $fake->enqueue_tool_calls([['id' => 'call_2', 'type' => 'function', 'function' => ['name' => 'execute_sql',
+            'arguments' => json_encode(['query' => "SELECT city FROM {user} WHERE idnumber = '[id_1]'"])]]]);
+        $fake->enqueue_text('The user [id_1] lives in the city found.');
+        client::set_instance_for_testing($fake);
+
+        $result = preview_runner::run('Where does that user live?', (int) get_admin()->id);
+
+        $this->assertTrue($result['ok']);
+        $this->assertCount(3, $fake->calls);
+        $tools = array_values(array_filter($fake->calls[2]['messages'], static fn(array $m): bool => $m['role'] === 'tool'));
+        $this->assertStringNotContainsString('ID-778899', (string) $tools[0]['content']);
+        $this->assertStringContainsString('[id_1]', (string) $tools[0]['content']);
+        $this->assertStringContainsString('Cartagena', (string) $tools[1]['content'], 'The query ran with the real idnumber');
+        $this->assertSame('The user ID-778899 lives in the city found.', $result['answer']);
+    }
+
+    /**
+     * RISK-001: a query with a placeholder the AI wrote in a form that cannot be restored ("[ID 1]") is not run: the AI
+     * receives an error telling it to write the exact placeholder, never the result of the query run against the token.
+     *
+     * @return void
+     */
+    public function test_preview_does_not_run_a_query_with_a_placeholder_that_cannot_be_restored(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        set_config('anonymization_level', 'basic', 'local_jedomi');
+        $named = $this->getDataGenerator()->create_user(['idnumber' => 'ID-778899', 'city' => 'Cartagena']);
+        $this->getDataGenerator()->create_user(['idnumber' => 'ID-OTHER', 'city' => 'Lima']);
+        $fake = new fake_ai_client();
+        $fake->enqueue_tool_calls([['id' => 'call_1', 'type' => 'function', 'function' => ['name' => 'execute_sql',
+            'arguments' => json_encode(['query' => 'SELECT id, idnumber FROM {user} WHERE id = ' . (int) $named->id])]]]);
+        $fake->enqueue_tool_calls([['id' => 'call_2', 'type' => 'function', 'function' => ['name' => 'execute_sql',
+            'arguments' => json_encode(['query' => "SELECT city FROM {user} WHERE idnumber <> '[ID 1]'"])]]]);
+        $fake->enqueue_text('Done.');
+        client::set_instance_for_testing($fake);
+
+        $result = preview_runner::run('Where do the other users live?', (int) get_admin()->id);
+
+        $this->assertTrue($result['ok']);
+        $tools = array_values(array_filter($fake->calls[2]['messages'], static fn(array $m): bool => $m['role'] === 'tool'));
+        $this->assertStringContainsString('unrestored_placeholder', (string) $tools[1]['content']);
+        $this->assertStringContainsString('[kind_N]', (string) $tools[1]['content']);
+        $this->assertStringNotContainsString('Lima', (string) $tools[1]['content'], 'The query was not run');
+        $this->assertStringNotContainsString('Cartagena', (string) $tools[1]['content'], 'The query was not run');
+        $this->assertStringContainsString('unrestored_placeholder', $result['profiler'][1]['result_preview']);
     }
 
     /**

@@ -1333,13 +1333,115 @@ final class handler_test extends \advanced_testcase {
     }
 
     /**
-     * MDL-CTR-007: with the Basic level the AI receives names and e-mails returned by the tools replaced.
+     * MDL-CTR-007, Decision 6: with the Basic level the AI receives names, e-mails and identifiers returned by the
+     * tools replaced.
      */
     public function test_basic_level_replaces_names_and_emails_sent_to_the_ai(): void {
         [$result] = $this->tool_result_with_level('basic');
 
         $this->assertStringNotContainsString('ximena.quintanilla@example.com', $result);
         $this->assertStringNotContainsString('Quintanilla', $result);
+        $this->assertStringNotContainsString('ID-778899', $result);
+    }
+
+    /**
+     * Decision 6: with the Basic level a tool call the AI writes with the placeholder of an identifier runs with the
+     * real value, and the streamed answer shows the real identifier.
+     */
+    public function test_basic_level_tool_call_with_an_identifier_placeholder_runs_with_the_real_value(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        \local_jedomi\local\service\admin_settings_service::save_privacy_settings(
+            'basic',
+            array_column(\local_jedomi\local\service\admin_settings_service::get_roles(), 'id')
+        );
+        $named = $this->getDataGenerator()->create_user(['idnumber' => 'ID-778899', 'city' => 'Cartagena']);
+        $fake = new fake_ai_client();
+        $fake->enqueue_tool_calls([['id' => 'call_1', 'type' => 'function', 'function' => ['name' => 'execute_sql',
+            'arguments' => json_encode(['sql' => 'SELECT id, idnumber FROM {user} WHERE id = ' . (int) $named->id])]]]);
+        $fake->enqueue_tool_calls([['id' => 'call_2', 'type' => 'function', 'function' => ['name' => 'execute_sql',
+            'arguments' => json_encode(['sql' => "SELECT city FROM {user} WHERE idnumber = '[id_1]'"])]]]);
+        $fake->enqueue_text('The user [id_1] lives in the city found.');
+        client::set_instance_for_testing($fake);
+
+        $output = $this->capture(fn() => handler::run(
+            [['role' => 'user', 'content' => 'Where does that user live?']],
+            'admin',
+            (int) get_admin()->id
+        ));
+
+        $this->assertCount(3, $fake->calls);
+        $tools = array_values(array_filter($fake->calls[2]['messages'], static fn(array $m): bool => $m['role'] === 'tool'));
+        $this->assertStringNotContainsString('ID-778899', (string) $tools[0]['content']);
+        $this->assertStringContainsString('[id_1]', (string) $tools[0]['content']);
+        $this->assertStringContainsString('Cartagena', (string) $tools[1]['content'], 'The query ran with the real idnumber');
+        $this->assertStringContainsString('The user ID-778899 lives', $this->streamed_text($this->events($output)));
+    }
+
+    /**
+     * Decision 6, REL-005: a write the AI proposes with the placeholder of an identifier is held with the real value, so
+     * the confirmation card and the action run later never carry a placeholder.
+     */
+    public function test_held_write_is_stored_with_the_real_identifier(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        set_config('anonymization_level', 'basic', 'local_jedomi');
+        $named = $this->getDataGenerator()->create_user(['idnumber' => 'ID-778899']);
+        $fake = new fake_ai_client();
+        $fake->enqueue_tool_calls([['id' => 'call_1', 'type' => 'function', 'function' => ['name' => 'execute_sql',
+            'arguments' => json_encode(['sql' => 'SELECT id, idnumber FROM {user} WHERE id = ' . (int) $named->id])]]]);
+        $fake->enqueue_tool_calls([['id' => 'call_2', 'type' => 'function', 'function' => ['name' => 'send_messages',
+            'arguments' => json_encode(['user_ids' => [(int) $named->id], 'message' => 'Your ID number is [id_1].'])]]]);
+        client::set_instance_for_testing($fake);
+
+        $events = $this->events($this->capture(fn() => handler::run(
+            [['role' => 'user', 'content' => 'Tell that user their ID number']],
+            'admin',
+            (int) get_admin()->id
+        )));
+
+        $this->assertCount(2, $fake->calls);
+        $pending = array_values(array_filter($events, static fn($e) => is_array($e) && isset($e['_jedomi_pending_action'])));
+        $this->assertCount(1, $pending);
+        $this->assertSame('Your ID number is ID-778899.', $pending[0]['_jedomi_pending_action']['preview']);
+        $heldid = $pending[0]['_jedomi_pending_action']['id'];
+        $record = $DB->get_record(\local_jedomi\local\service\pending_action_service::TABLE, ['id' => $heldid]);
+        $args = json_decode($record->argsjson, true);
+        $this->assertSame('Your ID number is ID-778899.', $args['message'], 'The held action carries the real value');
+        $this->assertStringNotContainsString('[id_1]', $record->argsjson);
+    }
+
+    /**
+     * REL-004: the placeholder of an address with a quote, written by the AI inside a string of its query, runs with the
+     * real address escaped, and an address written as an SQL injection only matches itself.
+     */
+    public function test_restored_value_with_quotes_is_escaped_in_the_query(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        set_config('anonymization_level', 'basic', 'local_jedomi');
+        $ohara = $this->getDataGenerator()->create_user(['address' => "O'Hara St", 'city' => 'Cartagena']);
+        $evil = $this->getDataGenerator()->create_user(['address' => "x' OR '1'='1", 'city' => 'Nowhere']);
+        $fake = new fake_ai_client();
+        $fake->enqueue_tool_calls([['id' => 'call_1', 'type' => 'function', 'function' => ['name' => 'execute_sql',
+            'arguments' => json_encode(['sql' => 'SELECT id, address FROM {user} WHERE id IN (' . (int) $ohara->id . ', '
+                . (int) $evil->id . ') ORDER BY id'])]]]);
+        $fake->enqueue_tool_calls([['id' => 'call_2', 'type' => 'function', 'function' => ['name' => 'execute_sql',
+            'arguments' => json_encode(['sql' => "SELECT city FROM {user} WHERE address = '[id_1]'"])]]]);
+        $fake->enqueue_tool_calls([['id' => 'call_3', 'type' => 'function', 'function' => ['name' => 'execute_sql',
+            'arguments' => json_encode(['sql' => "SELECT city FROM {user} WHERE address = '[id_2]'"])]]]);
+        $fake->enqueue_text('Done.');
+        client::set_instance_for_testing($fake);
+
+        $this->capture(fn() => handler::run([['role' => 'user', 'content' => 'Cities?']], 'admin', (int) get_admin()->id));
+
+        $this->assertCount(4, $fake->calls);
+        $tools = array_values(array_filter($fake->calls[3]['messages'], static fn(array $m): bool => $m['role'] === 'tool'));
+        $this->assertStringContainsString('"row_count":1', (string) $tools[1]['content'], 'The quoted address ran');
+        $this->assertStringContainsString('Cartagena', (string) $tools[1]['content']);
+        $this->assertStringContainsString('"row_count":1', (string) $tools[2]['content'], 'The injection is a value');
+        $this->assertStringContainsString('Nowhere', (string) $tools[2]['content']);
+        $this->assertStringNotContainsString('Cartagena', (string) $tools[2]['content']);
     }
 
     /**

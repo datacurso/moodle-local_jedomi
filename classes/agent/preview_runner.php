@@ -150,8 +150,14 @@ class preview_runner {
                 $toolduration = 0;
                 // The AI only knows the placeholders of the anonymised data; the tools need the real values.
                 $realargs = is_string($funcargs) ? json_decode($funcargs, true) : $funcargs;
+                $unrestored = null;
                 if (is_array($realargs) && !empty($realargs)) {
-                    $funcargs = json_encode($anonymizer->restore_value($realargs), JSON_UNESCAPED_UNICODE);
+                    try {
+                        $funcargs = json_encode($anonymizer->restore_tool_args($funcname, $realargs), JSON_UNESCAPED_UNICODE);
+                    } catch (\local_jedomi\local\unrestored_placeholder_exception $e) {
+                        // The query is not run against the text of a placeholder: the AI is told how to write it (RISK-001).
+                        $unrestored = $e->tool_result();
+                    }
                 }
 
                 // ... ── Loop detection ──────────────────────────────────────────────
@@ -169,6 +175,8 @@ class preview_runner {
                         'detail' => get_string('preview_detail_loop', 'local_jedomi', $toolcallcounts[$callkey]),
                     ]);
                     $loopbroken = true;
+                } else if ($unrestored !== null) {
+                    $toolresult = $unrestored;
                 } else if (pending_action_service::severity($funcname, is_array($decodedargs) ? $decodedargs : []) !== null) {
                     // A preview never runs an action that changes data: those run only after a confirmation.
                     $toolresult = json_encode([

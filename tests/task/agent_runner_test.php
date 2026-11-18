@@ -684,7 +684,43 @@ final class agent_runner_test extends \advanced_testcase {
 
         $this->assertStringNotContainsString('ximena.quintanilla@example.com', $result);
         $this->assertStringNotContainsString('Quintanilla', $result);
+        $this->assertStringNotContainsString('ID-778899', $result, 'Decision 6: identifiers too');
         $this->assertStringContainsString('Ximena Quintanilla', $delivered);
+    }
+
+    /**
+     * Decision 6, REL-005: in the agents, with the Basic level an identifier the AI received as a placeholder is restored
+     * in the arguments of the tool before it runs and in the result delivered to the creator.
+     */
+    public function test_agent_identifier_placeholder_is_restored_in_tool_arguments_and_result(): void {
+        global $DB;
+        $this->resetAfterTest();
+        set_config('anonymization_level', 'basic', 'local_jedomi');
+        set_config('telegram_enabled', 1, 'local_jedomi');
+        $telegram = new fake_telegram_api_client();
+        api_client::set_instance_for_testing($telegram);
+        $admin = get_admin();
+        $DB->insert_record('local_jedomi_telegram_links', (object) ['userid' => $admin->id, 'chatid' => '774000301',
+            'username' => 'admin', 'confirmed' => 1, 'timecreated' => time(), 'lastproactivesent' => 0]);
+        $named = $this->getDataGenerator()->create_user(['idnumber' => 'ID-778899', 'city' => 'Cartagena']);
+        $this->create_due_agent((int) $admin->id);
+        $fake = new fake_ai_client();
+        $fake->enqueue_tool_calls([['id' => 'call_1', 'type' => 'function', 'function' => ['name' => 'execute_sql',
+            'arguments' => json_encode(['query' => 'SELECT id, idnumber FROM {user} WHERE id = ' . (int) $named->id])]]]);
+        $fake->enqueue_tool_calls([['id' => 'call_2', 'type' => 'function', 'function' => ['name' => 'execute_sql',
+            'arguments' => json_encode(['query' => "SELECT city FROM {user} WHERE idnumber = '[id_1]'"])]]]);
+        $fake->enqueue_text('The user [id_1] lives in the city found.');
+        client::set_instance_for_testing($fake);
+
+        $this->run_task();
+
+        $this->assertCount(3, $fake->calls);
+        $tools = array_values(array_filter($fake->calls[2]['messages'], static fn(array $m): bool => $m['role'] === 'tool'));
+        $this->assertStringNotContainsString('ID-778899', (string) $tools[0]['content']);
+        $this->assertStringContainsString('[id_1]', (string) $tools[0]['content']);
+        $this->assertStringContainsString('Cartagena', (string) $tools[1]['content'], 'The query ran with the real idnumber');
+        $bychat = array_column($telegram->sent, 'text', 'chatid');
+        $this->assertStringContainsString('ID-778899', (string) ($bychat['774000301'] ?? ''));
     }
 
     /**

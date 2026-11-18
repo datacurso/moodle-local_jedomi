@@ -193,14 +193,14 @@ $string['ai_timeout'] = 'Tiempo de espera de la IA (segundos)';
 $string['ai_timeout_help'] = 'Cuánto espera Jedomi cada respuesta del servicio de IA en el chat web, con el servicio de Datacurso y con el servicio personalizado, de 10 a 600 segundos (valor predeterminado: 180). Telegram y los agentes programados conservan sus propios tiempos de espera. Un proxy delante del sitio puede cerrar la petición antes (Cloudflare la cierra a los 100 segundos), igual que el max_execution_time de PHP o el tiempo de espera del servidor web: auméntelos también o mantenga este valor por debajo de ellos.';
 $string['analyze_file'] = 'Resuma este archivo.';
 $string['analyze_image'] = 'Analice esta imagen.';
-$string['anon_basic'] = 'Básico (nombres y correos electrónicos)';
-$string['anon_basic_desc'] = 'Reemplaza nombres y correos. Conserva la mayor parte del contexto.';
+$string['anon_basic'] = 'Básico (nombres, correos electrónicos e identificadores)';
+$string['anon_basic_desc'] = 'Reemplaza nombres, correos e identificadores (nombre de usuario, número de identificación, teléfonos, dirección, dirección IP, cuentas de mensajería, URL de la página web). Conserva la mayor parte del contexto.';
 $string['anon_feedback_only'] = 'Solo comentarios (no se guarda el texto de conversaciones)';
 $string['anon_feedback_only_desc'] = 'Solo guarda calificaciones y botones de comentarios. Sin texto de conversación.';
-$string['anon_strict'] = 'Estricto (nombres, correos electrónicos, identificadores, texto libre)';
-$string['anon_strict_desc'] = 'Reemplaza nombres, correos, IDs y texto libre. Máxima privacidad.';
+$string['anon_strict'] = 'Estricto (nombres, correos electrónicos, identificadores, texto libre y códigos)';
+$string['anon_strict_desc'] = 'Reemplaza lo mismo que Básico (nombres, correos e identificadores) y, además, el texto libre largo y los códigos que mezclan letras y números dentro de los textos. Máxima privacidad.';
 $string['anonymization_level'] = 'Nivel de anonimización';
-$string['anonymization_level_help'] = 'Los datos personales se reemplazan por marcadores antes de llegar al servicio de IA: los mensajes del usuario, el texto de los archivos, imágenes y audios adjuntos, el contexto de la página, los mensajes anteriores de la conversación y los resultados de las herramientas, en el chat web, Telegram, los agentes programados y la vista previa de agentes. El usuario sigue viendo los datos reales en la respuesta.<br>Básico: nombres de los usuarios del sitio y direcciones de correo electrónico.<br>Estricto: además, identificadores (nombre de usuario, número de identificación, teléfono, dirección, dirección IP) y textos libres largos.<br>Solo comentarios: la IA recibe lo mismo que con Básico, y las valoraciones se guardan sin el texto de la conversación.';
+$string['anonymization_level_help'] = 'Los datos personales se reemplazan por marcadores antes de llegar al servicio de IA: los mensajes del usuario, el texto de los archivos, imágenes y audios adjuntos, el contexto de la página, los mensajes anteriores de la conversación y los resultados de las herramientas, en el chat web, Telegram, los agentes programados y la vista previa de agentes. El usuario sigue viendo los datos reales en la respuesta.<br>Básico: nombres de los usuarios del sitio, direcciones de correo electrónico e identificadores (nombre de usuario, número de identificación, teléfono, dirección, dirección IP, cuentas de mensajería, página web).<br>Estricto: además, textos libres largos y códigos que mezclan letras y números dentro de los textos.<br>Solo comentarios: la IA recibe lo mismo que con Básico, y las valoraciones se guardan sin el texto de la conversación.';
 $string['answer_stopped'] = 'Respuesta detenida.';
 $string['api_role_admin'] = 'Administrador';
 $string['api_role_manager'] = 'Gestor';
@@ -805,6 +805,8 @@ $string['spt_secret'] = 'Secreto del token de permisos';
 $string['spt_secret_help'] = 'Secreto usado para firmar los tokens de permisos del chat. Se genera automáticamente para este '
     . 'sitio y se guarda en Moodle, por lo que no hace falta configurarlo. Cambiarlo invalida los tokens ya emitidos: los usuarios '
     . 'deben recargar la página para seguir chateando.';
+$string['sql_carriage_return_rejected'] = 'La consulta contiene un retorno de carro (\\r), por lo que no se ejecutó. '
+    . 'Escriba los saltos de línea solo como \\n.';
 $string['sql_construct_rejected'] = 'La consulta usa una sintaxis fuera del subconjunto de solo lectura permitido, por lo que no '
     . 'se ejecutó. Escriba un único SELECT con FROM, [LEFT] JOIN ... ON, condiciones WHERE unidas solo con AND (=, <>, <, >, '
     . 'IN (números), IS [NOT] NULL, LIKE \'texto\'), GROUP BY, ORDER BY y LIMIT, y solo las funciones COUNT, SUM, AVG, MIN, '
@@ -828,6 +830,8 @@ $string['sql_table_not_allowed'] = 'La consulta lee una tabla que no está dispo
     . 'cursos limitadas a sus cursos, y lea nombres de usuarios solo uniendo {user} a las matriculaciones, roles o calificaciones '
     . 'de uno de sus cursos (por ejemplo JOIN {user_enrolments} ue ON ue.userid = u.id JOIN {enrol} e ON e.id = ue.enrolid '
     . 'WHERE e.courseid = 12).';
+$string['sql_too_long_rejected'] = 'La consulta tiene más de 8000 caracteres, por lo que no se ejecutó. '
+    . 'Escriba una consulta más corta.';
 $string['sql_user_column_rejected'] = 'La consulta lee columnas de usuario distintas del id y los nombres (como el correo, el '
     . 'teléfono, la dirección o la última IP), o todas las columnas con *, por lo que no se ejecutó. Indique solo u.id, '
     . 'u.firstname, u.lastname, u.middlename, u.alternatename, u.firstnamephonetic o u.lastnamephonetic.';

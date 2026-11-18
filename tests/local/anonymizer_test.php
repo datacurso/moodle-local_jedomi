@@ -121,6 +121,328 @@ final class anonymizer_test extends \advanced_testcase {
     }
 
     /**
+     * Identifier columns and a sample value of each (Decision 6).
+     *
+     * @return array
+     */
+    public static function identifier_column_provider(): array {
+        $columns = ['username' => 'xquintanilla', 'idnumber' => 'ID-778899', 'phone1' => '+57 300 111 2233',
+            'phone2' => '604 555 0101', 'address' => 'Calle 10 # 20-30', 'lastip' => '192.168.10.20',
+            'ip' => '10.0.0.7', 'skype' => 'ximena.q', 'icq' => '123456789', 'msn' => 'xq@msn.example',
+            'aim' => 'xq_aim', 'yahoo' => 'xq_yahoo', 'url' => 'https://ximena.example.com/me'];
+        $cases = [];
+        foreach ([anonymizer::LEVEL_BASIC, anonymizer::LEVEL_STRICT, anonymizer::LEVEL_FEEDBACK] as $level) {
+            foreach ($columns as $column => $value) {
+                $cases["{$level} {$column}"] = [$level, $column, $value];
+            }
+        }
+        return $cases;
+    }
+
+    /**
+     * Decision 6: every identifier column of a tool result is replaced at every level, Basic included, and the answer
+     * and the tool arguments written with its placeholder get the real value back.
+     *
+     * @dataProvider identifier_column_provider
+     * @param string $level Anonymisation level.
+     * @param string $column Identifier column.
+     * @param string $value Real value.
+     * @return void
+     */
+    public function test_identifier_columns_are_replaced_and_restored_at_every_level(
+        string $level,
+        string $column,
+        string $value
+    ): void {
+        $this->resetAfterTest();
+        $anonymizer = new anonymizer($level);
+
+        $sent = $anonymizer->anonymize_tool_result(json_encode(['rows' => [['id' => 7, $column => $value]]]));
+
+        $this->assertStringNotContainsString(json_encode($value), $sent, "The {$column} column must not reach the AI");
+        $this->assertSame(['rows' => [['id' => 7, $column => '[id_1]']]], json_decode($sent, true));
+        $this->assertSame("It is {$value}.", $anonymizer->restore('It is [id_1].'));
+        $this->assertSame(
+            ['sql' => "SELECT id FROM {user} WHERE {$column} = '{$value}'"],
+            $anonymizer->restore_value(['sql' => "SELECT id FROM {user} WHERE {$column} = '[ID 1]'"]),
+            'A tool call written with the placeholder runs with the real value'
+        );
+    }
+
+    /**
+     * Anonymiser that already replaced the given addresses, in order, by [id_1], [id_2]...
+     *
+     * @param string[] $addresses Real addresses.
+     * @return anonymizer
+     */
+    private function anonymizer_with_addresses(array $addresses): anonymizer {
+        $anonymizer = new anonymizer(anonymizer::LEVEL_BASIC);
+        $anonymizer->anonymize_tool_result(json_encode(array_map(static fn(string $a): array => ['address' => $a], $addresses)));
+        return $anonymizer;
+    }
+
+    /**
+     * REL-004: a real value restored into the query of the SQL tool is escaped for the place where the AI wrote its
+     * placeholder: doubled quotes inside a string, a quoted string outside one, backslashes doubled only where the
+     * database reads them as escapes, comments left alone, and nothing restored when the quotes do not pair.
+     *
+     * @return void
+     */
+    public function test_restore_sql_escapes_the_real_values_for_the_query(): void {
+        $this->resetAfterTest();
+        $anonymizer = $this->anonymizer_with_addresses(["O'Hara St", 'C:\\dir', "x' OR '1'='1"]);
+        $where = "SELECT id FROM {user} WHERE address = ";
+
+        $this->assertSame($where . "'O''Hara St'", $anonymizer->restore_sql($where . "'[id_1]'", 'postgres'));
+        $this->assertSame($where . "'O''Hara St'", $anonymizer->restore_sql($where . "'[id_1]'", 'mysql'));
+        $this->assertSame($where . "'%O''Hara St%'", $anonymizer->restore_sql($where . "'%[id_1]%'", 'postgres'));
+        $this->assertSame($where . "'C:\\dir'", $anonymizer->restore_sql($where . "'[id_2]'", 'postgres'));
+        $this->assertSame($where . "'C:\\\\dir'", $anonymizer->restore_sql($where . "'[id_2]'", 'mysql'));
+        $this->assertSame($where . "'x'' OR ''1''=''1'", $anonymizer->restore_sql($where . "'[id_3]'", 'mssql'));
+        $this->assertSame($where . "\"O'Hara St\"", $anonymizer->restore_sql($where . '"[id_1]"', 'mysql'));
+        $outside = $anonymizer->restore_sql($where . '[id_1] OR address = [id_2]', 'mysql');
+        $this->assertSame($where . "'O''Hara St' OR address = 'C:\\\\dir'", $outside, 'Outside a string: a quoted string');
+        $comment = $anonymizer->restore_sql($where . "[id_3] -- [id_1]\n", 'postgres');
+        $this->assertSame($where . "'x'' OR ''1''=''1' -- [id_1]\n", $comment, 'Comments are left alone');
+        $this->assert_not_restored($anonymizer, $where . "'[id_1] OR 1=1", 'postgres', 'Quotes that do not pair');
+        $this->assertSame(
+            $where . "'[id_9] OR 1=1",
+            $anonymizer->restore_sql($where . "'[id_9] OR 1=1", 'postgres'),
+            'Quotes that do not pair and only unknown tokens: the query is left as written'
+        );
+        $this->assertSame($where . "'[id_9]'", $anonymizer->restore_sql($where . "'[id_9]'", 'postgres'), 'Unknown tokens');
+    }
+
+    /**
+     * REL-004: in a query only the exact placeholders of the anonymiser are restored, and on the MySQL family only when
+     * the backslashes before them pair up, so a restored value never takes the second backslash of an escape pair and
+     * can never close its string. Loose forms, kept for the answers, are left as written in a query.
+     *
+     * @return void
+     */
+    public function test_restore_sql_restores_only_exact_placeholders_and_never_splits_an_escape_pair(): void {
+        $this->resetAfterTest();
+        $anonymizer = $this->anonymizer_with_addresses(["' OR 1=1 -- ", "O'Hara St"]);
+        $where = 'SELECT id FROM {user} WHERE address = ';
+        $restored = [
+            // Backslashes that pair up stay pairs; the value follows them escaped.
+            "'\\\\[id_1]'" => "'\\\\'' OR 1=1 -- '",
+            "'\\\\\\\\[id_1]'" => "'\\\\\\\\'' OR 1=1 -- '",
+            "'a\\\\b[id_2]'" => "'a\\\\bO''Hara St'",
+            '"\\\\[id_1]"' => "\"\\\\' OR 1=1 -- \"",
+            // Backslashes are not escapes inside backquotes.
+            "\x60\\[id_2]\x60" => "\x60\\O'Hara St\x60",
+            // An escaped quote before the placeholder is not a backslash before it.
+            "'\\'[id_1]'" => "'\\''' OR 1=1 -- '",
+        ];
+        $refused = [
+            // An odd backslash escapes the bracket: the token cannot be restored, so the query is not run (RISK-001).
+            "'\\[id_1]'", "'\\\\\\[id_1]'", '"\\[id_1]"',
+            // Loose forms are restored in answers only; in a query they are refused, never run as text.
+            "'[ id_1 ]'", "'[id-1]'", "'[id 1]'", "'[ID_1]'", "'\\[id\\_1\\]'", "'[id_01]'", '[ id_1 ]', '\\[id_1]',
+        ];
+        $quoted = static fn(string $sql): int => count(preg_split(sql_guard::quoted_parts_pattern('mysql'), $sql));
+        foreach ($restored as $input => $expected) {
+            $output = $anonymizer->restore_sql($where . $input, 'mysql');
+            $this->assertSame($where . $expected, $output, $input);
+            $this->assertSame($quoted($where . $input), $quoted($output), "{$input}: the value stays inside its string");
+        }
+        foreach ($refused as $input) {
+            $this->assert_not_restored($anonymizer, $where . $input, 'mysql', $input);
+        }
+        $tokenvalue = anonymizer::from_map(['[id_1]' => '[id_2]', '[id_2]' => "x' OR '1'='1"], anonymizer::LEVEL_BASIC);
+        $this->assertSame($where . "'[id_2]'", $tokenvalue->restore_sql($where . "'[id_1]'", 'mysql'), 'One pass');
+        // Elsewhere a backslash is not an escape: the exact placeholder after it is restored.
+        $this->assertSame($where . "'\\'' OR 1=1 -- '", $anonymizer->restore_sql($where . "'\\[id_1]'", 'postgres'));
+        $this->assert_not_restored($anonymizer, $where . "'[id-1]'", 'postgres', 'Loose form elsewhere');
+        $this->assertSame("' OR 1=1 -- ", $anonymizer->restore('\\[ID-1\\]'), 'Answers keep the loose restore');
+    }
+
+    /**
+     * REL-004: the arguments of the SQL tool get the escaped values in its query, every other argument the raw value.
+     *
+     * @return void
+     */
+    public function test_restore_tool_args_escapes_only_the_query_of_the_sql_tool(): void {
+        $this->resetAfterTest();
+        $anonymizer = $this->anonymizer_with_addresses(["O'Hara St"]);
+        $escaped = "WHERE address = 'O''Hara St'";
+
+        $this->assertSame(
+            ['sql' => $escaped, 'params' => ["O'Hara St"]],
+            $anonymizer->restore_tool_args('execute_sql', ['sql' => "WHERE address = '[id_1]'", 'params' => ['[id_1]']])
+        );
+        $this->assertSame(
+            ['query' => $escaped],
+            $anonymizer->restore_tool_args('execute_sql', ['query' => "WHERE address = '[id_1]'"])
+        );
+        $this->assertSame(
+            ['sql' => "WHERE address = 'O'Hara St'"],
+            $anonymizer->restore_tool_args('describe_table', ['sql' => "WHERE address = '[id_1]'"]),
+            'Other tools take structured values: raw restore'
+        );
+    }
+
+    /**
+     * Assert that a query is refused because a placeholder of the anonymiser in it cannot be restored.
+     *
+     * @param anonymizer $anonymizer Anonymiser.
+     * @param string $sql Query.
+     * @param string $family Database family.
+     * @param string $message Assertion message.
+     */
+    private function assert_not_restored(anonymizer $anonymizer, string $sql, string $family, string $message): void {
+        try {
+            $restored = $anonymizer->restore_sql($sql, $family);
+            $this->fail("{$message}: the query was returned to be run: {$restored}");
+        } catch (unrestored_placeholder_exception $e) {
+            $this->assertStringContainsString('[id_', $e->getMessage(), $message);
+        }
+    }
+
+    /**
+     * RISK-001: a placeholder of the anonymiser that the AI wrote in a form that cannot be restored in a query (another
+     * case, spaces, Markdown escapes) stops the SQL tool with an error telling the AI the exact form to write, instead of
+     * running the query against the text of the token; tokens that are not placeholders of the anonymiser stay text.
+     *
+     * @return void
+     */
+    public function test_sql_tool_arguments_with_a_placeholder_that_cannot_be_restored_are_refused(): void {
+        $this->resetAfterTest();
+        $anonymizer = $this->anonymizer_with_addresses(["O'Hara St"]);
+
+        foreach (["address <> '[ID 1]'", "address = '[id 1]'", 'address = \\[id\\_1\\]'] as $where) {
+            try {
+                $anonymizer->restore_tool_args('execute_sql', ['sql' => "SELECT id FROM {user} WHERE {$where}"]);
+                $this->fail("{$where}: the query would run against the text of the token");
+            } catch (unrestored_placeholder_exception $e) {
+                $result = json_decode($e->tool_result(), true);
+                $this->assertSame('unrestored_placeholder', $result['error'], $where);
+                $this->assertStringContainsString('[kind_N]', $result['detail'], $where);
+                $this->assertStringContainsString('[id_1]', $result['detail'], $where);
+                $this->assertStringNotContainsString("O'Hara", $result['detail'], 'The real value never reaches the AI');
+            }
+        }
+        $this->assertSame(
+            ['sql' => "SELECT id FROM {user} WHERE address <> '[ID 9]'"],
+            $anonymizer->restore_tool_args('execute_sql', ['sql' => "SELECT id FROM {user} WHERE address <> '[ID 9]'"]),
+            'A token that is not a placeholder of the anonymiser is text'
+        );
+        $this->assertSame(
+            ['note' => "O'Hara St"],
+            $anonymizer->restore_tool_args('describe_table', ['note' => '[ID 1]']),
+            'Other tools keep the loose restore'
+        );
+    }
+
+    /**
+     * RISK-002: a value written outside a string next to another string or value would merge with it into one string,
+     * so the restored query does not split into the expected strings and code (re-lex count fallback) and it is refused;
+     * with code between them the same values are restored. Each value outside a string adds exactly one string and the
+     * code after it.
+     *
+     * @return void
+     */
+    public function test_values_outside_strings_must_keep_the_strings_of_the_query(): void {
+        $this->resetAfterTest();
+        $anonymizer = $this->anonymizer_with_addresses(['a', 'b']);
+        $select = 'SELECT id FROM {user} WHERE address = ';
+
+        foreach (['postgres', 'mysql'] as $family) {
+            foreach (['[id_1][id_2]', "'a'[id_1]", "[id_1]'b'", "'a'[id_1]'b'"] as $adjacent) {
+                $this->assert_not_restored($anonymizer, $select . $adjacent, $family, "{$family}: {$adjacent}");
+            }
+            $this->assertSame($select . "'a' || 'b'", $anonymizer->restore_sql($select . '[id_1] || [id_2]', $family));
+            $this->assertSame($select . "'a' || 'a'", $anonymizer->restore_sql($select . "'a' || [id_1]", $family));
+            $this->assertSame($select . "'a' || 'b'", $anonymizer->restore_sql($select . "[id_1] || 'b'", $family));
+            // One, two and three values outside strings, with strings around them: the expected count grows by two each.
+            $this->assertSame($select . "'a'", $anonymizer->restore_sql($select . '[id_1]', $family));
+            $this->assertSame(
+                $select . "'a' AND city = 'x' AND address <> 'b' AND country = 'b'",
+                $anonymizer->restore_sql($select . "[id_1] AND city = 'x' AND address <> [id_2] AND country = [id_2]", $family)
+            );
+        }
+    }
+
+    /**
+     * REL-004: a query the AI writes with the placeholder of an address holding quotes or backslashes runs on the
+     * database of the site and finds only the matching user; an address written as an SQL injection is just a value.
+     *
+     * @return void
+     */
+    public function test_restored_query_runs_and_cannot_be_injected_through_a_value(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $generator = $this->getDataGenerator();
+        $ohara = $generator->create_user(['address' => "O'Hara St"]);
+        $slash = $generator->create_user(['address' => 'C:\\dir\\']);
+        $generator->create_user(['address' => 'Other St']);
+        $anonymizer = $this->anonymizer_with_addresses(["O'Hara St", 'C:\\dir\\', "x' OR '1'='1", "' OR 1=1 -- "]);
+        $run = static function (string $sql) use ($anonymizer): array {
+            $restored = $anonymizer->restore_tool_args('execute_sql', ['sql' => $sql])['sql'];
+            return array_column(query_runner::run($restored, [], (int) get_admin()->id, 50)['rows'], 'id');
+        };
+
+        $this->assertEquals([$ohara->id], $run("SELECT id FROM {user} WHERE address = '[id_1]'"));
+        $this->assertEquals([$ohara->id], $run('SELECT id FROM {user} WHERE address = [id_1]'));
+        if ($DB->get_dbfamily() === 'mysql') {
+            // Elsewhere a backslash in a query is refused by the guard before it reaches the database.
+            $this->assertEquals([$slash->id], $run("SELECT id FROM {user} WHERE address = '[id_2]'"));
+            // A placeholder after an escape pair or an escaped bracket never lets the value close its string.
+            $this->assertSame([], $run("SELECT id FROM {user} WHERE address = '\\\\[id_4]'"), 'After an escape pair');
+            try {
+                $run("SELECT id FROM {user} WHERE address = '\\[id_4]'");
+                $this->fail('A placeholder after an odd backslash cannot be restored and is not run');
+            } catch (unrestored_placeholder_exception $e) {
+                $this->assertStringContainsString('[id_4]', $e->getMessage());
+            }
+        }
+        $this->assertSame([], $run("SELECT id FROM {user} WHERE address = '[id_3]'"), 'The injection is only a value');
+        $this->assertSame([], $run('SELECT id FROM {user} WHERE address = [id_3]'));
+    }
+
+    /**
+     * Decision 6: at the Basic level the identifier columns of a database row are replaced, the same value in two
+     * columns gets one placeholder, empty, null and numeric values are kept, and free text is left to the Strict level.
+     *
+     * @return void
+     */
+    public function test_basic_level_replaces_identifier_columns_but_not_free_text(): void {
+        $this->resetAfterTest();
+        $text = 'The student asked for an extension of the deadline because of a family trip next week.';
+        $row = ['id' => 7, 'username' => 'X-1001', 'idnumber' => 'X-1001', 'phone1' => '', 'phone2' => null,
+            'icq' => 123456, 'description' => $text, 'city' => 'Bogotá'];
+
+        $basic = (new anonymizer(anonymizer::LEVEL_BASIC))->anonymize_row($row);
+        $strict = (new anonymizer(anonymizer::LEVEL_STRICT))->anonymize_row($row);
+
+        $this->assertSame(['id' => 7, 'username' => '[id_1]', 'idnumber' => '[id_1]', 'phone1' => '', 'phone2' => null,
+            'icq' => 123456, 'description' => $text, 'city' => 'Bogotá'], $basic);
+        $this->assertSame('[id_1]', $strict['username']);
+        $this->assertSame('[text_1]', $strict['description'], 'The Strict level still replaces free text');
+    }
+
+    /**
+     * Decision 6: identifiers of a tool result wrapped in untrusted data markers are replaced and restored at the
+     * Basic level, and the markers keep their random id.
+     *
+     * @return void
+     */
+    public function test_identifiers_inside_untrusted_markers_are_restored_at_the_basic_level(): void {
+        $this->resetAfterTest();
+        $anonymizer = new anonymizer(anonymizer::LEVEL_BASIC);
+        $untrusted = new untrusted();
+
+        $result = $anonymizer->anonymize_tool_result(json_encode(['username' => 'xq77']));
+        $block = $untrusted->wrap('tool execute_sql', $result);
+        $again = $anonymizer->anonymize_messages([['role' => 'user', 'content' => $block]])[0]['content'];
+
+        $this->assertSame($block, $again, 'The markers and the placeholder are kept');
+        $this->assertStringNotContainsString('xq77', $block);
+        $this->assertSame('{"username":"xq77"}', $anonymizer->restore($untrusted->unwrap($block)));
+    }
+
+    /**
      * REL-001: at the Strict level the untrusted data markers of an attachment keep their random id (a code mixing
      * letters and digits), while the content between them is still anonymised and restored.
      *
@@ -218,6 +540,35 @@ final class anonymizer_test extends \advanced_testcase {
         }
         foreach (['Telegram', 'vista previa', 'Básico', 'Estricto', 'Solo comentarios', 'datos reales'] as $part) {
             $this->assertStringContainsString($part, $spanish);
+        }
+        // Decision 6: identifiers belong to the Basic level, free text to the Strict level.
+        $this->assertMatchesRegularExpression('/Basic:[^<]*ID number[^<]*<br>Strict:[^<]*free texts/', $english);
+        $this->assertMatchesRegularExpression(
+            '/Básico:[^<]*número de identificación[^<]*<br>Estricto:[^<]*textos libres/u',
+            $spanish
+        );
+        // REL-003: the labels of the levels in the Privacy tab say the same as the help.
+        $label = static fn(string $key, string $lang): string => $lang === 'es'
+            ? self::plugin_spanish_string($key)
+            : $manager->get_string($key, 'local_jedomi', null, 'en');
+        foreach (['names', 'emails', 'identifiers'] as $part) {
+            $this->assertStringContainsString($part, $label('anon_basic', 'en'), "anon_basic names {$part}");
+        }
+        foreach (['nombres', 'correos', 'identificadores'] as $part) {
+            $this->assertStringContainsString($part, $label('anon_basic', 'es'), "anon_basic (es) names {$part}");
+        }
+        foreach (['names', 'emails', 'user name', 'ID number', 'phones', 'address', 'IP', 'messaging', 'URL'] as $part) {
+            $this->assertStringContainsString($part, $label('anon_basic_desc', 'en'), "anon_basic_desc names {$part}");
+        }
+        $parts = ['nombres', 'correos', 'nombre de usuario', 'número de identificación', 'teléfonos', 'dirección', 'IP',
+            'mensajería', 'URL'];
+        foreach ($parts as $part) {
+            $this->assertStringContainsString($part, $label('anon_basic_desc', 'es'), "anon_basic_desc (es) names {$part}");
+        }
+        foreach (['anon_strict', 'anon_strict_desc'] as $key) {
+            $this->assertMatchesRegularExpression('/identifiers.*free text.*codes/', $label($key, 'en'), $key);
+            $this->assertMatchesRegularExpression('/identificadores.*texto libre.*códigos/u', $label($key, 'es'), $key);
+            $this->assertStringNotContainsString('IDs', $label($key, 'en') . $label($key, 'es'), $key);
         }
 
         $anonymizer = new anonymizer(anonymizer::LEVEL_BASIC);
