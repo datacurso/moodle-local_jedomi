@@ -30,6 +30,7 @@ require_once(__DIR__ . '/lib.php');
 
 use local_jedomi\proxy\spt_validator;
 use local_jedomi\proxy\handler;
+use local_jedomi\proxy\request_body;
 
 // ... ── Method check ──
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -47,8 +48,18 @@ if (!isloggedin() || isguestuser()) {
 }
 require_login(null, false);
 
+// ... ── Size cap ──
+// The body is read only up to request_body::MAX_BYTES and refused above it, before it is decoded (JEDOMI-SEC-006).
+$body = request_body::read('php://input', isset($_SERVER['CONTENT_LENGTH']) ? (string) $_SERVER['CONTENT_LENGTH'] : null);
+if ($body === null) {
+    http_response_code(413);
+    header('Content-Type: application/json');
+    die(json_encode(['error' => ['code' => 'request_too_large',
+        'message' => get_string('chat_error_request_too_large', 'local_jedomi')]], JSON_UNESCAPED_UNICODE));
+}
+
 // ... ── Parse input ──
-$input = json_decode(file_get_contents('php://input'), true);
+$input = json_decode($body, true);
 if (!$input || !isset($input['messages'])) {
     http_response_code(400);
     header('Content-Type: application/json');

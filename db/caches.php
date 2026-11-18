@@ -74,6 +74,15 @@ $definitions = [
         'ttl'        => 120,
     ],
 
+    // Times of the web chat messages each user sent in the last minute (chat_rate_limit_service, JEDOMI-SEC-006).
+    // MODE_APPLICATION so the limit holds across sessions, browser tabs and web servers that share the cache.
+    'chat_rate' => [
+        'mode'       => cache_store::MODE_APPLICATION,
+        'simplekeys' => true,
+        'simpledata' => true, // A list of timestamps.
+        'ttl'        => 120,
+    ],
+
     // Hashes of the signatures of the companion web services already used, so a signed request runs only once.
     // MODE_APPLICATION so a replay is seen by every request. A timestamp is accepted from 60 seconds before to 60 seconds
     // after it, so a signature is kept a little longer than twice that margin.

@@ -106,6 +106,8 @@ function local_jedomi_get_sidebar_config(array $page = []): array {
         // With the custom service, documents need its documents switch and its document service.
         'documents_enabled' => \local_jedomi\ai\model_settings::is_documents_enabled(),
         'audio_enabled' => \local_jedomi\ai\model_settings::is_audio_enabled(),
+        // Largest attached file: a larger one is refused before it is uploaded (the server refuses it too).
+        'max_upload_bytes' => \local_jedomi\local\service\provider_upload_service::MAX_UPLOAD_BYTES,
         'voice_enabled' => $voiceenabled,
         'feedback_url'  => $CFG->wwwroot . '/local/jedomi/ajax/feedback.php',
         'user_name'     => fullname($USER),
@@ -175,6 +177,11 @@ function local_jedomi_get_sidebar_config(array $page = []): array {
             'audio_error_disabled'   => get_string('audio_error_disabled', 'local_jedomi'),
             'file_attach_limit'      => get_string('file_attach_limit', 'local_jedomi'),
             'file_error_unsupported' => get_string('file_error_unsupported', 'local_jedomi'),
+            'file_error_upload_too_large' => get_string(
+                'file_error_upload_too_large',
+                'local_jedomi',
+                \local_jedomi\local\service\provider_upload_service::max_upload_mb()
+            ),
             'file_remove'            => get_string('file_remove', 'local_jedomi'),
             'file_truncated'         => get_string('file_truncated', 'local_jedomi'),
             'files_error_disabled'   => get_string('files_error_disabled', 'local_jedomi'),

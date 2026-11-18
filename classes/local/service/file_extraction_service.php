@@ -86,10 +86,12 @@ class file_extraction_service {
      * @param ai_services_api|null $api Provider client; null for Jedomi's own.
      * @return array{text: string, format: string, pages: int, rows: int, columns: int, chars: int, seconds: int,
      *     truncated: bool}
-     * @throws \moodle_exception file_error_unsupported, files_error_disabled, documents_error_custom, audio_error_*, or
-     *         any provider error.
+     * @throws \moodle_exception file_error_upload_too_large (above provider_upload_service::MAX_UPLOAD_BYTES, before
+     *         anything else), file_error_unsupported, files_error_disabled, documents_error_custom, audio_error_*, or any
+     *         provider error.
      */
     public static function extract_upload(int $userid, string $path, string $filename, ?ai_services_api $api = null): array {
+        provider_upload_service::require_upload_size($path);
         $filename = clean_param($filename, PARAM_FILE);
         if ($filename !== '' && audio_service::is_supported($filename)) {
             $audio = audio_service::transcribe_upload($userid, $path, $filename, $api);

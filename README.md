@@ -193,6 +193,32 @@ the scheduled task "Purge old query profiler records" removes the old records on
 is set in the General tab too ("Maximum rows per query (web chat)", `sql_row_limit_web`); the other channels keep their
 fixed limits.
 
+## Web chat usage limits
+
+These limits are applied in Moodle, so they hold with the Datacurso AI service and with the custom AI service alike:
+
+- **Messages per user per minute (web chat)** (`chat_rate_limit`, General tab, 0 to 120, default 10; 0 turns it off).
+  Every request of the chat panel that leads to an AI call counts one: each question (`chatproxy.php`) and each
+  attached file, image or voice message read or transcribed (`extract_file.php`, `read_file.php`). A question with two
+  attached files counts three. Requests refused because the user cannot use Jedomi there do not count. A user over the
+  limit is told, in the chat, how many seconds to wait, and no AI request is made; the refusal is logged as
+  `RATE_LIMITED` (pseudonymised user, no content). The window slides: each request counts for one minute. Site
+  administrators are never limited. Telegram keeps its own limit, and the scheduled agents and the companion web service
+  are not affected.
+  - The counts are kept in the application cache `local_jedomi/chat_rate` under a per-user lock. On a site with
+    several web servers the limit holds across them only when the application cache is a shared store (Redis or
+    Memcached); with a file store on each server it applies per server.
+  - If the lock cannot be taken (two requests of the same user at the same moment), the request is refused with
+    "Please try again in a moment" (`rate_limit_busy`, logged as `RATE_LIMIT_BUSY`). If the cache store itself fails,
+    requests go through without a limit and `RATE_LIMIT_UNAVAILABLE` is logged, so a cache fault never stops the chat.
+- **Request size**: `chatproxy.php` refuses a request body above 8 MB before decoding it. The text of attached files
+  travels inside the conversation history, so the cap leaves room for two messages with five files at the 200,000
+  character cap each.
+- **Attachment size**: files attached in the chat (`extract_file.php`, `read_file.php`) and files read for Telegram are
+  refused above 20 MB before they are read or sent; the panel refuses them before uploading. The custom AI service keeps
+  its smaller caps for images (10 MB) and text files (2 MB). PHP's `upload_max_filesize` and `post_max_size` must allow
+  the size you want to accept.
+
 ## Documentation
 
 The complete documentation (configuration, roles and permissions, use of the chat, scheduled agents, Telegram and command line tools) is available at [https://docs.datacurso.com/docs/plugins/moodle-local_jedomi](https://docs.datacurso.com/docs/plugins/moodle-local_jedomi).

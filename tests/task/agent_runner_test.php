@@ -1452,4 +1452,25 @@ final class agent_runner_test extends \advanced_testcase {
         $this->assertSame(0, (int) $after->failcount);
         $this->assertEmpty($after->runwrites, 'A successful run clears the writes of the run');
     }
+
+    /**
+     * JEDOMI-SEC-006: the message limit of the web chat does not apply to the scheduled agents of a user.
+     */
+    public function test_web_chat_message_limit_does_not_apply_to_agents(): void {
+        $this->resetAfterTest();
+        $creator = $this->getDataGenerator()->create_user();
+        $this->setAdminUser();
+        $this->create_due_agent((int) $creator->id);
+        set_config('chat_rate_limit', 1, 'local_jedomi');
+        \local_jedomi\local\service\chat_rate_limit_service::consume((int) $creator->id);
+        $this->assertGreaterThan(0, \local_jedomi\local\service\chat_rate_limit_service::consume((int) $creator->id));
+        $fake = new fake_ai_client();
+        $fake->enqueue_text('There are 3 users.');
+        client::set_instance_for_testing($fake);
+
+        $this->run_task();
+
+        $this->assertCount(1, $fake->calls);
+        $this->assertSame((int) $creator->id, $fake->calls[0]['userid']);
+    }
 }

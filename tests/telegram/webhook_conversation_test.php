@@ -1033,4 +1033,23 @@ final class webhook_conversation_test extends \advanced_testcase {
             'disabling the integration' => ['integration'],
         ];
     }
+
+    /**
+     * JEDOMI-SEC-006: the message limit of the web chat does not apply to Telegram, which keeps its own limit.
+     */
+    public function test_web_chat_message_limit_does_not_apply_to_telegram(): void {
+        $student = $this->fresh_user();
+        $this->link((int) $student->id, '779000091');
+        set_config('chat_rate_limit', 1, 'local_jedomi');
+        \local_jedomi\local\service\chat_rate_limit_service::consume((int) $student->id);
+        $this->assertGreaterThan(0, \local_jedomi\local\service\chat_rate_limit_service::consume((int) $student->id));
+        $this->ai->enqueue_text('First answer.');
+        $this->ai->enqueue_text('Second answer.');
+
+        $this->say('779000091', 'Hello');
+        $this->say('779000091', 'Hello again');
+
+        $this->assertCount(2, $this->ai->calls);
+        $this->assertStringContainsString('Second answer.', end($this->telegram->sent)['text']);
+    }
 }

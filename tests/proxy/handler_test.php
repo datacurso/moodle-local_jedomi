@@ -2015,4 +2015,130 @@ final class handler_test extends \advanced_testcase {
         ], 'student', (int) get_admin()->id));
         $this->assertCount(4, $fake->calls[1]['messages']);
     }
+
+    /**
+     * Read the Jedomi log and empty it.
+     *
+     * @return string
+     */
+    private function take_log(): string {
+        global $CFG;
+        $path = $CFG->dataroot . '/local/jedomi/jedomi.log';
+        $log = is_file($path) ? (string) file_get_contents($path) : '';
+        @unlink($path);
+        return $log;
+    }
+
+    /**
+     * JEDOMI-SEC-006: with the default of 10 messages per minute, the 11th message of a user within a minute gets a clear
+     * message with the seconds to wait and no AI call, with the Datacurso service and with the custom service; the refusal
+     * is logged without the question.
+     *
+     * @dataProvider ai_service_provider
+     * @param string $service AI service of the site.
+     */
+    public function test_eleventh_message_within_a_minute_is_refused_without_an_ai_call(string $service): void {
+        global $USER;
+        $this->require_provider();
+        $this->resetAfterTest();
+        set_config('ai_service', $service, 'local_jedomi');
+        set_config('custom_model', 'chat-model', 'local_jedomi');
+        $this->setUser($this->getDataGenerator()->create_user());
+        $spt = $this->sign_with_site_secret(\local_jedomi_generate_spt('student'));
+        for ($i = 0; $i < 10; $i++) {
+            $this->assertSame(0, \local_jedomi\local\service\chat_rate_limit_service::consume((int) $USER->id));
+        }
+        $fake = new fake_ai_client();
+        $fake->enqueue_text('An answer that must never be produced.');
+        $this->take_log();
+
+        $events = $this->chat_request($spt, $fake, 'Question with secret-content');
+
+        $this->assertSame([], $fake->calls, 'No AI call is made over the limit');
+        $errors = $this->error_events($events);
+        $this->assertCount(1, $errors);
+        $this->assertSame('rate_limited', $errors[0]['error']['code']);
+        $this->assertIsInt($errors[0]['error']['seconds']);
+        $this->assertGreaterThan(0, $errors[0]['error']['seconds']);
+        $this->assertLessThanOrEqual(60, $errors[0]['error']['seconds']);
+        $this->assertSame(
+            get_string('chat_error_rate_limited', 'local_jedomi', $errors[0]['error']['seconds']),
+            $errors[0]['error']['message']
+        );
+        $log = $this->take_log();
+        $this->assertStringContainsString('RATE_LIMITED', $log);
+        $this->assertStringNotContainsString('secret-content', $log);
+        $this->assertStringNotContainsString('"userid":' . $USER->id, $log);
+    }
+
+    /**
+     * AI services of the site.
+     *
+     * @return array
+     */
+    public static function ai_service_provider(): array {
+        return [
+            'datacurso' => [\local_jedomi\ai\ai_service::DATACURSO],
+            'custom' => [\local_jedomi\ai\ai_service::CUSTOM],
+        ];
+    }
+
+    /**
+     * JEDOMI-SEC-006: messages under the limit get their answer and count toward it; a site administrator is never limited.
+     */
+    public function test_messages_under_the_limit_are_answered_and_administrators_are_exempt(): void {
+        global $USER;
+        $this->require_provider();
+        $this->resetAfterTest();
+        set_config('chat_rate_limit', 2, 'local_jedomi');
+        $this->setUser($this->getDataGenerator()->create_user());
+        $spt = $this->sign_with_site_secret(\local_jedomi_generate_spt('student'));
+        $fake = new fake_ai_client();
+        $fake->enqueue_text('One.');
+        $fake->enqueue_text('Two.');
+        $fake->enqueue_text('Three.');
+
+        $this->assertSame([], $this->error_events($this->chat_request($spt, $fake)));
+        $this->assertSame([], $this->error_events($this->chat_request($spt, $fake)));
+        $this->assertSame('rate_limited', $this->error_events($this->chat_request($spt, $fake))[0]['error']['code']);
+        $this->assertCount(2, $fake->calls);
+
+        $this->setAdminUser();
+        $adminspt = $this->sign_with_site_secret(\local_jedomi_generate_spt('admin'));
+        for ($i = 0; $i < 3; $i++) {
+            $fake->enqueue_text('Admin answer.');
+            $this->assertSame([], $this->error_events($this->chat_request($adminspt, $fake)));
+        }
+        $this->assertCount(5, $fake->calls);
+        $this->assertSame((int) $USER->id, (int) get_admin()->id);
+    }
+
+    /**
+     * REL-004: a request refused for access reasons (an excluded course) does not use a place of the message limit.
+     */
+    public function test_request_refused_for_access_does_not_count_toward_the_limit(): void {
+        global $USER;
+        $this->require_provider();
+        $this->resetAfterTest();
+        $course = $this->getDataGenerator()->create_course();
+        $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
+        set_config('course_mode', 'exclude', 'local_jedomi');
+        set_config('course_list', (string) $course->id, 'local_jedomi');
+        set_config('chat_rate_limit', 1, 'local_jedomi');
+        $this->setUser($student);
+        $fake = new fake_ai_client();
+        client::set_instance_for_testing($fake);
+
+        $events = $this->events($this->capture(fn() => handler::run_from_request(
+            ['messages' => [['role' => 'user', 'content' => 'Summarise this course']],
+                'context' => ['course_id' => (int) $course->id]],
+            'student',
+            ['course_id' => (int) $course->id],
+            (int) $USER->id
+        )));
+
+        $this->assertNotSame('rate_limited', $this->error_events($events)[0]['error']['code']);
+        $this->assertSame([], $fake->calls);
+        $this->assertSame(0, \local_jedomi\local\service\chat_rate_limit_service::consume((int) $USER->id));
+    }
 }

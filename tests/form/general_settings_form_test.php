@@ -35,12 +35,13 @@ final class general_settings_form_test extends \advanced_testcase {
         $this->resetAfterTest();
         $this->setAdminUser();
         general_settings_form::mock_submit(['spt_secret' => 's3cret', 'profiler_slow_ms' => 1000, 'profiler_retention_days' => 30,
-            'sql_row_limit_web' => 250]);
+            'sql_row_limit_web' => 250, 'chat_rate_limit' => 20]);
 
         $data = (new general_settings_form())->get_data();
 
         $this->assertSame('s3cret', $data->spt_secret);
         $this->assertSame(250, $data->sql_row_limit_web);
+        $this->assertSame('20', $data->chat_rate_limit);
     }
 
     /**
@@ -142,6 +143,84 @@ final class general_settings_form_test extends \advanced_testcase {
             'default' => [100, true],
             'highest' => [1000, true],
             'above' => [1001, false],
+        ];
+    }
+
+    /**
+     * JEDOMI-SEC-006: the message limit of the web chat is in the General tab, with a help button and the default of 10,
+     * and accepts only 0 (no limit) to 120.
+     *
+     * @dataProvider chat_rate_limit_provider
+     * @param int $value Submitted value.
+     * @param bool $valid Whether it is accepted.
+     * @return void
+     */
+    public function test_chat_rate_limit_is_validated(int $value, bool $valid): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $form = new general_settings_form();
+
+        $errors = $form->validation(['spt_secret' => 's', 'profiler_slow_ms' => 1000, 'profiler_retention_days' => 30,
+            'sql_row_limit_web' => 100, 'chat_rate_limit' => $value], []);
+
+        if ($valid) {
+            $this->assertArrayNotHasKey('chat_rate_limit', $errors);
+        } else {
+            $this->assertSame(get_string('chat_rate_limit_invalid', 'local_jedomi'), $errors['chat_rate_limit']);
+        }
+        $html = $form->render();
+        $this->assertStringContainsString('name="chat_rate_limit"', $html);
+        $this->assertStringContainsString('value="10"', $html);
+        $this->assertStringContainsString(s(get_string('chat_rate_limit', 'local_jedomi')), $html);
+        $this->assertNotEmpty(get_string('chat_rate_limit_help', 'local_jedomi'));
+    }
+
+    /**
+     * Message limits and whether they are accepted.
+     *
+     * @return array
+     */
+    public static function chat_rate_limit_provider(): array {
+        return [
+            'negative' => [-1, false],
+            'off' => [0, true],
+            'default' => [10, true],
+            'highest' => [120, true],
+            'above' => [121, false],
+        ];
+    }
+
+    /**
+     * REL-002: an empty or non-numeric message limit is refused, never saved as 0 (no limit).
+     *
+     * @dataProvider invalid_chat_rate_limit_provider
+     * @param string $value Submitted value.
+     * @return void
+     */
+    public function test_chat_rate_limit_must_be_a_number(string $value): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $form = new general_settings_form();
+
+        $errors = $form->validation(['spt_secret' => 's', 'profiler_slow_ms' => 1000, 'profiler_retention_days' => 30,
+            'sql_row_limit_web' => 100, 'chat_rate_limit' => $value], []);
+        $this->assertSame(get_string('chat_rate_limit_invalid', 'local_jedomi'), $errors['chat_rate_limit']);
+
+        general_settings_form::mock_submit(['spt_secret' => 's', 'profiler_slow_ms' => 1000, 'profiler_retention_days' => 30,
+            'sql_row_limit_web' => 100, 'chat_rate_limit' => $value]);
+        $this->assertNull((new general_settings_form())->get_data());
+    }
+
+    /**
+     * Message limits that are not whole numbers.
+     *
+     * @return array
+     */
+    public static function invalid_chat_rate_limit_provider(): array {
+        return [
+            'empty' => [''],
+            'text' => ['abc'],
+            'decimal' => ['2.5'],
         ];
     }
 }

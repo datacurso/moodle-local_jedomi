@@ -362,4 +362,22 @@ final class sidebar_config_test extends \advanced_testcase {
         set_config('ai_service', 'datacurso', 'local_jedomi');
         $this->assertTrue(local_jedomi_get_sidebar_config()['documents_enabled']);
     }
+
+    /**
+     * SEC-JD-074: the panel knows the attachment cap and its message, so a file above it is refused before it is uploaded.
+     */
+    public function test_sidebar_config_has_the_attachment_cap(): void {
+        global $PAGE;
+        $this->resetAfterTest();
+        $this->setUser($this->getDataGenerator()->create_user());
+        $PAGE->set_url('/local/jedomi/ajax/sidebar_config.php');
+
+        $config = local_jedomi_get_sidebar_config();
+
+        $this->assertSame(\local_jedomi\local\service\provider_upload_service::MAX_UPLOAD_BYTES, $config['max_upload_bytes']);
+        $this->assertSame(
+            get_string('file_error_upload_too_large', 'local_jedomi', 20),
+            $config['strings']['file_error_upload_too_large']
+        );
+    }
 }

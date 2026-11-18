@@ -17,6 +17,7 @@
 namespace local_jedomi\form;
 
 use local_jedomi\local\query_runner;
+use local_jedomi\local\service\chat_rate_limit_service;
 
 defined('MOODLE_INTERNAL') || die();
 
@@ -24,8 +25,8 @@ global $CFG;
 require_once($CFG->libdir . '/formslib.php');
 
 /**
- * Form of the General tab of the Jedomi settings: the session token secret, the query profiler settings and the row limit
- * of the queries of the web chat.
+ * Form of the General tab of the Jedomi settings: the session token secret, the query profiler settings, the row limit
+ * of the queries of the web chat and the messages per user and minute of the web chat.
  *
  * @package    local_jedomi
  * @copyright  2026 Jedomi Project
@@ -88,11 +89,25 @@ class general_settings_form extends \moodleform {
         $mform->addHelpButton('sql_row_limit_web', 'sql_row_limit_web', 'local_jedomi');
         $this->add_card_end();
 
+        $this->add_card_start(
+            'chatlimitheader',
+            get_string('chat_limit_heading', 'local_jedomi'),
+            get_string('chat_limit_heading_help', 'local_jedomi'),
+            'i/scheduled',
+            'green'
+        );
+        $mform->addElement('text', 'chat_rate_limit', get_string('chat_rate_limit', 'local_jedomi'), ['size' => 8]);
+        // Raw text, so an empty or non-numeric value is refused by validation() instead of being cleaned to 0 (no limit).
+        $mform->setType('chat_rate_limit', PARAM_RAW_TRIMMED);
+        $mform->setDefault('chat_rate_limit', chat_rate_limit_service::DEFAULT_PER_MINUTE);
+        $mform->addHelpButton('chat_rate_limit', 'chat_rate_limit', 'local_jedomi');
+        $this->add_card_end();
+
         $this->add_action_buttons(false);
     }
 
     /**
-     * Check that the slow threshold and the retention are within their ranges.
+     * Check that the slow threshold, the retention, the row limit and the message limit are within their ranges.
      *
      * @param array $data Submitted data.
      * @param array $files Submitted files.
@@ -111,6 +126,10 @@ class general_settings_form extends \moodleform {
         $rows = (int) ($data['sql_row_limit_web'] ?? 0);
         if ($rows < query_runner::WEB_ROW_LIMIT_MIN || $rows > query_runner::WEB_ROW_LIMIT_MAX) {
             $errors['sql_row_limit_web'] = get_string('sql_row_limit_web_invalid', 'local_jedomi');
+        }
+        $messages = trim((string) ($data['chat_rate_limit'] ?? ''));
+        if (!preg_match('/^\d{1,3}$/', $messages) || (int) $messages > chat_rate_limit_service::MAX_PER_MINUTE) {
+            $errors['chat_rate_limit'] = get_string('chat_rate_limit_invalid', 'local_jedomi');
         }
         return $errors;
     }
