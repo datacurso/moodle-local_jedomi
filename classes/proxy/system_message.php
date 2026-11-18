@@ -181,6 +181,8 @@ class system_message {
         $content .= "- If a tool fails, retry once (adjust params if applicable,"
             . " see WS PATH for WS-specific retry). If it fails again, stop and report.\n";
         $content .= "- If you have enough data, stop and respond.\n";
+        $content .= "- Read relative dates (\"today\", \"last week\", \"last month\", \"since ...\") against the date of today in"
+            . " the context below, never against an earlier year, and give the exact dates you used.\n";
         $content .= "- " . self::no_disclosure_rule() . "\n";
 
         $content .= "RESPONSE RULES:\n";
@@ -230,6 +232,7 @@ class system_message {
         $content .= \local_jedomi\local\personalization::prompt_site_instructions();
 
         $content .= "Current context:\n";
+        $content .= self::today_line();
         $content .= "- Moodle version: {$version}\n";
         $content .= "- Site: {$sitename} ({$CFG->wwwroot})\n";
         $content .= "- Database: {$dblabel}\n";
@@ -273,6 +276,23 @@ class system_message {
         global $CFG;
 
         return preg_match('/^(\d+\.\d+)/', (string) ($CFG->release ?? ''), $matches) ? $matches[1] : 'unknown';
+    }
+
+    /**
+     * Line with the date of today for the instructions: the server clock in the time zone of the current user, as an
+     * ISO date and its weekday in English, so relative dates such as "last month" are read against the current year.
+     * It never comes from the request (JEDOMI-SEC-002).
+     *
+     * @return string Line such as "- Today: 2026-11-18 (Wednesday), time zone America/Bogota".
+     */
+    private static function today_line(): string {
+        $timezone = \core_date::get_user_timezone_object();
+        $now = \core\di::get(\core\clock::class)->now();
+        $today = $now->setTimezone($timezone);
+        $date = $today->format('Y-m-d');
+        $weekday = $today->format('l');
+        $zone = $timezone->getName();
+        return "- Today: {$date} ({$weekday}), time zone {$zone}\n";
     }
 
     /**

@@ -311,4 +311,57 @@ final class system_message_test extends \advanced_testcase {
         $this->assertStringContainsString('This is a scheduled agent', $agent);
         $this->assertStringContainsString('TELEGRAM FORMAT', $agent);
     }
+
+    /**
+     * The model knows today's date: the server clock in the time zone of the user, as ISO date and weekday, so
+     * "last month" or "since the change" are read against the current year.
+     */
+    public function test_system_message_tells_today_in_the_user_time_zone(): void {
+        $this->resetAfterTest();
+        // 18 November 2026 at 03:30 UTC is still 17 November in Bogota and already 18 November in Tokyo.
+        $this->mock_clock_with_frozen(1794972600);
+        $user = $this->getDataGenerator()->create_user(['timezone' => 'America/Bogota']);
+        $this->setUser($user);
+
+        $bogota = system_message::build('teacher', [])['content'];
+        $this->assertStringContainsString("- Today: 2026-11-17 (Tuesday), time zone America/Bogota\n", $bogota);
+
+        $user->timezone = 'Asia/Tokyo';
+        $this->setUser($user);
+        $tokyo = system_message::build('teacher', [])['content'];
+        $this->assertStringContainsString("- Today: 2026-11-18 (Wednesday), time zone Asia/Tokyo\n", $tokyo);
+    }
+
+    /**
+     * The date is written by the server: nothing sent with the page context changes it or adds another one.
+     */
+    public function test_today_cannot_be_set_from_the_page_context(): void {
+        $this->resetAfterTest();
+        $this->mock_clock_with_frozen(1794972600);
+        $this->setUser($this->getDataGenerator()->create_user(['timezone' => 'UTC']));
+
+        $content = system_message::build('teacher', [], [
+            'today' => '2024-01-01',
+            'date' => '2024-01-01',
+            'timezone' => 'Pacific/Kiritimati',
+            'page_url' => '/course/view.php?date=2024-01-01',
+        ])['content'];
+
+        $this->assertStringContainsString("- Today: 2026-11-18 (Wednesday), time zone UTC\n", $content);
+        $this->assertStringNotContainsString('2024', $content);
+        $this->assertStringNotContainsString('Kiritimati', $content);
+        $this->assertSame(1, substr_count($content, '- Today: '));
+    }
+
+    /**
+     * Relative dates are read against today, never against an earlier year.
+     */
+    public function test_relative_dates_are_read_against_today(): void {
+        $this->resetAfterTest();
+
+        $content = system_message::build('teacher', [])['content'];
+
+        $this->assertStringContainsString('Read relative dates ("today", "last week", "last month", "since ...")'
+            . ' against the date of today in the context below', $content);
+    }
 }
