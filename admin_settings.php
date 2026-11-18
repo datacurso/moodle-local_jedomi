@@ -244,7 +244,8 @@ switch ($tab) {
                 $data->spt_secret,
                 (int) $data->profiler_slow_ms,
                 (int) $data->profiler_retention_days,
-                (int) $data->sql_row_limit_web
+                (int) $data->sql_row_limit_web,
+                (int) $data->chat_rate_limit
             );
             redirect($pageurl, $saved, null, notification::NOTIFY_SUCCESS);
         }

@@ -651,6 +651,87 @@ final class file_extraction_service_test extends \advanced_testcase {
         $this->assertSame('audio', $result['format']);
         $this->assertSame(4, $result['seconds']);
     }
+
+    /**
+     * Write a temporary file of a given size without filling memory (sparse file).
+     *
+     * @param int $bytes Size of the file.
+     * @return string Path.
+     */
+    private function upload_of_size(int $bytes): string {
+        $path = make_request_directory() . '/upload.tmp';
+        $handle = fopen($path, 'w');
+        ftruncate($handle, $bytes);
+        fclose($handle);
+        return $path;
+    }
+
+    /**
+     * SEC-JD-074: a document or audio file above the attachment cap is refused before it is read, sent or charged, with a
+     * message that tells the cap; a file at the cap goes on.
+     *
+     * @dataProvider oversized_upload_provider
+     * @param string $filename Name of the uploaded file.
+     */
+    public function test_upload_above_the_cap_is_refused_before_any_call(string $filename): void {
+        $this->resetAfterTest();
+        $user = $this->getDataGenerator()->create_user();
+        $this->setUser($user);
+        $this->enable_provider();
+        $curl = new fake_curl();
+
+        try {
+            file_extraction_service::extract_upload(
+                (int) $user->id,
+                $this->upload_of_size(provider_upload_service::MAX_UPLOAD_BYTES + 1),
+                $filename,
+                new testable_provider_api(30, $curl)
+            );
+            $this->fail('A file above the cap must be refused');
+        } catch (\moodle_exception $e) {
+            $this->assertSame('file_error_upload_too_large', $e->errorcode);
+            $this->assertSame(
+                ['code' => 'file_too_large', 'message' => get_string('file_error_upload_too_large', 'local_jedomi', 20)],
+                file_extraction_service::error_for($e)
+            );
+        }
+        $this->assertSame([], $curl->calls);
+
+        // A file at the cap passes the size check (it may still be refused for other reasons, such as a feature off).
+        try {
+            $curl->enqueue(json_encode(['text' => 'ok', 'format' => 'text', 'duration_seconds' => 3]));
+            file_extraction_service::extract_upload(
+                (int) $user->id,
+                $this->upload_of_size(provider_upload_service::MAX_UPLOAD_BYTES),
+                $filename,
+                new testable_provider_api(30, $curl)
+            );
+        } catch (\moodle_exception $e) {
+            $this->assertNotSame('file_error_upload_too_large', $e->errorcode);
+        }
+    }
+
+    /**
+     * Documents and audio files sent through extract_file.php.
+     *
+     * @return array
+     */
+    public static function oversized_upload_provider(): array {
+        return [
+            'pdf' => ['report.pdf'],
+            'word' => ['notes.docx'],
+            'audio' => ['lecture.mp3'],
+        ];
+    }
+
+    /**
+     * The attachment cap is the largest PDF the document service of the custom service and the Datacurso AI service read.
+     */
+    public function test_upload_cap_matches_the_service_caps(): void {
+        $this->assertSame(20971520, provider_upload_service::MAX_UPLOAD_BYTES);
+        $this->assertSame(\local_jedomi\ai\docservice_client::MAX_PDF_BYTES, provider_upload_service::MAX_UPLOAD_BYTES);
+    }
+
     /**
      * API-INT-001: files and images up to the maximum size and resolution are accepted, larger ones get the "file too
      * large" error, and at most the defined pages and characters are read, with each limit checked exactly at and just

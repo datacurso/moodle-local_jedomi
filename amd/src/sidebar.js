@@ -1082,7 +1082,7 @@ define(['core/log', 'core/ajax', 'core/templates', 'core/str', 'core/notificatio
             } catch (err) {
                 if (err?.name === 'AbortError') return;
                 // The file stays attached, so the user can try again or remove it.
-                addMessage('assistant', `⚠️ ${S.file_process_error || ''} **${attachment.name}**: ${err.message}`);
+                addMessage('assistant', uploadErrorMessage(err, attachment.name));
                 return;
             } finally {
                 attachment.controller = null;
@@ -1107,7 +1107,7 @@ define(['core/log', 'core/ajax', 'core/templates', 'core/str', 'core/notificatio
                 modelText = data.message || '';
             } catch (err) {
                 // The image stays attached, so the user can try again.
-                addMessage('assistant', `⚠️ ${S.file_process_error || ''} **${pendingImage.file.name}**: ${err.message}`);
+                addMessage('assistant', uploadErrorMessage(err, pendingImage.file.name));
                 return;
             } finally {
                 sending = false;
@@ -1444,7 +1444,10 @@ define(['core/log', 'core/ajax', 'core/templates', 'core/str', 'core/notificatio
                 throw new Error('__SESSION_EXPIRED__');
             }
             const err = await res.json().catch(() => ({}));
-            throw new Error(err.detail || err.error?.message || `HTTP ${res.status}`);
+            const error = new Error(err.detail || err.error?.message || `HTTP ${res.status}`);
+            // A refusal with a message ready to show (such as a request above the size cap) is shown as it is.
+            error.jedomiServerError = !!err.error?.message;
+            throw error;
         }
 
         // Security: detect when require_login() redirected to the HTML login page.
@@ -1761,9 +1764,34 @@ define(['core/log', 'core/ajax', 'core/templates', 'core/str', 'core/notificatio
     };
 
     // ── Image ─────────────────────────────────────────────────────────────────
+    // Whether a file is above the attachment cap of the server: such a file is never uploaded.
+    const isOverUploadCap = (file) => !!cfg.max_upload_bytes && file.size > cfg.max_upload_bytes;
+
+    // Tell the user that a file was not attached because it is above the attachment cap.
+    const reportOverUploadCap = (file) => {
+        const S = cfg.strings || {};
+        addMessage('assistant', `⚠️ ${S.file_process_error || ''} **${file.name}**: ${S.file_error_upload_too_large || ''}`);
+    };
+
+    // Error codes of the message limit (the same for the chat and the file endpoints).
+    const RATE_LIMIT_CODES = ['rate_limited', 'rate_limit_busy'];
+
+    // Message for a failed upload: a refusal of the message limit is shown as the chat shows it, without the file name.
+    const uploadErrorMessage = (err, name) => {
+        const S = cfg.strings || {};
+        return RATE_LIMIT_CODES.includes(err.code)
+            ? `⚠️ ${err.message}`
+            : `⚠️ ${S.file_process_error || ''} **${name}**: ${err.message}`;
+    };
+
     const handleImageSelect = (e) => {
         const file = e.target.files?.[0];
         if (!file) return;
+        if (isOverUploadCap(file)) {
+            reportOverUploadCap(file);
+            e.target.value = '';
+            return;
+        }
         const reader = new FileReader();
         reader.onload = (ev) => {
             const dataUrl = ev.target.result;
@@ -1814,6 +1842,8 @@ define(['core/log', 'core/ajax', 'core/templates', 'core/str', 'core/notificatio
             const extension = (file.name.split('.').pop() || '').toLowerCase();
             if (!FILE_EXTENSIONS.includes(extension) && !AUDIO_EXTENSIONS.includes(extension)) {
                 addMessage('assistant', `⚠️ ${S.file_process_error || ''} **${file.name}**: ${S.file_error_unsupported || ''}`);
+            } else if (isOverUploadCap(file)) {
+                reportOverUploadCap(file);
             } else if (pendingFiles.length >= MAX_ATTACHMENTS) {
                 overLimit = true;
             } else {

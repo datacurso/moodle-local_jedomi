@@ -32,6 +32,7 @@ defined('MOODLE_INTERNAL') || die();
 
 require_once(__DIR__ . '/../../lib.php');
 
+use local_jedomi\local\service\chat_rate_limit_service;
 use local_jedomi\local\service\message_service;
 use local_jedomi\local\service\pending_action_service;
 
@@ -115,6 +116,16 @@ class handler {
             return;
         }
         $messages = array_map([self::class, 'without_image_parts'], $messages);
+
+        // Messages per user and minute of the web chat, for both AI services (JEDOMI-SEC-006): counted after the access
+        // checks, so a refused request uses no place, and before any AI call. Over the limit the user is told how long to
+        // wait. Only the sidebar endpoints apply it, so Telegram, the agents and the companion web service are not
+        // affected.
+        $limited = chat_rate_limit_service::refusal($userid, 'web');
+        if ($limited !== null) {
+            self::send_error($limited);
+            return;
+        }
 
         // One anonymiser for the whole request: the messages, the page context and the tool results share its
         // placeholders, so the arguments the AI proposes and its answer get the real values back.

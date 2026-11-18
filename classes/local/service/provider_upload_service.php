@@ -32,6 +32,14 @@ use local_jedomi\ai\provider_api;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class provider_upload_service {
+    /**
+     * @var int Largest file attached in the web chat (extract_file.php, read_file.php) or read for Telegram, in bytes
+     *     (20 MB): the PDF cap of the document service of the custom service (docservice_client::MAX_PDF_BYTES) and the
+     *     file cap of the Datacurso AI service, which refuses larger request bodies. A larger file is refused before it is
+     *     read or sent (SEC-JD-074). The custom service keeps its smaller caps for images and text files.
+     */
+    public const MAX_UPLOAD_BYTES = 20971520;
+
     /** @var ai_services_api|null Provider client used instead of Jedomi's own in PHPUnit tests. */
     private static ?ai_services_api $testapi = null;
 
@@ -47,6 +55,29 @@ class provider_upload_service {
         }
         self::$testapi = $api;
     }
+
+    /**
+     * Stop when a file on disk is larger than MAX_UPLOAD_BYTES, before it is read or sent (SEC-JD-074).
+     *
+     * @param string $path Path of the file on disk.
+     * @return void
+     * @throws \moodle_exception file_error_upload_too_large, with the cap in MB.
+     */
+    public static function require_upload_size(string $path): void {
+        if (is_file($path) && (int) filesize($path) > self::MAX_UPLOAD_BYTES) {
+            throw new \moodle_exception('file_error_upload_too_large', 'local_jedomi', '', self::max_upload_mb());
+        }
+    }
+
+    /**
+     * MAX_UPLOAD_BYTES in megabytes, as the messages tell it.
+     *
+     * @return int
+     */
+    public static function max_upload_mb(): int {
+        return intdiv(self::MAX_UPLOAD_BYTES, 1048576);
+    }
+
     /**
      * Send a file on disk to an AI service route and return the decoded answer.
      *
@@ -116,6 +147,10 @@ class provider_upload_service {
      * @return array Keys code and message.
      */
     public static function error_for(\Throwable $e, array $statuserrors, array $localerrors): array {
+        if ($e instanceof \moodle_exception && $e->module === 'local_jedomi' && $e->errorcode === 'file_error_upload_too_large') {
+            return ['code' => 'file_too_large',
+                'message' => get_string('file_error_upload_too_large', 'local_jedomi', self::max_upload_mb())];
+        }
         if ($e instanceof \moodle_exception && $e->module === 'local_jedomi' && isset($localerrors[$e->errorcode])) {
             [$code, $key] = $localerrors[$e->errorcode];
             return ['code' => $code, 'message' => get_string($key, 'local_jedomi')];

@@ -106,7 +106,8 @@ class vision_service {
      * @param ai_services_api|null $api Provider client; null for Jedomi's own.
      * @return array{text: string, model: string, pages_total: int|null, pages_vision: int[], pages_skipped: int[]}
      *         A PDF read with the custom service also has truncated, true when pages were left out.
-     * @throws \moodle_exception files_error_disabled, image_error_unsupported, documents_error_custom (a PDF with the
+     * @throws \moodle_exception file_error_upload_too_large (above provider_upload_service::MAX_UPLOAD_BYTES, before
+     *         anything else), files_error_disabled, image_error_unsupported, documents_error_custom (a PDF with the
      *         custom service and its documents off), file_error_too_large, docservice_error_*, or any provider or custom
      *         service error.
      */
@@ -117,6 +118,7 @@ class vision_service {
         string $question = '',
         ?ai_services_api $api = null
     ): array {
+        provider_upload_service::require_upload_size($path);
         self::require_enabled();
         $filename = self::check_filename($filename);
         if (!is_readable($path)) {

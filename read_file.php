@@ -32,6 +32,7 @@ define('AJAX_SCRIPT', true);
 require_once(__DIR__ . '/../../config.php');
 require_once(__DIR__ . '/lib.php');
 
+use local_jedomi\local\service\chat_rate_limit_service;
 use local_jedomi\local\service\vision_service;
 
 require_login(null, false);
@@ -61,6 +62,13 @@ if ($disabled !== null) {
 $signed = local_jedomi_request_signed_course();
 if ($signed['error'] !== null) {
     local_jedomi_read_file_error(403, $signed['error']);
+}
+
+// Every request counts toward the message limit of the web chat, after the access checks and before the file is read
+// (JEDOMI-SEC-006, RISK-001).
+$limited = chat_rate_limit_service::refusal((int) $USER->id, 'upload');
+if ($limited !== null) {
+    local_jedomi_read_file_error(429, $limited);
 }
 
 $question = optional_param('question', '', PARAM_TEXT);

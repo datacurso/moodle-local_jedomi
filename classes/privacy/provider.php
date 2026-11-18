@@ -138,16 +138,36 @@ class provider implements
             'site_url' => 'privacy:metadata:jedomi_speech_service:site_url',
         ], 'privacy:metadata:jedomi_speech_service');
 
+        // With the Datacurso service, files, images and audio are uploaded through the provider (provider_upload_service)
+        // to /jedomi/v1/files/extract, /jedomi/v1/files/read and /jedomi/v1/audio/transcriptions, as they are: unlike the
+        // chat, neither the file nor the question is anonymised. The provider adds the pseudonymised user and the site.
+        $collection->add_external_location_link('jedomi_file_service', [
+            'file' => 'privacy:metadata:jedomi_file_service:file',
+            'filename' => 'privacy:metadata:jedomi_file_service:filename',
+            'mimetype' => 'privacy:metadata:jedomi_file_service:mimetype',
+            'question' => 'privacy:metadata:jedomi_file_service:question',
+            'language' => 'privacy:metadata:jedomi_file_service:language',
+            'userid' => 'privacy:metadata:jedomi_file_service:userid',
+            'lang' => 'privacy:metadata:jedomi_file_service:lang',
+            'site_id' => 'privacy:metadata:jedomi_file_service:site_id',
+            'site_url' => 'privacy:metadata:jedomi_file_service:site_url',
+        ], 'privacy:metadata:jedomi_file_service');
+
         // Only when the administrator chooses the custom AI service: no user id, site id or site address is sent.
         $collection->add_external_location_link('jedomi_custom_ai_service', [
             'messages' => 'privacy:metadata:jedomi_custom_ai_service:messages',
             'text' => 'privacy:metadata:jedomi_custom_ai_service:text',
             'files' => 'privacy:metadata:jedomi_custom_ai_service:files',
+            'filename' => 'privacy:metadata:jedomi_custom_ai_service:filename',
+            'mimetype' => 'privacy:metadata:jedomi_custom_ai_service:mimetype',
+            'question' => 'privacy:metadata:jedomi_custom_ai_service:question',
+            'language' => 'privacy:metadata:jedomi_custom_ai_service:language',
         ], 'privacy:metadata:jedomi_custom_ai_service');
 
         // Only with the custom AI service and its documents on: the PDF files go to its document service.
         $collection->add_external_location_link('jedomi_custom_document_service', [
             'files' => 'privacy:metadata:jedomi_custom_document_service:files',
+            'filename' => 'privacy:metadata:jedomi_custom_document_service:filename',
         ], 'privacy:metadata:jedomi_custom_document_service');
 
         $collection->add_external_location_link('telegram', [

@@ -86,7 +86,8 @@ final class admin_settings_service_test extends \advanced_testcase {
         unset_config('spt_secret', 'local_jedomi');
 
         $this->assertSame(
-            ['spt_secret' => '', 'profiler_slow_ms' => 1000, 'profiler_retention_days' => 30, 'sql_row_limit_web' => 100],
+            ['spt_secret' => '', 'profiler_slow_ms' => 1000, 'profiler_retention_days' => 30, 'sql_row_limit_web' => 100,
+                'chat_rate_limit' => 10],
             admin_settings_service::get_general_settings()
         );
     }
@@ -104,7 +105,8 @@ final class admin_settings_service_test extends \advanced_testcase {
         $this->assertSame('s3cret', get_config('local_jedomi', 'spt_secret'));
         $this->assertFalse(get_config('local_jedomi', 'collect_training_data'));
         $this->assertSame(
-            ['spt_secret' => 's3cret', 'profiler_slow_ms' => 1000, 'profiler_retention_days' => 30, 'sql_row_limit_web' => 100],
+            ['spt_secret' => 's3cret', 'profiler_slow_ms' => 1000, 'profiler_retention_days' => 30, 'sql_row_limit_web' => 100,
+                'chat_rate_limit' => 10],
             admin_settings_service::get_general_settings()
         );
     }
@@ -127,6 +129,35 @@ final class admin_settings_service_test extends \advanced_testcase {
         // Saving without it keeps the saved value.
         admin_settings_service::save_general_settings('s3cret', 500, 10);
         $this->assertSame(1000, admin_settings_service::get_general_settings()['sql_row_limit_web']);
+    }
+
+    /**
+     * JEDOMI-SEC-006: the message limit of the web chat is a setting of the General tab, kept within 0 and 120; a negative
+     * value falls back to the default (REL-003).
+     *
+     * @return void
+     */
+    public function test_save_general_settings_stores_the_chat_rate_limit(): void {
+        $this->resetAfterTest();
+
+        admin_settings_service::save_general_settings('s3cret', null, null, null, 30);
+        $this->assertSame(30, admin_settings_service::get_general_settings()['chat_rate_limit']);
+        $this->assertSame(30, chat_rate_limit_service::per_minute());
+
+        admin_settings_service::save_general_settings('s3cret', null, null, null, 0);
+        $this->assertSame(0, admin_settings_service::get_general_settings()['chat_rate_limit']);
+
+        admin_settings_service::save_general_settings('s3cret', null, null, null, 500);
+        $this->assertSame(120, admin_settings_service::get_general_settings()['chat_rate_limit']);
+
+        // A negative value never turns the limit off: it falls back to the default, as per_minute() reads it.
+        admin_settings_service::save_general_settings('s3cret', null, null, null, -5);
+        $this->assertSame(10, admin_settings_service::get_general_settings()['chat_rate_limit']);
+
+        // Saving without it keeps the saved value.
+        admin_settings_service::save_general_settings('s3cret', null, null, null, 0);
+        admin_settings_service::save_general_settings('s3cret', null, null, 200);
+        $this->assertSame(0, admin_settings_service::get_general_settings()['chat_rate_limit']);
     }
 
     /**

@@ -150,6 +150,37 @@ final class vision_service_test extends \advanced_testcase {
     }
 
     /**
+     * SEC-JD-074: an image or PDF above the attachment cap (read_file.php, Telegram) is refused before it is read or sent,
+     * with the Datacurso service and with the custom service.
+     */
+    public function test_upload_above_the_cap_is_refused_before_any_call(): void {
+        $userid = $this->setup_user();
+        $path = make_request_directory() . '/upload.tmp';
+        $handle = fopen($path, 'w');
+        ftruncate($handle, provider_upload_service::MAX_UPLOAD_BYTES + 1);
+        fclose($handle);
+        $curl = new fake_curl();
+
+        foreach ([\local_jedomi\ai\ai_service::DATACURSO, \local_jedomi\ai\ai_service::CUSTOM] as $service) {
+            set_config('ai_service', $service, 'local_jedomi');
+            foreach (['chart.png', 'scan.pdf'] as $filename) {
+                try {
+                    vision_service::read_upload($userid, $path, $filename, '', new testable_provider_api(30, $curl));
+                    $this->fail("A file above the cap must be refused ({$service}, {$filename})");
+                } catch (\moodle_exception $e) {
+                    $this->assertSame('file_error_upload_too_large', $e->errorcode);
+                    $this->assertSame(
+                        ['code' => 'file_too_large',
+                            'message' => get_string('file_error_upload_too_large', 'local_jedomi', 20)],
+                        vision_service::error_for($e)
+                    );
+                }
+            }
+        }
+        $this->assertSame([], $curl->calls);
+    }
+
+    /**
      * MDL-UNIT-048: a type the vision service does not read is rejected without calling the AI service.
      */
     public function test_unsupported_type_is_rejected_without_a_call(): void {

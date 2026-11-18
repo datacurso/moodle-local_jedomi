@@ -46,7 +46,8 @@ class admin_settings_service {
     /**
      * Settings of the General tab.
      *
-     * @return array{spt_secret: string, profiler_slow_ms: int, profiler_retention_days: int, sql_row_limit_web: int}
+     * @return array{spt_secret: string, profiler_slow_ms: int, profiler_retention_days: int, sql_row_limit_web: int,
+     *     chat_rate_limit: int}
      */
     public static function get_general_settings(): array {
         return [
@@ -54,6 +55,7 @@ class admin_settings_service {
             'profiler_slow_ms' => \local_jedomi\agent\query_profiler::slow_threshold_ms(),
             'profiler_retention_days' => \local_jedomi\agent\query_profiler::retention_days(),
             'sql_row_limit_web' => \local_jedomi\local\query_runner::web_row_limit(),
+            'chat_rate_limit' => chat_rate_limit_service::per_minute(),
         ];
     }
 
@@ -65,13 +67,16 @@ class admin_settings_service {
      * @param int|null $retentiondays Days the profiler records are kept; null keeps the current value.
      * @param int|null $sqlrowlimitweb Rows a query of the web chat returns at most, kept within the accepted range; null
      *        keeps the current value.
+     * @param int|null $chatratelimit Messages per user and minute of the web chat (0 for no limit), at most
+     *        chat_rate_limit_service::MAX_PER_MINUTE; a negative value saves the default; null keeps the current value.
      * @return void
      */
     public static function save_general_settings(
         string $sptsecret,
         ?int $slowms = null,
         ?int $retentiondays = null,
-        ?int $sqlrowlimitweb = null
+        ?int $sqlrowlimitweb = null,
+        ?int $chatratelimit = null
     ): void {
         set_config('spt_secret', $sptsecret, 'local_jedomi');
         if ($slowms !== null) {
@@ -86,6 +91,13 @@ class admin_settings_service {
                 max(\local_jedomi\local\query_runner::WEB_ROW_LIMIT_MIN, $sqlrowlimitweb)
             );
             set_config('sql_row_limit_web', $limit, 'local_jedomi');
+        }
+        if ($chatratelimit !== null) {
+            // A negative value never turns the limit off: it falls back to the default, as per_minute() reads it.
+            $messages = $chatratelimit < 0
+                ? chat_rate_limit_service::DEFAULT_PER_MINUTE
+                : min(chat_rate_limit_service::MAX_PER_MINUTE, $chatratelimit);
+            set_config(chat_rate_limit_service::SETTING, $messages, 'local_jedomi');
         }
         \local_jedomi\event\settings_updated::create_for_tab('general')->trigger();
     }

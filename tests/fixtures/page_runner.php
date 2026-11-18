@@ -42,6 +42,12 @@ global $DB;
 $_SERVER['REQUEST_METHOD'] = 'POST';
 $_POST = (array) json_decode($params ?: '{}', true);
 $_POST['sesskey'] = sesskey();
+// Signed permissions are bound to the session key of this process, so a test asks for them by role instead of passing them.
+if (!empty($_POST['generate_spt'])) {
+    require_once($CFG->dirroot . '/local/jedomi/lib.php');
+    $_POST['spt'] = json_encode(local_jedomi_generate_spt((string) $_POST['generate_spt']));
+    unset($_POST['generate_spt']);
+}
 $_GET = $_POST;
 
 require($CFG->dirroot . '/local/jedomi/' . clean_param($script, PARAM_PATH));

@@ -205,9 +205,66 @@ final class provider_test extends provider_testcase {
     public function test_metadata_declares_the_custom_ai_service(): void {
         $custom = $this->declared_fields('jedomi_custom_ai_service');
         $this->assertNotNull($custom, 'The data sent to the custom AI service must be declared');
-        $this->assertSame(['messages', 'text', 'files'], array_values($custom));
+        $this->assertSame(['messages', 'text', 'files', 'filename', 'mimetype', 'question', 'language'], array_values($custom));
         $files = get_string('privacy:metadata:jedomi_custom_ai_service:files', 'local_jedomi');
         $this->assertStringContainsString('page images', $files);
+        $this->assertStringContainsString('not anonymised', $files);
+        $this->assertStringContainsString(
+            'not anonymised',
+            get_string('privacy:metadata:jedomi_custom_ai_service:question', 'local_jedomi')
+        );
+    }
+
+    /**
+     * JEDOMI-SEC-007, SEC-JD-096: the files, images and audio sent through the Datacurso AI provider to be read or
+     * transcribed are declared with the fields of the upload and those the provider adds to every request.
+     */
+    public function test_metadata_declares_the_files_sent_to_the_datacurso_service(): void {
+        $fileservice = $this->declared_fields('jedomi_file_service');
+        $this->assertNotNull($fileservice, 'The files sent to the Datacurso AI service must be declared');
+        $this->assertSame(
+            ['file', 'filename', 'mimetype', 'question', 'language', 'userid', 'lang', 'site_id', 'site_url'],
+            array_values($fileservice)
+        );
+        $summary = get_string('privacy:metadata:jedomi_file_service', 'local_jedomi');
+        foreach (['image', 'audio', 'PDF', 'Telegram'] as $word) {
+            $this->assertStringContainsString($word, $summary);
+        }
+        $this->assertStringContainsString(
+            'not anonymised',
+            get_string('privacy:metadata:jedomi_file_service:file', 'local_jedomi')
+        );
+        $this->assertStringContainsString(
+            'not anonymised',
+            get_string('privacy:metadata:jedomi_file_service:question', 'local_jedomi')
+        );
+        $this->assertStringContainsStringIgnoringCase(
+            'pseudonym',
+            get_string('privacy:metadata:jedomi_file_service:userid', 'local_jedomi')
+        );
+    }
+
+    /**
+     * JEDOMI-SEC-007: every string of the privacy declaration exists in English and in Spanish.
+     */
+    public function test_every_privacy_string_exists_in_both_languages(): void {
+        global $CFG;
+        $string = [];
+        require($CFG->dirroot . '/local/jedomi/lang/es/local_jedomi.php');
+        $spanish = $string;
+
+        $keys = [];
+        foreach (provider::get_metadata(new collection('local_jedomi'))->get_collection() as $item) {
+            $keys[] = $item->get_summary();
+            foreach ($item->get_privacy_fields() ?? [] as $key) {
+                $keys[] = $key;
+            }
+        }
+        $this->assertNotEmpty($keys);
+        foreach ($keys as $key) {
+            $this->assertTrue(get_string_manager()->string_exists($key, 'local_jedomi'), "Missing English string {$key}");
+            $this->assertArrayHasKey($key, $spanish, "Missing Spanish string {$key}");
+        }
     }
 
     /**
@@ -216,7 +273,7 @@ final class provider_test extends provider_testcase {
     public function test_metadata_declares_the_custom_document_service(): void {
         $docservice = $this->declared_fields('jedomi_custom_document_service');
         $this->assertNotNull($docservice, 'The files sent to the document service must be declared');
-        $this->assertSame(['files'], array_values($docservice));
+        $this->assertSame(['files', 'filename'], array_values($docservice));
         $this->assertStringContainsString('PDF', get_string('privacy:metadata:jedomi_custom_document_service', 'local_jedomi'));
         $files = get_string('privacy:metadata:jedomi_custom_document_service:files', 'local_jedomi');
         $this->assertStringContainsString('images', $files);
