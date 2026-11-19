@@ -858,6 +858,8 @@ $string['sql_function_rejected'] = 'The query uses a function or clause that can
     . '@@ or FOR UPDATE), so it was not run.';
 $string['sql_heading'] = 'Web chat queries';
 $string['sql_heading_help'] = 'Limits of the database queries the AI runs in the web chat. The time limit per query applies on MySQL, MariaDB and PostgreSQL; SQL Server and Oracle keep the SQL tool with the row limit only.';
+$string['sql_params_rejected'] = 'The query parameters do not match its placeholders one to one, so it was not run. Use a list '
+    . 'with one value per ? or one key per :name, written without the colon, and no other values.';
 $string['sql_row_limit_web'] = 'Maximum rows per query (web chat)';
 $string['sql_row_limit_web_help'] = 'Most rows a database query of the web chat returns to the AI, from 10 to 1000 (default: 100). More rows give more complete answers to large questions but make each answer slower and larger. Telegram, the companion web service and the scheduled agents keep their own limits. On SQL Server and Oracle only the row limit applies: Moodle cannot set a time limit per query there, so a slow query of the AI runs on the database of the site until the database or PHP stops it. Keep the limit low on those databases.';
 $string['sql_row_limit_web_invalid'] = 'Enter a whole number from 10 to 1000.';
@@ -988,7 +990,7 @@ $string['telegram_not_linked'] = 'Not linked';
 $string['telegram_notify_graded'] = '📝 Your assignment <b>{$a->assignment}</b> in <b>{$a->course}</b> has been graded.';
 $string['telegram_open_auto'] = 'Open in Telegram (automatic)';
 $string['telegram_open_auto_help'] = 'Takes you straight to @{$a} with your code ready to link.';
-$string['telegram_pin_info'] = 'Changes you ask Jedomi for in Telegram are confirmed with this PIN instead of the Confirm button. After the right PIN it is not asked again for 15 minutes; 3 wrong PINs lock your changes through Telegram for 15 minutes. Queries do not need the PIN.';
+$string['telegram_pin_info'] = 'Changes you ask Jedomi for in Telegram are confirmed with this PIN instead of the Confirm button. After the right PIN it is not asked again for 15 minutes, but each change still shows its card and runs only when you confirm it with the button or the confirmation word; 3 wrong PINs lock your changes through Telegram for 15 minutes. Queries do not need the PIN.';
 $string['telegram_pin_invalid'] = 'The PIN is numeric only: {$a->min} to {$a->max} digits, with no letters, spaces or symbols.';
 $string['telegram_pin_is_set'] = 'A PIN is set. Saving a new one replaces it.';
 $string['telegram_pin_locked'] = 'Too many wrong PINs: your changes through Telegram are locked for {$a} more minute(s). Queries keep working.';
@@ -1015,7 +1017,7 @@ $string['telegram_remove_token'] = 'Remove the bot token';
 $string['telegram_remove_token_desc'] = 'Disconnect the bot: the token is deleted and the webhook is removed from Telegram.';
 $string['telegram_require_pin'] = 'Require a PIN in Telegram for actions of administrators and managers';
 $string['telegram_require_pin_desc'] = 'Administrators and managers confirm their changes in Telegram with a PIN they set on their profile.';
-$string['telegram_require_pin_help'] = 'When checked, each administrator and manager sets a PIN of 6 to 8 digits on the Jedomi Telegram page of their profile. Their changes through Telegram are confirmed with the PIN instead of the Confirm button; after the right PIN it is not asked again for 15 minutes, and 3 wrong PINs lock their changes through Telegram for 15 minutes. Until they set the PIN their changes through Telegram are refused, while queries keep working. Teachers and students are not affected.';
+$string['telegram_require_pin_help'] = 'When checked, each administrator and manager sets a PIN of 6 to 8 digits on the Jedomi Telegram page of their profile. Their changes through Telegram are confirmed with the PIN instead of the Confirm button; after the right PIN it is not asked again for 15 minutes, but each change still shows its card and runs only when they confirm it with the button or the confirmation word, and 3 wrong PINs lock their changes through Telegram for 15 minutes. Until they set the PIN their changes through Telegram are refused, while queries keep working. Teachers and students are not affected.';
 $string['telegram_role_visibility_help'] = 'Toggle OFF to prevent users with this role from linking or receiving Telegram '
     . 'messages. Admins always have access.';
 $string['telegram_secret_regenerated'] = 'The webhook secret was regenerated and the new webhook URL was registered in Telegram.';

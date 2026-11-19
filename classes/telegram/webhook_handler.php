@@ -449,14 +449,16 @@ class webhook_handler {
         $USER = $user;
 
         // An administrator or manager who needs a PIN confirms with it and the confirmation word does not confirm
-        // (Decision 7). A number is a PIN only while an action waits in the chat; then it never reaches the AI.
+        // (Decision 7), except in the 15 minutes after a right PIN, when actions are confirmed as without the PIN
+        // (JEDOMI-SEC-016). A number is a PIN only while an action waits in the chat; then it never reaches the AI.
         // Otherwise it is a normal message (RES-003).
-        if (telegram_pin_service::is_required((int) $link->userid)) {
-            $waiting = self::waiting_action($chatid);
-            if ($waiting !== null && telegram_pin_service::is_valid_format($text)) {
-                self::handle_pin($chatid, (int) $link->userid, $text, $waiting, (int) ($message['message_id'] ?? 0));
-                return;
-            }
+        $pinrequired = telegram_pin_service::is_required((int) $link->userid);
+        $waiting = $pinrequired ? self::waiting_action($chatid) : null;
+        if ($waiting !== null && telegram_pin_service::is_valid_format($text)) {
+            self::handle_pin($chatid, (int) $link->userid, $text, $waiting, (int) ($message['message_id'] ?? 0));
+            return;
+        }
+        if ($pinrequired && !telegram_pin_service::in_window((int) $link->userid)) {
             if ($waiting !== null && pending_action_service::is_confirm_keyword($text)) {
                 api_client::instance()->send_message($chatid, get_string('telegram_pin_prompt', 'local_jedomi'));
                 return;
@@ -888,13 +890,14 @@ class webhook_handler {
     }
 
     /**
-     * Hold a tool call that changes data until the user confirms it with the buttons of the chat.
+     * Hold a tool call that changes data until the user confirms it with the buttons of the chat, the confirmation word
+     * or, for an administrator or manager who needs a PIN and has not typed it in the last 15 minutes, the PIN.
      *
      * @param string $chatid Telegram chat id.
      * @param int $userid Linked Moodle user.
      * @param string $name Tool name.
      * @param array $args Tool arguments.
-     * @return string|null Result for the AI when the call is held, or null when the tool runs without confirmation.
+     * @return string|null Result for the AI when the call is held or refused, or null for a tool that changes nothing.
      */
     private static function hold_action(string $chatid, int $userid, string $name, array $args): ?string {
         global $DB;
@@ -903,16 +906,15 @@ class webhook_handler {
         if ($severity === null) {
             return null;
         }
-        $pinrequired = telegram_pin_service::is_required($userid);
-        if ($pinrequired) {
+        $askpin = false;
+        if (telegram_pin_service::is_required($userid)) {
             $refusal = self::pin_refusal($chatid, $userid);
             if ($refusal !== null) {
                 return $refusal;
             }
-            if (telegram_pin_service::in_window($userid)) {
-                // A right PIN in the last 15 minutes: the write runs without asking it again.
-                return null;
-            }
+            // A right PIN in the last 15 minutes only skips asking it again: the write is still held and shown with its
+            // card, and the user confirms it with the button or the confirmation word (JEDOMI-SEC-016).
+            $askpin = !telegram_pin_service::in_window($userid);
         }
         $card = pending_action_service::card($userid, $name, $args, $severity, pending_action_service::TELEGRAM_DETAILS_LENGTH);
         if ($card['truncated']) {
@@ -931,10 +933,10 @@ class webhook_handler {
 
         api_client::instance()->send_message(
             $chatid,
-            self::confirmation_text($userid, $name, $args, $severity, $pinrequired),
-            ['inline_keyboard' => [self::confirmation_buttons($callbackid, $severity, $pinrequired)]]
+            self::confirmation_text($userid, $name, $args, $severity, $askpin),
+            ['inline_keyboard' => [self::confirmation_buttons($callbackid, $severity, $askpin)]]
         );
-        if ($pinrequired) {
+        if ($askpin) {
             return json_encode(['status' => 'awaiting_confirmation',
                 'note' => 'The action waits for the user to type their PIN in the chat. Do not call it again.']);
         }
@@ -952,7 +954,7 @@ class webhook_handler {
      * @param string $name Tool name.
      * @param array $args Tool arguments.
      * @param string $severity One of the pending_action_service::SEVERITY_* constants.
-     * @param bool $pinrequired Whether the user confirms with the PIN instead.
+     * @param bool $askpin Whether the user confirms with the PIN instead.
      * @return string HTML text for Telegram.
      */
     private static function confirmation_text(
@@ -1157,7 +1159,7 @@ class webhook_handler {
      *
      * A critical action runs only with the confirmation word typed in the chat; a confirm button for it (from an
      * older message) is rejected and the action is kept. An administrator or manager who needs a PIN confirms only
-     * with it (Decision 7).
+     * with it (Decision 7), except in the 15 minutes after a right PIN, when the button or the word confirms.
      *
      * @param string $chatid Telegram chat id.
      * @param string $actionid Callback id of the held action.
@@ -1185,7 +1187,9 @@ class webhook_handler {
         if (
             in_array($mode, [self::RESOLVE_BUTTON, self::RESOLVE_KEYWORD], true) && $link
                 && telegram_pin_service::is_required((int) $link->userid)
+                && !telegram_pin_service::in_window((int) $link->userid)
         ) {
+            // Outside the 15 minutes after a right PIN, only the PIN confirms (Decision 7, JEDOMI-SEC-016).
             return get_string('telegram_pin_prompt', 'local_jedomi');
         }
         if ($mode === self::RESOLVE_BUTTON && $critical) {

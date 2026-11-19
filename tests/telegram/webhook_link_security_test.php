@@ -248,8 +248,9 @@ final class webhook_link_security_test extends \advanced_testcase {
     }
 
     /**
-     * Decision 7: the PIN replaces the confirmation of a write and opens a 15-minute window; the confirmation word does
-     * not confirm without the PIN, and the PIN never reaches the AI.
+     * Decision 7: the PIN confirms a write and opens a 15-minute window; the confirmation word does not confirm without
+     * the PIN, and the PIN never reaches the AI. Within the window (JEDOMI-SEC-016) a write is still held with its card
+     * and confirmed with the button or the word, without the PIN.
      */
     public function test_pin_confirms_the_write_and_opens_the_window(): void {
         global $DB;
@@ -281,11 +282,20 @@ final class webhook_link_security_test extends \advanced_testcase {
             $this->assertStringNotContainsString(self::PIN, json_encode($call['messages']));
         }
 
-        // Within the window the next write runs without asking again.
+        // JEDOMI-SEC-016: within the window the next write is still held with its card; only the PIN is not asked.
         $agentid = $this->ask_to_delete_an_agent('784000012');
-        $this->assertFalse($DB->record_exists('local_jedomi_agents', ['id' => $agentid]), 'Runs within the window');
+        $this->assertTrue($DB->record_exists('local_jedomi_agents', ['id' => $agentid]), 'Held within the window');
+        $this->assertSame(1, $DB->count_records('local_jedomi_telegram_pending_actions'));
+        $card = implode("\n", $this->texts());
+        $this->assertStringContainsString((string) $agentid, $card, 'The card shows the action');
+        $this->assertStringNotContainsString(get_string('telegram_pin_prompt', 'local_jedomi'), $card);
+        $keyword = \core_text::strtoupper(get_string('confirm_btn_yes', 'local_jedomi'));
+        $this->assertStringContainsString(get_string('telegram_confirm_keyword', 'local_jedomi', s($keyword)), $card);
+        $this->say('784000012', $keyword);
+        $this->assertFalse($DB->record_exists('local_jedomi_agents', ['id' => $agentid]), 'Runs once confirmed');
+        $this->assertSame(get_string('confirm_done', 'local_jedomi'), end($this->telegram->sent)['text']);
 
-        // After the window it is asked again.
+        // After the window the PIN is asked again and the confirmation word does not confirm.
         $DB->set_field(
             'local_jedomi_telegram_links',
             'pinverifiedat',
@@ -294,6 +304,61 @@ final class webhook_link_security_test extends \advanced_testcase {
         );
         $agentid = $this->ask_to_delete_an_agent('784000012');
         $this->assertTrue($DB->record_exists('local_jedomi_agents', ['id' => $agentid]), 'Held again after the window');
+        $this->assertStringContainsString(get_string('telegram_pin_prompt', 'local_jedomi'), implode("\n", $this->texts()));
+        $this->say('784000012', \core_text::strtoupper(get_string('confirm_btn_yes', 'local_jedomi')));
+        $this->assertTrue($DB->record_exists('local_jedomi_agents', ['id' => $agentid]), 'The word needs the PIN again');
+        $this->assertSame(get_string('telegram_pin_prompt', 'local_jedomi'), end($this->telegram->sent)['text']);
+    }
+
+    /**
+     * JEDOMI-SEC-016 (NEW-POC-2): within the PIN window a critical web service write (deleting users) is held with its
+     * card and runs only after the confirmation word; a high write keeps its confirm button, which confirms it.
+     */
+    public function test_writes_within_the_pin_window_are_still_confirmed(): void {
+        global $DB;
+        set_config('telegram_require_pin', 1, 'local_jedomi');
+        $adminid = (int) get_admin()->id;
+        $this->link($adminid, '784000015');
+        telegram_pin_service::set_pin($adminid, self::PIN);
+        $this->assertSame(telegram_pin_service::RESULT_OK, telegram_pin_service::verify($adminid, self::PIN)['result']);
+        $this->assertTrue(telegram_pin_service::in_window($adminid));
+        $victim = $this->getDataGenerator()->create_user();
+
+        $this->telegram->sent = [];
+        $this->ai_uses('ws_execute', ['wsname' => 'core_user_delete_users', 'params' => ['userids' => [(int) $victim->id]]]);
+        $this->say('784000015', 'Delete that user');
+
+        $this->assertFalse((bool) $DB->get_field('user', 'deleted', ['id' => $victim->id]), 'Held within the window');
+        $this->assertSame(1, $DB->count_records('local_jedomi_telegram_pending_actions'));
+        $card = implode("\n", $this->texts());
+        $this->assertStringContainsString((string) $victim->id, $card, 'The card shows the arguments');
+        $this->assertStringNotContainsString(get_string('telegram_pin_prompt', 'local_jedomi'), $card);
+        $toolresult = (string) $this->ai->calls[1]['messages'][count($this->ai->calls[1]['messages']) - 1]['content'];
+        $this->assertStringContainsString('awaiting_confirmation', $toolresult);
+
+        $this->say('784000015', \core_text::strtoupper(get_string('confirm_btn_yes', 'local_jedomi')));
+        $this->assertTrue((bool) $DB->get_field('user', 'deleted', ['id' => $victim->id]), 'Runs once confirmed');
+        $this->assertSame(0, $DB->count_records('local_jedomi_telegram_pending_actions'));
+
+        // A high write: the card has the confirm button, and the button confirms within the window.
+        $course = $this->getDataGenerator()->create_course();
+        $student = $this->getDataGenerator()->create_user();
+        $roleid = (int) $DB->get_field('role', 'id', ['shortname' => 'manager']);
+        $this->telegram->sent = [];
+        $this->ai_uses('ws_execute', ['wsname' => 'core_role_assign_roles', 'params' => ['assignments' => [
+            ['roleid' => $roleid, 'userid' => (int) $student->id, 'contextid' => \context_course::instance($course->id)->id]]]]);
+        $this->say('784000015', 'Make them manager of the course');
+        $buttons = array_merge(...array_map(
+            static fn(array $m): array => array_column($m['replymarkup']['inline_keyboard'][0] ?? [], 'callback_data'),
+            $this->telegram->sent
+        ));
+        $confirm = array_values(array_filter($buttons, static fn(string $d): bool => str_starts_with($d, 'confirm:')));
+        $this->assertCount(1, $confirm, 'The card has the confirm button');
+        $this->assertFalse($DB->record_exists('role_assignments', ['userid' => $student->id, 'roleid' => $roleid]));
+
+        webhook_handler::handle(['callback_query' => ['id' => 'cb-016', 'data' => $confirm[0],
+            'message' => ['message_id' => self::MESSAGEID, 'chat' => ['id' => '784000015', 'type' => 'private']]]]);
+        $this->assertTrue($DB->record_exists('role_assignments', ['userid' => $student->id, 'roleid' => $roleid]));
     }
 
     /**
@@ -341,6 +406,14 @@ final class webhook_link_security_test extends \advanced_testcase {
         $this->say('784000014', '135790');
 
         $this->assertCount(1, $this->ai->calls, 'A number is a normal message for a user without a PIN');
+
+        // A write of the teacher is held with the usual card, without any PIN.
+        $this->telegram->sent = [];
+        $hold = new \ReflectionMethod(webhook_handler::class, 'hold_action');
+        $result = (string) $hold->invoke(null, '784000014', (int) $teacher->id, 'delete_agent', ['id' => 1]);
+        $this->assertStringContainsString('awaiting_confirmation', $result);
+        $this->assertStringNotContainsString('PIN', $result);
+        $this->assertStringNotContainsString(get_string('telegram_pin_prompt', 'local_jedomi'), implode("\n", $this->texts()));
     }
 
     /**

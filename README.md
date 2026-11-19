@@ -213,7 +213,8 @@ token saved before again with that key.
 - **PIN for administrators and managers**: with "Require a PIN in Telegram for actions of administrators and managers"
   (Integrations → Telegram, off by default), each administrator and manager sets a PIN of 6 to 8 digits on the Jedomi
   Telegram page of their profile, stored only as a hash. The PIN replaces the Confirm button for their Telegram
-  writes; after a right PIN, writes run without asking again for 15 minutes. Three wrong PINs lock their Telegram
+  writes; after a right PIN it is not asked again for 15 minutes, but every write is still shown with its card and
+  runs only after the Confirm button (or the confirmation word for critical writes). Three wrong PINs lock their Telegram
   writes for 15 minutes. Until the PIN is set their writes are refused with a link to set it; queries keep working.
   Relinking the chat, or a revocation, removes the PIN.
 

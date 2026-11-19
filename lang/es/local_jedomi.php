@@ -865,6 +865,8 @@ $string['sql_function_rejected'] = 'La consulta usa una función o cláusula que
     . 'BENCHMARK, INTO OUTFILE, @@ o FOR UPDATE), por lo que no se ejecutó.';
 $string['sql_heading'] = 'Consultas del chat web';
 $string['sql_heading_help'] = 'Límites de las consultas a la base de datos que la IA ejecuta en el chat web. El tiempo límite por consulta se aplica en MySQL, MariaDB y PostgreSQL; SQL Server y Oracle conservan la herramienta SQL solo con el límite de filas.';
+$string['sql_params_rejected'] = 'Los parámetros de la consulta no coinciden uno a uno con sus marcadores, por lo que no se '
+    . 'ejecutó. Use una lista con un valor por cada ? o una clave por cada :nombre, escrita sin los dos puntos, y ningún otro valor.';
 $string['sql_row_limit_web'] = 'Máximo de filas por consulta (chat web)';
 $string['sql_row_limit_web_help'] = 'Máximo de filas que una consulta a la base de datos del chat web devuelve a la IA, de 10 a 1000 (valor predeterminado: 100). Más filas dan respuestas más completas a preguntas amplias, pero hacen cada respuesta más lenta y más extensa. Telegram, el servicio web complementario y los agentes programados conservan sus propios límites. En SQL Server y Oracle solo se aplica el límite de filas: Moodle no puede fijar allí un tiempo límite por consulta, así que una consulta lenta de la IA se ejecuta sobre la base de datos del sitio hasta que la base de datos o PHP la detengan. Mantenga un límite bajo en esos motores.';
 $string['sql_row_limit_web_invalid'] = 'Escriba un número entero entre 10 y 1000.';
@@ -1000,7 +1002,7 @@ $string['telegram_not_linked'] = 'Sin vincular';
 $string['telegram_notify_graded'] = '📝 Su tarea <b>{$a->assignment}</b> del curso <b>{$a->course}</b> ha sido calificada.';
 $string['telegram_open_auto'] = 'Abrir en Telegram (automático)';
 $string['telegram_open_auto_help'] = 'Lo lleva directamente a @{$a} con su código listo para vincular.';
-$string['telegram_pin_info'] = 'Los cambios que pida a Jedomi en Telegram se confirman con este PIN en lugar del botón Confirmar. Tras el PIN correcto no se vuelve a pedir durante 15 minutos; 3 PIN incorrectos bloquean sus cambios por Telegram durante 15 minutos. Las consultas no necesitan el PIN.';
+$string['telegram_pin_info'] = 'Los cambios que pida a Jedomi en Telegram se confirman con este PIN en lugar del botón Confirmar. Tras el PIN correcto no se vuelve a pedir durante 15 minutos, pero cada cambio sigue mostrando su tarjeta y solo se ejecuta cuando usted lo confirma con el botón o la palabra de confirmación; 3 PIN incorrectos bloquean sus cambios por Telegram durante 15 minutos. Las consultas no necesitan el PIN.';
 $string['telegram_pin_invalid'] = 'El PIN es solo numérico: de {$a->min} a {$a->max} dígitos, sin letras, espacios ni símbolos.';
 $string['telegram_pin_is_set'] = 'Hay un PIN definido. Si guarda uno nuevo, lo reemplaza.';
 $string['telegram_pin_locked'] = 'Demasiados PIN incorrectos: sus cambios por Telegram quedan bloqueados durante {$a} minuto(s) más. Las consultas siguen funcionando.';
@@ -1027,7 +1029,7 @@ $string['telegram_remove_token'] = 'Eliminar el token del bot';
 $string['telegram_remove_token_desc'] = 'Desconectar el bot: se borra el token y se elimina el webhook en Telegram.';
 $string['telegram_require_pin'] = 'Exigir PIN en Telegram para las acciones de administradores y gestores';
 $string['telegram_require_pin_desc'] = 'Los administradores y gestores confirman sus cambios en Telegram con un PIN que definen en su perfil.';
-$string['telegram_require_pin_help'] = 'Con la casilla marcada, cada administrador y gestor define un PIN de 6 a 8 dígitos en la página Telegram de Jedomi de su perfil. Sus cambios por Telegram se confirman con el PIN en lugar del botón Confirmar; tras el PIN correcto no se les vuelve a pedir durante 15 minutos, y 3 PIN incorrectos bloquean sus cambios por Telegram durante 15 minutos. Mientras no definan el PIN, sus cambios por Telegram se rechazan y las consultas siguen funcionando. No afecta a profesores ni estudiantes.';
+$string['telegram_require_pin_help'] = 'Con la casilla marcada, cada administrador y gestor define un PIN de 6 a 8 dígitos en la página Telegram de Jedomi de su perfil. Sus cambios por Telegram se confirman con el PIN en lugar del botón Confirmar; tras el PIN correcto no se les vuelve a pedir durante 15 minutos, pero cada cambio sigue mostrando su tarjeta y solo se ejecuta cuando lo confirman con el botón o la palabra de confirmación, y 3 PIN incorrectos bloquean sus cambios por Telegram durante 15 minutos. Mientras no definan el PIN, sus cambios por Telegram se rechazan y las consultas siguen funcionando. No afecta a profesores ni estudiantes.';
 $string['telegram_role_visibility_help'] = 'Desactive para evitar que usuarios con este rol vinculen o reciban mensajes de '
     . 'Telegram. Los admins siempre tienen acceso.';
 $string['telegram_secret_regenerated'] = 'Se regeneró el secreto del webhook y se registró la nueva URL del webhook en Telegram.';

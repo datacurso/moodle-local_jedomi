@@ -184,6 +184,10 @@ class sql_guard {
         if ($unreadable !== null) {
             return $unreadable;
         }
+        $ambiguous = self::params_rejection($sql, $params);
+        if ($ambiguous !== null) {
+            return $ambiguous;
+        }
         $code = self::lex($sql, $family);
         if ($code === null) {
             return 'sql_construct_rejected';
@@ -210,6 +214,51 @@ class sql_guard {
             return self::course_rejection($sql, $userid, $params);
         }
         return null;
+    }
+
+    /**
+     * Reason to reject parameters that the database could read differently from the guard, or null (JEDOMI-SEC-015).
+     *
+     * moodle_database::fix_sql_params() reads a named placeholder :name from the key name (without the colon) and the
+     * question marks from the values in order, whatever their keys. Only the shapes with one reading pass, so the guard
+     * checks exactly the values the database runs with: no parameters, a list (keys 0, 1, 2...) with one value per
+     * question mark, or one plain key (lowercase, no colon) per named placeholder, each written once. Mixed or colon
+     * keys, unused values, lists for named placeholders, names for question marks and $1 placeholders are refused.
+     *
+     * @param string $sql Query.
+     * @param array $params Query parameters.
+     * @return string|null sql_params_rejected or null.
+     */
+    public static function params_rejection(string $sql, array $params): ?string {
+        // The same patterns as moodle_database::fix_sql_params().
+        $namedcount = preg_match_all('/(?<!:):[a-z][a-z0-9_]*/', $sql, $named);
+        $questions = substr_count($sql, '?');
+        if (preg_match('/\$[1-9][0-9]*/', $sql) || ($namedcount > 0 && $questions > 0)) {
+            return 'sql_params_rejected';
+        }
+        if ($params === []) {
+            // Moodle refuses a placeholder without a value before running anything.
+            return null;
+        }
+        if (array_is_list($params)) {
+            return $namedcount === 0 && count($params) === $questions ? null : 'sql_params_rejected';
+        }
+        if ($questions > 0) {
+            return 'sql_params_rejected';
+        }
+        $names = array_map(static fn(string $match): string => substr($match, 1), $named[0]);
+        if (count(array_unique($names)) !== count($names)) {
+            return 'sql_params_rejected';
+        }
+        $keys = array_keys($params);
+        foreach ($keys as $key) {
+            if (!is_string($key) || !preg_match('/^[a-z][a-z0-9_]*$/', $key)) {
+                return 'sql_params_rejected';
+            }
+        }
+        sort($names);
+        sort($keys);
+        return $names === $keys ? null : 'sql_params_rejected';
     }
 
     /**
