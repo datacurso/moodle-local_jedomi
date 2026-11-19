@@ -236,6 +236,44 @@ class observers {
         self::update_cooldown($link);
     }
 
+    /**
+     * Revoke the Telegram link of a user who was suspended (Decision 7).
+     *
+     * @param \core\event\user_updated $event
+     * @return void
+     */
+    public static function user_updated(\core\event\user_updated $event): void {
+        global $DB;
+        $userid = (int) $event->objectid;
+        if (
+            $DB->record_exists('local_jedomi_telegram_links', ['userid' => $userid])
+                && $DB->record_exists('user', ['id' => $userid, 'suspended' => 1])
+        ) {
+            \local_jedomi\local\service\telegram_link_service::unlink($userid);
+        }
+    }
+
+    /**
+     * Revoke the Telegram link of a deleted user (Decision 7).
+     *
+     * @param \core\event\user_deleted $event
+     * @return void
+     */
+    public static function user_deleted(\core\event\user_deleted $event): void {
+        \local_jedomi\local\service\telegram_link_service::unlink((int) $event->objectid);
+    }
+
+    /**
+     * Revoke the Telegram link of a user whose password changed (Decision 7): whoever had the old password cannot keep
+     * acting through the chat.
+     *
+     * @param \core\event\user_password_updated $event
+     * @return void
+     */
+    public static function user_password_updated(\core\event\user_password_updated $event): void {
+        \local_jedomi\local\service\telegram_link_service::unlink((int) $event->relateduserid);
+    }
+
     // ... ── Cooldown helpers ─────────────────────────────────────────────────────
 
     /**
@@ -249,13 +287,14 @@ class observers {
     }
 
     /**
-     * Record the current time as the last proactive send for this link.
+     * Record the current time as the last proactive send for this link. Only that field is written, so the PIN state
+     * and the last use written meanwhile by the bot are kept (RISK-002).
      *
      * @param \stdClass $link Telegram link record to update.
      */
     private static function update_cooldown(\stdClass $link): void {
         global $DB;
         $link->lastproactivesent = time();
-        $DB->update_record('local_jedomi_telegram_links', $link);
+        $DB->set_field('local_jedomi_telegram_links', 'lastproactivesent', $link->lastproactivesent, ['id' => $link->id]);
     }
 }

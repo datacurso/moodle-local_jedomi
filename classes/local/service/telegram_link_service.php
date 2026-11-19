@@ -24,6 +24,9 @@ namespace local_jedomi\local\service;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class telegram_link_service {
+    /** @var int Seconds without use after which a link expires (Decision 7). */
+    public const EXPIRY = 30 * DAYSECS;
+
     /**
      * Whether users can link their account, and the bot names.
      *
@@ -75,5 +78,48 @@ class telegram_link_service {
                 'relateduserid' => $userid,
             ])->trigger();
         }
+    }
+
+    /**
+     * Whether a link went unused for more than EXPIRY: since its last use, or since it was created when never used.
+     *
+     * @param \stdClass $link Link record.
+     * @param int|null $now Current time; time() when null.
+     * @return bool
+     */
+    public static function is_expired(\stdClass $link, ?int $now = null): bool {
+        $lastuse = max((int) ($link->lastused ?? 0), (int) ($link->timecreated ?? 0));
+        return $lastuse < ($now ?? time()) - self::EXPIRY;
+    }
+
+    /**
+     * Record that the chat of a link was used now.
+     *
+     * @param \stdClass $link Link record.
+     * @return void
+     */
+    public static function touch(\stdClass $link): void {
+        global $DB;
+        $DB->set_field('local_jedomi_telegram_links', 'lastused', time(), ['id' => $link->id]);
+    }
+
+    /**
+     * Remove every link unused for more than EXPIRY, with the data of its chat.
+     *
+     * @return int Number of users whose link was removed.
+     */
+    public static function unlink_expired(): int {
+        global $DB;
+        $cutoff = time() - self::EXPIRY;
+        $userids = $DB->get_fieldset_select(
+            'local_jedomi_telegram_links',
+            'DISTINCT userid',
+            'lastused < :lastused AND timecreated < :timecreated',
+            ['lastused' => $cutoff, 'timecreated' => $cutoff]
+        );
+        foreach ($userids as $userid) {
+            self::unlink((int) $userid);
+        }
+        return count($userids);
     }
 }

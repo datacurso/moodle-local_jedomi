@@ -142,7 +142,11 @@ final class events_test extends \advanced_testcase {
         $sink = $this->redirectEvents();
         admin_settings_service::save_general_settings('Secret value', 500, 10);
         admin_settings_service::save_course_settings('all', []);
-        $events = $sink->get_events();
+        // The course settings also write config_log_created events of Moodle (SEC-JD-112); only the tab events matter here.
+        $events = array_values(array_filter(
+            $sink->get_events(),
+            static fn($event): bool => !$event instanceof \core\event\config_log_created
+        ));
         $sink->close();
 
         $this->assertSame([settings_updated::class, settings_updated::class], array_map('get_class', $events));

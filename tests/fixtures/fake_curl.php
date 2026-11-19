@@ -72,7 +72,29 @@ class fake_curl extends \curl {
         $this->info = ['http_code' => $response['http_code']];
         $this->error = $response['error'];
         $this->errno = $response['errno'];
+        if (isset($options['CURLOPT_WRITEFUNCTION'])) {
+            return $this->write($options['CURLOPT_WRITEFUNCTION'], $response['body']);
+        }
         return $response['body'];
+    }
+
+    /**
+     * Hand a body to a write callback in chunks, as libcurl does: a callback that takes less than a chunk aborts the
+     * request with CURLE_WRITE_ERROR.
+     *
+     * @param callable $callback Write callback: fn($handle, string $data): int.
+     * @param string $body Body.
+     * @return bool True, as curl_exec() returns with a write callback; false when it aborted.
+     */
+    private function write(callable $callback, string $body): bool {
+        foreach (str_split($body, 1048576) as $chunk) {
+            if ($chunk !== '' && $callback(null, $chunk) !== strlen($chunk)) {
+                $this->errno = CURLE_WRITE_ERROR;
+                $this->error = 'Failure writing output to destination';
+                return false;
+            }
+        }
+        return true;
     }
 
     #[\Override]

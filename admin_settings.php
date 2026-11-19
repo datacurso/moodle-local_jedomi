@@ -140,8 +140,13 @@ switch ($tab) {
             $type = notification::NOTIFY_SUCCESS;
             $token = trim((string) ($data->telegram_bot_token ?? ''));
             if (!empty($data->telegram_remove_token)) {
-                admin_settings_service::remove_telegram_token();
-                $message = get_string('telegram_msg_token_removed', 'local_jedomi');
+                if (!admin_settings_service::remove_telegram_token()) {
+                    // The token could not be decrypted, so its webhook could not be deleted in Telegram.
+                    $message = get_string('telegram_msg_token_removed_webhook_kept', 'local_jedomi');
+                    $type = notification::NOTIFY_WARNING;
+                } else {
+                    $message = get_string('telegram_msg_token_removed', 'local_jedomi');
+                }
             } else if ($token !== '' && !admin_settings_service::verify_and_save_telegram_token($token)) {
                 // The rejected token does not leave the previous one in use; the other changes are still saved.
                 $message = get_string('telegram_msg_token_invalid', 'local_jedomi');
@@ -152,7 +157,8 @@ switch ($tab) {
                 (int) $data->telegram_cooldown,
                 (int) $data->telegram_max_turns,
                 (int) $data->telegram_gateway_timeout,
-                telegram_settings_form::visible_role_ids($data, $roles)
+                telegram_settings_form::visible_role_ids($data, $roles),
+                !empty($data->telegram_require_pin)
             );
             redirect($pageurl, $message, null, $type);
         }
@@ -161,6 +167,7 @@ switch ($tab) {
             'telegram_cooldown' => $telegram['cooldown'],
             'telegram_max_turns' => $telegram['max_turns'],
             'telegram_gateway_timeout' => $telegram['gateway_timeout'],
+            'telegram_require_pin' => $telegram['require_pin'],
         ];
         foreach ($roles as $role) {
             $defaults['telegram_role_visible_' . $role['id']] = (int) !in_array($role['id'], $telegram['hidden_role_ids'], true);

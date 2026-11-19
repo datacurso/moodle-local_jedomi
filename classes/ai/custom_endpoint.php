@@ -25,6 +25,11 @@ namespace local_jedomi\ai;
  * only the local host allowed by that checkbox skips them, and its requests are then pinned to the address checked
  * here, so a DNS change between the check and the request cannot send them elsewhere. Redirects are never followed.
  *
+ * A name is looked up at most once a minute per PHP process (DNS_CACHE_SECONDS), and a lookup slower than DNS_TIMEOUT is not
+ * trusted: the host then counts as not local, so the request keeps HTTPS and the cURL security of the site, whose own
+ * resolution is bounded by the connection timeout. PHP cannot stop a system lookup early, so the limit decides what a
+ * slow answer is worth, and the cache keeps a slow resolver from being waited for more than once.
+ *
  * @package    local_jedomi
  * @copyright  2026 Jedomi Project
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
@@ -45,6 +50,21 @@ class custom_endpoint {
     /** @var int Longest wait to open a connection, in seconds. */
     private const CONNECT_TIMEOUT = 5;
 
+    /** @var int Longest trusted name lookup, in seconds. */
+    public const DNS_TIMEOUT = 2;
+
+    /** @var int Seconds a name lookup is reused. */
+    private const DNS_CACHE_SECONDS = 60;
+
+    /** @var array<string, array{addresses: string[], time: float}> Lookups of this process, by host. */
+    private static array $lookups = [];
+
+    /** @var \Closure|null Name lookup of PHPUnit tests: fn(string $host): string[]. */
+    private static ?\Closure $testresolver = null;
+
+    /** @var \Closure|null Clock of PHPUnit tests: fn(): float, in seconds. */
+    private static ?\Closure $testclock = null;
+
     /** @var string[] Networks of a local model: loopback and private networks (never link-local or 0.0.0.0). */
     private const LOCAL_NETWORKS = [
         '127.0.0.0/8',
@@ -54,6 +74,23 @@ class custom_endpoint {
         '::1/128',
         'fc00::/7',
     ];
+
+    /**
+     * Replace the name lookup and its clock, and forget the cached lookups. Only for PHPUnit tests.
+     *
+     * @param \Closure|null $resolver fn(string $host): string[] returning the IPv4 addresses; null to restore the system
+     *        lookup.
+     * @param \Closure|null $clock fn(): float returning the current time in seconds; null to restore microtime().
+     * @return void
+     */
+    public static function set_resolver_for_testing(?\Closure $resolver, ?\Closure $clock = null): void {
+        if (!defined('PHPUNIT_TEST') || !PHPUNIT_TEST) {
+            throw new \coding_exception('custom_endpoint::set_resolver_for_testing() is only for PHPUnit tests');
+        }
+        self::$testresolver = $resolver;
+        self::$testclock = $clock;
+        self::$lookups = [];
+    }
 
     /**
      * Root of the API that every route is added to, with the convention of the base_url of the OpenAI SDK.
@@ -227,10 +264,11 @@ class custom_endpoint {
     }
 
     /**
-     * Addresses of a host: itself when it is an IP address, otherwise its IPv4 addresses.
+     * Addresses of a host: itself when it is an IP address, otherwise its IPv4 addresses, looked up at most once per
+     * DNS_CACHE_SECONDS.
      *
      * @param string $host Host without brackets.
-     * @return string[] Empty when it cannot be resolved.
+     * @return string[] Empty when it cannot be resolved, or when the lookup took longer than DNS_TIMEOUT.
      */
     private static function resolve(string $host): array {
         if ($host === '') {
@@ -242,7 +280,35 @@ class custom_endpoint {
         if (!\core\ip_utils::is_domain_name($host)) {
             return [];
         }
-        $addresses = gethostbynamel($host);
-        return is_array($addresses) ? array_values($addresses) : [];
+        $start = self::now();
+        $cached = self::$lookups[$host] ?? null;
+        if ($cached !== null && $start - $cached['time'] < self::DNS_CACHE_SECONDS) {
+            return $cached['addresses'];
+        }
+        if (self::$testresolver !== null) {
+            $addresses = (self::$testresolver)($host);
+        } else {
+            $addresses = gethostbynamel($host);
+        }
+        $addresses = is_array($addresses) ? array_values($addresses) : [];
+        $end = self::now();
+        if ($end - $start > self::DNS_TIMEOUT) {
+            // Too slow to be trusted: the host counts as not local, as when it cannot be resolved.
+            $addresses = [];
+            if (function_exists('local_jedomi_log')) {
+                \local_jedomi_log('CUSTOM_DNS_SLOW', ['duration_ms' => (int) round(($end - $start) * 1000)]);
+            }
+        }
+        self::$lookups[$host] = ['addresses' => $addresses, 'time' => $end];
+        return $addresses;
+    }
+
+    /**
+     * Current time, in seconds.
+     *
+     * @return float
+     */
+    private static function now(): float {
+        return self::$testclock !== null ? (float) (self::$testclock)() : microtime(true);
     }
 }

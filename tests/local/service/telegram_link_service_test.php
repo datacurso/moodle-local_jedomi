@@ -140,4 +140,100 @@ final class telegram_link_service_test extends \advanced_testcase {
 
         $this->assertSame([], $telegram->sent);
     }
+
+    /**
+     * Link a chat to a user.
+     *
+     * @param int $userid User.
+     * @param string $chatid Chat id.
+     * @param int $timecreated Time the link was created.
+     * @param int $lastused Time the link was last used; 0 for never.
+     * @return void
+     */
+    private function link(int $userid, string $chatid, int $timecreated, int $lastused = 0): void {
+        global $DB;
+        $DB->insert_record('local_jedomi_telegram_links', (object) ['userid' => $userid, 'chatid' => $chatid,
+            'username' => 'ada', 'confirmed' => 1, 'timecreated' => $timecreated, 'lastused' => $lastused]);
+    }
+
+    /**
+     * Decision 7: a link expires 30 days after its last use, or after its creation when it was never used.
+     *
+     * @return void
+     */
+    public function test_link_expires_after_thirty_days_without_use(): void {
+        $now = 1800000000;
+        $limit = telegram_link_service::EXPIRY;
+        $this->assertSame(30 * DAYSECS, $limit);
+
+        $this->assertFalse(telegram_link_service::is_expired((object) ['timecreated' => $now - $limit, 'lastused' => 0], $now));
+        $this->assertTrue(telegram_link_service::is_expired((object) ['timecreated' => $now - $limit - 1, 'lastused' => 0], $now));
+        $this->assertFalse(telegram_link_service::is_expired(
+            (object) ['timecreated' => $now - 90 * DAYSECS, 'lastused' => $now - $limit + 1],
+            $now
+        ));
+        $this->assertTrue(telegram_link_service::is_expired(
+            (object) ['timecreated' => $now - 90 * DAYSECS, 'lastused' => $now - $limit - 1],
+            $now
+        ));
+    }
+
+    /**
+     * Decision 7: using a link records the time, and the cleanup removes only the expired links with their data.
+     *
+     * @return void
+     */
+    public function test_use_is_recorded_and_expired_links_are_removed(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $now = time();
+        $old = $this->getDataGenerator()->create_user();
+        $recent = $this->getDataGenerator()->create_user();
+        $this->link((int) $old->id, '782000010', $now - 60 * DAYSECS, $now - 31 * DAYSECS);
+        $this->link((int) $recent->id, '782000011', $now - 60 * DAYSECS, $now - 29 * DAYSECS);
+        $DB->insert_record('local_jedomi_telegram_sessions', (object) ['chatid' => '782000010', 'messages' => '[]',
+            'lastactivity' => $now]);
+
+        $link = telegram_link_service::get_confirmed_link((int) $recent->id);
+        telegram_link_service::touch($link);
+        $this->assertGreaterThanOrEqual($now, (int) $DB->get_field(
+            'local_jedomi_telegram_links',
+            'lastused',
+            ['userid' => $recent->id]
+        ));
+
+        $this->assertSame(1, telegram_link_service::unlink_expired());
+        $this->assertFalse($DB->record_exists('local_jedomi_telegram_links', ['userid' => $old->id]));
+        $this->assertFalse($DB->record_exists('local_jedomi_telegram_sessions', ['chatid' => '782000010']));
+        $this->assertTrue($DB->record_exists('local_jedomi_telegram_links', ['userid' => $recent->id]));
+    }
+
+    /**
+     * Decision 7: the link is revoked when the user is suspended, deleted or changes the password; other profile changes
+     * keep it.
+     *
+     * @return void
+     */
+    public function test_link_is_revoked_on_suspension_deletion_and_password_change(): void {
+        global $CFG, $DB;
+        require_once($CFG->dirroot . '/user/lib.php');
+        $this->resetAfterTest();
+        $now = time();
+        $kept = $this->getDataGenerator()->create_user();
+        $suspended = $this->getDataGenerator()->create_user();
+        $deleted = $this->getDataGenerator()->create_user();
+        $password = $this->getDataGenerator()->create_user();
+        $this->link((int) $kept->id, '782000020', $now);
+        $this->link((int) $suspended->id, '782000021', $now);
+        $this->link((int) $deleted->id, '782000022', $now);
+        $this->link((int) $password->id, '782000023', $now);
+
+        user_update_user((object) ['id' => $kept->id, 'firstname' => 'Renamed'], false);
+        user_update_user((object) ['id' => $suspended->id, 'suspended' => 1], false);
+        delete_user($deleted);
+        update_internal_user_password($password, 'N3w-Passw0rd!');
+
+        $linked = $DB->get_fieldset_select('local_jedomi_telegram_links', 'userid', '1 = 1');
+        $this->assertSame([(int) $kept->id], array_map('intval', $linked));
+    }
 }

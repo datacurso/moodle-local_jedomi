@@ -120,7 +120,7 @@ class ws_describe_tool implements agent_tool {
             ], JSON_UNESCAPED_UNICODE);
         } catch (\Exception $e) {
             return json_encode([
-                'error' => 'ws_describe failed: ' . $e->getMessage(),
+                'error' => 'ws_describe failed: ' . \local_jedomi\local\safe_error::for_model($e),
                 'duration_ms' => round((microtime(true) - $start) * 1000, 2),
             ]);
         }

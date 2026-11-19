@@ -243,4 +243,39 @@ final class custom_endpoint_test extends \advanced_testcase {
         $this->assertTrue(custom_endpoint::bypasses_curl_security('http://localhost:11434/v1/models', true));
         $this->assertFalse(custom_endpoint::bypasses_curl_security('http://localhost:11434/v1/models', false));
     }
+
+    /**
+     * RES-003 (DNS with a time limit): a name is resolved once per request, and a lookup slower than DNS_TIMEOUT is not
+     * trusted, so the host counts as not local (no HTTP, no pinning, the cURL security of the site applies).
+     *
+     * @return void
+     */
+    public function test_dns_lookup_has_a_time_limit_and_is_resolved_once(): void {
+        $lookups = [];
+        $now = 100.0;
+        $slow = false;
+        custom_endpoint::set_resolver_for_testing(
+            function (string $host) use (&$lookups, &$now, &$slow): array {
+                $lookups[] = $host;
+                $now += $slow ? custom_endpoint::DNS_TIMEOUT + 0.5 : 0.1;
+                return ['10.1.2.3'];
+            },
+            function () use (&$now): float {
+                return $now;
+            }
+        );
+        try {
+            $this->assertNull(custom_endpoint::check('http://model.lan:8000/v1', true));
+            $options = custom_endpoint::curl_options('http://model.lan:8000/v1/models', true, 10);
+            $this->assertSame(['model.lan:8000:10.1.2.3'], $options['CURLOPT_RESOLVE']);
+            $this->assertSame(['model.lan'], $lookups, 'One lookup per request');
+
+            $slow = true;
+            $this->assertFalse(custom_endpoint::is_local_host('slow.lan'));
+            $this->assertSame(custom_endpoint::ERROR_HTTP_NOT_ALLOWED, custom_endpoint::check('http://slow.lan', true));
+            $this->assertArrayNotHasKey('CURLOPT_RESOLVE', custom_endpoint::curl_options('http://slow.lan/v1', true, 10));
+        } finally {
+            custom_endpoint::set_resolver_for_testing(null);
+        }
+    }
 }

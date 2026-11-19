@@ -90,6 +90,16 @@ class model_settings {
     public const MAX_MAX_TOKENS = 128000;
 
     /**
+     * @var array<string, string> Capability of the model of each feature switch of the custom service that has one; the
+     *      documents switch has none (it needs the address of the document service).
+     */
+    public const CUSTOM_SWITCH_CAPABILITIES = [
+        'custom_files_enabled' => self::CAPABILITY_VISION,
+        'custom_audio_enabled' => self::CAPABILITY_AUDIO,
+        'custom_voice_enabled' => self::CAPABILITY_SPEECH,
+    ];
+
+    /**
      * @var string[] Legacy settings removed when the plugin moved to the provider route. The custom service of
      *      phase 20 has its own settings (custom_gateway_url, custom_api_key...), which are never removed.
      */
@@ -304,8 +314,9 @@ class model_settings {
     /**
      * Whether images, PDF pages and attached files can be processed.
      *
-     * With the Datacurso service, the switch, on until it is saved; with the custom service, its images switch and its
-     * vision model (documents need more: see {@see self::is_documents_enabled()}).
+     * With the Datacurso service, the switch, on until it is saved; with the custom service, its images switch
+     * (custom_files_enabled, which covers images only, despite its name) and its vision model. Documents need more with
+     * the custom service: see {@see self::is_documents_enabled()}.
      *
      * @return bool
      */
@@ -332,7 +343,7 @@ class model_settings {
         if (ai_service::get_active() === ai_service::DATACURSO) {
             return true;
         }
-        return self::is_switch_on('custom_documents_enabled', false) && ai_service::get_docservice_url() !== '';
+        return self::is_custom_switch_on('custom_documents_enabled') && ai_service::get_docservice_url() !== '';
     }
 
     /**
@@ -369,15 +380,32 @@ class model_settings {
     }
 
     /**
-     * Whether a feature of the custom service is on: its model is set and its switch is on. A switch that was never
-     * saved (a site configured before 1.6.3) counts as on, as the feature was on with its model alone.
+     * Whether a feature of the custom service is on: its model is set and its switch is on
+     * ({@see self::is_custom_switch_on()}).
      *
      * @param string $switch Switch: custom_files_enabled, custom_audio_enabled or custom_voice_enabled.
      * @param string $capability Capability of its model.
      * @return bool
      */
     public static function is_custom_feature_on(string $switch, string $capability): bool {
-        return ai_service::get_custom_model($capability) !== '' && self::is_switch_on($switch, true);
+        return ai_service::get_custom_model($capability) !== '' && self::is_custom_switch_on($switch);
+    }
+
+    /**
+     * Saved state of a feature switch of the custom service, the one rule of the runtime and the settings page. A
+     * switch that was never saved (a site configured before 1.6.3) counts as on while its model (and, for the voice
+     * conversation, its voice) is saved, as the feature was on with its model alone; the documents switch, which came
+     * later, counts as off.
+     *
+     * @param string $switch Switch: custom_files_enabled, custom_documents_enabled, custom_audio_enabled or
+     *        custom_voice_enabled.
+     * @return bool
+     */
+    public static function is_custom_switch_on(string $switch): bool {
+        $capability = self::CUSTOM_SWITCH_CAPABILITIES[$switch] ?? null;
+        $configured = $capability !== null && ai_service::get_custom_model($capability) !== ''
+            && ($capability !== self::CAPABILITY_SPEECH || ai_service::get_custom_voice() !== '');
+        return self::is_switch_on($switch, $configured);
     }
 
     /**
@@ -399,6 +427,16 @@ class model_settings {
      */
     public static function get_max_tokens(): int {
         return ai_service::is_custom() ? ai_service::get_custom_max_tokens() : self::get_configured_max_tokens();
+    }
+
+    /**
+     * Max tokens within the range the settings accept, the one limit of saving both services.
+     *
+     * @param int $maxtokens Max tokens.
+     * @return int From MIN_MAX_TOKENS to MAX_MAX_TOKENS.
+     */
+    public static function clamp_max_tokens(int $maxtokens): int {
+        return min(self::MAX_MAX_TOKENS, max(self::MIN_MAX_TOKENS, $maxtokens));
     }
 
     /**

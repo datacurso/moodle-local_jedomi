@@ -171,12 +171,12 @@ final class document_read_tool_test extends \advanced_testcase {
         );
 
         $this->assertContains('document_read', $names(\local_jedomi_get_tool_definitions('admin')));
-        $this->assertContains('document_read', $names(\local_jedomi\agent\tool_executor::get_definitions()));
+        $this->assertContains('document_read', $names((new \local_jedomi\agent\tool_executor())->get_definitions()));
         $this->assertNotContains('document_read', $names(\local_jedomi_get_tool_definitions('student')));
 
         set_config('files_enabled', 0, 'local_jedomi');
         $this->assertNotContains('document_read', $names(\local_jedomi_get_tool_definitions('admin')));
-        $this->assertNotContains('document_read', $names(\local_jedomi\agent\tool_executor::get_definitions()));
+        $this->assertNotContains('document_read', $names((new \local_jedomi\agent\tool_executor())->get_definitions()));
     }
 
     /**
@@ -187,9 +187,9 @@ final class document_read_tool_test extends \advanced_testcase {
         $cmid = $this->create_module_with_pdf();
         $othercourse = $this->getDataGenerator()->create_course();
         $teacher = $this->getDataGenerator()->create_and_enrol($othercourse, 'editingteacher');
-        \local_jedomi\agent\tool_executor::get_definitions(1, (int) $teacher->id);
+        $executor = new \local_jedomi\agent\tool_executor(1, (int) $teacher->id);
 
-        $result = json_decode(\local_jedomi\agent\tool_executor::execute('document_read', json_encode(['cmid' => $cmid])), true);
+        $result = json_decode($executor->execute('document_read', json_encode(['cmid' => $cmid])), true);
 
         $this->assertSame(
             'permission_denied',
@@ -314,6 +314,24 @@ final class document_read_tool_test extends \advanced_testcase {
     private function enqueue_read(): void {
         $this->curl->enqueue(json_encode(['text' => 'Unit 1', 'model' => 'm', 'pages_total' => 1, 'pages_vision' => [],
             'pages_skipped' => []]));
+    }
+
+    /**
+     * Decision 4: the PDF of an activity of an excluded course is never read, also by a teacher of the course, and
+     * nothing is sent to the AI service.
+     */
+    public function test_activity_of_an_excluded_course_is_refused(): void {
+        $course = $this->getDataGenerator()->create_course();
+        $page = $this->getDataGenerator()->create_module('page', ['course' => $course->id]);
+        $this->add_pdf((int) $page->cmid, 'mod_page', 'content', 0, 'syllabus.pdf');
+        $teacher = $this->getDataGenerator()->create_and_enrol($course, 'editingteacher');
+        set_config('course_mode', 'exclude', 'local_jedomi');
+        set_config('course_list', (string) $course->id, 'local_jedomi');
+
+        $result = json_decode(document_read_tool::read((int) $page->cmid, 'teacher', '', (int) $teacher->id), true);
+
+        $this->assertSame(get_string('error_course_excluded', 'local_jedomi'), $result['error'] ?? null);
+        $this->assertSame([], $this->curl->calls);
     }
 
     /**

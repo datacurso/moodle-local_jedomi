@@ -140,12 +140,9 @@ class ws_tool implements agent_tool {
                 'data' => $result,
             ], JSON_UNESCAPED_UNICODE);
         } catch (\Exception $e) {
-            $detail = $e->getMessage();
-            if ($e instanceof \moodle_exception && !empty($e->debuginfo) && strpos($detail, (string) $e->debuginfo) === false) {
-                $detail .= ' | debug: ' . $e->debuginfo;
-            }
+            // JEDOMI-SEC-009: a message without the debug information, which can quote a query or a path.
             return json_encode([
-                'error' => $detail,
+                'error' => \local_jedomi\local\safe_error::for_model($e),
                 'function' => $function,
             ]);
         } finally {

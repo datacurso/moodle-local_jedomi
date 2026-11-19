@@ -46,19 +46,38 @@ use core_external\external_value;
 use local_jedomi\companion_hmac;
 
 /**
- * External function that writes a site configuration value, blocking dangerous keys.
+ * External function that writes a site configuration value, blocking dangerous keys and logging each change in the
+ * config log of Moodle.
  */
 class set_site_config extends external_api {
     use companion_hmac;
 
     /**
      * Keys that can NEVER be written via this function.
-     * Changing them could break or expose the site.
+     * Changing them could break or expose the site. The last ones decide privileges: who is a site administrator or the
+     * guest user, the roles every user, visitor, guest or course creator gets, where and how users log in (enabled
+     * authentication plugins: "none" would allow logins without a password). The AI never grants site administrator
+     * status; it gives the steps of the Site administrators page instead. Lower case: names are compared in lower case.
      */
     private const BLOCKED_KEYS = [
         'wwwroot', 'dbtype', 'dbhost', 'dbname', 'dbuser', 'dbpass',
         'dirroot', 'dataroot', 'admin', 'passwordsaltmain',
         'secret', 'hmac_secret',
+        'siteadmins', 'siteguest', 'defaultuserroleid', 'notloggedinroleid', 'guestroleid', 'creatornewroleid',
+        'alternateloginurl', 'auth', 'registerauth',
+    ];
+
+    /**
+     * Secret settings that can never be written via this function, by component: the value would be stored unencrypted
+     * and shown in the config log. Settings shown as passwords on the admin pages are refused too (is_secret_setting()).
+     */
+    private const SECRET_KEYS = [
+        'core' => ['smtppass', 'proxypassword', 'cronremotepassword', 'recaptchaprivatekey'],
+        'local_jedomi' => ['custom_api_key', 'telegram_bot_token', 'telegram_webhook_secret', 'spt_secret', 'hmac_secret',
+            'log_key'],
+        // The licence key, and the development URLs that would send every AI request (and the licence) to another
+        // server: only a site administrator sets them, on the provider's own pages.
+        'aiprovider_datacurso' => ['licensekey', 'devservicesurl', 'devservicesurleu'],
     ];
 
     /**
@@ -145,8 +164,10 @@ class set_site_config extends external_api {
 
         $start = microtime(true);
 
-        // Block dangerous keys unconditionally.
-        if (in_array($name, self::BLOCKED_KEYS, true)) {
+        // Block dangerous keys unconditionally. The config table is case-insensitive on MySQL and MariaDB, so "SiteAdmins"
+        // would write the real "siteadmins" row: the checks use the lower-case name.
+        $key = \core_text::strtolower($name);
+        if (in_array($key, self::BLOCKED_KEYS, true)) {
             $executionms = (int) ((microtime(true) - $start) * 1000);
             \local_jedomi_log(sprintf(
                 '[local_jedomi] set_site_config BLOCKED: name=%s ip=%s',
@@ -161,8 +182,28 @@ class set_site_config extends external_api {
             ];
         }
 
-        // Write the config value.
-        set_config($name, $value, $plugin === 'core' ? null : $plugin);
+        // Refuse secrets: written here they would be stored unencrypted and shown in the config log.
+        if (self::is_secret_setting(\core_text::strtolower($plugin), $key)) {
+            $executionms = (int) ((microtime(true) - $start) * 1000);
+            \local_jedomi_log(sprintf(
+                '[local_jedomi] set_site_config SECRET BLOCKED: plugin=%s name=%s ip=%s',
+                $plugin,
+                $name,
+                getremoteaddr()
+            ));
+            return [
+                'status'       => 'error',
+                'name'         => $name,
+                'message'      => get_string('config_key_secret_msg', 'local_jedomi'),
+                'execution_ms' => $executionms,
+            ];
+        }
+
+        // Write the config value. A change is recorded in the config log of Moodle (the "Config changes" report and the
+        // config_log_created event), as when an administrator saves the setting (JEDOMI-SEC-011).
+        $component = $plugin === 'core' ? null : $plugin;
+        $previous = get_config($component ?? 'core', $name);
+        set_config($name, $value, $component, $previous === false || (string) $previous !== $value);
 
         // Purge caches so the change takes effect immediately.
         purge_all_caches();
@@ -183,5 +224,27 @@ class set_site_config extends external_api {
             'message'      => get_string('config_updated_msg', 'local_jedomi', $name),
             'execution_ms' => $executionms,
         ];
+    }
+
+    /**
+     * Whether a setting holds a secret: listed in SECRET_KEYS, or shown as a password on the admin pages.
+     *
+     * @param string $plugin Component, 'core' for the main settings.
+     * @param string $name Setting name.
+     * @return bool
+     */
+    private static function is_secret_setting(string $plugin, string $name): bool {
+        global $CFG;
+        if (in_array($name, self::SECRET_KEYS[$plugin] ?? [], true)) {
+            return true;
+        }
+        require_once($CFG->libdir . '/adminlib.php');
+        $fullname = 's_' . ($plugin === 'core' ? '' : $plugin) . '_' . $name;
+        foreach (admin_find_write_settings(admin_get_root(), [$fullname => '']) as $setting) {
+            if ($setting instanceof \admin_setting_configpasswordunmask || $setting instanceof \admin_setting_encryptedpassword) {
+                return true;
+            }
+        }
+        return false;
     }
 }

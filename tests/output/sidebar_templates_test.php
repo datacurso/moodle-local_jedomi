@@ -111,6 +111,34 @@ final class sidebar_templates_test extends \advanced_testcase {
     }
 
     /**
+     * JEDOMI-SEC-013, SEC-JD-043: a card whose data was cut shows the notice and only lets the user cancel it, in the
+     * card of an action and in the card of a message.
+     *
+     * @return void
+     */
+    public function test_cut_action_card_shows_the_notice_and_cannot_be_confirmed(): void {
+        $this->resetAfterTest();
+        $strings = ['pending_action_truncated' => 'Cut notice'];
+
+        $cut = $this->render('local/sidebar/action_confirm', ['issend' => false, 'critical' => true, 'keyword' => 'CONFIRM',
+            'description' => 'Create agent', 'hasdetails' => true, 'details' => 'Prompt: a', 'truncated' => true,
+            'strings' => $strings]);
+        $cutsend = $this->render('local/sidebar/action_confirm', ['issend' => true, 'countbefore' => 'Send to ', 'count' => 3,
+            'countafter' => ' users?', 'preview' => 'Hello', 'truncated' => true, 'strings' => $strings]);
+        $whole = $this->render('local/sidebar/action_confirm', ['issend' => false, 'critical' => false,
+            'description' => 'Create agent', 'hasdetails' => true, 'details' => 'Prompt: a', 'strings' => $strings]);
+
+        foreach ([$cut, $cutsend] as $html) {
+            $this->assertStringContainsString('Cut notice', $html);
+            $this->assertStringNotContainsString('confirm-yes', $html);
+            $this->assertStringNotContainsString('confirm-keyword', $html);
+            $this->assertStringContainsString('data-action="local_jedomi/sidebar/confirm-no"', $html);
+        }
+        $this->assertStringNotContainsString('Cut notice', $whole);
+        $this->assertStringContainsString('confirm-yes', $whole);
+    }
+
+    /**
      * MDL-UNIT-071: assistant answers have copy and rating buttons; user messages have the edit button.
      * Message and user action buttons use the data actions the module listens to.
      *

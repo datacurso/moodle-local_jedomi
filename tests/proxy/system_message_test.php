@@ -238,6 +238,26 @@ final class system_message_test extends \advanced_testcase {
     }
 
     /**
+     * The chat and the agents never grant site administrator status: they give the steps of the Site administrators
+     * page instead, which is not "Assign system roles".
+     *
+     * @return void
+     */
+    public function test_instructions_never_grant_site_administrator_status(): void {
+        $this->resetAfterTest();
+
+        $rule = system_message::site_admin_rule();
+        $this->assertStringContainsString('Never grant or remove the site administrator status', $rule);
+        $this->assertStringContainsString('/admin/roles/admins.php', $rule);
+        $this->assertStringContainsString('not "Assign system roles"', $rule);
+        $this->assertStringContainsString('give the user the steps', $rule);
+        foreach (['chat', 'agent'] as $channel) {
+            $content = system_message::build('admin', [], ['channel' => $channel])['content'];
+            $this->assertStringContainsString('- ' . $rule . "\n", $content, $channel);
+        }
+    }
+
+    /**
      * JEDOMI-SEC-002: the title of the page and any other free text the browser sends never reach the system message;
      * the address keeps only a plain path.
      *

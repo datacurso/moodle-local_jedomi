@@ -30,8 +30,10 @@ use local_jedomi\local\service\pending_action_service;
  * - the run stays within MAX_WRITES_PER_RUN writes and MAX_RECIPIENTS_PER_RUN distinct recipients.
  *
  * A write outside the scope is rejected. Any other write is held as a pending action of the creator, who approves or
- * rejects it in the Jedomi web chat. Going over a cap stops the run (write_cap_exceeded). Each write is logged without
- * its content and notify_creator() sends the creator a summary of the run.
+ * rejects it in the Jedomi web chat. Going over the cap of approved writes or of recipients stops the run
+ * (write_cap_exceeded, a run failure). Going over the cap of held writes is not a failure (REL-003): the extra writes are
+ * neither held nor run and the AI is told so. Each cap has its own message (READ-001). Each write is logged without its
+ * content and notify_creator() sends the creator a summary of the run.
  *
  * The parameters of a web service write are validated as Moodle validates them before anything else (R1): the scope is
  * checked on the validated parameters, a write is held or run with exactly those parameters, and a write Moodle would
@@ -79,8 +81,11 @@ class write_guard {
     /** @var int[] Distinct recipients of the approved writes run, by id. */
     private array $recipients = [];
 
-    /** @var bool Whether a cap stopped the run. */
-    private bool $stopped = false;
+    /** @var array String id and value of the cap that stopped the run; empty when no cap stopped it. */
+    private array $stopped = [];
+
+    /** @var bool Whether the run proposed more writes than the cap of held writes. */
+    private bool $heldcapped = false;
 
     /** @var array[] Writes of the scheduled run, from its failed attempts and this one: f, ok and r. */
     private array $runwrites = [];
@@ -130,7 +135,7 @@ class write_guard {
      *     web service write is run with the canonical arguments whose params are the validated parameters that were
      *     checked; any other call gets no arguments and runs as the model asked.
      * @return string Tool result for the AI.
-     * @throws write_cap_exceeded When this approved write would exceed a cap of the run, or too many writes are held.
+     * @throws write_cap_exceeded When this approved write would exceed the cap of approved writes or of recipients.
      */
     public function run(string $tool, array $args, callable $execute): string {
         [$tool, $args] = pending_action_service::normalise($tool, $args);
@@ -193,8 +198,15 @@ class write_guard {
         foreach ($scope['recipients'] as $userid) {
             $recipients[$userid] = $userid;
         }
-        if (count($this->runwrites) + 1 > self::MAX_WRITES_PER_RUN || count($recipients) > self::MAX_RECIPIENTS_PER_RUN) {
-            $this->stop("write {$function} over the caps of the run");
+        if (count($this->runwrites) + 1 > self::MAX_WRITES_PER_RUN) {
+            $this->stop("write {$function} over the cap of approved writes", 'agent_write_cap_writes', self::MAX_WRITES_PER_RUN);
+        }
+        if (count($recipients) > self::MAX_RECIPIENTS_PER_RUN) {
+            $this->stop(
+                "write {$function} over the cap of recipients",
+                'agent_write_cap_recipients',
+                self::MAX_RECIPIENTS_PER_RUN
+            );
         }
         $this->recipients = $recipients;
 
@@ -271,11 +283,7 @@ class write_guard {
             }
             return \local_jedomi\local\ws_runner::validate($method, $params);
         } catch (\moodle_exception $e) {
-            $detail = $e->getMessage();
-            if (!empty($e->debuginfo) && strpos($detail, (string) $e->debuginfo) === false) {
-                $detail .= ' | debug: ' . $e->debuginfo;
-            }
-            return json_encode(['error' => $detail, 'function' => $function]);
+            return json_encode(['error' => \local_jedomi\local\safe_error::for_model($e), 'function' => $function]);
         }
     }
 
@@ -324,7 +332,7 @@ class write_guard {
      * @return bool Whether a notification was sent.
      */
     public function notify_creator(): bool {
-        if (empty($this->done) && empty($this->held) && empty($this->blocked) && !$this->stopped) {
+        if (empty($this->done) && empty($this->held) && empty($this->blocked) && empty($this->stopped) && !$this->heldcapped) {
             return false;
         }
         $creator = \core_user::get_user((int) $this->agent->userid);
@@ -361,8 +369,13 @@ class write_guard {
     private function summary(): array {
         $name = trim((string) ($this->agent->name ?? '')) ?: '#' . (int) $this->agent->id;
         $lines = [];
-        if ($this->stopped) {
-            $lines[] = get_string('agent_writes_stopped', 'local_jedomi');
+        if (!empty($this->stopped)) {
+            // In the language of the creator, not in the one of the task.
+            $lines[] = get_string($this->stopped[0], 'local_jedomi', $this->stopped[1]);
+            $lines[] = '';
+        }
+        if ($this->heldcapped) {
+            $lines[] = get_string('agent_writes_held_cap', 'local_jedomi', self::MAX_WRITES_PER_RUN);
             $lines[] = '';
         }
         if (!empty($this->done)) {
@@ -399,12 +412,18 @@ class write_guard {
      * @param string $tool Canonical tool name.
      * @param array $args Canonical arguments.
      * @param string $why Reason for the technical log.
-     * @return string Tool result for the AI.
-     * @throws write_cap_exceeded When the run already held as many writes as the cap of approved writes.
+     * @return string Tool result for the AI. When the run already held MAX_WRITES_PER_RUN writes, the write is neither
+     *     held nor run and the result says so: it is not a failure of the run (REL-003).
      */
     private function hold(string $tool, array $args, string $why): string {
         if (count($this->held) >= self::MAX_WRITES_PER_RUN) {
-            $this->stop("too many writes held ({$tool})");
+            $this->heldcapped = true;
+            $this->log("write {$tool} not held (cap of held writes reached)");
+            return json_encode([
+                'error' => 'held_cap_reached',
+                'tool' => $tool,
+                'detail' => get_string('agent_detail_held_cap', 'local_jedomi', self::MAX_WRITES_PER_RUN),
+            ]);
         }
         pending_action_service::hold((int) $this->agent->userid, $tool, $args, (int) $this->agent->id);
         // The summary names the tool or function only: the arguments were chosen by the AI and may quote third-party
@@ -419,19 +438,18 @@ class write_guard {
     }
 
     /**
-     * Stop the run because a cap was reached.
+     * Stop the run because the cap of approved writes or of recipients was reached.
      *
      * @param string $what What reached the cap, for the technical log.
+     * @param string $stringid Message of the cap: agent_write_cap_writes or agent_write_cap_recipients.
+     * @param int $cap Value of the cap.
      * @return void
      * @throws write_cap_exceeded Always.
      */
-    private function stop(string $what): void {
-        $this->stopped = true;
+    private function stop(string $what, string $stringid, int $cap): void {
+        $this->stopped = [$stringid, $cap];
         $this->log("STOPPED: {$what}");
-        throw new write_cap_exceeded(get_string('agent_write_cap_reached', 'local_jedomi', [
-            'writes' => self::MAX_WRITES_PER_RUN,
-            'recipients' => self::MAX_RECIPIENTS_PER_RUN,
-        ]));
+        throw new write_cap_exceeded(get_string($stringid, 'local_jedomi', $cap));
     }
 
     /**

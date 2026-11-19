@@ -47,8 +47,30 @@ class handler {
     /** @var int Messages of the browser history kept for a request: the panel sends at most this many. */
     public const MAX_BROWSER_MESSAGES = 30;
 
+    /** @var int Seconds between two signals of life while an AI round waits; far below the 100 s of Cloudflare. */
+    public const HEARTBEAT_INTERVAL = 15;
+
+    /** @var int A question stops after this many times the AI request timeout (ai_timeout) in total. */
+    public const QUESTION_TIME_FACTOR = 3;
+
     /** @var string[] Roles the browser may send: tool calls, tool results and system rules come only from the server. */
     private const BROWSER_ROLES = ['user', 'assistant'];
+
+    /** @var \Closure|null Abort check of the tests; null for connection_aborted(). */
+    private static ?\Closure $abortcheck = null;
+
+    /**
+     * Replace the check that tells whether the browser closed the request (PHPUnit only).
+     *
+     * @param \Closure|null $check Returns true when the browser is gone; null for connection_aborted().
+     * @return void
+     */
+    public static function set_abort_check_for_testing(?\Closure $check): void {
+        if (!defined('PHPUNIT_TEST') || !PHPUNIT_TEST) {
+            throw new \coding_exception('handler::set_abort_check_for_testing() is only for PHPUnit tests');
+        }
+        self::$abortcheck = $check;
+    }
 
     /**
      * Refuse the database and web service tools when Jedomi is disabled in the Datacurso AI provider (when installed:
@@ -268,6 +290,28 @@ class handler {
     }
 
     /**
+     * Send one SSE data event to the browser and flush it.
+     *
+     * @param array $data Event payload.
+     */
+    private static function send_event(array $data): void {
+        echo "data: " . json_encode($data, JSON_UNESCAPED_UNICODE) . "\n\n";
+        if (ob_get_level()) {
+            ob_flush();
+        }
+        flush();
+    }
+
+    /**
+     * Current time of the Moodle clock.
+     *
+     * @return int
+     */
+    private static function now(): int {
+        return \core\di::get(\core\clock::class)->time();
+    }
+
+    /**
      * Whether a message has image parts.
      *
      * @param array $message Chat message.
@@ -316,6 +360,11 @@ class handler {
      * The text of the user and assistant messages (the question and the history the browser sends back, with the
      * real values) is anonymised with the same anonymiser as the tool results; the system message is not.
      *
+     * For slow or weak models: a signal of life (_jedomi_heartbeat) goes out every HEARTBEAT_INTERVAL seconds while a
+     * round waits; the question stops after {@see question_time_limit()}; an answer without text is asked again once
+     * and then gets a clear message; the same tool failing with the same error
+     * {@see \local_jedomi\local\repeated_tool_error::LIMIT} times stops the question.
+     *
      * @param array  $messages Conversation messages (system message first).
      * @param string $role     User role (already validated).
      * @param int    $userid   Moodle user the AI calls are made for.
@@ -334,6 +383,49 @@ class handler {
         require_once(__DIR__ . '/../../lib.php');
         \local_jedomi_log('RUN_START', ['role' => $role, 'user_message_count' => count($messages)]);
 
+        // While an AI round waits, the browser gets a signal of life with the seconds spent on the question; when the
+        // user closes the chat (chatproxy.php ignores the abort), the waiting AI call is aborted.
+        $started = self::now();
+        $abortcheck = self::$abortcheck ?? static fn(): bool => (bool) connection_aborted();
+        \local_jedomi\ai\heartbeat::start(self::HEARTBEAT_INTERVAL, static function () use ($started): void {
+            self::send_event(['_jedomi_heartbeat' => ['elapsed' => self::now() - $started]]);
+        }, $abortcheck);
+        try {
+            return self::run_rounds($messages, $role, $userid, $anonymizer, $started, $toolcontext);
+        } finally {
+            \local_jedomi\ai\heartbeat::stop();
+        }
+    }
+
+    /**
+     * Longest time a question of the web chat may take, all its AI rounds and tools together.
+     *
+     * @return int Seconds: {@see self::QUESTION_TIME_FACTOR} times the AI request timeout of the settings.
+     */
+    public static function question_time_limit(): int {
+        return \local_jedomi\ai\client::configured_timeout() * self::QUESTION_TIME_FACTOR;
+    }
+
+    /**
+     * Rounds of the tool-calling loop of {@see run()}.
+     *
+     * @param array  $messages Conversation messages (system message first).
+     * @param string $role     User role (already validated).
+     * @param int    $userid   Moodle user the AI calls are made for.
+     * @param \local_jedomi\local\anonymizer|null $anonymizer Anonymiser of the request; null for a new one.
+     * @param int    $started  Time the question started.
+     * @param \context|null $toolcontext Context the tools of other plugins are offered in; null offers none.
+     * @return bool True when an answer of the AI was sent to the user.
+     */
+    private static function run_rounds(
+        array $messages,
+        string $role,
+        int $userid,
+        ?\local_jedomi\local\anonymizer $anonymizer,
+        int $started,
+        ?\context $toolcontext
+    ): bool {
+
         $tools = spt_validator::get_tool_definitions($role);
         if (message_service::can_send($userid)) {
             // Offered only in the web chat, where the user confirms each send.
@@ -344,6 +436,11 @@ class handler {
         $plugintools = $toolcontext !== null ? \local_jedomi\local\plugin_tools::available($userid, $toolcontext, 'web') : [];
         $tools = array_merge($tools, \local_jedomi\local\plugin_tools::definitions($plugintools));
         $toolrepeatcounts = [];
+        // The same call failing with the same error stops the question (the loop detector cuts identical calls later).
+        $toolerrors = new \local_jedomi\local\repeated_tool_error();
+        $timelimit = self::question_time_limit();
+        $configuredtimeout = \local_jedomi\ai\client::configured_timeout();
+        $retriedempty = false;
         // Personal data of the messages and of the tool results reaches the AI anonymised with the level of the
         // Privacy tab; the answer shown to the user gets the real values back.
         $anonymizer = $anonymizer ?? new \local_jedomi\local\anonymizer();
@@ -366,7 +463,34 @@ class handler {
                 return false;
             }
 
-            $response = self::call_ai($messages, $tools, $userid);
+            // Time limit of the question: a clear message instead of a request that never ends. The last round only
+            // gets the time that is left.
+            $elapsed = self::now() - $started;
+            if ($elapsed >= $timelimit) {
+                \local_jedomi_log('QUESTION_TIME_LIMIT', ['iteration' => $i, 'elapsed' => $elapsed, 'limit' => $timelimit]);
+                self::stream_sse_content(get_string('error_question_time_limit', 'local_jedomi', (int) ceil($timelimit / 60)));
+                return false;
+            }
+            $remaining = $timelimit - $elapsed;
+            $response = self::call_ai($messages, $tools, $userid, $remaining < $configuredtimeout ? $remaining : null);
+            if (\local_jedomi\ai\heartbeat::aborted()) {
+                // The browser closed the request while the AI answered: the call was aborted, nothing more is sent.
+                \local_jedomi_log('CLIENT_ABORTED', ['iteration' => $i, 'during' => 'ai_call']);
+                return false;
+            }
+
+            if ($response['type'] === 'empty') {
+                // An answer without text is asked again once, briefly; a second one gets a clear message.
+                \local_jedomi_log('AI_EMPTY_ANSWER', ['iteration' => $i, 'finish_reason' => $response['finish_reason'],
+                    'retried' => $retriedempty]);
+                if ($retriedempty) {
+                    self::send_error(['code' => 'empty_answer', 'message' => get_string('error_empty_answer', 'local_jedomi')]);
+                    return false;
+                }
+                $retriedempty = true;
+                $messages[] = \local_jedomi\ai\empty_answer::retry_message($response['finish_reason']);
+                continue;
+            }
 
             if ($response['type'] === 'error') {
                 echo "data: " . json_encode(['error' => $response['error']], JSON_UNESCAPED_UNICODE) . "\n\n";
@@ -406,7 +530,13 @@ class handler {
                 $argsraw = $tc['function']['arguments'];
                 $args = is_array($argsraw) ? $argsraw : (json_decode($argsraw, true) ?? []);
                 // The AI only knows the placeholders of the anonymised data; the tools need the real values.
-                $args = $anonymizer->restore_value($args);
+                $unrestored = null;
+                try {
+                    $args = $anonymizer->restore_tool_args($name, $args);
+                } catch (\local_jedomi\local\unrestored_placeholder_exception $e) {
+                    // The query is not run against the text of a placeholder: the AI is told how to write it (RISK-001).
+                    $unrestored = $e->tool_result();
+                }
 
                 // JEDOMI-SEC-008: a tool that was not offered to the role is neither held nor run.
                 $offered = self::is_offered_tool($name, $tools);
@@ -414,7 +544,7 @@ class handler {
                 // A tool that changes data does not run now: it waits for the user's confirmation
                 // and the turn ends, so the model cannot act on a result that does not exist yet.
                 // A plugin tool that does not declare it only reads waits for the confirmation too.
-                if (!$offered) {
+                if (!$offered || $unrestored !== null) {
                     $pending = null;
                 } else if (isset($plugintools[$name]) && !\local_jedomi\local\plugin_tools::is_read_only($plugintools[$name])) {
                     $pending = pending_action_service::hold_plugin_tool($userid, $name, $args, $toolcontext);
@@ -440,7 +570,7 @@ class handler {
                     return true;
                 }
 
-                $callkey = $name . '|' . self::stable_tool_args_signature($args);
+                $callkey = $name . '|' . \local_jedomi\local\repeated_tool_error::args_signature($args);
                 $toolrepeatcounts[$callkey] = ($toolrepeatcounts[$callkey] ?? 0) + 1;
 
                 // Notify the client that a tool is being executed.
@@ -459,6 +589,9 @@ class handler {
                         'detail' => get_string('error_tool_loop_detected', 'local_jedomi'),
                     ]);
                     \local_jedomi_log('LOOP_DETECTED', ['tool' => $name, 'count' => $toolrepeatcounts[$callkey]]);
+                } else if ($unrestored !== null) {
+                    \local_jedomi_log('TOOL_UNRESTORED_PLACEHOLDER', ['tool' => $name]);
+                    $result = $unrestored;
                 } else if (!$offered) {
                     \local_jedomi_log('TOOL_NOT_OFFERED', ['tool' => $name]);
                     $result = json_encode(['error' => get_string('error_unknown_tool', 'local_jedomi', $name)]);
@@ -468,10 +601,12 @@ class handler {
                             ? self::execute_plugin_tool($plugintools[$name], $args, $role)
                             : self::execute_tool_by_name($name, $args, $role);
                     } catch (\Throwable $e) {
+                        // JEDOMI-SEC-009: the model gets what it needs to correct the call; the log only the class.
+                        \local_jedomi_log('TOOL_FAILED', ['tool' => $name] + \local_jedomi\local\safe_error::log_context($e));
                         $result = json_encode([
                             'error' => 'tool_failed',
                             'tool'  => $name,
-                            'detail' => get_class($e) . ': ' . $e->getMessage(),
+                            'detail' => \local_jedomi\local\safe_error::for_model($e),
                         ]);
                     }
                 }
@@ -496,6 +631,13 @@ class handler {
                 ];
 
                 \local_jedomi_log('TOOL_RESULT', ['tool' => $name, 'summary' => self::summarize_tool_result($name, $result)]);
+
+                if ($toolerrors->record($callkey, $result)) {
+                    \local_jedomi_log('TOOL_ERROR_REPEATED', ['tool' => $name]);
+                    self::stream_sse_content(get_string('error_tool_repeated', 'local_jedomi', $name));
+                    return false;
+                }
+                \local_jedomi\ai\heartbeat::beat();
             }
         }
 
@@ -522,60 +664,31 @@ class handler {
     }
 
     /**
-     * Build a deterministic signature for tool arguments.
-     *
-     * @param  array $args Tool arguments.
-     * @return string
-     */
-    private static function stable_tool_args_signature(array $args): string {
-        $normalized = self::sort_recursive($args);
-        return hash('sha256', json_encode($normalized, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_IGNORE));
-    }
-
-    /**
-     * Recursively sort associative arrays for stable hashing.
-     *
-     * @param  mixed $value
-     * @return mixed
-     */
-    private static function sort_recursive($value) {
-        if (!is_array($value)) {
-            return $value;
-        }
-
-        $islist = array_keys($value) === range(0, count($value) - 1);
-        if ($islist) {
-            return array_map(static fn($v) => self::sort_recursive($v), $value);
-        }
-
-        ksort($value);
-        foreach ($value as $k => $v) {
-            $value[$k] = self::sort_recursive($v);
-        }
-        return $value;
-    }
-
-    /**
      * Call the AI service through the Jedomi AI client.
      *
      * @param  array $messages Conversation messages.
      * @param  array $tools    OpenAI-format tool definitions.
      * @param  int   $userid   Moodle user the call is made for.
+     * @param  int|null $timeout Total timeout of the call in seconds; null for the AI request timeout of the settings.
      * @return array           ['type'=>'text', 'content'=>'...']
+     *                         ['type'=>'empty', 'finish_reason'=>'...'] for a final answer without text
      *                         ['type'=>'tool_calls', 'tool_calls'=>[...]]
      *                         ['type'=>'error', 'error'=>['code'=>'...', 'message'=>'...']]
      */
-    private static function call_ai(array $messages, array $tools, int $userid): array {
+    private static function call_ai(array $messages, array $tools, int $userid, ?int $timeout = null): array {
         // With the custom service, the oldest history is dropped so the request fits in the context window of its model.
         $messages = \local_jedomi\ai\context_window::fit_for_custom_service($messages, $tools);
         try {
-            $answer = \local_jedomi\ai\client::instance()->complete($messages, $userid, $tools);
+            $answer = \local_jedomi\ai\client::instance()->complete($messages, $userid, $tools, $timeout);
         } catch (\Throwable $e) {
             return ['type' => 'error', 'error' => \local_jedomi\ai\error_message::from_exception($e)];
         }
 
         if (!empty($answer['tool_calls'])) {
             return ['type' => 'tool_calls', 'tool_calls' => $answer['tool_calls']];
+        }
+        if (\local_jedomi\ai\empty_answer::is_empty($answer)) {
+            return ['type' => 'empty', 'finish_reason' => (string) ($answer['finish_reason'] ?? '')];
         }
 
         // Text response: prefer content, fall back to reasoning (thinking tokens).
@@ -713,21 +826,10 @@ class handler {
                 'execution_ms' => $result['execution_ms'],
             ]);
         } catch (\Exception $e) {
-            $realerror = $e->getMessage();
             // The query runner wraps the database error in execute_sql_error with the database message as debug info;
-            // the model needs that message (an unknown column, a syntax error) to fix its query instead of guessing.
-            $withdetail = $e instanceof \dml_exception
-                || ($e instanceof \moodle_exception && $e->errorcode === 'execute_sql_error');
-            if ($withdetail && !empty($e->debuginfo)) {
-                $realerror .= ' | DBG: ' . $e->debuginfo;
-            }
-            $prev = $e->getPrevious();
-            if ($prev) {
-                $realerror .= ' | PREV: ' . $prev->getMessage();
-                if ($prev instanceof \dml_exception && !empty($prev->debuginfo)) {
-                    $realerror .= ' | PREV_DBG: ' . $prev->debuginfo;
-                }
-            }
+            // the model needs the first line of that message (an unknown column, a syntax error) to fix its query
+            // instead of guessing, never the query or its parameters (JEDOMI-SEC-009).
+            $realerror = \local_jedomi\local\safe_error::for_model($e);
             if (strpos($sql, '{') === false) {
                 $realerror .= get_string('hint_sql_braces', 'local_jedomi');
             }
@@ -776,7 +878,7 @@ class handler {
             $result = \local_jedomi\schema\table_descriptor::describe($tablename);
             return json_encode($result);
         } catch (\Exception $e) {
-            return json_encode(['error' => $e->getMessage()]);
+            return json_encode(['error' => \local_jedomi\local\safe_error::for_model($e)]);
         }
     }
 
@@ -809,7 +911,11 @@ class handler {
                     : get_string('note_tables_found', 'local_jedomi'),
             ]);
         } catch (\Throwable $e) {
-            return json_encode(['error' => get_string('error_search_tables_failed', 'local_jedomi', $e->getMessage())]);
+            return json_encode(['error' => get_string(
+                'error_search_tables_failed',
+                'local_jedomi',
+                \local_jedomi\local\safe_error::for_model($e)
+            )]);
         }
     }
 
@@ -838,7 +944,7 @@ class handler {
             );
             return json_encode($result);
         } catch (\Exception $e) {
-            return json_encode(['error' => $e->getMessage()]);
+            return json_encode(['error' => \local_jedomi\local\safe_error::for_model($e)]);
         }
     }
 
@@ -883,7 +989,7 @@ class handler {
             ]);
         } catch (\Throwable $e) {
             return json_encode([
-                'error' => get_string('error_ws_search_failed', 'local_jedomi', get_class($e) . ': ' . $e->getMessage()),
+                'error' => get_string('error_ws_search_failed', 'local_jedomi', \local_jedomi\local\safe_error::for_model($e)),
             ]);
         }
     }
@@ -911,7 +1017,7 @@ class handler {
             return json_encode(\local_jedomi\schema\ws_indexer::describe($wsname));
         } catch (\Throwable $e) {
             return json_encode([
-                'error' => get_string('error_ws_describe_failed', 'local_jedomi', get_class($e) . ': ' . $e->getMessage()),
+                'error' => get_string('error_ws_describe_failed', 'local_jedomi', \local_jedomi\local\safe_error::for_model($e)),
             ]);
         }
     }
@@ -942,26 +1048,12 @@ class handler {
                 is_array($decoded) ? $decoded : []
             );
             return json_encode(['result' => json_encode($result)]);
-        } catch (\moodle_exception $e) {
-            $detail = $e->getMessage();
-            if (method_exists($e, 'getDebugInfo') && $e->getDebugInfo()) {
-                $detail .= get_string('ws_debug_prefix', 'local_jedomi') . $e->getDebugInfo();
-            }
-            \local_jedomi_log('WS_EXECUTE_ERROR', ['wsname' => $wsname ?? '']);
-            return json_encode([
-                'error'    => get_string('error_ws_execute_failed', 'local_jedomi', $detail),
-                'wsname'   => $wsname ?? '',
-                'params'   => $params ?? '{}',
-                'errclass' => get_class($e),
-            ]);
         } catch (\Throwable $e) {
-            \local_jedomi_log('WS_EXECUTE_ERROR', [
-                'wsname' => $wsname ?? '',
-                'params' => $params ?? '{}',
-                'error' => $e->getMessage(),
-            ]);
+            // JEDOMI-SEC-009: the log gets the class and the error code, the model a message without debug details.
+            \local_jedomi_log('WS_EXECUTE_ERROR', ['wsname' => $wsname ?? '']
+                + \local_jedomi\local\safe_error::log_context($e));
             return json_encode([
-                'error'    => get_string('error_ws_execute_failed', 'local_jedomi', $e->getMessage()),
+                'error'    => get_string('error_ws_execute_failed', 'local_jedomi', \local_jedomi\local\safe_error::for_model($e)),
                 'wsname'   => $wsname ?? '',
                 'params'   => $params ?? '{}',
                 'errclass' => get_class($e),
@@ -1236,7 +1328,8 @@ class handler {
             return get_string('summary_invalid_json', 'local_jedomi');
         }
         if (isset($decoded['error'])) {
-            return get_string('summary_error_prefix', 'local_jedomi') . $decoded['error'];
+            // The page shows an error code or a generic text, never the detail meant for the model (JEDOMI-SEC-009).
+            return get_string('summary_error_prefix', 'local_jedomi') . \local_jedomi\local\safe_error::summary($decoded['error']);
         }
         return match ($name) {
             'execute_sql' => ($decoded['row_count'] ?? count($decoded['rows'] ?? []))

@@ -15,7 +15,7 @@ This plugin is part of the **Datacurso AI Plugin Suite**.
 
 1. Moodle 4.5 (`MOODLE_405_STABLE`). This is the version the plugin requires and is tested with; later versions are
    not supported yet.
-2. The Moodle AI provider **Datacurso AI Provider** (`aiprovider_datacurso`) 2026111100 (release 1.8.0) or later,
+2. The Moodle AI provider **Datacurso AI Provider** (`aiprovider_datacurso`) 2026111900 (release 1.9.0) or later,
    installed **before** Jedomi, with whichever AI service you use: its settings page holds the Jedomi settings and its
    "Enabled" switch turns Jedomi on or off. Download it for free from
    [https://moodle.org/plugins/aiprovider_datacurso/versions](https://moodle.org/plugins/aiprovider_datacurso/versions).
@@ -69,7 +69,11 @@ Choose the service on the Jedomi page of the Datacurso AI Provider settings, wit
   model list, shows the fields of the service. The verification lists the ids of the models of the service (up to
   100, sorted, only ids the fields accept) and offers them as suggestions in the model fields, which stay free text; an
   id that is not listed can still be typed. The settings can only be saved while the address and key are the last pair
-  verified.
+  verified. With a chat model typed, the verification also probes it with two tiny requests: the first finds the token
+  parameter it accepts (`max_tokens`, or `max_completion_tokens` for newer OpenAI models), which every request then
+  uses; the second, with one tool, tells whether it can call tools. Warnings say when the model cannot call tools,
+  did not answer, or has no known context window; they never make the verification fail. A chat request refused for
+  its token parameter is retried once with the other one, which is then kept.
 
 Once verified, the custom service mirrors the Datacurso fields:
 
@@ -94,9 +98,11 @@ images (`POST {url}/api/v1/pdf/to-images?dpi=150&fmt=JPEG`, multipart field `fil
 by the image model. The document service URL follows the same rules as the service URL (HTTPS, HTTP only for a local
 host with "Allow HTTP for local models", the cURL security of the site, no redirects); its requests have a 5 s
 connection timeout and a 120 s total timeout, and the PDF (20 MB), the answer (32 MB) and each image (10 MB) have a
-size cap. The pages asked (`document_read` with `pages`) are chosen before the 20-page cap. The whole read of a PDF has one
+size cap; the answer cap is held while it arrives. A dropped connection or a busy service (502, 503, 504) is tried once
+more after a short pause while time is left. The pages asked (`document_read` with `pages`) are chosen before the 20-page cap. The whole read of a PDF has one
 deadline, the AI request timeout: the pages left when it runs out are skipped, and a page the image model fails on is
-skipped while the others are kept. On a site behind a proxy (Cloudflare closes requests after 100 seconds), ask for
+skipped while the others are kept; when the time runs out before any page is read, the user is told the document took
+too long. On a site behind a proxy (Cloudflare closes requests after 100 seconds), ask for
 fewer pages of long documents. Text files (`.txt`, `.csv`, `.md`, up to 2 MB, cut at 200,000 characters) are read on
 the site, also only with "Documents" on and the document service URL. Word and
 PowerPoint files are refused with a message asking for a PDF. With "Documents" off or no document service URL,
@@ -109,20 +115,33 @@ Jedomi estimates the tokens (about four characters per token), keeps the max tok
 for the answer, and drops the
 oldest messages that do not fit. The system message and the latest question (with the tool calls of the current
 answer) always stay, an assistant tool call is dropped together with its results, and the kept history starts with a
-user message. The technical log records each trimming (`CONTEXT_TRIMMED`, counts only). Empty and nothing detected
-means no trimming.
+user message. The technical log records each trimming (`CONTEXT_TRIMMED`, counts only). The max tokens sent with each
+request is also at most half the known window. Empty and nothing detected means no trimming, and the settings page
+warns about it.
 
 **AI request timeout.** "AI request timeout (seconds)", after the fields of either service, sets how long the web chat
 and the CLI wait for each AI answer, for both services: 10 to 600 seconds, 180 by default. Telegram and the scheduled
-agents keep their own timeouts. A proxy in front of the site (Cloudflare closes requests after 100 seconds), the
-`max_execution_time` of PHP or the timeout of the web server can end a request earlier.
+agents keep their own timeouts. A question of the web chat stops after three times this value in total (9 minutes
+by default) and a Telegram question after 10 minutes, with a message for the user. While an AI round waits, the web
+chat sends a signal of life every 15 seconds (the panel shows "Jedomi is still working on your answer…") so a proxy
+that closes idle requests (Cloudflare closes them after 100 seconds) keeps the connection, and Telegram shows "typing"
+again every 4 seconds. Closing the web chat aborts the AI call that waits. The `max_execution_time` of PHP or the
+timeout of the web server can still end a request earlier.
+
+**Slow or weak models.** An answer without text (out of tokens, or an empty stop) is asked again once, briefly and with
+the same maximum tokens; a second one gets a clear message (web chat, Telegram) or fails the agent run with a clear
+last error. The same tool called with the same arguments and failing with the same error three times stops the question
+(or fails the agent run) with a message that names the tool.
 
 About the custom service:
 
 - The address must use HTTPS and respects the blocked hosts and allowed ports of the site cURL security settings. Only
   a loopback or private network host may use HTTP, with "Allow HTTP for local models" on. Redirects are never followed.
+  A host name is looked up once per minute, and a lookup slower than 2 seconds is not trusted (the host then counts as
+  not local).
 - The API key never goes back to the browser, the Jedomi log or the events, and is only sent to the saved address:
-  changing the address asks for the key again.
+  changing the address asks for the key again. It is stored encrypted with the encryption key of the site, kept in
+  dataroot, so a copy of the database alone does not reveal it.
 - PDF and text files can be read with "Documents" on (see above); Word and PowerPoint files cannot.
 - Its requests use no Datacurso credits and are not recorded in the consumption history of the provider.
 - When a request fails, the user sees the same message as with the Datacurso service, and the technical log keeps the
@@ -146,24 +165,69 @@ Scheduled agents run on their own, so the actions they take are limited:
 
 - **Approved writes**: an agent runs a web service function that changes data without confirmation only when that
   function is in its "Writes run without confirmation" list. The list offers the functions of the web service list
-  saved for the role of the agent owner; without a saved list, an agent runs no web service function at all.
+  saved for the role of the agent owner; without a saved list, an agent runs no web service function at all, also for
+  reading, and its creator gets a notification when the agent is created or enabled. Enabling or disabling an agent
+  removes the approved writes its owner may no longer approve and says which ones.
 - **Scope**: an approved write runs only when its targets stay inside the course, category, user or site of the agent,
   checked on the server. A target outside the scope is rejected.
 - **Held writes**: any other write, and a write whose targets cannot be verified, waits as a pending action of the agent
-  creator for 7 days, to approve or reject in the Jedomi web chat.
-- **Caps**: each run makes at most 20 approved writes to at most 50 distinct recipients; going over stops the run.
-- **Notification**: after each run with writes, the creator gets a Moodle notification (popup and email by default)
-  listing the writes run, waiting for approval and rejected.
+  creator for 7 days, to approve or reject in the Jedomi web chat. The card shows every argument of the write; data too
+  long to show whole is marked as cut and can only be rejected. The same write proposed again in a later run waits
+  once, and deleting the agent deletes its held writes.
+- **Caps**: each run makes at most 20 approved writes to at most 50 distinct recipients; going over stops the run and
+  counts as a failed run. A run holds at most 20 writes; the extra ones are neither held nor run, and this does not
+  count as a failed run. Each cap has its own message.
+- **Notification**: after each run with writes, the creator gets a Moodle notification (popup only by default; email
+  can be turned on in the notification preferences) listing the writes run, waiting for approval and rejected.
+
+Web service functions whose name, after its component, has a write word (such as `add`, `create`, `set` or `send`)
+need confirmation in every channel even when they are declared as reading. In Telegram, an action whose data does not
+fit whole in one message is not held: the user is told to ask for it in the web chat.
 
 After upgrading to 1.6.1, existing agents have no approved writes, so all their writes wait for approval until their
 owners approve the functions each agent needs in its form.
+
+## Site administrators
+
+Jedomi never grants or removes site administrator status: the companion web service refuses `siteadmins` and the other
+core settings that decide privileges, and when asked the AI gives the steps instead. To add a site administrator go to
+Site administration > Users > Permissions > Site administrators (`/admin/roles/admins.php`), search the user in the
+Users list, select them, click Add and confirm. "Assign system roles" is a different page: it gives the Manager role,
+which is not site administrator.
 
 ## Telegram webhook
 
 Telegram sends the webhook secret in the `X-Telegram-Bot-Api-Secret-Token` header; the secret is not part of the
 webhook address, and a secret in the query string is refused. Upgrading to 1.6.1 rotates the secret and registers the
 webhook again when a bot token is configured. If Telegram cannot be reached at that moment, the Integrations tab shows
-a warning until the bot token is saved again.
+a warning until the bot token is saved again. While that warning is shown, "Drop pending updates" registers the
+webhook with a new secret. An update Telegram delivers again (same `update_id`) is acknowledged and not processed twice.
+The bot token is stored encrypted with the encryption key of the site, kept in dataroot; the 1.7.0 upgrade encrypts a
+token saved before again with that key.
+
+## Telegram link security
+
+- **Expiry**: a link unused for 30 days expires. The next message tells the user to link again from the profile, and
+  the link no longer receives notifications.
+- **Revocation**: the link is removed when the user is suspended or deleted or the password changes.
+- **PIN for administrators and managers**: with "Require a PIN in Telegram for actions of administrators and managers"
+  (Integrations → Telegram, off by default), each administrator and manager sets a PIN of 6 to 8 digits on the Jedomi
+  Telegram page of their profile, stored only as a hash. The PIN replaces the Confirm button for their Telegram
+  writes; after a right PIN, writes run without asking again for 15 minutes. Three wrong PINs lock their Telegram
+  writes for 15 minutes. Until the PIN is set their writes are refused with a link to set it; queries keep working.
+  Relinking the chat, or a revocation, removes the PIN.
+
+## Anonymisation
+
+Personal data is replaced by placeholders such as `[person_1]` or `[id_1]` before it reaches the AI service (messages,
+attached texts, page context, history and tool results) in the web chat, Telegram, the scheduled agents and the agent
+preview. The answer shown to the user and the arguments of the tools the AI calls get the real values back, so the user
+never sees a placeholder. The level is set in the Privacy tab:
+
+- **Basic** (default): names of site users, email addresses and identifier columns of tool results (user name, ID
+  number, phones, address, IP address, messaging ids and web page).
+- **Strict**: also free text (descriptions, messages, long texts) and codes mixing letters and digits inside texts.
+- **Feedback only**: the AI receives the same as with Basic, and ratings are saved without the conversation text.
 
 ## Technical log and privacy
 
@@ -171,7 +235,12 @@ The plugin writes an operational and security trace to `{dataroot}/local/jedomi/
 Telegram chat ids or conversation texts: users and chats appear as pseudonyms (a keyed hash with a random key of the
 site), and the source IP address is kept only for requests rejected for security reasons. The file rotates at 5 MB and
 keeps the five previous files (about 30 MB in total), so the oldest entries are removed as new ones are written; an
-administrator can delete the files at any time. The log is declared in the privacy registry of the site.
+administrator can delete the files at any time. The log is declared in the privacy registry of the site. Errors are
+logged with their class and error code, never their message, which can quote a query or personal data; the user sees a
+generic message with a reference that finds the entry.
+
+Changes of the course, privacy and Telegram role settings, and settings written by the companion web service
+(`jedomi_set_site_config`), also appear in the "Config changes" report of Moodle.
 
 ## Database queries and their limits
 
@@ -187,11 +256,64 @@ channel it works in:
 
 The row limit is applied by the database on every supported database. The time limit is applied by the database on
 MySQL, MariaDB and PostgreSQL only: SQL Server and Oracle have no per-query time limit that can be set safely from
-Moodle, so there a slow query runs until the database or PHP stops it. The query profiler (Query profiler tab) records
+Moodle, so there a slow query runs until the database or PHP stops it. The SQL tool stays available on SQL Server and
+Oracle with the row limit only: the risk is a long query of the AI on the production database. On those databases keep
+the row limits low, watch the slow queries in the Query profiler tab, and set a time limit in the database itself if it
+offers one (the help of the SQL settings says so too). The query profiler (Query profiler tab) records
 the queries of the agents; its slow query threshold and the days its records are kept are set in the General tab, and
 the scheduled task "Purge old query profiler records" removes the old records once a day. The row limit of the web chat
 is set in the General tab too ("Maximum rows per query (web chat)", `sql_row_limit_web`); the other channels keep their
 fixed limits.
+
+Row locking clauses (`FOR UPDATE`, `FOR SHARE`, `LOCK IN SHARE MODE`, `NOWAIT`, `SKIP LOCKED`) are rejected for every
+user, site administrators included. A user who does not manage every course writes a single `SELECT` with `FROM`,
+`[LEFT] JOIN ... ON`, `WHERE` conditions joined by `AND`, `GROUP BY`, `HAVING`, `ORDER BY` and `LIMIT`, and only the
+functions `COUNT`, `SUM`, `AVG`, `MIN`, `MAX`, `ROUND` and `COALESCE`; the course filter must be in `WHERE` or in a join,
+never only in `HAVING`.
+
+A course backup asked to the AI by an administrator can only be copied to an existing folder inside dataroot (given
+relative to dataroot or absolute); any other folder, `..` or a symbolic link leading out of dataroot is refused.
+
+## Course exclusion
+
+The Course availability tab sets which courses are in Jedomi: "All courses", "All courses except the selected ones",
+or "Only the selected courses" (every course that is not selected counts as excluded; this mode needs at least one
+course).
+An excluded course is outside Jedomi, not only without the panel:
+
+- **Role outside a course** (site home, dashboard, Telegram, scheduled agents, companion web service): computed
+  ignoring excluded courses. A teacher whose taught courses are all excluded is a student there.
+- **Web chat**: the panel is not shown in an excluded course, and the server refuses any request whose signed course is
+  excluded (`course_unavailable`) in `chatproxy.php`, `conversation.php`, `extract_file.php` and `read_file.php`, not
+  only in the page.
+- **Teacher tools**: the course lists signed for the chat and Telegram, the courses named to the AI in Telegram, the
+  own data tools (`my_courses`, `my_grades`, `my_assignments`) and `document_read` leave excluded courses out.
+- **Web service calls** (every channel, only while some course is outside Jedomi): the AI can only call a reduced set
+  of about 40 functions (`ws_runner::RESTRICTED_ALLOWLIST`: course contents and lists, enrolled users, groups, grades,
+  completion, assignments, forums, quizzes, calendar events, notes, users and messages); any other function is refused
+  before it runs (`error_ws_restricted`). Other functions can name a course in ways Jedomi cannot read reliably (ids
+  under other names, `{name, value}` options, context ids) or return course data without a course id, so they cannot
+  be guarded. When every course is in Jedomi every function is available as before. An allowed call is refused before
+  it runs when an argument, at any depth, names an excluded course (`error_course_excluded`): a course id (also
+  `importfrom`/`importto` of `core_course_import_course`), an activity (course module, instance id such as `forumid`, or
+  `module` with `instance`), a context (also by `contextlevel` and `instanceid`), a group or grouping, or a record mapped
+  to its course (sections, forum discussions and posts, calendar events, quiz and H5P attempts, assignment and workshop
+  submissions, glossary and database entries, group conversations and their messages, enrolment instances, grade
+  items, scales; and the `id`/`ids` of the functions Jedomi knows). A call with an argument named like an identifier
+  (ending in `id` or `ids`, or `instance`) that Jedomi cannot place in a course nor in a target of no course (users,
+  cohorts, categories, roles, the system context, draft areas) is refused too (`error_argument_unplaced`, fail closed),
+  for example the bare `id` of an unknown function, `notificationid`, quiz slots or competencies. A record that does
+  not exist names no course and is left to the function. Results drop the courses of the course-listing functions,
+  any listed record whose `courseid` or `course` is excluded, and the excluded courses of nested course lists
+  (`courses`, `enrolledcourses` of users).
+- **Teacher SQL**: a user who does not manage every course can only read courses they manage that are in Jedomi; a query
+  that names an excluded course is rejected (`sql_course_rejected`).
+- **Agents**: an agent cannot be saved, nor previewed, in a context of an excluded course. An existing agent whose
+  context is in an excluded course does not run: it stays enabled, its last error says why and it runs again at its
+  next hour once the course is back in Jedomi. An agent of a user whose role drops runs with the lower role.
+- **Site administrators and users who manage every course**: excluded courses are also left out of their course-level
+  tools (web service calls naming a course, `document_read`, agents). Their SQL is site-wide, with no course allowlist,
+  and is not limited by the course exclusion.
 
 ## Web chat usage limits
 

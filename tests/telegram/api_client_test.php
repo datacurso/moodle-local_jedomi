@@ -74,6 +74,27 @@ final class api_client_test extends \advanced_testcase {
     }
 
     /**
+     * RES-002: a chat action can use its own short timeout, and the next requests keep the usual one.
+     */
+    public function test_chat_action_can_use_a_short_timeout(): void {
+        $client = new class ('123:abc') extends api_client {
+            /** @var int[] Total timeout of each request. */
+            public array $timeouts = [];
+
+            #[\Override]
+            protected function post(string $method, array $params): ?array {
+                $this->timeouts[] = $this->curl_options('')[CURLOPT_TIMEOUT];
+                return ['ok' => true];
+            }
+        };
+
+        $this->assertTrue($client->send_chat_action('42', 'typing', 2));
+        $client->send_chat_action('42');
+
+        $this->assertSame([2, 30], $client->timeouts);
+    }
+
+    /**
      * RES-001: setWebhook can drop the pending updates itself, so the webhook never has to be deleted first.
      */
     public function test_set_webhook_can_drop_pending_updates(): void {

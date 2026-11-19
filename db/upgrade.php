@@ -543,5 +543,42 @@ function xmldb_local_jedomi_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2026111900, 'local', 'jedomi');
     }
 
+    if ($oldversion < 2026111902) {
+        // Telegram link security (Decision 7): the last use of the link, after which it expires in 30 days, and the PIN
+        // of administrators and managers with its failures, lock and confirmation window.
+        $table = new xmldb_table('local_jedomi_telegram_links');
+        $fields = [
+            new xmldb_field('lastused', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0', 'lastproactivesent'),
+            new xmldb_field('pinhash', XMLDB_TYPE_CHAR, '255', null, null, null, null, 'lastused'),
+            new xmldb_field('pinfailures', XMLDB_TYPE_INTEGER, '2', null, XMLDB_NOTNULL, null, '0', 'pinhash'),
+            new xmldb_field('pinlockeduntil', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0', 'pinfailures'),
+            new xmldb_field('pinverifiedat', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0', 'pinlockeduntil'),
+        ];
+        foreach ($fields as $field) {
+            if (!$dbman->field_exists($table, $field)) {
+                $dbman->add_field($table, $field);
+            }
+        }
+        // The existing links count as used now, so they get 30 days before they expire instead of being expired and
+        // removed at once (RES-001).
+        $DB->set_field('local_jedomi_telegram_links', 'lastused', time(), ['lastused' => 0]);
+        upgrade_plugin_savepoint(true, 2026111902, 'local', 'jedomi');
+    }
+
+    if ($oldversion < 2026111903) {
+        // The summary of each agent run is no longer sent by email by default (REL-005).
+        require_once($CFG->dirroot . '/local/jedomi/db/upgradelib.php');
+        local_jedomi_upgrade_agentwrites_email_default();
+        upgrade_plugin_savepoint(true, 2026111903, 'local', 'jedomi');
+    }
+
+    if ($oldversion < 2026111904) {
+        // The Telegram bot token and the API key of the custom AI service are encrypted with the key of the site, kept
+        // in dataroot, instead of a key derived from the database or clear text (JEDOMI-SEC-010).
+        require_once($CFG->dirroot . '/local/jedomi/db/upgradelib.php');
+        local_jedomi_upgrade_encrypt_secrets();
+        upgrade_plugin_savepoint(true, 2026111904, 'local', 'jedomi');
+    }
+
     return true;
 }

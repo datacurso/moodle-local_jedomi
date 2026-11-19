@@ -371,4 +371,161 @@ final class custom_api_test extends \advanced_testcase {
         $this->assertSame(['vllm', 'openrouter', 'groq', 'lmstudio', 'none', 'negative', 'text', 'float'], $result['ids']);
         $this->assertSame(['vllm' => 32768, 'openrouter' => 131072, 'groq' => 8192, 'lmstudio' => 4096], $result['context']);
     }
+
+    /**
+     * Decision 3: the saved token parameter names the answer limit; max_tokens is the default.
+     *
+     * @return void
+     */
+    public function test_chat_uses_the_saved_token_parameter(): void {
+        $ok = json_encode(['choices' => [['message' => ['content' => 'Hi'], 'finish_reason' => 'stop']]]);
+        $payload = ['model' => 'm', 'messages' => [], 'max_tokens' => 300];
+
+        $this->curl->enqueue($ok);
+        (new custom_api('https://api.example.com', 'sk-test', false))->chat($payload, 5);
+        $this->assertSame(300, $this->curl->last_body()['max_tokens']);
+        $this->assertArrayNotHasKey('max_completion_tokens', $this->curl->last_body());
+
+        $this->curl->enqueue($ok);
+        $api = new custom_api('https://api.example.com', 'sk-test', false, custom_api::TOKEN_PARAM_COMPLETION);
+        $api->chat($payload, 5);
+        $this->assertSame(300, $this->curl->last_body()['max_completion_tokens']);
+        $this->assertArrayNotHasKey('max_tokens', $this->curl->last_body());
+        $this->assertCount(2, $this->curl->calls);
+    }
+
+    /**
+     * Decision 3: a 400 that refuses the token parameter is retried once with the other one, which is then kept.
+     *
+     * @return void
+     */
+    public function test_rejected_token_parameter_is_retried_with_the_other_one(): void {
+        $kept = [];
+        $keep = function (string $param) use (&$kept): void {
+            $kept[] = $param;
+        };
+        $api = new custom_api('https://api.example.com', 'sk-test', false, custom_api::TOKEN_PARAM_MAX, $keep);
+        $this->curl->enqueue('{"error":{"message":"Unsupported parameter: \'max_tokens\' is not supported with this model. '
+            . 'Use \'max_completion_tokens\' instead."}}', 400);
+        $this->curl->enqueue(json_encode(['choices' => [['message' => ['content' => 'Hi'], 'finish_reason' => 'stop']]]));
+
+        $answer = $api->chat(['model' => 'm', 'messages' => [], 'max_tokens' => 300], 5);
+
+        $this->assertSame('Hi', $answer['choices'][0]['message']['content']);
+        $this->assertCount(2, $this->curl->calls);
+        $this->assertSame(300, $this->curl->last_body()['max_completion_tokens']);
+        $this->assertArrayNotHasKey('max_tokens', $this->curl->last_body());
+        $this->assertSame([custom_api::TOKEN_PARAM_COMPLETION], $kept);
+        $this->assertSame(custom_api::TOKEN_PARAM_COMPLETION, $api->get_token_param());
+    }
+
+    /**
+     * A 400 about the size of the answer, or a retry that fails too, is not a token parameter problem: one request only,
+     * or nothing kept.
+     *
+     * @return void
+     */
+    public function test_other_token_errors_are_not_retried(): void {
+        $kept = [];
+        $keep = function (string $param) use (&$kept): void {
+            $kept[] = $param;
+        };
+        $api = new custom_api('https://api.example.com', 'sk-test', false, custom_api::TOKEN_PARAM_MAX, $keep);
+        $payload = ['model' => 'm', 'messages' => [], 'max_tokens' => 300];
+
+        $this->curl->enqueue('{"error":{"message":"max_tokens is too large: 300000"}}', 400);
+        $this->assert_error(fn() => $api->chat($payload, 5), 'custom_error_http', 400);
+        $this->assertCount(1, $this->curl->calls);
+
+        $this->curl->enqueue('{"error":{"message":"Unsupported parameter: max_tokens"}}', 400);
+        $this->curl->enqueue('{"error":{"message":"Unsupported parameter: max_completion_tokens"}}', 400);
+        $this->assert_error(fn() => $api->chat($payload, 5), 'custom_error_http', 400);
+        $this->assertCount(3, $this->curl->calls);
+        $this->assertSame([], $kept);
+        $this->assertSame(custom_api::TOKEN_PARAM_MAX, $api->get_token_param());
+    }
+
+    /**
+     * REL-002: only an answer that says the model cannot call tools is a tools error; a 400 that only mentions a tool
+     * (such as a bad tool message) stays an ordinary error.
+     *
+     * @return void
+     */
+    public function test_tools_error_is_detected_precisely(): void {
+        $api = new custom_api('https://api.example.com', 'sk-test', false);
+        $payload = ['model' => 'm', 'messages' => [], 'tools' => [['type' => 'function']], 'tool_choice' => 'auto'];
+
+        $this->curl->enqueue('{"error":{"message":"\"auto\" tool choice requires --enable-auto-tool-choice"}}', 400);
+        $this->assert_error(fn() => $api->chat($payload, 5), 'ai_error_tools_unsupported', null);
+
+        $this->curl->enqueue('{"error":{"message":"Invalid message: tool_call_id abc not found"}}', 400);
+        $this->assert_error(fn() => $api->chat($payload, 5), 'custom_error_http', 400);
+    }
+
+    /**
+     * The probe of the verification: a tiny answer finds the token parameter, then a request with one tool tells whether
+     * the model can call tools.
+     *
+     * @return void
+     */
+    public function test_probe_finds_the_token_parameter_and_the_tools(): void {
+        $ok = json_encode(['choices' => [['message' => ['content' => 'OK'], 'finish_reason' => 'stop']]]);
+        $api = new custom_api('https://api.example.com', 'sk-test', false);
+        $this->curl->enqueue('{"error":{"message":"Unsupported parameter: \'max_tokens\'"}}', 400);
+        $this->curl->enqueue($ok);
+        $this->curl->enqueue('{"error":{"message":"this model does not support tools"}}', 400);
+
+        $result = $api->probe('m', 10);
+
+        $this->assertSame(['tokenparam' => custom_api::TOKEN_PARAM_COMPLETION, 'tools' => false], $result);
+        $this->assertCount(3, $this->curl->calls);
+        $first = json_decode($this->curl->calls[0]['params'], true);
+        $this->assertSame('m', $first['model']);
+        $this->assertSame(custom_api::PROBE_TOKENS, $first['max_tokens']);
+        $this->assertArrayNotHasKey('tools', $first);
+        $this->assertNotEmpty($this->curl->last_body()['tools']);
+        $this->assertSame(custom_api::PROBE_TOKENS, $this->curl->last_body()['max_completion_tokens']);
+
+        $this->curl->enqueue($ok);
+        $this->curl->enqueue($ok);
+        $result = (new custom_api('https://api.example.com', 'sk-test', false))->probe('m', 10);
+        $this->assertSame(['tokenparam' => custom_api::TOKEN_PARAM_MAX, 'tools' => true], $result);
+    }
+
+    /**
+     * A probe whose first request fails raises that error; a tool request that fails for another reason does not say the
+     * model has no tools.
+     *
+     * @return void
+     */
+    public function test_probe_failures(): void {
+        $api = new custom_api('https://api.example.com', 'sk-test', false);
+        $this->curl->enqueue('{"error":"model not found"}', 404);
+        $this->assert_error(fn() => $api->probe('missing', 10), 'custom_error_http', 404);
+
+        $this->curl->enqueue(json_encode(['choices' => [['message' => ['content' => 'OK']]]]));
+        $this->curl->enqueue('', 500);
+        $this->assertSame(['tokenparam' => custom_api::TOKEN_PARAM_MAX, 'tools' => null], $api->probe('m', 10));
+    }
+
+    /**
+     * The client of the saved settings uses the saved token parameter and keeps the one a retry finds.
+     *
+     * @return void
+     */
+    public function test_from_settings_keeps_the_token_parameter(): void {
+        set_config('custom_gateway_url', 'https://api.example.com', 'local_jedomi');
+        $this->assertSame(custom_api::TOKEN_PARAM_MAX, ai_service::get_custom_token_param());
+        set_config('custom_token_param', 'something-else', 'local_jedomi');
+        $this->assertSame(custom_api::TOKEN_PARAM_MAX, ai_service::get_custom_token_param());
+        ai_service::remember_token_param('https://other.example.com', custom_api::TOKEN_PARAM_COMPLETION);
+        $this->assertSame(custom_api::TOKEN_PARAM_MAX, ai_service::get_custom_token_param(), 'Found for another address');
+
+        $this->curl->enqueue('{"error":{"message":"Unsupported parameter: max_tokens"}}', 400);
+        $this->curl->enqueue(json_encode(['choices' => [['message' => ['content' => 'Hi']]]]));
+        custom_api::from_settings()->chat(['model' => 'm', 'messages' => [], 'max_tokens' => 300], 5);
+
+        $this->assertSame(custom_api::TOKEN_PARAM_COMPLETION, ai_service::get_custom_token_param());
+        $this->assertSame(custom_api::TOKEN_PARAM_COMPLETION, custom_api::from_settings()->get_token_param());
+    }
 }

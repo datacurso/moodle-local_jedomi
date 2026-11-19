@@ -22,9 +22,10 @@ namespace local_jedomi\local;
  * The web chat, Telegram and the agents all call it before running a query. It applies four layers:
  *
  * 1. For every user (site administrators included): functions and clauses that read or write server files, pause or
- *    lock the database, reach other databases or reveal server variables or information (version, account, database,
- *    connection) are rejected (sql_function_rejected), and so are executable comments and optimizer hints (MySQL and
- *    MariaDB), which the database runs although they look like comments.
+ *    lock the database (row locking clauses such as FOR UPDATE and LOCK IN SHARE MODE included), reach other databases
+ *    or reveal server variables or information (version, account, database, connection) are rejected
+ *    (sql_function_rejected), and so are executable comments and optimizer hints (MySQL and MariaDB), which the
+ *    database runs although they look like comments.
  * 2. For every user: anything the guard and the database could read differently is rejected (sql_construct_rejected):
  *    control characters, placeholders Moodle would bind at another place than the guard reads them (inside a comment
  *    or a string) and, outside MySQL, quoting the guard does not follow (double-quoted identifiers, dollar quoting,
@@ -32,7 +33,8 @@ namespace local_jedomi\local;
  * 3. For every user: tables and columns that hold credentials, keys, tokens, site configuration or sessions are
  *    rejected (sql_sensitive_rejected); columns are recognised by name in any table (see is_sensitive_column()).
  * 4. For a user who does not manage every course (a teacher), an allowlist instead of a denylist. The query must be a
- *    single SELECT whose every token fits the small grammar of sql_select_parser (sql_construct_rejected): no CASE,
+ *    single SELECT whose every token fits the small grammar of sql_select_parser (sql_construct_rejected), HAVING
+ *    included: no CASE,
  *    OR, NOT, subqueries, UNION, comments, quoted identifiers, variables or functions other than COUNT, SUM, AVG, MIN,
  *    MAX, ROUND and COALESCE. Every table it reads must be either:
  *    - course data (the course table, a table with a course column, a known child table of one, the context table or a
@@ -142,8 +144,25 @@ class sql_guard {
     private const SERVER_INFO_FUNCTIONS = ['version', 'user', 'database', 'schema', 'connection_id', 'current_database',
         'current_schema', 'current_schemas', 'current_setting', 'inet_server_addr', 'inet_server_port', 'pg_backend_pid'];
 
+    /**
+     * @var string[] Patterns of the row locking clauses rejected for every user, site administrators and users who manage
+     *      every course included (SEC-JD-037): FOR UPDATE, FOR NO KEY UPDATE, FOR SHARE, FOR KEY SHARE, LOCK IN SHARE
+     *      MODE, and the NOWAIT and SKIP LOCKED options. A read-only query never needs to lock rows, and a lock held
+     *      until the timeout blocks the writes of the whole site.
+     */
+    private const LOCKING_CLAUSES = ['for\s+(?:no\s+key\s+)?update', 'for\s+(?:key\s+)?share', 'lock\s+in\s+share\s+mode',
+        'nowait', 'skip\s+locked'];
+
     /** @var string[] Patterns of the placeholders Moodle binds, as lib/dml/moodle_database.php counts them. */
     private const PLACEHOLDERS = ['/\?/', '/(?<!:):[a-z][a-z0-9_]*/', '/\$[1-9][0-9]*/'];
+
+    /**
+     * @var int Longest query read, in bytes (RISK-004). Far above any query of the allowed subset, and below the length
+     *      at which the PCRE JIT stack of a default PHP build runs out on a single string literal (about 8150 bytes), so
+     *      a query that fits is read whole; a longer one is rejected before it is read. A regular expression that still
+     *      fails rejects the query as well.
+     */
+    public const MAX_QUERY_LENGTH = 8000;
 
     /**
      * Check a query and return why it is rejected, or null when it can run.
@@ -161,7 +180,15 @@ class sql_guard {
     public static function rejection_reason(string $sql, int $userid = 0, array $params = []): ?string {
         global $DB;
         $family = $DB->get_dbfamily();
-        $code = strtolower(self::lex($sql, $family));
+        $unreadable = self::unreadable_rejection($sql);
+        if ($unreadable !== null) {
+            return $unreadable;
+        }
+        $code = self::lex($sql, $family);
+        if ($code === null) {
+            return 'sql_construct_rejected';
+        }
+        $code = strtolower($code);
         if (self::has_executable_comment($sql) || self::calls_blocked_function($code)) {
             return 'sql_function_rejected';
         }
@@ -188,7 +215,8 @@ class sql_guard {
     /**
      * Reason to reject a query that the guard and the database could read differently, or null.
      *
-     * Rejects control characters other than tab and line breaks; a double dash followed by a byte that is not ASCII
+     * Rejects what unreadable_rejection() rejects (too long, a carriage return) and a query the regular expressions
+     * cannot read; control characters other than tab and line feed; a double dash followed by a byte that is not ASCII
      * (whether it starts a comment depends on the character set); a different number of placeholders in the query than
      * in its code (Moodle counts every placeholder, also those inside comments and strings, so the parameters would
      * shift); and, outside MySQL, the quoting the guard does not follow: double quotes and backslashes everywhere, and on
@@ -196,11 +224,15 @@ class sql_guard {
      *
      * @param string $sql Query.
      * @param string $family Database family, as moodle_database::get_dbfamily() returns it.
-     * @return string|null sql_construct_rejected or null.
+     * @return string|null sql_construct_rejected, a reason of unreadable_rejection() or null.
      */
     public static function syntax_rejection(string $sql, string $family): ?string {
         $rejected = 'sql_construct_rejected';
-        if (preg_match('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]|--[\x80-\xFF]/', $sql)) {
+        $unreadable = self::unreadable_rejection($sql);
+        if ($unreadable !== null) {
+            return $unreadable;
+        }
+        if (preg_match('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]|--[\x80-\xFF]/', $sql) !== 0) {
             return $rejected;
         }
         if (
@@ -212,8 +244,11 @@ class sql_guard {
         }
         $comments = [];
         $code = self::lex($sql, $family, $comments);
+        if ($code === null) {
+            return $rejected;
+        }
         if ($family === 'postgres') {
-            if (preg_match("/(?<![A-Za-z0-9_])[eE]''/", $code)) {
+            if (preg_match("/(?<![A-Za-z0-9_])[eE]''/", $code) !== 0) {
                 return $rejected;
             }
             foreach ($comments as $comment) {
@@ -222,11 +257,12 @@ class sql_guard {
                 }
             }
         }
-        if ($family === 'oracle' && preg_match("/(?<![A-Za-z0-9_])[nN]?[qQ]''/", $code)) {
+        if ($family === 'oracle' && preg_match("/(?<![A-Za-z0-9_])[nN]?[qQ]''/", $code) !== 0) {
             return $rejected;
         }
         foreach (self::PLACEHOLDERS as $pattern) {
-            if (preg_match_all($pattern, $sql) !== preg_match_all($pattern, $code)) {
+            $count = preg_match_all($pattern, $sql);
+            if ($count === false || $count !== preg_match_all($pattern, $code)) {
                 return $rejected;
             }
         }
@@ -234,7 +270,7 @@ class sql_guard {
     }
 
     /**
-     * Tell whether a query calls a function or uses a clause rejected for every user.
+     * Tell whether a query calls a function or uses a clause rejected for every user, row locking clauses included.
      *
      * @param string $code Lowercase query without literals and comments.
      * @return bool
@@ -242,8 +278,8 @@ class sql_guard {
     private static function calls_blocked_function(string $code): bool {
         $code = str_replace(self::BACKQUOTE, ' ', $code);
         $pattern = '/\b(?:' . implode('|', self::BLOCKED_FUNCTIONS) . ')\b|\b(?:' . implode('|', self::SERVER_INFO_FUNCTIONS)
-            . ')\s*\(|\binto\s+(?:outfile|dumpfile)\b|@@|(?:^|;)\s*copy\b/';
-        return (bool) preg_match($pattern, $code);
+            . ')\s*\(|\b(?:' . implode('|', self::LOCKING_CLAUSES) . ')\b|\binto\s+(?:outfile|dumpfile)\b|@@|(?:^|;)\s*copy\b/';
+        return preg_match($pattern, $code) !== 0;
     }
 
     /**
@@ -254,7 +290,24 @@ class sql_guard {
      * @return bool
      */
     private static function has_executable_comment(string $sql): bool {
-        return (bool) preg_match('/\/\*\s*(?:m\s*)?[!+]/i', $sql);
+        return preg_match('/\/\*\s*(?:m\s*)?[!+]/i', $sql) !== 0;
+    }
+
+    /**
+     * Pattern of the quoted parts of a query as the guard reads them: string literals, quoted identifiers and comments.
+     *
+     * The whole match is the only capturing group, so preg_split() with PREG_SPLIT_DELIM_CAPTURE returns the code at even
+     * positions and the quoted parts at odd ones. See lex() for the quoting each database family follows.
+     *
+     * @param string $family Database family, as moodle_database::get_dbfamily() returns it.
+     * @return string
+     */
+    public static function quoted_parts_pattern(string $family): string {
+        if ($family === 'mysql') {
+            return '/(\'(?:[^\'\\\\]|\\\\.|\'\')*\'|"(?:[^"\\\\]|\\\\.|"")*"|\x60(?:[^\x60]|\x60\x60)*\x60'
+                . '|--(?=[ \t\r\n]|$)[^\n]*|#[^\n]*|\/\*.*?\*\/)/s';
+        }
+        return '/(\'(?:[^\']|\'\')*\'|--[^\n]*|\/\*.*?\*\/)/s';
     }
 
     /**
@@ -267,29 +320,49 @@ class sql_guard {
      * comment; the double quotes and backslashes that other databases read differently are rejected by
      * syntax_rejection(). Reading more code than the database does keeps the guard on the safe side.
      *
+     * A regular expression that fails (a backtracking or JIT stack limit) returns null, never a query read in part, so
+     * the caller rejects the query instead of checking less code than the database runs (RISK-004).
+     *
      * @param string $sql Query.
      * @param string $family Database family.
      * @param string[] $comments Set to the comments of the query.
-     * @return string
+     * @return string|null Query read, or null when it could not be read.
      */
-    private static function lex(string $sql, string $family, array &$comments = []): string {
-        if ($family === 'mysql') {
-            $pattern = '/\'(?:[^\'\\\\]|\\\\.|\'\')*\'|"(?:[^"\\\\]|\\\\.|"")*"|\x60(?:[^\x60]|\x60\x60)*\x60'
-                . '|--(?=[ \t\r\n]|$)[^\n]*|#[^\n]*|\/\*.*?\*\//s';
-        } else {
-            $pattern = '/\'(?:[^\']|\'\')*\'|--[^\n]*|\/\*.*?\*\//s';
-        }
-        return (string) preg_replace_callback($pattern, static function (array $m) use (&$comments): string {
+    private static function lex(string $sql, string $family, array &$comments = []): ?string {
+        $pattern = self::quoted_parts_pattern($family);
+        $failed = false;
+        $code = preg_replace_callback($pattern, static function (array $m) use (&$comments, &$failed): string {
             $first = $m[0][0];
             if ($first === "'" || $first === '"') {
                 return $first . $first;
             }
             if ($first === self::BACKQUOTE) {
-                return self::BACKQUOTE . preg_replace('/[^A-Za-z0-9_$]/', '_', substr($m[0], 1, -1)) . self::BACKQUOTE;
+                $name = preg_replace('/[^A-Za-z0-9_$]/', '_', substr($m[0], 1, -1));
+                $failed = $failed || $name === null;
+                return self::BACKQUOTE . $name . self::BACKQUOTE;
             }
             $comments[] = $m[0];
             return ' ';
         }, $sql);
+        return $code === null || $failed ? null : $code;
+    }
+
+    /**
+     * Reason to reject a query before it is read: longer than MAX_QUERY_LENGTH (RISK-004), or with a carriage return,
+     * which ends a "--" comment on PostgreSQL and SQL Server while the guard, like MySQL, ends it only at a line feed, so
+     * code after it could run unseen (RISK-003). The AI is told to write line breaks as line feeds.
+     *
+     * @param string $sql Query.
+     * @return string|null sql_too_long_rejected, sql_carriage_return_rejected or null.
+     */
+    private static function unreadable_rejection(string $sql): ?string {
+        if (strlen($sql) > self::MAX_QUERY_LENGTH) {
+            return 'sql_too_long_rejected';
+        }
+        if (strpos($sql, "\r") !== false) {
+            return 'sql_carriage_return_rejected';
+        }
+        return null;
     }
 
     /**
@@ -302,7 +375,11 @@ class sql_guard {
      * @return string|null
      */
     private static function course_rejection(string $sql, int $userid, array $params): ?string {
-        $tokens = sql_select_parser::tokenize($sql, $params);
+        try {
+            $tokens = sql_select_parser::tokenize($sql, $params);
+        } catch (\moodle_exception $e) {
+            return $e->errorcode;
+        }
         $prefix = self::prefix();
         // Every table named anywhere (placeholders and prefixed names) must be readable, before the grammar is checked.
         $coursedata = false;
@@ -419,7 +496,7 @@ class sql_guard {
     /**
      * Reason to reject a query that names a column no table of the query has (a keyword the database could read as a
      * value, such as CURRENT_USER, or a typo), or that qualifies a column or "*" with a name that is not a table of the
-     * query. A select alias is accepted in GROUP BY and ORDER BY.
+     * query. A select alias is accepted in GROUP BY, HAVING and ORDER BY.
      *
      * @param array $query Parsed query.
      * @param array[] $instances Table instances with their columns.
@@ -438,7 +515,7 @@ class sql_guard {
                 $mine = $column['qualifier'] === null || $column['qualifier'] === $instance['ref'];
                 $known = $known || ($mine && in_array($column['column'], $instance['columns'], true));
             }
-            $alias = $column['qualifier'] === null && in_array($column['clause'], ['group', 'order'], true)
+            $alias = $column['qualifier'] === null && in_array($column['clause'], ['group', 'having', 'order'], true)
                 && in_array($column['column'], $query['aliases'], true);
             if (!$known && !$alias) {
                 return 'sql_construct_rejected';
@@ -833,13 +910,18 @@ class sql_guard {
     }
 
     /**
-     * Tell whether a user manages a course.
+     * Tell whether a user manages a course that is in Jedomi.
+     *
+     * An excluded course is outside Jedomi, so it is never accepted, also when the user manages it.
      *
      * @param int $userid User id.
      * @param int $courseid Course id.
      * @return bool False as well when the course does not exist, so an unknown id is never accepted.
      */
     private static function manages_course(int $userid, int $courseid): bool {
+        if (!\local_jedomi\course_access::is_course_in_jedomi($courseid)) {
+            return false;
+        }
         $context = \context_course::instance($courseid, IGNORE_MISSING);
         return $context && has_capability('moodle/course:update', $context, $userid);
     }

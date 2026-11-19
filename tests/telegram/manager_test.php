@@ -125,6 +125,45 @@ final class manager_test extends \advanced_testcase {
     }
 
     /**
+     * Encrypt a token as 1.6.x did: AES-256-GCM with a key derived from the site salt (or identifier) and a constant.
+     *
+     * @param string $token Token.
+     * @return string
+     */
+    private static function legacy_encrypt(string $token): string {
+        global $CFG;
+        $key = hash('sha256', ($CFG->passwordsaltmain ?? $CFG->siteidentifier ?? 'jedomi_default_secret')
+            . 'jedomi_telegram_pepper_v1', true);
+        $nonce = random_bytes(12);
+        $tag = '';
+        $cipher = openssl_encrypt($token, 'aes-256-gcm', $key, OPENSSL_RAW_DATA, $nonce, $tag, '', 16);
+        return base64_encode($nonce . $cipher . $tag);
+    }
+
+    /**
+     * JEDOMI-SEC-010: the token is encrypted with the key of the site (in dataroot), not with a key derived from the
+     * database; a token saved by 1.6.x is still read and the upgrade encrypts it again.
+     *
+     * @return void
+     */
+    public function test_token_uses_the_site_key_and_legacy_tokens_are_reencrypted(): void {
+        $this->resetAfterTest();
+        $token = '123456789:legacy-token';
+
+        $this->assertMatchesRegularExpression('/^sodium:/', manager::encrypt($token));
+
+        set_config('telegram_bot_token', self::legacy_encrypt($token), 'local_jedomi');
+        $this->assertSame($token, manager::get_bot_token(), 'A token of 1.6.x is still read');
+
+        $this->assertTrue(manager::reencrypt_legacy_bot_token());
+        $stored = get_config('local_jedomi', 'telegram_bot_token');
+        $this->assertMatchesRegularExpression('/^sodium:/', $stored);
+        $this->assertSame($token, \core\encryption::decrypt($stored));
+        $this->assertSame($token, manager::get_bot_token());
+        $this->assertFalse(manager::reencrypt_legacy_bot_token(), 'A token already encrypted is left as it is');
+    }
+
+    /**
      * MDL-UNIT-098: an encrypted token is recovered identical when decrypted.
      *
      * @return void
@@ -176,17 +215,18 @@ final class manager_test extends \advanced_testcase {
      * @return void
      */
     public function test_altered_cipher_is_rejected(string $alteration): void {
-        $raw = base64_decode(manager::encrypt('123456:secret-token'));
+        [$method, $data] = explode(':', manager::encrypt('123456:secret-token'), 2);
+        $raw = base64_decode($data);
         switch ($alteration) {
             case 'flip':
-                $raw[14] = chr(ord($raw[14]) ^ 0x01);
-                $cipher = base64_encode($raw);
+                $raw[30] = chr(ord($raw[30]) ^ 0x01);
+                $cipher = $method . ':' . base64_encode($raw);
                 break;
             case 'truncate':
-                $cipher = base64_encode(substr($raw, 0, -4));
+                $cipher = $method . ':' . base64_encode(substr($raw, 0, -4));
                 break;
             case 'short':
-                $cipher = base64_encode(substr($raw, 0, 20));
+                $cipher = $method . ':' . base64_encode(substr($raw, 0, 20));
                 break;
             case 'notbase64':
                 $cipher = '***not base64***';
@@ -226,9 +266,10 @@ final class manager_test extends \advanced_testcase {
         $this->resetAfterTest();
         $logfile = $CFG->dataroot . '/local/jedomi/jedomi.log';
         @unlink($logfile);
-        $raw = base64_decode(manager::encrypt('123456789:stored-token'));
-        $raw[13] = chr(ord($raw[13]) ^ 0xff);
-        set_config('telegram_bot_token', base64_encode($raw), 'local_jedomi');
+        [$method, $data] = explode(':', manager::encrypt('123456789:stored-token'), 2);
+        $raw = base64_decode($data);
+        $raw[30] = chr(ord($raw[30]) ^ 0xff);
+        set_config('telegram_bot_token', $method . ':' . base64_encode($raw), 'local_jedomi');
 
         $this->assertNull(manager::get_bot_token());
 
@@ -275,5 +316,38 @@ final class manager_test extends \advanced_testcase {
         // Without a bot token the registration is attempted and its result recorded for the administrator.
         $this->assertNotSame('', manager::get_last_webhook_error());
         $this->assertGreaterThan(0, manager::get_last_webhook_error_time());
+    }
+
+    /**
+     * A value encrypted with the key of the site and then altered, as after a change of that key.
+     *
+     * @return string
+     */
+    private static function unreadable_secret(): string {
+        [$method, $data] = explode(':', \local_jedomi\local\secret_store::encrypt('123:abc'), 2);
+        $raw = base64_decode($data);
+        $raw[30] = chr(ord($raw[30]) ^ 0x01);
+        return $method . ':' . base64_encode($raw);
+    }
+
+    /**
+     * A bot token that cannot be decrypted is recorded as unreadable until a token is saved again.
+     *
+     * @return void
+     */
+    public function test_unreadable_bot_token_is_recorded_until_saved_again(): void {
+        $this->resetAfterTest();
+        $this->assertFalse(manager::is_bot_token_unreadable(), 'No token is not an unreadable token');
+        set_config('telegram_bot_token', self::unreadable_secret(), 'local_jedomi');
+
+        $this->assertNull(manager::get_bot_token());
+        $this->assertTrue(manager::is_bot_token_unreadable());
+        $this->assertSame('1', get_config('local_jedomi', 'secret_unreadable_telegram_bot_token'));
+
+        manager::set_bot_token('123:new');
+
+        $this->assertFalse(manager::is_bot_token_unreadable());
+        $this->assertFalse(get_config('local_jedomi', 'secret_unreadable_telegram_bot_token'));
+        $this->assertSame('123:new', manager::get_bot_token());
     }
 }

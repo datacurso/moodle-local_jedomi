@@ -582,6 +582,23 @@ final class lib_test extends \advanced_testcase {
     }
 
     /**
+     * JEDOMI-SEC-009: the error of a tool result is redacted from the technical log, like queries.
+     */
+    public function test_log_redacts_errors(): void {
+        $redacted = local_jedomi_redact_log_data([
+            'tool' => 'execute_sql',
+            'error' => "Unknown column 'secret' | DBG: SELECT secret FROM mdl_user",
+            'nested' => ['error' => 'RuntimeException: raw marker'],
+            'class' => 'dml_read_exception',
+        ]);
+
+        $this->assertSame('execute_sql', $redacted['tool']);
+        $this->assertSame('dml_read_exception', $redacted['class']);
+        $this->assertStringStartsWith('[redacted ', $redacted['error']);
+        $this->assertStringStartsWith('[redacted ', $redacted['nested']['error']);
+    }
+
+    /**
      * MDL-UNIT-085: on the profile, a user with an allowed role can link the account and one whose roles are all
      * disabled cannot.
      *

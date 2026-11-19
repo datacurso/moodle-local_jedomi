@@ -182,11 +182,11 @@ class sql_tool implements agent_tool {
                 $this->userid
             );
 
-            // The database message (an unknown column, a syntax error) lets the agent fix its query.
-            $detail = ($e instanceof \moodle_exception && !empty($e->debuginfo)) ? ' | ' . $e->debuginfo : '';
+            // The first line of the database message (an unknown column, a syntax error) lets the agent fix its query;
+            // the query and its parameters never come back (JEDOMI-SEC-009).
             $error = \local_jedomi\local\query_runner::is_timeout($e)
                 ? get_string('query_timeout', 'local_jedomi')
-                : $e->getMessage() . $detail;
+                : \local_jedomi\local\safe_error::for_model($e);
             return json_encode([
                 'error' => $error,
                 'duration_ms' => round($elapsedms, 2),

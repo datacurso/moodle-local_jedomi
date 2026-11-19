@@ -92,4 +92,13 @@ $definitions = [
         'simpledata' => true,
         'ttl'        => 130,
     ],
+
+    // Telegram update ids already received, per bot, so an update Telegram delivers again is not processed twice
+    // (SEC-JD-049). MODE_APPLICATION so every web server sees them; Telegram stops retrying an update within a day.
+    'telegram_updates' => [
+        'mode'       => cache_store::MODE_APPLICATION,
+        'simplekeys' => true,
+        'simpledata' => true,
+        'ttl'        => 86400,
+    ],
 ];

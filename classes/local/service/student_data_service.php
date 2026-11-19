@@ -51,7 +51,7 @@ class student_data_service {
     }
 
     /**
-     * Visible courses with an active enrolment of a user, keyed by id.
+     * Visible courses in Jedomi with an active enrolment of a user, keyed by id.
      *
      * @param int $userid User.
      * @return \stdClass[]
@@ -59,7 +59,8 @@ class student_data_service {
     private static function enrolled_courses(int $userid): array {
         $courses = [];
         foreach (enrol_get_users_courses($userid, true, 'enddate, showgrades') as $course) {
-            if ((int) $course->id === SITEID) {
+            if ((int) $course->id === SITEID || !\local_jedomi\course_access::is_course_in_jedomi((int) $course->id)) {
+                // The site home and the courses excluded from Jedomi are not courses of the user here.
                 continue;
             }
             $context = \context_course::instance($course->id);

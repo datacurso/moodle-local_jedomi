@@ -420,6 +420,7 @@ final class webhook_conversation_test extends \advanced_testcase {
 
         $this->assertStringNotContainsString('ximena.quintanilla@example.com', $result);
         $this->assertStringNotContainsString('Quintanilla', $result);
+        $this->assertStringNotContainsString('ID-778899', $result, 'Decision 6: identifiers too');
         $this->assertStringContainsString('Ximena Quintanilla', $answer);
     }
 
@@ -485,6 +486,30 @@ final class webhook_conversation_test extends \advanced_testcase {
         $answer = (string) end($this->telegram->sent)['text'];
         $this->assertStringContainsString('Ximena Quintanilla', $answer);
         $this->assertStringContainsString('ximena.quintanilla@example.com', $answer);
+    }
+
+    /**
+     * Decision 6, REL-005: in Telegram, with the Basic level an identifier the AI received as a placeholder is restored
+     * in the arguments of the tool before it runs and in the answer sent to the user.
+     */
+    public function test_identifier_placeholder_is_restored_in_tool_arguments_and_answer(): void {
+        set_config('anonymization_level', 'basic', 'local_jedomi');
+        $named = $this->fresh_user(['idnumber' => 'ID-778899', 'city' => 'Cartagena']);
+        $this->link((int) get_admin()->id, '779000045');
+        $this->ai->enqueue_tool_calls([['id' => 'call_1', 'type' => 'function', 'function' => ['name' => 'execute_sql',
+            'arguments' => json_encode(['sql' => 'SELECT id, idnumber FROM {user} WHERE id = ' . (int) $named->id])]]]);
+        $this->ai->enqueue_tool_calls([['id' => 'call_2', 'type' => 'function', 'function' => ['name' => 'execute_sql',
+            'arguments' => json_encode(['sql' => "SELECT city FROM {user} WHERE idnumber = '[id_1]'"])]]]);
+        $this->ai->enqueue_text('The user [id_1] lives in the city found.');
+
+        $this->say('779000045', 'Where does that user live?');
+
+        $this->assertCount(3, $this->ai->calls);
+        $results = $this->tool_results($this->ai->calls[2]);
+        $this->assertStringNotContainsString('ID-778899', $results[0]);
+        $this->assertStringContainsString('[id_1]', $results[0]);
+        $this->assertStringContainsString('Cartagena', $results[1], 'The query ran with the real idnumber');
+        $this->assertStringContainsString('The user ID-778899 lives', (string) end($this->telegram->sent)['text']);
     }
 
     /**
@@ -955,6 +980,29 @@ final class webhook_conversation_test extends \advanced_testcase {
         $this->assertTrue($DB->record_exists('local_jedomi_agents', ['id' => $agentid]), 'A button does not run it');
         $this->say('779000040', \core_text::strtolower($this->keyword()));
         $this->assertFalse($DB->record_exists('local_jedomi_agents', ['id' => $agentid]), 'The word runs it');
+    }
+
+    /**
+     * JEDOMI-SEC-013, SEC-JD-043: an action whose data does not fit whole in a Telegram message is not held there: no
+     * card with cut data is shown, nothing waits for confirmation, and the AI is told to use the web chat.
+     *
+     * @return void
+     */
+    public function test_action_too_long_for_telegram_is_not_held(): void {
+        global $DB;
+        $this->link((int) get_admin()->id, '779000041');
+        $prompt = str_repeat('Summarise the week. ', 300);
+        $args = ['name' => 'Long digest', 'prompt' => $prompt, 'schedule_cron' => '0 8 * * 1'];
+        $this->ai_uses('create_agent', $args, 'Use the web chat.');
+
+        $this->say('779000041', 'Create a long digest agent');
+
+        $this->assertSame(0, $DB->count_records('local_jedomi_telegram_pending_actions'));
+        $this->assertSame(0, $DB->count_records('local_jedomi_agents'));
+        $withbuttons = array_filter($this->telegram->sent, static fn(array $m): bool =>
+            !empty($m['replymarkup']['inline_keyboard']));
+        $this->assertSame([], $withbuttons);
+        $this->assertStringContainsString('action_too_long_for_telegram', json_encode(end($this->ai->calls)));
     }
 
     /**

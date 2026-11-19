@@ -122,6 +122,19 @@ final class language_test extends \basic_testcase {
     }
 
     /**
+     * READ-001: the signal of a slow answer names Jedomi and reads naturally in both languages.
+     *
+     * @return void
+     */
+    public function test_still_working_names_jedomi(): void {
+        $manager = get_string_manager();
+        $en = $manager->load_component_strings('local_jedomi', 'en', true);
+
+        $this->assertSame('Jedomi is still working on your answer…', $en['still_working']);
+        $this->assertSame('Jedomi sigue trabajando en su respuesta…', self::plugin_spanish_strings()['still_working']);
+    }
+
+    /**
      * U7: the help of the service select and of the document fields describe the documents of the custom service of
      * 1.6.3: PDF and text files need the documents switch and the document service; Word and PowerPoint are refused.
      *

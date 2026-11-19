@@ -39,6 +39,13 @@ use local_jedomi\aiprovider\settings_extension;
  * those of the returned ids come back too and are kept (custom_context_lengths), so the context window of the chosen
  * chat model is known without typing it.
  *
+ * With the chat model typed on the page, the model is then probed with two tiny requests ({@see custom_api::probe()}):
+ * the first finds the token parameter of the answer limit it accepts (max_tokens or max_completion_tokens, decision 3),
+ * which is kept (custom_token_param) and used by every request; the second, with one tool, tells whether it can call
+ * tools. Warnings tell the administrator when the model cannot call tools (Jedomi needs them), when it did not answer,
+ * and when no context window is known for it (neither typed nor told by the service), so the conversation is never
+ * trimmed. A warning never makes the verification fail.
+ *
  * Only administrators who can change the site configuration may call it, with the session key (AJAX). The address
  * follows {@see custom_endpoint}; the request has a short timeout and never follows redirects, and each
  * administrator has a few verifications per minute, so it cannot be used to scan the internal network. The key is
@@ -68,6 +75,8 @@ class verify_custom_service extends external_api {
             'url' => new external_value(PARAM_RAW_TRIMMED, 'Address of the custom AI service'),
             'apikey' => new external_value(PARAM_RAW_TRIMMED, 'API key; empty to use the saved key for the saved address'),
             'allowhttp' => new external_value(PARAM_BOOL, 'Whether HTTP is allowed for a local model'),
+            'model' => new external_value(PARAM_RAW_TRIMMED, 'Chat model to probe; empty for none', VALUE_DEFAULT, ''),
+            'contextwindow' => new external_value(PARAM_INT, 'Context window typed on the page; 0 for none', VALUE_DEFAULT, 0),
         ]);
     }
 
@@ -77,15 +86,25 @@ class verify_custom_service extends external_api {
      * @param string $url Address.
      * @param string $apikey API key; empty for the saved key.
      * @param bool $allowhttp Whether HTTP is allowed for a local model.
+     * @param string $model Chat model to probe; empty for none.
+     * @param int $contextwindow Context window typed on the page; 0 for none.
      * @return array
      */
-    public static function execute(string $url, string $apikey, bool $allowhttp): array {
+    public static function execute(
+        string $url,
+        string $apikey,
+        bool $allowhttp,
+        string $model = '',
+        int $contextwindow = 0
+    ): array {
         global $USER;
 
         $params = self::validate_parameters(self::execute_parameters(), [
             'url' => $url,
             'apikey' => $apikey,
             'allowhttp' => $allowhttp,
+            'model' => $model,
+            'contextwindow' => $contextwindow,
         ]);
         $context = \context_system::instance();
         self::validate_context($context);
@@ -105,8 +124,9 @@ class verify_custom_service extends external_api {
             return self::result('key_required');
         }
 
+        $api = new custom_api($url, $key, $params['allowhttp']);
         try {
-            $list = (new custom_api($url, $key, $params['allowhttp']))->list_models_with_context(self::TIMEOUT);
+            $list = $api->list_models_with_context(self::TIMEOUT);
         } catch (\moodle_exception $e) {
             return self::failure($e);
         }
@@ -124,8 +144,45 @@ class verify_custom_service extends external_api {
         foreach ($lengths as $id => $tokens) {
             $contextlengths[] = ['id' => (string) $id, 'tokens' => $tokens];
         }
-        return ['models' => $ids, 'modeltotal' => count($valid), 'contextlengths' => $contextlengths]
+        $model = $params['model'];
+        $probe = $model !== '' && preg_match(settings_extension::CUSTOM_ID_PATTERN, $model)
+            ? self::probe($api, $url, $model, $params['contextwindow'] > 0 || isset($list['context'][$model]))
+            : ['tokenparam' => '', 'warnings' => []];
+        return ['models' => $ids, 'modeltotal' => count($valid), 'contextlengths' => $contextlengths] + $probe
             + self::result('ok', count($list['ids']));
+    }
+
+    /**
+     * Probe the chat model: keep the token parameter it accepts and warn about what Jedomi will miss.
+     *
+     * @param custom_api $api Client of the verified service.
+     * @param string $url Address of the verified service, normalised.
+     * @param string $model Chat model id.
+     * @param bool $windowknown Whether a context window is known for it.
+     * @return array{tokenparam: string, warnings: array} Token parameter found (empty when the model did not answer) and
+     *         the warnings (no_tools, model_failed, no_window), each with its message.
+     */
+    private static function probe(custom_api $api, string $url, string $model, bool $windowknown): array {
+        $codes = [];
+        $tokenparam = '';
+        try {
+            $result = $api->probe($model, self::TIMEOUT);
+            $tokenparam = $result['tokenparam'];
+            ai_service::remember_token_param($url, $tokenparam);
+            if ($result['tools'] === false) {
+                $codes[] = 'no_tools';
+            }
+        } catch (\moodle_exception $e) {
+            $codes[] = 'model_failed';
+        }
+        if (!$windowknown) {
+            $codes[] = 'no_window';
+        }
+        $warnings = [];
+        foreach ($codes as $code) {
+            $warnings[] = ['code' => $code, 'message' => get_string('custom_verify_warning_' . $code, 'local_jedomi', $model)];
+        }
+        return ['tokenparam' => $tokenparam, 'warnings' => $warnings];
     }
 
     /**
@@ -150,6 +207,14 @@ class verify_custom_service extends external_api {
                     'tokens' => new external_value(PARAM_INT, 'Context length the service tells for it, in tokens'),
                 ]),
                 'Context lengths the service tells for the returned models, sorted by id'
+            ),
+            'tokenparam' => new external_value(PARAM_ALPHANUMEXT, 'Token parameter the chat model accepts; empty when not probed'),
+            'warnings' => new external_multiple_structure(
+                new external_single_structure([
+                    'code' => new external_value(PARAM_ALPHANUMEXT, 'no_tools, model_failed or no_window'),
+                    'message' => new external_value(PARAM_TEXT, 'Warning for the administrator'),
+                ]),
+                'Warnings about the chat model; they never make the verification fail'
             ),
         ]);
     }
@@ -190,6 +255,8 @@ class verify_custom_service extends external_api {
             'models' => [],
             'modeltotal' => 0,
             'contextlengths' => [],
+            'tokenparam' => '',
+            'warnings' => [],
         ];
     }
 

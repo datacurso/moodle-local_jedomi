@@ -78,6 +78,8 @@ class integrations_tab extends form_tab {
         return parent::export_for_template($output) + [
             'enabled' => (bool) $tg['enabled'],
             'tokenset' => $tokenset,
+            // The stored token cannot be decrypted: the bot is silent until the token is entered again.
+            'tokenunreadable' => !empty($tg['bot_token_unreadable']),
             'verified' => $verified,
             'botusername' => (string) $tg['bot_username'],
             'botfirstname' => (string) $tg['bot_firstname'],

@@ -43,6 +43,9 @@
     * code string - One-time link code
     * deeplink string - https://t.me link that starts the bot with the code
     * codeexpiry int - Time the code expires
+    * pinrequired bool - The user confirms Telegram writes with a PIN
+    * pinset bool - The user has set the PIN
+    * pinformhtml string - Rendered HTML of the PIN form (moodleform), shown when the PIN is required
 
     Example context (json):
     {
@@ -51,7 +54,8 @@
         "actionurl": "https://example.com/local/jedomi/telegram_profile.php?userid=2", "sesskey": "abc123",
         "botusername": "jedomibot", "botfirstname": "Jedomi", "botlink": "https://t.me/jedomibot",
         "linkedas": "", "linkedtime": 0, "hascode": true, "code": "ABC234",
-        "deeplink": "https://t.me/jedomibot?start=ABC234", "codeexpiry": 1700000600
+        "deeplink": "https://t.me/jedomibot?start=ABC234", "codeexpiry": 1700000600,
+        "pinrequired": false, "pinset": false, "pinformhtml": ""
     }
 }}
 <div class="local_jedomi-telegram_profile">
@@ -101,6 +105,15 @@
                     <li>{{#str}} telegram_howto_unlink, local_jedomi {{/str}}</li>
                 </ul>
             </div>
+            {{#pinrequired}}
+            <div class="local_jedomi-tg-pin border rounded p-3 mb-3">
+                <p class="font-weight-bold fw-bold small mb-1">{{#str}} telegram_pin_title, local_jedomi {{/str}}</p>
+                <p class="small mb-2">{{#str}} telegram_pin_info, local_jedomi {{/str}}</p>
+                {{#pinset}}<p class="small text-success mb-2">{{#str}} telegram_pin_is_set, local_jedomi {{/str}}</p>{{/pinset}}
+                {{^pinset}}<p class="small text-danger mb-2">{{#str}} telegram_pin_not_set, local_jedomi {{/str}}</p>{{/pinset}}
+                {{{pinformhtml}}}
+            </div>
+            {{/pinrequired}}
             <form method="post" action="{{actionurl}}" data-form="local_jedomi/telegram_profile/unlink">
                 <input type="hidden" name="sesskey" value="{{sesskey}}">
                 <input type="hidden" name="action" value="unlink">

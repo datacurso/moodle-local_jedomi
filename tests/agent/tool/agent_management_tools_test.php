@@ -45,12 +45,12 @@ final class agent_management_tools_test extends \advanced_testcase {
         $this->getDataGenerator()->role_assign('manager', $manager->id);
         $foreign = agent_manager::create_agent((object) ['userid' => $adminid, 'prompt' => 'Admin report',
             'schedule_cron' => '0 8 * * *']);
-        tool_executor::get_definitions(1, (int) $manager->id);
+        $executor = new tool_executor(1, (int) $manager->id);
 
-        $created = json_decode(tool_executor::execute('create_agent', json_encode(['prompt' => 'Spy',
+        $created = json_decode($executor->execute('create_agent', json_encode(['prompt' => 'Spy',
             'schedule_cron' => '0 8 * * *', 'userid' => $adminid])), true);
-        $deleted = json_decode(tool_executor::execute('delete_agent', json_encode(['id' => $foreign])), true);
-        $own = json_decode(tool_executor::execute('create_agent', json_encode(['prompt' => 'Mine',
+        $deleted = json_decode($executor->execute('delete_agent', json_encode(['id' => $foreign])), true);
+        $own = json_decode($executor->execute('create_agent', json_encode(['prompt' => 'Mine',
             'schedule_cron' => '0 8 * * *'])), true);
 
         $this->assertSame('permission_denied', $created['error'] ?? null);

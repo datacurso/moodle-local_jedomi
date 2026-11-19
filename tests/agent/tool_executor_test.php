@@ -26,12 +26,6 @@ namespace local_jedomi\agent;
  * @covers     \local_jedomi\agent\tool_executor
  */
 final class tool_executor_test extends \advanced_testcase {
-    #[\Override]
-    protected function tearDown(): void {
-        tool_executor::reset();
-        parent::tearDown();
-    }
-
     /**
      * JEDOMI-SEC-008: a tool that is not offered to the role of the agent creator is never run.
      */
@@ -40,24 +34,41 @@ final class tool_executor_test extends \advanced_testcase {
         $this->resetAfterTest();
         $manager = $this->getDataGenerator()->create_user();
         $this->getDataGenerator()->role_assign($DB->get_field('role', 'id', ['shortname' => 'manager']), $manager->id);
-        tool_executor::get_definitions(0, (int) $manager->id);
+        $executor = new tool_executor(0, (int) $manager->id);
 
-        $result = json_decode(tool_executor::execute('get_site_config', '{"name":"dbpass"}'), true);
+        $result = json_decode($executor->execute('get_site_config', '{"name":"dbpass"}'), true);
 
-        $this->assertFalse(tool_executor::is_offered('get_site_config'));
+        $this->assertFalse($executor->is_offered('get_site_config'));
         $this->assertSame('Unknown tool: get_site_config', $result['error']);
     }
 
     /**
-     * JEDOMI-SEC-001: without tools prepared for a user nothing runs (no tool runs as user 0).
+     * READ-003, JEDOMI-SEC-001: the tools offered belong to each executor; an executor prepared for an administrator does
+     * not widen what the executor of another user runs, whatever the order they were built in.
      */
-    public function test_nothing_runs_before_the_tools_are_prepared(): void {
+    public function test_offered_tools_are_kept_per_executor(): void {
+        global $DB;
         $this->resetAfterTest();
-        tool_executor::reset();
+        $manager = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->role_assign($DB->get_field('role', 'id', ['shortname' => 'manager']), $manager->id);
 
-        $result = json_decode(tool_executor::execute('search_tables', '{"query":"user"}'), true);
+        $formanager = new tool_executor(0, (int) $manager->id);
+        $foradmin = new tool_executor(0, (int) get_admin()->id);
 
-        $this->assertSame('tools_not_prepared', $result['error']);
+        $this->assertTrue($foradmin->is_offered('get_site_config'));
+        $this->assertFalse($formanager->is_offered('get_site_config'), 'Building another executor changes nothing');
+        $result = json_decode($formanager->execute('get_site_config', '{"name":"sitename"}'), true);
+        $this->assertSame('Unknown tool: get_site_config', $result['error']);
+        $this->assertFalse((new tool_executor(0, 0))->is_offered('get_site_config'), 'User 0 gets no administrator tool');
+    }
+
+    /**
+     * READ-003: the executor keeps no static state: its tools and offered names are properties of each instance.
+     */
+    public function test_executor_has_no_static_state(): void {
+        $properties = (new \ReflectionClass(tool_executor::class))->getProperties(\ReflectionProperty::IS_STATIC);
+
+        $this->assertSame([], $properties);
     }
 
     /**
@@ -67,9 +78,9 @@ final class tool_executor_test extends \advanced_testcase {
         $this->resetAfterTest();
         $course = $this->getDataGenerator()->create_course(['shortname' => 'EXEC-1']);
         set_config('ws_allowlist_admin', json_encode(['core_course_get_courses_by_field']), 'local_jedomi');
-        tool_executor::get_definitions(0, (int) get_admin()->id);
+        $executor = new tool_executor(0, (int) get_admin()->id);
 
-        $result = json_decode(tool_executor::execute('call_webservice', json_encode([
+        $result = json_decode($executor->execute('call_webservice', json_encode([
             'function' => 'core_course_get_courses_by_field',
             'params' => ['field' => 'id', 'value' => (string) $course->id],
         ])), true);
@@ -85,9 +96,9 @@ final class tool_executor_test extends \advanced_testcase {
     public function test_no_saved_list_runs_no_web_service(): void {
         $this->resetAfterTest();
         unset_config('ws_allowlist_admin', 'local_jedomi');
-        tool_executor::get_definitions(0, (int) get_admin()->id);
+        $executor = new tool_executor(0, (int) get_admin()->id);
 
-        $result = json_decode(tool_executor::execute('ws_execute', json_encode([
+        $result = json_decode($executor->execute('ws_execute', json_encode([
             'wsname' => 'core_webservice_get_site_info',
             'params' => '{}',
         ])), true);

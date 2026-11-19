@@ -350,6 +350,47 @@ final class companion_signature_test extends \advanced_testcase {
     }
 
     /**
+     * JEDOMI-SEC-011: a setting changed through the companion is recorded in the config log of Moodle, with its old and
+     * new value; writing the same value again adds no row.
+     */
+    public function test_signed_setting_change_is_recorded_in_the_config_log(): void {
+        global $DB;
+        set_config('jedomi_signature_probe', 'before', 'local_jedomi');
+        $params = ['name' => 'jedomi_signature_probe', 'value' => 'after', 'plugin' => 'local_jedomi'];
+        $now = time();
+        $hash = self::payload_hash($params);
+
+        $result = set_site_config::execute(
+            'jedomi_signature_probe',
+            'after',
+            'local_jedomi',
+            self::sign('jedomi_set_site_config', $now, $hash),
+            $now,
+            $hash
+        );
+
+        $this->assertSame('success', $result['status']);
+        $logs = $DB->get_records('config_log', ['name' => 'jedomi_signature_probe', 'plugin' => 'local_jedomi']);
+        $this->assertCount(1, $logs);
+        $log = reset($logs);
+        $this->assertSame('before', $log->oldvalue);
+        $this->assertSame('after', $log->value);
+        $this->assertSame((int) get_admin()->id, (int) $log->userid);
+
+        $again = $this->start_of_a_new_second();
+        $hash = self::payload_hash($params);
+        set_site_config::execute(
+            'jedomi_signature_probe',
+            'after',
+            'local_jedomi',
+            self::sign('jedomi_set_site_config', $again, $hash),
+            $again,
+            $hash
+        );
+        $this->assertSame(1, $DB->count_records('config_log', ['name' => 'jedomi_signature_probe']));
+    }
+
+    /**
      * MDL-UNIT-103: a password validation signed over its own parameters is accepted and reports the policy violations
      * of a weak password.
      */

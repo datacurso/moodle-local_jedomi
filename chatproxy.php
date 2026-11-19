@@ -88,7 +88,7 @@ try {
 } catch (\moodle_exception $e) {
     http_response_code(403);
     header('Content-Type: application/json');
-    die(json_encode(['error' => $e->getMessage()]));
+    die(json_encode(['error' => \local_jedomi\local\safe_error::for_user($e, 'chatproxy_spt')]));
 }
 
 // The user can stop an answer: the browser then closes the request. The script is not killed halfway through a tool

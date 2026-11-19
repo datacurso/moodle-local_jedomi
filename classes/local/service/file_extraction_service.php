@@ -74,6 +74,7 @@ class file_extraction_service {
         'files_error_disabled' => ['files_disabled', 'files_error_disabled'],
         'documents_error_custom' => ['documents_unavailable', 'documents_error_custom'],
         'documents_error_custom_office' => ['documents_unavailable', 'documents_error_custom_office'],
+        'documents_error_deadline' => ['documents_unavailable', 'documents_error_deadline'],
         'file_error_too_large' => ['file_too_large', 'file_error_too_large'],
     ];
 

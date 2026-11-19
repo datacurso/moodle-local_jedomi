@@ -144,7 +144,7 @@ abstract class own_data_tool implements agent_tool {
         try {
             return json_encode($this->read($this->actor_id(), $courseid), JSON_UNESCAPED_UNICODE);
         } catch (\moodle_exception $e) {
-            $error = $e->errorcode === 'nopermissions' ? 'permission_denied' : $e->getMessage();
+            $error = $e->errorcode === 'nopermissions' ? 'permission_denied' : \local_jedomi\local\safe_error::for_model($e);
             return json_encode(['error' => $error]);
         }
     }

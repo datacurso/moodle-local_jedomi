@@ -286,6 +286,9 @@ const runAgentAction = async(root, action, id) => {
         } else {
             if (action === 'run') {
                 showMessage(tablemessage, 'success', strings.agent_run_queued, true);
+            } else if (data.notice) {
+                // Approved writes that are no longer allowed were removed from the agent.
+                showMessage(tablemessage, 'warning', data.notice);
             }
             refresh(root);
         }

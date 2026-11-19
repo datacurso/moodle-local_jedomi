@@ -207,4 +207,47 @@ final class telegram_profile_test extends \advanced_testcase {
         $this->assertDoesNotMatchRegularExpression('/\b(tu|tus|vincula|vinculá|puedes|podés)\b/iu', $spanish);
         $this->assertStringNotContainsString('bot de Telegram para que los usuarios', $spanish, 'Not the administrator text');
     }
+
+    /**
+     * Decision 7: a linked user who needs a PIN gets the PIN form and whether a PIN is set.
+     *
+     * @return void
+     */
+    public function test_export_pin_form(): void {
+        global $PAGE;
+        $this->resetAfterTest();
+        $PAGE->set_url(new \moodle_url('/local/jedomi/telegram_profile.php'));
+        $renderer = $PAGE->get_renderer('local_jedomi');
+        $link = (object) ['username' => 'ada', 'chatid' => '1', 'timecreated' => 1700000000];
+        $make = static fn(bool $required, bool $set, string $form = ''): telegram_profile => new telegram_profile(
+            telegram_profile::STATE_LINKED,
+            'jedomibot',
+            'Jedomi',
+            $link,
+            '',
+            0,
+            new \moodle_url('/local/jedomi/telegram_profile.php', ['userid' => 2]),
+            $required,
+            $set,
+            $form
+        );
+
+        $none = $make(false, false)->export_for_template($renderer);
+        $missing = $make(true, false, '<form id="pinform"></form>')->export_for_template($renderer);
+        $set = $make(true, true)->export_for_template($renderer);
+
+        $this->assertFalse($none['pinrequired']);
+        $this->assertTrue($missing['pinrequired']);
+        $this->assertFalse($missing['pinset']);
+        $this->assertTrue($set['pinset']);
+        $this->assertSame('<form id="pinform"></form>', $missing['pinformhtml'] ?? null);
+        $this->assertArrayNotHasKey('pinformat', $missing);
+        $this->assertArrayNotHasKey('pinpattern', $missing);
+        $this->assertArrayNotHasKey('pinminlength', $missing);
+        $this->assertArrayNotHasKey('pinmaxlength', $missing);
+        $html = $renderer->render($make(true, false, '<form id="pinform"></form>'));
+        $this->assertStringContainsString('<form id="pinform"></form>', $html, 'The form HTML is not escaped');
+        $this->assertStringContainsString(get_string('telegram_pin_not_set', 'local_jedomi'), $html);
+        $this->assertStringNotContainsString('name="pin"', $html, 'No hand-written PIN form');
+    }
 }

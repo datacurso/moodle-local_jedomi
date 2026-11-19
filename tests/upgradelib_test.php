@@ -29,6 +29,8 @@ namespace local_jedomi;
  * @covers     ::local_jedomi_upgrade_agent_write_approvals
  * @covers     ::local_jedomi_upgrade_custom_service_url
  * @covers     ::local_jedomi_upgrade_custom_feature_switches
+ * @covers     ::local_jedomi_upgrade_agentwrites_email_default
+ * @covers     ::local_jedomi_upgrade_encrypt_secrets
  */
 final class upgradelib_test extends \advanced_testcase {
     #[\Override]
@@ -519,5 +521,121 @@ final class upgradelib_test extends \advanced_testcase {
 
         $this->assertSame('1', get_config('local_jedomi', 'custom_audio_enabled'));
         $this->assertSame('0', get_config('local_jedomi', 'custom_files_enabled'));
+    }
+
+    /**
+     * Decision 7: the 2026111902 step adds the last use and the PIN fields to the Telegram links.
+     *
+     * @return void
+     */
+    public function test_upgrade_step_adds_the_link_security_fields(): void {
+        global $CFG, $DB;
+        require_once($CFG->libdir . '/upgradelib.php');
+        require_once($CFG->dirroot . '/local/jedomi/db/upgrade.php');
+        $dbman = $DB->get_manager();
+        $table = new \xmldb_table('local_jedomi_telegram_links');
+        $fields = ['lastused', 'pinhash', 'pinfailures', 'pinlockeduntil', 'pinverifiedat'];
+        foreach ($fields as $name) {
+            $dbman->drop_field($table, new \xmldb_field($name));
+        }
+        set_config('version', 2026111901, 'local_jedomi');
+
+        $this->assertTrue(xmldb_local_jedomi_upgrade(2026111901));
+
+        foreach ($fields as $name) {
+            $this->assertTrue($dbman->field_exists('local_jedomi_telegram_links', $name), $name);
+        }
+    }
+
+    /**
+     * RES-001, REL-002: the 2026111902 step sets the last use of the existing links to the time of the upgrade, so a
+     * link created long before is not expired nor removed by the cleanup.
+     *
+     * @return void
+     */
+    public function test_upgrade_step_keeps_old_links_alive(): void {
+        global $CFG, $DB;
+        require_once($CFG->libdir . '/upgradelib.php');
+        require_once($CFG->dirroot . '/local/jedomi/db/upgrade.php');
+        $dbman = $DB->get_manager();
+        $table = new \xmldb_table('local_jedomi_telegram_links');
+        foreach (['lastused', 'pinhash', 'pinfailures', 'pinlockeduntil', 'pinverifiedat'] as $name) {
+            $dbman->drop_field($table, new \xmldb_field($name));
+        }
+        $user = $this->getDataGenerator()->create_user();
+        $DB->insert_record('local_jedomi_telegram_links', (object) ['userid' => $user->id, 'chatid' => '784200001',
+            'username' => 'linked', 'confirmed' => 1, 'timecreated' => time() - 60 * DAYSECS, 'lastproactivesent' => 0]);
+        set_config('version', 2026111901, 'local_jedomi');
+
+        $this->assertTrue(xmldb_local_jedomi_upgrade(2026111901));
+
+        $link = $DB->get_record('local_jedomi_telegram_links', ['userid' => $user->id]);
+        $this->assertGreaterThanOrEqual(time() - 5, (int) $link->lastused);
+        $this->assertFalse(\local_jedomi\local\service\telegram_link_service::is_expired($link));
+        $this->assertSame(0, \local_jedomi\local\service\telegram_link_service::unlink_expired());
+        $this->assertTrue($DB->record_exists('local_jedomi_telegram_links', ['userid' => $user->id]));
+    }
+    /**
+     * REL-005: the summary of the writes of an agent run is not sent by email by default, on a new site and after the
+     * upgrade; the other outputs of the site default are kept, and so are the preferences of the users.
+     *
+     * @return void
+     */
+    public function test_agent_run_summary_is_not_emailed_by_default(): void {
+        global $CFG;
+        $messageproviders = [];
+        include($CFG->dirroot . '/local/jedomi/db/messages.php');
+        $this->assertSame(MESSAGE_PERMITTED, $messageproviders['agentwrites']['defaults']['email']);
+        $this->assertSame(
+            MESSAGE_PERMITTED + MESSAGE_DEFAULT_ENABLED,
+            $messageproviders['agentwrites']['defaults']['popup']
+        );
+
+        $name = 'message_provider_local_jedomi_agentwrites_enabled';
+        $user = $this->getDataGenerator()->create_user();
+        set_user_preference($name, 'email', $user);
+        set_config($name, 'email,popup', 'message');
+
+        local_jedomi_upgrade_agentwrites_email_default();
+
+        $this->assertSame('popup', get_config('message', $name));
+        $this->assertSame('email', get_user_preferences($name, null, $user));
+        set_config($name, 'email', 'message');
+        local_jedomi_upgrade_agentwrites_email_default();
+        $this->assertSame('', get_config('message', $name));
+    }
+
+    /**
+     * JEDOMI-SEC-010: the upgrade encrypts with the key of the site the API key of the custom service saved in clear text,
+     * keeps its value and adds no config log row; running it again changes nothing.
+     */
+    public function test_upgrade_encrypts_the_custom_service_key(): void {
+        global $DB;
+        set_config('custom_api_key', 'sk-saved', 'local_jedomi');
+        $logs = $DB->count_records('config_log', ['name' => 'custom_api_key']);
+
+        local_jedomi_upgrade_encrypt_secrets();
+
+        $stored = get_config('local_jedomi', 'custom_api_key');
+        $this->assertMatchesRegularExpression('/^sodium:/', $stored);
+        $this->assertStringNotContainsString('sk-saved', $stored);
+        $this->assertSame('sk-saved', \local_jedomi\ai\ai_service::get_custom_key());
+        $this->assertSame($logs, $DB->count_records('config_log', ['name' => 'custom_api_key']));
+
+        local_jedomi_upgrade_encrypt_secrets();
+        $this->assertSame($stored, get_config('local_jedomi', 'custom_api_key'), 'An encrypted key is left as it is');
+    }
+
+    /**
+     * JEDOMI-SEC-010: without secrets saved the upgrade saves nothing.
+     */
+    public function test_upgrade_without_secrets_saves_nothing(): void {
+        unset_config('custom_api_key', 'local_jedomi');
+        unset_config('telegram_bot_token', 'local_jedomi');
+
+        local_jedomi_upgrade_encrypt_secrets();
+
+        $this->assertFalse(get_config('local_jedomi', 'custom_api_key'));
+        $this->assertFalse(get_config('local_jedomi', 'telegram_bot_token'));
     }
 }

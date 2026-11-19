@@ -88,4 +88,24 @@ final class course_settings_form_test extends \advanced_testcase {
         $this->assertNotNull($data);
         $this->assertSame($mode, $data->course_mode);
     }
+
+    /**
+     * REL-001: "only the selected courses" without any course would leave every course outside Jedomi, so it is refused
+     * with a message on the course list; the other modes accept an empty list.
+     *
+     * @return void
+     */
+    public function test_include_mode_without_courses_is_rejected(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        course_settings_form::mock_submit(['course_mode' => 'include', 'course_ids' => []]);
+        $form = new course_settings_form();
+
+        $this->assertNull($form->get_data());
+        $errors = $form->validation(['course_mode' => 'include', 'course_ids' => []], []);
+        $this->assertSame(get_string('error_course_include_empty', 'local_jedomi'), $errors['course_ids'] ?? null);
+
+        course_settings_form::mock_submit(['course_mode' => 'exclude', 'course_ids' => []]);
+        $this->assertNotNull((new course_settings_form())->get_data());
+    }
 }

@@ -96,6 +96,6 @@ try {
 } catch (\Exception $e) {
     echo json_encode([
         'error'   => true,
-        'message' => $e->getMessage(),
+        'message' => \local_jedomi\local\safe_error::for_user($e, 'ajax/sidebar_config'),
     ]);
 }

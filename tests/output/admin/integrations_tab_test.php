@@ -440,4 +440,18 @@ final class integrations_tab_test extends \advanced_testcase {
         $this->assertStringNotContainsString($warning, $this->render_with(['needs_registration' => false]));
         $this->assertStringNotContainsString($warning, $this->render_with([]));
     }
+
+    /**
+     * A bot token that cannot be decrypted shows a warning asking to enter it again.
+     *
+     * @return void
+     */
+    public function test_unreadable_token_shows_a_warning(): void {
+        $this->resetAfterTest();
+        $warning = get_string('telegram_token_unreadable', 'local_jedomi');
+
+        $this->assertStringContainsString($warning, $this->render_with(['bot_token_unreadable' => true]));
+        $this->assertStringNotContainsString($warning, $this->render_with(['bot_token_unreadable' => false]));
+        $this->assertStringNotContainsString($warning, $this->render_with([]));
+    }
 }

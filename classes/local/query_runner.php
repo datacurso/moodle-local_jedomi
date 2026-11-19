@@ -189,7 +189,7 @@ class query_runner {
                 (int) ((microtime(true) - $start) * 1000),
                 $e instanceof \moodle_exception ? sprintf(' errorcode="%s"', $e->errorcode) : ''
             ));
-            throw new \moodle_exception('execute_sql_error', 'local_jedomi', '', null, $e->getMessage());
+            throw new \moodle_exception('execute_sql_error', 'local_jedomi', '', null, safe_error::for_model($e));
         }
 
         $elapsedms = (microtime(true) - $start) * 1000;

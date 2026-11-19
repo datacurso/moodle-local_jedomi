@@ -27,6 +27,9 @@
  * default, and shows the context length the service tells for the chosen chat model as the placeholder of the context
  * window field ("16384 (auto)"), updated while the chat model changes.
  *
+ * The chat model and the typed context window go with the verification, which probes the model: its warnings (no tool
+ * calling, no answer, no context window known) are shown under the result, as text only.
+ *
  * @module     local_jedomi/admin/custom_service
  * @copyright  2026 Jedomi Project
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
@@ -162,6 +165,24 @@ const showStatus = (region, message, type) => {
 };
 
 /**
+ * Show the warnings of a verification under its result.
+ *
+ * @param {HTMLElement|null} region Result region.
+ * @param {Array<{code: string, message: string}>} warnings Warnings.
+ */
+const showWarnings = (region, warnings) => {
+    if (!region) {
+        return;
+    }
+    warnings.forEach(({message}) => {
+        const alert = document.createElement('div');
+        alert.className = 'alert alert-warning mb-0 mt-2';
+        alert.textContent = message;
+        region.append(alert);
+    });
+};
+
+/**
  * Wire the verification button of the form.
  *
  * @param {Object} config Configuration.
@@ -206,10 +227,17 @@ export const init = ({defaultmaxtokens, minmaxtokens = 0} = {}) => {
         try {
             const result = await fetchMany([{
                 methodname: 'local_jedomi_verify_custom_service',
-                args: {url: url?.value || '', apikey: key?.value || '', allowhttp: !!allowHttp?.checked},
+                args: {
+                    url: url?.value || '',
+                    apikey: key?.value || '',
+                    allowhttp: !!allowHttp?.checked,
+                    model: form.querySelector('input[name="custom_model"]')?.value.trim() || '',
+                    contextwindow: parseInt(form.querySelector('input[name="custom_context_window"]')?.value || '', 10) || 0,
+                },
             }])[0];
             setVerified(result.valid ? '1' : '0');
             showStatus(region, result.message, result.valid ? 'success' : 'danger');
+            showWarnings(region, result.valid ? (result.warnings || []) : []);
             const ids = result.valid ? result.models : [];
             suggestModels(form, ids);
             await showModels(region, ids, result.modeltotal);

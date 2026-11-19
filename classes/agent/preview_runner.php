@@ -73,10 +73,15 @@ class preview_runner {
     ): array {
         global $DB;
 
+        if (!\local_jedomi\course_access::is_course_in_jedomi(\local_jedomi\course_access::context_course_id((int) $contextid))) {
+            // An excluded course is outside Jedomi: its agents never run, so there is nothing to preview.
+            return ['ok' => false, 'error' => get_string('agent_invalid_context_excluded', 'local_jedomi'),
+                'error_code' => 'course_excluded'];
+        }
         [, $system, $tools] = agent_runner::run_conditions($userid, $contexttype, $contextid);
         // The tools run with the permissions of the user, as in the scheduled run of the agent; the profiler records
         // their queries as a preview (of the agent being edited, if any), never as a run of the agent.
-        tool_executor::get_definitions($agentid, $userid, 'preview');
+        $executor = new tool_executor($agentid, $userid, 'preview');
         $maxrounds = agent_runner::MAX_TOOL_ITERATIONS;
 
         $messages = [
@@ -92,7 +97,7 @@ class preview_runner {
             'context_hash' => $cachehash,
         ]);
         if ($cached && !empty($cached->result_json)) {
-            $fromcache = self::answer_from_cache($cached, $userid);
+            $fromcache = self::answer_from_cache($cached, $userid, $executor);
             if ($fromcache !== null) {
                 // The page needs the cache key to offer "Clear cache" for this prompt.
                 return $fromcache + ['cache_hash' => $cachehash];
@@ -150,8 +155,14 @@ class preview_runner {
                 $toolduration = 0;
                 // The AI only knows the placeholders of the anonymised data; the tools need the real values.
                 $realargs = is_string($funcargs) ? json_decode($funcargs, true) : $funcargs;
+                $unrestored = null;
                 if (is_array($realargs) && !empty($realargs)) {
-                    $funcargs = json_encode($anonymizer->restore_value($realargs), JSON_UNESCAPED_UNICODE);
+                    try {
+                        $funcargs = json_encode($anonymizer->restore_tool_args($funcname, $realargs), JSON_UNESCAPED_UNICODE);
+                    } catch (\local_jedomi\local\unrestored_placeholder_exception $e) {
+                        // The query is not run against the text of a placeholder: the AI is told how to write it (RISK-001).
+                        $unrestored = $e->tool_result();
+                    }
                 }
 
                 // ... ── Loop detection ──────────────────────────────────────────────
@@ -169,6 +180,8 @@ class preview_runner {
                         'detail' => get_string('preview_detail_loop', 'local_jedomi', $toolcallcounts[$callkey]),
                     ]);
                     $loopbroken = true;
+                } else if ($unrestored !== null) {
+                    $toolresult = $unrestored;
                 } else if (pending_action_service::severity($funcname, is_array($decodedargs) ? $decodedargs : []) !== null) {
                     // A preview never runs an action that changes data: those run only after a confirmation.
                     $toolresult = json_encode([
@@ -183,7 +196,7 @@ class preview_runner {
                     ];
 
                     $toolstart = microtime(true);
-                    $toolresult = tool_executor::execute($funcname, $funcargs);
+                    $toolresult = $executor->execute($funcname, $funcargs);
                     $toolduration = (microtime(true) - $toolstart) * 1000;
 
                     if (strlen($toolresult) > 64000) {
@@ -222,7 +235,7 @@ class preview_runner {
             } else if (!empty($content)) {
                 $finalanswer = $content;
             } else {
-                $finalanswer = self::last_tool_result($messages, $untrusted);
+                $finalanswer = agent_runner::last_tool_result($messages, $untrusted);
             }
         }
 
@@ -265,9 +278,10 @@ class preview_runner {
      *
      * @param \stdClass $cached Cache record.
      * @param int $userid User the preview runs for.
+     * @param tool_executor $executor Tools of the preview, prepared for the user.
      * @return array|null Response, or null when the cache cannot be used.
      */
-    private static function answer_from_cache(\stdClass $cached, int $userid): ?array {
+    private static function answer_from_cache(\stdClass $cached, int $userid, tool_executor $executor): ?array {
         // ... ── Try semantic cache plan replay ──────────────────────────────────────
         $plan = !empty($cached->plan_json) ? json_decode($cached->plan_json, true) : null;
         if (is_array($plan) && !empty($plan)) {
@@ -287,7 +301,7 @@ class preview_runner {
                     break;
                 }
                 $toolstart = microtime(true);
-                $toolresult = tool_executor::execute($step['tool'], $step['arguments']);
+                $toolresult = $executor->execute($step['tool'], $step['arguments']);
                 $toolduration = (microtime(true) - $toolstart) * 1000;
                 $resultinfo = json_decode($toolresult, true);
                 if (!empty($resultinfo['error'])) {
@@ -362,27 +376,6 @@ class preview_runner {
             ];
         }
         return null;
-    }
-
-    /**
-     * Content of the last tool result that is not an error.
-     *
-     * @param array $messages Conversation.
-     * @param \local_jedomi\local\untrusted $untrusted Delimiters of the run, removed from the result.
-     * @return string
-     */
-    private static function last_tool_result(array $messages, \local_jedomi\local\untrusted $untrusted): string {
-        foreach (array_reverse($messages) as $msg) {
-            if (($msg['role'] ?? '') === 'tool' && !empty($msg['content'])) {
-                $content = $untrusted->unwrap((string) $msg['content']);
-                $decoded = json_decode($content, true);
-                if (!empty($decoded['error'])) {
-                    continue;
-                }
-                return $content;
-            }
-        }
-        return '';
     }
 
     /**

@@ -478,4 +478,26 @@ final class observers_test extends \advanced_testcase {
         $this->grade($assign, $student, 90.0);
         $this->assertCount(2, $this->telegram->sent, 'A changed grade is notified');
     }
+
+    /**
+     * RISK-002: recording the time of a notification changes only that time, never the PIN state or the last use
+     * written meanwhile by the bot.
+     *
+     * @return void
+     */
+    public function test_notification_keeps_the_pin_state_written_meanwhile(): void {
+        global $DB;
+        [$student, $assign] = $this->linked_student_with_assignment();
+        $this->telegram->onsend = static function () use ($DB): void {
+            $DB->set_field('local_jedomi_telegram_links', 'pinhash', 'hash', ['chatid' => self::CHATID]);
+            $DB->set_field('local_jedomi_telegram_links', 'lastused', 12345, ['chatid' => self::CHATID]);
+        };
+
+        $this->grade($assign, $student);
+
+        $link = $DB->get_record('local_jedomi_telegram_links', ['chatid' => self::CHATID]);
+        $this->assertSame('hash', $link->pinhash);
+        $this->assertSame(12345, (int) $link->lastused);
+        $this->assertGreaterThanOrEqual(time() - 5, (int) $link->lastproactivesent);
+    }
 }

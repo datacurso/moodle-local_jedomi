@@ -65,7 +65,8 @@ class provider_api extends \aiprovider_datacurso\httpclient\ai_services_api {
     #[\Override]
     protected function create_curl(): \curl {
         $curl = $this->create_transport();
-        $curl->setopt(['CURLOPT_TIMEOUT' => $this->timeout]);
+        // While a question waits, the progress of the request sends its signals of life ({@see heartbeat}).
+        $curl->setopt(['CURLOPT_TIMEOUT' => $this->timeout] + heartbeat::curl_options());
         return $curl;
     }
 

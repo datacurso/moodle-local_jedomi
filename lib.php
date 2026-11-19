@@ -210,6 +210,7 @@ function local_jedomi_get_sidebar_config(array $page = []): array {
             'tool_ws_describe'       => get_string('tool_ws_describe', 'local_jedomi'),
             'tool_ws_execute'        => get_string('tool_ws_execute', 'local_jedomi'),
             'tool_unknown'           => get_string('tool_unknown', 'local_jedomi'),
+            'still_working'          => get_string('still_working', 'local_jedomi'),
             // Session.
             'session_expired_title'  => get_string('session_expired_title', 'local_jedomi'),
             'session_expired_hint'   => get_string('session_expired_hint', 'local_jedomi'),
@@ -295,6 +296,7 @@ function local_jedomi_get_sidebar_config(array $page = []): array {
             'confirm_done'            => get_string('confirm_done', 'local_jedomi'),
             'confirm_cancelled'       => get_string('confirm_cancelled', 'local_jedomi'),
             'pending_action_needed'   => get_string('pending_action_needed', 'local_jedomi'),
+            'pending_action_truncated' => get_string('pending_action_truncated', 'local_jedomi'),
             // Quick actions: Admin.
             'qa_admin_active_users_label'    => get_string('qa_admin_active_users_label', 'local_jedomi'),
             'qa_admin_active_users_msg'      => get_string('qa_admin_active_users_msg', 'local_jedomi'),
@@ -756,7 +758,10 @@ function local_jedomi_signed_request_course($spt, ?int $requestcourseid): array 
     try {
         \local_jedomi\proxy\spt_validator::validate($spt);
     } catch (\moodle_exception $e) {
-        return ['courseid' => 0, 'error' => ['code' => 'invalid_spt', 'message' => $e->getMessage()]];
+        return ['courseid' => 0, 'error' => [
+            'code' => 'invalid_spt',
+            'message' => \local_jedomi\local\safe_error::for_user($e, 'spt'),
+        ]];
     }
 
     $courseid = (int) ($spt['course_id'] ?? 0);
@@ -1254,6 +1259,10 @@ function local_jedomi_generate_spt(string $role): array {
         }
     }
 
+    // Excluded courses are outside Jedomi: they are never signed as courses of the user.
+    $courseidsowned = \local_jedomi\course_access::filter_course_ids($courseidsowned);
+    $courseidsenrolled = \local_jedomi\course_access::filter_course_ids($courseidsenrolled);
+
     $tools = local_jedomi_get_tool_definitions($role);
 
     $payload = [
@@ -1332,6 +1341,9 @@ function local_jedomi_generate_spt_for_user(int $userid, string $role): array {
         }
     }
     // Admin: no course list (full access).
+    // Excluded courses are outside Jedomi: they are never signed as courses of the user.
+    $courseidsowned = \local_jedomi\course_access::filter_course_ids($courseidsowned);
+    $courseidsenrolled = \local_jedomi\course_access::filter_course_ids($courseidsenrolled);
 
     $tools = local_jedomi_get_tool_definitions($role, (int) $userid);
 
@@ -1363,7 +1375,8 @@ function local_jedomi_generate_spt_for_user(int $userid, string $role): array {
  *
  * Site admins are 'admin' and users who can update users at system level 'manager'. Inside a course a user who can
  * manage its activities is 'teacher'; outside a course (the site home, the dashboard, a profile, Telegram) a user who
- * can manage the activities of any course they are enrolled in is 'teacher'. Everyone else is 'student'.
+ * can manage the activities of any course in Jedomi they are enrolled in is 'teacher': excluded courses are ignored
+ * ({@see \local_jedomi\course_access::is_course_in_jedomi()}). Everyone else is 'student'.
  *
  * @param int $userid User.
  * @param int $courseid Course of the request; 0 or the site course outside a course.
@@ -1386,6 +1399,10 @@ function local_jedomi_user_role(int $userid, int $courseid): string {
     }
 
     foreach (enrol_get_users_courses($userid, true, ['id']) as $course) {
+        if (!\local_jedomi\course_access::is_course_in_jedomi((int) $course->id)) {
+            // An excluded course is outside Jedomi: it gives no role outside a course.
+            continue;
+        }
         if (has_capability('moodle/course:manageactivities', context_course::instance($course->id), $userid)) {
             return 'teacher';
         }
@@ -1489,9 +1506,9 @@ function local_jedomi_telegram_active_user(int $userid): ?stdClass {
 /**
  * The confirmed Telegram link of a user who may use the bot and receive its notifications now.
  *
- * Jedomi and the Telegram integration must be enabled, the user must have a confirmed link, an active account and a
- * role allowed by the Telegram role rule. The bot checks it on every message and during a request in progress, and
- * the notifications check it before each message.
+ * Jedomi and the Telegram integration must be enabled, the user must have a confirmed link used within the last 30
+ * days, an active account and a role allowed by the Telegram role rule. The bot checks it on every message and during a
+ * request in progress, and the notifications check it before each message.
  *
  * @param int $userid Moodle user id.
  * @return stdClass|null The confirmed link, or null when the user may not be served.
@@ -1502,7 +1519,10 @@ function local_jedomi_telegram_recipient(int $userid): ?stdClass {
         return null;
     }
     $link = $DB->get_record('local_jedomi_telegram_links', ['userid' => $userid, 'confirmed' => 1]);
-    if (!$link || local_jedomi_telegram_active_user($userid) === null || !local_jedomi_telegram_role_allowed_for($userid)) {
+    if (
+        !$link || \local_jedomi\local\service\telegram_link_service::is_expired($link)
+            || local_jedomi_telegram_active_user($userid) === null || !local_jedomi_telegram_role_allowed_for($userid)
+    ) {
         return null;
     }
     return $link;
@@ -1779,7 +1799,9 @@ function local_jedomi_redact_log_data(mixed $data): mixed {
     if (!is_array($data)) {
         return $data;
     }
-    $sensitive = ['args', 'arguments', 'sql', 'query', 'params', 'parameters', 'prompt', 'messages', 'content', 'text'];
+    // The error of a tool result can quote a query or the database error (JEDOMI-SEC-009). The "detail" of the AI client
+    // is kept: it only holds an HTTP status or a cURL error number (error_message::log_detail()).
+    $sensitive = ['args', 'arguments', 'sql', 'query', 'params', 'parameters', 'prompt', 'messages', 'content', 'text', 'error'];
     foreach ($data as $key => $value) {
         if (is_string($key) && in_array(strtolower($key), $sensitive, true)) {
             $size = is_string($value) ? strlen($value) : strlen((string) json_encode($value));

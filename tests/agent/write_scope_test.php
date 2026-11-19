@@ -419,4 +419,26 @@ final class write_scope_test extends \advanced_testcase {
         $this->assertSame(write_scope::UNKNOWN, $scope->check(['forumid' => $forum->id, 'subject' => 'x'])['status']);
         $this->assertSame(write_scope::UNKNOWN, $scope->check(['groupid' => $group->id])['status']);
     }
+
+    /**
+     * REL-009: an agent whose context was deleted has no scope left: no write is in scope, not even one to its creator or
+     * to the course it belonged to.
+     */
+    public function test_agent_of_a_deleted_context_has_nothing_in_scope(): void {
+        $this->resetAfterTest();
+        $gen = $this->getDataGenerator();
+        $course = $gen->create_course();
+        $teacher = $gen->create_and_enrol($course, 'editingteacher');
+        $student = $gen->create_and_enrol($course, 'student');
+        $contextid = (int) \context_course::instance($course->id)->id;
+        delete_course($course, false);
+
+        $scope = new write_scope($this->agent((int) $teacher->id, 'course', $contextid));
+
+        $message = static fn(int $userid): array => ['messages' => [['touserid' => $userid, 'text' => 'Hi']]];
+        $this->assertNotSame(write_scope::IN, $scope->check($message((int) $teacher->id))['status']);
+        $this->assertNotSame(write_scope::IN, $scope->check($message((int) $student->id))['status']);
+        $this->assertNotSame(write_scope::IN, $scope->check(['courseid' => $course->id, 'name' => 'x'])['status']);
+        $this->assertNotSame(write_scope::IN, $scope->check(['contextid' => \context_system::instance()->id])['status']);
+    }
 }

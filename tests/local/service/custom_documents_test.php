@@ -437,6 +437,35 @@ final class custom_documents_test extends \advanced_testcase {
     }
 
     /**
+     * When the deadline runs out before any page is read, the user is told that the document took too long, not that
+     * the document service failed.
+     *
+     * @return void
+     */
+    public function test_deadline_before_any_page_has_its_own_message(): void {
+        set_config('ai_timeout', '100', 'local_jedomi');
+        $now = 0;
+        vision_service::set_clock_for_testing(function () use (&$now): int {
+            $time = $now;
+            $now += 60;
+            return $time;
+        });
+        $this->queue_pages(2);
+
+        try {
+            vision_service::read_upload((int) $this->user->id, $this->file('doc.pdf', '%PDF'), 'doc.pdf');
+            $this->fail('The deadline must be raised');
+        } catch (\moodle_exception $e) {
+            $this->assertSame('documents_error_deadline', $e->errorcode);
+            $error = vision_service::error_for($e);
+            $this->assertSame('documents_unavailable', $error['code']);
+            $this->assertSame(get_string('documents_error_deadline', 'local_jedomi'), $error['message']);
+            $this->assertSame($error, file_extraction_service::error_for($e));
+        }
+        $this->assertSame([], $this->curl->calls, 'No page is sent after the deadline');
+    }
+
+    /**
      * U5: the pages asked are chosen before the page cap, so pages after the first 20 can be read.
      *
      * @return void

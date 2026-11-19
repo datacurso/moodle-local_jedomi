@@ -120,7 +120,7 @@ class search_tables_tool implements agent_tool {
             ], JSON_UNESCAPED_UNICODE);
         } catch (\Exception $e) {
             return json_encode([
-                'error' => 'search_tables failed: ' . $e->getMessage(),
+                'error' => 'search_tables failed: ' . \local_jedomi\local\safe_error::for_model($e),
                 'duration_ms' => round((microtime(true) - $start) * 1000, 2),
             ]);
         }

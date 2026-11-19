@@ -21,6 +21,7 @@ use local_jedomi\ai\ai_service;
 use local_jedomi\ai\client;
 use local_jedomi\ai\custom_endpoint;
 use local_jedomi\ai\model_settings;
+use local_jedomi\local\secret_store;
 
 /**
  * Jedomi AI service fields on its settings page in the Datacurso AI provider.
@@ -191,15 +192,28 @@ class settings_extension implements plugin_settings_extension {
         $mform->setType('custom_gateway_url', PARAM_RAW_TRIMMED);
         $mform->addHelpButton('custom_gateway_url', 'custom_gateway_url', self::COMPONENT);
 
-        $placeholder = ai_service::get_custom_key() !== ''
-            ? get_string('custom_api_key_saved', self::COMPONENT)
-            : get_string('custom_api_key_placeholder', self::COMPONENT);
+        // A saved key that cannot be decrypted (the encryption key of the site changed) is not offered as optional.
+        $unreadable = secret_store::is_unreadable('custom_api_key');
+        if ($unreadable) {
+            $placeholder = get_string('custom_api_key_unreadable', self::COMPONENT);
+        } else {
+            $placeholder = ai_service::get_custom_key() !== ''
+                ? get_string('custom_api_key_saved', self::COMPONENT)
+                : get_string('custom_api_key_placeholder', self::COMPONENT);
+        }
         $mform->addElement('passwordunmask', 'custom_api_key', get_string('custom_api_key', self::COMPONENT), [
             'placeholder' => $placeholder,
             'autocomplete' => 'new-password',
         ]);
         $mform->setType('custom_api_key', PARAM_RAW_TRIMMED);
         $mform->addHelpButton('custom_api_key', 'custom_api_key', self::COMPONENT);
+        if ($unreadable) {
+            $mform->addElement('static', 'custom_api_key_unreadable', '', \html_writer::div(
+                get_string('custom_api_key_unreadable', self::COMPONENT),
+                'alert alert-warning mb-0',
+                ['role' => 'alert']
+            ));
+        }
 
         $mform->addElement('advcheckbox', 'custom_allow_http', '', get_string('custom_allow_http', self::COMPONENT));
         $mform->setType('custom_allow_http', PARAM_BOOL);
@@ -242,6 +256,16 @@ class settings_extension implements plugin_settings_extension {
             $mform->getElement('custom_context_window')->updateAttributes([
                 'placeholder' => get_string('custom_context_window_detected', self::COMPONENT, $detected),
             ]);
+        }
+        if (ai_service::get_custom_model(model_settings::CAPABILITY_CHAT) !== '' && ai_service::get_custom_context_window() <= 0) {
+            // RES-006: without a window the conversation is never trimmed; the warning hides while one is typed.
+            $mform->addElement(
+                'static',
+                'custom_context_window_unknown',
+                '',
+                \html_writer::div(get_string('custom_context_window_unknown', self::COMPONENT), 'alert alert-warning mb-0')
+            );
+            $mform->hideIf('custom_context_window_unknown', 'custom_context_window', 'neq', '');
         }
 
         foreach (array_diff(self::element_names($mform), $before) as $field) {
@@ -329,16 +353,9 @@ class settings_extension implements plugin_settings_extension {
             $data[$field] = ai_service::get_custom_model($capability);
         }
         $data['custom_speech_voice'] = ai_service::get_custom_voice();
-        // A switch never saved (a site configured before 1.6.3) shows on while its model is saved, as the runtime does.
-        $vision = $data['custom_vision_model'] !== '';
-        $audio = $data['custom_audio_model'] !== '';
-        $data['custom_files_enabled'] = (int) model_settings::is_switch_on('custom_files_enabled', $vision);
-        $data['custom_audio_enabled'] = (int) model_settings::is_switch_on('custom_audio_enabled', $audio);
-        $data['custom_voice_enabled'] = (int) model_settings::is_switch_on(
-            'custom_voice_enabled',
-            $data['custom_speech_model'] !== '' && $data['custom_speech_voice'] !== ''
-        );
-        $data['custom_documents_enabled'] = (int) model_settings::is_switch_on('custom_documents_enabled', false);
+        foreach (array_keys(self::CUSTOM_SWITCHES) as $switch) {
+            $data[$switch] = (int) model_settings::is_custom_switch_on($switch);
+        }
         $data['custom_docservice_url'] = ai_service::get_docservice_url();
         $maxtokens = trim((string) get_config(self::COMPONENT, 'custom_max_tokens'));
         $data['custom_max_tokens'] = $maxtokens !== ''
@@ -421,12 +438,37 @@ class settings_extension implements plugin_settings_extension {
     }
 
     /**
-     * Validate the fields of the custom service: an allowed address, a key, the verified pair, and plausible model ids.
+     * Validate the fields of the custom service: the connection, the chat model, the fields of the switches that are on
+     * and the token fields.
      *
      * @param array $data Submitted form data.
      * @return array Error messages keyed by element name; empty when valid.
      */
     private static function validate_custom(array $data): array {
+        $errors = self::validate_custom_connection($data);
+        if (!empty($errors)) {
+            return $errors;
+        }
+        $model = trim((string) ($data['custom_model'] ?? ''));
+        if ($model === '') {
+            $errors['custom_model'] = get_string('error_custom_model_required', self::COMPONENT);
+        } else if (!preg_match(self::CUSTOM_ID_PATTERN, $model)) {
+            $errors['custom_model'] = get_string('error_custom_model_invalid', self::COMPONENT);
+        }
+        $errors += self::validate_custom_switches($data);
+        if (!isset($errors['custom_model'])) {
+            $errors += self::validate_custom_tokens($data, $model);
+        }
+        return $errors;
+    }
+
+    /**
+     * Validate the connection of the custom service: an allowed address, a key and the verified pair.
+     *
+     * @param array $data Submitted form data.
+     * @return array The first error, keyed by element name; empty when valid.
+     */
+    private static function validate_custom_connection(array $data): array {
         $url = custom_endpoint::normalise((string) ($data['custom_gateway_url'] ?? ''));
         $refused = custom_endpoint::check($url, !empty($data['custom_allow_http']));
         if ($refused !== null) {
@@ -439,66 +481,105 @@ class settings_extension implements plugin_settings_extension {
         if (!ai_service::is_verified($url, $key)) {
             return ['custom_gateway_url' => get_string('error_custom_not_verified', self::COMPONENT)];
         }
+        return [];
+    }
 
+    /**
+     * Validate the fields of each switch that is on, which are then required, and the switches that need another one:
+     * the voice conversation needs audio (the user is transcribed) and documents need images (the vision model reads
+     * the pages). The error of a switch replaces those of its own fields.
+     *
+     * @param array $data Submitted form data.
+     * @return array Error messages keyed by element name; empty when valid.
+     */
+    private static function validate_custom_switches(array $data): array {
         $errors = [];
-        $model = trim((string) ($data['custom_model'] ?? ''));
-        if ($model === '') {
-            $errors['custom_model'] = get_string('error_custom_model_required', self::COMPONENT);
-        } else if (!preg_match(self::CUSTOM_ID_PATTERN, $model)) {
-            $errors['custom_model'] = get_string('error_custom_model_invalid', self::COMPONENT);
-        }
-
-        // Only the fields of a switch that is on are checked, and they are then required.
         foreach (self::CUSTOM_SWITCHES as $switch => $info) {
             if (empty($data[$switch])) {
                 continue;
             }
             foreach ($info['fields'] as $field) {
-                if ($field === 'custom_docservice_url') {
-                    $errors += self::validate_docservice_url($data);
-                    continue;
-                }
-                $value = trim((string) ($data[$field] ?? ''));
-                if ($value === '') {
-                    $errors[$field] = get_string(
-                        $field === 'custom_speech_voice' ? 'error_custom_voice_required' : 'error_custom_model_required_switch',
-                        self::COMPONENT
-                    );
-                } else if (!preg_match(self::CUSTOM_ID_PATTERN, $value)) {
-                    $errors[$field] = get_string('error_custom_model_invalid', self::COMPONENT);
-                }
+                $errors += $field === 'custom_docservice_url'
+                    ? self::validate_docservice_url($data)
+                    : self::validate_custom_id($data, $field);
             }
         }
-        if (!empty($data['custom_voice_enabled']) && empty($data['custom_audio_enabled'])) {
-            // What the user says is transcribed by the audio model.
-            $errors = ['custom_voice_enabled' => get_string('error_voice_requires_audio', self::COMPONENT)]
-                + array_diff_key($errors, array_flip(['custom_speech_model', 'custom_speech_voice']));
+        $needs = [
+            'custom_voice_enabled' => ['custom_audio_enabled', 'error_voice_requires_audio'],
+            'custom_documents_enabled' => ['custom_files_enabled', 'error_documents_require_vision'],
+        ];
+        foreach ($needs as $switch => [$needed, $error]) {
+            if (!empty($data[$switch]) && empty($data[$needed])) {
+                $errors = [$switch => get_string($error, self::COMPONENT)]
+                    + array_diff_key($errors, array_flip(self::CUSTOM_SWITCHES[$switch]['fields']));
+            }
         }
-        if (!empty($data['custom_documents_enabled']) && empty($data['custom_files_enabled'])) {
-            // The pages of a PDF are read by the vision model.
-            $errors = ['custom_documents_enabled' => get_string('error_documents_require_vision', self::COMPONENT)]
-                + array_diff_key($errors, ['custom_docservice_url' => true]);
-        }
+        return $errors;
+    }
 
+    /**
+     * Validate a model or voice id field of a switch that is on: required, and a plausible id.
+     *
+     * @param array $data Submitted form data.
+     * @param string $field Field name.
+     * @return array The error of the field, or empty.
+     */
+    private static function validate_custom_id(array $data, string $field): array {
+        $value = trim((string) ($data[$field] ?? ''));
+        if ($value === '') {
+            $error = $field === 'custom_speech_voice' ? 'error_custom_voice_required' : 'error_custom_model_required_switch';
+            return [$field => get_string($error, self::COMPONENT)];
+        }
+        if (!preg_match(self::CUSTOM_ID_PATTERN, $value)) {
+            return [$field => get_string('error_custom_model_invalid', self::COMPONENT)];
+        }
+        return [];
+    }
+
+    /**
+     * Validate the max tokens and the context window, and that the answer fits in the window: the typed one, or the one
+     * detected for the chat model.
+     *
+     * @param array $data Submitted form data.
+     * @param string $model Chat model, already valid.
+     * @return array Error messages keyed by element name; empty when valid.
+     */
+    private static function validate_custom_tokens(array $data, string $model): array {
+        $errors = [];
         $maxtokens = trim((string) ($data['custom_max_tokens'] ?? ''));
         if ($maxtokens !== '' && !preg_match('/^-?\d+$/', $maxtokens)) {
             $errors['custom_max_tokens'] = get_string('error_invalid_max_tokens', self::COMPONENT);
         }
-        $window = trim((string) ($data['custom_context_window'] ?? ''));
-        if (
-            $window !== '' && (!preg_match('/^\d+$/', $window) || (int) $window < self::MIN_CONTEXT_WINDOW
-                || (int) $window > self::MAX_CONTEXT_WINDOW)
-        ) {
+        $window = self::parse_context_window((string) ($data['custom_context_window'] ?? ''));
+        if ($window === null) {
             $errors['custom_context_window'] = get_string('error_invalid_context_window', self::COMPONENT);
         }
-        if (!isset($errors['custom_max_tokens']) && !isset($errors['custom_context_window']) && !isset($errors['custom_model'])) {
-            // The answer must fit in the window: the typed one, or the one detected for the chat model.
-            $window = $window !== '' ? (int) $window : ai_service::get_detected_context_window($model);
-            if ($window > 0 && self::custom_max_tokens($maxtokens, $window) >= $window) {
-                $errors['custom_max_tokens'] = get_string('error_max_tokens_exceed_context', self::COMPONENT, $window);
-            }
+        if (!empty($errors)) {
+            return $errors;
         }
-        return $errors;
+        $window = $window > 0 ? $window : ai_service::get_detected_context_window($model);
+        if ($window > 0 && self::custom_max_tokens($maxtokens, $window) >= $window) {
+            return ['custom_max_tokens' => get_string('error_max_tokens_exceed_context', self::COMPONENT, $window)];
+        }
+        return [];
+    }
+
+    /**
+     * Context window of a submission, with the limits validation and saving share.
+     *
+     * @param string $value Submitted value.
+     * @return int|null Tokens; 0 when empty; null when it is not a whole number from MIN_CONTEXT_WINDOW to
+     *         MAX_CONTEXT_WINDOW.
+     */
+    private static function parse_context_window(string $value): ?int {
+        $value = trim($value);
+        if ($value === '') {
+            return 0;
+        }
+        if (!preg_match('/^\d+$/', $value) || (int) $value < self::MIN_CONTEXT_WINDOW || (int) $value > self::MAX_CONTEXT_WINDOW) {
+            return null;
+        }
+        return (int) $value;
     }
 
     /**
@@ -532,7 +613,7 @@ class settings_extension implements plugin_settings_extension {
         if ($value === '') {
             return ai_service::default_custom_max_tokens($window);
         }
-        return min(model_settings::MAX_MAX_TOKENS, max(model_settings::MIN_MAX_TOKENS, (int) $value));
+        return model_settings::clamp_max_tokens((int) $value);
     }
 
     /**
@@ -565,7 +646,7 @@ class settings_extension implements plugin_settings_extension {
      * @return void
      */
     private static function save_datacurso(\stdClass $data): void {
-        $maxtokens = min(model_settings::MAX_MAX_TOKENS, max(model_settings::MIN_MAX_TOKENS, (int) ($data->max_tokens ?? 0)));
+        $maxtokens = model_settings::clamp_max_tokens((int) ($data->max_tokens ?? 0));
 
         self::save_value('model', trim((string) ($data->model ?? '')));
         foreach (self::SWITCHES as $switch => $capability) {
@@ -618,29 +699,31 @@ class settings_extension implements plugin_settings_extension {
             $docservice = '';
         }
         self::save_value('custom_docservice_url', $docservice);
-        $window = trim((string) ($data->custom_context_window ?? ''));
-        $window = preg_match('/^\d+$/', $window) && (int) $window > 0 ? (string) (int) $window : '';
-        self::save_value('custom_context_window', $window);
-        $known = $window !== '' ? (int) $window
-            : ai_service::get_detected_context_window(trim((string) ($data->custom_model ?? '')));
+        $window = (int) self::parse_context_window((string) ($data->custom_context_window ?? ''));
+        self::save_value('custom_context_window', $window > 0 ? (string) $window : '');
+        $known = $window > 0 ? $window : ai_service::get_detected_context_window(trim((string) ($data->custom_model ?? '')));
         $maxtokens = self::custom_max_tokens(trim((string) ($data->custom_max_tokens ?? '')), $known);
         self::save_value('custom_max_tokens', (string) $maxtokens);
     }
 
     /**
-     * Store a secret of local_jedomi; a change is written to the config log masked, as Moodle does for passwords.
+     * Store a secret of local_jedomi encrypted (JEDOMI-SEC-010); a change is written to the config log masked, as Moodle
+     * does for passwords. A secret saved in clear text before 1.7.0 is encrypted again without a log row.
      *
      * @param string $name Setting name.
      * @param string $value New value.
      * @return void
      */
     private static function save_secret(string $name, string $value): void {
-        $previous = (string) get_config(self::COMPONENT, $name);
-        if ($previous === $value) {
+        $stored = (string) get_config(self::COMPONENT, $name);
+        $previous = secret_store::get($name);
+        if ($previous === $value && ($value === '' || secret_store::is_encrypted($stored))) {
             return;
         }
-        set_config($name, $value, self::COMPONENT);
-        add_to_config_log($name, $previous === '' ? null : '********', $value === '' ? '' : '********', self::COMPONENT);
+        secret_store::set($name, $value);
+        if ($previous !== $value) {
+            add_to_config_log($name, $previous === '' ? null : '********', $value === '' ? '' : '********', self::COMPONENT);
+        }
     }
 
     /**

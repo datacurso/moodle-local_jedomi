@@ -279,4 +279,27 @@ final class context_window_test extends \advanced_testcase {
         }
         $this->assertSame(1024, context_window::answer_reservation(100000, 1024));
     }
+
+    /**
+     * The max tokens sent with the custom service is the answer reservation of a known window, so a saved value larger
+     * than half the window (saved before 1.6.3) is never sent; without a window, or with the Datacurso service, it is
+     * the saved value.
+     *
+     * @return void
+     */
+    public function test_answer_tokens_fit_the_window(): void {
+        $this->resetAfterTest();
+        set_config('max_tokens', '8000', 'local_jedomi');
+        $this->assertSame(8000, context_window::answer_tokens());
+
+        set_config('ai_service', ai_service::CUSTOM, 'local_jedomi');
+        set_config('custom_model', 'chat-model', 'local_jedomi');
+        set_config('custom_max_tokens', '16384', 'local_jedomi');
+        $this->assertSame(16384, context_window::answer_tokens(), 'No window: the saved value');
+
+        set_config('custom_context_lengths', json_encode(['chat-model' => 8192]), 'local_jedomi');
+        $this->assertSame(4096, context_window::answer_tokens());
+        set_config('custom_context_window', '100000', 'local_jedomi');
+        $this->assertSame(16384, context_window::answer_tokens());
+    }
 }

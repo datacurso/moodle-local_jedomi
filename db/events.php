@@ -35,4 +35,17 @@ $observers = [
         'callback'  => 'local_jedomi\event\observers::user_loggedin',
         'internal'  => false,
     ],
+    // The Telegram link is revoked when the account is suspended or deleted or its password changes (Decision 7).
+    [
+        'eventname' => '\core\event\user_updated',
+        'callback'  => 'local_jedomi\event\observers::user_updated',
+    ],
+    [
+        'eventname' => '\core\event\user_deleted',
+        'callback'  => 'local_jedomi\event\observers::user_deleted',
+    ],
+    [
+        'eventname' => '\core\event\user_password_updated',
+        'callback'  => 'local_jedomi\event\observers::user_password_updated',
+    ],
 ];

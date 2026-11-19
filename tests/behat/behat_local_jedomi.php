@@ -497,7 +497,7 @@ JS;
     }
 
     /**
-     * Make Jedomi unavailable in a course with the "hide in the selected courses" mode.
+     * Make Jedomi unavailable in a course with the "All courses except the selected ones" mode.
      *
      * @Given /^Jedomi is not available in the course "(?P<shortname_string>(?:[^"]|\\")*)"$/
      * @param string $shortname Course short name.

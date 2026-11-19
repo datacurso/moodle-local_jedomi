@@ -24,7 +24,7 @@ namespace local_jedomi\local;
  *
  *     SELECT [DISTINCT] item [, item]... FROM table [, table | [INNER] JOIN table ON conditions
  *         | LEFT [OUTER] JOIN table ON conditions]... [WHERE conditions] [GROUP BY expr [, expr]...]
- *         [ORDER BY expr [ASC|DESC] [, ...]] [LIMIT number [OFFSET number]]
+ *         [HAVING conditions] [ORDER BY expr [ASC|DESC] [, ...]] [LIMIT number [OFFSET number]]
  *     item       := * | qualifier.* | expr [[AS] alias]
  *     table      := {name} | prefixed_name, with an optional [AS] alias
  *     expr       := column | qualifier.column | number | 'string' | COUNT(*) | function([DISTINCT] expr [, expr]...)
@@ -32,6 +32,9 @@ namespace local_jedomi\local;
  *     conditions := condition [AND condition]...
  *     condition  := expr (= | <> | != | < | <= | > | >=) expr | expr IN (number [, number]...) | expr IS [NOT] NULL
  *                 | expr LIKE 'string'
+ *
+ * HAVING only filters rows the WHERE clause already limited, so its conditions never count as a course filter. Functions
+ * that exist in a single database (such as FROM_UNIXTIME, which PostgreSQL lacks) are outside the subset.
  *
  * Placeholders (? and :name) take the value of their parameter: a whole number becomes a number, anything else a string.
  * A violation is reported with a moodle_exception whose error code is the rejection reason of sql_guard.
@@ -110,6 +113,7 @@ class sql_select_parser {
      * @param string $sql Query.
      * @param array $params Positional or named parameters.
      * @return array[] Tokens, each with type (word, table, number, string, op, punct, comment or other) and value.
+     * @throws \moodle_exception sql_construct_rejected when the regular expression fails, so no query is read in part.
      */
     public static function tokenize(string $sql, array $params): array {
         $positional = array_values(array_filter($params, static fn($key): bool => is_int($key), ARRAY_FILTER_USE_KEY));
@@ -127,7 +131,15 @@ class sql_select_parser {
         $offset = 0;
         $index = 0;
         $length = strlen($sql);
-        while ($offset < $length && preg_match($pattern, $sql, $m, PREG_UNMATCHED_AS_NULL, $offset)) {
+        while ($offset < $length) {
+            $matched = preg_match($pattern, $sql, $m, PREG_UNMATCHED_AS_NULL, $offset);
+            if ($matched === false) {
+                // A query read only in part could pass for less than it is (RISK-004).
+                throw new \moodle_exception('sql_construct_rejected', 'local_jedomi');
+            }
+            if ($matched === 0) {
+                break;
+            }
             $offset += strlen($m[0]);
             foreach (['space', 'comment', 'table', 'word', 'number', 'string', 'op', 'punct', 'param', 'other'] as $type) {
                 if ($m[$type] !== null) {
@@ -205,6 +217,10 @@ class sql_select_parser {
             do {
                 $this->expr('group');
             } while ($this->accept_punct(','));
+        }
+        if ($this->accept('having')) {
+            // Parsed for its columns only: the course filter must be in WHERE or in the join of the table.
+            $this->conditions('having');
         }
         if ($this->accept('order')) {
             $this->expect('by');

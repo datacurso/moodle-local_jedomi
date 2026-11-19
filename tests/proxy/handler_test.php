@@ -1334,13 +1334,115 @@ final class handler_test extends \advanced_testcase {
     }
 
     /**
-     * MDL-CTR-007: with the Basic level the AI receives names and e-mails returned by the tools replaced.
+     * MDL-CTR-007, Decision 6: with the Basic level the AI receives names, e-mails and identifiers returned by the
+     * tools replaced.
      */
     public function test_basic_level_replaces_names_and_emails_sent_to_the_ai(): void {
         [$result] = $this->tool_result_with_level('basic');
 
         $this->assertStringNotContainsString('ximena.quintanilla@example.com', $result);
         $this->assertStringNotContainsString('Quintanilla', $result);
+        $this->assertStringNotContainsString('ID-778899', $result);
+    }
+
+    /**
+     * Decision 6: with the Basic level a tool call the AI writes with the placeholder of an identifier runs with the
+     * real value, and the streamed answer shows the real identifier.
+     */
+    public function test_basic_level_tool_call_with_an_identifier_placeholder_runs_with_the_real_value(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        \local_jedomi\local\service\admin_settings_service::save_privacy_settings(
+            'basic',
+            array_column(\local_jedomi\local\service\admin_settings_service::get_roles(), 'id')
+        );
+        $named = $this->getDataGenerator()->create_user(['idnumber' => 'ID-778899', 'city' => 'Cartagena']);
+        $fake = new fake_ai_client();
+        $fake->enqueue_tool_calls([['id' => 'call_1', 'type' => 'function', 'function' => ['name' => 'execute_sql',
+            'arguments' => json_encode(['sql' => 'SELECT id, idnumber FROM {user} WHERE id = ' . (int) $named->id])]]]);
+        $fake->enqueue_tool_calls([['id' => 'call_2', 'type' => 'function', 'function' => ['name' => 'execute_sql',
+            'arguments' => json_encode(['sql' => "SELECT city FROM {user} WHERE idnumber = '[id_1]'"])]]]);
+        $fake->enqueue_text('The user [id_1] lives in the city found.');
+        client::set_instance_for_testing($fake);
+
+        $output = $this->capture(fn() => handler::run(
+            [['role' => 'user', 'content' => 'Where does that user live?']],
+            'admin',
+            (int) get_admin()->id
+        ));
+
+        $this->assertCount(3, $fake->calls);
+        $tools = array_values(array_filter($fake->calls[2]['messages'], static fn(array $m): bool => $m['role'] === 'tool'));
+        $this->assertStringNotContainsString('ID-778899', (string) $tools[0]['content']);
+        $this->assertStringContainsString('[id_1]', (string) $tools[0]['content']);
+        $this->assertStringContainsString('Cartagena', (string) $tools[1]['content'], 'The query ran with the real idnumber');
+        $this->assertStringContainsString('The user ID-778899 lives', $this->streamed_text($this->events($output)));
+    }
+
+    /**
+     * Decision 6, REL-005: a write the AI proposes with the placeholder of an identifier is held with the real value, so
+     * the confirmation card and the action run later never carry a placeholder.
+     */
+    public function test_held_write_is_stored_with_the_real_identifier(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        set_config('anonymization_level', 'basic', 'local_jedomi');
+        $named = $this->getDataGenerator()->create_user(['idnumber' => 'ID-778899']);
+        $fake = new fake_ai_client();
+        $fake->enqueue_tool_calls([['id' => 'call_1', 'type' => 'function', 'function' => ['name' => 'execute_sql',
+            'arguments' => json_encode(['sql' => 'SELECT id, idnumber FROM {user} WHERE id = ' . (int) $named->id])]]]);
+        $fake->enqueue_tool_calls([['id' => 'call_2', 'type' => 'function', 'function' => ['name' => 'send_messages',
+            'arguments' => json_encode(['user_ids' => [(int) $named->id], 'message' => 'Your ID number is [id_1].'])]]]);
+        client::set_instance_for_testing($fake);
+
+        $events = $this->events($this->capture(fn() => handler::run(
+            [['role' => 'user', 'content' => 'Tell that user their ID number']],
+            'admin',
+            (int) get_admin()->id
+        )));
+
+        $this->assertCount(2, $fake->calls);
+        $pending = array_values(array_filter($events, static fn($e) => is_array($e) && isset($e['_jedomi_pending_action'])));
+        $this->assertCount(1, $pending);
+        $this->assertSame('Your ID number is ID-778899.', $pending[0]['_jedomi_pending_action']['preview']);
+        $heldid = $pending[0]['_jedomi_pending_action']['id'];
+        $record = $DB->get_record(\local_jedomi\local\service\pending_action_service::TABLE, ['id' => $heldid]);
+        $args = json_decode($record->argsjson, true);
+        $this->assertSame('Your ID number is ID-778899.', $args['message'], 'The held action carries the real value');
+        $this->assertStringNotContainsString('[id_1]', $record->argsjson);
+    }
+
+    /**
+     * REL-004: the placeholder of an address with a quote, written by the AI inside a string of its query, runs with the
+     * real address escaped, and an address written as an SQL injection only matches itself.
+     */
+    public function test_restored_value_with_quotes_is_escaped_in_the_query(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        set_config('anonymization_level', 'basic', 'local_jedomi');
+        $ohara = $this->getDataGenerator()->create_user(['address' => "O'Hara St", 'city' => 'Cartagena']);
+        $evil = $this->getDataGenerator()->create_user(['address' => "x' OR '1'='1", 'city' => 'Nowhere']);
+        $fake = new fake_ai_client();
+        $fake->enqueue_tool_calls([['id' => 'call_1', 'type' => 'function', 'function' => ['name' => 'execute_sql',
+            'arguments' => json_encode(['sql' => 'SELECT id, address FROM {user} WHERE id IN (' . (int) $ohara->id . ', '
+                . (int) $evil->id . ') ORDER BY id'])]]]);
+        $fake->enqueue_tool_calls([['id' => 'call_2', 'type' => 'function', 'function' => ['name' => 'execute_sql',
+            'arguments' => json_encode(['sql' => "SELECT city FROM {user} WHERE address = '[id_1]'"])]]]);
+        $fake->enqueue_tool_calls([['id' => 'call_3', 'type' => 'function', 'function' => ['name' => 'execute_sql',
+            'arguments' => json_encode(['sql' => "SELECT city FROM {user} WHERE address = '[id_2]'"])]]]);
+        $fake->enqueue_text('Done.');
+        client::set_instance_for_testing($fake);
+
+        $this->capture(fn() => handler::run([['role' => 'user', 'content' => 'Cities?']], 'admin', (int) get_admin()->id));
+
+        $this->assertCount(4, $fake->calls);
+        $tools = array_values(array_filter($fake->calls[3]['messages'], static fn(array $m): bool => $m['role'] === 'tool'));
+        $this->assertStringContainsString('"row_count":1', (string) $tools[1]['content'], 'The quoted address ran');
+        $this->assertStringContainsString('Cartagena', (string) $tools[1]['content']);
+        $this->assertStringContainsString('"row_count":1', (string) $tools[2]['content'], 'The injection is a value');
+        $this->assertStringContainsString('Nowhere', (string) $tools[2]['content']);
+        $this->assertStringNotContainsString('Cartagena', (string) $tools[2]['content']);
     }
 
     /**
@@ -1429,8 +1531,39 @@ final class handler_test extends \advanced_testcase {
 
         $this->assertArrayHasKey('error', $answer);
         $this->assertStringContainsString(get_string('execute_sql_error', 'local_jedomi'), $answer['error']);
-        $this->assertStringContainsString(' | DBG: ', $answer['error']);
         $this->assertStringContainsString('nosuchcolumn', $answer['error'], 'The database detail reaches the model');
+        // JEDOMI-SEC-009: only the first line of the database error, never the debug labels or the query.
+        $this->assertStringNotContainsString('DBG', $answer['error']);
+        $this->assertStringNotContainsString('FROM', $answer['error']);
+    }
+
+    /**
+     * JEDOMI-SEC-009: when a query fails, the browser gets a generic summary of the tool result, never the database
+     * error, and the model gets the first line of that error without the query.
+     *
+     * @return void
+     */
+    public function test_failed_query_sends_no_database_detail_to_the_browser(): void {
+        $this->require_provider();
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $fake = new fake_ai_client();
+
+        $events = $this->run_with_tool_call('execute_sql', ['sql' => 'SELECT nosuchcolumn FROM {course}'], $fake);
+
+        $result = array_values(array_filter($events, static fn($e) => is_array($e) && isset($e['_jedomi_tool_result'])));
+        $this->assertCount(1, $result);
+        $summary = $result[0]['_jedomi_tool_result']['summary'];
+        $this->assertSame(
+            get_string('summary_error_prefix', 'local_jedomi') . get_string('summary_error_generic', 'local_jedomi'),
+            $summary
+        );
+        $this->assertStringNotContainsString('nosuchcolumn', $summary);
+        $this->assertStringNotContainsString('DBG', $summary);
+
+        $toolmessage = $fake->calls[1]['messages'][2]['content'];
+        $this->assertStringContainsString('nosuchcolumn', $toolmessage, 'The model still gets the database error');
+        $this->assertStringNotContainsString('DBG', $toolmessage);
     }
 
     /**
@@ -1533,7 +1666,8 @@ final class handler_test extends \advanced_testcase {
      * request is accepted, as opening Jedomi on the site home is, and it only gets site-level permissions: the signed
      * course is the site home, the course-scoped capabilities are not those of the excluded course, and the role, the
      * tools and the system message are the ones of the site home. Nothing is granted beyond what the user already has
-     * on the site home.
+     * on the site home. Decision 4: the excluded course is outside Jedomi, so a teacher whose only taught course is
+     * excluded is a student on the site home and gets the student tools.
      *
      * @return void
      */
@@ -1572,19 +1706,19 @@ final class handler_test extends \advanced_testcase {
         $this->assertSame([], $this->error_events($events), 'The site home request is accepted, as on the site home');
         $this->assertCount(1, $fake->calls);
         $this->assertSame((int) SITEID, (int) $sitespt['course_id'], 'The signed course is the site home');
-        // Outside a course a teacher is a teacher in every channel (MDL-INT-039): the same role as on the site home.
-        $this->assertSame('teacher', $sitespt['role'], 'Outside a course a teacher gets the site-level role');
+        // Outside a course the role ignores the excluded courses (Decision 4): the only taught course is excluded.
+        $this->assertSame('student', $sitespt['role'], 'An excluded course gives no role outside a course');
         $this->assertFalse($sitespt['capabilities']['can_view_all_grades'], 'No grade capability of the excluded course');
         $this->assertFalse($sitespt['capabilities']['can_manage_courses'], 'No course capability of the excluded course');
-        $teachertools = array_column(array_column(\local_jedomi_get_tool_definitions('teacher'), 'function'), 'name');
+        $studenttools = array_column(array_column(\local_jedomi_get_tool_definitions('student'), 'function'), 'name');
         $offered = $this->tool_names($fake->calls[0]);
         $this->assertEqualsCanonicalizing(
-            array_values(array_diff($teachertools, ['send_messages'])),
+            array_values(array_diff($studenttools, ['send_messages'])),
             array_values(array_diff($offered, ['send_messages']))
         );
         $system = $fake->calls[0]['messages'][0];
         $this->assertSame('system', $system['role']);
-        $this->assertStringContainsString('Role: teacher.', $system['content']);
+        $this->assertStringContainsString('Role: student.', $system['content']);
     }
 
     /**
@@ -2330,5 +2464,172 @@ final class handler_test extends \advanced_testcase {
         $this->assertNotSame('rate_limited', $this->error_events($events)[0]['error']['code']);
         $this->assertSame([], $fake->calls);
         $this->assertSame(0, \local_jedomi\local\service\chat_rate_limit_service::consume((int) $USER->id));
+    }
+
+    /**
+     * Run the web chat loop for one question as the administrator.
+     *
+     * @param fake_ai_client $fake AI client double.
+     * @return array Decoded SSE events.
+     */
+    private function ask(fake_ai_client $fake): array {
+        client::set_instance_for_testing($fake);
+        return $this->events($this->capture(fn() => handler::run(
+            [['role' => 'user', 'content' => 'hi']],
+            'admin',
+            (int) get_admin()->id
+        )));
+    }
+
+    /**
+     * Unit 9: while a slow AI round waits, the browser gets signals of life with the time spent on the question, and
+     * the signals stop with the answer.
+     */
+    public function test_slow_ai_round_sends_signals_of_life(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $clock = $this->mock_clock_with_frozen();
+        $fake = new fake_ai_client();
+        $fake->oncall = static function () use ($clock): void {
+            // The AI service takes 20 seconds; cURL reports progress meanwhile.
+            $clock->bump(20);
+            \local_jedomi\ai\heartbeat::beat();
+        };
+        $fake->enqueue_tool_calls([
+            ['id' => 'call_1', 'type' => 'function', 'function' => ['name' => 'no_such_tool', 'arguments' => '{}']],
+        ]);
+        $fake->enqueue_text('Final answer.');
+
+        $events = $this->ask($fake);
+
+        $beats = array_values(array_filter($events, static fn($e) => is_array($e) && isset($e['_jedomi_heartbeat'])));
+        $this->assertCount(2, $beats);
+        $this->assertSame(['elapsed' => 20], $beats[0]['_jedomi_heartbeat']);
+        $this->assertSame(['elapsed' => 40], $beats[1]['_jedomi_heartbeat']);
+        $this->assertArrayHasKey('_jedomi_heartbeat', $events[0], 'The first signal comes while the first round waits');
+        $this->assertSame('Final answer.', $this->streamed_text($events));
+        $this->assertFalse(\local_jedomi\ai\heartbeat::is_active(), 'The signals stop with the answer');
+    }
+
+    /**
+     * RES-001: when the user closes the chat while an AI round waits, the AI call is aborted and nothing more is sent
+     * to the closed browser: no error and no further round.
+     */
+    public function test_closed_browser_aborts_the_waiting_ai_call(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $closed = false;
+        handler::set_abort_check_for_testing(static function () use (&$closed): bool {
+            return $closed;
+        });
+        $fake = new fake_ai_client();
+        $progressresult = null;
+        $fake->oncall = static function () use (&$closed, &$progressresult): void {
+            $closed = true;
+            $progressresult = (\local_jedomi\ai\heartbeat::curl_options()['CURLOPT_PROGRESSFUNCTION'])(null, 0, 0, 0, 0);
+        };
+        $fake->enqueue_exception(new \RuntimeException('Callback aborted'));
+        $fake->enqueue_text('Never asked.');
+
+        try {
+            $events = $this->ask($fake);
+        } finally {
+            handler::set_abort_check_for_testing(null);
+        }
+
+        $this->assertNotSame(0, $progressresult, 'The progress callback stops the transfer');
+        $this->assertCount(1, $fake->calls);
+        $errors = array_filter($events, static fn($e) => is_array($e) && isset($e['error']));
+        $this->assertSame([], $errors, 'No error message goes to a closed browser');
+        $this->assertSame('', $this->streamed_text($events));
+    }
+
+    /**
+     * Unit 9: a question stops after three times the AI request timeout in total, with a clear message, and the last
+     * AI call only gets the time that is left.
+     */
+    public function test_question_stops_at_its_time_limit(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        set_config('ai_timeout', 10, 'local_jedomi');
+        $this->assertSame(30, handler::question_time_limit());
+        $clock = $this->mock_clock_with_frozen();
+        $fake = new fake_ai_client();
+        $fake->oncall = static function () use ($clock): void {
+            $clock->bump(25);
+        };
+        for ($i = 1; $i <= 4; $i++) {
+            $fake->enqueue_tool_calls([
+                ['id' => 'call_' . $i, 'type' => 'function',
+                    'function' => ['name' => 'no_such_tool', 'arguments' => json_encode(['step' => $i])]],
+            ]);
+        }
+
+        $events = $this->ask($fake);
+
+        $this->assertCount(2, $fake->calls, 'No AI round starts after the time limit');
+        $this->assertNull($fake->calls[0]['timeout']);
+        $this->assertSame(5, $fake->calls[1]['timeout'], 'The last round only gets the time that is left');
+        $this->assertSame(get_string('error_question_time_limit', 'local_jedomi', 1), $this->streamed_text($events));
+        $this->assertSame('[DONE]', end($events));
+    }
+
+    /**
+     * Unit 9: an answer without text (out of tokens) is asked again once, briefly, and the second answer is shown.
+     */
+    public function test_empty_answer_is_asked_again_once(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $fake = new fake_ai_client();
+        $fake->enqueue_empty('length', 'Let me think about this for a long time');
+        $fake->enqueue_text('Short answer.');
+
+        $events = $this->ask($fake);
+
+        $this->assertCount(2, $fake->calls);
+        $retry = end($fake->calls[1]['messages']);
+        $this->assertSame(\local_jedomi\ai\empty_answer::retry_message('length'), $retry);
+        $this->assertSame('Short answer.', $this->streamed_text($events));
+    }
+
+    /**
+     * Unit 9: when the second answer is empty too, the user gets a clear message instead of an empty bubble.
+     */
+    public function test_second_empty_answer_shows_a_clear_message(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $fake = new fake_ai_client();
+        $fake->enqueue_empty('stop');
+        $fake->enqueue_empty('stop');
+
+        $events = $this->ask($fake);
+
+        $this->assertCount(2, $fake->calls);
+        $this->assertSame(
+            ['code' => 'empty_answer', 'message' => get_string('error_empty_answer', 'local_jedomi')],
+            end($events)['error']
+        );
+        $this->assertSame('', $this->streamed_text($events));
+    }
+
+    /**
+     * Unit 9: the same tool failing with the same arguments and the same error three times stops the question with a
+     * message that names the tool.
+     */
+    public function test_same_tool_error_repeated_stops_the_question(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $fake = new fake_ai_client();
+        for ($i = 1; $i <= 5; $i++) {
+            $fake->enqueue_tool_calls([
+                ['id' => 'call_' . $i, 'type' => 'function', 'function' => ['name' => 'no_such_tool', 'arguments' => '{"a":1}']],
+            ]);
+        }
+        $fake->enqueue_text('Never asked.');
+
+        $events = $this->ask($fake);
+
+        $this->assertCount(\local_jedomi\local\repeated_tool_error::LIMIT, $fake->calls);
+        $this->assertSame(get_string('error_tool_repeated', 'local_jedomi', 'no_such_tool'), $this->streamed_text($events));
     }
 }

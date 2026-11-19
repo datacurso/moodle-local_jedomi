@@ -39,6 +39,9 @@ class fake_ai_client extends client {
     /** @var array<int, array{messages: array, userid: int, tools: array, timeout: ?int, temperature: ?float}> */
     public array $calls = [];
 
+    /** @var \Closure|null Run on every call before the answer is handed out, as a slow AI service would wait. */
+    public ?\Closure $oncall = null;
+
     /**
      * Queue a plain text answer.
      *
@@ -55,6 +58,16 @@ class fake_ai_client extends client {
      */
     public function enqueue_tool_calls(array $toolcalls): void {
         $this->queue[] = ['content' => '', 'tool_calls' => $toolcalls, 'finish_reason' => 'tool_calls'];
+    }
+
+    /**
+     * Queue an answer without text and without tool calls.
+     *
+     * @param string $finishreason Finish reason of the answer (length or stop).
+     * @param string $reasoning Thinking text of the answer.
+     */
+    public function enqueue_empty(string $finishreason, string $reasoning = ''): void {
+        $this->queue[] = ['content' => '', 'tool_calls' => [], 'finish_reason' => $finishreason, 'reasoning' => $reasoning];
     }
 
     /**
@@ -81,6 +94,9 @@ class fake_ai_client extends client {
             'timeout' => $timeout,
             'temperature' => $temperature,
         ];
+        if ($this->oncall !== null) {
+            ($this->oncall)(count($this->calls));
+        }
         $next = array_shift($this->queue);
         if ($next === null) {
             throw new \coding_exception('fake_ai_client: no queued answer');

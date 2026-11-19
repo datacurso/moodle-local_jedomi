@@ -19,8 +19,9 @@ namespace local_jedomi\local;
 /**
  * Applies the anonymisation level of the Privacy tab to the data the plugin stores or sends to the AI.
  *
- * - Basic: names and e-mails are replaced.
- * - Strict: identifiers and free text are replaced as well.
+ * - Basic: names, e-mails and identifier columns (user name, ID number, phones, address, IP, messaging ids, web
+ *   page) are replaced.
+ * - Strict: free text and codes mixing letters and digits inside texts are replaced as well.
  * - Feedback only: no conversation text is stored; what is sent to the AI is anonymised as with Basic.
  *
  * Every replaced value gets a stable placeholder within one instance, so the answer of the AI can be turned back
@@ -31,7 +32,7 @@ namespace local_jedomi\local;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class anonymizer {
-    /** @var string Level: names and e-mails. */
+    /** @var string Level: names, e-mails and identifier columns. */
     public const LEVEL_BASIC = 'basic';
 
     /** @var string Level: names, e-mails, identifiers and free text. */
@@ -44,7 +45,7 @@ class anonymizer {
     private const NAME_COLUMNS = ['firstname', 'lastname', 'middlename', 'alternatename', 'firstnamephonetic',
         'lastnamephonetic', 'userfullname', 'username_full', 'studentname', 'teachername', 'authorname'];
 
-    /** @var string[] Columns that identify people (Strict level). */
+    /** @var string[] Columns that identify people (every level, Decision 6). */
     private const IDENTIFIER_COLUMNS = ['username', 'idnumber', 'phone1', 'phone2', 'address', 'lastip', 'ip',
         'skype', 'icq', 'msn', 'aim', 'yahoo', 'url'];
 
@@ -64,6 +65,23 @@ class anonymizer {
      *      underscore, spaces inside the brackets or Markdown escapes ("[Person 1]", "[person-1]", "\[person\_1\]").
      */
     private const LOOSE_PLACEHOLDER_PATTERN = '/\\\\?\[\s*([a-z]+)\s*(?:\\\\?[_\- ])?\s*(\d+)\s*\\\\?\]/i';
+
+    /**
+     * @var string Pattern of a placeholder exactly as this anonymiser writes it, the only form restored in a query, after
+     *      no backslash (group 1 is empty, group 2 the placeholder).
+     */
+    private const SQL_PLACEHOLDER_PATTERN = '/(?<!\\\\)()(\[[a-z]+_\d+\])/';
+
+    /**
+     * @var string The same inside a string of the MySQL family, where it may follow backslashes that pair up as escapes
+     *      (group 1); after an odd number the last backslash escapes the bracket and nothing matches.
+     */
+    private const SQL_ESCAPED_PLACEHOLDER_PATTERN = '/(?<!\\\\)((?:\\\\\\\\)*)(\[[a-z]+_\d+\])/';
+
+    /**
+     * @var string The same inside a quoted identifier, or a string of a database that reads no backslash escapes.
+     */
+    private const SQL_LITERAL_PLACEHOLDER_PATTERN = '/()(\[[a-z]+_\d+\])/';
 
     /** @var string Applied level. */
     private string $level;
@@ -215,14 +233,209 @@ class anonymizer {
         if (empty($this->originals) || strpos($text, '[') === false) {
             return $text;
         }
-        // One pass, so a restored value that looks like a placeholder is never replaced again. A placeholder the AI
-        // wrote slightly differently ("[Person 1]") still gets its real value; a token that matches no placeholder of
-        // this anonymiser is kept as written.
+        return $this->replace_placeholders($text, static fn(string $value): string => $value);
+    }
+
+    /**
+     * Replace the placeholders of this anonymiser in a text by their real values passed through a function.
+     *
+     * One pass, so a restored value that looks like a placeholder is never replaced again. A placeholder the AI wrote
+     * slightly differently ("[Person 1]") still gets its real value; a token that matches no placeholder of this
+     * anonymiser is kept as written.
+     *
+     * @param string $text Text with placeholders.
+     * @param callable $format Function from the real value to the text written in place of the placeholder.
+     * @return string
+     */
+    private function replace_placeholders(string $text, callable $format): string {
         return (string) preg_replace_callback(
             self::LOOSE_PLACEHOLDER_PATTERN,
-            fn(array $m): string => $this->originals[self::canonical_placeholder($m[1], $m[2])] ?? $m[0],
+            function (array $m) use ($format): string {
+                $placeholder = self::canonical_placeholder($m[1], $m[2]);
+                return isset($this->originals[$placeholder]) ? $format($this->originals[$placeholder]) : $m[0];
+            },
             $text
         );
+    }
+
+    /**
+     * Put the real values back in the arguments of a tool call proposed by the AI, before the tool runs or is held.
+     *
+     * The query of the SQL tool (its sql or query argument) gets the values escaped for the place of each placeholder
+     * ({@see self::restore_sql()}); every other argument, passed to the tool as a structured value, gets the raw value
+     * ({@see self::restore_value()}). Shared by every channel that runs tools: web chat, Telegram, agents and preview.
+     *
+     * @param string $tool Tool name.
+     * @param mixed $args Arguments as proposed by the AI (an array; anything else gets the raw restore).
+     * @param string|null $family Database family; null for the one of the site.
+     * @return mixed Arguments with the real values.
+     * @throws unrestored_placeholder_exception When the query of the SQL tool holds a placeholder that cannot be put back:
+     *     the channel sends its tool_result() to the AI as the result of the call and does not run the tool (RISK-001).
+     */
+    public function restore_tool_args(string $tool, $args, ?string $family = null) {
+        if (!is_array($args)) {
+            return $this->restore_value($args);
+        }
+        $sqlkeys = $tool === 'execute_sql' ? ['sql', 'query'] : [];
+        foreach ($args as $key => $value) {
+            $args[$key] = in_array($key, $sqlkeys, true) && is_string($value)
+                ? $this->restore_sql($value, $family)
+                : $this->restore_value($value);
+        }
+        return $args;
+    }
+
+    /**
+     * Put the real values back in a query written by the AI, escaped so that no value can change the query (REL-004).
+     *
+     * The query is split as sql_guard reads it. A placeholder inside a quoted string or identifier gets the value with
+     * that quote doubled, and with backslashes doubled when the database reads them as escapes (the MySQL family);
+     * outside, it gets the value as a quoted string ('...'), so "WHERE address = [id_1]" also works. Placeholders inside
+     * comments are left as they are. Only placeholders written exactly as this anonymiser writes them are restored, never
+     * after a backslash outside a string, and inside a string of the MySQL family only after backslashes that pair up,
+     * so a value never takes the second backslash of an escape pair; a restored query that does not split into the same
+     * strings is returned unchanged. When a quote or a comment start is left without its pair, the query is returned
+     * unchanged, since where its strings end cannot be known. Values the guard of the query refuses anyway (a "?" that
+     * would shift the bound parameters, a backslash outside MySQL) make the query be refused, never run differently.
+     *
+     * A placeholder of this anonymiser that cannot be put back (another case, spaces or a hyphen, Markdown escapes, an odd
+     * backslash before it in a MySQL string, or anywhere in a query returned unchanged) makes the query be refused with
+     * {@see unrestored_placeholder_exception} (RISK-001): run with the text of the token, the query would give a false
+     * result. Tokens that are not placeholders of this anonymiser are text and stay as written.
+     *
+     * @param string $sql Query with placeholders.
+     * @param string|null $family Database family, as moodle_database::get_dbfamily() returns it; null for the site one.
+     * @return string Query with the real values.
+     * @throws unrestored_placeholder_exception When a placeholder of this anonymiser is left in the code or a string.
+     */
+    public function restore_sql(string $sql, ?string $family = null): string {
+        global $DB;
+        if (empty($this->originals) || strpos($sql, '[') === false) {
+            return $sql;
+        }
+        $family = $family ?? $DB->get_dbfamily();
+        $backslash = $family === 'mysql';
+        $pattern = sql_guard::quoted_parts_pattern($family);
+        $parts = preg_split($pattern, $sql, -1, PREG_SPLIT_DELIM_CAPTURE);
+        if ($parts === false) {
+            return $this->unchanged_sql($sql);
+        }
+        $expected = count($parts);
+        // Placeholders of this anonymiser in any form outside comments, and those put back.
+        $written = [];
+        $restored = 0;
+        foreach ($parts as $index => $part) {
+            if ($index % 2 === 0) {
+                if (strpbrk($part, "'\"\x60") !== false || strpos($part, '/*') !== false) {
+                    return $this->unchanged_sql($sql);
+                }
+                $written = array_merge($written, $this->placeholders_written_in($part));
+                $parts[$index] = $this->replace_sql_placeholders(
+                    self::SQL_PLACEHOLDER_PATTERN,
+                    $part,
+                    static fn(string $value): string => "'" . self::escape_sql_text($value, "'", $backslash) . "'",
+                    $count
+                );
+                $restored += $count;
+                // Each value written outside a string adds a string and the code after it.
+                $expected += 2 * $count;
+                continue;
+            }
+            $quote = $part[0];
+            if (!in_array($quote, ["'", '"', "\x60"], true)) {
+                continue;
+            }
+            $written = array_merge($written, $this->placeholders_written_in($part));
+            $escapes = $backslash && $quote !== "\x60";
+            $parts[$index] = $quote . $this->replace_sql_placeholders(
+                $escapes ? self::SQL_ESCAPED_PLACEHOLDER_PATTERN : self::SQL_LITERAL_PLACEHOLDER_PATTERN,
+                substr($part, 1, -1),
+                static fn(string $value): string => self::escape_sql_text($value, $quote, $escapes),
+                $count
+            ) . $quote;
+            $restored += $count;
+        }
+        if ($restored !== count($written)) {
+            throw new unrestored_placeholder_exception($written);
+        }
+        $query = implode('', $parts);
+        // Defence in depth: the restored query must split into the same strings and code, or it is not run with values.
+        $check = preg_split($pattern, $query, -1, PREG_SPLIT_DELIM_CAPTURE);
+        return $check !== false && count($check) === $expected ? $query : $this->unchanged_sql($sql);
+    }
+
+    /**
+     * A query whose placeholders cannot be put back, returned unchanged when it holds no placeholder of this anonymiser.
+     *
+     * @param string $sql Query.
+     * @return string The query as written.
+     * @throws unrestored_placeholder_exception When it holds a placeholder of this anonymiser in any form.
+     */
+    private function unchanged_sql(string $sql): string {
+        $written = $this->placeholders_written_in($sql);
+        if (!empty($written)) {
+            throw new unrestored_placeholder_exception($written);
+        }
+        return $sql;
+    }
+
+    /**
+     * Placeholders of this anonymiser written in a text in any form the AI may use ("[id_1]", "[ID 1]", "\[id\_1\]").
+     *
+     * @param string $text Text.
+     * @return string[] Each one as this anonymiser writes it, once per occurrence.
+     */
+    private function placeholders_written_in(string $text): array {
+        $found = [];
+        if (preg_match_all(self::LOOSE_PLACEHOLDER_PATTERN, $text, $matches, PREG_SET_ORDER)) {
+            foreach ($matches as $m) {
+                $placeholder = self::canonical_placeholder($m[1], $m[2]);
+                if (isset($this->originals[$placeholder])) {
+                    $found[] = $placeholder;
+                }
+            }
+        }
+        return $found;
+    }
+
+    /**
+     * Replace the exact placeholders of this anonymiser in a part of a query by their real values passed through a
+     * function, in one pass, so a restored value that looks like a placeholder is never replaced again.
+     *
+     * @param string $pattern One of the SQL_*PLACEHOLDER_PATTERN constants.
+     * @param string $text Part of a query.
+     * @param callable $format Function from the real value to the text written in place of the placeholder.
+     * @param int|null $count Set to the number of placeholders replaced.
+     * @return string
+     */
+    private function replace_sql_placeholders(string $pattern, string $text, callable $format, ?int &$count): string {
+        $count = 0;
+        return (string) preg_replace_callback(
+            $pattern,
+            function (array $m) use ($format, &$count): string {
+                if (!isset($this->originals[$m[2]])) {
+                    return $m[0];
+                }
+                $count++;
+                return $m[1] . $format($this->originals[$m[2]]);
+            },
+            $text
+        );
+    }
+
+    /**
+     * Escape a value for the inside of a quoted SQL string or identifier.
+     *
+     * @param string $value Value.
+     * @param string $quote Quote character of the string or identifier.
+     * @param bool $backslash Whether the database reads backslashes as escapes inside it.
+     * @return string
+     */
+    private static function escape_sql_text(string $value, string $quote, bool $backslash): string {
+        if ($backslash) {
+            $value = str_replace('\\', '\\\\', $value);
+        }
+        return str_replace($quote, $quote . $quote, $value);
     }
 
     /**
@@ -325,10 +538,10 @@ class anonymizer {
         if ($column === 'email' || substr($column, -5) === 'email') {
             return $this->placeholder('email', $value);
         }
+        if (in_array($column, self::IDENTIFIER_COLUMNS, true)) {
+            return $this->placeholder('id', $value);
+        }
         if ($this->level === self::LEVEL_STRICT) {
-            if (in_array($column, self::IDENTIFIER_COLUMNS, true)) {
-                return $this->placeholder('id', $value);
-            }
             $isfreetext = in_array($column, self::FREE_TEXT_COLUMNS, true)
                 || (\core_text::strlen($value) > self::FREE_TEXT_LENGTH && preg_match('/\s/u', $value));
             if ($isfreetext) {

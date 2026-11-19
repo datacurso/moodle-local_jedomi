@@ -155,4 +155,24 @@ final class cleanup_telegram_sessions_test extends \advanced_testcase {
         $this->assertStringContainsString('Deleted 1 expired pending action(s).', $output);
         $this->assertStringContainsString('Deleted 0 expired web chat pending action(s).', $output);
     }
+
+    /**
+     * Decision 7: the cleanup removes the links unused for more than 30 days and keeps the others.
+     */
+    public function test_expired_links_are_removed(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $now = time();
+        $old = $this->getDataGenerator()->create_user();
+        $recent = $this->getDataGenerator()->create_user();
+        $DB->insert_record('local_jedomi_telegram_links', (object) ['userid' => $old->id, 'chatid' => '775000040',
+            'confirmed' => 1, 'timecreated' => $now - 31 * DAYSECS, 'lastused' => 0]);
+        $DB->insert_record('local_jedomi_telegram_links', (object) ['userid' => $recent->id, 'chatid' => '775000041',
+            'confirmed' => 1, 'timecreated' => $now - 31 * DAYSECS, 'lastused' => $now - DAYSECS]);
+
+        $output = $this->run_cleanup();
+
+        $this->assertSame(['775000041'], array_values($DB->get_fieldset_select('local_jedomi_telegram_links', 'chatid', '1 = 1')));
+        $this->assertStringContainsString('Removed 1 expired Telegram link(s).', $output);
+    }
 }

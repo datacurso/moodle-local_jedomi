@@ -72,7 +72,7 @@ final class sidebar_config_test extends \advanced_testcase {
         foreach (
             ['tool_search_tables', 'tool_execute_sql', 'tool_describe_table', 'tool_get_site_config', 'tool_site_overview',
                 'tool_ws_search', 'tool_ws_describe', 'tool_ws_execute', 'tool_unknown', 'session_expired_title',
-                'session_expired_hint', 'qa_course_current', 'qa_course_with_id'] as $key
+                'session_expired_hint', 'qa_course_current', 'qa_course_with_id', 'still_working'] as $key
         ) {
             $this->assertSame(get_string($key, 'local_jedomi'), $strings[$key] ?? null, $key);
         }

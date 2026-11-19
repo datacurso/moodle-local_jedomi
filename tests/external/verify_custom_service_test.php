@@ -306,4 +306,100 @@ final class verify_custom_service_test extends \advanced_testcase {
         $this->assertSame([], $result['contextlengths']);
         $this->assertSame(['a' => 4096], json_decode(get_config('local_jedomi', 'custom_context_lengths'), true));
     }
+
+    /**
+     * Codes of the warnings of a result.
+     *
+     * @param array $result Result.
+     * @return string[]
+     */
+    private static function warning_codes(array $result): array {
+        return array_column($result['warnings'], 'code');
+    }
+
+    /**
+     * Decision 3 and REL-002: with a chat model, the verification probes it, keeps the token parameter it accepts and
+     * warns when it cannot call tools or no context window is known for it (RES-006).
+     *
+     * @return void
+     */
+    public function test_chat_model_is_probed(): void {
+        $this->curl->enqueue(json_encode(['object' => 'list', 'data' => [['id' => 'o-model']]]));
+        $this->curl->enqueue('{"error":{"message":"Unsupported parameter: \'max_tokens\' is not supported"}}', 400);
+        $this->curl->enqueue(json_encode(['choices' => [['message' => ['content' => 'OK']]]]));
+        $this->curl->enqueue('{"error":{"message":"o-model does not support tools"}}', 400);
+
+        $result = external_api::clean_returnvalue(
+            verify_custom_service::execute_returns(),
+            verify_custom_service::execute('https://203.0.113.10/v1', 'sk-test', false, 'o-model')
+        );
+
+        $this->assertTrue($result['valid']);
+        $this->assertSame('max_completion_tokens', $result['tokenparam']);
+        $this->assertSame('max_tokens', ai_service::get_custom_token_param(), 'Not the saved address yet');
+        set_config('custom_gateway_url', 'https://203.0.113.10/v1', 'local_jedomi');
+        $this->assertSame('max_completion_tokens', ai_service::get_custom_token_param(), 'Kept for the verified address');
+        $this->assertSame(['no_tools', 'no_window'], self::warning_codes($result));
+        $expected = get_string('custom_verify_warning_no_tools', 'local_jedomi', 'o-model');
+        $this->assertSame($expected, $result['warnings'][0]['message']);
+        $this->assertSame(get_string('custom_verify_warning_no_window', 'local_jedomi'), $result['warnings'][1]['message']);
+        $this->assertCount(4, $this->curl->calls);
+    }
+
+    /**
+     * A model with tools and a known window gets no warning; a typed window also counts as known.
+     *
+     * @return void
+     */
+    public function test_probe_without_warnings(): void {
+        $ok = json_encode(['choices' => [['message' => ['content' => 'OK']]]]);
+        $this->curl->enqueue(json_encode(['object' => 'list', 'data' => [['id' => 'm', 'max_model_len' => 32768]]]));
+        $this->curl->enqueue($ok);
+        $this->curl->enqueue($ok);
+
+        $result = external_api::clean_returnvalue(
+            verify_custom_service::execute_returns(),
+            verify_custom_service::execute('https://203.0.113.10/v1', 'sk-test', false, 'm')
+        );
+        $this->assertSame('max_tokens', $result['tokenparam']);
+        $this->assertSame([], $result['warnings']);
+
+        $this->curl->enqueue(json_encode(['object' => 'list', 'data' => [['id' => 'n']]]));
+        $this->curl->enqueue($ok);
+        $this->curl->enqueue($ok);
+        $result = external_api::clean_returnvalue(
+            verify_custom_service::execute_returns(),
+            verify_custom_service::execute('https://203.0.113.10/v1', 'sk-test', false, 'n', 8192)
+        );
+        $this->assertSame([], $result['warnings']);
+    }
+
+    /**
+     * A chat model that does not answer still leaves the connection verified, with a warning; without a model nothing is
+     * probed.
+     *
+     * @return void
+     */
+    public function test_probe_failure_and_no_model(): void {
+        $this->curl->enqueue(json_encode(['object' => 'list', 'data' => [['id' => 'a', 'max_model_len' => 4096]]]));
+        $this->curl->enqueue('{"error":"model not found"}', 404);
+
+        $result = external_api::clean_returnvalue(
+            verify_custom_service::execute_returns(),
+            verify_custom_service::execute('https://203.0.113.10/v1', 'sk-test', false, 'missing-model')
+        );
+        $this->assertTrue($result['valid']);
+        $this->assertSame('', $result['tokenparam']);
+        $this->assertSame(['model_failed', 'no_window'], self::warning_codes($result));
+        $expected = get_string('custom_verify_warning_model_failed', 'local_jedomi', 'missing-model');
+        $this->assertSame($expected, $result['warnings'][0]['message']);
+        $this->assertTrue(ai_service::is_verified('https://203.0.113.10', 'sk-test'));
+
+        $this->curl->calls = [];
+        $this->curl->enqueue(json_encode(['object' => 'list', 'data' => [['id' => 'a']]]));
+        $result = $this->call('https://203.0.113.10/v1');
+        $this->assertCount(1, $this->curl->calls, 'Without a chat model nothing is probed');
+        $this->assertSame([], $result['warnings']);
+        $this->assertSame('', $result['tokenparam']);
+    }
 }

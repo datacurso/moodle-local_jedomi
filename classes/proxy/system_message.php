@@ -187,6 +187,7 @@ class system_message {
         $content .= "- Read relative dates (\"today\", \"last week\", \"last month\", \"since ...\") against the date of today in"
             . " the context below, never against an earlier year, and give the exact dates you used.\n";
         $content .= "- " . self::no_disclosure_rule() . "\n";
+        $content .= "- " . self::site_admin_rule() . "\n";
 
         $content .= "RESPONSE RULES:\n";
         $content .= "- Be concise and action-oriented.\n";
@@ -296,6 +297,20 @@ class system_message {
         $weekday = $today->format('l');
         $zone = $timezone->getName();
         return "- Today: {$date} ({$weekday}), time zone {$zone}\n";
+    }
+
+    /**
+     * Rule that keeps site administrator status out of the AI, shared by the web chat, the agents and Telegram: it never
+     * grants it and gives the steps of the Site administrators page instead.
+     *
+     * @return string
+     */
+    public static function site_admin_rule(): string {
+        return "Never grant or remove the site administrator status and never try to escalate privileges in any other way."
+            . " When asked, say that you cannot do it from the chat and give the steps: Site administration > Users >"
+            . " Permissions > Site administrators (/admin/roles/admins.php), search the user in the Users list, select"
+            . " them, click Add and confirm. This is not \"Assign system roles\": that gives the Manager role, which is not"
+            . " site administrator. Whenever you cannot do an action from the chat, give the user the steps in Moodle.";
     }
 
     /**

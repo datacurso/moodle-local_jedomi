@@ -559,4 +559,40 @@ final class model_settings_test extends \advanced_testcase {
         set_config('custom_files_enabled', 0, 'local_jedomi');
         $this->assertFalse(model_settings::is_documents_enabled(), 'Off without image processing');
     }
+
+    /**
+     * READ-005: one rule for the switches of the custom service: a switch never saved is on while its model (and the
+     * voice, for the voice conversation) is saved; the documents switch is off until saved; a saved value wins.
+     *
+     * @return void
+     */
+    public function test_custom_switch_rule(): void {
+        $this->resetAfterTest();
+        foreach (['custom_files_enabled', 'custom_documents_enabled', 'custom_audio_enabled', 'custom_voice_enabled'] as $switch) {
+            $this->assertFalse(model_settings::is_custom_switch_on($switch), $switch);
+        }
+        set_config('custom_vision_model', 'vl', 'local_jedomi');
+        set_config('custom_speech_model', 'tts', 'local_jedomi');
+        $this->assertTrue(model_settings::is_custom_switch_on('custom_files_enabled'));
+        $this->assertFalse(model_settings::is_custom_switch_on('custom_voice_enabled'), 'No voice yet');
+        set_config('custom_speech_voice', 'alloy', 'local_jedomi');
+        $this->assertTrue(model_settings::is_custom_switch_on('custom_voice_enabled'));
+        $this->assertFalse(model_settings::is_custom_switch_on('custom_documents_enabled'));
+
+        set_config('custom_files_enabled', '0', 'local_jedomi');
+        set_config('custom_documents_enabled', '1', 'local_jedomi');
+        $this->assertFalse(model_settings::is_custom_switch_on('custom_files_enabled'));
+        $this->assertTrue(model_settings::is_custom_switch_on('custom_documents_enabled'));
+    }
+
+    /**
+     * READ-006: one range of the max tokens for saving both services.
+     *
+     * @return void
+     */
+    public function test_clamp_max_tokens(): void {
+        $this->assertSame(model_settings::MIN_MAX_TOKENS, model_settings::clamp_max_tokens(-5));
+        $this->assertSame(4096, model_settings::clamp_max_tokens(4096));
+        $this->assertSame(model_settings::MAX_MAX_TOKENS, model_settings::clamp_max_tokens(999999));
+    }
 }

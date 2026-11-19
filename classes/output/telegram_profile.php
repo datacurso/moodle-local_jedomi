@@ -47,6 +47,12 @@ class telegram_profile implements \core\output\named_templatable, \renderable, \
     protected int $codeexpiry;
     /** @var \moodle_url URL the page forms post to. */
     protected \moodle_url $pageurl;
+    /** @var bool Whether the user confirms Telegram writes with a PIN (Decision 7). */
+    protected bool $pinrequired;
+    /** @var bool Whether the user has set the PIN. */
+    protected bool $pinset;
+    /** @var string Rendered HTML of the PIN form; empty when the PIN does not apply. */
+    protected string $pinformhtml;
 
     /**
      * Store the page state.
@@ -58,6 +64,9 @@ class telegram_profile implements \core\output\named_templatable, \renderable, \
      * @param string $code One-time link code just generated; empty for none.
      * @param int $codeexpiry Time the code expires; 0 for none.
      * @param \moodle_url $pageurl URL the page forms post to.
+     * @param bool $pinrequired Whether the user confirms Telegram writes with a PIN.
+     * @param bool $pinset Whether the user has set the PIN.
+     * @param string $pinformhtml Rendered HTML of the PIN form; empty when the PIN does not apply.
      */
     public function __construct(
         string $state,
@@ -66,7 +75,10 @@ class telegram_profile implements \core\output\named_templatable, \renderable, \
         ?\stdClass $link,
         string $code,
         int $codeexpiry,
-        \moodle_url $pageurl
+        \moodle_url $pageurl,
+        bool $pinrequired = false,
+        bool $pinset = false,
+        string $pinformhtml = ''
     ) {
         $this->state = $state;
         $this->botusername = $botusername;
@@ -75,6 +87,9 @@ class telegram_profile implements \core\output\named_templatable, \renderable, \
         $this->code = $code;
         $this->codeexpiry = $codeexpiry;
         $this->pageurl = $pageurl;
+        $this->pinrequired = $pinrequired;
+        $this->pinset = $pinset;
+        $this->pinformhtml = $pinformhtml;
     }
 
     /**
@@ -108,6 +123,9 @@ class telegram_profile implements \core\output\named_templatable, \renderable, \
             'code' => $this->code,
             'deeplink' => $botlink . '?start=' . rawurlencode($this->code),
             'codeexpiry' => $this->codeexpiry,
+            'pinrequired' => $this->pinrequired,
+            'pinset' => $this->pinset,
+            'pinformhtml' => $this->pinformhtml,
         ];
     }
 

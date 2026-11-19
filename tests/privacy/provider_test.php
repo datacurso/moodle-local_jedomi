@@ -452,4 +452,41 @@ final class provider_test extends provider_testcase {
         set_config('log_key', str_repeat('a', 64), 'local_jedomi');
         $this->assertNotSame($chat, \local_jedomi_log_pseudonym('chat', '880000777'));
     }
+
+    /**
+     * Decision 7: the export includes the last use of the link and the PIN state, never the PIN hash; the deletion removes
+     * them with the link.
+     */
+    public function test_export_and_delete_cover_the_link_use_and_the_pin(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $user = $this->getDataGenerator()->create_user();
+        $this->create_telegram_and_agent_data($user, '880000010');
+        $lastused = time() - 60;
+        $DB->set_field('local_jedomi_telegram_links', 'lastused', $lastused, ['userid' => $user->id]);
+        \local_jedomi\local\service\telegram_pin_service::set_pin((int) $user->id, '135790');
+        \local_jedomi\local\service\telegram_pin_service::verify((int) $user->id, '000000');
+        $hash = (string) $DB->get_field('local_jedomi_telegram_links', 'pinhash', ['userid' => $user->id]);
+        $context = \context_user::instance($user->id);
+
+        provider::export_user_data(new approved_contextlist($user, 'local_jedomi', [$context->id]));
+        $chat = writer::with_context($context)->get_data([get_string('privacy_telegram', 'local_jedomi')])->chats[0];
+        $this->assertSame(\core_privacy\local\request\transform::datetime($lastused), $chat['lastused']);
+        $this->assertSame(\core_privacy\local\request\transform::yesno(true), $chat['pinset']);
+        $this->assertSame(1, $chat['pinfailures']);
+        $this->assertStringNotContainsString($hash, json_encode($chat));
+
+        $names = array_map(static fn($item) => $item->get_name(), provider::get_metadata(new collection('local_jedomi'))
+            ->get_collection());
+        $links = provider::get_metadata(new collection('local_jedomi'))->get_collection()[array_search(
+            'local_jedomi_telegram_links',
+            $names
+        )]->get_privacy_fields();
+        foreach (['lastused', 'pinhash', 'pinfailures', 'pinlockeduntil', 'pinverifiedat'] as $field) {
+            $this->assertArrayHasKey($field, $links, $field);
+        }
+
+        provider::delete_data_for_user(new approved_contextlist($user, 'local_jedomi', [$context->id]));
+        $this->assertFalse($DB->record_exists('local_jedomi_telegram_links', ['userid' => $user->id]));
+    }
 }

@@ -279,6 +279,18 @@ class api_client {
     }
 
     /**
+     * Delete a message from a chat.
+     *
+     * @param int|string $chatid
+     * @param int        $messageid
+     * @return bool Whether Telegram deleted it.
+     */
+    public function delete_message(int|string $chatid, int $messageid): bool {
+        $result = $this->post('deleteMessage', ['chat_id' => $chatid, 'message_id' => $messageid]);
+        return $result !== null && ($result['ok'] ?? false);
+    }
+
+    /**
      * Answer a callback query (removes the "loading" state from inline buttons).
      *
      * @param string $callbackid
@@ -489,13 +501,22 @@ class api_client {
      *
      * @param string $chatid Telegram chat ID.
      * @param string $action  'typing', 'upload_photo', 'record_video', etc.
+     * @param int|null $timeout Total timeout of this request in seconds; null for the usual one.
      * @return bool True if Telegram accepted the action.
      */
-    public function send_chat_action(string $chatid, string $action = 'typing'): bool {
-        $result = $this->post('sendChatAction', [
-            'chat_id' => $chatid,
-            'action'  => $action,
-        ]);
+    public function send_chat_action(string $chatid, string $action = 'typing', ?int $timeout = null): bool {
+        $usual = $this->timeout;
+        if ($timeout !== null) {
+            $this->timeout = max(1, $timeout);
+        }
+        try {
+            $result = $this->post('sendChatAction', [
+                'chat_id' => $chatid,
+                'action'  => $action,
+            ]);
+        } finally {
+            $this->timeout = $usual;
+        }
         return $result !== null && !empty($result['ok']);
     }
 

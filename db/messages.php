@@ -25,11 +25,12 @@
 defined('MOODLE_INTERNAL') || die();
 
 $messageproviders = [
-    // Summary of the writes a scheduled agent ran, held for approval or blocked, sent to its creator after the run.
+    // Summary of the writes a scheduled agent ran, held for approval or blocked, sent to its creator after the run. It
+    // is not sent by email by default (REL-005): each run may send one.
     'agentwrites' => [
         'defaults' => [
             'popup' => MESSAGE_PERMITTED + MESSAGE_DEFAULT_ENABLED,
-            'email' => MESSAGE_PERMITTED + MESSAGE_DEFAULT_ENABLED,
+            'email' => MESSAGE_PERMITTED,
         ],
     ],
     // The Telegram webhook could not be registered, so the bot does not receive messages; sent to site administrators.

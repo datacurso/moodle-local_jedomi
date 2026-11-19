@@ -170,6 +170,24 @@ final class agent_runner_test extends \advanced_testcase {
     }
 
     /**
+     * READ-002: the answer of a run that ended without text is the last tool result without an error, without the
+     * delimiters of the run; with no such result it is empty. The scheduled run and the preview share this rule.
+     */
+    public function test_last_tool_result_skips_errors_and_unwraps(): void {
+        $untrusted = new \local_jedomi\local\untrusted();
+        $messages = [
+            ['role' => 'user', 'content' => 'How many courses?'],
+            ['role' => 'tool', 'content' => $untrusted->wrap('tool execute_sql', '{"rows":[{"total":3}]}')],
+            ['role' => 'assistant', 'content' => ''],
+            ['role' => 'tool', 'content' => $untrusted->wrap('tool execute_sql', '{"error":"sql_construct_rejected"}')],
+        ];
+
+        $this->assertSame('{"rows":[{"total":3}]}', agent_runner::last_tool_result($messages, $untrusted));
+        $this->assertSame('', agent_runner::last_tool_result(array_slice($messages, 2), $untrusted));
+        $this->assertSame('', agent_runner::last_tool_result([], $untrusted));
+    }
+
+    /**
      * RISK-I3: the last error of a run stores only a safe message: the messages written for the user (AI errors, empty
      * answers) are kept, and any other failure becomes a generic text with a reference to the technical log, never its
      * raw message.
@@ -271,8 +289,10 @@ final class agent_runner_test extends \advanced_testcase {
         $creator = $this->getDataGenerator()->create_user();
         $this->create_due_agent((int) $creator->id);
         $fake = new fake_ai_client();
+        // A tool that works: a failing one is stopped earlier, after the same error repeats.
         for ($i = 1; $i <= 7; $i++) {
-            $this->enqueue_tool_call($fake, 'call_' . $i, ['table' => 'user']);
+            $fake->enqueue_tool_calls([['id' => 'call_' . $i, 'type' => 'function',
+                'function' => ['name' => 'describe_table', 'arguments' => json_encode(['tablename' => 'user'])]]]);
         }
         $fake->enqueue_text('Done.');
         client::set_instance_for_testing($fake);
@@ -632,10 +652,10 @@ final class agent_runner_test extends \advanced_testcase {
                 (string) $DB->get_field('user', 'password', ['id' => $victim->id])],
             'plugin keys' => ["SELECT value FROM {config_plugins} WHERE name = 'licensekey'", 'LicenseMarker42'],
         ];
-        \local_jedomi\agent\tool_executor::get_definitions(1, (int) $admin->id);
+        $executor = new \local_jedomi\agent\tool_executor(1, (int) $admin->id);
 
         foreach ($queries as $label => [$sql, $secret]) {
-            $result = \local_jedomi\agent\tool_executor::execute('execute_sql', json_encode(['query' => $sql]));
+            $result = $executor->execute('execute_sql', json_encode(['query' => $sql]));
             $this->assertStringNotContainsString($secret, $result, "An agent must reject the query on {$label}");
         }
     }
@@ -684,7 +704,43 @@ final class agent_runner_test extends \advanced_testcase {
 
         $this->assertStringNotContainsString('ximena.quintanilla@example.com', $result);
         $this->assertStringNotContainsString('Quintanilla', $result);
+        $this->assertStringNotContainsString('ID-778899', $result, 'Decision 6: identifiers too');
         $this->assertStringContainsString('Ximena Quintanilla', $delivered);
+    }
+
+    /**
+     * Decision 6, REL-005: in the agents, with the Basic level an identifier the AI received as a placeholder is restored
+     * in the arguments of the tool before it runs and in the result delivered to the creator.
+     */
+    public function test_agent_identifier_placeholder_is_restored_in_tool_arguments_and_result(): void {
+        global $DB;
+        $this->resetAfterTest();
+        set_config('anonymization_level', 'basic', 'local_jedomi');
+        set_config('telegram_enabled', 1, 'local_jedomi');
+        $telegram = new fake_telegram_api_client();
+        api_client::set_instance_for_testing($telegram);
+        $admin = get_admin();
+        $DB->insert_record('local_jedomi_telegram_links', (object) ['userid' => $admin->id, 'chatid' => '774000301',
+            'username' => 'admin', 'confirmed' => 1, 'timecreated' => time(), 'lastproactivesent' => 0]);
+        $named = $this->getDataGenerator()->create_user(['idnumber' => 'ID-778899', 'city' => 'Cartagena']);
+        $this->create_due_agent((int) $admin->id);
+        $fake = new fake_ai_client();
+        $fake->enqueue_tool_calls([['id' => 'call_1', 'type' => 'function', 'function' => ['name' => 'execute_sql',
+            'arguments' => json_encode(['query' => 'SELECT id, idnumber FROM {user} WHERE id = ' . (int) $named->id])]]]);
+        $fake->enqueue_tool_calls([['id' => 'call_2', 'type' => 'function', 'function' => ['name' => 'execute_sql',
+            'arguments' => json_encode(['query' => "SELECT city FROM {user} WHERE idnumber = '[id_1]'"])]]]);
+        $fake->enqueue_text('The user [id_1] lives in the city found.');
+        client::set_instance_for_testing($fake);
+
+        $this->run_task();
+
+        $this->assertCount(3, $fake->calls);
+        $tools = array_values(array_filter($fake->calls[2]['messages'], static fn(array $m): bool => $m['role'] === 'tool'));
+        $this->assertStringNotContainsString('ID-778899', (string) $tools[0]['content']);
+        $this->assertStringContainsString('[id_1]', (string) $tools[0]['content']);
+        $this->assertStringContainsString('Cartagena', (string) $tools[1]['content'], 'The query ran with the real idnumber');
+        $bychat = array_column($telegram->sent, 'text', 'chatid');
+        $this->assertStringContainsString('ID-778899', (string) ($bychat['774000301'] ?? ''));
     }
 
     /**
@@ -1011,10 +1067,10 @@ final class agent_runner_test extends \advanced_testcase {
             json_encode(['core_course_get_courses_by_field', 'core_webservice_get_site_info']),
             'local_jedomi'
         );
-        \local_jedomi\agent\tool_executor::get_definitions(0, (int) $admin->id);
+        $executor = new \local_jedomi\agent\tool_executor(0, (int) $admin->id);
         $before = (int) $USER->id;
 
-        $ok = json_decode(\local_jedomi\agent\tool_executor::execute('ws_execute', json_encode([
+        $ok = json_decode($executor->execute('ws_execute', json_encode([
             'wsname' => 'core_course_get_courses_by_field',
             'params' => json_encode(['field' => 'id', 'value' => (string) $course->id]),
         ])), true);
@@ -1022,20 +1078,20 @@ final class agent_runner_test extends \advanced_testcase {
         $this->assertSame('WS-AGENT-1', $ok['data']['courses'][0]['shortname']);
         $this->assertSame($before, (int) $USER->id, 'The session user is restored after the call');
 
-        $asobject = json_decode(\local_jedomi\agent\tool_executor::execute('ws_execute', json_encode([
+        $asobject = json_decode($executor->execute('ws_execute', json_encode([
             'wsname' => 'core_course_get_courses_by_field',
             'params' => ['field' => 'id', 'value' => (string) $course->id],
         ])), true);
         $this->assertTrue($asobject['success'] ?? false, 'Parameters sent as an object are accepted too');
 
-        $invalid = json_decode(\local_jedomi\agent\tool_executor::execute('ws_execute', json_encode([
+        $invalid = json_decode($executor->execute('ws_execute', json_encode([
             'wsname' => 'core_course_get_courses_by_field',
             'params' => json_encode(['field' => 'id', 'value' => (string) $course->id, 'unexpected' => 1]),
         ])), true);
         $this->assertArrayHasKey('error', $invalid);
         $this->assertStringContainsString('unexpected', $invalid['error'], 'Moodle rejects the unknown key');
 
-        $wrongtype = json_decode(\local_jedomi\agent\tool_executor::execute('ws_execute', json_encode([
+        $wrongtype = json_decode($executor->execute('ws_execute', json_encode([
             'wsname' => 'core_webservice_get_site_info',
             'params' => json_encode(['serviceshortnames' => 'not-a-list']),
         ])), true);
@@ -1117,6 +1173,56 @@ final class agent_runner_test extends \advanced_testcase {
 
         $this->assertSame([], $fake->calls);
         $this->assertSame(0, (int) $DB->get_field('local_jedomi_agents', 'enabled', ['id' => $agent->id]));
+    }
+
+    /**
+     * Decision 4: an agent whose context is in an excluded course (exclude mode, or a course not listed in "only listed"
+     * mode) does not run. It stays enabled, says why in its last error and waits for its next hour, so it runs again
+     * when the course is back in Jedomi.
+     */
+    public function test_agent_in_an_excluded_course_does_not_run(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $course = $this->getDataGenerator()->create_course();
+        $page = $this->getDataGenerator()->create_module('page', ['course' => $course->id]);
+        $creator = $this->getDataGenerator()->create_and_enrol($course, 'editingteacher');
+        $fake = new fake_ai_client();
+        client::set_instance_for_testing($fake);
+
+        foreach (
+            [
+                'exclude' => \context_course::instance($course->id)->id,
+                'include' => \context_module::instance($page->cmid)->id,
+            ] as $mode => $contextid
+        ) {
+            set_config('course_mode', $mode, 'local_jedomi');
+            set_config('course_list', $mode === 'exclude' ? (string) $course->id : '', 'local_jedomi');
+            $agent = $this->create_due_agent((int) $creator->id);
+            $DB->update_record('local_jedomi_agents', (object) ['id' => $agent->id, 'context_type' => 'course',
+                'context_id' => $contextid]);
+
+            $this->run_task();
+
+            $after = $DB->get_record('local_jedomi_agents', ['id' => $agent->id]);
+            $this->assertSame([], $fake->calls, "{$mode} mode: the agent must not reach the AI");
+            $this->assertSame(1, (int) $after->enabled, "{$mode} mode: the agent stays enabled");
+            $this->assertSame(get_string('agent_skipped_course_excluded', 'local_jedomi'), $after->lasterror);
+            $this->assertGreaterThan(time(), (int) $after->nextrun, "{$mode} mode: the agent waits for its next hour");
+            $this->assertEmpty($after->lastrun);
+
+            // Back in Jedomi (REL-005): at its next hour the agent reaches the AI and its last error is cleared.
+            set_config('course_mode', 'all', 'local_jedomi');
+            $DB->set_field('local_jedomi_agents', 'nextrun', time() - 60, ['id' => $agent->id]);
+            $fake->enqueue_text('Course summary.');
+            $this->run_task();
+
+            $after = $DB->get_record('local_jedomi_agents', ['id' => $agent->id]);
+            $this->assertCount(1, $fake->calls, "{$mode} mode: back in Jedomi, the agent reaches the AI");
+            $this->assertNull($after->lasterror, "{$mode} mode: a successful run clears the last error");
+            $this->assertNotEmpty($after->lastrun);
+            $fake->calls = [];
+            $DB->delete_records('local_jedomi_agents', ['id' => $agent->id]);
+        }
     }
 
     /**
@@ -1359,16 +1465,11 @@ final class agent_runner_test extends \advanced_testcase {
         $this->assertCount(1, $fake->calls, 'The run stops: the AI is not asked again');
         $after = $DB->get_record('local_jedomi_agents', ['id' => $agent->id]);
         $this->assertSame(1, (int) $after->failcount);
-        $this->assertStringContainsString(
-            get_string('agent_write_cap_reached', 'local_jedomi', [
-                'writes' => \local_jedomi\agent\write_guard::MAX_WRITES_PER_RUN,
-                'recipients' => \local_jedomi\agent\write_guard::MAX_RECIPIENTS_PER_RUN,
-            ]),
-            (string) $after->lasterror
-        );
+        $capmessage = get_string('agent_write_cap_writes', 'local_jedomi', \local_jedomi\agent\write_guard::MAX_WRITES_PER_RUN);
+        $this->assertStringContainsString($capmessage, (string) $after->lasterror);
         $summary = $this->messages_to($sink, (int) $teacher->id, 'local_jedomi');
         $this->assertCount(1, $summary);
-        $this->assertStringContainsString(get_string('agent_writes_stopped', 'local_jedomi'), $summary[0]->fullmessage);
+        $this->assertStringContainsString($capmessage, $summary[0]->fullmessage);
 
         $DB->set_field(
             'local_jedomi_agents',
@@ -1415,6 +1516,46 @@ final class agent_runner_test extends \advanced_testcase {
         $held = $DB->count_records(\local_jedomi\local\service\pending_action_service::TABLE, ['agentid' => $agent->id]);
         $this->assertSame(1, $held);
         $this->assertSame('confirmation_required', $this->last_tool_result($fake->calls[2])['error'] ?? null);
+    }
+
+    /**
+     * REL-003: a run that holds more writes than the cap of held writes is not a failure: nothing is written, the extra
+     * writes are neither held nor run, the run ends normally and the agent is never disabled for it.
+     */
+    public function test_run_over_the_held_cap_is_not_a_failure(): void {
+        global $DB;
+        $this->resetAfterTest();
+        [$agent, , $teacher] = $this->create_messaging_course_agent([]);
+        $calls = [];
+        for ($i = 0; $i <= \local_jedomi\agent\write_guard::MAX_WRITES_PER_RUN; $i++) {
+            $calls[] = ['id' => 'call_' . $i, 'type' => 'function', 'function' => ['name' => 'ws_execute',
+                'arguments' => json_encode(['wsname' => 'core_message_send_instant_messages', 'params' => json_encode(
+                    ['messages' => [['touserid' => (int) $teacher->id, 'text' => 'Note ' . $i]]]
+                )])]];
+        }
+        $failures = \local_jedomi\agent\agent_manager::MAX_FAILURES - 1;
+        $DB->set_field('local_jedomi_agents', 'failcount', $failures, ['id' => $agent->id]);
+        $fake = new fake_ai_client();
+        $fake->enqueue_tool_calls($calls);
+        $fake->enqueue_text('Waiting for your approval.');
+        client::set_instance_for_testing($fake);
+        $sink = $this->redirectMessages();
+
+        $this->run_task();
+
+        $after = $DB->get_record('local_jedomi_agents', ['id' => $agent->id]);
+        $this->assertSame(0, (int) $after->failcount);
+        $this->assertSame(1, (int) $after->enabled);
+        $this->assertSame(
+            \local_jedomi\agent\write_guard::MAX_WRITES_PER_RUN,
+            $DB->count_records(\local_jedomi\local\service\pending_action_service::TABLE, ['agentid' => $agent->id])
+        );
+        $summary = $this->messages_to($sink, (int) $teacher->id, 'local_jedomi');
+        $this->assertCount(1, $summary);
+        $this->assertStringContainsString(
+            get_string('agent_writes_held_cap', 'local_jedomi', \local_jedomi\agent\write_guard::MAX_WRITES_PER_RUN),
+            $summary[0]->fullmessage
+        );
     }
 
     /**
@@ -1472,5 +1613,101 @@ final class agent_runner_test extends \advanced_testcase {
 
         $this->assertCount(1, $fake->calls);
         $this->assertSame((int) $creator->id, $fake->calls[0]['userid']);
+    }
+
+    /**
+     * Unit 9: an answer without text is asked again once, and the second answer is the result of the run.
+     */
+    public function test_empty_answer_is_asked_again_once(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $creator = $this->getDataGenerator()->create_user();
+        $agent = $this->create_due_agent((int) $creator->id);
+        $fake = new fake_ai_client();
+        $fake->enqueue_empty('length');
+        $fake->enqueue_text('There are 3 users.');
+        client::set_instance_for_testing($fake);
+
+        $this->run_task();
+
+        $this->assertCount(2, $fake->calls);
+        $this->assertSame(\local_jedomi\ai\empty_answer::retry_message('length'), end($fake->calls[1]['messages']));
+        $after = $DB->get_record('local_jedomi_agents', ['id' => $agent->id]);
+        $this->assertSame('There are 3 users.', $after->lastresult);
+        $this->assertSame(0, (int) $after->failcount);
+    }
+
+    /**
+     * Unit 9: a second answer without text fails the run with a clear last error.
+     */
+    public function test_second_empty_answer_fails_with_a_clear_error(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $creator = $this->getDataGenerator()->create_user();
+        $agent = $this->create_due_agent((int) $creator->id);
+        $fake = new fake_ai_client();
+        $fake->enqueue_empty('stop');
+        $fake->enqueue_empty('stop');
+        client::set_instance_for_testing($fake);
+
+        $this->run_task();
+
+        $this->assertCount(2, $fake->calls);
+        $after = $DB->get_record('local_jedomi_agents', ['id' => $agent->id]);
+        $this->assertSame(get_string('agent_error_empty_answer', 'local_jedomi'), $after->lasterror);
+        $this->assertSame(1, (int) $after->failcount);
+    }
+
+    /**
+     * Unit 9: the same tool failing with the same arguments and the same error three times fails the run with a last
+     * error that names the tool.
+     */
+    public function test_same_tool_error_repeated_fails_the_run(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $creator = $this->getDataGenerator()->create_user();
+        $agent = $this->create_due_agent((int) $creator->id);
+        $fake = new fake_ai_client();
+        for ($i = 1; $i <= 5; $i++) {
+            $this->enqueue_tool_call($fake, 'call_' . $i, ['table' => 'user']);
+        }
+        $fake->enqueue_text('Never asked.');
+        client::set_instance_for_testing($fake);
+
+        $this->run_task();
+
+        $this->assertCount(\local_jedomi\local\repeated_tool_error::LIMIT, $fake->calls);
+        $after = $DB->get_record('local_jedomi_agents', ['id' => $agent->id]);
+        $this->assertSame(get_string('error_tool_repeated', 'local_jedomi', 'no_such_tool'), $after->lasterror);
+        $this->assertSame(1, (int) $after->failcount);
+    }
+
+    /**
+     * RES-005: a PHP error (not an exception) in one run is recorded as a failure of that agent, and the next agents
+     * still run.
+     */
+    public function test_php_error_in_a_run_is_recorded_and_the_task_goes_on(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $creator = $this->getDataGenerator()->create_user();
+        $broken = $this->create_due_agent((int) $creator->id);
+        $healthy = $this->create_due_agent((int) $creator->id);
+        // The broken agent is due first.
+        $DB->set_field('local_jedomi_agents', 'nextrun', time() - 120, ['id' => $broken->id]);
+        $fake = new fake_ai_client();
+        // Tool calls that are not a list make the loop fail with a TypeError.
+        $fake->queue[] = ['content' => '', 'tool_calls' => 'not a list', 'finish_reason' => 'tool_calls'];
+        $fake->enqueue_text('There are 3 users.');
+        client::set_instance_for_testing($fake);
+
+        $output = $this->run_task();
+
+        $failed = $DB->get_record('local_jedomi_agents', ['id' => $broken->id]);
+        $this->assertSame(1, (int) $failed->failcount);
+        $this->assertNotEmpty($failed->lasterror);
+        $this->assertStringNotContainsString('not a list', $failed->lasterror);
+        $ran = $DB->get_record('local_jedomi_agents', ['id' => $healthy->id]);
+        $this->assertSame('There are 3 users.', $ran->lastresult);
+        $this->assertStringContainsString('1 ok, 1 fail', $output);
     }
 }
