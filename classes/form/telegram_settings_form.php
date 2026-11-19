@@ -106,6 +106,15 @@ class telegram_settings_form extends \moodleform {
             $mform->addElement('advcheckbox', 'telegram_role_visible_' . $role['id'], $role['name'], $role['shortname']);
             $mform->setDefault('telegram_role_visible_' . $role['id'], 1);
         }
+        // Decision 7: off by default; administrators and managers then confirm their Telegram writes with a PIN.
+        $mform->addElement(
+            'advcheckbox',
+            'telegram_require_pin',
+            get_string('telegram_require_pin', 'local_jedomi'),
+            get_string('telegram_require_pin_desc', 'local_jedomi')
+        );
+        $mform->addHelpButton('telegram_require_pin', 'telegram_require_pin', 'local_jedomi');
+        $mform->setDefault('telegram_require_pin', 0);
 
         $this->add_action_buttons(false);
     }

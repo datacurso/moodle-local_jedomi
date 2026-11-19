@@ -520,4 +520,57 @@ final class upgradelib_test extends \advanced_testcase {
         $this->assertSame('1', get_config('local_jedomi', 'custom_audio_enabled'));
         $this->assertSame('0', get_config('local_jedomi', 'custom_files_enabled'));
     }
+
+    /**
+     * Decision 7: the 2026111902 step adds the last use and the PIN fields to the Telegram links.
+     *
+     * @return void
+     */
+    public function test_upgrade_step_adds_the_link_security_fields(): void {
+        global $CFG, $DB;
+        require_once($CFG->libdir . '/upgradelib.php');
+        require_once($CFG->dirroot . '/local/jedomi/db/upgrade.php');
+        $dbman = $DB->get_manager();
+        $table = new \xmldb_table('local_jedomi_telegram_links');
+        $fields = ['lastused', 'pinhash', 'pinfailures', 'pinlockeduntil', 'pinverifiedat'];
+        foreach ($fields as $name) {
+            $dbman->drop_field($table, new \xmldb_field($name));
+        }
+        set_config('version', 2026111901, 'local_jedomi');
+
+        $this->assertTrue(xmldb_local_jedomi_upgrade(2026111901));
+
+        foreach ($fields as $name) {
+            $this->assertTrue($dbman->field_exists('local_jedomi_telegram_links', $name), $name);
+        }
+    }
+
+    /**
+     * RES-001, REL-002: the 2026111902 step sets the last use of the existing links to the time of the upgrade, so a
+     * link created long before is not expired nor removed by the cleanup.
+     *
+     * @return void
+     */
+    public function test_upgrade_step_keeps_old_links_alive(): void {
+        global $CFG, $DB;
+        require_once($CFG->libdir . '/upgradelib.php');
+        require_once($CFG->dirroot . '/local/jedomi/db/upgrade.php');
+        $dbman = $DB->get_manager();
+        $table = new \xmldb_table('local_jedomi_telegram_links');
+        foreach (['lastused', 'pinhash', 'pinfailures', 'pinlockeduntil', 'pinverifiedat'] as $name) {
+            $dbman->drop_field($table, new \xmldb_field($name));
+        }
+        $user = $this->getDataGenerator()->create_user();
+        $DB->insert_record('local_jedomi_telegram_links', (object) ['userid' => $user->id, 'chatid' => '784200001',
+            'username' => 'linked', 'confirmed' => 1, 'timecreated' => time() - 60 * DAYSECS, 'lastproactivesent' => 0]);
+        set_config('version', 2026111901, 'local_jedomi');
+
+        $this->assertTrue(xmldb_local_jedomi_upgrade(2026111901));
+
+        $link = $DB->get_record('local_jedomi_telegram_links', ['userid' => $user->id]);
+        $this->assertGreaterThanOrEqual(time() - 5, (int) $link->lastused);
+        $this->assertFalse(\local_jedomi\local\service\telegram_link_service::is_expired($link));
+        $this->assertSame(0, \local_jedomi\local\service\telegram_link_service::unlink_expired());
+        $this->assertTrue($DB->record_exists('local_jedomi_telegram_links', ['userid' => $user->id]));
+    }
 }

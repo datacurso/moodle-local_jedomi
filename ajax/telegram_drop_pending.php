@@ -46,8 +46,9 @@ if (!$token) {
     exit;
 }
 
-// The setWebhook call drops the queue itself and keeps the URL registered, so the webhook is never deleted.
-$result = manager::register_webhook(null, true);
+// The setWebhook call drops the queue itself and keeps the URL registered, so the webhook is never deleted. While the
+// registration is pending the secret is rotated (FIX-001).
+$result = manager::drop_pending_updates();
 
 if ($result) {
     echo json_encode([

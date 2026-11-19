@@ -207,7 +207,7 @@ class admin_settings_service {
      * @return array{enabled: int, bot_token_set: bool, bot_username: string, bot_firstname: string,
      *     bot_verified: int, webhook_error: int, webhook_url: string, rate_limit: int, cooldown: int,
      *     max_turns: int, gateway_timeout: int, hidden_role_ids: int[], last_error: string,
-     *     last_error_time: int, webhook_ok_time: int, needs_registration: bool, is_configured: bool}
+     *     last_error_time: int, webhook_ok_time: int, needs_registration: bool, require_pin: int, is_configured: bool}
      */
     public static function get_telegram_settings(): array {
         $maxturns = get_config('local_jedomi', 'telegram_max_turns');
@@ -228,6 +228,7 @@ class admin_settings_service {
             'last_error_time' => manager::get_last_webhook_error_time(),
             'webhook_ok_time' => manager::get_webhook_ok_time(),
             'needs_registration' => manager::needs_webhook_registration(),
+            'require_pin' => (int) get_config('local_jedomi', 'telegram_require_pin'),
         ];
         $settings['is_configured'] = $settings['enabled'] && $settings['bot_token_set'] && $settings['bot_verified'];
         return $settings;
@@ -309,6 +310,7 @@ class admin_settings_service {
      * @param int $maxturns Conversation turns kept as context.
      * @param int $gatewaytimeout Seconds to wait for the AI service.
      * @param int[] $visibleroleids Roles that can use the bot; every other role is hidden.
+     * @param bool $requirepin Whether administrators and managers confirm their Telegram writes with a PIN.
      * @return void
      */
     public static function save_telegram_settings(
@@ -316,13 +318,15 @@ class admin_settings_service {
         int $cooldown,
         int $maxturns,
         int $gatewaytimeout,
-        array $visibleroleids
+        array $visibleroleids,
+        bool $requirepin = false
     ): void {
         set_config('telegram_rate_limit', $ratelimit, 'local_jedomi');
         set_config('telegram_cooldown', $cooldown, 'local_jedomi');
         set_config('telegram_max_turns', $maxturns, 'local_jedomi');
         set_config('telegram_gateway_timeout', $gatewaytimeout, 'local_jedomi');
         set_config('telegram_hidden_roles', implode(',', self::hidden_role_ids($visibleroleids)), 'local_jedomi');
+        set_config('telegram_require_pin', (int) $requirepin, 'local_jedomi');
         \local_jedomi\event\settings_updated::create_for_tab('telegram')->trigger();
     }
 

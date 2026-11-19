@@ -45,7 +45,8 @@ class cleanup_telegram_sessions extends \core\task\scheduled_task {
     /**
      * Delete Telegram sessions idle for over 30 minutes, Telegram pending actions older than 5 minutes, web chat
      * pending actions older than 15 minutes and message limit records whose window ended over an hour ago and that do
-     * not block their chat. Each count is read before deleting, so the report gives the real amounts.
+     * not block their chat, and Telegram links unused for 30 days. Each count is read before deleting, so the report
+     * gives the real amounts.
      */
     public function execute(): void {
         $now = time();
@@ -68,6 +69,10 @@ class cleanup_telegram_sessions extends \core\task\scheduled_task {
             [$now - self::RATE_LIMIT_TTL, $now]
         );
         mtrace("Deleted {$limitcount} expired Telegram message limit record(s).");
+
+        // Links unused for 30 days, with the data of their chats (Decision 7).
+        $linkcount = \local_jedomi\local\service\telegram_link_service::unlink_expired();
+        mtrace("Removed {$linkcount} expired Telegram link(s).");
     }
 
     /**

@@ -207,4 +207,38 @@ final class telegram_profile_test extends \advanced_testcase {
         $this->assertDoesNotMatchRegularExpression('/\b(tu|tus|vincula|vinculá|puedes|podés)\b/iu', $spanish);
         $this->assertStringNotContainsString('bot de Telegram para que los usuarios', $spanish, 'Not the administrator text');
     }
+
+    /**
+     * Decision 7: a linked user who needs a PIN gets the PIN form and whether a PIN is set.
+     *
+     * @return void
+     */
+    public function test_export_pin_form(): void {
+        global $PAGE;
+        $this->resetAfterTest();
+        $PAGE->set_url(new \moodle_url('/local/jedomi/telegram_profile.php'));
+        $renderer = $PAGE->get_renderer('local_jedomi');
+        $link = (object) ['username' => 'ada', 'chatid' => '1', 'timecreated' => 1700000000];
+        $make = static fn(bool $required, bool $set): telegram_profile => new telegram_profile(
+            telegram_profile::STATE_LINKED,
+            'jedomibot',
+            'Jedomi',
+            $link,
+            '',
+            0,
+            new \moodle_url('/local/jedomi/telegram_profile.php', ['userid' => 2]),
+            $required,
+            $set
+        );
+
+        $none = $make(false, false)->export_for_template($renderer);
+        $missing = $make(true, false)->export_for_template($renderer);
+        $set = $make(true, true)->export_for_template($renderer);
+
+        $this->assertFalse($none['pinrequired']);
+        $this->assertTrue($missing['pinrequired']);
+        $this->assertFalse($missing['pinset']);
+        $this->assertTrue($set['pinset']);
+        $this->assertStringContainsString('name="pin"', $renderer->render($make(true, false)));
+    }
 }

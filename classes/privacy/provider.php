@@ -69,6 +69,11 @@ class provider implements
             'chatid' => 'privacy:metadata:local_jedomi_telegram_links:chatid',
             'username' => 'privacy:metadata:local_jedomi_telegram_links:username',
             'timecreated' => 'privacy:metadata:local_jedomi_telegram_links:timecreated',
+            'lastused' => 'privacy:metadata:local_jedomi_telegram_links:lastused',
+            'pinhash' => 'privacy:metadata:local_jedomi_telegram_links:pinhash',
+            'pinfailures' => 'privacy:metadata:local_jedomi_telegram_links:pinfailures',
+            'pinlockeduntil' => 'privacy:metadata:local_jedomi_telegram_links:pinlockeduntil',
+            'pinverifiedat' => 'privacy:metadata:local_jedomi_telegram_links:pinverifiedat',
         ], 'privacy:metadata:local_jedomi_telegram_links');
 
         $collection->add_database_table('local_jedomi_telegram_sessions', [
@@ -331,6 +336,12 @@ class provider implements
                 'username' => $link->username,
                 'confirmed' => transform::yesno((bool) $link->confirmed),
                 'timecreated' => transform::datetime($link->timecreated),
+                'lastused' => $link->lastused ? transform::datetime($link->lastused) : null,
+                // The PIN hash itself is never exported: only whether a PIN is set and its state.
+                'pinset' => transform::yesno((string) $link->pinhash !== ''),
+                'pinfailures' => (int) $link->pinfailures,
+                'pinlockeduntil' => $link->pinlockeduntil ? transform::datetime($link->pinlockeduntil) : null,
+                'pinverifiedat' => $link->pinverifiedat ? transform::datetime($link->pinverifiedat) : null,
                 'conversations' => array_values(array_map(static fn(\stdClass $session): array => [
                     'messages' => $session->messages,
                     'lastactivity' => transform::datetime($session->lastactivity),

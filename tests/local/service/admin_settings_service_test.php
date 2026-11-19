@@ -724,4 +724,20 @@ final class admin_settings_service_test extends \advanced_testcase {
         $revision = reset($files)->get_timemodified();
         $this->assertStringContainsString('/local_jedomi/customavatar/' . $revision . '/robo.png', $url);
     }
+
+    /**
+     * Decision 7: the PIN for administrators and managers is off by default and saved with the Telegram settings.
+     *
+     * @return void
+     */
+    public function test_require_pin_setting(): void {
+        $this->resetAfterTest();
+        $this->assertSame(0, admin_settings_service::get_telegram_settings()['require_pin']);
+
+        admin_settings_service::save_telegram_settings(30, 5, 10, 45, [], true);
+        $this->assertSame(1, admin_settings_service::get_telegram_settings()['require_pin']);
+
+        admin_settings_service::save_telegram_settings(30, 5, 10, 45, [], false);
+        $this->assertSame(0, admin_settings_service::get_telegram_settings()['require_pin']);
+    }
 }

@@ -10,6 +10,11 @@
                 <FIELD NAME="confirmed" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
                 <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
                 <FIELD NAME="lastproactivesent" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+                <FIELD NAME="lastused" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Last message or button of the chat; the link expires 30 days after it"/>
+                <FIELD NAME="pinhash" TYPE="char" LENGTH="255" NOTNULL="false" SEQUENCE="false" COMMENT="password_hash of the Telegram PIN of an administrator or manager"/>
+                <FIELD NAME="pinfailures" TYPE="int" LENGTH="2" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Wrong PINs in a row"/>
+                <FIELD NAME="pinlockeduntil" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Telegram writes locked until this time after too many wrong PINs"/>
+                <FIELD NAME="pinverifiedat" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Last right PIN; writes run without asking it again for 15 minutes"/>
             </FIELDS>
             <KEYS>
                 <KEY NAME="primary" TYPE="primary" FIELDS="id"/>

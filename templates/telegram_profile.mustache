@@ -43,6 +43,11 @@
     * code string - One-time link code
     * deeplink string - https://t.me link that starts the bot with the code
     * codeexpiry int - Time the code expires
+    * pinrequired bool - The user confirms Telegram writes with a PIN
+    * pinset bool - The user has set the PIN
+    * pinminlength int - Fewest digits of the PIN
+    * pinmaxlength int - Most digits of the PIN
+    * pinpattern string - HTML pattern of the PIN
 
     Example context (json):
     {
@@ -51,7 +56,9 @@
         "actionurl": "https://example.com/local/jedomi/telegram_profile.php?userid=2", "sesskey": "abc123",
         "botusername": "jedomibot", "botfirstname": "Jedomi", "botlink": "https://t.me/jedomibot",
         "linkedas": "", "linkedtime": 0, "hascode": true, "code": "ABC234",
-        "deeplink": "https://t.me/jedomibot?start=ABC234", "codeexpiry": 1700000600
+        "deeplink": "https://t.me/jedomibot?start=ABC234", "codeexpiry": 1700000600,
+        "pinrequired": false, "pinset": false, "pinminlength": 6, "pinmaxlength": 8,
+        "pinpattern": "[0-9]{6,8}"
     }
 }}
 <div class="local_jedomi-telegram_profile">
@@ -101,6 +108,31 @@
                     <li>{{#str}} telegram_howto_unlink, local_jedomi {{/str}}</li>
                 </ul>
             </div>
+            {{#pinrequired}}
+            <div class="local_jedomi-tg-pin border rounded p-3 mb-3">
+                <p class="font-weight-bold fw-bold small mb-1">{{#str}} telegram_pin_title, local_jedomi {{/str}}</p>
+                <p class="small mb-2">{{#str}} telegram_pin_info, local_jedomi {{/str}}</p>
+                {{#pinset}}<p class="small text-success mb-2">{{#str}} telegram_pin_is_set, local_jedomi {{/str}}</p>{{/pinset}}
+                {{^pinset}}<p class="small text-danger mb-2">{{#str}} telegram_pin_not_set, local_jedomi {{/str}}</p>{{/pinset}}
+                <form method="post" action="{{actionurl}}" autocomplete="off">
+                    <input type="hidden" name="sesskey" value="{{sesskey}}">
+                    <input type="hidden" name="action" value="setpin">
+                    <div class="form-group mb-2">
+                        <label for="{{uniqid}}-pin" class="small">{{#str}} telegram_pin_new, local_jedomi {{/str}}</label>
+                        <input type="password" id="{{uniqid}}-pin" name="pin" class="form-control form-control-sm" inputmode="numeric"
+                               pattern="{{pinpattern}}" minlength="{{pinminlength}}" maxlength="{{pinmaxlength}}"
+                               autocomplete="new-password" required>
+                    </div>
+                    <div class="form-group mb-2">
+                        <label for="{{uniqid}}-pinconfirm" class="small">{{#str}} telegram_pin_repeat, local_jedomi {{/str}}</label>
+                        <input type="password" id="{{uniqid}}-pinconfirm" name="pinconfirm" class="form-control form-control-sm"
+                               inputmode="numeric" minlength="{{pinminlength}}" maxlength="{{pinmaxlength}}"
+                               autocomplete="new-password" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-sm">{{#str}} telegram_pin_save, local_jedomi {{/str}}</button>
+                </form>
+            </div>
+            {{/pinrequired}}
             <form method="post" action="{{actionurl}}" data-form="local_jedomi/telegram_profile/unlink">
                 <input type="hidden" name="sesskey" value="{{sesskey}}">
                 <input type="hidden" name="action" value="unlink">

@@ -152,7 +152,8 @@ switch ($tab) {
                 (int) $data->telegram_cooldown,
                 (int) $data->telegram_max_turns,
                 (int) $data->telegram_gateway_timeout,
-                telegram_settings_form::visible_role_ids($data, $roles)
+                telegram_settings_form::visible_role_ids($data, $roles),
+                !empty($data->telegram_require_pin)
             );
             redirect($pageurl, $message, null, $type);
         }
@@ -161,6 +162,7 @@ switch ($tab) {
             'telegram_cooldown' => $telegram['cooldown'],
             'telegram_max_turns' => $telegram['max_turns'],
             'telegram_gateway_timeout' => $telegram['gateway_timeout'],
+            'telegram_require_pin' => $telegram['require_pin'],
         ];
         foreach ($roles as $role) {
             $defaults['telegram_role_visible_' . $role['id']] = (int) !in_array($role['id'], $telegram['hidden_role_ids'], true);

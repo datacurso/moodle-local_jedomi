@@ -237,9 +237,10 @@ class manager {
      * webhook registered before stay as they were and the error is recorded.
      *
      * @param api_client|null $client Client of the stored token; built from it when null.
+     * @param bool $droppending Whether Telegram drops the updates waiting to be delivered.
      * @return bool Whether Telegram accepted the new secret.
      */
-    public static function register_webhook_with_new_secret(?api_client $client = null): bool {
+    public static function register_webhook_with_new_secret(?api_client $client = null, bool $droppending = false): bool {
         $token = self::get_bot_token();
         if (!$token) {
             self::set_last_webhook_error('No bot token configured — webhook not registered');
@@ -248,13 +249,29 @@ class manager {
 
         $client = $client ?? new api_client($token);
         $secret = self::new_webhook_secret();
-        if (!$client->set_webhook(self::get_webhook_url(), $secret)) {
+        if (!$client->set_webhook(self::get_webhook_url(), $secret, $droppending)) {
             self::set_last_webhook_error('setWebhook failed — check the URL is HTTPS and reachable');
             return false;
         }
         set_config('telegram_webhook_secret', $secret, 'local_jedomi');
         self::clear_last_webhook_error();
         return true;
+    }
+
+    /**
+     * Drop the updates waiting to be delivered, keeping the webhook registered.
+     *
+     * While the webhook must be registered again (RES-001) the kept secret is not trusted, so the webhook is registered
+     * with a new secret, stored only once Telegram accepts it (FIX-001); otherwise the current secret is kept.
+     *
+     * @param api_client|null $client Client of the stored token; built from it when null.
+     * @return bool Whether Telegram accepted the registration.
+     */
+    public static function drop_pending_updates(?api_client $client = null): bool {
+        if (self::needs_webhook_registration()) {
+            return self::register_webhook_with_new_secret($client, true);
+        }
+        return self::register_webhook($client, true);
     }
 
     /**
@@ -408,6 +425,58 @@ class manager {
             return false;
         }
         return hash_equals(self::get_webhook_secret(), $header);
+    }
+
+    /**
+     * Whether an update was already received from the current bot, recording it when it was not (SEC-JD-049).
+     *
+     * Telegram delivers an update again when the webhook does not answer in time; a repeated update_id is acknowledged
+     * and not processed. Update ids are counted per bot, so the bot id (the part of the token before the colon) is part
+     * of the key. An update without update_id is never taken as repeated.
+     *
+     * @param array $update Decoded update.
+     * @return bool True when the update was already seen; false when it is new (and is now recorded as seen).
+     */
+    public static function mark_update_seen(array $update): bool {
+        $key = self::update_key($update);
+        if ($key === null) {
+            return false;
+        }
+        $cache = \cache::make('local_jedomi', 'telegram_updates');
+        if ($cache->get($key) !== false) {
+            return true;
+        }
+        $cache->set($key, 1);
+        return false;
+    }
+
+    /**
+     * Forget that an update was seen, so the retry of Telegram is processed (REL-006): used when processing it failed.
+     *
+     * @param array $update Decoded update.
+     * @return void
+     */
+    public static function forget_update(array $update): void {
+        $key = self::update_key($update);
+        if ($key !== null) {
+            \cache::make('local_jedomi', 'telegram_updates')->delete($key);
+        }
+    }
+
+    /**
+     * Cache key of an update: the bot id and the update id; null when the update has no valid update_id.
+     *
+     * @param array $update Decoded update.
+     * @return string|null
+     */
+    private static function update_key(array $update): ?string {
+        $updateid = $update['update_id'] ?? null;
+        if (!is_int($updateid) && !(is_string($updateid) && ctype_digit($updateid))) {
+            return null;
+        }
+        $token = (string) self::get_bot_token();
+        $botid = preg_match('/^(\d{1,20}):/', $token, $matches) ? $matches[1] : '0';
+        return 'b' . $botid . '_u' . $updateid;
     }
 
     /**

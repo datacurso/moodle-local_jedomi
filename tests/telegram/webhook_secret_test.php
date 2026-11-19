@@ -251,4 +251,28 @@ final class webhook_secret_test extends \advanced_testcase {
         $this->assertSame(2, $options[CURLOPT_SSL_VERIFYHOST]);
         $this->assertContains('X-Telegram-Bot-Api-Secret-Token: ' . $secret, $options[CURLOPT_HTTPHEADER]);
     }
+
+    /**
+     * FIX-001: dropping the pending updates while the webhook must be registered again registers it with a new secret
+     * and only then clears the need; otherwise it keeps the secret.
+     */
+    public function test_drop_pending_rotates_the_secret_while_the_registration_is_pending(): void {
+        $this->resetAfterTest();
+        manager::set_bot_token('123:abc');
+        $secret = manager::get_webhook_secret();
+
+        $client = self::recording_client();
+        $this->assertTrue(manager::drop_pending_updates($client));
+        $this->assertSame($secret, manager::get_webhook_secret(), 'Normal case: the secret is kept');
+        $this->assertSame('true', $client->requests[0][1]['drop_pending_updates']);
+
+        manager::require_webhook_registration();
+        $client = self::recording_client();
+        $this->assertTrue(manager::drop_pending_updates($client));
+        $newsecret = manager::get_webhook_secret();
+        $this->assertNotSame($secret, $newsecret, 'The pending registration gets a new secret');
+        $this->assertSame($newsecret, $client->requests[0][1]['secret_token']);
+        $this->assertSame('true', $client->requests[0][1]['drop_pending_updates']);
+        $this->assertFalse(manager::needs_webhook_registration());
+    }
 }

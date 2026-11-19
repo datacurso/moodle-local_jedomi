@@ -1501,9 +1501,9 @@ function local_jedomi_telegram_active_user(int $userid): ?stdClass {
 /**
  * The confirmed Telegram link of a user who may use the bot and receive its notifications now.
  *
- * Jedomi and the Telegram integration must be enabled, the user must have a confirmed link, an active account and a
- * role allowed by the Telegram role rule. The bot checks it on every message and during a request in progress, and
- * the notifications check it before each message.
+ * Jedomi and the Telegram integration must be enabled, the user must have a confirmed link used within the last 30
+ * days, an active account and a role allowed by the Telegram role rule. The bot checks it on every message and during a
+ * request in progress, and the notifications check it before each message.
  *
  * @param int $userid Moodle user id.
  * @return stdClass|null The confirmed link, or null when the user may not be served.
@@ -1514,7 +1514,10 @@ function local_jedomi_telegram_recipient(int $userid): ?stdClass {
         return null;
     }
     $link = $DB->get_record('local_jedomi_telegram_links', ['userid' => $userid, 'confirmed' => 1]);
-    if (!$link || local_jedomi_telegram_active_user($userid) === null || !local_jedomi_telegram_role_allowed_for($userid)) {
+    if (
+        !$link || \local_jedomi\local\service\telegram_link_service::is_expired($link)
+            || local_jedomi_telegram_active_user($userid) === null || !local_jedomi_telegram_role_allowed_for($userid)
+    ) {
         return null;
     }
     return $link;

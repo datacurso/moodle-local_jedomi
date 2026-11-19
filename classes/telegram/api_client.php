@@ -279,6 +279,18 @@ class api_client {
     }
 
     /**
+     * Delete a message from a chat.
+     *
+     * @param int|string $chatid
+     * @param int        $messageid
+     * @return bool Whether Telegram deleted it.
+     */
+    public function delete_message(int|string $chatid, int $messageid): bool {
+        $result = $this->post('deleteMessage', ['chat_id' => $chatid, 'message_id' => $messageid]);
+        return $result !== null && ($result['ok'] ?? false);
+    }
+
+    /**
      * Answer a callback query (removes the "loading" state from inline buttons).
      *
      * @param string $callbackid

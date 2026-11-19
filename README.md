@@ -163,7 +163,20 @@ owners approve the functions each agent needs in its form.
 Telegram sends the webhook secret in the `X-Telegram-Bot-Api-Secret-Token` header; the secret is not part of the
 webhook address, and a secret in the query string is refused. Upgrading to 1.6.1 rotates the secret and registers the
 webhook again when a bot token is configured. If Telegram cannot be reached at that moment, the Integrations tab shows
-a warning until the bot token is saved again.
+a warning until the bot token is saved again. While that warning is shown, "Drop pending updates" registers the
+webhook with a new secret. An update Telegram delivers again (same `update_id`) is acknowledged and not processed twice.
+
+## Telegram link security
+
+- **Expiry**: a link unused for 30 days expires. The next message tells the user to link again from the profile, and
+  the link no longer receives notifications.
+- **Revocation**: the link is removed when the user is suspended or deleted or the password changes.
+- **PIN for administrators and managers**: with "Require a PIN in Telegram for actions of administrators and managers"
+  (Integrations → Telegram, off by default), each administrator and manager sets a PIN of 6 to 8 digits on the Jedomi
+  Telegram page of their profile, stored only as a hash. The PIN replaces the Confirm button for their Telegram
+  writes; after a right PIN, writes run without asking again for 15 minutes. Three wrong PINs lock their Telegram
+  writes for 15 minutes. Until the PIN is set their writes are refused with a link to set it; queries keep working.
+  Relinking the chat, or a revocation, removes the PIN.
 
 ## Anonymisation
 

@@ -54,6 +54,15 @@ class fake_telegram_api_client extends api_client {
     /** @var array<int, array{chatid: int|string, messageid: int, text: string}> Messages edited, in order. */
     public array $edited = [];
 
+    /** @var array<int, array{chatid: int|string, messageid: int}> Messages deleted, in order. */
+    public array $deleted = [];
+
+    /** @var bool Whether delete_message() fails. */
+    public bool $deletefails = false;
+
+    /** @var callable|null Called with the chat id and the text before each send_message(); it may throw. */
+    public $onsend = null;
+
     /**
      * Use a dummy token so no real bot configuration is needed.
      */
@@ -63,6 +72,9 @@ class fake_telegram_api_client extends api_client {
 
     #[\Override]
     public function send_message(int|string $chatid, string $text, ?array $replymarkup = null, bool $truncate = false): bool {
+        if ($this->onsend !== null) {
+            ($this->onsend)($chatid, $text);
+        }
         $this->sent[] = ['chatid' => $chatid, 'text' => $text, 'replymarkup' => $replymarkup];
         return true;
     }
@@ -70,6 +82,15 @@ class fake_telegram_api_client extends api_client {
     #[\Override]
     public function edit_message_text(int|string $chatid, int $messageid, string $text, ?array $replymarkup = null): bool {
         $this->edited[] = ['chatid' => $chatid, 'messageid' => $messageid, 'text' => $text];
+        return true;
+    }
+
+    #[\Override]
+    public function delete_message(int|string $chatid, int $messageid): bool {
+        if ($this->deletefails) {
+            return false;
+        }
+        $this->deleted[] = ['chatid' => $chatid, 'messageid' => $messageid];
         return true;
     }
 
