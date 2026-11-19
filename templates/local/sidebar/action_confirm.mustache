@@ -18,7 +18,8 @@
     @template local_jedomi/local/sidebar/action_confirm
 
     Confirmation card of an action that changes data. The server holds the action until the user confirms it.
-    Bulk messages show the recipient count and a preview; critical actions ask to type the confirmation keyword.
+    Bulk messages show the recipient count and the message; critical actions ask to type the confirmation keyword.
+    When the data was too long to show whole, the card says so and only offers Cancel (JEDOMI-SEC-013).
 
     Classes required for JS:
     * none
@@ -37,26 +38,33 @@
     * description string - What the action does
     * hasdetails bool - Whether details are shown
     * details string - Details of the action
+    * truncated bool - Whether the data was cut: the notice is shown and the action can only be cancelled
     * critical bool - Whether the keyword must be typed
     * keyword string - Keyword to type
-    * strings object - Sidebar strings: yes_send, cancel, pending_action_needed, confirm_type_to_proceed, confirm_btn_yes, confirm_btn_no
+    * strings object - Sidebar strings: yes_send, cancel, pending_action_needed, pending_action_truncated, confirm_type_to_proceed,
+      confirm_btn_yes, confirm_btn_no
 
     Example context (json):
     {
         "issend": false, "countbefore": "", "count": 0, "countafter": "", "preview": "",
-        "description": "Delete agent 3", "hasdetails": true, "details": "Daily report", "critical": true, "keyword": "CONFIRM",
+        "description": "Delete agent 3", "hasdetails": true, "details": "Daily report", "truncated": false, "critical": true,
+        "keyword": "CONFIRM",
         "strings": {"pending_action_needed": "This action needs your confirmation.", "confirm_type_to_proceed": "Type CONFIRM to proceed:",
+            "pending_action_truncated": "This action has more data than can be shown, so it can only be cancelled.",
             "confirm_btn_yes": "Confirm", "confirm_btn_no": "Cancel", "yes_send": "Yes, send", "cancel": "Cancel"}
     }
 }}
 {{#issend}}
 <div class="jedomi-confirm-msg"><svg class="jedomi-confirm-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/></svg>{{countbefore}}<strong>{{count}}</strong>{{countafter}}</div>
 <div class="jedomi-confirm-preview">{{preview}}</div>
+{{#truncated}}<div class="jedomi-action-warning" role="alert">{{strings.pending_action_truncated}}</div>{{/truncated}}
 <div class="jedomi-confirm-btns">
+    {{^truncated}}
     <button type="button" class="jedomi-confirm-yes" data-action="local_jedomi/sidebar/confirm-yes">
         <svg class="jedomi-confirm-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20 6 9 17l-5-5"/></svg>
         {{strings.yes_send}}
     </button>
+    {{/truncated}}
     <button type="button" class="jedomi-confirm-no" data-action="local_jedomi/sidebar/confirm-no">
         <svg class="jedomi-confirm-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18M6 6l12 12"/></svg>
         {{strings.cancel}}
@@ -67,6 +75,8 @@
 <div class="jedomi-action-warning">{{strings.pending_action_needed}}</div>
 <div class="jedomi-action-desc">{{description}}</div>
 {{#hasdetails}}<div class="jedomi-confirm-preview">{{details}}</div>{{/hasdetails}}
+{{#truncated}}<div class="jedomi-action-warning" role="alert">{{strings.pending_action_truncated}}</div>{{/truncated}}
+{{^truncated}}
 {{#critical}}
 <div class="jedomi-type-confirm-wrap">
     <label>{{strings.confirm_type_to_proceed}}
@@ -74,11 +84,14 @@
     </label>
 </div>
 {{/critical}}
+{{/truncated}}
 <div class="jedomi-confirm-btns">
+    {{^truncated}}
     <button type="button" class="jedomi-confirm-yes" data-action="local_jedomi/sidebar/confirm-yes">
         <svg class="jedomi-confirm-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20 6 9 17l-5-5"/></svg>
         {{strings.confirm_btn_yes}}
     </button>
+    {{/truncated}}
     <button type="button" class="jedomi-confirm-no" data-action="local_jedomi/sidebar/confirm-no">
         <svg class="jedomi-confirm-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18M6 6l12 12"/></svg>
         {{strings.confirm_btn_no}}

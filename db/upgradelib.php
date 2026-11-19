@@ -249,3 +249,21 @@ function local_jedomi_upgrade_custom_feature_switches(): void {
         set_config('custom_max_tokens', (string) \local_jedomi\ai\ai_service::default_custom_max_tokens($window), 'local_jedomi');
     }
 }
+
+/**
+ * Remove email from the site default outputs of the summary of the writes of an agent run (REL-005): each run may send
+ * one, so it is shown in the notifications only. The other outputs of the site default and the preferences of each
+ * user are kept.
+ *
+ * @return void
+ */
+function local_jedomi_upgrade_agentwrites_email_default(): void {
+    $name = 'message_provider_local_jedomi_agentwrites_enabled';
+    $current = get_config('message', $name);
+    if ($current === false) {
+        return;
+    }
+    $outputs = array_filter(explode(',', (string) $current), static fn(string $output): bool => $output !== ''
+        && $output !== 'email');
+    set_config($name, implode(',', $outputs), 'message');
+}

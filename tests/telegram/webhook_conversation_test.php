@@ -983,6 +983,29 @@ final class webhook_conversation_test extends \advanced_testcase {
     }
 
     /**
+     * JEDOMI-SEC-013, SEC-JD-043: an action whose data does not fit whole in a Telegram message is not held there: no
+     * card with cut data is shown, nothing waits for confirmation, and the AI is told to use the web chat.
+     *
+     * @return void
+     */
+    public function test_action_too_long_for_telegram_is_not_held(): void {
+        global $DB;
+        $this->link((int) get_admin()->id, '779000041');
+        $prompt = str_repeat('Summarise the week. ', 300);
+        $args = ['name' => 'Long digest', 'prompt' => $prompt, 'schedule_cron' => '0 8 * * 1'];
+        $this->ai_uses('create_agent', $args, 'Use the web chat.');
+
+        $this->say('779000041', 'Create a long digest agent');
+
+        $this->assertSame(0, $DB->count_records('local_jedomi_telegram_pending_actions'));
+        $this->assertSame(0, $DB->count_records('local_jedomi_agents'));
+        $withbuttons = array_filter($this->telegram->sent, static fn(array $m): bool =>
+            !empty($m['replymarkup']['inline_keyboard']));
+        $this->assertSame([], $withbuttons);
+        $this->assertStringContainsString('action_too_long_for_telegram', json_encode(end($this->ai->calls)));
+    }
+
+    /**
      * MDL-INT-114: unlinking, suspending the account, blocking the role or disabling the integration while the bot
      * works stops the run before the next tool, sends no result and does not save the task state again.
      *

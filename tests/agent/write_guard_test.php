@@ -186,6 +186,11 @@ final class write_guard_test extends \advanced_testcase {
             $this->fail('The write over the cap must stop the run');
         } catch (write_cap_exceeded $e) {
             $this->assertInstanceOf(run_failure::class, $e);
+            // READ-001: the message names the cap that was reached.
+            $this->assertSame(
+                get_string('agent_write_cap_writes', 'local_jedomi', write_guard::MAX_WRITES_PER_RUN),
+                $e->getMessage()
+            );
         }
         $this->assertSame(write_guard::MAX_WRITES_PER_RUN, $this->runs);
     }
@@ -203,8 +208,58 @@ final class write_guard_test extends \advanced_testcase {
         $guard = new write_guard($agent);
         $guard->run('ws_execute', $this->message_to(array_slice($ids, 0, write_guard::MAX_RECIPIENTS_PER_RUN)), $this->spy());
 
+        // READ-001: the message names the cap of recipients, not the one of writes.
         $this->expectException(write_cap_exceeded::class);
+        $cap = write_guard::MAX_RECIPIENTS_PER_RUN;
+        $this->expectExceptionMessage(get_string('agent_write_cap_recipients', 'local_jedomi', $cap));
         $guard->run('ws_execute', $this->message_to([end($ids)]), $this->spy());
+    }
+
+    /**
+     * REL-003, READ-001: going over the cap of held writes does not stop the run as a failure: the extra write is
+     * neither held nor run, the AI is told so, and the creator gets the message of that cap.
+     */
+    public function test_held_cap_is_not_a_run_failure(): void {
+        $this->resetAfterTest();
+        [$agent, , $teacher] = $this->course_agent([]);
+        $guard = new write_guard($agent);
+        for ($i = 0; $i < write_guard::MAX_WRITES_PER_RUN; $i++) {
+            $guard->run('create_agent', ['prompt' => 'Agent ' . $i], $this->spy());
+        }
+
+        $result = json_decode($guard->run('create_agent', ['prompt' => 'One more'], $this->spy()), true);
+
+        $this->assertSame('held_cap_reached', $result['error']);
+        $this->assertSame(0, $this->runs);
+        $this->assertSame(write_guard::MAX_WRITES_PER_RUN, $this->count_pending());
+        $sink = $this->redirectMessages();
+        $this->assertTrue($guard->notify_creator());
+        $text = $sink->get_messages()[0]->fullmessage;
+        $this->assertStringContainsString(
+            get_string('agent_writes_held_cap', 'local_jedomi', write_guard::MAX_WRITES_PER_RUN),
+            $text
+        );
+        $writescap = get_string('agent_write_cap_writes', 'local_jedomi', write_guard::MAX_WRITES_PER_RUN);
+        $this->assertStringNotContainsString($writescap, $text);
+        $this->assertSame((int) $teacher->id, (int) $sink->get_messages()[0]->useridto);
+    }
+
+    /**
+     * REL-002: the same write held by the agent in two runs waits once for the creator.
+     */
+    public function test_same_write_held_in_two_runs_waits_once(): void {
+        $this->resetAfterTest();
+        [$agent, $course] = $this->course_agent([]);
+        $agent = $this->store($agent);
+        $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
+
+        (new write_guard($agent))->run('ws_execute', $this->message_to([(int) $student->id]), $this->spy());
+        $second = new write_guard($agent);
+        $result = json_decode($second->run('ws_execute', $this->message_to([(int) $student->id]), $this->spy()), true);
+
+        $this->assertSame('confirmation_required', $result['error']);
+        $this->assertSame(1, $this->count_pending());
+        $this->assertSame(0, $this->runs);
     }
 
     /**

@@ -2990,10 +2990,12 @@ define(['core/log', 'core/ajax', 'core/templates', 'core/str', 'core/notificatio
             countbefore: countbefore || '',
             count: Number(pending.count || 0),
             countafter: countafter || '',
-            preview: preview.substring(0, 120) + (preview.length > 120 ? '...' : ''),
+            // The whole message and data are shown (JEDOMI-SEC-013); cut data only lets the user cancel.
+            preview: preview,
             description: pending.description || pending.tool || '',
             hasdetails: !!pending.details,
             details: pending.details || '',
+            truncated: !!pending.truncated,
             critical: isCritical,
             keyword: confirmKeyword,
             strings: CS,

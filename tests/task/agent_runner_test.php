@@ -1445,16 +1445,11 @@ final class agent_runner_test extends \advanced_testcase {
         $this->assertCount(1, $fake->calls, 'The run stops: the AI is not asked again');
         $after = $DB->get_record('local_jedomi_agents', ['id' => $agent->id]);
         $this->assertSame(1, (int) $after->failcount);
-        $this->assertStringContainsString(
-            get_string('agent_write_cap_reached', 'local_jedomi', [
-                'writes' => \local_jedomi\agent\write_guard::MAX_WRITES_PER_RUN,
-                'recipients' => \local_jedomi\agent\write_guard::MAX_RECIPIENTS_PER_RUN,
-            ]),
-            (string) $after->lasterror
-        );
+        $capmessage = get_string('agent_write_cap_writes', 'local_jedomi', \local_jedomi\agent\write_guard::MAX_WRITES_PER_RUN);
+        $this->assertStringContainsString($capmessage, (string) $after->lasterror);
         $summary = $this->messages_to($sink, (int) $teacher->id, 'local_jedomi');
         $this->assertCount(1, $summary);
-        $this->assertStringContainsString(get_string('agent_writes_stopped', 'local_jedomi'), $summary[0]->fullmessage);
+        $this->assertStringContainsString($capmessage, $summary[0]->fullmessage);
 
         $DB->set_field(
             'local_jedomi_agents',
@@ -1501,6 +1496,46 @@ final class agent_runner_test extends \advanced_testcase {
         $held = $DB->count_records(\local_jedomi\local\service\pending_action_service::TABLE, ['agentid' => $agent->id]);
         $this->assertSame(1, $held);
         $this->assertSame('confirmation_required', $this->last_tool_result($fake->calls[2])['error'] ?? null);
+    }
+
+    /**
+     * REL-003: a run that holds more writes than the cap of held writes is not a failure: nothing is written, the extra
+     * writes are neither held nor run, the run ends normally and the agent is never disabled for it.
+     */
+    public function test_run_over_the_held_cap_is_not_a_failure(): void {
+        global $DB;
+        $this->resetAfterTest();
+        [$agent, , $teacher] = $this->create_messaging_course_agent([]);
+        $calls = [];
+        for ($i = 0; $i <= \local_jedomi\agent\write_guard::MAX_WRITES_PER_RUN; $i++) {
+            $calls[] = ['id' => 'call_' . $i, 'type' => 'function', 'function' => ['name' => 'ws_execute',
+                'arguments' => json_encode(['wsname' => 'core_message_send_instant_messages', 'params' => json_encode(
+                    ['messages' => [['touserid' => (int) $teacher->id, 'text' => 'Note ' . $i]]]
+                )])]];
+        }
+        $failures = \local_jedomi\agent\agent_manager::MAX_FAILURES - 1;
+        $DB->set_field('local_jedomi_agents', 'failcount', $failures, ['id' => $agent->id]);
+        $fake = new fake_ai_client();
+        $fake->enqueue_tool_calls($calls);
+        $fake->enqueue_text('Waiting for your approval.');
+        client::set_instance_for_testing($fake);
+        $sink = $this->redirectMessages();
+
+        $this->run_task();
+
+        $after = $DB->get_record('local_jedomi_agents', ['id' => $agent->id]);
+        $this->assertSame(0, (int) $after->failcount);
+        $this->assertSame(1, (int) $after->enabled);
+        $this->assertSame(
+            \local_jedomi\agent\write_guard::MAX_WRITES_PER_RUN,
+            $DB->count_records(\local_jedomi\local\service\pending_action_service::TABLE, ['agentid' => $agent->id])
+        );
+        $summary = $this->messages_to($sink, (int) $teacher->id, 'local_jedomi');
+        $this->assertCount(1, $summary);
+        $this->assertStringContainsString(
+            get_string('agent_writes_held_cap', 'local_jedomi', \local_jedomi\agent\write_guard::MAX_WRITES_PER_RUN),
+            $summary[0]->fullmessage
+        );
     }
 
     /**

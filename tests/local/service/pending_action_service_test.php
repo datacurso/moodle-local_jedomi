@@ -79,6 +79,10 @@ final class pending_action_service_test extends \advanced_testcase {
             'write that removes' => ['core_course_remove_content_item_from_user_favourites', 'critical'],
             'other write' => ['core_course_create_courses', 'high'],
             'read' => ['core_course_get_courses', null],
+            'read whose name only has a plural noun' => ['core_course_get_updates_since', null],
+            'read whose name has a write verb' => ['mod_forum_can_add_discussion', 'high'],
+            'read that sets favourites' => ['core_course_set_favourite_courses', 'high'],
+            'read that creates evidence' => ['core_competency_create_user_evidence_competency', 'high'],
             'unknown function' => ['core_no_such_function', null],
         ];
     }
@@ -181,7 +185,8 @@ final class pending_action_service_test extends \advanced_testcase {
 
         $this->assertSame('medium', $pending['severity']);
         $this->assertSame(2, $pending['count']);
-        $this->assertSame(\core_text::substr(trim($message), 0, 120), $pending['preview']);
+        $this->assertSame(trim($message), $pending['preview'], 'The whole message is shown (JEDOMI-SEC-013)');
+        $this->assertFalse($pending['truncated']);
     }
 
     /**
@@ -470,5 +475,141 @@ final class pending_action_service_test extends \advanced_testcase {
 
         $result = pending_action_service::resolve($reassigned, (int) $creator->id, false);
         $this->assertSame(pending_action_service::STATUS_CANCELLED, $result['status']);
+    }
+
+    /**
+     * JEDOMI-SEC-013 (RE-POC-5), SEC-JD-043, RISK-002: the card of a held write shows every argument, also the ones after
+     * the twelfth line, with their whole values, and is not marked as cut.
+     */
+    public function test_card_shows_every_argument_of_the_write(): void {
+        $this->resetAfterTest();
+        $assignments = [];
+        for ($i = 1; $i <= 4; $i++) {
+            $assignments[] = ['roleid' => 5, 'userid' => 900000 + $i, 'contextid' => 1];
+        }
+        $assignments[] = ['roleid' => 1, 'userid' => 900005, 'contextid' => 1];
+        $long = str_repeat('Long text of the description. ', 10);
+        $args = ['wsname' => 'core_role_assign_roles', 'params' => json_encode(['assignments' => $assignments,
+            'note' => $long])];
+
+        $card = pending_action_service::hold(2, 'ws_execute', $args, 0);
+
+        $this->assertStringContainsString("Assignments › #5 › Roleid: 1\nAssignments › #5 › Userid: 900005", $card['details']);
+        $this->assertStringContainsString(trim($long), $card['details']);
+        $this->assertStringNotContainsString('…', $card['details']);
+        $this->assertFalse($card['truncated']);
+    }
+
+    /**
+     * JEDOMI-SEC-013, SEC-JD-043: arguments too long to show whole are marked as cut, and the action can only be
+     * cancelled: confirming it is refused and the action is kept.
+     */
+    public function test_cut_card_is_marked_and_cannot_be_confirmed(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $user = $this->getDataGenerator()->create_user();
+        $args = ['name' => 'Huge', 'prompt' => str_repeat('a', pending_action_service::DETAILS_LENGTH + 10),
+            'schedule_cron' => '0 8 * * *'];
+
+        $card = pending_action_service::hold((int) $user->id, 'create_agent', $args);
+
+        $this->assertTrue($card['truncated']);
+        $this->assertLessThanOrEqual(pending_action_service::DETAILS_LENGTH, \core_text::strlen($card['details']));
+        $this->assertTrue(pending_action_service::cards_for_user((int) $user->id)[0]['truncated']);
+        try {
+            pending_action_service::resolve($card['id'], (int) $user->id, true);
+            $this->fail('A cut action must not be confirmed');
+        } catch (\moodle_exception $e) {
+            $this->assertSame('pending_action_too_long', $e->errorcode);
+        }
+        $this->assertTrue($DB->record_exists(pending_action_service::TABLE, ['id' => $card['id']]));
+        $result = pending_action_service::resolve($card['id'], (int) $user->id, false);
+        $this->assertSame(pending_action_service::STATUS_CANCELLED, $result['status']);
+        $this->assertSame(0, $DB->count_records('local_jedomi_agents'));
+    }
+
+    /**
+     * REL-002: the same write held again by the same agent, in another run, is not stored twice; another write, the
+     * same write of another agent and the same action of the chat are.
+     */
+    public function test_same_write_of_an_agent_is_held_once(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $creator = $this->getDataGenerator()->create_user();
+        $make = fn(string $name): int => (int) $DB->insert_record('local_jedomi_agents', (object) ['userid' => $creator->id,
+            'name' => $name, 'prompt' => 'p', 'schedule_cron' => '0 8 * * *', 'timecreated' => time(),
+            'timemodified' => time()]);
+        $agentid = $make('Night watch');
+        $otheragent = $make('Day watch');
+        $args = ['wsname' => 'core_course_create_categories', 'params' => '{"categories":[{"name":"x"}]}'];
+
+        $first = pending_action_service::hold((int) $creator->id, 'ws_execute', $args, $agentid);
+        $again = pending_action_service::hold((int) $creator->id, 'call_webservice', ['function' => $args['wsname'],
+            'params' => $args['params']], $agentid);
+        pending_action_service::hold((int) $creator->id, 'ws_execute', ['wsname' => $args['wsname'],
+            'params' => '{"categories":[{"name":"y"}]}'], $agentid);
+        pending_action_service::hold((int) $creator->id, 'ws_execute', $args, $otheragent);
+        pending_action_service::hold((int) $creator->id, 'ws_execute', $args);
+        pending_action_service::hold((int) $creator->id, 'ws_execute', $args);
+
+        $this->assertSame($first['id'], $again['id']);
+        $this->assertSame(2, $DB->count_records(pending_action_service::TABLE, ['agentid' => $agentid]));
+        $this->assertSame(1, $DB->count_records(pending_action_service::TABLE, ['agentid' => $otheragent]));
+        $this->assertSame(2, $DB->count_records(pending_action_service::TABLE, ['agentid' => 0]));
+    }
+
+    /**
+     * RES-004: the cards of the writes held by agents are loaded with the same number of queries whatever their number.
+     */
+    public function test_cards_of_held_writes_do_not_query_once_per_row(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $creator = $this->getDataGenerator()->create_user();
+        $agents = [];
+        for ($i = 0; $i < 4; $i++) {
+            $agents[] = (int) $DB->insert_record('local_jedomi_agents', (object) ['userid' => $creator->id,
+                'name' => 'Agent ' . $i, 'prompt' => 'p', 'schedule_cron' => '0 8 * * *', 'timecreated' => time(),
+                'timemodified' => time()]);
+        }
+        $hold = function (int $agentid, string $name) use ($creator): void {
+            $params = json_encode(['categories' => [['name' => $name]]]);
+            $args = ['wsname' => 'core_course_create_categories', 'params' => $params];
+            pending_action_service::hold((int) $creator->id, 'ws_execute', $args, $agentid);
+        };
+        $hold($agents[0], 'a');
+        $reads = $DB->perf_get_reads();
+        pending_action_service::cards_for_user((int) $creator->id);
+        $one = $DB->perf_get_reads() - $reads;
+        foreach ($agents as $index => $agentid) {
+            $hold($agentid, 'b' . $index);
+            $hold($agentid, 'c' . $index);
+        }
+
+        $reads = $DB->perf_get_reads();
+        $cards = pending_action_service::cards_for_user((int) $creator->id);
+        $many = $DB->perf_get_reads() - $reads;
+
+        $this->assertCount(9, $cards);
+        $this->assertSame($one, $many);
+        $this->assertStringContainsString('Agent 3', end($cards)['description']);
+    }
+
+    /**
+     * REL-002: the writes held by an agent that no longer exists are removed by the cleanup and not shown.
+     */
+    public function test_writes_held_by_a_deleted_agent_are_purged(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $creator = $this->getDataGenerator()->create_user();
+        $agentid = (int) $DB->insert_record('local_jedomi_agents', (object) ['userid' => $creator->id, 'name' => 'Gone',
+            'prompt' => 'p', 'schedule_cron' => '0 8 * * *', 'timecreated' => time(), 'timemodified' => time()]);
+        $orphan = $this->hold_for_agent((int) $creator->id, $agentid);
+        $kept = pending_action_service::hold((int) $creator->id, 'delete_agent', ['id' => 1]);
+        $DB->delete_records('local_jedomi_agents', ['id' => $agentid]);
+
+        $this->assertSame([$kept['id']], array_column(pending_action_service::cards_for_user((int) $creator->id), 'id'));
+        $this->assertSame(1, pending_action_service::purge_expired());
+        $this->assertFalse($DB->record_exists(pending_action_service::TABLE, ['id' => $orphan]));
+        $this->assertTrue($DB->record_exists(pending_action_service::TABLE, ['id' => $kept['id']]));
     }
 }

@@ -146,14 +146,24 @@ Scheduled agents run on their own, so the actions they take are limited:
 
 - **Approved writes**: an agent runs a web service function that changes data without confirmation only when that
   function is in its "Writes run without confirmation" list. The list offers the functions of the web service list
-  saved for the role of the agent owner; without a saved list, an agent runs no web service function at all.
+  saved for the role of the agent owner; without a saved list, an agent runs no web service function at all, also for
+  reading, and its creator gets a notification when the agent is created or enabled. Enabling or disabling an agent
+  removes the approved writes its owner may no longer approve and says which ones.
 - **Scope**: an approved write runs only when its targets stay inside the course, category, user or site of the agent,
   checked on the server. A target outside the scope is rejected.
 - **Held writes**: any other write, and a write whose targets cannot be verified, waits as a pending action of the agent
-  creator for 7 days, to approve or reject in the Jedomi web chat.
-- **Caps**: each run makes at most 20 approved writes to at most 50 distinct recipients; going over stops the run.
-- **Notification**: after each run with writes, the creator gets a Moodle notification (popup and email by default)
-  listing the writes run, waiting for approval and rejected.
+  creator for 7 days, to approve or reject in the Jedomi web chat. The card shows every argument of the write; data too
+  long to show whole is marked as cut and can only be rejected. The same write proposed again in a later run waits
+  once, and deleting the agent deletes its held writes.
+- **Caps**: each run makes at most 20 approved writes to at most 50 distinct recipients; going over stops the run and
+  counts as a failed run. A run holds at most 20 writes; the extra ones are neither held nor run, and this does not
+  count as a failed run. Each cap has its own message.
+- **Notification**: after each run with writes, the creator gets a Moodle notification (popup only by default; email
+  can be turned on in the notification preferences) listing the writes run, waiting for approval and rejected.
+
+Web service functions whose name, after its component, has a write word (such as `add`, `create`, `set` or `send`)
+need confirmation in every channel even when they are declared as reading. In Telegram, an action whose data does not
+fit whole in one message is not held: the user is told to ask for it in the web chat.
 
 After upgrading to 1.6.1, existing agents have no approved writes, so all their writes wait for approval until their
 owners approve the functions each agent needs in its form.

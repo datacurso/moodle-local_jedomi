@@ -1524,4 +1524,81 @@ final class agent_manager_test extends \advanced_testcase {
         agent_manager::update_agent($id, (object) ['enabled' => 1]);
         $this->assertNull($DB->get_field('local_jedomi_agents', 'runwrites', ['id' => $id]), 'Enabling again clears them');
     }
+    /**
+     * REL-001: enabling or disabling an agent whose approved write is no longer allowed for its owner does not fail: the
+     * write that is no longer allowed is removed from the agent and returned so the user is told; the others are kept.
+     * Saving the form with a write that is not allowed is still refused.
+     */
+    public function test_toggling_an_agent_drops_approved_writes_no_longer_allowed(): void {
+        $send = 'core_message_send_instant_messages';
+        $members = 'core_group_add_group_members';
+        $course = $this->getDataGenerator()->create_course();
+        $teacher = $this->getDataGenerator()->create_and_enrol($course, 'editingteacher');
+        set_config('ws_allowlist_teacher', json_encode([$send, $members]), 'local_jedomi');
+        $id = agent_manager::create_agent((object) ['userid' => (int) $teacher->id, 'prompt' => 'Remind',
+            'schedule_cron' => '0 8 * * *', 'approvedwrites' => [$send, $members]]);
+        set_config('ws_allowlist_teacher', json_encode([$send]), 'local_jedomi');
+
+        $dropped = agent_manager::update_agent($id, (object) ['enabled' => 0]);
+
+        $this->assertSame([$members], $dropped);
+        $agent = agent_manager::get_agent($id);
+        $this->assertSame(0, (int) $agent->enabled);
+        $this->assertSame([$send], agent_manager::approved_writes($agent));
+        $this->assertSame([], agent_manager::update_agent($id, (object) ['enabled' => 1]));
+        $this->assertSame(1, (int) agent_manager::get_agent($id)->enabled);
+
+        $this->expectException(\moodle_exception::class);
+        agent_manager::update_agent($id, (object) ['approvedwrites' => [$send, $members]]);
+    }
+
+    /**
+     * REL-002: deleting an agent deletes the writes it held for its creator; the actions of the chat stay.
+     */
+    public function test_deleting_an_agent_deletes_its_held_writes(): void {
+        global $DB;
+        $creator = $this->getDataGenerator()->create_user();
+        $id = agent_manager::create_agent((object) ['userid' => (int) $creator->id, 'prompt' => 'Watch',
+            'schedule_cron' => '0 8 * * *']);
+        $table = \local_jedomi\local\service\pending_action_service::TABLE;
+        \local_jedomi\local\service\pending_action_service::hold((int) $creator->id, 'delete_agent', ['id' => 7], $id);
+        \local_jedomi\local\service\pending_action_service::hold((int) $creator->id, 'delete_agent', ['id' => 8]);
+
+        agent_manager::delete_agent($id);
+
+        $this->assertSame(0, $DB->count_records($table, ['agentid' => $id]));
+        $this->assertSame(1, $DB->count_records($table, ['agentid' => 0]));
+    }
+
+    /**
+     * REL-004: an administrator without a saved web service list is told, when they create or enable an agent, that it
+     * cannot use any web service function, also for reading; an owner with a list is not.
+     */
+    public function test_creator_is_told_when_the_agent_has_no_functions(): void {
+        $admin = get_admin();
+        unset_config('ws_allowlist_admin', 'local_jedomi');
+        $sink = $this->redirectMessages();
+
+        $id = agent_manager::create_agent((object) ['userid' => (int) $admin->id, 'prompt' => 'Report',
+            'schedule_cron' => '0 8 * * *', 'name' => 'Weekly report']);
+
+        $messages = $sink->get_messages();
+        $this->assertCount(1, $messages);
+        $this->assertSame((int) $admin->id, (int) $messages[0]->useridto);
+        $this->assertSame('agentwrites', $messages[0]->eventtype);
+        $this->assertStringContainsString('Weekly report', $messages[0]->subject);
+        $this->assertSame(get_string('agent_no_functions_text', 'local_jedomi'), $messages[0]->fullmessage);
+
+        $sink->clear();
+        agent_manager::update_agent($id, (object) ['enabled' => 0]);
+        $this->assertSame(0, $sink->count(), 'Disabling does not notify');
+        agent_manager::update_agent($id, (object) ['enabled' => 1]);
+        $this->assertSame(1, $sink->count(), 'Enabling again notifies');
+
+        $sink->clear();
+        set_config('ws_allowlist_admin', json_encode(['core_course_get_courses']), 'local_jedomi');
+        agent_manager::create_agent((object) ['userid' => (int) $admin->id, 'prompt' => 'Report',
+            'schedule_cron' => '0 8 * * *']);
+        $this->assertSame(0, $sink->count());
+    }
 }

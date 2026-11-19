@@ -506,7 +506,54 @@ class agent_manager {
 
         $id = (int) $DB->insert_record('local_jedomi_agents', $record);
         self::agent_event(\local_jedomi\event\agent_created::class, $id, (int) $record->userid);
+        if ($record->enabled) {
+            self::notify_without_functions((object) ['id' => $id, 'userid' => $record->userid, 'name' => $record->name]);
+        }
         return $id;
+    }
+
+    /**
+     * Tell the creator of an agent, when it is created or enabled, that it cannot use any web service function, also
+     * for reading (REL-004): its owner is an administrator without a saved web service list, and agents never get the
+     * "every function" access. Nothing is sent when the owner has a list.
+     *
+     * @param \stdClass $agent Agent (id, userid, name).
+     * @return bool Whether the notification was sent.
+     */
+    public static function notify_without_functions(\stdClass $agent): bool {
+        global $CFG;
+        require_once($CFG->dirroot . '/local/jedomi/lib.php');
+        $creator = \core_user::get_user((int) $agent->userid);
+        if (!$creator || !empty($creator->deleted)) {
+            return false;
+        }
+        if (!\local_jedomi_role_has_full_ws_access(\local_jedomi_get_user_role_for_user((int) $creator->id))) {
+            return false;
+        }
+        try {
+            $name = trim((string) ($agent->name ?? '')) ?: '#' . (int) $agent->id;
+            [$subject, $text] = \local_jedomi\local\user_language::run((int) $creator->id, static fn(): array => [
+                get_string('agent_no_functions_subject', 'local_jedomi', $name),
+                get_string('agent_no_functions_text', 'local_jedomi'),
+            ]);
+            $message = new \core\message\message();
+            $message->component = 'local_jedomi';
+            $message->name = 'agentwrites';
+            $message->userfrom = \core_user::get_noreply_user();
+            $message->userto = $creator;
+            $message->subject = $subject;
+            $message->fullmessage = $text;
+            $message->fullmessageformat = FORMAT_PLAIN;
+            $message->fullmessagehtml = text_to_html(s($text), false, false, true);
+            $message->smallmessage = $subject;
+            $message->notification = 1;
+            $message->contexturl = (new \moodle_url('/local/jedomi/admin_settings.php'))->out(false);
+            $message->contexturlname = get_string('pluginname', 'local_jedomi');
+            return (bool) message_send($message);
+        } catch (\Throwable $e) {
+            \local_jedomi_log('[AGENT] Agent #' . (int) $agent->id . ' — notice without functions failed (' . get_class($e) . ')');
+            return false;
+        }
     }
 
     /**
@@ -571,14 +618,20 @@ class agent_manager {
      * writes may be kept or reduced, never extended, and an agent given to another owner starts without approved writes
      * unless that new owner is the one who approves them. Without an acting user (an internal update) nothing is checked.
      *
+     * An update that does not send the approved writes (enabling or disabling the agent, for example) removes the approved
+     * writes its owner may no longer approve instead of failing (REL-001), and returns them so the user is told. An update
+     * that sends approved writes the owner may not approve still fails.
+     *
+     * Enabling the agent tells its creator when it cannot use any web service function (notify_without_functions()).
+     *
      * @param  int       $id
      * @param  \stdClass $data Fields to update.
      * @param  int       $actorid User who makes the change; 0 for an internal update.
-     * @return void
+     * @return string[] Approved writes removed because the owner may no longer approve them.
      * @throws \moodle_exception When the agent would not be valid, see validation_error(), or agent_approve_writes_owner_only
      *     when a user other than the owner adds approved writes.
      */
-    public static function update_agent(int $id, \stdClass $data, int $actorid = 0): void {
+    public static function update_agent(int $id, \stdClass $data, int $actorid = 0): array {
         global $DB;
 
         $record = new \stdClass();
@@ -604,7 +657,18 @@ class agent_manager {
 
         // Enabling an agent or changing its schedule or owner moves its next run to its next scheduled hour.
         $current = self::get_agent($id);
+        $dropped = [];
+        $enabling = false;
         if ($current) {
+            $keep = self::approved_writes($current);
+            if (!property_exists($record, 'approvedwrites') && !empty($keep)) {
+                $approvable = self::approvable_writes((int) ($record->userid ?? $current->userid));
+                $dropped = array_values(array_diff($keep, $approvable));
+                if (!empty($dropped)) {
+                    // The owner may no longer approve them (their list changed): they are removed, not kept (REL-001).
+                    $record->approvedwrites = self::encode_approved_writes(array_values(array_intersect($keep, $approvable)));
+                }
+            }
             self::require_valid((object) array_merge((array) $current, (array) $record));
             if (property_exists($record, 'name') && $record->name === '') {
                 $record->name = self::generate_name_from_prompt((string) ($record->prompt ?? $current->prompt));
@@ -646,6 +710,11 @@ class agent_manager {
         $DB->update_record('local_jedomi_agents', $record);
         $ownerid = (int) ($record->userid ?? ($current->userid ?? 0));
         self::agent_event(\local_jedomi\event\agent_updated::class, $id, $ownerid);
+        if ($enabling) {
+            self::notify_without_functions((object) ['id' => $id, 'userid' => $ownerid,
+                'name' => $record->name ?? $current->name]);
+        }
+        return $dropped;
     }
 
     /**
@@ -668,7 +737,7 @@ class agent_manager {
     // ... ── CRUD: Delete ─────────────────────────────────────────────────────────
 
     /**
-     * Delete an agent record and its associated cache entries.
+     * Delete an agent record, its associated cache entries and the writes it held for its creator.
      *
      * @param  int $id
      */
@@ -676,6 +745,8 @@ class agent_manager {
         global $DB;
         $ownerid = (int) $DB->get_field('local_jedomi_agents', 'userid', ['id' => $id]);
         self::clear_agent_cache($id);
+        // The writes it held for its creator can no longer be approved (REL-002).
+        \local_jedomi\local\service\pending_action_service::delete_for_agent($id);
         $DB->delete_records('local_jedomi_agents', ['id' => $id]);
         if ($ownerid > 0) {
             self::agent_event(\local_jedomi\event\agent_deleted::class, $id, $ownerid);

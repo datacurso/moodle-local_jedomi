@@ -905,6 +905,13 @@ class webhook_handler {
                 return null;
             }
         }
+        $card = pending_action_service::card($userid, $name, $args, $severity, pending_action_service::TELEGRAM_DETAILS_LENGTH);
+        if ($card['truncated']) {
+            // The user could not see in Telegram everything the action does, so it is not held here (JEDOMI-SEC-013).
+            return json_encode(['error' => 'action_too_long_for_telegram',
+                'note' => 'The data of this action is too long to show in Telegram. Tell the user to ask for it in the '
+                    . 'Jedomi web chat. Do not call it again.']);
+        }
         $callbackid = random_string(16);
         $DB->insert_record('local_jedomi_telegram_pending_actions', (object) [
             'callbackid' => $callbackid,
@@ -946,7 +953,7 @@ class webhook_handler {
         string $severity,
         bool $pinrequired = false
     ): string {
-        $card = pending_action_service::card($userid, $name, $args, $severity);
+        $card = pending_action_service::card($userid, $name, $args, $severity, pending_action_service::TELEGRAM_DETAILS_LENGTH);
         $text = '<b>' . s($card['description']) . '</b>';
         if ($name === 'send_messages') {
             $text = '<b>' . s(str_replace('{count}', (string) $card['count'], get_string('confirm_send_bulk', 'local_jedomi')))

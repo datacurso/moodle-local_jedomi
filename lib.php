@@ -295,6 +295,7 @@ function local_jedomi_get_sidebar_config(array $page = []): array {
             'confirm_done'            => get_string('confirm_done', 'local_jedomi'),
             'confirm_cancelled'       => get_string('confirm_cancelled', 'local_jedomi'),
             'pending_action_needed'   => get_string('pending_action_needed', 'local_jedomi'),
+            'pending_action_truncated' => get_string('pending_action_truncated', 'local_jedomi'),
             // Quick actions: Admin.
             'qa_admin_active_users_label'    => get_string('qa_admin_active_users_label', 'local_jedomi'),
             'qa_admin_active_users_msg'      => get_string('qa_admin_active_users_msg', 'local_jedomi'),

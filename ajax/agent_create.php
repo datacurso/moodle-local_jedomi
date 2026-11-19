@@ -134,8 +134,13 @@ try {
             $id = required_param('id', PARAM_INT);
             $agent = agent_manager::require_manageable_agent($id, (int) $USER->id);
             $newenabled = $agent->enabled ? 0 : 1;
-            agent_manager::update_agent($id, (object)['enabled' => $newenabled]);
-            echo json_encode(['ok' => true, 'enabled' => $newenabled]);
+            // Approved writes the owner may no longer approve are removed and the user is told (REL-001).
+            $dropped = agent_manager::update_agent($id, (object)['enabled' => $newenabled]);
+            $response = ['ok' => true, 'enabled' => $newenabled];
+            if (!empty($dropped)) {
+                $response['notice'] = get_string('agent_approved_writes_dropped', 'local_jedomi', implode(', ', $dropped));
+            }
+            echo json_encode($response);
             break;
 
         case 'run':

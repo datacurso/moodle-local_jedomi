@@ -65,17 +65,25 @@ class pending_action_service {
     /** @var string Status: the action ran but did not succeed, or was not allowed. */
     public const STATUS_FAILED = 'failed';
 
-    /** @var int Characters of the message shown in the send_messages card. */
-    private const PREVIEW_LENGTH = 120;
+    /**
+     * @var int Characters of the data (or of the message of send_messages) shown in the web card. Every argument is shown
+     *     whole (JEDOMI-SEC-013); only data longer than this is cut, and then the card says so and cannot be confirmed.
+     */
+    public const DETAILS_LENGTH = 20000;
 
-    /** @var int Characters of the arguments shown in the card. */
-    private const DETAILS_LENGTH = 500;
-
-    /** @var int Lines of the arguments shown in the card; the rest is replaced by an ellipsis. */
-    private const DETAIL_LINES = 12;
+    /** @var int Characters of the data shown in a Telegram card, which must fit in one Telegram message (4096). */
+    public const TELEGRAM_DETAILS_LENGTH = 3000;
 
     /** @var string[] Words in a web service function name that mark it as destructive. */
     private const DESTRUCTIVE_WORDS = ['delete', 'remove', 'unenrol'];
+
+    /**
+     * @var string[] Words of a web service function name, after its component, that mark it as a write even when it is
+     *     declared as reading (SEC-JD-039): a function wrongly declared as reading still needs confirmation.
+     */
+    private const WRITE_WORDS = ['add', 'archive', 'assign', 'change', 'create', 'delete', 'duplicate', 'edit', 'enrol',
+        'import', 'insert', 'lock', 'mark', 'move', 'purge', 'remove', 'replace', 'reset', 'restore', 'revert', 'save',
+        'send', 'set', 'submit', 'toggle', 'unassign', 'unblock', 'unenrol', 'unlock', 'update', 'upload', 'write'];
 
     /**
      * Severity of a tool call, or null when it runs without confirmation.
@@ -123,10 +131,12 @@ class pending_action_service {
     }
 
     /**
-     * Severity of a web service function: only functions declared as 'read' run without confirmation.
+     * Severity of a web service function: only functions declared as 'read' whose name has no write word run without
+     * confirmation.
      *
      * Moodle sets the type only when db/services.php declares it, so a function with a missing or
-     * unexpected type is treated as writing.
+     * unexpected type is treated as writing. A function declared as reading whose name, after its component, has a write
+     * word (see WRITE_WORDS, whole words only) is treated as writing too (SEC-JD-039).
      *
      * @param string $wsname Web service function name.
      * @return string|null
@@ -142,7 +152,7 @@ class pending_action_service {
             // An unknown function fails in ws_execute anyway.
             return null;
         }
-        if (($info->type ?? '') === 'read') {
+        if (($info->type ?? '') === 'read' && !self::has_write_word($wsname, (string) ($info->component ?? ''))) {
             return null;
         }
         foreach (self::DESTRUCTIVE_WORDS as $word) {
@@ -154,10 +164,29 @@ class pending_action_service {
     }
 
     /**
+     * Whether the name of a web service function, without its component, has a write word as a whole word: "add" in
+     * mod_forum_can_add_discussion, but not "updates" in core_course_get_updates_since.
+     *
+     * @param string $wsname Function name.
+     * @param string $component Its component ("moodle" for the core functions).
+     * @return bool
+     */
+    private static function has_write_word(string $wsname, string $component): bool {
+        $name = \core_text::strtolower($wsname);
+        if ($component !== '' && str_starts_with($name, $component . '_')) {
+            $name = substr($name, strlen($component) + 1);
+        } else if (preg_match('/^core_[a-z0-9]+_(.*)$/', $name, $match)) {
+            $name = $match[1];
+        }
+        return !empty(array_intersect(explode('_', $name), self::WRITE_WORDS));
+    }
+
+    /**
      * Hold a tool call that needs confirmation.
      *
      * The action is stored in its canonical form (see normalise()), so it runs through the same tool when it is
-     * confirmed.
+     * confirmed. A scheduled agent never holds the same action twice for the same user (REL-002): the action it already
+     * holds is returned instead.
      *
      * @param int $userid User who must confirm it.
      * @param string $tool Tool name.
@@ -175,39 +204,104 @@ class pending_action_service {
             return null;
         }
 
-        $id = (int) $DB->insert_record(self::TABLE, (object) [
-            'userid' => $userid,
-            'agentid' => $agentid,
-            'tool' => \core_text::substr($tool, 0, 64),
-            'argsjson' => json_encode($args, JSON_UNESCAPED_UNICODE),
-            'severity' => $severity,
-            'timecreated' => time(),
-        ]);
+        $argsjson = json_encode($args, JSON_UNESCAPED_UNICODE);
+        $id = $agentid > 0 ? self::held_by_agent($userid, $agentid, $tool, $args) : 0;
+        if ($id === 0) {
+            $id = (int) $DB->insert_record(self::TABLE, (object) [
+                'userid' => $userid,
+                'agentid' => $agentid,
+                'tool' => \core_text::substr($tool, 0, 64),
+                'argsjson' => $argsjson,
+                'severity' => $severity,
+                'timecreated' => time(),
+            ]);
+        }
 
         return ['id' => $id] + self::card($userid, $tool, $args, $severity);
     }
 
     /**
-     * Data of the confirmation card of an action, in readable language: what it does, its data as "field: value"
-     * lines and, for send_messages, the recipients that will really get the message and a preview of it.
+     * Id of the same action, still valid, that an agent already holds for a user, or 0 (REL-002).
+     *
+     * @param int $userid User who must confirm it.
+     * @param int $agentid Agent that holds it.
+     * @param string $tool Canonical tool name.
+     * @param array $args Canonical arguments.
+     * @return int
+     */
+    private static function held_by_agent(int $userid, int $agentid, string $tool, array $args): int {
+        global $DB;
+        $fingerprint = self::fingerprint($tool, $args);
+        $records = $DB->get_records(self::TABLE, ['userid' => $userid, 'agentid' => $agentid, 'tool' => $tool], 'id ASC');
+        foreach ($records as $record) {
+            $stored = json_decode((string) $record->argsjson, true);
+            if (!self::is_expired($record) && is_array($stored) && self::fingerprint($tool, $stored) === $fingerprint) {
+                return (int) $record->id;
+            }
+        }
+        return 0;
+    }
+
+    /**
+     * Fingerprint of an action: its tool and its arguments with the keys of their objects sorted, the parameters of a
+     * web service or administration operation decoded when they come as JSON.
+     *
+     * @param string $tool Canonical tool name.
+     * @param array $args Canonical arguments.
+     * @return string
+     */
+    private static function fingerprint(string $tool, array $args): string {
+        if (isset($args['params']) && is_string($args['params'])) {
+            $decoded = json_decode($args['params'], true);
+            $args['params'] = is_array($decoded) ? $decoded : $args['params'];
+        }
+        $sorted = static function ($value) use (&$sorted) {
+            if (!is_array($value)) {
+                return $value;
+            }
+            if (!array_is_list($value)) {
+                ksort($value);
+            }
+            return array_map($sorted, $value);
+        };
+        return hash('sha256', $tool . '|' . json_encode($sorted($args), JSON_UNESCAPED_UNICODE));
+    }
+
+    /**
+     * Data of the confirmation card of an action, in readable language: what it does, all its data as "field: value"
+     * lines and, for send_messages, the recipients that will really get the message and the message.
+     *
+     * Every argument is shown whole (JEDOMI-SEC-013). Only data longer than the limit is cut; then truncated is true and
+     * the action can only be cancelled.
      *
      * @param int $userid User who would run the action.
      * @param string $tool Tool name.
      * @param array $args Tool arguments.
      * @param string $severity One of the SEVERITY_* constants.
-     * @return array Keys tool, severity, description and details, plus count and preview for send_messages.
+     * @param int $limit Characters of the data shown: DETAILS_LENGTH (web) or TELEGRAM_DETAILS_LENGTH.
+     * @return array Keys tool, severity, description, details and truncated, plus count and preview for send_messages.
      */
-    public static function card(int $userid, string $tool, array $args, string $severity): array {
+    public static function card(
+        int $userid,
+        string $tool,
+        array $args,
+        string $severity,
+        int $limit = self::DETAILS_LENGTH
+    ): array {
+        $details = self::readable_details($tool, $args);
         $card = [
             'tool' => $tool,
             'severity' => $severity,
             'description' => self::describe($userid, $tool, $args),
-            'details' => self::readable_details($tool, $args),
+            'details' => \core_text::substr($details, 0, $limit),
+            'truncated' => \core_text::strlen($details) > $limit,
         ];
         if ($tool === 'send_messages') {
+            $message = trim((string) ($args['message'] ?? ''));
             $card['count'] = count(message_service::contactable($userid, $args['user_ids'] ?? []));
-            $card['preview'] = \core_text::substr(trim((string) ($args['message'] ?? '')), 0, self::PREVIEW_LENGTH);
+            $card['preview'] = \core_text::substr($message, 0, $limit);
             $card['details'] = '';
+            $card['truncated'] = \core_text::strlen($message) > $limit;
         }
         return $card;
     }
@@ -221,19 +315,25 @@ class pending_action_service {
      */
     public static function cards_for_user(int $userid): array {
         global $DB;
+        $records = array_filter(self::get_for_user($userid), static fn(\stdClass $record): bool => !self::is_expired($record));
+        $agentids = array_unique(array_filter(array_map(static fn(\stdClass $record): int => (int) $record->agentid, $records)));
+        // The names of the agents are read in one query, not one per action (RES-004).
+        $names = empty($agentids) ? [] : $DB->get_records_list('local_jedomi_agents', 'id', $agentids, '', 'id, name');
         $cards = [];
-        foreach (self::get_for_user($userid) as $record) {
-            if (self::is_expired($record)) {
+        foreach ($records as $record) {
+            $agentid = (int) $record->agentid;
+            if ($agentid > 0 && !isset($names[$agentid])) {
+                // The agent was deleted: its writes can no longer be approved (the cleanup removes them).
                 continue;
             }
             $args = json_decode((string) $record->argsjson, true);
             $card = ['id' => (int) $record->id]
                 + self::card($userid, (string) $record->tool, is_array($args) ? $args : [], (string) $record->severity);
-            if (!empty($record->agentid)) {
+            if ($agentid > 0) {
                 // The creator is told which of their agents proposed the action.
-                $name = (string) $DB->get_field('local_jedomi_agents', 'name', ['id' => (int) $record->agentid]);
+                $name = trim((string) $names[$agentid]->name);
                 $card['description'] = get_string('pending_from_agent', 'local_jedomi', [
-                    'agent' => $name !== '' ? $name : '#' . (int) $record->agentid,
+                    'agent' => $name !== '' ? $name : '#' . $agentid,
                     'description' => $card['description'],
                 ]);
             }
@@ -256,7 +356,8 @@ class pending_action_service {
 
     /**
      * Data of an action as readable "field: value" lines: the parameters of a web service or administration
-     * operation, or the arguments of the other tools, without JSON. Lists are numbered and long values shortened.
+     * operation, or the arguments of the other tools, without JSON. Lists are numbered; every value is shown whole
+     * (JEDOMI-SEC-013), card() cuts the text only when it is longer than its limit.
      *
      * @param string $tool Tool name.
      * @param array $args Tool arguments.
@@ -275,11 +376,7 @@ class pending_action_service {
         }
         $lines = [];
         self::detail_lines($values, '', $lines);
-        if (count($lines) > self::DETAIL_LINES) {
-            $lines = array_slice($lines, 0, self::DETAIL_LINES);
-            $lines[] = '…';
-        }
-        return \core_text::substr(implode("\n", $lines), 0, self::DETAILS_LENGTH);
+        return implode("\n", $lines);
     }
 
     /**
@@ -304,7 +401,7 @@ class pending_action_service {
         } else if ($value === null) {
             $text = '-';
         } else {
-            $text = shorten_text(trim((string) $value), 80);
+            $text = trim((string) $value);
         }
         $lines[] = $label === '' ? $text : $label . ': ' . $text;
     }
@@ -356,14 +453,16 @@ class pending_action_service {
      * while the agent still exists and still belongs to them. Nobody approves it on their behalf, whatever their rank;
      * a site administrator may only cancel it. There is no delegation of this approval.
      *
+     * An action whose data is too long to be shown whole in the card is never confirmed, only cancelled (JEDOMI-SEC-013).
+     *
      * @param int $id Pending action id.
      * @param int $userid User resolving it (must be its owner; a site administrator may also cancel a write held by an
      *     agent).
      * @param bool $confirm True to run it, false to cancel it.
      * @param string $keyword Confirmation keyword typed by the user (critical actions).
      * @return array{status: string, message: string, sent: int, failed: int}
-     * @throws \moodle_exception pending_action_not_found, pending_action_not_creator, pending_action_expired or
-     *     confirm_keyword_required.
+     * @throws \moodle_exception pending_action_not_found, pending_action_not_creator, pending_action_expired,
+     *     pending_action_too_long or confirm_keyword_required.
      */
     public static function resolve(int $id, int $userid, bool $confirm, string $keyword = ''): array {
         global $DB;
@@ -385,6 +484,14 @@ class pending_action_service {
         if (self::is_expired($record)) {
             $DB->delete_records(self::TABLE, ['id' => $record->id]);
             throw new \moodle_exception('pending_action_expired', 'local_jedomi');
+        }
+        if ($confirm) {
+            $stored = json_decode((string) $record->argsjson, true);
+            $card = self::card($userid, (string) $record->tool, is_array($stored) ? $stored : [], (string) $record->severity);
+            if ($card['truncated']) {
+                // The user could not see everything the action does.
+                throw new \moodle_exception('pending_action_too_long', 'local_jedomi');
+            }
         }
         if ($confirm && $record->severity === self::SEVERITY_CRITICAL && !self::is_confirm_keyword($keyword)) {
             throw new \moodle_exception('confirm_keyword_required', 'local_jedomi');
@@ -479,13 +586,14 @@ class pending_action_service {
     }
 
     /**
-     * Remove actions that were not resolved in time.
+     * Remove actions that were not resolved in time, and the writes held by agents that no longer exist (REL-002).
      *
      * @return int Number of actions removed.
      */
     public static function purge_expired(): int {
         global $DB;
-        $where = '(agentid = 0 AND timecreated < :cutoff) OR (agentid > 0 AND timecreated < :agentcutoff)';
+        $where = '(agentid = 0 AND timecreated < :cutoff) OR (agentid > 0 AND timecreated < :agentcutoff)'
+            . ' OR (agentid > 0 AND NOT EXISTS (SELECT 1 FROM {local_jedomi_agents} a WHERE a.id = agentid))';
         $params = ['cutoff' => time() - self::EXPIRY, 'agentcutoff' => time() - self::AGENT_EXPIRY];
         $count = $DB->count_records_select(self::TABLE, $where, $params);
         $DB->delete_records_select(self::TABLE, $where, $params);
@@ -512,6 +620,19 @@ class pending_action_service {
     public static function get_for_user(int $userid): array {
         global $DB;
         return array_values($DB->get_records(self::TABLE, ['userid' => $userid], 'timecreated ASC, id ASC'));
+    }
+
+    /**
+     * Delete the writes an agent held for its creator, when the agent is deleted (REL-002).
+     *
+     * @param int $agentid Agent id.
+     * @return void
+     */
+    public static function delete_for_agent(int $agentid): void {
+        global $DB;
+        if ($agentid > 0) {
+            $DB->delete_records(self::TABLE, ['agentid' => $agentid]);
+        }
     }
 
     /**

@@ -29,6 +29,7 @@ namespace local_jedomi;
  * @covers     ::local_jedomi_upgrade_agent_write_approvals
  * @covers     ::local_jedomi_upgrade_custom_service_url
  * @covers     ::local_jedomi_upgrade_custom_feature_switches
+ * @covers     ::local_jedomi_upgrade_agentwrites_email_default
  */
 final class upgradelib_test extends \advanced_testcase {
     #[\Override]
@@ -572,5 +573,34 @@ final class upgradelib_test extends \advanced_testcase {
         $this->assertFalse(\local_jedomi\local\service\telegram_link_service::is_expired($link));
         $this->assertSame(0, \local_jedomi\local\service\telegram_link_service::unlink_expired());
         $this->assertTrue($DB->record_exists('local_jedomi_telegram_links', ['userid' => $user->id]));
+    }
+    /**
+     * REL-005: the summary of the writes of an agent run is not sent by email by default, on a new site and after the
+     * upgrade; the other outputs of the site default are kept, and so are the preferences of the users.
+     *
+     * @return void
+     */
+    public function test_agent_run_summary_is_not_emailed_by_default(): void {
+        global $CFG;
+        $messageproviders = [];
+        include($CFG->dirroot . '/local/jedomi/db/messages.php');
+        $this->assertSame(MESSAGE_PERMITTED, $messageproviders['agentwrites']['defaults']['email']);
+        $this->assertSame(
+            MESSAGE_PERMITTED + MESSAGE_DEFAULT_ENABLED,
+            $messageproviders['agentwrites']['defaults']['popup']
+        );
+
+        $name = 'message_provider_local_jedomi_agentwrites_enabled';
+        $user = $this->getDataGenerator()->create_user();
+        set_user_preference($name, 'email', $user);
+        set_config($name, 'email,popup', 'message');
+
+        local_jedomi_upgrade_agentwrites_email_default();
+
+        $this->assertSame('popup', get_config('message', $name));
+        $this->assertSame('email', get_user_preferences($name, null, $user));
+        set_config($name, 'email', 'message');
+        local_jedomi_upgrade_agentwrites_email_default();
+        $this->assertSame('', get_config('message', $name));
     }
 }

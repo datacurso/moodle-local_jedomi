@@ -565,5 +565,12 @@ function xmldb_local_jedomi_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2026111902, 'local', 'jedomi');
     }
 
+    if ($oldversion < 2026111903) {
+        // The summary of each agent run is no longer sent by email by default (REL-005).
+        require_once($CFG->dirroot . '/local/jedomi/db/upgradelib.php');
+        local_jedomi_upgrade_agentwrites_email_default();
+        upgrade_plugin_savepoint(true, 2026111903, 'local', 'jedomi');
+    }
+
     return true;
 }
