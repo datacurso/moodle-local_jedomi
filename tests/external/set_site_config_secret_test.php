@@ -71,6 +71,9 @@ final class set_site_config_secret_test extends \advanced_testcase {
             'SMTP password' => ['smtppass', ''],
             'proxy password' => ['proxypassword', ''],
             'password setting not listed by name' => ['cronremotepassword', ''],
+            'AI provider licence key' => ['licensekey', 'aiprovider_datacurso'],
+            'AI provider development URL' => ['devservicesurl', 'aiprovider_datacurso'],
+            'AI provider development URL (EU)' => ['devservicesurleu', 'aiprovider_datacurso'],
         ];
     }
 

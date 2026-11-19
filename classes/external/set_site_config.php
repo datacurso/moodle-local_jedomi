@@ -75,6 +75,9 @@ class set_site_config extends external_api {
         'core' => ['smtppass', 'proxypassword', 'cronremotepassword', 'recaptchaprivatekey'],
         'local_jedomi' => ['custom_api_key', 'telegram_bot_token', 'telegram_webhook_secret', 'spt_secret', 'hmac_secret',
             'log_key'],
+        // The licence key, and the development URLs that would send every AI request (and the licence) to another
+        // server: only a site administrator sets them, on the provider's own pages.
+        'aiprovider_datacurso' => ['licensekey', 'devservicesurl', 'devservicesurleu'],
     ];
 
     /**
