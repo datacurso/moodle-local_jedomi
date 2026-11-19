@@ -210,6 +210,7 @@ function local_jedomi_get_sidebar_config(array $page = []): array {
             'tool_ws_describe'       => get_string('tool_ws_describe', 'local_jedomi'),
             'tool_ws_execute'        => get_string('tool_ws_execute', 'local_jedomi'),
             'tool_unknown'           => get_string('tool_unknown', 'local_jedomi'),
+            'still_working'          => get_string('still_working', 'local_jedomi'),
             // Session.
             'session_expired_title'  => get_string('session_expired_title', 'local_jedomi'),
             'session_expired_hint'   => get_string('session_expired_hint', 'local_jedomi'),

@@ -114,8 +114,17 @@ means no trimming.
 
 **AI request timeout.** "AI request timeout (seconds)", after the fields of either service, sets how long the web chat
 and the CLI wait for each AI answer, for both services: 10 to 600 seconds, 180 by default. Telegram and the scheduled
-agents keep their own timeouts. A proxy in front of the site (Cloudflare closes requests after 100 seconds), the
-`max_execution_time` of PHP or the timeout of the web server can end a request earlier.
+agents keep their own timeouts. A question of the web chat stops after three times this value in total (9 minutes
+by default) and a Telegram question after 10 minutes, with a message for the user. While an AI round waits, the web
+chat sends a signal of life every 15 seconds (the panel shows "Jedomi is still working on your answer…") so a proxy
+that closes idle requests (Cloudflare closes them after 100 seconds) keeps the connection, and Telegram shows "typing"
+again every 4 seconds. Closing the web chat aborts the AI call that waits. The `max_execution_time` of PHP or the
+timeout of the web server can still end a request earlier.
+
+**Slow or weak models.** An answer without text (out of tokens, or an empty stop) is asked again once, briefly and with
+the same maximum tokens; a second one gets a clear message (web chat, Telegram) or fails the agent run with a clear
+last error. The same tool called with the same arguments and failing with the same error three times stops the question
+(or fails the agent run) with a message that names the tool.
 
 About the custom service:
 

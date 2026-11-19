@@ -247,6 +247,8 @@ class custom_api {
             $headers[] = 'Authorization: Bearer ' . $this->apikey;
         }
         $options['CURLOPT_HTTPHEADER'] = $headers;
+        // While a question waits, the progress of the request sends its signals of life ({@see heartbeat}).
+        $options += heartbeat::curl_options();
 
         $body = $method === 'GET' ? $curl->get($url, [], $options) : $curl->post($url, $params ?? '', $options);
         $status = (int) ($curl->get_info()['http_code'] ?? 0);

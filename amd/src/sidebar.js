@@ -1266,7 +1266,24 @@ define(['core/log', 'core/ajax', 'core/templates', 'core/str', 'core/notificatio
                     voiceHooks?.onPendingAction(pending);
                 },
                 voiceHooks ? {voice_mode: true} : {},
-                voiceHooks?.signal || controller?.signal || null
+                voiceHooks?.signal || controller?.signal || null,
+                // onHeartbeat: a slow AI round is still working; shown until the answer starts.
+                () => {
+                    if (voiceDisplay || streamBubble.rawText !== '') return;
+                    const version = ++streamBubble.version;
+                    Templates.renderForPromise('local_jedomi/local/sidebar/tool_status',
+                        {label: cfg.strings?.still_working || '', icon: {cpu: true}})
+                        .then(({html, js}) => {
+                            if (streamBubble.version === version) {
+                                Templates.replaceNodeContents(streamBubble.inner, html, js);
+                            }
+                            return null;
+                        })
+                        .catch(error => Log.error('Jedomi: working status could not be rendered', error));
+                    streamBubble.el.classList.remove('jedomi-hidden');
+                    setThinking(false);
+                    streamBubble.thinking = false;
+                }
             );
 
             fullText = withoutActionBlocks(fullText);
@@ -1387,7 +1404,10 @@ define(['core/log', 'core/ajax', 'core/templates', 'core/str', 'core/notificatio
     // runs the tool loop against the real Moodle DB and returns SSE.
     // extra adds fields to the request, such as voice_mode for the voice conversation.
     // signal, when given, cancels the request (the voice conversation does it when the user speaks over Jedomi).
-    const callGatewayStream = async (messages, onToken, onToolEvent, onPendingAction, extra = {}, signal = null) => {
+    // onHeartbeat gets the signals of life ({elapsed} seconds) the proxy sends while a slow AI round waits.
+    const callGatewayStream = async (
+        messages, onToken, onToolEvent, onPendingAction, extra = {}, signal = null, onHeartbeat = null
+    ) => {
         // Context truncation: at most 30 messages to avoid a context overflow. Only the role and the content are sent:
         // the text shown in the chat and the id of an answer stay in the browser.
         const truncated = messages.slice(-30).map(({role, content}) => ({role, content}));
@@ -1457,6 +1477,11 @@ define(['core/log', 'core/ajax', 'core/templates', 'core/str', 'core/notificatio
                 try {
                     const chunk = JSON.parse(raw);
 
+                    // A signal of life while a slow AI round waits.
+                    if (chunk._jedomi_heartbeat) {
+                        if (onHeartbeat) onHeartbeat(chunk._jedomi_heartbeat);
+                        continue;
+                    }
                     // A tool is running.
                     if (chunk._jedomi_tool_executing && onToolEvent) {
                         onToolEvent(chunk._jedomi_tool_executing);

@@ -271,8 +271,10 @@ final class agent_runner_test extends \advanced_testcase {
         $creator = $this->getDataGenerator()->create_user();
         $this->create_due_agent((int) $creator->id);
         $fake = new fake_ai_client();
+        // A tool that works: a failing one is stopped earlier, after the same error repeats.
         for ($i = 1; $i <= 7; $i++) {
-            $this->enqueue_tool_call($fake, 'call_' . $i, ['table' => 'user']);
+            $fake->enqueue_tool_calls([['id' => 'call_' . $i, 'type' => 'function',
+                'function' => ['name' => 'describe_table', 'arguments' => json_encode(['tablename' => 'user'])]]]);
         }
         $fake->enqueue_text('Done.');
         client::set_instance_for_testing($fake);
@@ -1593,5 +1595,101 @@ final class agent_runner_test extends \advanced_testcase {
 
         $this->assertCount(1, $fake->calls);
         $this->assertSame((int) $creator->id, $fake->calls[0]['userid']);
+    }
+
+    /**
+     * Unit 9: an answer without text is asked again once, and the second answer is the result of the run.
+     */
+    public function test_empty_answer_is_asked_again_once(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $creator = $this->getDataGenerator()->create_user();
+        $agent = $this->create_due_agent((int) $creator->id);
+        $fake = new fake_ai_client();
+        $fake->enqueue_empty('length');
+        $fake->enqueue_text('There are 3 users.');
+        client::set_instance_for_testing($fake);
+
+        $this->run_task();
+
+        $this->assertCount(2, $fake->calls);
+        $this->assertSame(\local_jedomi\ai\empty_answer::retry_message('length'), end($fake->calls[1]['messages']));
+        $after = $DB->get_record('local_jedomi_agents', ['id' => $agent->id]);
+        $this->assertSame('There are 3 users.', $after->lastresult);
+        $this->assertSame(0, (int) $after->failcount);
+    }
+
+    /**
+     * Unit 9: a second answer without text fails the run with a clear last error.
+     */
+    public function test_second_empty_answer_fails_with_a_clear_error(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $creator = $this->getDataGenerator()->create_user();
+        $agent = $this->create_due_agent((int) $creator->id);
+        $fake = new fake_ai_client();
+        $fake->enqueue_empty('stop');
+        $fake->enqueue_empty('stop');
+        client::set_instance_for_testing($fake);
+
+        $this->run_task();
+
+        $this->assertCount(2, $fake->calls);
+        $after = $DB->get_record('local_jedomi_agents', ['id' => $agent->id]);
+        $this->assertSame(get_string('agent_error_empty_answer', 'local_jedomi'), $after->lasterror);
+        $this->assertSame(1, (int) $after->failcount);
+    }
+
+    /**
+     * Unit 9: the same tool failing with the same arguments and the same error three times fails the run with a last
+     * error that names the tool.
+     */
+    public function test_same_tool_error_repeated_fails_the_run(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $creator = $this->getDataGenerator()->create_user();
+        $agent = $this->create_due_agent((int) $creator->id);
+        $fake = new fake_ai_client();
+        for ($i = 1; $i <= 5; $i++) {
+            $this->enqueue_tool_call($fake, 'call_' . $i, ['table' => 'user']);
+        }
+        $fake->enqueue_text('Never asked.');
+        client::set_instance_for_testing($fake);
+
+        $this->run_task();
+
+        $this->assertCount(\local_jedomi\local\repeated_tool_error::LIMIT, $fake->calls);
+        $after = $DB->get_record('local_jedomi_agents', ['id' => $agent->id]);
+        $this->assertSame(get_string('error_tool_repeated', 'local_jedomi', 'no_such_tool'), $after->lasterror);
+        $this->assertSame(1, (int) $after->failcount);
+    }
+
+    /**
+     * RES-005: a PHP error (not an exception) in one run is recorded as a failure of that agent, and the next agents
+     * still run.
+     */
+    public function test_php_error_in_a_run_is_recorded_and_the_task_goes_on(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $creator = $this->getDataGenerator()->create_user();
+        $broken = $this->create_due_agent((int) $creator->id);
+        $healthy = $this->create_due_agent((int) $creator->id);
+        // The broken agent is due first.
+        $DB->set_field('local_jedomi_agents', 'nextrun', time() - 120, ['id' => $broken->id]);
+        $fake = new fake_ai_client();
+        // Tool calls that are not a list make the loop fail with a TypeError.
+        $fake->queue[] = ['content' => '', 'tool_calls' => 'not a list', 'finish_reason' => 'tool_calls'];
+        $fake->enqueue_text('There are 3 users.');
+        client::set_instance_for_testing($fake);
+
+        $output = $this->run_task();
+
+        $failed = $DB->get_record('local_jedomi_agents', ['id' => $broken->id]);
+        $this->assertSame(1, (int) $failed->failcount);
+        $this->assertNotEmpty($failed->lasterror);
+        $this->assertStringNotContainsString('not a list', $failed->lasterror);
+        $ran = $DB->get_record('local_jedomi_agents', ['id' => $healthy->id]);
+        $this->assertSame('There are 3 users.', $ran->lastresult);
+        $this->assertStringContainsString('1 ok, 1 fail', $output);
     }
 }

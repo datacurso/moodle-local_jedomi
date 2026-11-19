@@ -529,6 +529,10 @@ class agent_runner extends \core\task\scheduled_task {
                     $totalrounds = 0;
                     $plan = [];
                     $toolcallcounts = [];
+                    // The same call failing with the same error ends the run (the loop detector cuts identical calls
+                    // later), and an answer without text is asked again once.
+                    $toolerrors = new \local_jedomi\local\repeated_tool_error();
+                    $retriedempty = false;
                     // Personal data returned by the tools reaches the AI anonymised with the level of the Privacy
                     // tab; the arguments it proposes and the final answer get the real values back.
                     $anonymizer = new \local_jedomi\local\anonymizer();
@@ -572,6 +576,16 @@ class agent_runner extends \core\task\scheduled_task {
                             $texttoolcalls = $this->parse_text_tool_calls($content);
                         }
                         $alltoolcalls = array_merge($nativetoolcalls, $texttoolcalls);
+
+                        if (empty($alltoolcalls) && !$retriedempty && \local_jedomi\ai\empty_answer::is_empty($answer)) {
+                            $retriedempty = true;
+                            $logline = "[AGENT] {$agentlabel} — round {$round} empty answer"
+                                . " ({$answer['finish_reason']}) — asking again";
+                            mtrace($logline);
+                            \local_jedomi_log($logline);
+                            $messages[] = \local_jedomi\ai\empty_answer::retry_message((string) $answer['finish_reason']);
+                            continue;
+                        }
 
                         if (empty($alltoolcalls)) {
                             $finalcontent = $content;
@@ -670,6 +684,16 @@ class agent_runner extends \core\task\scheduled_task {
                                 'tool_call_id' => $tcid,
                                 'content' => $untrusted->wrap('tool ' . $funcname, $anonymizer->anonymize_tool_result($toolresult)),
                             ];
+
+                            if ($toolerrors->record($callkey, $toolresult)) {
+                                $logline = "[AGENT] {$agentlabel} — {$funcname} failed with the same error"
+                                    . " " . \local_jedomi\local\repeated_tool_error::LIMIT . "x — stopping";
+                                mtrace($logline);
+                                \local_jedomi_log($logline);
+                                throw new \local_jedomi\agent\run_failure(
+                                    get_string('error_tool_repeated', 'local_jedomi', $funcname)
+                                );
+                            }
                         }
                     }
 
@@ -815,7 +839,7 @@ class agent_runner extends \core\task\scheduled_task {
                         mtrace("[AGENT] {$agentlabel} — no Telegram for user {$creatorref}");
                         \local_jedomi_log("[AGENT] {$agentlabel} — no Telegram for user {$creatorref}");
                     }
-                } catch (\Exception $e) {
+                } catch (\Throwable $e) {
                     mtrace("[AGENT] {$agentlabel} — Telegram error: " . $e->getMessage());
                     \local_jedomi_log("[AGENT] {$agentlabel} — Telegram error: " . $e->getMessage());
                 }
@@ -824,7 +848,7 @@ class agent_runner extends \core\task\scheduled_task {
                 $guard->notify_creator();
 
                 $ok++;
-            } catch (\Exception $e) {
+            } catch (\Throwable $e) {
                 $aid = $agent->id ?? '?';
                 $alabel = "Agent #{$aid}";
                 // The agent keeps only a safe message as its last error: managers who may not read the instruction see
@@ -849,7 +873,7 @@ class agent_runner extends \core\task\scheduled_task {
                         );
                     }
                     // phpcs:ignore Generic.CodeAnalysis.EmptyStatement.DetectedCatch -- best-effort.
-                } catch (\Exception $ignored) {
+                } catch (\Throwable $ignored) {
                     // Best-effort: agent already failed, do not mask the original error.
                 }
                 $fail++;

@@ -48,6 +48,12 @@ class fake_telegram_api_client extends api_client {
     /** @var string[] Chat actions sent (such as "typing"), in order. */
     public array $chatactions = [];
 
+    /** @var array<int, int|null> Timeout of each chat action, in order; null for the default timeout. */
+    public array $chatactiontimeouts = [];
+
+    /** @var \Closure|null Called with the chat id and the action on each send_chat_action(); it may throw. */
+    public ?\Closure $onchataction = null;
+
     /** @var array<int, array{chatid: int|string, caption: string, content: string}> Documents sent, in order. */
     public array $documents = [];
 
@@ -107,8 +113,12 @@ class fake_telegram_api_client extends api_client {
     }
 
     #[\Override]
-    public function send_chat_action(string $chatid, string $action = 'typing'): bool {
+    public function send_chat_action(string $chatid, string $action = 'typing', ?int $timeout = null): bool {
         $this->chatactions[] = $action;
+        $this->chatactiontimeouts[] = $timeout;
+        if ($this->onchataction !== null) {
+            return (bool) ($this->onchataction)($chatid, $action);
+        }
         return true;
     }
 

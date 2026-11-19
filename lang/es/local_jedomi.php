@@ -83,7 +83,7 @@ $string['agent_enabled'] = 'Activo';
 $string['agent_enabled_help'] = 'Los agentes activos se ejecutan según su programación. Un agente desactivado no se ejecuta, ni '
     . 'siquiera con Ejecutar ahora.';
 $string['agent_error_create'] = 'Error al crear agente: {$a}';
-$string['agent_error_empty_answer'] = 'El servicio de IA devolvió una respuesta vacía.';
+$string['agent_error_empty_answer'] = 'La IA no escribió una respuesta, tampoco al pedírsela de nuevo. Pruebe con una instrucción más corta o con un modelo con un límite de respuesta mayor.';
 $string['agent_error_load'] = 'Error al cargar agentes.';
 $string['agent_error_nopermission'] = 'No puede gestionar los agentes de usuarios con más permisos que los suyos.';
 $string['agent_error_run_failed'] = 'La ejecución falló por un error inesperado (referencia {$a}). Los detalles están en el '
@@ -198,7 +198,7 @@ $string['ai_heading_help'] = 'Jedomi envía sus solicitudes de IA a través del 
 $string['ai_service'] = 'Servicio de IA';
 $string['ai_service_help'] = 'Servicio Datacurso: Jedomi usa el servicio de IA de Datacurso con los modelos de abajo, con los créditos y límites de la licencia de Datacurso.<br>Servicio personalizado: Jedomi llama directamente a un servicio compatible con OpenAI de su elección (DeepInfra, OpenAI, un modelo local como Ollama, LM Studio o vLLM). Las llamadas no usan créditos de Datacurso ni se registran en el historial de consumo. Las imágenes las lee el modelo de imágenes. Los archivos PDF y de texto (.txt, .csv, .md) solo se leen con «Documentos» activado y un servicio de documentos, que convierte las páginas PDF en imágenes para el modelo de imágenes; los archivos de Word y PowerPoint no se pueden leer. Los datos personales se anonimizan igual que con el servicio de Datacurso.<br>Para desactivar Jedomi, desmarque «Habilitado».';
 $string['ai_timeout'] = 'Tiempo de espera de la IA (segundos)';
-$string['ai_timeout_help'] = 'Cuánto espera Jedomi cada respuesta del servicio de IA en el chat web, con el servicio de Datacurso y con el servicio personalizado, de 10 a 600 segundos (valor predeterminado: 180). Telegram y los agentes programados conservan sus propios tiempos de espera. Un proxy delante del sitio puede cerrar la petición antes (Cloudflare la cierra a los 100 segundos), igual que el max_execution_time de PHP o el tiempo de espera del servidor web: auméntelos también o mantenga este valor por debajo de ellos.';
+$string['ai_timeout_help'] = 'Cuánto espera Jedomi cada respuesta del servicio de IA en el chat web, con el servicio de Datacurso y con el servicio personalizado, de 10 a 600 segundos (valor predeterminado: 180). Una pregunta del chat web se detiene después de tres veces este valor en total (9 minutos de forma predeterminada), con un mensaje para el usuario. Telegram y los agentes programados conservan sus propios tiempos de espera. Mientras Jedomi espera a la IA, el chat web envía una señal de actividad cada 15 segundos, para que un proxy que cierra las peticiones inactivas (Cloudflare las cierra a los 100 segundos) mantenga la conexión; el max_execution_time de PHP o el tiempo de espera del servidor web aún pueden terminar la petición antes: auméntelos también o mantenga este valor por debajo de ellos.';
 $string['analyze_file'] = 'Resuma este archivo.';
 $string['analyze_image'] = 'Analice esta imagen.';
 $string['anon_basic'] = 'Básico (nombres, correos electrónicos e identificadores)';
@@ -402,6 +402,7 @@ $string['error_custom_not_verified'] = 'Verifique la conexión con esta direcci�
 $string['error_custom_voice_required'] = 'Escriba la voz del modelo de voz.';
 $string['error_docservice_url_required'] = 'Escriba la dirección del servicio de documentos o desactive los documentos.';
 $string['error_documents_require_vision'] = 'Los documentos necesitan el procesamiento de imágenes, que lee sus páginas: actívelo también.';
+$string['error_empty_answer'] = 'La IA no escribió una respuesta, tampoco al pedírsela de nuevo. Intente con una pregunta más corta o más concreta.';
 $string['error_fallback_iterations'] = 'Lo siento, no pude completar la operación después de varios intentos.';
 $string['error_invalid_ai_timeout'] = 'Escriba un número entero de segundos entre 10 y 600.';
 $string['error_invalid_context_window'] = 'Escriba un número entero de tokens entre 1024 y 10000000, o déjelo vacío.';
@@ -414,11 +415,13 @@ $string['error_not_own_course'] = 'Ese curso no es uno de sus cursos.';
 $string['error_own_data_arguments'] = 'Argumento(s) no admitido(s): {$a}. Estas herramientas solo leen los datos del usuario '
     . 'actual.';
 $string['error_post_required'] = 'Esta solicitud debe enviarse con POST.';
+$string['error_question_time_limit'] = 'Jedomi dejó de trabajar en esta pregunta después de {$a} minutos. Intente con una pregunta más corta o más concreta.';
 $string['error_search_tables_failed'] = 'search_tables failed: {$a}';
 $string['error_telegram_e006'] = '❌ Respuesta inválida del servicio Jedomi (E006). Inténtelo de nuevo.';
 $string['error_telegram_e007'] = '❌ Secreto de webhook inválido (E007). Contacte al administrador.';
 $string['error_tool_loop_detected'] = 'Llamada a herramienta repetida bloqueada. Use otra herramienta o ejecute con nuevos '
     . 'parámetros.';
+$string['error_tool_repeated'] = 'Jedomi se detuvo porque la herramienta {$a} falló varias veces con el mismo error. Intente reformular la pregunta o pedir algo más concreto.';
 $string['error_unknown_action'] = 'Acción desconocida: {$a}';
 $string['error_unknown_tool'] = 'Herramienta desconocida: {$a}';
 $string['error_value_range'] = 'Introduzca un valor entre {$a->min} y {$a->max}.';
@@ -865,6 +868,7 @@ $string['sql_too_long_rejected'] = 'La consulta tiene más de 8000 caracteres, p
 $string['sql_user_column_rejected'] = 'La consulta lee columnas de usuario distintas del id y los nombres (como el correo, el '
     . 'teléfono, la dirección o la última IP), o todas las columnas con *, por lo que no se ejecutó. Indique solo u.id, '
     . 'u.firstname, u.lastname, u.middlename, u.alternatename, u.firstnamephonetic o u.lastnamephonetic.';
+$string['still_working'] = 'Jedomi sigue trabajando en su respuesta…';
 $string['stop_answer'] = 'Detener la respuesta';
 $string['summary_config_data'] = 'datos de configuración recuperados';
 $string['summary_done'] = 'listo';

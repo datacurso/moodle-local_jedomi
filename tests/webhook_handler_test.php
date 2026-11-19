@@ -1978,4 +1978,208 @@ final class webhook_handler_test extends \advanced_testcase {
             'No text is lost'
         );
     }
+
+    /**
+     * Continue a Telegram question with the given AI client and return what the bot sent.
+     *
+     * @param string $chatid Chat id.
+     * @param fake_ai_client $fake AI client double.
+     * @param array $extrastate Extra keys of the saved state.
+     * @return fake_telegram_api_client
+     */
+    private function continue_question(
+        string $chatid,
+        fake_ai_client $fake,
+        array $extrastate = [],
+        ?fake_telegram_api_client $telegram = null
+    ): fake_telegram_api_client {
+        $this->require_provider();
+        $telegram = $telegram ?? new fake_telegram_api_client();
+        api_client::set_instance_for_testing($telegram);
+        $this->seed_selfping_state($chatid, array_merge([
+            'spt'   => ['token' => 'fake-spt-token', 'role' => 'student', 'tools' => []],
+            'tools' => [],
+        ], $extrastate), $fake);
+        $this->run_internal_ping($chatid);
+        return $telegram;
+    }
+
+    /**
+     * Unit 9: an answer without text is asked again once, and the second answer is sent.
+     */
+    public function test_telegram_empty_answer_is_asked_again_once(): void {
+        $fake = new fake_ai_client();
+        $fake->enqueue_empty('length');
+        $fake->enqueue_text('Hola de nuevo');
+
+        $telegram = $this->continue_question('990000901', $fake);
+
+        $this->assertCount(2, $fake->calls);
+        $this->assertSame(\local_jedomi\ai\empty_answer::retry_message('length'), end($fake->calls[1]['messages']));
+        $this->assertContains('Hola de nuevo', array_column($telegram->sent, 'text'));
+    }
+
+    /**
+     * Unit 9: a second answer without text ends the question with a clear message and frees the chat.
+     */
+    public function test_telegram_second_empty_answer_sends_a_clear_message(): void {
+        $fake = new fake_ai_client();
+        $fake->enqueue_empty('stop');
+        $fake->enqueue_empty('stop');
+
+        $telegram = $this->continue_question('990000902', $fake);
+
+        $this->assertCount(2, $fake->calls);
+        $this->assertContains(get_string('error_empty_answer', 'local_jedomi'), array_column($telegram->sent, 'text'));
+        $this->assertEmpty(\local_jedomi\telegram\session::get_context('tool_loop_990000902'));
+    }
+
+    /**
+     * Unit 9: a question that has run for more than its time limit stops with a clear message, without another AI
+     * call, and frees the chat.
+     */
+    public function test_telegram_question_stops_at_its_time_limit(): void {
+        $fake = new fake_ai_client();
+        $fake->enqueue_text('Never asked.');
+
+        $telegram = $this->continue_question('990000903', $fake, [
+            'started_at' => time() - \local_jedomi\telegram\webhook_handler::QUESTION_TIME_LIMIT - 1,
+        ]);
+
+        $this->assertSame([], $fake->calls);
+        $minutes = (int) ceil(\local_jedomi\telegram\webhook_handler::QUESTION_TIME_LIMIT / 60);
+        $this->assertContains(
+            get_string('error_question_time_limit', 'local_jedomi', $minutes),
+            array_column($telegram->sent, 'text')
+        );
+        $this->assertEmpty(\local_jedomi\telegram\session::get_context('tool_loop_990000903'));
+    }
+
+    /**
+     * Unit 9: the same tool failing with the same arguments and the same error three times ends the question with a
+     * message that names the tool.
+     */
+    public function test_telegram_same_tool_error_repeated_stops_the_question(): void {
+        $fake = new fake_ai_client();
+        for ($i = 1; $i <= 5; $i++) {
+            $fake->enqueue_tool_calls([
+                ['id' => 'call_' . $i, 'type' => 'function', 'function' => ['name' => 'no_such_tool', 'arguments' => '{"a":1}']],
+            ]);
+        }
+
+        $telegram = $this->continue_question('990000904', $fake);
+
+        $this->assertCount(\local_jedomi\local\repeated_tool_error::LIMIT, $fake->calls);
+        $this->assertContains(
+            get_string('error_tool_repeated', 'local_jedomi', 'no_such_tool'),
+            array_column($telegram->sent, 'text')
+        );
+        $this->assertEmpty(\local_jedomi\telegram\session::get_context('tool_loop_990000904'));
+    }
+
+    /**
+     * Unit 9: while a slow AI call waits, the "typing" status of the chat is sent again.
+     */
+    public function test_telegram_slow_ai_call_refreshes_the_typing_status(): void {
+        $clock = $this->mock_clock_with_frozen();
+        $fake = new fake_ai_client();
+        $fake->oncall = static function () use ($clock): void {
+            $clock->bump(\local_jedomi\telegram\webhook_handler::TYPING_INTERVAL);
+            \local_jedomi\ai\heartbeat::beat();
+        };
+        $fake->enqueue_text('Hola');
+
+        $quick = $this->continue_question('990000905', $fake);
+
+        $this->assertSame(['typing', 'typing'], $quick->chatactions, 'The round itself and one refresh while it waits');
+        $this->assertFalse(\local_jedomi\ai\heartbeat::is_active());
+    }
+
+    /**
+     * RES-002: the "typing" status uses a short timeout, so a slow Telegram cannot hold the AI call for long.
+     */
+    public function test_telegram_typing_uses_a_short_timeout(): void {
+        $clock = $this->mock_clock_with_frozen();
+        $fake = new fake_ai_client();
+        $fake->oncall = static function () use ($clock): void {
+            $clock->bump(\local_jedomi\telegram\webhook_handler::TYPING_INTERVAL);
+            \local_jedomi\ai\heartbeat::beat();
+        };
+        $fake->enqueue_text('Hola');
+
+        $telegram = $this->continue_question('990000906', $fake);
+
+        $this->assertCount(2, $telegram->chatactiontimeouts);
+        foreach ($telegram->chatactiontimeouts as $timeout) {
+            $this->assertSame(\local_jedomi\telegram\webhook_handler::TYPING_TIMEOUT, $timeout);
+        }
+        $this->assertLessThanOrEqual(3, \local_jedomi\telegram\webhook_handler::TYPING_TIMEOUT);
+    }
+
+    /**
+     * RES-002 / REL-005: a failing "typing" status never stops the answer, and is not sent again for the question.
+     */
+    public function test_telegram_failing_typing_never_aborts_the_answer(): void {
+        $clock = $this->mock_clock_with_frozen();
+        $fake = new fake_ai_client();
+        $fake->oncall = static function () use ($clock): void {
+            for ($i = 0; $i < 3; $i++) {
+                $clock->bump(\local_jedomi\telegram\webhook_handler::TYPING_INTERVAL);
+                \local_jedomi\ai\heartbeat::beat();
+            }
+        };
+        $fake->enqueue_text('Hola');
+        $telegram = new fake_telegram_api_client();
+        $telegram->onchataction = static function (): bool {
+            throw new \RuntimeException('Telegram is down');
+        };
+
+        $this->continue_question('990000907', $fake, [], $telegram);
+
+        $this->assertCount(1, $fake->calls);
+        $this->assertContains('Hola', array_column($telegram->sent, 'text'));
+        $this->assertSame(['typing'], $telegram->chatactions, 'No new "typing" after the first failure');
+    }
+
+    /**
+     * REL-003: near the 10-minute limit of the question, the AI call only gets the time that is left, at least 5 s.
+     */
+    public function test_telegram_round_timeout_is_reduced_near_the_question_limit(): void {
+        $clock = $this->mock_clock_with_frozen();
+        $limit = \local_jedomi\telegram\webhook_handler::QUESTION_TIME_LIMIT;
+        // The longest timeout of the setting (the state of the tests sets 5 s), forced so the seed cannot change it.
+        $GLOBALS['CFG']->forced_plugin_settings['local_jedomi']['telegram_gateway_timeout'] = 50;
+        $fake = new fake_ai_client();
+        $fake->enqueue_text('Hola');
+        $this->continue_question('990000908', $fake, ['started_at' => $clock->time() - $limit + 10]);
+
+        $late = new fake_ai_client();
+        $late->enqueue_text('Hola');
+        $this->continue_question('990000909', $late, ['started_at' => $clock->time() - $limit + 2]);
+
+        $this->assertSame(10, $fake->calls[0]['timeout']);
+        $this->assertSame(5, $late->calls[0]['timeout']);
+    }
+
+    /**
+     * REL-002: the same failing call with its arguments in another order counts as the same call.
+     */
+    public function test_telegram_reordered_arguments_count_as_the_same_failing_call(): void {
+        $fake = new fake_ai_client();
+        $orders = ['{"q":{"a":1,"b":2},"z":0}', '{"z":0,"q":{"b":2,"a":1}}'];
+        for ($i = 0; $i < 5; $i++) {
+            $fake->enqueue_tool_calls([
+                ['id' => 'call_' . $i, 'type' => 'function',
+                    'function' => ['name' => 'no_such_tool', 'arguments' => $orders[$i % 2]]],
+            ]);
+        }
+
+        $telegram = $this->continue_question('990000910', $fake);
+
+        $this->assertCount(\local_jedomi\local\repeated_tool_error::LIMIT, $fake->calls);
+        $this->assertContains(
+            get_string('error_tool_repeated', 'local_jedomi', 'no_such_tool'),
+            array_column($telegram->sent, 'text')
+        );
+    }
 }

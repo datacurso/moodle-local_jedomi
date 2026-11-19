@@ -2244,4 +2244,171 @@ final class handler_test extends \advanced_testcase {
         $this->assertSame([], $fake->calls);
         $this->assertSame(0, \local_jedomi\local\service\chat_rate_limit_service::consume((int) $USER->id));
     }
+
+    /**
+     * Run the web chat loop for one question as the administrator.
+     *
+     * @param fake_ai_client $fake AI client double.
+     * @return array Decoded SSE events.
+     */
+    private function ask(fake_ai_client $fake): array {
+        client::set_instance_for_testing($fake);
+        return $this->events($this->capture(fn() => handler::run(
+            [['role' => 'user', 'content' => 'hi']],
+            'admin',
+            (int) get_admin()->id
+        )));
+    }
+
+    /**
+     * Unit 9: while a slow AI round waits, the browser gets signals of life with the time spent on the question, and
+     * the signals stop with the answer.
+     */
+    public function test_slow_ai_round_sends_signals_of_life(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $clock = $this->mock_clock_with_frozen();
+        $fake = new fake_ai_client();
+        $fake->oncall = static function () use ($clock): void {
+            // The AI service takes 20 seconds; cURL reports progress meanwhile.
+            $clock->bump(20);
+            \local_jedomi\ai\heartbeat::beat();
+        };
+        $fake->enqueue_tool_calls([
+            ['id' => 'call_1', 'type' => 'function', 'function' => ['name' => 'no_such_tool', 'arguments' => '{}']],
+        ]);
+        $fake->enqueue_text('Final answer.');
+
+        $events = $this->ask($fake);
+
+        $beats = array_values(array_filter($events, static fn($e) => is_array($e) && isset($e['_jedomi_heartbeat'])));
+        $this->assertCount(2, $beats);
+        $this->assertSame(['elapsed' => 20], $beats[0]['_jedomi_heartbeat']);
+        $this->assertSame(['elapsed' => 40], $beats[1]['_jedomi_heartbeat']);
+        $this->assertArrayHasKey('_jedomi_heartbeat', $events[0], 'The first signal comes while the first round waits');
+        $this->assertSame('Final answer.', $this->streamed_text($events));
+        $this->assertFalse(\local_jedomi\ai\heartbeat::is_active(), 'The signals stop with the answer');
+    }
+
+    /**
+     * RES-001: when the user closes the chat while an AI round waits, the AI call is aborted and nothing more is sent
+     * to the closed browser: no error and no further round.
+     */
+    public function test_closed_browser_aborts_the_waiting_ai_call(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $closed = false;
+        handler::set_abort_check_for_testing(static function () use (&$closed): bool {
+            return $closed;
+        });
+        $fake = new fake_ai_client();
+        $progressresult = null;
+        $fake->oncall = static function () use (&$closed, &$progressresult): void {
+            $closed = true;
+            $progressresult = (\local_jedomi\ai\heartbeat::curl_options()['CURLOPT_PROGRESSFUNCTION'])(null, 0, 0, 0, 0);
+        };
+        $fake->enqueue_exception(new \RuntimeException('Callback aborted'));
+        $fake->enqueue_text('Never asked.');
+
+        try {
+            $events = $this->ask($fake);
+        } finally {
+            handler::set_abort_check_for_testing(null);
+        }
+
+        $this->assertNotSame(0, $progressresult, 'The progress callback stops the transfer');
+        $this->assertCount(1, $fake->calls);
+        $errors = array_filter($events, static fn($e) => is_array($e) && isset($e['error']));
+        $this->assertSame([], $errors, 'No error message goes to a closed browser');
+        $this->assertSame('', $this->streamed_text($events));
+    }
+
+    /**
+     * Unit 9: a question stops after three times the AI request timeout in total, with a clear message, and the last
+     * AI call only gets the time that is left.
+     */
+    public function test_question_stops_at_its_time_limit(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        set_config('ai_timeout', 10, 'local_jedomi');
+        $this->assertSame(30, handler::question_time_limit());
+        $clock = $this->mock_clock_with_frozen();
+        $fake = new fake_ai_client();
+        $fake->oncall = static function () use ($clock): void {
+            $clock->bump(25);
+        };
+        for ($i = 1; $i <= 4; $i++) {
+            $fake->enqueue_tool_calls([
+                ['id' => 'call_' . $i, 'type' => 'function',
+                    'function' => ['name' => 'no_such_tool', 'arguments' => json_encode(['step' => $i])]],
+            ]);
+        }
+
+        $events = $this->ask($fake);
+
+        $this->assertCount(2, $fake->calls, 'No AI round starts after the time limit');
+        $this->assertNull($fake->calls[0]['timeout']);
+        $this->assertSame(5, $fake->calls[1]['timeout'], 'The last round only gets the time that is left');
+        $this->assertSame(get_string('error_question_time_limit', 'local_jedomi', 1), $this->streamed_text($events));
+        $this->assertSame('[DONE]', end($events));
+    }
+
+    /**
+     * Unit 9: an answer without text (out of tokens) is asked again once, briefly, and the second answer is shown.
+     */
+    public function test_empty_answer_is_asked_again_once(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $fake = new fake_ai_client();
+        $fake->enqueue_empty('length', 'Let me think about this for a long time');
+        $fake->enqueue_text('Short answer.');
+
+        $events = $this->ask($fake);
+
+        $this->assertCount(2, $fake->calls);
+        $retry = end($fake->calls[1]['messages']);
+        $this->assertSame(\local_jedomi\ai\empty_answer::retry_message('length'), $retry);
+        $this->assertSame('Short answer.', $this->streamed_text($events));
+    }
+
+    /**
+     * Unit 9: when the second answer is empty too, the user gets a clear message instead of an empty bubble.
+     */
+    public function test_second_empty_answer_shows_a_clear_message(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $fake = new fake_ai_client();
+        $fake->enqueue_empty('stop');
+        $fake->enqueue_empty('stop');
+
+        $events = $this->ask($fake);
+
+        $this->assertCount(2, $fake->calls);
+        $this->assertSame(
+            ['code' => 'empty_answer', 'message' => get_string('error_empty_answer', 'local_jedomi')],
+            end($events)['error']
+        );
+        $this->assertSame('', $this->streamed_text($events));
+    }
+
+    /**
+     * Unit 9: the same tool failing with the same arguments and the same error three times stops the question with a
+     * message that names the tool.
+     */
+    public function test_same_tool_error_repeated_stops_the_question(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $fake = new fake_ai_client();
+        for ($i = 1; $i <= 5; $i++) {
+            $fake->enqueue_tool_calls([
+                ['id' => 'call_' . $i, 'type' => 'function', 'function' => ['name' => 'no_such_tool', 'arguments' => '{"a":1}']],
+            ]);
+        }
+        $fake->enqueue_text('Never asked.');
+
+        $events = $this->ask($fake);
+
+        $this->assertCount(\local_jedomi\local\repeated_tool_error::LIMIT, $fake->calls);
+        $this->assertSame(get_string('error_tool_repeated', 'local_jedomi', 'no_such_tool'), $this->streamed_text($events));
+    }
 }

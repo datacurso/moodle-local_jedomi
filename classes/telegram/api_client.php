@@ -501,13 +501,22 @@ class api_client {
      *
      * @param string $chatid Telegram chat ID.
      * @param string $action  'typing', 'upload_photo', 'record_video', etc.
+     * @param int|null $timeout Total timeout of this request in seconds; null for the usual one.
      * @return bool True if Telegram accepted the action.
      */
-    public function send_chat_action(string $chatid, string $action = 'typing'): bool {
-        $result = $this->post('sendChatAction', [
-            'chat_id' => $chatid,
-            'action'  => $action,
-        ]);
+    public function send_chat_action(string $chatid, string $action = 'typing', ?int $timeout = null): bool {
+        $usual = $this->timeout;
+        if ($timeout !== null) {
+            $this->timeout = max(1, $timeout);
+        }
+        try {
+            $result = $this->post('sendChatAction', [
+                'chat_id' => $chatid,
+                'action'  => $action,
+            ]);
+        } finally {
+            $this->timeout = $usual;
+        }
         return $result !== null && !empty($result['ok']);
     }
 

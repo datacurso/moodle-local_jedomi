@@ -54,6 +54,15 @@ class webhook_handler {
     /** Longest AI call that fits in one worker (the hard guard less a margin), the top of the timeout setting. */
     public const MAX_AI_TIMEOUT = self::HARD_GUARD - 5;
 
+    /** Seconds a question may take over all its workers; then it stops with a message. */
+    public const QUESTION_TIME_LIMIT = 600;
+
+    /** Seconds between two "typing" statuses while an AI call waits (Telegram shows each one for about 5 seconds). */
+    public const TYPING_INTERVAL = 4;
+
+    /** Seconds a "typing" status may take while the AI answers, so a slow Telegram never holds the AI call long. */
+    public const TYPING_TIMEOUT = 2;
+
     /** Tools the Telegram channel can run; any other tool is never offered to the AI here. */
     private const SUPPORTED_TOOLS = [
         'describe_table', 'search_tables', 'execute_sql', 'get_site_config', 'site_overview', 'ws_search', 'ws_describe',
@@ -1434,6 +1443,7 @@ class webhook_handler {
             // Init state (iteration counter, lock, cached SPT for self-pings).
             $state = [
                 'anonymizer'     => $anonymizermap,
+                'started_at'     => self::now(),
                 'is_locked'      => true,
                 'locked_at'      => time(),
                 'iteration'      => 0,
@@ -1468,6 +1478,9 @@ class webhook_handler {
             $tools = $spt['tools'] ?? [];
 
             $timeout = self::get_ai_timeout();
+
+            // A state saved before the time limit existed starts counting now.
+            $state['started_at'] = (int) ($state['started_at'] ?? self::now());
 
             // Ensure lock is active.
             $state['is_locked'] = true;
@@ -1512,8 +1525,12 @@ class webhook_handler {
         ));
 
         $toolrepeatcounts = [];
+        // The same call failing with the same error stops the question; the counts follow the state across workers.
+        $toolerrors = new \local_jedomi\local\repeated_tool_error((array) ($state['tool_errors'] ?? []));
         $progresssentfirst = false;
         $senttimeoutwarning = false;
+        // After a "typing" status fails, no other one is sent for the question in this worker.
+        $typingok = true;
 
         for ($iteration = (int)($state['iteration'] ?? 0); $iteration < $maxiterations; $iteration++) {
             $elapsed = time() - $loopstart;
@@ -1526,6 +1543,23 @@ class webhook_handler {
                     $elapsed,
                     count($messages)
                 ));
+            }
+
+            // ... ── Time limit of the question, over all its workers: a clear message instead of a chat that never ends ──
+            $questionelapsed = self::now() - (int) ($state['started_at'] ?? self::now());
+            if ($questionelapsed >= self::QUESTION_TIME_LIMIT) {
+                \local_jedomi_log(sprintf(
+                    '[GATELOOP] question_time_limit chat=%s iter=%d elapsed=%ds',
+                    self::chatref($chatid),
+                    $iteration,
+                    $questionelapsed
+                ));
+                self::release_lock(
+                    $statekey,
+                    $chatid,
+                    get_string('error_question_time_limit', 'local_jedomi', (int) ceil(self::QUESTION_TIME_LIMIT / 60))
+                );
+                return;
             }
 
             // ... ── Hard guard (~55s): save state + self_ping → next worker ──
@@ -1585,13 +1619,18 @@ class webhook_handler {
 
             // ... ── Re-send typing indicator each iteration (Telegram auto-expires after ~6s) ──
             // Only on iterations after the first (avoids double-send with the initial one).
-            if ($iteration > 0) {
-                api_client::instance()->send_chat_action($chatid, 'typing');
+            if ($iteration > 0 && $typingok) {
+                $typingok = self::send_typing($chatid);
             }
 
             // Adaptive AI timeout: shrink as we approach the hard guard
-            // so we don't get stuck waiting when FPM is about to kill us.
-            $aitimeout = max(5, min($timeout, $hardguard - (time() - $loopstart) - 5));
+            // so we don't get stuck waiting when FPM is about to kill us,
+            // and never past the time limit of the question.
+            $aitimeout = max(5, min(
+                $timeout,
+                $hardguard - (time() - $loopstart) - 5,
+                self::QUESTION_TIME_LIMIT - $questionelapsed
+            ));
 
             \local_jedomi_log(sprintf(
                 '[GATELOOP] calling_ai chat=%s iter=%d elapsed=%ds timeout=%ds msg_count=%d',
@@ -1602,6 +1641,12 @@ class webhook_handler {
                 count($messages)
             ));
 
+            // While the AI call waits, the chat shows "typing" again (it expires after about 5 seconds).
+            \local_jedomi\ai\heartbeat::start(self::TYPING_INTERVAL, static function () use ($chatid, &$typingok): void {
+                if ($typingok) {
+                    $typingok = self::send_typing($chatid);
+                }
+            });
             try {
                 // The question and the history keep the real values in the state; the AI gets them anonymised with
                 // the placeholders of the conversation, as the tool results.
@@ -1619,12 +1664,26 @@ class webhook_handler {
                 \local_jedomi_log('[AI] error on iter ' . $iteration . ': ' . $error['code']);
                 self::release_lock($statekey, $chatid, $error['message']);
                 return;
+            } finally {
+                \local_jedomi\ai\heartbeat::stop();
             }
 
             // The access may have changed while the AI answered: nothing more runs and nothing is sent.
             if (!self::access_still_valid($chatid, $userid)) {
                 self::stop_without_access($statekey, $chatid);
                 return;
+            }
+
+            // An answer without text is asked again once, briefly; a second one ends the question with a clear message.
+            if (\local_jedomi\ai\empty_answer::is_empty($answer)) {
+                \local_jedomi_log('[AI] empty answer on iter ' . $iteration . ' finish=' . ($answer['finish_reason'] ?? ''));
+                if (!empty($state['empty_retried'])) {
+                    self::release_lock($statekey, $chatid, get_string('error_empty_answer', 'local_jedomi'));
+                    return;
+                }
+                $state['empty_retried'] = true;
+                $messages[] = \local_jedomi\ai\empty_answer::retry_message((string) ($answer['finish_reason'] ?? ''));
+                continue;
             }
 
             $result = self::parse_answer($answer);
@@ -1909,6 +1968,7 @@ class webhook_handler {
                 $iteration = (int)$freshstate['iteration'] - 1; // For loop increments; restore 1 less.
                 $messages = $freshstate['messages'] ?? $messages;
                 $anonymizer = anonymizer::from_map((array) ($freshstate['anonymizer'] ?? []));
+                $toolerrors = new \local_jedomi\local\repeated_tool_error((array) ($freshstate['tool_errors'] ?? []));
                 continue;
             }
 
@@ -1925,8 +1985,7 @@ class webhook_handler {
                 $argsraw = $tc['function']['arguments'] ?? '{}';
                 $args = is_array($argsraw) ? $argsraw : (json_decode($argsraw, true) ?? []);
                 $tcid = $tc['id'] ?? '';
-                ksort($args);
-                $callkey = $name . '|' . md5(json_encode($args));
+                $callkey = $name . '|' . \local_jedomi\local\repeated_tool_error::args_signature($args);
                 $toolrepeatcounts[$callkey] = ($toolrepeatcounts[$callkey] ?? 0) + 1;
                 $repeatcount = $toolrepeatcounts[$callkey];
                 if ($repeatcount > 8) {
@@ -1987,6 +2046,18 @@ class webhook_handler {
                     'tool_call_id' => $tcid,
                     'content'      => $untrusted->wrap('tool ' . $name, $anonymizer->anonymize_tool_result($toolresult)),
                 ];
+
+                if ($toolerrors->record($callkey, $toolresult)) {
+                    \local_jedomi_log(sprintf(
+                        '[GATELOOP] tool_error_repeated chat=%s iter=%d tool=%s',
+                        self::chatref($chatid),
+                        $iteration,
+                        $name
+                    ));
+                    self::release_lock($statekey, $chatid, get_string('error_tool_repeated', 'local_jedomi', $name));
+                    return;
+                }
+                $state['tool_errors'] = $toolerrors->export();
             }
 
             // ... ── Save checkpoint with updated iteration + messages ──
@@ -2067,6 +2138,15 @@ class webhook_handler {
     }
 
     /**
+     * Current time of the Moodle clock.
+     *
+     * @return int
+     */
+    private static function now(): int {
+        return \core\di::get(\core\clock::class)->time();
+    }
+
+    /**
      * Turn an AI client answer into the shape the tool loop uses.
      *
      * @param  array $answer Answer from \local_jedomi\ai\client::complete().
@@ -2085,6 +2165,25 @@ class webhook_handler {
             return null;
         }
         return ['type' => 'text', 'content' => $text];
+    }
+
+    /**
+     * Send the "typing" status of a chat with a short timeout; a failure is only logged.
+     *
+     * @param string $chatid Telegram chat ID.
+     * @return bool Whether Telegram accepted it.
+     */
+    private static function send_typing(string $chatid): bool {
+        try {
+            if (api_client::instance()->send_chat_action($chatid, 'typing', self::TYPING_TIMEOUT)) {
+                return true;
+            }
+        } catch (\Throwable $e) {
+            \local_jedomi_log('[GATELOOP] typing_failed chat=' . self::chatref($chatid) . ' error=' . get_class($e));
+            return false;
+        }
+        \local_jedomi_log('[GATELOOP] typing_failed chat=' . self::chatref($chatid));
+        return false;
     }
 
     /**
