@@ -44,6 +44,23 @@ final class sidebar_templates_test extends \advanced_testcase {
     }
 
     /**
+     * Source of the sidebar JavaScript modules.
+     *
+     * @param string ...$modules Modules under amd/src/local/sidebar, or 'sidebar' for the entry module; all when none.
+     * @return string
+     */
+    private static function sidebar_source(string ...$modules): string {
+        $dir = __DIR__ . '/../../amd/src';
+        if (!$modules) {
+            $files = array_merge([$dir . '/sidebar.js'], glob($dir . '/local/sidebar/*.js'));
+        } else {
+            $files = array_map(fn($module) => $module === 'sidebar' ? "{$dir}/sidebar.js" : "{$dir}/local/sidebar/{$module}.js",
+                $modules);
+        }
+        return implode("\n", array_map('file_get_contents', $files));
+    }
+
+    /**
      * MDL-UNIT-067: the panel has the export, half width, full width, new conversation and close controls.
      * The sidebar structure has every element the module wires, and escapes the greeting.
      *
@@ -287,7 +304,7 @@ final class sidebar_templates_test extends \advanced_testcase {
      * @return void
      */
     public function test_answer_keeps_underscores_and_formats_headings_and_lists(): void {
-        $source = file_get_contents(__DIR__ . '/../../amd/src/sidebar.js');
+        $source = self::sidebar_source('markdown');
 
         $this->assertStringNotContainsString(".replace(/_(.+?)_/g, '<em>$1</em>')", $source, 'Underscores inside names');
         $this->assertStringContainsString(
@@ -317,19 +334,20 @@ final class sidebar_templates_test extends \advanced_testcase {
     public function test_panel_texts_are_in_the_user_language(): void {
         global $CFG;
         require_once($CFG->dirroot . '/local/jedomi/lib.php');
-        $source = file_get_contents(__DIR__ . '/../../amd/src/sidebar.js');
+        $source = self::sidebar_source();
         $fixedtexts = ["type: 'Curso'", "type: 'Notas'", "type: 'Quiz'", "'jedomi_datos.csv'", 'JEDOMI — Conversation',
             'm.role.toUpperCase()'];
         foreach ($fixedtexts as $fixed) {
             $this->assertStringNotContainsString($fixed, $source, "'{$fixed}' is no longer fixed in the panel");
         }
 
+        $texts = self::sidebar_source('markdown', 'csv', 'conversation');
         $keys = ['export_csv_filename', 'export_filename', 'export_role_user', 'export_title', 'link_type_admin',
             'link_type_assign', 'link_type_course', 'link_type_grades', 'link_type_messages', 'link_type_profile',
             'link_type_quiz'];
         $manager = get_string_manager();
         foreach ($keys as $key) {
-            $this->assertStringContainsString("L.{$key}", str_replace('cfg.strings?.', 'L.', $source), "{$key} is used");
+            $this->assertStringContainsString("L.{$key}", str_replace('cfg.strings?.', 'L.', $texts), "{$key} is used");
             $this->assertNotSame(
                 $manager->get_string($key, 'local_jedomi', null, 'en'),
                 self::plugin_spanish_string($key),
@@ -410,7 +428,7 @@ final class sidebar_templates_test extends \advanced_testcase {
             $this->assertTrue($text !== '' || str_contains($attributes, 'aria-label="'), 'Button without a name: ' . $button);
         }
 
-        $source = file_get_contents(__DIR__ . '/../../amd/src/sidebar.js');
+        $source = self::sidebar_source('panel', 'events', 'chat');
         $this->assertStringContainsString("panel.setAttribute('inert', '')", $source, 'Closing hides the panel again');
         $this->assertStringContainsString("panel.removeAttribute('inert')", $source, 'Opening makes it reachable');
         $this->assertStringContainsString("addEventListener('keydown', trapFocus)", $source, 'The focus stays in the panel');
@@ -425,15 +443,16 @@ final class sidebar_templates_test extends \advanced_testcase {
      * @return void
      */
     public function test_shortcuts_do_not_clash_with_the_browser_nor_lose_the_conversation(): void {
-        $source = file_get_contents(__DIR__ . '/../../amd/src/sidebar.js');
+        $source = self::sidebar_source();
 
         $this->assertStringNotContainsString("e.key === 'J'", $source, 'Ctrl+Shift+J opens the browser console');
         $this->assertStringNotContainsString("e.key === 'N'", $source, 'Ctrl+Shift+N opens a private window');
-        $this->assertStringContainsString("if (!e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) return;", $source);
-        $this->assertStringContainsString("e.code === 'KeyJ'", $source);
-        $this->assertStringContainsString("e.code === 'KeyN'", $source);
-        $this->assertStringContainsString('Notification.saveCancelPromise(', $source, 'The new conversation is confirmed');
-        $this->assertStringContainsString("S.new_conversation_confirm", $source);
+        $shortcuts = self::sidebar_source('events', 'conversation');
+        $this->assertStringContainsString("if (!e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) {", $shortcuts);
+        $this->assertStringContainsString("e.code === 'KeyJ'", $shortcuts);
+        $this->assertStringContainsString("e.code === 'KeyN'", $shortcuts);
+        $this->assertStringContainsString('Notification.saveCancelPromise(', $shortcuts, 'The new conversation is confirmed');
+        $this->assertStringContainsString("S.new_conversation_confirm", $shortcuts);
         $this->assertStringContainsString('Alt+Shift+N', get_string('keyboard_shortcuts', 'local_jedomi'));
     }
 
@@ -447,7 +466,7 @@ final class sidebar_templates_test extends \advanced_testcase {
      * @return void
      */
     public function test_editing_acts_on_the_chosen_message_and_reloading_keeps_the_conversation(): void {
-        $source = file_get_contents(__DIR__ . '/../../amd/src/sidebar.js');
+        $source = self::sidebar_source('messages', 'history');
 
         $this->assertStringContainsString(
             "msgs.querySelectorAll('.jedomi-user-actions').forEach(node => node.remove())",
@@ -455,7 +474,7 @@ final class sidebar_templates_test extends \advanced_testcase {
             'The Edit button is only under the last question'
         );
         $this->assertStringContainsString(
-            "_historyRequest({action: 'undolast'})",
+            "historyRequest({action: 'undolast'})",
             $source,
             'The edited question leaves the history on the server'
         );
@@ -478,9 +497,9 @@ final class sidebar_templates_test extends \advanced_testcase {
      * @return void
      */
     public function test_an_answer_can_be_stopped_and_failures_leave_no_orphan_message(): void {
-        $source = file_get_contents(__DIR__ . '/../../amd/src/sidebar.js');
+        $source = self::sidebar_source('events', 'chat', 'conversation');
 
-        $this->assertStringContainsString("on('jedomi-stop',         'click',  stopAnswer)", $source, 'Stop button');
+        $this->assertStringContainsString("on('jedomi-stop', 'click', stopAnswer)", $source, 'Stop button');
         $this->assertStringContainsString(
             'voiceHooks?.signal || controller?.signal',
             $source,
@@ -489,7 +508,7 @@ final class sidebar_templates_test extends \advanced_testcase {
         $this->assertStringContainsString('controller.cleared = true;', $source, 'A new conversation stops the answer');
         $this->assertStringContainsString('cfg.strings?.answer_stopped', $source, 'The kept text is marked as stopped');
         $this->assertStringContainsString(
-            "if (userWrap) userWrap.dataset.orphan = '1';",
+            "userWrap.dataset.orphan = '1';",
             $source,
             'A failed question leaves the history'
         );
@@ -507,12 +526,13 @@ final class sidebar_templates_test extends \advanced_testcase {
      */
     public function test_user_is_told_when_the_panel_configuration_cannot_load(): void {
         $this->resetAfterTest();
-        $source = file_get_contents(__DIR__ . '/../../amd/src/sidebar.js');
-        $this->assertStringContainsString('showConfigError', $source);
+        $source = self::sidebar_source();
+        $notice = self::sidebar_source('sidebar', 'config_error');
+        $this->assertStringContainsString('showConfigError', $notice);
         $this->assertStringNotContainsString('bootstrap with empty config', $source, 'The panel never starts empty');
-        $this->assertStringContainsString("setAttribute('role', 'alert')", $source);
+        $this->assertStringContainsString("setAttribute('role', 'alert')", $notice);
         foreach (['config_load_error', 'config_load_retry'] as $key) {
-            $this->assertStringContainsString($key, $source, $key);
+            $this->assertStringContainsString($key, $notice, $key);
             $this->assertNotEmpty(get_string($key, 'local_jedomi'), $key);
         }
         $hook = file_get_contents(__DIR__ . '/../../classes/hook_callbacks.php');
@@ -698,7 +718,7 @@ final class sidebar_templates_test extends \advanced_testcase {
         $server = \local_jedomi\local\service\audio_service::EXTENSIONS;
         $this->assertEqualsCanonicalizing($server, $accepted, 'The selector accepts the formats of the server');
 
-        $source = file_get_contents(__DIR__ . '/../../amd/src/sidebar.js');
+        $source = self::sidebar_source('attachments', 'voice_message');
         $this->assertSame(1, preg_match("/const AUDIO_EXTENSIONS = \\[([^\\]]+)\\];/", $source, $js));
         $dropped = array_map(fn($extension) => trim($extension, " '"), explode(',', $js[1]));
         $this->assertEqualsCanonicalizing($server, $dropped, 'Dropped audio files use the formats of the server');
@@ -714,16 +734,17 @@ final class sidebar_templates_test extends \advanced_testcase {
      */
     public function test_voice_conversation_button_never_fails_silently(): void {
         $this->resetAfterTest();
-        $source = file_get_contents(__DIR__ . '/../../amd/src/sidebar.js');
-        $this->assertStringContainsString("if (sending) return 'sending';", $source);
-        $this->assertStringContainsString("if (recorder) return 'recording';", $source);
-        $this->assertStringContainsString("if (voice) return 'pending';", $source);
-        $this->assertStringContainsString('voice_mode_busy_${busy}', $source, 'Each busy reason has its notice');
+        $source = self::sidebar_source();
+        $voicemode = self::sidebar_source('voice_mode');
+        $this->assertMatchesRegularExpression("/if \\(state\\.sending\\) \\{\\s*return 'sending';/", $voicemode);
+        $this->assertMatchesRegularExpression("/if \\(state\\.recorder\\) \\{\\s*return 'recording';/", $voicemode);
+        $this->assertMatchesRegularExpression("/if \\(state\\.voice\\) \\{\\s*return 'pending';/", $voicemode);
+        $this->assertStringContainsString('voice_mode_busy_${busy}', $voicemode, 'Each busy reason has its notice');
         $silent = 'sending || recorder || voice || !cfg.speech_url) return;';
         $this->assertStringNotContainsString($silent, $source, 'The button no longer returns silently while busy');
-        $this->assertStringContainsString('voice_mode_idle_exit', $source, 'The exit after the silence is announced');
+        $this->assertStringContainsString('voice_mode_idle_exit', $voicemode, 'The exit after the silence is announced');
         $spoken = '/voice_mode_idle_exit[\\s\\S]{0,400}speakVoiceNotice\\(notice/';
-        $this->assertMatchesRegularExpression($spoken, $source, 'The exit notice is also spoken with the voice of the browser');
+        $this->assertMatchesRegularExpression($spoken, $voicemode, 'The exit notice is also spoken with the voice of the browser');
 
         $manager = get_string_manager();
         $lib = file_get_contents(__DIR__ . '/../../lib.php');
@@ -755,7 +776,7 @@ final class sidebar_templates_test extends \advanced_testcase {
         $this->assertStringContainsString('first.txt', $html);
         $this->assertStringContainsString('&lt;b&gt;second&lt;/b&gt;.txt', $html, 'File names are escaped');
 
-        $source = file_get_contents(__DIR__ . '/../../amd/src/sidebar.js');
+        $source = self::sidebar_source('attachments', 'composer');
         $this->assertStringContainsString('const MAX_ATTACHMENTS = 5;', $source);
         $imagetypes = "const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];";
         $this->assertStringContainsString($imagetypes, $source, 'A dropped GIF is refused in the browser, as on the server');
@@ -775,7 +796,7 @@ final class sidebar_templates_test extends \advanced_testcase {
      * @return void
      */
     public function test_voice_conversation_only_transcribes_what_the_user_says(): void {
-        $source = file_get_contents(__DIR__ . '/../../amd/src/sidebar.js');
+        $source = self::sidebar_source('voice_mode', 'voice_turn');
 
         $this->assertMatchesRegularExpression(
             '~const VOICE_MODE_MAX_UTTERANCE_MS = 30000;~',
@@ -800,10 +821,10 @@ final class sidebar_templates_test extends \advanced_testcase {
      * chat shows a translated note in their place after a reload.
      */
     public function test_images_of_a_question_leave_a_note_after_a_reload(): void {
-        $source = file_get_contents(__DIR__ . '/../../amd/src/sidebar.js');
-        $this->assertStringContainsString('if (image) userMessage.images = 1;', $source);
+        $source = self::sidebar_source('chat', 'history', 'messages');
+        $this->assertMatchesRegularExpression('/if \(image\) \{\s*userMessage\.images = 1;/', $source);
         $this->assertStringContainsString('fields.images = String(last.images)', $source);
-        $this->assertMatchesRegularExpression('/msg\.images > 0\) addImagePlaceholder\(wrap, msg\.images\)/', $source);
+        $this->assertMatchesRegularExpression('/msg\.images > 0\) \{\s*addImagePlaceholder\(wrap, msg\.images\)/', $source);
         $this->assertStringContainsString('image_not_kept', $source);
 
         $endpoint = file_get_contents(__DIR__ . '/../../conversation.php');
@@ -878,7 +899,7 @@ final class sidebar_templates_test extends \advanced_testcase {
      * @return void
      */
     public function test_position_is_applied_with_css_variables_and_kept_on_phones(): void {
-        $source = file_get_contents(__DIR__ . '/../../amd/src/sidebar.js');
+        $source = self::sidebar_source('sidebar');
         $this->assertStringContainsString("setProperty('--j-fab-x'", $source);
         $this->assertStringContainsString("setProperty('--j-fab-y'", $source);
 
@@ -921,14 +942,14 @@ final class sidebar_templates_test extends \advanced_testcase {
         global $CFG, $PAGE;
         $this->resetAfterTest();
         require_once($CFG->dirroot . '/local/jedomi/lib.php');
-        $source = file_get_contents(__DIR__ . '/../../amd/src/sidebar.js');
+        $source = self::sidebar_source('markdown');
 
         $this->assertStringContainsString('class="jedomi-external-link" target="_blank" rel="noopener noreferrer"', $source);
         $this->assertStringContainsString('<span class="jedomi-external-badge" aria-hidden="true">↗ ${host}</span>', $source);
         $this->assertStringContainsString('<span class="sr-only">(${label}: ${host})</span>', $source);
         $this->assertStringContainsString('S.link_external', $source, 'The label is a language string');
         $this->assertStringContainsString('new URL(url).origin === new URL(cfg.wwwroot).origin', $source);
-        $this->assertStringNotContainsString('url.includes(wwwroot)', $source, 'An address holding the site address');
+        $this->assertStringNotContainsString('url.includes(wwwroot)', self::sidebar_source(), 'An address holding the site address');
         $this->assertStringContainsString('\/(?![\/\\\\]))/i.test(url)', $source, '/\ is not a relative path');
 
         $this->setUser($this->getDataGenerator()->create_user());

@@ -1948,7 +1948,7 @@
 
 /* ── Navbar alignment and RTL (appended) ───────────────────────────────────── */
 
-/* Below Moodle's fixed-top navbar: amd/src/sidebar.js sets --j-nav-h to the navbar height. */
+/* Below Moodle's fixed-top navbar: amd/src/local/sidebar/panel.js sets --j-nav-h to the navbar height. */
 .jedomi-sidebar.jedomi-below-navbar {
     top: var(--j-nav-h);
     height: calc(100vh - var(--j-nav-h));

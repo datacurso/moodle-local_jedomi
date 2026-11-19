@@ -15,6 +15,7 @@
 - Security (phase 23 unit 6, REL-001/REL-002 of phase 22 unit 5): at every level the history and the previous answers sent again to the AI get the placeholders of the session map (`anonymizer::anonymize_history_text()`, used by `anonymize_messages()`), so an identifier shown in an answer (an `idnumber`, a phone) no longer leaves the site in a later Telegram turn; only values already in the map are replaced, as whole words of 3 characters or more. A preview answered from its cache loads the placeholders of the cached run and sends the cached answer anonymised, even when the data changed since
 - Fixed (phase 23 unit 6, FIX-001): a real value with `\r\n` or `\r` put back into an `execute_sql` query gets plain line breaks (`\n`), so a correct query is no longer refused; other tool arguments keep the value as it is
 - Removed (phase 23 unit 7): `webhook_handler::execute_pending_action()`, used only by its tests; Telegram held actions are confirmed through `resolve_held_action()`
+- Changed (unit 9): the sidebar JavaScript is split into ES modules: `amd/src/sidebar.js` keeps the `local_jedomi/sidebar` module and its `init()` entry point, and the parts of the panel live in `amd/src/local/sidebar/` (state, selectors, permissions, history, chat, markdown, attachments, voice message, voice conversation and others), with their shared state in one module and no circular imports. The panel behaves as before; the module is now checked by ESLint
 
 ## 1.7.0 (2026-11-19)
 
