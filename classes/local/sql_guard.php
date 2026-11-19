@@ -22,9 +22,10 @@ namespace local_jedomi\local;
  * The web chat, Telegram and the agents all call it before running a query. It applies four layers:
  *
  * 1. For every user (site administrators included): functions and clauses that read or write server files, pause or
- *    lock the database, reach other databases or reveal server variables or information (version, account, database,
- *    connection) are rejected (sql_function_rejected), and so are executable comments and optimizer hints (MySQL and
- *    MariaDB), which the database runs although they look like comments.
+ *    lock the database (row locking clauses such as FOR UPDATE and LOCK IN SHARE MODE included), reach other databases
+ *    or reveal server variables or information (version, account, database, connection) are rejected
+ *    (sql_function_rejected), and so are executable comments and optimizer hints (MySQL and MariaDB), which the
+ *    database runs although they look like comments.
  * 2. For every user: anything the guard and the database could read differently is rejected (sql_construct_rejected):
  *    control characters, placeholders Moodle would bind at another place than the guard reads them (inside a comment
  *    or a string) and, outside MySQL, quoting the guard does not follow (double-quoted identifiers, dollar quoting,
@@ -32,7 +33,8 @@ namespace local_jedomi\local;
  * 3. For every user: tables and columns that hold credentials, keys, tokens, site configuration or sessions are
  *    rejected (sql_sensitive_rejected); columns are recognised by name in any table (see is_sensitive_column()).
  * 4. For a user who does not manage every course (a teacher), an allowlist instead of a denylist. The query must be a
- *    single SELECT whose every token fits the small grammar of sql_select_parser (sql_construct_rejected): no CASE,
+ *    single SELECT whose every token fits the small grammar of sql_select_parser (sql_construct_rejected), HAVING
+ *    included: no CASE,
  *    OR, NOT, subqueries, UNION, comments, quoted identifiers, variables or functions other than COUNT, SUM, AVG, MIN,
  *    MAX, ROUND and COALESCE. Every table it reads must be either:
  *    - course data (the course table, a table with a course column, a known child table of one, the context table or a
@@ -141,6 +143,15 @@ class sql_guard {
      */
     private const SERVER_INFO_FUNCTIONS = ['version', 'user', 'database', 'schema', 'connection_id', 'current_database',
         'current_schema', 'current_schemas', 'current_setting', 'inet_server_addr', 'inet_server_port', 'pg_backend_pid'];
+
+    /**
+     * @var string[] Patterns of the row locking clauses rejected for every user, site administrators and users who manage
+     *      every course included (SEC-JD-037): FOR UPDATE, FOR NO KEY UPDATE, FOR SHARE, FOR KEY SHARE, LOCK IN SHARE
+     *      MODE, and the NOWAIT and SKIP LOCKED options. A read-only query never needs to lock rows, and a lock held
+     *      until the timeout blocks the writes of the whole site.
+     */
+    private const LOCKING_CLAUSES = ['for\s+(?:no\s+key\s+)?update', 'for\s+(?:key\s+)?share', 'lock\s+in\s+share\s+mode',
+        'nowait', 'skip\s+locked'];
 
     /** @var string[] Patterns of the placeholders Moodle binds, as lib/dml/moodle_database.php counts them. */
     private const PLACEHOLDERS = ['/\?/', '/(?<!:):[a-z][a-z0-9_]*/', '/\$[1-9][0-9]*/'];
@@ -259,7 +270,7 @@ class sql_guard {
     }
 
     /**
-     * Tell whether a query calls a function or uses a clause rejected for every user.
+     * Tell whether a query calls a function or uses a clause rejected for every user, row locking clauses included.
      *
      * @param string $code Lowercase query without literals and comments.
      * @return bool
@@ -267,7 +278,7 @@ class sql_guard {
     private static function calls_blocked_function(string $code): bool {
         $code = str_replace(self::BACKQUOTE, ' ', $code);
         $pattern = '/\b(?:' . implode('|', self::BLOCKED_FUNCTIONS) . ')\b|\b(?:' . implode('|', self::SERVER_INFO_FUNCTIONS)
-            . ')\s*\(|\binto\s+(?:outfile|dumpfile)\b|@@|(?:^|;)\s*copy\b/';
+            . ')\s*\(|\b(?:' . implode('|', self::LOCKING_CLAUSES) . ')\b|\binto\s+(?:outfile|dumpfile)\b|@@|(?:^|;)\s*copy\b/';
         return preg_match($pattern, $code) !== 0;
     }
 
@@ -485,7 +496,7 @@ class sql_guard {
     /**
      * Reason to reject a query that names a column no table of the query has (a keyword the database could read as a
      * value, such as CURRENT_USER, or a typo), or that qualifies a column or "*" with a name that is not a table of the
-     * query. A select alias is accepted in GROUP BY and ORDER BY.
+     * query. A select alias is accepted in GROUP BY, HAVING and ORDER BY.
      *
      * @param array $query Parsed query.
      * @param array[] $instances Table instances with their columns.
@@ -504,7 +515,7 @@ class sql_guard {
                 $mine = $column['qualifier'] === null || $column['qualifier'] === $instance['ref'];
                 $known = $known || ($mine && in_array($column['column'], $instance['columns'], true));
             }
-            $alias = $column['qualifier'] === null && in_array($column['clause'], ['group', 'order'], true)
+            $alias = $column['qualifier'] === null && in_array($column['clause'], ['group', 'having', 'order'], true)
                 && in_array($column['column'], $query['aliases'], true);
             if (!$known && !$alias) {
                 return 'sql_construct_rejected';

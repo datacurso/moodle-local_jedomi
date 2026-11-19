@@ -140,7 +140,8 @@ About the custom service:
   A host name is looked up once per minute, and a lookup slower than 2 seconds is not trusted (the host then counts as
   not local).
 - The API key never goes back to the browser, the Jedomi log or the events, and is only sent to the saved address:
-  changing the address asks for the key again.
+  changing the address asks for the key again. It is stored encrypted with the encryption key of the site, kept in
+  dataroot, so a copy of the database alone does not reveal it.
 - PDF and text files can be read with "Documents" on (see above); Word and PowerPoint files cannot.
 - Its requests use no Datacurso credits and are not recorded in the consumption history of the provider.
 - When a request fails, the user sees the same message as with the Datacurso service, and the technical log keeps the
@@ -193,6 +194,8 @@ webhook address, and a secret in the query string is refused. Upgrading to 1.6.1
 webhook again when a bot token is configured. If Telegram cannot be reached at that moment, the Integrations tab shows
 a warning until the bot token is saved again. While that warning is shown, "Drop pending updates" registers the
 webhook with a new secret. An update Telegram delivers again (same `update_id`) is acknowledged and not processed twice.
+The bot token is stored encrypted with the encryption key of the site, kept in dataroot; the 1.7.0 upgrade encrypts a
+token saved before again with that key.
 
 ## Telegram link security
 
@@ -224,7 +227,12 @@ The plugin writes an operational and security trace to `{dataroot}/local/jedomi/
 Telegram chat ids or conversation texts: users and chats appear as pseudonyms (a keyed hash with a random key of the
 site), and the source IP address is kept only for requests rejected for security reasons. The file rotates at 5 MB and
 keeps the five previous files (about 30 MB in total), so the oldest entries are removed as new ones are written; an
-administrator can delete the files at any time. The log is declared in the privacy registry of the site.
+administrator can delete the files at any time. The log is declared in the privacy registry of the site. Errors are
+logged with their class and error code, never their message, which can quote a query or personal data; the user sees a
+generic message with a reference that finds the entry.
+
+Changes of the course, privacy and Telegram role settings, and settings written by the companion web service
+(`jedomi_set_site_config`), also appear in the "Config changes" report of Moodle.
 
 ## Database queries and their limits
 
@@ -248,6 +256,15 @@ the queries of the agents; its slow query threshold and the days its records are
 the scheduled task "Purge old query profiler records" removes the old records once a day. The row limit of the web chat
 is set in the General tab too ("Maximum rows per query (web chat)", `sql_row_limit_web`); the other channels keep their
 fixed limits.
+
+Row locking clauses (`FOR UPDATE`, `FOR SHARE`, `LOCK IN SHARE MODE`, `NOWAIT`, `SKIP LOCKED`) are rejected for every
+user, site administrators included. A user who does not manage every course writes a single `SELECT` with `FROM`,
+`[LEFT] JOIN ... ON`, `WHERE` conditions joined by `AND`, `GROUP BY`, `HAVING`, `ORDER BY` and `LIMIT`, and only the
+functions `COUNT`, `SUM`, `AVG`, `MIN`, `MAX`, `ROUND` and `COALESCE`; the course filter must be in `WHERE` or in a join,
+never only in `HAVING`.
+
+A course backup asked to the AI by an administrator can only be copied to an existing folder inside dataroot (given
+relative to dataroot or absolute); any other folder, `..` or a symbolic link leading out of dataroot is refused.
 
 ## Course exclusion
 

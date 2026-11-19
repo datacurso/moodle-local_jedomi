@@ -109,7 +109,7 @@ class speech_service {
      * @return array Keys status (403), contenttype and body.
      */
     public static function login_error(\moodle_exception $e): array {
-        return self::error(403, $e->errorcode, $e->getMessage());
+        return self::error(403, $e->errorcode, \local_jedomi\local\safe_error::for_user($e, 'speech_login'));
     }
 
     /**
@@ -137,7 +137,7 @@ class speech_service {
         try {
             spt_validator::validate($spt);
         } catch (\moodle_exception $e) {
-            return self::error(403, 'invalid_spt', $e->getMessage());
+            return self::error(403, 'invalid_spt', \local_jedomi\local\safe_error::for_user($e, 'speech_spt'));
         }
 
         $disabled = \local_jedomi_plugin_disabled_error();

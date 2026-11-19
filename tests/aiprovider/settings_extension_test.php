@@ -831,7 +831,9 @@ final class settings_extension_test extends \advanced_testcase {
         );
 
         $extension->save((object) $this->custom_data(['custom_api_key' => '']));
-        $this->assertSame('sk-new-key', get_config('local_jedomi', 'custom_api_key'));
+        $this->assertSame('sk-new-key', ai_service::get_custom_key());
+        // JEDOMI-SEC-010: a key saved in clear text before is stored encrypted on the next save, without a log row.
+        $this->assertMatchesRegularExpression('/^sodium:/', get_config('local_jedomi', 'custom_api_key'));
     }
 
     /**
@@ -915,7 +917,9 @@ final class settings_extension_test extends \advanced_testcase {
         $this->assertSame(ai_service::CUSTOM, get_config('local_jedomi', 'ai_service'));
         $this->assertSame('jedomi/zai-org/GLM-5.3-Flash', get_config('local_jedomi', 'model'));
         $this->assertSame('https://api.example.com/v1', get_config('local_jedomi', 'custom_gateway_url'));
-        $this->assertSame('sk-new-key', get_config('local_jedomi', 'custom_api_key'));
+        // JEDOMI-SEC-010: the key is stored encrypted with the key of the site, never in clear text.
+        $this->assertSame('sk-new-key', ai_service::get_custom_key());
+        $this->assertStringNotContainsString('sk-new-key', get_config('local_jedomi', 'custom_api_key'));
         $this->assertSame('meta-llama/Llama-3.3-70B-Instruct', get_config('local_jedomi', 'custom_model'));
         $this->assertSame('Qwen/Qwen2.5-VL-7B-Instruct', get_config('local_jedomi', 'custom_vision_model'));
         $this->assertSame((string) model_settings::MAX_MAX_TOKENS, get_config('local_jedomi', 'custom_max_tokens'));
@@ -929,7 +933,7 @@ final class settings_extension_test extends \advanced_testcase {
         $extension->save((object) $this->valid_data(['model' => 'jedomi/zai-org/GLM-5.3-Flash']));
         $this->assertSame(ai_service::DATACURSO, get_config('local_jedomi', 'ai_service'));
         $this->assertSame('meta-llama/Llama-3.3-70B-Instruct', get_config('local_jedomi', 'custom_model'));
-        $this->assertSame('sk-new-key', get_config('local_jedomi', 'custom_api_key'));
+        $this->assertSame('sk-new-key', ai_service::get_custom_key());
     }
 
     /**
@@ -1317,5 +1321,37 @@ final class settings_extension_test extends \advanced_testcase {
 
         set_config('custom_context_lengths', json_encode(['chat-model' => 8192]), 'local_jedomi');
         $this->assertFalse($form()->elementExists('custom_context_window_unknown'));
+    }
+
+    /**
+     * An AI API key that cannot be decrypted shows a warning to enter it again instead of the usual placeholder.
+     *
+     * @return void
+     */
+    public function test_unreadable_api_key_shows_a_warning(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        [$method, $data] = explode(':', \local_jedomi\local\secret_store::encrypt('sk-secret'), 2);
+        $raw = base64_decode($data);
+        $raw[30] = chr(ord($raw[30]) ^ 0x01);
+        set_config('custom_api_key', $method . ':' . base64_encode($raw), 'local_jedomi');
+        $warning = get_string('custom_api_key_unreadable', 'local_jedomi');
+
+        $mform = new \MoodleQuickForm('jedomitest', 'post', '');
+        (new settings_extension())->add_fields($mform);
+
+        $this->assertSame($warning, $mform->getElement('custom_api_key')->getAttribute('placeholder'));
+        $this->assertTrue($mform->elementExists('custom_api_key_unreadable'));
+        $this->assertStringContainsString($warning, $mform->getElement('custom_api_key_unreadable')->toHtml());
+
+        \local_jedomi\local\secret_store::set('custom_api_key', 'sk-new');
+        $mform = new \MoodleQuickForm('jedomitest', 'post', '');
+        (new settings_extension())->add_fields($mform);
+
+        $this->assertFalse($mform->elementExists('custom_api_key_unreadable'));
+        $this->assertSame(
+            get_string('custom_api_key_saved', 'local_jedomi'),
+            $mform->getElement('custom_api_key')->getAttribute('placeholder')
+        );
     }
 }

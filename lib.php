@@ -758,7 +758,10 @@ function local_jedomi_signed_request_course($spt, ?int $requestcourseid): array 
     try {
         \local_jedomi\proxy\spt_validator::validate($spt);
     } catch (\moodle_exception $e) {
-        return ['courseid' => 0, 'error' => ['code' => 'invalid_spt', 'message' => $e->getMessage()]];
+        return ['courseid' => 0, 'error' => [
+            'code' => 'invalid_spt',
+            'message' => \local_jedomi\local\safe_error::for_user($e, 'spt'),
+        ]];
     }
 
     $courseid = (int) ($spt['course_id'] ?? 0);
@@ -1796,7 +1799,9 @@ function local_jedomi_redact_log_data(mixed $data): mixed {
     if (!is_array($data)) {
         return $data;
     }
-    $sensitive = ['args', 'arguments', 'sql', 'query', 'params', 'parameters', 'prompt', 'messages', 'content', 'text'];
+    // The error of a tool result can quote a query or the database error (JEDOMI-SEC-009). The "detail" of the AI client
+    // is kept: it only holds an HTTP status or a cURL error number (error_message::log_detail()).
+    $sensitive = ['args', 'arguments', 'sql', 'query', 'params', 'parameters', 'prompt', 'messages', 'content', 'text', 'error'];
     foreach ($data as $key => $value) {
         if (is_string($key) && in_array(strtolower($key), $sensitive, true)) {
             $size = is_string($value) ? strlen($value) : strlen((string) json_encode($value));

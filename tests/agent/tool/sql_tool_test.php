@@ -104,8 +104,9 @@ final class sql_tool_test extends \advanced_testcase {
         [$answer] = $this->run_with_database('mysql', 'SELECT nope FROM {course}', $failure);
 
         $this->assertStringContainsString("Unknown column 'nope' in 'field list'", $answer['error']);
-        // The AI gets the message of the database itself, without a generic prefix.
-        $this->assertStringStartsWith($failure->getMessage(), $answer['error']);
+        // JEDOMI-SEC-009: the AI gets the message of the database itself, never the query the debug information repeats.
+        $this->assertStringStartsWith(get_string('execute_sql_error', 'local_jedomi'), $answer['error']);
+        $this->assertStringNotContainsString('SELECT nope', $answer['error']);
 
         // The same on the real database, whatever its engine words the error.
         $real = json_decode((new sql_tool(0, (int) get_admin()->id))->execute(

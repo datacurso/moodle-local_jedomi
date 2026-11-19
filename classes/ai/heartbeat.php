@@ -115,7 +115,7 @@ final class heartbeat {
             // A signal of life is never worth the answer: the request goes on without further signals.
             self::$failed = true;
             if (function_exists('local_jedomi_log')) {
-                \local_jedomi_log('HEARTBEAT_LISTENER_FAILED', ['error' => get_class($e)]);
+                \local_jedomi_log('HEARTBEAT_LISTENER_FAILED', ['class' => get_class($e)]);
             }
         }
     }

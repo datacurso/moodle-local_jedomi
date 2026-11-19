@@ -115,7 +115,7 @@ register_shutdown_function(function () use ($update): void {
 try {
     webhook_handler::handle($update);
 } catch (\Throwable $e) {
-    $msg = 'UNCAUGHT: ' . get_class($e) . ': ' . $e->getMessage()
-        . ' in ' . $e->getFile() . ':' . $e->getLine();
+    // JEDOMI-SEC-009: the class, the error code and the line, never the message (it can quote a query or a user).
+    $msg = 'UNCAUGHT: ' . \local_jedomi\local\safe_error::describe($e) . ' at ' . basename($e->getFile()) . ':' . $e->getLine();
     local_jedomi_log($msg);
 }

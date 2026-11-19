@@ -81,7 +81,7 @@ class preview_runner {
         [, $system, $tools] = agent_runner::run_conditions($userid, $contexttype, $contextid);
         // The tools run with the permissions of the user, as in the scheduled run of the agent; the profiler records
         // their queries as a preview (of the agent being edited, if any), never as a run of the agent.
-        tool_executor::get_definitions($agentid, $userid, 'preview');
+        $executor = new tool_executor($agentid, $userid, 'preview');
         $maxrounds = agent_runner::MAX_TOOL_ITERATIONS;
 
         $messages = [
@@ -97,7 +97,7 @@ class preview_runner {
             'context_hash' => $cachehash,
         ]);
         if ($cached && !empty($cached->result_json)) {
-            $fromcache = self::answer_from_cache($cached, $userid);
+            $fromcache = self::answer_from_cache($cached, $userid, $executor);
             if ($fromcache !== null) {
                 // The page needs the cache key to offer "Clear cache" for this prompt.
                 return $fromcache + ['cache_hash' => $cachehash];
@@ -196,7 +196,7 @@ class preview_runner {
                     ];
 
                     $toolstart = microtime(true);
-                    $toolresult = tool_executor::execute($funcname, $funcargs);
+                    $toolresult = $executor->execute($funcname, $funcargs);
                     $toolduration = (microtime(true) - $toolstart) * 1000;
 
                     if (strlen($toolresult) > 64000) {
@@ -235,7 +235,7 @@ class preview_runner {
             } else if (!empty($content)) {
                 $finalanswer = $content;
             } else {
-                $finalanswer = self::last_tool_result($messages, $untrusted);
+                $finalanswer = agent_runner::last_tool_result($messages, $untrusted);
             }
         }
 
@@ -278,9 +278,10 @@ class preview_runner {
      *
      * @param \stdClass $cached Cache record.
      * @param int $userid User the preview runs for.
+     * @param tool_executor $executor Tools of the preview, prepared for the user.
      * @return array|null Response, or null when the cache cannot be used.
      */
-    private static function answer_from_cache(\stdClass $cached, int $userid): ?array {
+    private static function answer_from_cache(\stdClass $cached, int $userid, tool_executor $executor): ?array {
         // ... ── Try semantic cache plan replay ──────────────────────────────────────
         $plan = !empty($cached->plan_json) ? json_decode($cached->plan_json, true) : null;
         if (is_array($plan) && !empty($plan)) {
@@ -300,7 +301,7 @@ class preview_runner {
                     break;
                 }
                 $toolstart = microtime(true);
-                $toolresult = tool_executor::execute($step['tool'], $step['arguments']);
+                $toolresult = $executor->execute($step['tool'], $step['arguments']);
                 $toolduration = (microtime(true) - $toolstart) * 1000;
                 $resultinfo = json_decode($toolresult, true);
                 if (!empty($resultinfo['error'])) {
@@ -375,27 +376,6 @@ class preview_runner {
             ];
         }
         return null;
-    }
-
-    /**
-     * Content of the last tool result that is not an error.
-     *
-     * @param array $messages Conversation.
-     * @param \local_jedomi\local\untrusted $untrusted Delimiters of the run, removed from the result.
-     * @return string
-     */
-    private static function last_tool_result(array $messages, \local_jedomi\local\untrusted $untrusted): string {
-        foreach (array_reverse($messages) as $msg) {
-            if (($msg['role'] ?? '') === 'tool' && !empty($msg['content'])) {
-                $content = $untrusted->unwrap((string) $msg['content']);
-                $decoded = json_decode($content, true);
-                if (!empty($decoded['error'])) {
-                    continue;
-                }
-                return $content;
-            }
-        }
-        return '';
     }
 
     /**

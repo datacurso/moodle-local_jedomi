@@ -182,7 +182,7 @@ class document_read_tool implements agent_tool {
                 return json_encode(['error' => 'no PDF files found in this activity']);
             }
         } catch (\Throwable $e) {
-            return json_encode(['error' => 'document read failed: ' . $e->getMessage()]);
+            return json_encode(['error' => 'document read failed: ' . \local_jedomi\local\safe_error::for_model($e)]);
         }
 
         try {

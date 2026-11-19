@@ -30,6 +30,7 @@ namespace local_jedomi;
  * @covers     ::local_jedomi_upgrade_custom_service_url
  * @covers     ::local_jedomi_upgrade_custom_feature_switches
  * @covers     ::local_jedomi_upgrade_agentwrites_email_default
+ * @covers     ::local_jedomi_upgrade_encrypt_secrets
  */
 final class upgradelib_test extends \advanced_testcase {
     #[\Override]
@@ -602,5 +603,39 @@ final class upgradelib_test extends \advanced_testcase {
         set_config($name, 'email', 'message');
         local_jedomi_upgrade_agentwrites_email_default();
         $this->assertSame('', get_config('message', $name));
+    }
+
+    /**
+     * JEDOMI-SEC-010: the upgrade encrypts with the key of the site the API key of the custom service saved in clear text,
+     * keeps its value and adds no config log row; running it again changes nothing.
+     */
+    public function test_upgrade_encrypts_the_custom_service_key(): void {
+        global $DB;
+        set_config('custom_api_key', 'sk-saved', 'local_jedomi');
+        $logs = $DB->count_records('config_log', ['name' => 'custom_api_key']);
+
+        local_jedomi_upgrade_encrypt_secrets();
+
+        $stored = get_config('local_jedomi', 'custom_api_key');
+        $this->assertMatchesRegularExpression('/^sodium:/', $stored);
+        $this->assertStringNotContainsString('sk-saved', $stored);
+        $this->assertSame('sk-saved', \local_jedomi\ai\ai_service::get_custom_key());
+        $this->assertSame($logs, $DB->count_records('config_log', ['name' => 'custom_api_key']));
+
+        local_jedomi_upgrade_encrypt_secrets();
+        $this->assertSame($stored, get_config('local_jedomi', 'custom_api_key'), 'An encrypted key is left as it is');
+    }
+
+    /**
+     * JEDOMI-SEC-010: without secrets saved the upgrade saves nothing.
+     */
+    public function test_upgrade_without_secrets_saves_nothing(): void {
+        unset_config('custom_api_key', 'local_jedomi');
+        unset_config('telegram_bot_token', 'local_jedomi');
+
+        local_jedomi_upgrade_encrypt_secrets();
+
+        $this->assertFalse(get_config('local_jedomi', 'custom_api_key'));
+        $this->assertFalse(get_config('local_jedomi', 'telegram_bot_token'));
     }
 }

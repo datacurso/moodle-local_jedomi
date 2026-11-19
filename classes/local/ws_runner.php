@@ -295,7 +295,8 @@ class ws_runner {
             if ($e instanceof \moodle_exception) {
                 throw $e;
             }
-            throw new \moodle_exception('ws_execute_error', 'local_jedomi', '', $e->getMessage() . ' [' . get_class($e) . ']');
+            // JEDOMI-SEC-009: the message of an unexpected error can quote a query or a path; only its class is given.
+            throw new \moodle_exception('ws_execute_error', 'local_jedomi', '', safe_error::for_model($e));
         }
         return self::without_excluded_courses(self::clean_result($method, $result), $wsname);
     }
@@ -628,8 +629,9 @@ class ws_runner {
         try {
             return \core_external\external_api::clean_returnvalue($description, $result);
         } catch (\invalid_response_exception $e) {
+            // The debug information can quote values of the result: only the function is logged (JEDOMI-SEC-009).
             \local_jedomi_log('WS: the result of ' . $classname . '::' . $method->getName() . '() does not match its return '
-                . 'description: ' . $e->debuginfo);
+                . 'description');
             return $result;
         }
     }

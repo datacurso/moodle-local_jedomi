@@ -140,8 +140,13 @@ switch ($tab) {
             $type = notification::NOTIFY_SUCCESS;
             $token = trim((string) ($data->telegram_bot_token ?? ''));
             if (!empty($data->telegram_remove_token)) {
-                admin_settings_service::remove_telegram_token();
-                $message = get_string('telegram_msg_token_removed', 'local_jedomi');
+                if (!admin_settings_service::remove_telegram_token()) {
+                    // The token could not be decrypted, so its webhook could not be deleted in Telegram.
+                    $message = get_string('telegram_msg_token_removed_webhook_kept', 'local_jedomi');
+                    $type = notification::NOTIFY_WARNING;
+                } else {
+                    $message = get_string('telegram_msg_token_removed', 'local_jedomi');
+                }
             } else if ($token !== '' && !admin_settings_service::verify_and_save_telegram_token($token)) {
                 // The rejected token does not leave the previous one in use; the other changes are still saved.
                 $message = get_string('telegram_msg_token_invalid', 'local_jedomi');

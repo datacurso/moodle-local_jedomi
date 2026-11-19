@@ -83,7 +83,7 @@ class ws_indexer {
         try {
             $info = external_api::external_function_info($record);
         } catch (\Throwable $e) {
-            return ['error' => get_string('ws_cannot_load_info', 'local_jedomi', $e->getMessage())];
+            return ['error' => get_string('ws_cannot_load_info', 'local_jedomi', \local_jedomi\local\safe_error::for_model($e))];
         }
 
         $result = self::build_compact_info($record, $info);

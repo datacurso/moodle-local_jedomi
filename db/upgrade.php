@@ -572,5 +572,13 @@ function xmldb_local_jedomi_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2026111903, 'local', 'jedomi');
     }
 
+    if ($oldversion < 2026111904) {
+        // The Telegram bot token and the API key of the custom AI service are encrypted with the key of the site, kept
+        // in dataroot, instead of a key derived from the database or clear text (JEDOMI-SEC-010).
+        require_once($CFG->dirroot . '/local/jedomi/db/upgradelib.php');
+        local_jedomi_upgrade_encrypt_secrets();
+        upgrade_plugin_savepoint(true, 2026111904, 'local', 'jedomi');
+    }
+
     return true;
 }

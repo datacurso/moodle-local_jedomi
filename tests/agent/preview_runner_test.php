@@ -191,7 +191,6 @@ final class preview_runner_test extends \advanced_testcase {
         $fake->enqueue_text('There is one course.');
         $fake->enqueue_text('Run again.');
         client::set_instance_for_testing($fake);
-        \local_jedomi\agent\tool_executor::get_definitions(1, (int) get_admin()->id);
 
         $result = preview_runner::run('How many courses are there?', (int) get_admin()->id);
 
@@ -234,7 +233,6 @@ final class preview_runner_test extends \advanced_testcase {
         $fake->enqueue_text('There is one course.');
         $fake->enqueue_text('There is still one course.');
         client::set_instance_for_testing($fake);
-        \local_jedomi\agent\tool_executor::get_definitions(1, (int) get_admin()->id);
         preview_runner::run('How many courses are there?', (int) get_admin()->id);
 
         $again = preview_runner::run('How many courses are there?', (int) get_admin()->id);
@@ -306,7 +304,8 @@ final class preview_runner_test extends \advanced_testcase {
         $this->setAdminUser();
         $adminid = (int) get_admin()->id;
         // Another user ran a tool before, as in a previous request: the preview must not keep their permissions.
-        \local_jedomi\agent\tool_executor::get_definitions(1, (int) $this->getDataGenerator()->create_user()->id);
+        $previous = new \local_jedomi\agent\tool_executor(1, (int) $this->getDataGenerator()->create_user()->id);
+        $previous->execute('search_tables', '{"query":"user"}');
         $fake = new fake_ai_client();
         $fake->enqueue_tool_calls([
             ['id' => 'call_1', 'type' => 'function', 'function' => ['name' => 'execute_sql',

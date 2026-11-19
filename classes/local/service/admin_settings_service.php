@@ -131,8 +131,8 @@ class admin_settings_service {
         if ($mode === 'include' && empty($ids)) {
             throw new \moodle_exception('error_course_include_empty', 'local_jedomi');
         }
-        set_config('course_mode', $mode, 'local_jedomi');
-        set_config('course_list', implode(',', $ids), 'local_jedomi');
+        self::save_logged('course_mode', $mode);
+        self::save_logged('course_list', implode(',', $ids));
         \local_jedomi\event\settings_updated::create_for_tab('course')->trigger();
     }
 
@@ -159,6 +159,20 @@ class admin_settings_service {
     }
 
     /**
+     * Store a setting of local_jedomi that changes who can use Jedomi or what reaches the AI (courses, roles,
+     * anonymization), with a row in the config log of Moodle when its value changes (SEC-JD-112), so the "Config changes"
+     * report shows who changed it and when.
+     *
+     * @param string $name Setting name.
+     * @param string $value New value.
+     * @return void
+     */
+    private static function save_logged(string $name, string $value): void {
+        $previous = get_config('local_jedomi', $name);
+        set_config($name, $value, 'local_jedomi', $previous === false || (string) $previous !== $value);
+    }
+
+    /**
      * Save the settings of the Privacy tab.
      *
      * @param string $level One of {@see self::ANONYMIZATION_LEVELS}; anything else is stored as "basic".
@@ -169,8 +183,8 @@ class admin_settings_service {
         if (!in_array($level, self::ANONYMIZATION_LEVELS, true)) {
             $level = 'basic';
         }
-        set_config('anonymization_level', $level, 'local_jedomi');
-        set_config('hidden_roles', implode(',', self::hidden_role_ids($visibleroleids)), 'local_jedomi');
+        self::save_logged('anonymization_level', $level);
+        self::save_logged('hidden_roles', implode(',', self::hidden_role_ids($visibleroleids)));
         \local_jedomi\event\settings_updated::create_for_tab('privacy')->trigger();
     }
 
@@ -204,7 +218,7 @@ class admin_settings_service {
     /**
      * Settings and status of the Telegram integration.
      *
-     * @return array{enabled: int, bot_token_set: bool, bot_username: string, bot_firstname: string,
+     * @return array{enabled: int, bot_token_set: bool, bot_token_unreadable: bool, bot_username: string, bot_firstname: string,
      *     bot_verified: int, webhook_error: int, webhook_url: string, rate_limit: int, cooldown: int,
      *     max_turns: int, gateway_timeout: int, hidden_role_ids: int[], last_error: string,
      *     last_error_time: int, webhook_ok_time: int, needs_registration: bool, require_pin: int, is_configured: bool}
@@ -214,6 +228,7 @@ class admin_settings_service {
         $settings = [
             'enabled' => (int) get_config('local_jedomi', 'telegram_enabled'),
             'bot_token_set' => !empty(get_config('local_jedomi', 'telegram_bot_token')),
+            'bot_token_unreadable' => manager::is_bot_token_unreadable(),
             'bot_username' => (string) (get_config('local_jedomi', 'telegram_bot_username') ?: ''),
             'bot_firstname' => (string) (get_config('local_jedomi', 'telegram_bot_firstname') ?: ''),
             'bot_verified' => (int) get_config('local_jedomi', 'telegram_bot_verified'),
@@ -230,7 +245,8 @@ class admin_settings_service {
             'needs_registration' => manager::needs_webhook_registration(),
             'require_pin' => (int) get_config('local_jedomi', 'telegram_require_pin'),
         ];
-        $settings['is_configured'] = $settings['enabled'] && $settings['bot_token_set'] && $settings['bot_verified'];
+        $settings['is_configured'] = $settings['enabled'] && $settings['bot_token_set'] && !$settings['bot_token_unreadable']
+            && $settings['bot_verified'];
         return $settings;
     }
 
@@ -282,14 +298,20 @@ class admin_settings_service {
      * Remove the stored bot token: its webhook is deleted in Telegram, so the bot stops receiving messages, and the
      * bot details, the verified flag and the webhook state are forgotten.
      *
+     * A token that cannot be decrypted is still removed, but its webhook cannot be deleted in Telegram without it.
+     *
      * @param api_client|null $client Client of the stored token; built from the stored token when null.
-     * @return void
+     * @return bool False when a stored token could not be decrypted, so its webhook may remain registered in Telegram.
      */
-    public static function remove_telegram_token(?api_client $client = null): void {
+    public static function remove_telegram_token(?api_client $client = null): bool {
         global $CFG;
         require_once($CFG->dirroot . '/local/jedomi/lib.php');
+        $webhookremoved = true;
         $token = manager::get_bot_token();
-        if ($token !== null) {
+        if ($token === null && manager::is_bot_token_unreadable()) {
+            $webhookremoved = false;
+            \local_jedomi_log('[local_jedomi] Telegram bot token removed without deleting its webhook: it could not be decrypted');
+        } else if ($token !== null) {
             $client = $client ?? new api_client($token);
             if (!$client->delete_webhook()) {
                 \local_jedomi_log('[local_jedomi] Telegram webhook could not be deleted while removing the bot token');
@@ -300,6 +322,8 @@ class admin_settings_service {
         }
         set_config('telegram_bot_verified', 0, 'local_jedomi');
         manager::forget_webhook_state();
+        \local_jedomi\local\secret_store::clear_unreadable('telegram_bot_token');
+        return $webhookremoved;
     }
 
     /**
@@ -325,7 +349,7 @@ class admin_settings_service {
         set_config('telegram_cooldown', $cooldown, 'local_jedomi');
         set_config('telegram_max_turns', $maxturns, 'local_jedomi');
         set_config('telegram_gateway_timeout', $gatewaytimeout, 'local_jedomi');
-        set_config('telegram_hidden_roles', implode(',', self::hidden_role_ids($visibleroleids)), 'local_jedomi');
+        self::save_logged('telegram_hidden_roles', implode(',', self::hidden_role_ids($visibleroleids)));
         set_config('telegram_require_pin', (int) $requirepin, 'local_jedomi');
         \local_jedomi\event\settings_updated::create_for_tab('telegram')->trigger();
     }

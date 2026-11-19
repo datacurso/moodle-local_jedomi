@@ -210,4 +210,32 @@ final class register_telegram_webhook_test extends \advanced_testcase {
         $this->assertSame(11, reset($tasks)->get_attempts_available());
         $this->assertSame(register_telegram_webhook::ATTEMPTS, reset($tasks)->get_attempts_available());
     }
+
+    /**
+     * A value encrypted with the key of the site and then altered, as after a change of that key.
+     *
+     * @return string
+     */
+    private static function unreadable_secret(): string {
+        [$method, $data] = explode(':', \local_jedomi\local\secret_store::encrypt('123:abc'), 2);
+        $raw = base64_decode($data);
+        $raw[30] = chr(ord($raw[30]) ^ 0x01);
+        return $method . ':' . base64_encode($raw);
+    }
+
+    /**
+     * A bot token that cannot be decrypted keeps the registration pending and records the real cause.
+     */
+    public function test_unreadable_bot_token_keeps_the_registration_pending(): void {
+        $this->use_client(true);
+        set_config('telegram_bot_token', self::unreadable_secret(), 'local_jedomi');
+
+        $this->expectOutputRegex('/could not be decrypted/');
+        $this->task(register_telegram_webhook::ATTEMPTS)->execute();
+
+        $this->assertSame([], $this->client->requests);
+        $this->assertTrue(manager::needs_webhook_registration(), 'The pending registration is kept');
+        $this->assertStringContainsString('could not be decrypted', manager::get_last_webhook_error());
+        $this->assertNotSame('', get_config('local_jedomi', 'telegram_bot_token'), 'The stored token is kept');
+    }
 }

@@ -21,6 +21,7 @@ use local_jedomi\ai\ai_service;
 use local_jedomi\ai\client;
 use local_jedomi\ai\custom_endpoint;
 use local_jedomi\ai\model_settings;
+use local_jedomi\local\secret_store;
 
 /**
  * Jedomi AI service fields on its settings page in the Datacurso AI provider.
@@ -191,15 +192,28 @@ class settings_extension implements plugin_settings_extension {
         $mform->setType('custom_gateway_url', PARAM_RAW_TRIMMED);
         $mform->addHelpButton('custom_gateway_url', 'custom_gateway_url', self::COMPONENT);
 
-        $placeholder = ai_service::get_custom_key() !== ''
-            ? get_string('custom_api_key_saved', self::COMPONENT)
-            : get_string('custom_api_key_placeholder', self::COMPONENT);
+        // A saved key that cannot be decrypted (the encryption key of the site changed) is not offered as optional.
+        $unreadable = secret_store::is_unreadable('custom_api_key');
+        if ($unreadable) {
+            $placeholder = get_string('custom_api_key_unreadable', self::COMPONENT);
+        } else {
+            $placeholder = ai_service::get_custom_key() !== ''
+                ? get_string('custom_api_key_saved', self::COMPONENT)
+                : get_string('custom_api_key_placeholder', self::COMPONENT);
+        }
         $mform->addElement('passwordunmask', 'custom_api_key', get_string('custom_api_key', self::COMPONENT), [
             'placeholder' => $placeholder,
             'autocomplete' => 'new-password',
         ]);
         $mform->setType('custom_api_key', PARAM_RAW_TRIMMED);
         $mform->addHelpButton('custom_api_key', 'custom_api_key', self::COMPONENT);
+        if ($unreadable) {
+            $mform->addElement('static', 'custom_api_key_unreadable', '', \html_writer::div(
+                get_string('custom_api_key_unreadable', self::COMPONENT),
+                'alert alert-warning mb-0',
+                ['role' => 'alert']
+            ));
+        }
 
         $mform->addElement('advcheckbox', 'custom_allow_http', '', get_string('custom_allow_http', self::COMPONENT));
         $mform->setType('custom_allow_http', PARAM_BOOL);
@@ -693,19 +707,23 @@ class settings_extension implements plugin_settings_extension {
     }
 
     /**
-     * Store a secret of local_jedomi; a change is written to the config log masked, as Moodle does for passwords.
+     * Store a secret of local_jedomi encrypted (JEDOMI-SEC-010); a change is written to the config log masked, as Moodle
+     * does for passwords. A secret saved in clear text before 1.7.0 is encrypted again without a log row.
      *
      * @param string $name Setting name.
      * @param string $value New value.
      * @return void
      */
     private static function save_secret(string $name, string $value): void {
-        $previous = (string) get_config(self::COMPONENT, $name);
-        if ($previous === $value) {
+        $stored = (string) get_config(self::COMPONENT, $name);
+        $previous = secret_store::get($name);
+        if ($previous === $value && ($value === '' || secret_store::is_encrypted($stored))) {
             return;
         }
-        set_config($name, $value, self::COMPONENT);
-        add_to_config_log($name, $previous === '' ? null : '********', $value === '' ? '' : '********', self::COMPONENT);
+        secret_store::set($name, $value);
+        if ($previous !== $value) {
+            add_to_config_log($name, $previous === '' ? null : '********', $value === '' ? '' : '********', self::COMPONENT);
+        }
     }
 
     /**

@@ -38,7 +38,7 @@ require_once(__DIR__ . '/../../lib.php');
  * Telegram integration manager: encrypted bot token storage, config helpers and rate limiting.
  */
 class manager {
-    /** Fixed pepper — adds defense-in-depth against DB-only breaches. */
+    /** Constant of the key derivation of 1.6.x, kept only to read a token saved then. */
     private const PEPPER = 'jedomi_telegram_pepper_v1';
 
     /** Default rate limit: max messages per minute. */
@@ -63,59 +63,96 @@ class manager {
     private const NEEDS_REGISTRATION_KEY = 'telegram_webhook_needs_registration';
 
     /**
-     * Derive the encryption key from site secret + pepper.
-     *
-     * Uses $CFG->passwordsaltmain when available (set in config.php),
-     * falls back to $CFG->siteidentifier which always exists.
+     * Key of the encryption used up to 1.6.x: derived from a value of the database and a constant of this code, so a
+     * dump of the database was enough to rebuild it (JEDOMI-SEC-010). Only used to read a token saved then.
      *
      * @return string 32-byte raw key
      */
-    private static function derive_key(): string {
+    private static function legacy_key(): string {
         global $CFG;
         $secret = $CFG->passwordsaltmain ?? $CFG->siteidentifier ?? 'jedomi_default_secret';
         return hash('sha256', $secret . self::PEPPER, true);
     }
 
     /**
-     * Encrypt a plaintext string using AES-256-GCM.
-     *
-     * Returns a string containing: nonce (12 bytes) + ciphertext + tag (16 bytes),
-     * all base64-encoded for storage.
+     * Encrypt a secret with the key of the site, kept in dataroot outside the database (\core\encryption).
      *
      * @param string $plaintext
-     * @return string Base64-encoded ciphertext bundle
+     * @return string Encrypted value, prefixed with its method
+     * @throws \moodle_exception encryption_failed
      */
     public static function encrypt(string $plaintext): string {
-        $key = self::derive_key();
-        $nonce = random_bytes(12); // 96 bits for GCM
-        $tag = '';
-        $ciphertext = openssl_encrypt($plaintext, 'aes-256-gcm', $key, OPENSSL_RAW_DATA, $nonce, $tag, '', 16);
-        if ($ciphertext === false) {
+        try {
+            $encrypted = \local_jedomi\local\secret_store::encrypt($plaintext);
+        } catch (\moodle_exception $e) {
             throw new \moodle_exception('encryption_failed', 'local_jedomi');
         }
-        return base64_encode($nonce . $ciphertext . $tag);
+        if ($encrypted === '') {
+            throw new \moodle_exception('encryption_failed', 'local_jedomi');
+        }
+        return $encrypted;
     }
 
     /**
-     * Decrypt a ciphertext bundle produced by self::encrypt().
+     * Decrypt a value produced by self::encrypt(), or by the AES-256-GCM encryption of 1.6.x (nonce, ciphertext and tag
+     * in base64), which the upgrade encrypts again with the key of the site.
      *
-     * @param string $ciphertextbundle Base64-encoded
+     * @param string $ciphertextbundle Encrypted value
      * @return string Plaintext
+     * @throws \moodle_exception decryption_failed
      */
     public static function decrypt(string $ciphertextbundle): string {
+        if (\local_jedomi\local\secret_store::is_encrypted($ciphertextbundle)) {
+            try {
+                return \local_jedomi\local\secret_store::decrypt($ciphertextbundle);
+            } catch (\moodle_exception $e) {
+                throw new \moodle_exception('decryption_failed', 'local_jedomi');
+            }
+        }
+        return self::legacy_decrypt($ciphertextbundle);
+    }
+
+    /**
+     * Decrypt a token encrypted by 1.6.x with AES-256-GCM.
+     *
+     * @param string $ciphertextbundle Base64 of nonce (12 bytes), ciphertext and tag (16 bytes)
+     * @return string Plaintext
+     * @throws \moodle_exception decryption_failed
+     */
+    private static function legacy_decrypt(string $ciphertextbundle): string {
         $raw = base64_decode($ciphertextbundle, true);
         if ($raw === false || strlen($raw) < 29) { // 12 nonce + 1 min ciphertext + 16 tag
             throw new \moodle_exception('decryption_failed', 'local_jedomi');
         }
-        $key = self::derive_key();
         $nonce = substr($raw, 0, 12);
         $tag = substr($raw, -16);
         $ciphertext = substr($raw, 12, -16);
-        $plaintext = openssl_decrypt($ciphertext, 'aes-256-gcm', $key, OPENSSL_RAW_DATA, $nonce, $tag);
+        $plaintext = openssl_decrypt($ciphertext, 'aes-256-gcm', self::legacy_key(), OPENSSL_RAW_DATA, $nonce, $tag);
         if ($plaintext === false) {
             throw new \moodle_exception('decryption_failed', 'local_jedomi');
         }
         return $plaintext;
+    }
+
+    /**
+     * Encrypt again with the key of the site a bot token saved by 1.6.x (JEDOMI-SEC-010). A token already encrypted
+     * with the key of the site, or none, is left as it is; a token that cannot be read is left too (the page asks for it
+     * again).
+     *
+     * @return bool True when the token was encrypted again.
+     */
+    public static function reencrypt_legacy_bot_token(): bool {
+        $stored = (string) get_config('local_jedomi', 'telegram_bot_token');
+        if ($stored === '' || \local_jedomi\local\secret_store::is_encrypted($stored)) {
+            return false;
+        }
+        try {
+            $token = self::legacy_decrypt($stored);
+        } catch (\moodle_exception $e) {
+            return false;
+        }
+        self::set_bot_token($token);
+        return true;
     }
 
     /**
@@ -125,6 +162,7 @@ class manager {
      */
     public static function set_bot_token(string $token): void {
         set_config('telegram_bot_token', self::encrypt($token), 'local_jedomi');
+        \local_jedomi\local\secret_store::clear_unreadable('telegram_bot_token');
     }
 
     /**
@@ -135,14 +173,27 @@ class manager {
     public static function get_bot_token(): ?string {
         $encrypted = get_config('local_jedomi', 'telegram_bot_token');
         if (empty($encrypted)) {
+            \local_jedomi\local\secret_store::clear_unreadable('telegram_bot_token');
             return null;
         }
         try {
-            return self::decrypt($encrypted);
+            $token = self::decrypt($encrypted);
         } catch (\Exception $e) {
             \local_jedomi_log('[local_jedomi] Failed to decrypt Telegram bot token');
+            \local_jedomi\local\secret_store::mark_unreadable('telegram_bot_token');
             return null;
         }
+        \local_jedomi\local\secret_store::clear_unreadable('telegram_bot_token');
+        return $token;
+    }
+
+    /**
+     * Whether a bot token is stored but cannot be decrypted (the key of the site changed or the value was altered).
+     *
+     * @return bool
+     */
+    public static function is_bot_token_unreadable(): bool {
+        return self::get_bot_token() === null && !empty(get_config('local_jedomi', 'telegram_bot_token'));
     }
 
     /**

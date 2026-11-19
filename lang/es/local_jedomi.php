@@ -255,9 +255,11 @@ $string['chat_rate_limit_help'] = 'Máximo de solicitudes que un usuario puede h
 $string['chat_rate_limit_invalid'] = 'Escriba un número entero entre 0 y 120.';
 $string['check_webhook'] = 'Verificar webhook';
 $string['cleanup_telegram_sessions'] = 'Jedomi — Limpiar sesiones de Telegram vencidas';
+$string['cli_backup_destination_outside_dataroot'] = 'La copia de seguridad solo se puede guardar en una carpeta existente dentro del directorio de datos de Moodle (dataroot). Indique una carpeta relativa a dataroot, o deje el destino vacío para conservar la copia en los archivos de copias de seguridad de Moodle.';
 $string['close'] = 'Cerrar (Esc)';
 $string['component_all'] = 'Todos los componentes';
 $string['config_key_blocked_msg'] = 'Esta clave de configuración está bloqueada por seguridad.';
+$string['config_key_secret_msg'] = 'Este ajuste contiene un secreto (una contraseña, clave o token) y no se puede cambiar desde aquí: cámbielo en su página de ajustes, donde se guarda cifrado.';
 $string['config_load_error'] = 'No se pudo cargar el panel de Jedomi. Inténtelo de nuevo o, si el problema continúa, comuníquese con el administrador del sitio.';
 $string['config_load_retry'] = 'Reintentar';
 $string['config_updated_msg'] = 'Config \'{$a}\' actualizada correctamente.';
@@ -319,6 +321,7 @@ $string['custom_api_key'] = 'Clave de API';
 $string['custom_api_key_help'] = 'Clave del servicio, enviada como token Bearer. No se vuelve a mostrar una vez guardada: deje el campo vacío para conservar la clave guardada. Los modelos locales no suelen necesitarla. La clave guardada solo se envía a la dirección guardada; si cambia la dirección, escriba la clave de nuevo.';
 $string['custom_api_key_placeholder'] = 'Escriba la clave de API (opcional para modelos locales)';
 $string['custom_api_key_saved'] = 'Hay una clave guardada. Deje el campo vacío para conservarla.';
+$string['custom_api_key_unreadable'] = 'No se pudo descifrar la clave de API guardada: la clave de cifrado del sitio cambió. Introduzca de nuevo la clave de API.';
 $string['custom_audio_enabled'] = 'Habilitar procesamiento de audio';
 $string['custom_audio_enabled_help'] = 'Permite dictar con el micrófono y adjuntar archivos de audio en el chat web, y enviar mensajes de voz y de audio en Telegram. El audio lo transcribe el modelo de audio del servicio personalizado, que es obligatorio mientras esta opción esté activada.';
 $string['custom_audio_model'] = 'Modelo de audio (servicio personalizado)';
@@ -373,7 +376,7 @@ $string['custom_voice_enabled'] = 'Habilitar conversación por voz';
 $string['custom_voice_enabled_help'] = 'Agrega un botón de conversación por voz al chat web: el usuario habla, Jedomi lo transcribe con el modelo de audio, responde y lee la respuesta en voz alta con el modelo de voz y la voz del servicio personalizado. Necesita el procesamiento de audio.';
 $string['dblabel_mysql'] = 'MySQL/MariaDB';
 $string['dblabel_pgsql'] = 'PostgreSQL';
-$string['decryption_failed'] = 'Falló la desencriptación. El token puede estar corrompido o el salt del sitio cambió.';
+$string['decryption_failed'] = 'Falló la desencriptación. El token puede estar corrompido o la clave de cifrado del sitio cambió.';
 $string['docservice_error_http'] = 'El servicio de documentos respondió con el estado HTTP {$a}.';
 $string['docservice_error_invalid'] = 'El servicio de documentos no respondió con imágenes de las páginas.';
 $string['docservice_error_too_large'] = 'La respuesta del servicio de documentos es demasiado grande.';
@@ -392,7 +395,7 @@ $string['drop_pending_success'] = '✅ Pendientes eliminados correctamente.';
 $string['drop_pending_updates'] = 'Eliminar pendientes';
 $string['drop_pending_updates_help'] = 'Limpia la cola de actualizaciones de Telegram para que mensajes viejos no se procesen al '
     . 'reconectar el webhook. Útil durante pruebas.';
-$string['encryption_failed'] = 'Falló la encriptación. Verifique la configuración de OpenSSL del servidor.';
+$string['encryption_failed'] = 'Falló la encriptación. Verifique que se pueda leer la clave de cifrado del sitio en dataroot.';
 $string['entity_agent'] = 'Agente';
 $string['entity_query_log'] = 'Consulta registrada';
 $string['error_argument_unplaced'] = 'Esta llamada nombra un registro que Jedomi no puede ubicar en un curso ({$a}) mientras '
@@ -409,6 +412,7 @@ $string['error_docservice_url_required'] = 'Escriba la dirección del servicio d
 $string['error_documents_require_vision'] = 'Los documentos necesitan el procesamiento de imágenes, que lee sus páginas: actívelo también.';
 $string['error_empty_answer'] = 'La IA no escribió una respuesta, tampoco al pedírsela de nuevo. Intente con una pregunta más corta o más concreta.';
 $string['error_fallback_iterations'] = 'Lo siento, no pude completar la operación después de varios intentos.';
+$string['error_generic_reference'] = 'Algo salió mal. Si vuelve a ocurrir, indique al administrador esta referencia: {$a}.';
 $string['error_invalid_ai_timeout'] = 'Escriba un número entero de segundos entre 10 y 600.';
 $string['error_invalid_context_window'] = 'Escriba un número entero de tokens entre 1024 y 10000000, o déjelo vacío.';
 $string['error_invalid_hash'] = 'Clave de caché no válida.';
@@ -427,6 +431,7 @@ $string['error_telegram_e007'] = '❌ Secreto de webhook inválido (E007). Conta
 $string['error_tool_loop_detected'] = 'Llamada a herramienta repetida bloqueada. Use otra herramienta o ejecute con nuevos '
     . 'parámetros.';
 $string['error_tool_repeated'] = 'Jedomi se detuvo porque la herramienta {$a} falló varias veces con el mismo error. Intente reformular la pregunta o pedir algo más concreto.';
+$string['error_tool_unexpected'] = 'La herramienta se detuvo por un error inesperado ({$a}).';
 $string['error_unknown_action'] = 'Acción desconocida: {$a}';
 $string['error_unknown_tool'] = 'Herramienta desconocida: {$a}';
 $string['error_value_range'] = 'Introduzca un valor entre {$a->min} y {$a->max}.';
@@ -847,7 +852,8 @@ $string['sql_carriage_return_rejected'] = 'La consulta contiene un retorno de ca
     . 'Escriba los saltos de línea solo como \\n.';
 $string['sql_construct_rejected'] = 'La consulta usa una sintaxis fuera del subconjunto de solo lectura permitido, por lo que no '
     . 'se ejecutó. Escriba un único SELECT con FROM, [LEFT] JOIN ... ON, condiciones WHERE unidas solo con AND (=, <>, <, >, '
-    . 'IN (números), IS [NOT] NULL, LIKE \'texto\'), GROUP BY, ORDER BY y LIMIT, y solo las funciones COUNT, SUM, AVG, MIN, '
+    . 'IN (números), IS [NOT] NULL, LIKE \'texto\'), GROUP BY, HAVING, ORDER BY y LIMIT, y solo las funciones COUNT, SUM, '
+    . 'AVG, MIN, '
     . 'MAX, ROUND y COALESCE. No use CASE, OR, NOT, subconsultas, UNION, comentarios, nombres entre comillas, variables ni '
     . 'punto y coma.';
 $string['sql_course_rejected'] = 'La consulta menciona un curso que usted no gestiona, por lo que no se ejecutó.';
@@ -856,7 +862,7 @@ $string['sql_course_unfiltered_rejected'] = 'La consulta lee datos de cursos sin
     . 'e.courseid IN (12, 15)) y no use OR, UNION, BETWEEN ni subconsultas.';
 $string['sql_function_rejected'] = 'La consulta usa una función o cláusula que puede leer o escribir archivos del servidor, '
     . 'pausar o bloquear la base de datos, acceder a otras bases de datos o revelar variables del servidor (como LOAD_FILE, SLEEP, '
-    . 'BENCHMARK, INTO OUTFILE o @@), por lo que no se ejecutó.';
+    . 'BENCHMARK, INTO OUTFILE, @@ o FOR UPDATE), por lo que no se ejecutó.';
 $string['sql_heading'] = 'Consultas del chat web';
 $string['sql_heading_help'] = 'Límites de las consultas a la base de datos que la IA ejecuta en el chat web. El tiempo límite por consulta se aplica en MySQL, MariaDB y PostgreSQL; SQL Server y Oracle conservan la herramienta SQL solo con el límite de filas.';
 $string['sql_row_limit_web'] = 'Máximo de filas por consulta (chat web)';
@@ -877,6 +883,7 @@ $string['still_working'] = 'Jedomi sigue trabajando en su respuesta…';
 $string['stop_answer'] = 'Detener la respuesta';
 $string['summary_config_data'] = 'datos de configuración recuperados';
 $string['summary_done'] = 'listo';
+$string['summary_error_generic'] = 'la herramienta no pudo completar la solicitud';
 $string['summary_error_prefix'] = 'error: ';
 $string['summary_function_details'] = 'detalles de función recuperados';
 $string['summary_functions_found'] = ' funciones encontradas';
@@ -983,6 +990,7 @@ $string['telegram_msg_text_only'] = 'Solo puedo leer texto, fotos, documentos y 
 $string['telegram_msg_token_invalid'] = 'El token del bot no es válido y no se guardó. Se eliminó el token anterior y el bot quedó '
     . 'desconectado; los demás cambios se guardaron. Verifique el token de @BotFather y guárdelo de nuevo.';
 $string['telegram_msg_token_removed'] = 'Se eliminó el token del bot y su webhook en Telegram. El bot ya no responde.';
+$string['telegram_msg_token_removed_webhook_kept'] = 'Token del bot eliminado. No se pudo descifrar, por lo que su webhook no se pudo eliminar en Telegram y puede seguir registrado: para eliminarlo, introduzca de nuevo el token y elimínelo, o revoque el token en @BotFather.';
 $string['telegram_msg_unavailable'] = 'El bot de Jedomi no está disponible en este momento. Inténtelo de nuevo más tarde.';
 $string['telegram_msg_unlinked'] = 'Desvinculado. Envíe /start para volver a vincular.';
 $string['telegram_new_conversation_greeting'] = 'Hola, soy {$a}';
@@ -1060,6 +1068,7 @@ $string['telegram_task_alert_failing'] = '{$a->name}: con errores (siguiente int
 $string['telegram_task_alert_footer'] = 'Revíselas en la página de tareas programadas: {$a}';
 $string['telegram_task_alert_heading'] = '⚠️ <b>Tareas programadas con problemas</b>';
 $string['telegram_token_not_configured'] = 'El token del bot no está configurado.';
+$string['telegram_token_unreadable'] = 'No se pudo descifrar el token del bot guardado: la clave de cifrado del sitio cambió. El bot no recibe mensajes hasta que introduzca de nuevo el token.';
 $string['telegram_webhook_auto_missing_desc'] = 'Intente guardar el token de nuevo.';
 $string['telegram_webhook_auto_missing_title'] = 'Webhook no registrado';
 $string['telegram_webhook_auto_ok_desc'] = 'Al guardar el token, el webhook se registró automáticamente.';
@@ -1281,7 +1290,6 @@ $string['welcome_message_default'] = "¡Hola, {username}!\nSoy {assistantname}, 
 $string['ws_agent_allowlist_required'] = 'Los agentes no ejecutan ninguna función de servicio web hasta que se guarde una lista de servicios web para el rol de su creador en la pestaña Servicios web.';
 $string['ws_cannot_load_info'] = 'No se puede cargar información de la función: {$a}';
 $string['ws_component'] = 'Componente';
-$string['ws_debug_prefix'] = ' | debug: ';
 $string['ws_description'] = 'Descripción';
 $string['ws_execute_error'] = 'Error al ejecutar el servicio web: {$a}';
 $string['ws_function_not_found'] = 'Función no encontrada: {$a}';

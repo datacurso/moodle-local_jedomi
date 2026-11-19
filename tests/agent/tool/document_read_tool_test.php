@@ -171,12 +171,12 @@ final class document_read_tool_test extends \advanced_testcase {
         );
 
         $this->assertContains('document_read', $names(\local_jedomi_get_tool_definitions('admin')));
-        $this->assertContains('document_read', $names(\local_jedomi\agent\tool_executor::get_definitions()));
+        $this->assertContains('document_read', $names((new \local_jedomi\agent\tool_executor())->get_definitions()));
         $this->assertNotContains('document_read', $names(\local_jedomi_get_tool_definitions('student')));
 
         set_config('files_enabled', 0, 'local_jedomi');
         $this->assertNotContains('document_read', $names(\local_jedomi_get_tool_definitions('admin')));
-        $this->assertNotContains('document_read', $names(\local_jedomi\agent\tool_executor::get_definitions()));
+        $this->assertNotContains('document_read', $names((new \local_jedomi\agent\tool_executor())->get_definitions()));
     }
 
     /**
@@ -187,9 +187,9 @@ final class document_read_tool_test extends \advanced_testcase {
         $cmid = $this->create_module_with_pdf();
         $othercourse = $this->getDataGenerator()->create_course();
         $teacher = $this->getDataGenerator()->create_and_enrol($othercourse, 'editingteacher');
-        \local_jedomi\agent\tool_executor::get_definitions(1, (int) $teacher->id);
+        $executor = new \local_jedomi\agent\tool_executor(1, (int) $teacher->id);
 
-        $result = json_decode(\local_jedomi\agent\tool_executor::execute('document_read', json_encode(['cmid' => $cmid])), true);
+        $result = json_decode($executor->execute('document_read', json_encode(['cmid' => $cmid])), true);
 
         $this->assertSame(
             'permission_denied',

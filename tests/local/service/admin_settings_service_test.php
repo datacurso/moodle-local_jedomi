@@ -243,6 +243,43 @@ final class admin_settings_service_test extends \advanced_testcase {
     }
 
     /**
+     * SEC-JD-112: a change of the anonymization level, the roles or the courses is recorded in the config log of Moodle
+     * with its old and new value, and saving the same values again adds no row.
+     *
+     * @return void
+     */
+    public function test_privacy_course_and_role_changes_are_in_the_config_log(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        set_config('anonymization_level', 'basic', 'local_jedomi');
+        set_config('course_mode', 'all', 'local_jedomi');
+        $roleids = array_column(admin_settings_service::get_roles(), 'id');
+        $count = static fn(string $name): int => $DB->count_records('config_log', ['plugin' => 'local_jedomi', 'name' => $name]);
+
+        admin_settings_service::save_privacy_settings('strict', $roleids);
+        admin_settings_service::save_course_settings('exclude', ['9']);
+        admin_settings_service::save_telegram_settings(30, 5, 10, 45, array_slice($roleids, 1));
+
+        $level = $DB->get_record('config_log', ['plugin' => 'local_jedomi', 'name' => 'anonymization_level'], '*', MUST_EXIST);
+        $this->assertSame('basic', $level->oldvalue);
+        $this->assertSame('strict', $level->value);
+        $this->assertSame((int) get_admin()->id, (int) $level->userid);
+        $mode = $DB->get_record('config_log', ['plugin' => 'local_jedomi', 'name' => 'course_mode'], '*', MUST_EXIST);
+        $this->assertSame('all', $mode->oldvalue);
+        $this->assertSame('exclude', $mode->value);
+        foreach (['hidden_roles', 'course_list', 'telegram_hidden_roles'] as $name) {
+            $this->assertSame(1, $count($name), $name);
+        }
+
+        admin_settings_service::save_privacy_settings('strict', $roleids);
+        admin_settings_service::save_course_settings('exclude', ['9']);
+        foreach (['anonymization_level', 'hidden_roles', 'course_mode', 'course_list'] as $name) {
+            $this->assertSame(1, $count($name), "{$name} unchanged: no new row");
+        }
+    }
+
+    /**
      * MDL-INT-096: roles are listed with a display name and their short name, except the guest role and the role of
      * authenticated users on the site home, whose switches would have no effect.
      *
@@ -739,5 +776,55 @@ final class admin_settings_service_test extends \advanced_testcase {
 
         admin_settings_service::save_telegram_settings(30, 5, 10, 45, [], false);
         $this->assertSame(0, admin_settings_service::get_telegram_settings()['require_pin']);
+    }
+
+    /**
+     * A value encrypted with the key of the site and then altered, as after a change of that key.
+     *
+     * @return string
+     */
+    private static function unreadable_secret(): string {
+        [$method, $data] = explode(':', \local_jedomi\local\secret_store::encrypt('123:abc'), 2);
+        $raw = base64_decode($data);
+        $raw[30] = chr(ord($raw[30]) ^ 0x01);
+        return $method . ':' . base64_encode($raw);
+    }
+
+    /**
+     * A bot token that cannot be decrypted is reported, and removing it unsets it and tells that the webhook may remain.
+     *
+     * @return void
+     */
+    public function test_unreadable_token_is_reported_and_can_be_removed(): void {
+        $this->resetAfterTest();
+        set_config('telegram_bot_token', self::unreadable_secret(), 'local_jedomi');
+        set_config('telegram_bot_verified', 1, 'local_jedomi');
+
+        $settings = admin_settings_service::get_telegram_settings();
+        $this->assertTrue($settings['bot_token_set']);
+        $this->assertTrue($settings['bot_token_unreadable']);
+        $this->assertFalse($settings['is_configured']);
+
+        $client = $this->fake_client(null);
+        $this->assertFalse(admin_settings_service::remove_telegram_token($client), 'The webhook could not be deleted');
+
+        $this->assertSame([], $client->calls, 'Telegram cannot be called without the token');
+        $this->assertFalse(get_config('local_jedomi', 'telegram_bot_token'));
+        $settings = admin_settings_service::get_telegram_settings();
+        $this->assertFalse($settings['bot_token_set']);
+        $this->assertFalse($settings['bot_token_unreadable']);
+        $this->assertFalse(get_config('local_jedomi', 'secret_unreadable_telegram_bot_token'));
+    }
+
+    /**
+     * Removing a readable token deletes its webhook and reports it.
+     *
+     * @return void
+     */
+    public function test_removing_a_readable_token_reports_the_webhook_deleted(): void {
+        $this->resetAfterTest();
+        \local_jedomi\telegram\manager::set_bot_token('123:abc');
+
+        $this->assertTrue(admin_settings_service::remove_telegram_token($this->fake_client(null)));
     }
 }

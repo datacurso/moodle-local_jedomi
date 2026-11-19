@@ -582,10 +582,12 @@ class handler {
                     try {
                         $result = self::execute_tool_by_name($name, $args, $role);
                     } catch (\Throwable $e) {
+                        // JEDOMI-SEC-009: the model gets what it needs to correct the call; the log only the class.
+                        \local_jedomi_log('TOOL_FAILED', ['tool' => $name] + \local_jedomi\local\safe_error::log_context($e));
                         $result = json_encode([
                             'error' => 'tool_failed',
                             'tool'  => $name,
-                            'detail' => get_class($e) . ': ' . $e->getMessage(),
+                            'detail' => \local_jedomi\local\safe_error::for_model($e),
                         ]);
                     }
                 }
@@ -790,21 +792,10 @@ class handler {
                 'execution_ms' => $result['execution_ms'],
             ]);
         } catch (\Exception $e) {
-            $realerror = $e->getMessage();
             // The query runner wraps the database error in execute_sql_error with the database message as debug info;
-            // the model needs that message (an unknown column, a syntax error) to fix its query instead of guessing.
-            $withdetail = $e instanceof \dml_exception
-                || ($e instanceof \moodle_exception && $e->errorcode === 'execute_sql_error');
-            if ($withdetail && !empty($e->debuginfo)) {
-                $realerror .= ' | DBG: ' . $e->debuginfo;
-            }
-            $prev = $e->getPrevious();
-            if ($prev) {
-                $realerror .= ' | PREV: ' . $prev->getMessage();
-                if ($prev instanceof \dml_exception && !empty($prev->debuginfo)) {
-                    $realerror .= ' | PREV_DBG: ' . $prev->debuginfo;
-                }
-            }
+            // the model needs the first line of that message (an unknown column, a syntax error) to fix its query
+            // instead of guessing, never the query or its parameters (JEDOMI-SEC-009).
+            $realerror = \local_jedomi\local\safe_error::for_model($e);
             if (strpos($sql, '{') === false) {
                 $realerror .= get_string('hint_sql_braces', 'local_jedomi');
             }
@@ -853,7 +844,7 @@ class handler {
             $result = \local_jedomi\schema\table_descriptor::describe($tablename);
             return json_encode($result);
         } catch (\Exception $e) {
-            return json_encode(['error' => $e->getMessage()]);
+            return json_encode(['error' => \local_jedomi\local\safe_error::for_model($e)]);
         }
     }
 
@@ -886,7 +877,11 @@ class handler {
                     : get_string('note_tables_found', 'local_jedomi'),
             ]);
         } catch (\Throwable $e) {
-            return json_encode(['error' => get_string('error_search_tables_failed', 'local_jedomi', $e->getMessage())]);
+            return json_encode(['error' => get_string(
+                'error_search_tables_failed',
+                'local_jedomi',
+                \local_jedomi\local\safe_error::for_model($e)
+            )]);
         }
     }
 
@@ -915,7 +910,7 @@ class handler {
             );
             return json_encode($result);
         } catch (\Exception $e) {
-            return json_encode(['error' => $e->getMessage()]);
+            return json_encode(['error' => \local_jedomi\local\safe_error::for_model($e)]);
         }
     }
 
@@ -960,7 +955,7 @@ class handler {
             ]);
         } catch (\Throwable $e) {
             return json_encode([
-                'error' => get_string('error_ws_search_failed', 'local_jedomi', get_class($e) . ': ' . $e->getMessage()),
+                'error' => get_string('error_ws_search_failed', 'local_jedomi', \local_jedomi\local\safe_error::for_model($e)),
             ]);
         }
     }
@@ -988,7 +983,7 @@ class handler {
             return json_encode(\local_jedomi\schema\ws_indexer::describe($wsname));
         } catch (\Throwable $e) {
             return json_encode([
-                'error' => get_string('error_ws_describe_failed', 'local_jedomi', get_class($e) . ': ' . $e->getMessage()),
+                'error' => get_string('error_ws_describe_failed', 'local_jedomi', \local_jedomi\local\safe_error::for_model($e)),
             ]);
         }
     }
@@ -1019,26 +1014,12 @@ class handler {
                 is_array($decoded) ? $decoded : []
             );
             return json_encode(['result' => json_encode($result)]);
-        } catch (\moodle_exception $e) {
-            $detail = $e->getMessage();
-            if (method_exists($e, 'getDebugInfo') && $e->getDebugInfo()) {
-                $detail .= get_string('ws_debug_prefix', 'local_jedomi') . $e->getDebugInfo();
-            }
-            \local_jedomi_log('WS_EXECUTE_ERROR', ['wsname' => $wsname ?? '']);
-            return json_encode([
-                'error'    => get_string('error_ws_execute_failed', 'local_jedomi', $detail),
-                'wsname'   => $wsname ?? '',
-                'params'   => $params ?? '{}',
-                'errclass' => get_class($e),
-            ]);
         } catch (\Throwable $e) {
-            \local_jedomi_log('WS_EXECUTE_ERROR', [
-                'wsname' => $wsname ?? '',
-                'params' => $params ?? '{}',
-                'error' => $e->getMessage(),
-            ]);
+            // JEDOMI-SEC-009: the log gets the class and the error code, the model a message without debug details.
+            \local_jedomi_log('WS_EXECUTE_ERROR', ['wsname' => $wsname ?? '']
+                + \local_jedomi\local\safe_error::log_context($e));
             return json_encode([
-                'error'    => get_string('error_ws_execute_failed', 'local_jedomi', $e->getMessage()),
+                'error'    => get_string('error_ws_execute_failed', 'local_jedomi', \local_jedomi\local\safe_error::for_model($e)),
                 'wsname'   => $wsname ?? '',
                 'params'   => $params ?? '{}',
                 'errclass' => get_class($e),
@@ -1313,7 +1294,8 @@ class handler {
             return get_string('summary_invalid_json', 'local_jedomi');
         }
         if (isset($decoded['error'])) {
-            return get_string('summary_error_prefix', 'local_jedomi') . $decoded['error'];
+            // The page shows an error code or a generic text, never the detail meant for the model (JEDOMI-SEC-009).
+            return get_string('summary_error_prefix', 'local_jedomi') . \local_jedomi\local\safe_error::summary($decoded['error']);
         }
         return match ($name) {
             'execute_sql' => ($decoded['row_count'] ?? count($decoded['rows'] ?? []))

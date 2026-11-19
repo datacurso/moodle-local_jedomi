@@ -185,7 +185,7 @@ try {
 } catch (\Exception $e) {
     echo json_encode([
         'ok'    => false,
-        'error' => $e->getMessage(),
+        'error' => \local_jedomi\local\safe_error::for_user($e, 'ajax/agent_create'),
     ]);
 }
 

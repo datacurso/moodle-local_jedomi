@@ -1530,8 +1530,39 @@ final class handler_test extends \advanced_testcase {
 
         $this->assertArrayHasKey('error', $answer);
         $this->assertStringContainsString(get_string('execute_sql_error', 'local_jedomi'), $answer['error']);
-        $this->assertStringContainsString(' | DBG: ', $answer['error']);
         $this->assertStringContainsString('nosuchcolumn', $answer['error'], 'The database detail reaches the model');
+        // JEDOMI-SEC-009: only the first line of the database error, never the debug labels or the query.
+        $this->assertStringNotContainsString('DBG', $answer['error']);
+        $this->assertStringNotContainsString('FROM', $answer['error']);
+    }
+
+    /**
+     * JEDOMI-SEC-009: when a query fails, the browser gets a generic summary of the tool result, never the database
+     * error, and the model gets the first line of that error without the query.
+     *
+     * @return void
+     */
+    public function test_failed_query_sends_no_database_detail_to_the_browser(): void {
+        $this->require_provider();
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $fake = new fake_ai_client();
+
+        $events = $this->run_with_tool_call('execute_sql', ['sql' => 'SELECT nosuchcolumn FROM {course}'], $fake);
+
+        $result = array_values(array_filter($events, static fn($e) => is_array($e) && isset($e['_jedomi_tool_result'])));
+        $this->assertCount(1, $result);
+        $summary = $result[0]['_jedomi_tool_result']['summary'];
+        $this->assertSame(
+            get_string('summary_error_prefix', 'local_jedomi') . get_string('summary_error_generic', 'local_jedomi'),
+            $summary
+        );
+        $this->assertStringNotContainsString('nosuchcolumn', $summary);
+        $this->assertStringNotContainsString('DBG', $summary);
+
+        $toolmessage = $fake->calls[1]['messages'][2]['content'];
+        $this->assertStringContainsString('nosuchcolumn', $toolmessage, 'The model still gets the database error');
+        $this->assertStringNotContainsString('DBG', $toolmessage);
     }
 
     /**

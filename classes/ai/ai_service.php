@@ -80,10 +80,12 @@ class ai_service {
     /**
      * Saved API key of the custom service. Only for the server-side calls: never send it to a browser or a log.
      *
+     * The key is stored encrypted with the key of the site, in dataroot (JEDOMI-SEC-010).
+     *
      * @return string Empty when none is saved.
      */
     public static function get_custom_key(): string {
-        return trim((string) get_config(self::COMPONENT, 'custom_api_key'));
+        return trim(\local_jedomi\local\secret_store::get('custom_api_key'));
     }
 
     /**

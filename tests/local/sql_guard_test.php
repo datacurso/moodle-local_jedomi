@@ -447,7 +447,89 @@ final class sql_guard_test extends \advanced_testcase {
             'inner join and prefixed qualifier' => ['SELECT e.id FROM {course} JOIN {enrol} e ON e.courseid = {course}.id '
                 . 'WHERE {course}.id = ?', ['OWN']],
             'lowercase keywords and line breaks' => ["select c.id\nfrom {course} as c\nwhere c.id in (OWN)\n", []],
+            'groups filtered with having' => ["SELECT gg.userid, AVG(gg.finalgrade) AS average {$grades} GROUP BY gg.userid "
+                . 'HAVING AVG(gg.finalgrade) < 5 AND COUNT(gg.id) >= 2 ORDER BY average', []],
+            'having on a select alias' => ["SELECT gg.userid, COUNT(gg.id) AS total {$grades} GROUP BY gg.userid "
+                . 'HAVING total > 1', []],
         ];
+    }
+
+    /**
+     * Queries a teacher cannot run although they read only their own course: HAVING is not a course filter, and
+     * FROM_UNIXTIME does not exist in PostgreSQL.
+     *
+     * @return array<string, array{0: string}>
+     */
+    public static function outside_subset_provider(): array {
+        return [
+            'course filter only in having' => ['SELECT gi.courseid, COUNT(gi.id) AS total FROM {grade_items} gi '
+                . 'GROUP BY gi.courseid HAVING gi.courseid = OWN'],
+            'having with or' => ['SELECT gi.courseid FROM {grade_items} gi WHERE gi.courseid = OWN GROUP BY gi.courseid '
+                . 'HAVING COUNT(gi.id) > 1 OR 1 = 1'],
+            'having with a subquery' => ['SELECT gi.courseid FROM {grade_items} gi WHERE gi.courseid = OWN '
+                . 'GROUP BY gi.courseid HAVING COUNT(gi.id) > (SELECT COUNT(id) FROM {course})'],
+            'from_unixtime' => ['SELECT FROM_UNIXTIME(c.startdate) AS started FROM {course} c WHERE c.id = OWN'],
+            'from_unixtime in where' => ['SELECT c.id FROM {course} c WHERE c.id = OWN AND FROM_UNIXTIME(c.startdate) > 0'],
+        ];
+    }
+
+    /**
+     * Phase 22 unit 12: HAVING is part of the teacher grammar but never limits the courses read; FROM_UNIXTIME is not.
+     *
+     * @dataProvider outside_subset_provider
+     * @param string $sql Query.
+     */
+    public function test_teacher_grammar_keeps_having_out_of_the_course_filter_and_rejects_from_unixtime(string $sql): void {
+        [$teacher, $own, $other] = $this->teacher();
+
+        $this->assertNotNull(sql_guard::rejection_reason(self::with_ids($sql, $own, $other), $teacher));
+    }
+
+    /**
+     * Row locking clauses, in every spelling the databases Moodle supports accept.
+     *
+     * @return array<string, array{0: string}>
+     */
+    public static function locking_clause_provider(): array {
+        return [
+            'for update' => ['SELECT id FROM {course} FOR UPDATE'],
+            'for update in lowercase with a line break' => ["select id from {course} for\nupdate"],
+            'for update of a table' => ['SELECT c.id FROM {course} c FOR UPDATE OF c'],
+            'for update nowait' => ['SELECT id FROM {course} FOR UPDATE NOWAIT'],
+            'for update skip locked' => ['SELECT id FROM {course} FOR UPDATE SKIP LOCKED'],
+            'for no key update' => ['SELECT id FROM {course} FOR NO KEY UPDATE'],
+            'for share' => ['SELECT id FROM {course} FOR SHARE'],
+            'for key share' => ['SELECT id FROM {course} FOR KEY SHARE'],
+            'lock in share mode' => ['SELECT id FROM {course} LOCK IN SHARE MODE'],
+            'for update hidden by a comment' => ['SELECT id FROM {course} FOR/* x */UPDATE'],
+        ];
+    }
+
+    /**
+     * SEC-JD-037: row locking clauses are rejected for every user, site administrators and managers included.
+     *
+     * @dataProvider locking_clause_provider
+     * @param string $sql Query.
+     */
+    public function test_locking_clauses_are_rejected_for_every_user(string $sql): void {
+        [$teacher] = $this->teacher();
+        $manager = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->role_assign('manager', $manager->id);
+
+        foreach ([(int) get_admin()->id, (int) $manager->id, 0] as $userid) {
+            $this->assertSame('sql_function_rejected', sql_guard::rejection_reason($sql, $userid), "User {$userid}");
+        }
+        $this->assertNotNull(sql_guard::rejection_reason($sql, $teacher));
+    }
+
+    /**
+     * SEC-JD-037: the words of a locking clause in a string, or as part of a name, are not a lock.
+     */
+    public function test_locking_words_in_strings_and_names_are_not_rejected(): void {
+        $this->resetAfterTest();
+
+        $sql = "SELECT id AS for_update, shortname AS skip_locked_courses FROM {course} WHERE fullname = 'for update nowait'";
+        $this->assertNull(sql_guard::rejection_reason($sql, (int) get_admin()->id));
     }
 
     /**

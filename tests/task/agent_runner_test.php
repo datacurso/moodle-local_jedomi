@@ -170,6 +170,24 @@ final class agent_runner_test extends \advanced_testcase {
     }
 
     /**
+     * READ-002: the answer of a run that ended without text is the last tool result without an error, without the
+     * delimiters of the run; with no such result it is empty. The scheduled run and the preview share this rule.
+     */
+    public function test_last_tool_result_skips_errors_and_unwraps(): void {
+        $untrusted = new \local_jedomi\local\untrusted();
+        $messages = [
+            ['role' => 'user', 'content' => 'How many courses?'],
+            ['role' => 'tool', 'content' => $untrusted->wrap('tool execute_sql', '{"rows":[{"total":3}]}')],
+            ['role' => 'assistant', 'content' => ''],
+            ['role' => 'tool', 'content' => $untrusted->wrap('tool execute_sql', '{"error":"sql_construct_rejected"}')],
+        ];
+
+        $this->assertSame('{"rows":[{"total":3}]}', agent_runner::last_tool_result($messages, $untrusted));
+        $this->assertSame('', agent_runner::last_tool_result(array_slice($messages, 2), $untrusted));
+        $this->assertSame('', agent_runner::last_tool_result([], $untrusted));
+    }
+
+    /**
      * RISK-I3: the last error of a run stores only a safe message: the messages written for the user (AI errors, empty
      * answers) are kept, and any other failure becomes a generic text with a reference to the technical log, never its
      * raw message.
@@ -634,10 +652,10 @@ final class agent_runner_test extends \advanced_testcase {
                 (string) $DB->get_field('user', 'password', ['id' => $victim->id])],
             'plugin keys' => ["SELECT value FROM {config_plugins} WHERE name = 'licensekey'", 'LicenseMarker42'],
         ];
-        \local_jedomi\agent\tool_executor::get_definitions(1, (int) $admin->id);
+        $executor = new \local_jedomi\agent\tool_executor(1, (int) $admin->id);
 
         foreach ($queries as $label => [$sql, $secret]) {
-            $result = \local_jedomi\agent\tool_executor::execute('execute_sql', json_encode(['query' => $sql]));
+            $result = $executor->execute('execute_sql', json_encode(['query' => $sql]));
             $this->assertStringNotContainsString($secret, $result, "An agent must reject the query on {$label}");
         }
     }
@@ -1049,10 +1067,10 @@ final class agent_runner_test extends \advanced_testcase {
             json_encode(['core_course_get_courses_by_field', 'core_webservice_get_site_info']),
             'local_jedomi'
         );
-        \local_jedomi\agent\tool_executor::get_definitions(0, (int) $admin->id);
+        $executor = new \local_jedomi\agent\tool_executor(0, (int) $admin->id);
         $before = (int) $USER->id;
 
-        $ok = json_decode(\local_jedomi\agent\tool_executor::execute('ws_execute', json_encode([
+        $ok = json_decode($executor->execute('ws_execute', json_encode([
             'wsname' => 'core_course_get_courses_by_field',
             'params' => json_encode(['field' => 'id', 'value' => (string) $course->id]),
         ])), true);
@@ -1060,20 +1078,20 @@ final class agent_runner_test extends \advanced_testcase {
         $this->assertSame('WS-AGENT-1', $ok['data']['courses'][0]['shortname']);
         $this->assertSame($before, (int) $USER->id, 'The session user is restored after the call');
 
-        $asobject = json_decode(\local_jedomi\agent\tool_executor::execute('ws_execute', json_encode([
+        $asobject = json_decode($executor->execute('ws_execute', json_encode([
             'wsname' => 'core_course_get_courses_by_field',
             'params' => ['field' => 'id', 'value' => (string) $course->id],
         ])), true);
         $this->assertTrue($asobject['success'] ?? false, 'Parameters sent as an object are accepted too');
 
-        $invalid = json_decode(\local_jedomi\agent\tool_executor::execute('ws_execute', json_encode([
+        $invalid = json_decode($executor->execute('ws_execute', json_encode([
             'wsname' => 'core_course_get_courses_by_field',
             'params' => json_encode(['field' => 'id', 'value' => (string) $course->id, 'unexpected' => 1]),
         ])), true);
         $this->assertArrayHasKey('error', $invalid);
         $this->assertStringContainsString('unexpected', $invalid['error'], 'Moodle rejects the unknown key');
 
-        $wrongtype = json_decode(\local_jedomi\agent\tool_executor::execute('ws_execute', json_encode([
+        $wrongtype = json_decode($executor->execute('ws_execute', json_encode([
             'wsname' => 'core_webservice_get_site_info',
             'params' => json_encode(['serviceshortnames' => 'not-a-list']),
         ])), true);

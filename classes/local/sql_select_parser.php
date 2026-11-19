@@ -24,7 +24,7 @@ namespace local_jedomi\local;
  *
  *     SELECT [DISTINCT] item [, item]... FROM table [, table | [INNER] JOIN table ON conditions
  *         | LEFT [OUTER] JOIN table ON conditions]... [WHERE conditions] [GROUP BY expr [, expr]...]
- *         [ORDER BY expr [ASC|DESC] [, ...]] [LIMIT number [OFFSET number]]
+ *         [HAVING conditions] [ORDER BY expr [ASC|DESC] [, ...]] [LIMIT number [OFFSET number]]
  *     item       := * | qualifier.* | expr [[AS] alias]
  *     table      := {name} | prefixed_name, with an optional [AS] alias
  *     expr       := column | qualifier.column | number | 'string' | COUNT(*) | function([DISTINCT] expr [, expr]...)
@@ -32,6 +32,9 @@ namespace local_jedomi\local;
  *     conditions := condition [AND condition]...
  *     condition  := expr (= | <> | != | < | <= | > | >=) expr | expr IN (number [, number]...) | expr IS [NOT] NULL
  *                 | expr LIKE 'string'
+ *
+ * HAVING only filters rows the WHERE clause already limited, so its conditions never count as a course filter. Functions
+ * that exist in a single database (such as FROM_UNIXTIME, which PostgreSQL lacks) are outside the subset.
  *
  * Placeholders (? and :name) take the value of their parameter: a whole number becomes a number, anything else a string.
  * A violation is reported with a moodle_exception whose error code is the rejection reason of sql_guard.
@@ -214,6 +217,10 @@ class sql_select_parser {
             do {
                 $this->expr('group');
             } while ($this->accept_punct(','));
+        }
+        if ($this->accept('having')) {
+            // Parsed for its columns only: the course filter must be in WHERE or in the join of the table.
+            $this->conditions('having');
         }
         if ($this->accept('order')) {
             $this->expect('by');

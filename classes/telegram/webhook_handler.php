@@ -1410,7 +1410,8 @@ class webhook_handler {
             try {
                 $checkpoint = session::get_context($statekey);
             } catch (\Exception $e) {
-                \local_jedomi_log('[GATELOOP] checkpoint read FAILED for chat ' . self::chatref($chatid) . ': ' . $e->getMessage());
+                \local_jedomi_log('[GATELOOP] checkpoint read FAILED for chat ' . self::chatref($chatid) . ': '
+                    . \local_jedomi\local\safe_error::describe($e));
                 $checkpoint = null;
             }
             if (!empty($checkpoint) && !empty($checkpoint['messages'])) {
@@ -2039,7 +2040,7 @@ class webhook_handler {
                         $toolresult = mb_substr($toolresult, 0, 64000) . "\n... (truncated)";
                     }
                 } catch (\Exception $e) {
-                    $toolresult = 'Error executing ' . $name . ': ' . $e->getMessage();
+                    $toolresult = 'Error executing ' . $name . ': ' . \local_jedomi\local\safe_error::for_model($e);
                 }
                 $messages[] = [
                     'role'         => 'tool',
@@ -2086,7 +2087,7 @@ class webhook_handler {
             } catch (\Exception $e) {
                 \local_jedomi_log('[GATELOOP] STATE SAVE FAILED for chat ' . self::chatref($chatid)
                     . ' iter=' . $iteration . ' bytes=' . strlen($statejson)
-                    . ' err=' . $e->getMessage());
+                    . ' err=' . \local_jedomi\local\safe_error::describe($e));
                 // Fallback: release lock and inform user, don't crash silently.
                 session::set_context($statekey, []);
                 api_client::instance()->send_message($chatid, get_string('telegram_msg_state_save_failed', 'local_jedomi'));
@@ -2308,10 +2309,8 @@ class webhook_handler {
                 try {
                     $result = \local_jedomi\local\query_runner::run($sql, $params, $userid, $maxrows, 'telegram');
                 } catch (\moodle_exception $e) {
-                    if (in_array($e->errorcode, ['execute_sql_error', 'query_timeout'], true)) {
-                        return "❌ SQL error: " . $e->getMessage() . (empty($e->debuginfo) ? '' : ' | ' . $e->debuginfo);
-                    }
-                    return '❌ ' . $e->getMessage();
+                    // JEDOMI-SEC-009: the first line of the database error, never the query or its parameters.
+                    return '❌ ' . \local_jedomi\local\safe_error::for_model($e);
                 }
 
                 // ... ── Date/time column detection ──
@@ -2514,7 +2513,7 @@ class webhook_handler {
                 try {
                     $result = \local_jedomi\local\ws_runner::call($method, $decoded, true);
                 } catch (\Throwable $e) {
-                    return json_encode(['error' => 'Error in ' . $wsname . ': ' . $e->getMessage()]);
+                    return json_encode(['error' => 'Error in ' . $wsname . ': ' . \local_jedomi\local\safe_error::for_model($e)]);
                 }
                 $json = json_encode($result);
                 if (mb_strlen($json) > 2048) {
@@ -2734,7 +2733,8 @@ class webhook_handler {
                     $result = self::execute_tool($toolname, $params, 0, '', []);
                     return $result;
                 } catch (\Exception $e) {
-                    return "❌ Action <b>" . s($toolname) . "</b> not implemented.\n\n" . s($e->getMessage());
+                    return "❌ Action <b>" . s($toolname) . "</b> not implemented.\n\n"
+                        . s(\local_jedomi\local\safe_error::for_model($e));
                 }
         }
     }
@@ -2813,7 +2813,8 @@ class webhook_handler {
         try {
             $transaction = $DB->start_delegated_transaction();
         } catch (\Throwable $e) {
-            \local_jedomi_log('[TELEGRAM RATE] limit check failed for chat ' . self::chatref($chatid) . ': ' . $e->getMessage());
+            \local_jedomi_log('[TELEGRAM RATE] limit check failed for chat ' . self::chatref($chatid) . ': '
+                . \local_jedomi\local\safe_error::describe($e));
             return null;
         }
         try {
@@ -2860,7 +2861,8 @@ class webhook_handler {
             $transaction->allow_commit();
             return false;
         } catch (\Throwable $e) {
-            \local_jedomi_log('[TELEGRAM RATE] limit check failed for chat ' . self::chatref($chatid) . ': ' . $e->getMessage());
+            \local_jedomi_log('[TELEGRAM RATE] limit check failed for chat ' . self::chatref($chatid) . ': '
+                . \local_jedomi\local\safe_error::describe($e));
             try {
                 // The rollback throws the error again; it is already handled here.
                 $transaction->rollback($e);

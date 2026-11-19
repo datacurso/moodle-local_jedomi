@@ -95,7 +95,9 @@ final class site_overview_tool {
         try {
             return json_encode(self::build(self::window_days($args['days'] ?? null)), JSON_UNESCAPED_UNICODE);
         } catch (\Throwable $e) {
-            return json_encode(['error' => get_string('summary_error_prefix', 'local_jedomi') . $e->getMessage()]);
+            return json_encode([
+                'error' => get_string('summary_error_prefix', 'local_jedomi') . \local_jedomi\local\safe_error::for_model($e),
+            ]);
         }
     }
 

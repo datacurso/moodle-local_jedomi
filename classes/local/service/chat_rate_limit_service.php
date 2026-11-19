@@ -177,7 +177,7 @@ class chat_rate_limit_service {
      * @return int 0.
      */
     private static function unavailable(\Throwable $e): int {
-        \local_jedomi_log('RATE_LIMIT_UNAVAILABLE', ['error' => get_class($e)]);
+        \local_jedomi_log('RATE_LIMIT_UNAVAILABLE', ['class' => get_class($e)]);
         return 0;
     }
 }

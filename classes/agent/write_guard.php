@@ -283,11 +283,7 @@ class write_guard {
             }
             return \local_jedomi\local\ws_runner::validate($method, $params);
         } catch (\moodle_exception $e) {
-            $detail = $e->getMessage();
-            if (!empty($e->debuginfo) && strpos($detail, (string) $e->debuginfo) === false) {
-                $detail .= ' | debug: ' . $e->debuginfo;
-            }
-            return json_encode(['error' => $detail, 'function' => $function]);
+            return json_encode(['error' => \local_jedomi\local\safe_error::for_model($e), 'function' => $function]);
         }
     }
 

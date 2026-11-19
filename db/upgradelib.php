@@ -267,3 +267,19 @@ function local_jedomi_upgrade_agentwrites_email_default(): void {
         && $output !== 'email');
     set_config($name, implode(',', $outputs), 'message');
 }
+
+/**
+ * Encrypt with the key of the site (\core\encryption, in dataroot) the secrets saved by 1.6.x (JEDOMI-SEC-010): the
+ * Telegram bot token, encrypted then with a key derived from the database, and the API key of the custom AI service,
+ * saved then in clear text. Values already encrypted with the key of the site are left as they are, so the step can run
+ * again. The change is not written to the config log: the secrets keep their value.
+ *
+ * @return void
+ */
+function local_jedomi_upgrade_encrypt_secrets(): void {
+    \local_jedomi\telegram\manager::reencrypt_legacy_bot_token();
+    $stored = (string) get_config('local_jedomi', 'custom_api_key');
+    if ($stored !== '' && !\local_jedomi\local\secret_store::is_encrypted($stored)) {
+        \local_jedomi\local\secret_store::set('custom_api_key', $stored);
+    }
+}

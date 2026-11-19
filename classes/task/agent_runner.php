@@ -404,7 +404,8 @@ class agent_runner extends \core\task\scheduled_task {
 
                 // Every tool of this agent runs with the permissions of its creator, from the first run and
                 // whatever agent ran before it in the same cycle.
-                \local_jedomi\agent\tool_executor::get_definitions((int) $agent->id, (int) $agent->userid);
+                // The tools belong to this run only (READ-003): nothing of them is kept for the next agent.
+                $executor = new \local_jedomi\agent\tool_executor((int) $agent->id, (int) $agent->userid);
                 // Writes run only when approved for the agent and inside its scope; the rest wait for the creator.
                 $guard = new \local_jedomi\agent\write_guard($agent);
                 // Tool results and content read from Moodle reach the AI as untrusted data.
@@ -436,7 +437,7 @@ class agent_runner extends \core\task\scheduled_task {
                         $toolresult = $guard->run(
                             (string) $step['tool'],
                             is_array($stepargs) ? $stepargs : [],
-                            static fn(?array $checked = null): string => \local_jedomi\agent\tool_executor::execute(
+                            static fn(?array $checked = null): string => $executor->execute(
                                 (string) $step['tool'],
                                 $checked === null ? (string) $step['arguments'] : json_encode($checked, JSON_UNESCAPED_UNICODE)
                             )
@@ -658,19 +659,19 @@ class agent_runner extends \core\task\scheduled_task {
                                     'arguments' => $funcargs,
                                 ];
 
-                                if (\local_jedomi\agent\tool_executor::is_offered($funcname)) {
+                                if ($executor->is_offered($funcname)) {
                                     $toolresult = $guard->run(
                                         $funcname,
                                         is_array($decodedargs) ? $decodedargs : [],
                                         // An approved write runs with the validated arguments the guard checked.
-                                        static fn(?array $checked = null): string => \local_jedomi\agent\tool_executor::execute(
+                                        static fn(?array $checked = null): string => $executor->execute(
                                             $funcname,
                                             $checked === null ? $funcargs : json_encode($checked, JSON_UNESCAPED_UNICODE)
                                         )
                                     );
                                 } else {
                                     // A tool that is not offered to the role of the creator is rejected, never held.
-                                    $toolresult = \local_jedomi\agent\tool_executor::execute($funcname, $funcargs);
+                                    $toolresult = $executor->execute($funcname, $funcargs);
                                 }
 
                                 if (strlen($toolresult) > 64000) {
@@ -705,22 +706,8 @@ class agent_runner extends \core\task\scheduled_task {
                     // can self-correct (same behavior as the web proxy handler).
                     if (empty($finalcontent)) {
                         // Try last loop iteration content first.
-                        if (!empty($content)) {
-                            $finalcontent = $content;
-                        } else {
-                            // Fallback: extract content from the last non-error tool result.
-                            foreach (array_reverse($messages) as $msg) {
-                                if (($msg['role'] ?? '') === 'tool' && !empty($msg['content'])) {
-                                    $toolcontent = $untrusted->unwrap((string) $msg['content']);
-                                    $decoded = json_decode($toolcontent, true);
-                                    if (!empty($decoded['error'])) {
-                                        continue;
-                                    }
-                                    $finalcontent = $toolcontent;
-                                    break;
-                                }
-                            }
-                        }
+                        // The text of the last round, or else the last tool result without an error (READ-002).
+                        $finalcontent = !empty($content) ? $content : self::last_tool_result($messages, $untrusted);
                         if (!empty($finalcontent)) {
                             $logline = "[AGENT] {$agentlabel} — fallback final"
                                 . " ({$totalrounds}r, " . strlen($finalcontent) . "B)";
@@ -743,18 +730,7 @@ class agent_runner extends \core\task\scheduled_task {
                         $finalcontent = $stripped;
                     } else if ($hadtoolcallblocks) {
                         // Content was ONLY tool call blocks — fallback to last tool result (skip errors).
-                        $finalcontent = '';
-                        foreach (array_reverse($messages ?? []) as $msg) {
-                            if (($msg['role'] ?? '') === 'tool' && !empty($msg['content'])) {
-                                $toolcontent = $untrusted->unwrap((string) $msg['content']);
-                                $decoded = json_decode($toolcontent, true);
-                                if (!empty($decoded['error'])) {
-                                    continue;
-                                }
-                                $finalcontent = $toolcontent;
-                                break;
-                            }
-                        }
+                        $finalcontent = self::last_tool_result($messages ?? [], $untrusted);
                     }
 
                     // The answer was written from anonymised data: the creator gets the real values back.
@@ -840,8 +816,8 @@ class agent_runner extends \core\task\scheduled_task {
                         \local_jedomi_log("[AGENT] {$agentlabel} — no Telegram for user {$creatorref}");
                     }
                 } catch (\Throwable $e) {
-                    mtrace("[AGENT] {$agentlabel} — Telegram error: " . $e->getMessage());
-                    \local_jedomi_log("[AGENT] {$agentlabel} — Telegram error: " . $e->getMessage());
+                    mtrace("[AGENT] {$agentlabel} — Telegram error: " . \local_jedomi\local\safe_error::describe($e));
+                    \local_jedomi_log("[AGENT] {$agentlabel} — Telegram error: " . \local_jedomi\local\safe_error::describe($e));
                 }
 
                 // The creator gets the writes of the run: run, waiting for approval and rejected.
@@ -855,10 +831,9 @@ class agent_runner extends \core\task\scheduled_task {
                 // the agent, and a raw message can quote it. The details stay in the technical log, anonymised.
                 $lasterror = self::last_error_for($e);
                 mtrace("[AGENT] {$alabel} — ERROR ({$lasterror['reference']}): " . $lasterror['message']);
-                \local_jedomi_log("[AGENT] {$alabel} — ERROR ({$lasterror['reference']}): " . get_class($e) . ': '
-                    . (new \local_jedomi\local\anonymizer(\local_jedomi\local\anonymizer::LEVEL_BASIC))->anonymize_text(
-                        \core_text::substr($e->getMessage(), 0, 500)
-                    ));
+                // JEDOMI-SEC-009: the class and the error code; the message can quote the instruction or a query.
+                \local_jedomi_log("[AGENT] {$alabel} — ERROR ({$lasterror['reference']}): "
+                    . \local_jedomi\local\safe_error::describe($e));
                 if ($guard !== null) {
                     // The writes made before the failure (or the cap that stopped the run) are reported too.
                     $guard->notify_creator();
@@ -883,6 +858,29 @@ class agent_runner extends \core\task\scheduled_task {
         $elapsed = time() - $start;
         mtrace("[AGENT] agent_runner done — {$ok} ok, {$fail} fail, {$elapsed}s");
         \local_jedomi_log("[AGENT] agent_runner done — {$ok} ok, {$fail} fail, {$elapsed}s");
+    }
+
+    /**
+     * Content of the last tool result of a conversation that is not an error, without the delimiters of the run.
+     *
+     * The answer of a run that ended without text (READ-002), shared by the scheduled run and the preview.
+     *
+     * @param array $messages Conversation.
+     * @param \local_jedomi\local\untrusted $untrusted Delimiters of the run, removed from the result.
+     * @return string Empty when no tool result without an error is found.
+     */
+    public static function last_tool_result(array $messages, \local_jedomi\local\untrusted $untrusted): string {
+        foreach (array_reverse($messages) as $msg) {
+            if (($msg['role'] ?? '') === 'tool' && !empty($msg['content'])) {
+                $content = $untrusted->unwrap((string) $msg['content']);
+                $decoded = json_decode($content, true);
+                if (!empty($decoded['error'])) {
+                    continue;
+                }
+                return $content;
+            }
+        }
+        return '';
     }
 
     /**
@@ -1061,8 +1059,10 @@ class agent_runner extends \core\task\scheduled_task {
                 \local_jedomi\telegram\api_client::instance()->send_message($telegramlink->chatid, $msg);
             }
         } catch (\Exception $e) {
-            mtrace("[AGENT] Agent #{$agent->id} — Telegram notify disabled error: " . $e->getMessage());
-            \local_jedomi_log("[AGENT] Agent #{$agent->id} — Telegram notify disabled error: " . $e->getMessage());
+            $failure = "[AGENT] Agent #{$agent->id} — Telegram notify disabled error: "
+                . \local_jedomi\local\safe_error::describe($e);
+            mtrace($failure);
+            \local_jedomi_log($failure);
         }
     }
 

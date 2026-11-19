@@ -54,7 +54,8 @@ class cli_registry {
                     'destination' => [
                         'type'        => 'string',
                         'required'    => false,
-                        'description' => 'Optional filesystem path to store the backup file.',
+                        'description' => 'Optional folder inside the Moodle data directory (dataroot) to store the backup '
+                            . 'file, relative to dataroot or absolute. Any other folder is refused.',
                     ],
                 ],
             ],
@@ -262,6 +263,53 @@ class cli_registry {
     }
 
     /**
+     * Real path of the folder a backup may be copied to, or null when it is not an existing folder inside dataroot
+     * (SEC-JD-029).
+     *
+     * A relative path is read from dataroot. The path is resolved with realpath(), so "..", and a symbolic link that
+     * leads out of dataroot, are refused like any other folder outside it.
+     *
+     * @param string $destination Folder given by the AI.
+     * @return string|null
+     */
+    public static function backup_folder(string $destination): ?string {
+        global $CFG;
+        $root = realpath($CFG->dataroot);
+        if ($root === false || $destination === '' || strpos($destination, "\0") !== false) {
+            return null;
+        }
+        $absolute = $destination[0] === '/' || preg_match('/^[A-Za-z]:[\\\\\/]/', $destination) === 1;
+        $real = realpath($absolute ? $destination : $CFG->dataroot . DIRECTORY_SEPARATOR . $destination);
+        if ($real === false || !is_dir($real)) {
+            return null;
+        }
+        return ($real === $root || strpos($real, $root . DIRECTORY_SEPARATOR) === 0) ? $real : null;
+    }
+
+    /**
+     * Copy a backup file to a folder inside dataroot; the stored backup file is deleted only once the copy succeeded.
+     *
+     * @param \stored_file $file Backup file made by the backup.
+     * @param string $dir Destination folder.
+     * @param string $filename Name of the copy.
+     * @return array ['stored_at' => path] or ['error' => reason]; on an error the stored backup file is kept.
+     */
+    public static function store_backup_copy(\stored_file $file, string $dir, string $filename): array {
+        $target = $dir . DIRECTORY_SEPARATOR . $filename;
+        if (is_link($target)) {
+            return ['error' => 'destination is a link'];
+        }
+        if (!is_writable($dir)) {
+            return ['error' => 'destination not writable'];
+        }
+        if (!$file->copy_content_to($target)) {
+            return ['error' => 'copy to the destination failed'];
+        }
+        $file->delete();
+        return ['stored_at' => $target];
+    }
+
+    /**
      * Execute a course backup.
      *
      * @param  array $params Operation parameters (courseid, destination).
@@ -272,16 +320,25 @@ class cli_registry {
         require_once($CFG->dirroot . '/backup/util/includes/backup_includes.php');
 
         $courseid    = (int) ($params['courseid'] ?? 0);
-        $destination = trim($params['destination'] ?? '');
+        $destination = trim((string) ($params['destination'] ?? ''));
 
         if ($courseid <= 1) {
             return ['error' => 'invalid course id'];
+        }
+        // SEC-JD-029: the backup is copied only into an existing folder inside dataroot, checked before it is made.
+        $dir = null;
+        if ($destination !== '') {
+            $dir = self::backup_folder($destination);
+            if ($dir === null) {
+                return ['error' => 'destination_outside_dataroot',
+                    'message' => get_string('cli_backup_destination_outside_dataroot', 'local_jedomi')];
+            }
         }
 
         try {
             $course = $DB->get_record('course', ['id' => $courseid], '*', MUST_EXIST);
         } catch (\Exception $e) {
-            return ['error' => 'course not found: ' . $e->getMessage()];
+            return ['error' => 'course not found: ' . \local_jedomi\local\safe_error::for_model($e)];
         }
 
         $admin = get_admin();
@@ -318,15 +375,13 @@ class cli_registry {
                 'mimetype' => $file->get_mimetype(),
             ] : [];
 
-            if (!empty($destination) && $file) {
-                $dir = rtrim($destination, '/');
-                if (!is_dir($dir) || !is_writable($dir)) {
+            if ($dir !== null && $file) {
+                $stored = self::store_backup_copy($file, $dir, $filename);
+                if (isset($stored['error'])) {
                     $bc->destroy();
-                    return ['error' => 'destination not writable', 'backup' => $filedetails];
+                    return ['error' => $stored['error'], 'backup' => $filedetails];
                 }
-                $file->copy_content_to($dir . '/' . $filename);
-                $file->delete();
-                $filedetails['stored_at'] = $dir . '/' . $filename;
+                $filedetails['stored_at'] = $stored['stored_at'];
             }
 
             $bc->destroy();
@@ -341,7 +396,7 @@ class cli_registry {
             if (isset($bc)) {
                 $bc->destroy();
             }
-            return ['error' => 'backup failed: ' . $e->getMessage()];
+            return ['error' => 'backup failed: ' . \local_jedomi\local\safe_error::for_model($e)];
         }
     }
 
@@ -378,7 +433,7 @@ class cli_registry {
             \core\task\manager::run_from_cli($task);
             return ['success' => true, 'task' => $taskclass];
         } catch (\Throwable $e) {
-            return ['error' => 'task execution failed: ' . $e->getMessage()];
+            return ['error' => 'task execution failed: ' . \local_jedomi\local\safe_error::for_model($e)];
         }
     }
 
@@ -393,7 +448,7 @@ class cli_registry {
             purge_all_caches();
             return ['success' => true, 'message' => 'All Moodle caches purged successfully.'];
         } catch (\Throwable $e) {
-            return ['error' => 'cache purge failed: ' . $e->getMessage()];
+            return ['error' => 'cache purge failed: ' . \local_jedomi\local\safe_error::for_model($e)];
         }
     }
 
@@ -428,7 +483,7 @@ class cli_registry {
         try {
             $course = $DB->get_record('course', ['id' => $courseid], '*', MUST_EXIST);
         } catch (\Exception $e) {
-            return ['error' => 'course not found: ' . $e->getMessage()];
+            return ['error' => 'course not found: ' . \local_jedomi\local\safe_error::for_model($e)];
         }
 
         try {
@@ -457,7 +512,7 @@ class cli_registry {
                 'resource_type' => $resourcetype,
             ];
         } catch (\Throwable $e) {
-            return ['error' => 'create_mod failed: ' . $e->getMessage()];
+            return ['error' => 'create_mod failed: ' . \local_jedomi\local\safe_error::for_model($e)];
         }
     }
 }

@@ -158,9 +158,9 @@ final class own_data_tools_test extends \advanced_testcase {
 
         $web = \local_jedomi\proxy\handler::run_tool('my_grades', [], 'student');
         $webforged = \local_jedomi\proxy\handler::run_tool('my_grades', ['userid' => (int) $data['classmate']->id], 'student');
-        \local_jedomi\agent\tool_executor::get_definitions(0, (int) $data['student']->id);
-        $agent = \local_jedomi\agent\tool_executor::execute('my_grades', '{}');
-        $agentforged = \local_jedomi\agent\tool_executor::execute(
+        $executor = new \local_jedomi\agent\tool_executor(0, (int) $data['student']->id);
+        $agent = $executor->execute('my_grades', '{}');
+        $agentforged = $executor->execute(
             'my_grades',
             json_encode(['userid' => (int) $data['classmate']->id])
         );
