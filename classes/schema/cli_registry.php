@@ -217,6 +217,12 @@ class cli_registry {
         if (!self::can_execute($userid)) {
             return ['error' => 'permission_denied'];
         }
+        if (self::names_excluded_course($params)) {
+            return [
+                'error' => 'error_course_excluded',
+                'message' => get_string('error_course_excluded', 'local_jedomi'),
+            ];
+        }
 
         return match ($name) {
             'backup'         => self::execute_backup($params),
@@ -225,6 +231,34 @@ class cli_registry {
             'create_mod'     => self::execute_create_mod($params),
             default          => ['error' => 'unknown operation: ' . $name],
         };
+    }
+
+    /**
+     * Whether the parameters of an operation name a course outside Jedomi (RISK-001): the course of "courseid" (backup,
+     * create_mod) or the course of the activity "beforemod" (create_mod). Operations without a course (scheduled_task,
+     * purge_caches) name none.
+     *
+     * @param array $params Operation parameters.
+     * @return bool
+     */
+    private static function names_excluded_course(array $params): bool {
+        global $DB;
+        if (!\local_jedomi\course_access::is_restricted()) {
+            return false;
+        }
+        $courseids = [];
+        if (isset($params['courseid']) && is_numeric($params['courseid'])) {
+            $courseids[] = (int) $params['courseid'];
+        }
+        if (isset($params['beforemod']) && is_numeric($params['beforemod']) && (int) $params['beforemod'] > 0) {
+            $courseids[] = (int) $DB->get_field('course_modules', 'course', ['id' => (int) $params['beforemod']]);
+        }
+        foreach ($courseids as $courseid) {
+            if (!\local_jedomi\course_access::is_course_in_jedomi($courseid)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

@@ -169,6 +169,10 @@ class document_read_tool implements agent_tool {
                 return json_encode(['error' => 'permission_denied']);
             }
             [$course, $cm] = get_course_and_cm_from_cmid($cmid, '', 0, $userid);
+            if (!\local_jedomi\course_access::is_course_in_jedomi((int) $course->id)) {
+                // The documents of a course outside Jedomi are never read for the AI.
+                return json_encode(['error' => get_string('error_course_excluded', 'local_jedomi')], JSON_UNESCAPED_UNICODE);
+            }
             $context = \context_module::instance($cmid);
             if (!self::can_read_module($course, $cm, $context, $userid)) {
                 return json_encode(['error' => 'permission_denied']);

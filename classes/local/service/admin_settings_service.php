@@ -120,15 +120,30 @@ class admin_settings_service {
      * @param string $mode One of {@see self::COURSE_MODES}; anything else is stored as "all".
      * @param array $courseids Course ids; values that are not positive integers are dropped.
      * @return void
+     * @throws \moodle_exception error_course_include_empty for "only the selected courses" without a course (REL-001),
+     *     which would leave every course outside Jedomi; nothing is saved then.
      */
     public static function save_course_settings(string $mode, array $courseids): void {
         if (!in_array($mode, self::COURSE_MODES, true)) {
             $mode = 'all';
         }
+        $ids = self::valid_course_ids($courseids);
+        if ($mode === 'include' && empty($ids)) {
+            throw new \moodle_exception('error_course_include_empty', 'local_jedomi');
+        }
         set_config('course_mode', $mode, 'local_jedomi');
-        $ids = array_values(array_filter(array_map('intval', $courseids)));
         set_config('course_list', implode(',', $ids), 'local_jedomi');
         \local_jedomi\event\settings_updated::create_for_tab('course')->trigger();
+    }
+
+    /**
+     * The course ids of a submitted list that are positive integers, in their order.
+     *
+     * @param array $courseids Submitted course ids.
+     * @return int[]
+     */
+    public static function valid_course_ids(array $courseids): array {
+        return array_values(array_filter(array_map('intval', $courseids), static fn(int $id): bool => $id > 0));
     }
 
     /**

@@ -99,6 +99,7 @@ $string['agent_filter_role'] = 'Role';
 $string['agent_filter_status'] = 'Status';
 $string['agent_invalid'] = '{$a}';
 $string['agent_invalid_approved_write'] = 'the write function "{$a}" cannot be approved for this agent: it is not a write function of the web service list of the role of its owner';
+$string['agent_invalid_context_excluded'] = 'the course of this context is excluded from Jedomi in the Course availability tab';
 $string['agent_invalid_context_id'] = 'the context ID is not the ID of an existing Moodle context of type {$a}';
 $string['agent_invalid_context_type'] = 'invalid context type';
 $string['agent_invalid_cron'] = 'invalid custom schedule: use five fields (minute, hour, day of the month, month, day of the '
@@ -151,6 +152,8 @@ $string['agent_run_now'] = 'Run now';
 $string['agent_run_queued'] = 'Agent queued for execution (next cron cycle).';
 $string['agent_runner_task'] = 'Jedomi — Execute scheduled AI agents';
 $string['agent_schedule'] = 'Schedule';
+$string['agent_skipped_course_excluded'] = 'Not run: the course of its context is excluded from Jedomi. It runs again when the '
+    . 'course is back in Jedomi.';
 $string['agent_skipped_role'] = 'Not run: the creator holds none of the roles chosen for the agent in its context.';
 $string['agent_status'] = 'Status';
 $string['agent_summary'] = 'Summary';
@@ -262,16 +265,23 @@ $string['connection_error'] = 'Connection error:';
 $string['conversation_cleared'] = 'Conversation cleared.';
 $string['copytoclipboard'] = 'Copy to clipboard';
 $string['course_availability_courses'] = 'Selected courses';
-$string['course_availability_courses_help'] = 'Courses where the chat is shown (include mode) or hidden (exclude mode). Search by course name or short name.';
+$string['course_availability_courses_help'] = 'Courses that are in Jedomi ("Only the selected courses") or outside it '
+    . '("All courses except the selected ones"). An excluded course is outside Jedomi, not only without the panel: it gives '
+    . 'no teacher role on the site home, in Telegram or in the agents, the teacher tools, web service calls and teacher SQL '
+    . 'never return or accept it, and its agents do not run. Site-wide '
+    . 'administrator SQL is not limited by this list. Search by course name or short name.';
 $string['course_availability_heading'] = 'Course availability';
-$string['course_availability_heading_help'] = 'Control which courses show the Jedomi sidebar.';
+$string['course_availability_heading_help'] = 'Control which courses are in Jedomi. An excluded course is outside Jedomi in every '
+    . 'channel: the web chat, Telegram and the agents.';
 $string['course_mode_all'] = 'All courses (default)';
-$string['course_mode_all_desc'] = 'The sidebar will appear on all courses site-wide.';
-$string['course_mode_exclude'] = 'Hide in selected courses';
-$string['course_mode_exclude_desc'] = 'The sidebar will appear everywhere except the courses you choose below.';
-$string['course_mode_include'] = 'Show only in selected courses';
-$string['course_mode_include_desc'] = 'The sidebar will appear only in the courses you choose below, and also on the pages that '
-    . 'do not belong to a course (Dashboard, profile, calendar, site administration).';
+$string['course_mode_all_desc'] = 'Every course is in Jedomi.';
+$string['course_mode_exclude'] = 'All courses except the selected ones';
+$string['course_mode_exclude_desc'] = 'The courses you choose below are outside Jedomi: no panel, and no teacher role, tools, '
+    . 'SQL or agents for them.';
+$string['course_mode_include'] = 'Only the selected courses';
+$string['course_mode_include_desc'] = 'Every course you do not choose below is outside Jedomi: no panel, and no teacher role, '
+    . 'tools, SQL or agents for it. The pages that do not belong to a course (Dashboard, profile, calendar, site '
+    . 'administration) keep the panel.';
 $string['course_none_selected'] = 'No courses selected yet.';
 $string['course_search_placeholder'] = 'Search by name or shortname...';
 $string['csv_download'] = '📥 Download CSV';
@@ -372,6 +382,11 @@ $string['drop_pending_updates_help'] = 'Clears the Telegram update queue so stal
 $string['encryption_failed'] = 'Encryption failed. Check your server OpenSSL configuration.';
 $string['entity_agent'] = 'Agent';
 $string['entity_query_log'] = 'Profiled query';
+$string['error_argument_unplaced'] = 'This call names a record that Jedomi cannot place in a course ({$a}) while some '
+    . 'courses are outside Jedomi, so it was not run. Ask an administrator, or use a more specific tool or arguments that '
+    . 'name the course.';
+$string['error_course_excluded'] = 'That course is excluded from Jedomi.';
+$string['error_course_include_empty'] = 'Select at least one course, or choose another mode: with no course selected, every course would be outside Jedomi.';
 $string['error_custom_model_invalid'] = 'Enter a model id without spaces, as the service lists it.';
 $string['error_custom_model_required'] = 'Enter the id of the chat model.';
 $string['error_custom_model_required_switch'] = 'Enter the id of the model, or turn its switch off.';
@@ -400,6 +415,8 @@ $string['error_value_range'] = 'Enter a value between {$a->min} and {$a->max}.';
 $string['error_voice_requires_audio'] = 'The voice conversation needs audio processing: enable it too.';
 $string['error_ws_describe_failed'] = 'ws_describe failed: {$a}';
 $string['error_ws_execute_failed'] = 'ws_execute failed: {$a}';
+$string['error_ws_restricted'] = 'While some courses are outside Jedomi, only a reduced set of web service functions is '
+    . 'available. {$a} is not one of them.';
 $string['error_ws_search_failed'] = 'ws_search failed: {$a}';
 $string['event_action_cancelled'] = 'Assistant action cancelled';
 $string['event_action_confirmed'] = 'Assistant action confirmed';

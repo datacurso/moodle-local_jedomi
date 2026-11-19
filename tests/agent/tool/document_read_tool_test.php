@@ -317,6 +317,24 @@ final class document_read_tool_test extends \advanced_testcase {
     }
 
     /**
+     * Decision 4: the PDF of an activity of an excluded course is never read, also by a teacher of the course, and
+     * nothing is sent to the AI service.
+     */
+    public function test_activity_of_an_excluded_course_is_refused(): void {
+        $course = $this->getDataGenerator()->create_course();
+        $page = $this->getDataGenerator()->create_module('page', ['course' => $course->id]);
+        $this->add_pdf((int) $page->cmid, 'mod_page', 'content', 0, 'syllabus.pdf');
+        $teacher = $this->getDataGenerator()->create_and_enrol($course, 'editingteacher');
+        set_config('course_mode', 'exclude', 'local_jedomi');
+        set_config('course_list', (string) $course->id, 'local_jedomi');
+
+        $result = json_decode(document_read_tool::read((int) $page->cmid, 'teacher', '', (int) $teacher->id), true);
+
+        $this->assertSame(get_string('error_course_excluded', 'local_jedomi'), $result['error'] ?? null);
+        $this->assertSame([], $this->curl->calls);
+    }
+
+    /**
      * MDL-INT-051: a student submission or annotated feedback PDF is never read, even by an editing teacher of the
      * course: the tool reads only the published content of the activity.
      */

@@ -100,6 +100,7 @@ $string['agent_filter_role'] = 'Rol';
 $string['agent_filter_status'] = 'Estado';
 $string['agent_invalid'] = '{$a}';
 $string['agent_invalid_approved_write'] = 'la función de escritura "{$a}" no se puede aprobar para este agente: no es una función de escritura de la lista de servicios web del rol de su propietario';
+$string['agent_invalid_context_excluded'] = 'el curso de este contexto está excluido de Jedomi en la pestaña Disponibilidad por curso';
 $string['agent_invalid_context_id'] = 'el ID de contexto no corresponde a un contexto de Moodle existente de tipo {$a}';
 $string['agent_invalid_context_type'] = 'tipo de contexto no válido';
 $string['agent_invalid_cron'] = 'programación personalizada no válida: use cinco campos (minuto, hora, día del mes, mes, día de '
@@ -152,6 +153,8 @@ $string['agent_run_now'] = 'Ejecutar ahora';
 $string['agent_run_queued'] = 'Agente encolado para ejecución (próximo ciclo de cron).';
 $string['agent_runner_task'] = 'Jedomi — Ejecutar agentes de IA programados';
 $string['agent_schedule'] = 'Programación';
+$string['agent_skipped_course_excluded'] = 'No se ejecutó: el curso de su contexto está excluido de Jedomi. Volverá a '
+    . 'ejecutarse cuando el curso vuelva a estar en Jedomi.';
 $string['agent_skipped_role'] = 'No se ejecutó: el creador no tiene ninguno de los roles elegidos para el agente en su '
     . 'contexto.';
 $string['agent_status'] = 'Estado';
@@ -264,16 +267,23 @@ $string['connection_error'] = 'Error de conexión:';
 $string['conversation_cleared'] = 'Conversación borrada.';
 $string['copytoclipboard'] = 'Copiar al portapapeles';
 $string['course_availability_courses'] = 'Cursos seleccionados';
-$string['course_availability_courses_help'] = 'Cursos donde se muestra el chat (modo incluir) o se oculta (modo excluir). Busque por nombre o nombre corto del curso.';
+$string['course_availability_courses_help'] = 'Cursos que están en Jedomi («Solo los cursos seleccionados») o fuera de '
+    . 'Jedomi («Todos los cursos excepto los seleccionados»). Un curso excluido queda fuera de Jedomi, no solo sin el panel: '
+    . 'no le da el rol de profesor en la página principal, en Telegram ni en los agentes, las herramientas de profesor, las '
+    . 'llamadas a servicios web y el SQL de profesor nunca lo devuelven ni lo aceptan, y sus agentes no se '
+    . 'ejecutan. El SQL de administrador de todo el sitio no se limita con esta lista. Busque por nombre o nombre corto del curso.';
 $string['course_availability_heading'] = 'Disponibilidad por curso';
-$string['course_availability_heading_help'] = 'Controle en qué cursos aparece el panel lateral de Jedomi.';
+$string['course_availability_heading_help'] = 'Controle qué cursos están en Jedomi. Un curso excluido queda fuera de Jedomi en '
+    . 'todos los canales: el chat web, Telegram y los agentes.';
 $string['course_mode_all'] = 'Todos los cursos (por defecto)';
-$string['course_mode_all_desc'] = 'El panel lateral aparecerá en todos los cursos del sitio.';
-$string['course_mode_exclude'] = 'Ocultar en cursos seleccionados';
-$string['course_mode_exclude_desc'] = 'El panel lateral aparecerá en todos los cursos excepto los que elija abajo.';
-$string['course_mode_include'] = 'Mostrar solo en cursos seleccionados';
-$string['course_mode_include_desc'] = 'El panel lateral aparecerá únicamente en los cursos que elija abajo y también en las '
-    . 'páginas que no pertenecen a un curso (área personal, perfil, calendario, administración del sitio).';
+$string['course_mode_all_desc'] = 'Todos los cursos están en Jedomi.';
+$string['course_mode_exclude'] = 'Todos los cursos excepto los seleccionados';
+$string['course_mode_exclude_desc'] = 'Los cursos que elija abajo quedan fuera de Jedomi: sin panel, y sin rol de profesor, '
+    . 'herramientas, SQL ni agentes para ellos.';
+$string['course_mode_include'] = 'Solo los cursos seleccionados';
+$string['course_mode_include_desc'] = 'Todo curso que no elija abajo queda fuera de Jedomi: sin panel, y sin rol de profesor, '
+    . 'herramientas, SQL ni agentes para él. Las páginas que no pertenecen a un curso (área personal, perfil, calendario, '
+    . 'administración del sitio) mantienen el panel.';
 $string['course_none_selected'] = 'Todavía no hay cursos seleccionados.';
 $string['course_search_placeholder'] = 'Buscar por nombre o nombre corto...';
 $string['csv_download'] = '📥 Descargar CSV';
@@ -374,6 +384,11 @@ $string['drop_pending_updates_help'] = 'Limpia la cola de actualizaciones de Tel
 $string['encryption_failed'] = 'Falló la encriptación. Verifique la configuración de OpenSSL del servidor.';
 $string['entity_agent'] = 'Agente';
 $string['entity_query_log'] = 'Consulta registrada';
+$string['error_argument_unplaced'] = 'Esta llamada nombra un registro que Jedomi no puede ubicar en un curso ({$a}) mientras '
+    . 'algunos cursos están fuera de Jedomi, por lo que no se ejecutó. Consulte a un administrador o use una herramienta '
+    . 'más específica o argumentos que nombren el curso.';
+$string['error_course_excluded'] = 'Ese curso está excluido de Jedomi.';
+$string['error_course_include_empty'] = 'Seleccione al menos un curso o elija otro modo: sin cursos seleccionados, todos los cursos quedarían fuera de Jedomi.';
 $string['error_custom_model_invalid'] = 'Escriba un id de modelo sin espacios, tal como lo lista el servicio.';
 $string['error_custom_model_required'] = 'Escriba el id del modelo de chat.';
 $string['error_custom_model_required_switch'] = 'Escriba el id del modelo o desactive su opción.';
@@ -404,6 +419,8 @@ $string['error_value_range'] = 'Introduzca un valor entre {$a->min} y {$a->max}.
 $string['error_voice_requires_audio'] = 'La conversación por voz necesita el procesamiento de audio: habilítelo también.';
 $string['error_ws_describe_failed'] = 'ws_describe failed: {$a}';
 $string['error_ws_execute_failed'] = 'ws_execute failed: {$a}';
+$string['error_ws_restricted'] = 'Mientras haya cursos fuera de Jedomi, solo está disponible un conjunto reducido de '
+    . 'funciones de servicios web. {$a} no es una de ellas.';
 $string['error_ws_search_failed'] = 'ws_search failed: {$a}';
 $string['event_action_cancelled'] = 'Acción del asistente cancelada';
 $string['event_action_confirmed'] = 'Acción del asistente confirmada';

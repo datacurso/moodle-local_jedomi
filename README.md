@@ -205,6 +205,47 @@ the scheduled task "Purge old query profiler records" removes the old records on
 is set in the General tab too ("Maximum rows per query (web chat)", `sql_row_limit_web`); the other channels keep their
 fixed limits.
 
+## Course exclusion
+
+The Course availability tab sets which courses are in Jedomi: "All courses", "All courses except the selected ones",
+or "Only the selected courses" (every course that is not selected counts as excluded; this mode needs at least one
+course).
+An excluded course is outside Jedomi, not only without the panel:
+
+- **Role outside a course** (site home, dashboard, Telegram, scheduled agents, companion web service): computed
+  ignoring excluded courses. A teacher whose taught courses are all excluded is a student there.
+- **Web chat**: the panel is not shown in an excluded course, and the server refuses any request whose signed course is
+  excluded (`course_unavailable`) in `chatproxy.php`, `conversation.php`, `extract_file.php` and `read_file.php`, not
+  only in the page.
+- **Teacher tools**: the course lists signed for the chat and Telegram, the courses named to the AI in Telegram, the
+  own data tools (`my_courses`, `my_grades`, `my_assignments`) and `document_read` leave excluded courses out.
+- **Web service calls** (every channel, only while some course is outside Jedomi): the AI can only call a reduced set
+  of about 40 functions (`ws_runner::RESTRICTED_ALLOWLIST`: course contents and lists, enrolled users, groups, grades,
+  completion, assignments, forums, quizzes, calendar events, notes, users and messages); any other function is refused
+  before it runs (`error_ws_restricted`). Other functions can name a course in ways Jedomi cannot read reliably (ids
+  under other names, `{name, value}` options, context ids) or return course data without a course id, so they cannot
+  be guarded. When every course is in Jedomi every function is available as before. An allowed call is refused before
+  it runs when an argument, at any depth, names an excluded course (`error_course_excluded`): a course id (also
+  `importfrom`/`importto` of `core_course_import_course`), an activity (course module, instance id such as `forumid`, or
+  `module` with `instance`), a context (also by `contextlevel` and `instanceid`), a group or grouping, or a record mapped
+  to its course (sections, forum discussions and posts, calendar events, quiz and H5P attempts, assignment and workshop
+  submissions, glossary and database entries, group conversations and their messages, enrolment instances, grade
+  items, scales; and the `id`/`ids` of the functions Jedomi knows). A call with an argument named like an identifier
+  (ending in `id` or `ids`, or `instance`) that Jedomi cannot place in a course nor in a target of no course (users,
+  cohorts, categories, roles, the system context, draft areas) is refused too (`error_argument_unplaced`, fail closed),
+  for example the bare `id` of an unknown function, `notificationid`, quiz slots or competencies. A record that does
+  not exist names no course and is left to the function. Results drop the courses of the course-listing functions,
+  any listed record whose `courseid` or `course` is excluded, and the excluded courses of nested course lists
+  (`courses`, `enrolledcourses` of users).
+- **Teacher SQL**: a user who does not manage every course can only read courses they manage that are in Jedomi; a query
+  that names an excluded course is rejected (`sql_course_rejected`).
+- **Agents**: an agent cannot be saved, nor previewed, in a context of an excluded course. An existing agent whose
+  context is in an excluded course does not run: it stays enabled, its last error says why and it runs again at its
+  next hour once the course is back in Jedomi. An agent of a user whose role drops runs with the lower role.
+- **Site administrators and users who manage every course**: excluded courses are also left out of their course-level
+  tools (web service calls naming a course, `document_read`, agents). Their SQL is site-wide, with no course allowlist,
+  and is not limited by the course exclusion.
+
 ## Web chat usage limits
 
 These limits are applied in Moodle, so they hold with the Datacurso AI service and with the custom AI service alike:

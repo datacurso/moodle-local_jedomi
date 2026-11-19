@@ -194,6 +194,23 @@ final class admin_settings_service_test extends \advanced_testcase {
     }
 
     /**
+     * REL-001: "only the selected courses" without a valid course is refused and the saved settings stay as they were,
+     * as the form refuses it.
+     */
+    public function test_save_course_settings_refuses_include_without_courses(): void {
+        $this->resetAfterTest();
+        admin_settings_service::save_course_settings('exclude', ['9']);
+
+        try {
+            admin_settings_service::save_course_settings('include', ['0', 'x']);
+            $this->fail('Include mode without courses must be refused');
+        } catch (\moodle_exception $e) {
+            $this->assertSame('error_course_include_empty', $e->errorcode);
+        }
+        $this->assertSame(['course_mode' => 'exclude', 'course_ids' => [9]], admin_settings_service::get_course_settings());
+    }
+
+    /**
      * MDL-UNIT-010: privacy settings record every role that is not marked visible as hidden.
      *
      * @return void

@@ -1254,6 +1254,10 @@ function local_jedomi_generate_spt(string $role): array {
         }
     }
 
+    // Excluded courses are outside Jedomi: they are never signed as courses of the user.
+    $courseidsowned = \local_jedomi\course_access::filter_course_ids($courseidsowned);
+    $courseidsenrolled = \local_jedomi\course_access::filter_course_ids($courseidsenrolled);
+
     $tools = local_jedomi_get_tool_definitions($role);
 
     $payload = [
@@ -1332,6 +1336,9 @@ function local_jedomi_generate_spt_for_user(int $userid, string $role): array {
         }
     }
     // Admin: no course list (full access).
+    // Excluded courses are outside Jedomi: they are never signed as courses of the user.
+    $courseidsowned = \local_jedomi\course_access::filter_course_ids($courseidsowned);
+    $courseidsenrolled = \local_jedomi\course_access::filter_course_ids($courseidsenrolled);
 
     $tools = local_jedomi_get_tool_definitions($role, (int) $userid);
 
@@ -1363,7 +1370,8 @@ function local_jedomi_generate_spt_for_user(int $userid, string $role): array {
  *
  * Site admins are 'admin' and users who can update users at system level 'manager'. Inside a course a user who can
  * manage its activities is 'teacher'; outside a course (the site home, the dashboard, a profile, Telegram) a user who
- * can manage the activities of any course they are enrolled in is 'teacher'. Everyone else is 'student'.
+ * can manage the activities of any course in Jedomi they are enrolled in is 'teacher': excluded courses are ignored
+ * ({@see \local_jedomi\course_access::is_course_in_jedomi()}). Everyone else is 'student'.
  *
  * @param int $userid User.
  * @param int $courseid Course of the request; 0 or the site course outside a course.
@@ -1386,6 +1394,10 @@ function local_jedomi_user_role(int $userid, int $courseid): string {
     }
 
     foreach (enrol_get_users_courses($userid, true, ['id']) as $course) {
+        if (!\local_jedomi\course_access::is_course_in_jedomi((int) $course->id)) {
+            // An excluded course is outside Jedomi: it gives no role outside a course.
+            continue;
+        }
         if (has_capability('moodle/course:manageactivities', context_course::instance($course->id), $userid)) {
             return 'teacher';
         }

@@ -1634,7 +1634,8 @@ final class handler_test extends \advanced_testcase {
      * request is accepted, as opening Jedomi on the site home is, and it only gets site-level permissions: the signed
      * course is the site home, the course-scoped capabilities are not those of the excluded course, and the role, the
      * tools and the system message are the ones of the site home. Nothing is granted beyond what the user already has
-     * on the site home.
+     * on the site home. Decision 4: the excluded course is outside Jedomi, so a teacher whose only taught course is
+     * excluded is a student on the site home and gets the student tools.
      *
      * @return void
      */
@@ -1673,19 +1674,19 @@ final class handler_test extends \advanced_testcase {
         $this->assertSame([], $this->error_events($events), 'The site home request is accepted, as on the site home');
         $this->assertCount(1, $fake->calls);
         $this->assertSame((int) SITEID, (int) $sitespt['course_id'], 'The signed course is the site home');
-        // Outside a course a teacher is a teacher in every channel (MDL-INT-039): the same role as on the site home.
-        $this->assertSame('teacher', $sitespt['role'], 'Outside a course a teacher gets the site-level role');
+        // Outside a course the role ignores the excluded courses (Decision 4): the only taught course is excluded.
+        $this->assertSame('student', $sitespt['role'], 'An excluded course gives no role outside a course');
         $this->assertFalse($sitespt['capabilities']['can_view_all_grades'], 'No grade capability of the excluded course');
         $this->assertFalse($sitespt['capabilities']['can_manage_courses'], 'No course capability of the excluded course');
-        $teachertools = array_column(array_column(\local_jedomi_get_tool_definitions('teacher'), 'function'), 'name');
+        $studenttools = array_column(array_column(\local_jedomi_get_tool_definitions('student'), 'function'), 'name');
         $offered = $this->tool_names($fake->calls[0]);
         $this->assertEqualsCanonicalizing(
-            array_values(array_diff($teachertools, ['send_messages'])),
+            array_values(array_diff($studenttools, ['send_messages'])),
             array_values(array_diff($offered, ['send_messages']))
         );
         $system = $fake->calls[0]['messages'][0];
         $this->assertSame('system', $system['role']);
-        $this->assertStringContainsString('Role: teacher.', $system['content']);
+        $this->assertStringContainsString('Role: student.', $system['content']);
     }
 
     /**

@@ -73,6 +73,11 @@ class preview_runner {
     ): array {
         global $DB;
 
+        if (!\local_jedomi\course_access::is_course_in_jedomi(\local_jedomi\course_access::context_course_id((int) $contextid))) {
+            // An excluded course is outside Jedomi: its agents never run, so there is nothing to preview.
+            return ['ok' => false, 'error' => get_string('agent_invalid_context_excluded', 'local_jedomi'),
+                'error_code' => 'course_excluded'];
+        }
         [, $system, $tools] = agent_runner::run_conditions($userid, $contexttype, $contextid);
         // The tools run with the permissions of the user, as in the scheduled run of the agent; the profiler records
         // their queries as a preview (of the agent being edited, if any), never as a run of the agent.

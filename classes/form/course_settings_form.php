@@ -74,7 +74,8 @@ class course_settings_form extends \moodleform {
     }
 
     /**
-     * Reject a mode that is not offered.
+     * Reject a mode that is not offered, and "only the selected courses" without any course (REL-001): it would leave
+     * every course outside Jedomi.
      *
      * @param array $data Submitted values.
      * @param array $files Submitted files.
@@ -84,7 +85,19 @@ class course_settings_form extends \moodleform {
         $errors = parent::validation($data, $files);
         if (!in_array($data['course_mode'] ?? '', admin_settings_service::COURSE_MODES, true)) {
             $errors['course_mode'] = get_string('required');
+        } else if ($data['course_mode'] === 'include' && empty(self::selected_course_ids($data))) {
+            $errors['course_ids'] = get_string('error_course_include_empty', 'local_jedomi');
         }
         return $errors;
+    }
+
+    /**
+     * The valid course ids of the submitted values.
+     *
+     * @param array $data Submitted values.
+     * @return int[]
+     */
+    private static function selected_course_ids(array $data): array {
+        return admin_settings_service::valid_course_ids((array) ($data['course_ids'] ?? []));
     }
 }

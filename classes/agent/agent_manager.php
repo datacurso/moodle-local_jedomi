@@ -83,7 +83,7 @@ class agent_manager {
      *
      * The instruction must have text, the schedule must be valid, the context type must be known and, except for the
      * site, the context id must be the id of an existing Moodle context of that type (a course, category or user
-     * context id, not the id of the course, category or user).
+     * context id, not the id of the course, category or user), and a course context must be of a course in Jedomi.
      *
      * The approved writes must be writes the owner may approve, see approvable_writes().
      *
@@ -119,6 +119,10 @@ class agent_manager {
         if (!$context || (int) $context->contextlevel !== self::CONTEXT_LEVELS[$type]) {
             $typename = get_string('agent_context_type_' . $type, 'local_jedomi');
             return get_string('agent_invalid_context_id', 'local_jedomi', $typename);
+        }
+        if (!\local_jedomi\course_access::is_course_in_jedomi(\local_jedomi\course_access::context_course_id($contextid))) {
+            // No agent may live in a course outside Jedomi, nor in one of its activities or blocks.
+            return get_string('agent_invalid_context_excluded', 'local_jedomi');
         }
         return null;
     }

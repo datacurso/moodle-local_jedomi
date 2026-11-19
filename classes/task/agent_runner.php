@@ -361,21 +361,24 @@ class agent_runner extends \core\task\scheduled_task {
                     }
                 }
 
-                // ... ── 3) Does the creator hold one of the roles chosen for the agent? ──
+                // ... ── 3) Is the course of the agent context in Jedomi? ──
+                // An excluded course is outside Jedomi: the run is skipped until the next scheduled hour
+                // and the agent stays enabled, so it runs again when the course is back in Jedomi.
+                $agentcourseid = \local_jedomi\course_access::context_course_id((int) ($agent->context_id ?? 0));
+                if (!\local_jedomi\course_access::is_course_in_jedomi($agentcourseid)) {
+                    mtrace("[AGENT] {$agentlabel} — the course of its context is excluded from Jedomi — SKIPPED");
+                    \local_jedomi_log("[AGENT] {$agentlabel} — the course of its context is excluded from Jedomi — SKIPPED");
+                    self::skip_until_next_run($agent, 'agent_skipped_course_excluded');
+                    $fail++;
+                    continue;
+                }
+
+                // ... ── 4) Does the creator hold one of the roles chosen for the agent? ──
                 // The run is skipped until the next scheduled hour; the agent stays enabled and says why.
                 if (!self::creator_has_agent_role($creator, $agent)) {
                     mtrace("[AGENT] {$agentlabel} — creator {$creatorref} holds none of the agent roles — SKIPPED");
                     \local_jedomi_log("[AGENT] {$agentlabel} — creator {$creatorref} holds none of the agent roles — SKIPPED");
-                    $DB->update_record('local_jedomi_agents', (object) [
-                        'id' => $agent->id,
-                        'lasterror' => get_string('agent_skipped_role', 'local_jedomi'),
-                        'nextrun' => \local_jedomi\agent\agent_manager::calculate_next_run(
-                            (string) $agent->schedule_cron,
-                            time(),
-                            \local_jedomi\agent\agent_manager::creator_timezone((int) $agent->userid)
-                        ),
-                        'timemodified' => time(),
-                    ]);
+                    self::skip_until_next_run($agent, 'agent_skipped_role');
                     $fail++;
                     continue;
                 }
@@ -903,6 +906,27 @@ class agent_runner extends \core\task\scheduled_task {
             $held[] = (string) $DB->get_field('role', 'shortname', ['id' => (int) ($CFG->defaultuserroleid ?? 0)]);
         }
         return !empty(array_intersect($held, array_map('strval', $chosen)));
+    }
+
+    /**
+     * Skip the run of an agent until its next scheduled hour: the agent stays enabled and its last error says why.
+     *
+     * @param \stdClass $agent Agent record.
+     * @param string $reasonkey Language string of the reason.
+     * @return void
+     */
+    private static function skip_until_next_run(\stdClass $agent, string $reasonkey): void {
+        global $DB;
+        $DB->update_record('local_jedomi_agents', (object) [
+            'id' => $agent->id,
+            'lasterror' => get_string($reasonkey, 'local_jedomi'),
+            'nextrun' => \local_jedomi\agent\agent_manager::calculate_next_run(
+                (string) $agent->schedule_cron,
+                time(),
+                \local_jedomi\agent\agent_manager::creator_timezone((int) $agent->userid)
+            ),
+            'timemodified' => time(),
+        ]);
     }
 
     /**

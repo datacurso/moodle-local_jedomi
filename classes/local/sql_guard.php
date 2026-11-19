@@ -899,13 +899,18 @@ class sql_guard {
     }
 
     /**
-     * Tell whether a user manages a course.
+     * Tell whether a user manages a course that is in Jedomi.
+     *
+     * An excluded course is outside Jedomi, so it is never accepted, also when the user manages it.
      *
      * @param int $userid User id.
      * @param int $courseid Course id.
      * @return bool False as well when the course does not exist, so an unknown id is never accepted.
      */
     private static function manages_course(int $userid, int $courseid): bool {
+        if (!\local_jedomi\course_access::is_course_in_jedomi($courseid)) {
+            return false;
+        }
         $context = \context_course::instance($courseid, IGNORE_MISSING);
         return $context && has_capability('moodle/course:update', $context, $userid);
     }

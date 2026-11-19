@@ -2657,6 +2657,9 @@ class webhook_handler {
             }
         }
         // Admin: no course list (full access).
+        // Excluded courses are outside Jedomi: they are never signed as courses of the user.
+        $courseidsowned = \local_jedomi\course_access::filter_course_ids($courseidsowned);
+        $courseidsenrolled = \local_jedomi\course_access::filter_course_ids($courseidsenrolled);
 
         // Only the tools of the role that Telegram can really run are offered.
         $tools = array_values(array_filter(
@@ -2693,7 +2696,7 @@ class webhook_handler {
      * The role is computed as in the web chat: only site administrators and system user managers are
      * administrators and managers, so a role or permission in a course never makes the user a manager.
      * The courses are those with an active enrolment or a role assigned in the course, without the site
-     * home, and each one is grouped by the highest role the user holds in it.
+     * home and the courses excluded from Jedomi, and each one is grouped by the highest role the user holds in it.
      *
      * @param  int   $userid
      * @return array  'role', 'course_ids_owned', 'course_ids_enrolled', 'courses_by_role'
@@ -2718,6 +2721,12 @@ class webhook_handler {
             $courses[(int) $row->id] = $courses[(int) $row->id] ?? $row;
         }
         unset($courses[SITEID]);
+        // Excluded courses are outside Jedomi: never listed, signed or named to the AI.
+        $courses = array_filter(
+            $courses,
+            static fn(int $courseid): bool => \local_jedomi\course_access::is_course_in_jedomi($courseid),
+            ARRAY_FILTER_USE_KEY
+        );
 
         $rank = ['student' => 1, 'teacher' => 2, 'manager' => 3];
         $courseidsowned = [];

@@ -1156,6 +1156,56 @@ final class agent_runner_test extends \advanced_testcase {
     }
 
     /**
+     * Decision 4: an agent whose context is in an excluded course (exclude mode, or a course not listed in "only listed"
+     * mode) does not run. It stays enabled, says why in its last error and waits for its next hour, so it runs again
+     * when the course is back in Jedomi.
+     */
+    public function test_agent_in_an_excluded_course_does_not_run(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $course = $this->getDataGenerator()->create_course();
+        $page = $this->getDataGenerator()->create_module('page', ['course' => $course->id]);
+        $creator = $this->getDataGenerator()->create_and_enrol($course, 'editingteacher');
+        $fake = new fake_ai_client();
+        client::set_instance_for_testing($fake);
+
+        foreach (
+            [
+                'exclude' => \context_course::instance($course->id)->id,
+                'include' => \context_module::instance($page->cmid)->id,
+            ] as $mode => $contextid
+        ) {
+            set_config('course_mode', $mode, 'local_jedomi');
+            set_config('course_list', $mode === 'exclude' ? (string) $course->id : '', 'local_jedomi');
+            $agent = $this->create_due_agent((int) $creator->id);
+            $DB->update_record('local_jedomi_agents', (object) ['id' => $agent->id, 'context_type' => 'course',
+                'context_id' => $contextid]);
+
+            $this->run_task();
+
+            $after = $DB->get_record('local_jedomi_agents', ['id' => $agent->id]);
+            $this->assertSame([], $fake->calls, "{$mode} mode: the agent must not reach the AI");
+            $this->assertSame(1, (int) $after->enabled, "{$mode} mode: the agent stays enabled");
+            $this->assertSame(get_string('agent_skipped_course_excluded', 'local_jedomi'), $after->lasterror);
+            $this->assertGreaterThan(time(), (int) $after->nextrun, "{$mode} mode: the agent waits for its next hour");
+            $this->assertEmpty($after->lastrun);
+
+            // Back in Jedomi (REL-005): at its next hour the agent reaches the AI and its last error is cleared.
+            set_config('course_mode', 'all', 'local_jedomi');
+            $DB->set_field('local_jedomi_agents', 'nextrun', time() - 60, ['id' => $agent->id]);
+            $fake->enqueue_text('Course summary.');
+            $this->run_task();
+
+            $after = $DB->get_record('local_jedomi_agents', ['id' => $agent->id]);
+            $this->assertCount(1, $fake->calls, "{$mode} mode: back in Jedomi, the agent reaches the AI");
+            $this->assertNull($after->lasterror, "{$mode} mode: a successful run clears the last error");
+            $this->assertNotEmpty($after->lastrun);
+            $fake->calls = [];
+            $DB->delete_records('local_jedomi_agents', ['id' => $agent->id]);
+        }
+    }
+
+    /**
      * SYS-E2E-009: an agent enabled from the Agents tab waits for its scheduled hour, and its hour is the one of the time
      * zone of its creator. Behat: agents_tab.feature.
      */
