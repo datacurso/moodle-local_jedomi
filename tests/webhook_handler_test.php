@@ -42,8 +42,8 @@ require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/fake_telegram_api_cli
 /**
  * Test cases for webhook_handler methods.
  *
- * Current permission model of the webhook tools (see execute_tool and
- * execute_pending_action in classes/telegram/webhook_handler.php):
+ * Current permission model of the webhook tools (see execute_tool in
+ * classes/telegram/webhook_handler.php):
  *
  * - "Linked" means a confirmed row in local_jedomi_telegram_links for the
  *   chat id; the role is derived from the linked userid (site admins in
@@ -347,105 +347,6 @@ final class webhook_handler_test extends \advanced_testcase {
         );
         $this->assertStringContainsString('Permission denied', $result);
         $this->assertStringNotContainsString('Results', $result);
-    }
-
-    // ... ========================
-    // Task 2.6: execute_pending_action
-    // ========================
-
-    /**
-     * Test execute_pending_action with unknown tool.
-     */
-    public function test_execute_pending_action_unknown(): void {
-        $result = \local_jedomi\telegram\webhook_handler::execute_pending_action(
-            ['name' => 'unknown_tool', 'params' => []],
-            '12345',
-        );
-        $this->assertStringContainsString('not supported', $result);
-    }
-
-    /**
-     * Test execute_pending_action with get_config for a linked admin.
-     *
-     * The key must belong to the get_config allowlist ($safekeys).
-     */
-    public function test_execute_pending_action_get_config(): void {
-        $this->create_telegram_link((int)get_admin()->id, '12345');
-        set_config('telegram_max_turns', 25, 'local_jedomi');
-
-        $result = \local_jedomi\telegram\webhook_handler::execute_pending_action(
-            ['name' => 'get_config', 'params' => ['key' => 'telegram_max_turns']],
-            '12345',
-        );
-        $this->assertStringContainsString('telegram_max_turns', $result);
-        $this->assertStringContainsString('25', $result);
-    }
-
-    /**
-     * Test execute_pending_action get_config with an allowlisted but unset key.
-     */
-    public function test_execute_pending_action_get_config_not_found(): void {
-        $this->create_telegram_link((int)get_admin()->id, '12345');
-        unset_config('telegram_gateway_timeout', 'local_jedomi');
-
-        $result = \local_jedomi\telegram\webhook_handler::execute_pending_action(
-            ['name' => 'get_config', 'params' => ['key' => 'telegram_gateway_timeout']],
-            '12345',
-        );
-        $this->assertStringContainsString('not found', $result);
-    }
-
-    /**
-     * Test execute_pending_action get_config denies a chat without a link.
-     */
-    public function test_execute_pending_action_get_config_denied_unlinked_chat(): void {
-        $result = \local_jedomi\telegram\webhook_handler::execute_pending_action(
-            ['name' => 'get_config', 'params' => ['key' => 'telegram_max_turns']],
-            'chat-without-link',
-        );
-        $this->assertStringContainsString('Permission denied. Admin only.', $result);
-    }
-
-    /**
-     * Test execute_pending_action get_config denies a linked non-admin user.
-     */
-    public function test_execute_pending_action_get_config_denied_non_admin(): void {
-        $user = $this->getDataGenerator()->create_user();
-        $this->create_telegram_link((int)$user->id, '55555');
-        set_config('telegram_max_turns', 25, 'local_jedomi');
-
-        $result = \local_jedomi\telegram\webhook_handler::execute_pending_action(
-            ['name' => 'get_config', 'params' => ['key' => 'telegram_max_turns']],
-            '55555',
-        );
-        $this->assertStringContainsString('Permission denied. Admin only.', $result);
-    }
-
-    /**
-     * Data provider: admin-only pending actions.
-     *
-     * @return array
-     */
-    public static function admin_only_pending_actions_provider(): array {
-        return [
-            'cache_purge' => ['cache_purge'],
-            'run_task'    => ['run_task'],
-            'get_config'  => ['get_config'],
-        ];
-    }
-
-    /**
-     * Test every admin-only pending action denies an unlinked chat.
-     *
-     * @dataProvider admin_only_pending_actions_provider
-     * @param string $action Pending action name under test
-     */
-    public function test_admin_only_pending_actions_deny_unlinked(string $action): void {
-        $result = \local_jedomi\telegram\webhook_handler::execute_pending_action(
-            ['name' => $action, 'params' => []],
-            'chat-without-link',
-        );
-        $this->assertStringContainsString('Permission denied. Admin only.', $result);
     }
 
     /**

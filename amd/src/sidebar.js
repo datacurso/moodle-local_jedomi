@@ -1647,10 +1647,29 @@ define(['core/log', 'core/ajax', 'core/templates', 'core/str', 'core/notificatio
         return wrap;
     };
 
+    // Whether an address opens a page of this site: a site-relative path, or an absolute address with the origin of the
+    // site. An address that merely contains the site address (in its query, or as user name before an @) is external.
+    const isSiteUrl = (url) => {
+        if (/^\/(?![\/\\])/.test(url)) return true;
+        try {
+            return !!cfg.wwwroot && new URL(url).origin === new URL(cfg.wwwroot).origin;
+        } catch (e) {
+            return false;
+        }
+    };
+
+    // Host of an absolute address, shown next to an external link; empty when it cannot be read.
+    const urlHost = (url) => {
+        try {
+            return new URL(url).host;
+        } catch (e) {
+            return '';
+        }
+    };
+
     // Detect the Moodle page type from the URL.
     const getMoodlePageInfo = (url) => {
-        const wwwroot = cfg.wwwroot || '';
-        if (!url.includes(wwwroot) && !url.startsWith('/')) return null;
+        if (!isSiteUrl(url)) return null;
 
         // The type labels are language strings, in the language of the user.
         const L = cfg.strings || {};
@@ -1694,8 +1713,9 @@ define(['core/log', 'core/ajax', 'core/templates', 'core/str', 'core/notificatio
             .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
             // Rich Moodle links [text](url): a preview card for Moodle URLs.
             .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, linkText, url) => {
-                // Only web and site-relative links: model output can carry javascript: or data: URLs.
-                if (!/^(https?:\/\/|\/(?!\/))/i.test(url)) {
+                // Only web and site-relative links: model output can carry javascript: or data: URLs. A path starting
+                // with /\ is not site-relative: browsers read it as another host.
+                if (!/^(https?:\/\/|\/(?![\/\\]))/i.test(url)) {
                     return linkText;
                 }
                 const pageInfo = getMoodlePageInfo(url);
@@ -1704,7 +1724,16 @@ define(['core/log', 'core/ajax', 'core/templates', 'core/str', 'core/notificatio
                            `${pageInfo.icon} <span data-link-text>${linkText}</span> ` +
                            `<span class="jedomi-link-badge">${pageInfo.type} ↗</span></a>`);
                 }
-                return keep(`<a href="${url}"><span data-link-text>${linkText}</span> ↗</a>`);
+                // A link to another site is marked as external with its host, opens apart from the panel and sends no
+                // referrer (JEDOMI-SEC-005): the AI may write a link prompted by untrusted content.
+                const S = cfg.strings || {};
+                const host = urlHost(url).replace(/[&<>"']/g, '');
+                const label = (S.link_external || '').replace(/[&<>"']/g, '');
+                return keep(`<a href="${url}" class="jedomi-external-link" target="_blank" rel="noopener noreferrer"` +
+                       ` title="${label}">` +
+                       `<span data-link-text>${linkText}</span> ` +
+                       `<span class="jedomi-external-badge" aria-hidden="true">↗ ${host}</span>` +
+                       `<span class="sr-only">(${label}: ${host})</span></a>`);
             })
             // Bare web addresses keep their underscores.
             .replace(/\bhttps?:\/\/[^\s<]+/g, (url) => keep(url))

@@ -62,8 +62,10 @@ final class general_settings_form_test extends \advanced_testcase {
         get_string_manager()->reset_caches();
 
         $expected = [
-            'en' => ['generated automatically', 'stored in moodle', 'does not need to be set', 'invalidates', 'reload'],
-            'es' => ['genera automáticamente', 'guarda en moodle', 'no hace falta configurarlo', 'invalida', 'recargar'],
+            'en' => ['generated automatically', 'stored in moodle', 'does not need to be set', 'invalidates', 'reload',
+                'never shown', 'leave the field empty'],
+            'es' => ['genera automáticamente', 'guarda en moodle', 'no hace falta configurarlo', 'invalida', 'recargar',
+                'nunca se muestra', 'deje el campo vacío'],
         ];
         foreach ($expected as $lang => $phrases) {
             $help = \core_text::strtolower(get_string_manager()->get_string('spt_secret_help', 'local_jedomi', null, $lang));

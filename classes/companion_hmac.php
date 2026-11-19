@@ -21,7 +21,7 @@
  * SHA256 of the JSON object of the non-auth parameters (keys sorted). The server recomputes
  * the payload hash from the parameters it actually received, so a captured signature cannot
  * be reused with other parameters.
- * Secret is stored in mdl_config as local_jedomi / hmac_secret.
+ * Secret is stored encrypted in config_plugins as local_jedomi / hmac_secret.
  * TTL: 60 seconds — drift > 60s is rejected.
  * Single use: a valid signature is recorded (its hash, in the companion_signatures application cache) for longer than
  * twice the margin, and the same signature sent again is rejected, so a captured request cannot be replayed within the margin.
@@ -195,17 +195,13 @@ trait companion_hmac {
      * Ensure the HMAC secret exists, generating one if it does not.
      *
      * The secret is 64 hex characters (256 bits of entropy).
-     * It is stored in mdl_config under plugin='local_jedomi', name='hmac_secret'.
+     * It is stored encrypted with the key of the site (JEDOMI-SEC-010) in config_plugins under plugin='local_jedomi',
+     * name='hmac_secret'; a value saved in clear text before 1.8.0 is still read.
      *
      * @return string  The hex-encoded secret
      */
     private static function get_or_create_hmac_secret(): string {
-        $secret = get_config('local_jedomi', 'hmac_secret');
-        if (empty($secret)) {
-            $secret = bin2hex(random_bytes(32)); // 256 bits
-            set_config('hmac_secret', $secret, 'local_jedomi');
-        }
-        return $secret;
+        return \local_jedomi\local\secret_store::get_or_generate('hmac_secret', 32); // 256 bits.
     }
 
     /**

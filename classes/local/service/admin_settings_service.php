@@ -46,12 +46,12 @@ class admin_settings_service {
     /**
      * Settings of the General tab.
      *
-     * @return array{spt_secret: string, profiler_slow_ms: int, profiler_retention_days: int, sql_row_limit_web: int,
-     *     chat_rate_limit: int}
+     * The permission token secret is never returned, so the form never shows it (JEDOMI-SEC-010).
+     *
+     * @return array{profiler_slow_ms: int, profiler_retention_days: int, sql_row_limit_web: int, chat_rate_limit: int}
      */
     public static function get_general_settings(): array {
         return [
-            'spt_secret' => (string) (get_config('local_jedomi', 'spt_secret') ?: ''),
             'profiler_slow_ms' => \local_jedomi\agent\query_profiler::slow_threshold_ms(),
             'profiler_retention_days' => \local_jedomi\agent\query_profiler::retention_days(),
             'sql_row_limit_web' => \local_jedomi\local\query_runner::web_row_limit(),
@@ -62,7 +62,8 @@ class admin_settings_service {
     /**
      * Save the settings of the General tab.
      *
-     * @param string $sptsecret Shared secret used to sign session tokens.
+     * @param string $sptsecret New secret used to sign the chat permission tokens, saved encrypted; empty (or only
+     *        blanks) keeps the stored secret.
      * @param int|null $slowms Slow query threshold in milliseconds; null keeps the current value.
      * @param int|null $retentiondays Days the profiler records are kept; null keeps the current value.
      * @param int|null $sqlrowlimitweb Rows a query of the web chat returns at most, kept within the accepted range; null
@@ -78,7 +79,9 @@ class admin_settings_service {
         ?int $sqlrowlimitweb = null,
         ?int $chatratelimit = null
     ): void {
-        set_config('spt_secret', $sptsecret, 'local_jedomi');
+        if (trim($sptsecret) !== '') {
+            \local_jedomi\local\secret_store::set('spt_secret', $sptsecret);
+        }
         if ($slowms !== null) {
             set_config('profiler_slow_ms', max(1, $slowms), 'local_jedomi');
         }

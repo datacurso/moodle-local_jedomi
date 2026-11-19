@@ -197,17 +197,13 @@ class manager {
     }
 
     /**
-     * Generate or retrieve the webhook secret.
+     * Generate or retrieve the webhook secret, kept encrypted with the key of the site (JEDOMI-SEC-010); one saved in
+     * clear text before 1.8.0 is still read.
      *
      * @return string 32-char hex random secret
      */
     public static function get_webhook_secret(): string {
-        $secret = get_config('local_jedomi', 'telegram_webhook_secret');
-        if (empty($secret)) {
-            $secret = self::new_webhook_secret();
-            set_config('telegram_webhook_secret', $secret, 'local_jedomi');
-        }
-        return $secret;
+        return \local_jedomi\local\secret_store::get_or_generate('telegram_webhook_secret', 16);
     }
 
     /**
@@ -225,7 +221,7 @@ class manager {
      * @return void
      */
     public static function replace_webhook_secret(): void {
-        set_config('telegram_webhook_secret', self::new_webhook_secret(), 'local_jedomi');
+        \local_jedomi\local\secret_store::set('telegram_webhook_secret', self::new_webhook_secret());
     }
 
     /**
@@ -242,7 +238,7 @@ class manager {
      */
     public static function regenerate_webhook_secret(): string {
         $secret = self::new_webhook_secret();
-        set_config('telegram_webhook_secret', $secret, 'local_jedomi');
+        \local_jedomi\local\secret_store::set('telegram_webhook_secret', $secret);
 
         // Update Telegram webhook with the new secret.
         self::register_webhook(null, true);
@@ -304,7 +300,7 @@ class manager {
             self::set_last_webhook_error('setWebhook failed — check the URL is HTTPS and reachable');
             return false;
         }
-        set_config('telegram_webhook_secret', $secret, 'local_jedomi');
+        \local_jedomi\local\secret_store::set('telegram_webhook_secret', $secret);
         self::clear_last_webhook_error();
         return true;
     }

@@ -156,7 +156,7 @@ class handler {
 
         $voicemode = !empty($input['voice_mode']) && \local_jedomi\ai\model_settings::is_voice_enabled();
         $system = system_message::build($role, $spt, $context, $voicemode);
-        if (self::run(array_merge([$system], $messages), $role, $userid, $anonymizer)) {
+        if (self::run(array_merge([$system], $messages), $role, $userid, $anonymizer, $courseid)) {
             // Audit trail without the conversation: who was answered, where and through which channel.
             $eventcontext = $courseid > SITEID
                 ? (\context_course::instance($courseid, IGNORE_MISSING) ?: \context_system::instance())
@@ -368,13 +368,15 @@ class handler {
      * @param string $role     User role (already validated).
      * @param int    $userid   Moodle user the AI calls are made for.
      * @param \local_jedomi\local\anonymizer|null $anonymizer Anonymiser of the request; null for a new one.
+     * @param int    $courseid Course signed in the permissions (0 outside a course): held actions keep it.
      * @return bool True when an answer of the AI was sent to the user, false on an error or a stopped answer.
      */
     public static function run(
         array $messages,
         string $role,
         int $userid,
-        ?\local_jedomi\local\anonymizer $anonymizer = null
+        ?\local_jedomi\local\anonymizer $anonymizer = null,
+        int $courseid = 0
     ): bool {
         require_once(__DIR__ . '/../../lib.php');
         \local_jedomi_log('RUN_START', ['role' => $role, 'user_message_count' => count($messages)]);
@@ -387,7 +389,7 @@ class handler {
             self::send_event(['_jedomi_heartbeat' => ['elapsed' => self::now() - $started]]);
         }, $abortcheck);
         try {
-            return self::run_rounds($messages, $role, $userid, $anonymizer, $started);
+            return self::run_rounds($messages, $role, $userid, $anonymizer, $started, $courseid);
         } finally {
             \local_jedomi\ai\heartbeat::stop();
         }
@@ -410,6 +412,7 @@ class handler {
      * @param int    $userid   Moodle user the AI calls are made for.
      * @param \local_jedomi\local\anonymizer|null $anonymizer Anonymiser of the request; null for a new one.
      * @param int    $started  Time the question started.
+     * @param int    $courseid Course signed in the permissions (0 outside a course).
      * @return bool True when an answer of the AI was sent to the user.
      */
     private static function run_rounds(
@@ -417,7 +420,8 @@ class handler {
         string $role,
         int $userid,
         ?\local_jedomi\local\anonymizer $anonymizer,
-        int $started
+        int $started,
+        int $courseid = 0
     ): bool {
 
         $tools = spt_validator::get_tool_definitions($role);
@@ -533,7 +537,7 @@ class handler {
 
                 // A tool that changes data does not run now: it waits for the user's confirmation
                 // and the turn ends, so the model cannot act on a result that does not exist yet.
-                $pending = $offered && $unrestored === null ? pending_action_service::hold($userid, $name, $args) : null;
+                $pending = $offered && $unrestored === null ? pending_action_service::hold($userid, $name, $args, 0, $courseid) : null;
                 if ($pending !== null) {
                     \local_jedomi_log('TOOL_HELD', ['tool' => $name, 'severity' => $pending['severity']]);
                     echo "data: " . json_encode(['_jedomi_pending_action' => $pending], JSON_UNESCAPED_UNICODE) . "\n\n";
@@ -930,6 +934,7 @@ class handler {
                 return json_encode(['error' => 'query is required']);
             }
 
+            // Only the functions the role may call: its list, the course rule and the declared capabilities.
             $allowed = \local_jedomi\local\ws_runner::searchable_functions($role);
             if ($allowed === []) {
                 return json_encode(['results' => [], 'note' => get_string('note_ws_none_configured', 'local_jedomi')]);
@@ -975,8 +980,8 @@ class handler {
                 return json_encode(['error' => 'wsname is required']);
             }
 
-            // The same list that gates the execution: an empty list allows no description at all.
-            if (!\local_jedomi\local\ws_runner::role_allows($role, $wsname)) {
+            // The same rules as the search: an empty list allows no description at all.
+            if (!\local_jedomi\local\ws_runner::describable($role, $wsname)) {
                 return json_encode(['error' => 'permission_denied: function not in allowlist']);
             }
 

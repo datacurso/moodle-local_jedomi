@@ -107,7 +107,7 @@ final class register_telegram_webhook_test extends \advanced_testcase {
         $this->assertNotSame($oldsecret, $newsecret);
         $this->assertSame($newsecret, $this->client->requests[0][1]['secret_token']);
         $this->assertFalse(manager::needs_webhook_registration());
-        $this->assertSame(10, $this->client->curl_options('')[CURLOPT_TIMEOUT]);
+        $this->assertSame(10, $this->client->curl_options()['CURLOPT_TIMEOUT']);
         $this->assertSame(0, $sink->count());
     }
 

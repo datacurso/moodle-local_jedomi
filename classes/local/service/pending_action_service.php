@@ -192,10 +192,12 @@ class pending_action_service {
      * @param string $tool Tool name.
      * @param array $args Tool arguments.
      * @param int $agentid Scheduled agent that proposed it (its creator confirms it in the web chat); 0 for the chat.
+     * @param int $courseid Course the role of the user was computed in when it was held (the signed page course);
+     *                      0 outside a course. Kept server side: the confirmation computes the role in it again.
      * @return array|null Data for the confirmation card (id, tool, severity, description, details, and
      *                    count and preview for send_messages), or null when the tool needs no confirmation.
      */
-    public static function hold(int $userid, string $tool, array $args, int $agentid = 0): ?array {
+    public static function hold(int $userid, string $tool, array $args, int $agentid = 0, int $courseid = 0): ?array {
         global $DB;
 
         [$tool, $args] = self::normalise($tool, $args);
@@ -210,6 +212,7 @@ class pending_action_service {
             $id = (int) $DB->insert_record(self::TABLE, (object) [
                 'userid' => $userid,
                 'agentid' => $agentid,
+                'courseid' => $courseid > SITEID ? $courseid : 0,
                 'tool' => \core_text::substr($tool, 0, 64),
                 'argsjson' => $argsjson,
                 'severity' => $severity,
@@ -503,13 +506,53 @@ class pending_action_service {
         }
 
         $args = json_decode($record->argsjson, true);
-        $role = \local_jedomi_get_user_role_for_user($userid);
+        // The role is computed again in the course stored when the action was held, never in one sent with the
+        // confirmation, so a teacher of that course without an enrolment keeps the role (unit 7b).
+        $role = self::role_in_course($userid, (int) ($record->courseid ?? 0));
         try {
             $decoded = json_decode(handler::run_tool($record->tool, is_array($args) ? $args : [], $role), true);
         } catch (\Throwable $e) {
             $decoded = ['error' => 'tool_failed'];
         }
         return self::summarise($record->tool, is_array($decoded) ? $decoded : ['error' => 'invalid_result']);
+    }
+
+    /**
+     * Jedomi role of a user in the course a held action belongs to, as it was computed when it was held.
+     *
+     * A course excluded from Jedomi gives no role: the role is then the one outside a course.
+     *
+     * @param int $userid User.
+     * @param int $courseid Course stored with the held action; 0 or the site course outside a course.
+     * @return string 'admin', 'manager', 'teacher' or 'student'.
+     */
+    public static function role_in_course(int $userid, int $courseid): string {
+        global $CFG;
+        require_once($CFG->dirroot . '/local/jedomi/lib.php');
+        if ($courseid > SITEID && !\local_jedomi\course_access::is_course_in_jedomi($courseid)) {
+            $courseid = 0;
+        }
+        return \local_jedomi_user_role($userid, $courseid);
+    }
+
+    /**
+     * Course of a tool call of Telegram, where there is no page: the courseid of its arguments when the user can access
+     * that course and it is in Jedomi, or 0.
+     *
+     * @param int $userid User.
+     * @param array $args Tool arguments.
+     * @return int
+     */
+    public static function course_of_args(int $userid, array $args): int {
+        global $DB;
+        $courseid = isset($args['courseid']) && is_numeric($args['courseid']) ? (int) $args['courseid'] : 0;
+        if ($courseid <= SITEID || !$DB->record_exists('course', ['id' => $courseid])
+                || !\local_jedomi\course_access::is_course_in_jedomi($courseid)) {
+            return 0;
+        }
+        $context = \context_course::instance($courseid);
+        return is_enrolled($context, $userid, '', true) || has_capability('moodle/course:view', $context, $userid)
+            || has_capability('moodle/course:manageactivities', $context, $userid) ? $courseid : 0;
     }
 
     /**

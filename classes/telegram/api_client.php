@@ -32,10 +32,16 @@ require_once(__DIR__ . '/../../lib.php');
 
 /**
  * Thin HTTP client for the Telegram Bot API: sending and editing messages, callbacks and file downloads.
+ *
+ * Every request goes through Moodle's \curl (JEDOMI-SEC-018), so the proxy of the site and its cURL security
+ * (curlsecurityblockedhosts, allowed ports) apply, and redirects are never followed: the bot token is part of every
+ * address, so it must never be sent to another host. The token is never logged.
  */
 class api_client {
     /** @var int Seconds a request may take to connect to Telegram. */
     public const CONNECT_TIMEOUT = 5;
+    /** @var int Seconds an upload (sendDocument) may take in total. */
+    public const UPLOAD_TIMEOUT = 60;
     /** @var int Seconds a request may take in total, connection included. */
     private int $timeout = 30;
     /** @var string Telegram bot token used to authenticate API calls. */
@@ -326,15 +332,13 @@ class api_client {
         $downloadurl = 'https://api.telegram.org/file/bot' . $this->token . '/' . $filepath;
         $tmppath = make_temp_directory('local_jedomi') . '/' . basename($filepath);
 
-        $ch = curl_init($downloadurl);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-        $data = curl_exec($ch);
-        $httpcode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-
-        if ($httpcode !== 200 || $data === false) {
+        // A redirect is not followed: the download fails (its status is not 200).
+        $curl = $this->new_curl();
+        $data = $curl->get($downloadurl, [], $this->curl_options());
+        $httpcode = (int) ($curl->get_info()['http_code'] ?? 0);
+        if ($httpcode !== 200 || !empty($curl->errno) || (string) $curl->error !== '') {
+            \local_jedomi_log('E005: Telegram file download failed: http=' . $httpcode
+                . ' curl=' . $this->redact($curl->error ?: 'none'));
             return null;
         }
 
@@ -429,20 +433,33 @@ class api_client {
     }
 
     /**
-     * cURL options of a POST request with the given body.
+     * Options of every request, for Moodle's \curl: the timeouts, redirects never followed and TLS verified (\curl does
+     * not verify the peer by default, and the bot token is in every address).
      *
-     * @param string $body Form-encoded request body.
-     * @return array cURL options keyed by CURLOPT_* constant.
+     * @return array \curl options keyed by option name.
      */
-    public function curl_options(string $body): array {
+    public function curl_options(): array {
         return [
-            CURLOPT_POST => true,
-            CURLOPT_POSTFIELDS => $body,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_CONNECTTIMEOUT => min(self::CONNECT_TIMEOUT, $this->timeout),
-            CURLOPT_TIMEOUT => $this->timeout,
-            CURLOPT_HTTPHEADER => ['Content-Type: application/x-www-form-urlencoded'],
+            'CURLOPT_CONNECTTIMEOUT' => min(self::CONNECT_TIMEOUT, $this->timeout),
+            'CURLOPT_TIMEOUT' => $this->timeout,
+            'CURLOPT_FOLLOWLOCATION' => false,
+            'CURLOPT_MAXREDIRS' => 0,
+            'CURLOPT_SSL_VERIFYPEER' => true,
+            'CURLOPT_SSL_VERIFYHOST' => 2,
         ];
+    }
+
+    /**
+     * New transport for one request: Moodle's \curl, with the proxy and the cURL security of the site.
+     *
+     * Tests override it to observe the request without network.
+     *
+     * @return \curl
+     */
+    protected function new_curl(): \curl {
+        global $CFG;
+        require_once($CFG->libdir . '/filelib.php');
+        return new \curl();
     }
 
     /**
@@ -453,23 +470,45 @@ class api_client {
      * @return array|null  Decoded JSON response, or null on failure
      */
     protected function post(string $method, array $params): ?array {
+        return $this->send($method, self::build_body($params), $this->curl_options());
+    }
+
+    /**
+     * Send a request to the Telegram Bot API and decode its answer.
+     *
+     * @param string $method API method name, e.g. "sendMessage".
+     * @param string|array $body Form-encoded body, or fields for a multipart body (\CURLFile for the files).
+     * @param array $options \curl options.
+     * @return array|null Decoded JSON response, or null on failure.
+     */
+    private function send(string $method, string|array $body, array $options): ?array {
         if (empty($this->token)) {
             \local_jedomi_log('E001: no token configured');
             return null;
         }
 
         $url = $this->baseurl . '/' . $method;
-        $ch = curl_init($url);
-        curl_setopt_array($ch, $this->curl_options(self::build_body($params)));
+        // A blocked host is refused here: \curl would refuse it too, but its url_blocked event stores and prints the
+        // whole address, bot token included, in the site logs.
+        if ((new \core\files\curl_security_helper())->url_is_blocked($url)) {
+            $this->lasthttpcode = 0;
+            \local_jedomi_log('E002: Telegram API request blocked by the cURL security of the site: method=' . $method);
+            return null;
+        }
 
-        $response = curl_exec($ch);
-        $httpcode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $curlerr = curl_error($ch);
-        curl_close($ch);
+        $curl = $this->new_curl();
+        if (is_string($body)) {
+            $curl->setHeader('Content-Type: application/x-www-form-urlencoded');
+        }
+        $response = $curl->post($url, $body, $options);
+        $httpcode = (int) ($curl->get_info()['http_code'] ?? 0);
+        $curlerr = $this->redact((string) $curl->error);
+        $failed = !empty($curl->errno) || $curlerr !== '';
         $this->lasthttpcode = $httpcode;
 
-        if ($httpcode !== 200 || $response === false) {
-            $snippet = $response !== false ? mb_substr($response, 0, 500) : 'no_response';
+        if ($httpcode !== 200 || $failed) {
+            // On a failure \curl returns its error text instead of a body.
+            $snippet = !$failed && is_string($response) ? $this->redact(mb_substr($response, 0, 500)) : 'no_response';
             \local_jedomi_log('[TELEGRAM API ERR] HTTP ' . $httpcode . ' method=' . $method
                 . ' body=' . $snippet . ' curl_err=' . ($curlerr ?: 'none'));
             \local_jedomi_log('E002: Telegram API HTTP error: method=' . $method
@@ -565,48 +604,17 @@ class api_client {
      * @return array|null          Decoded JSON response, or null on failure.
      */
     private function post_multipart(string $method, array $params): ?array {
-        if (empty($this->token)) {
-            \local_jedomi_log('E001: no token configured');
-            return null;
-        }
+        $options = ['CURLOPT_TIMEOUT' => self::UPLOAD_TIMEOUT] + $this->curl_options();
+        return $this->send($method, $params, $options);
+    }
 
-        $url = $this->baseurl . '/' . $method;
-        $ch = curl_init($url);
-        curl_setopt_array($ch, [
-            CURLOPT_POST           => true,
-            CURLOPT_POSTFIELDS     => $params, // Array → libcurl uses multipart/form-data.
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT        => 60,
-        ]);
-
-        $response = curl_exec($ch);
-        $httpcode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $curlerr = curl_error($ch);
-        curl_close($ch);
-        $this->lasthttpcode = $httpcode;
-
-        if ($httpcode !== 200 || $response === false) {
-            $snippet = $response !== false ? mb_substr($response, 0, 500) : 'no_response';
-            \local_jedomi_log('[TELEGRAM API ERR] HTTP ' . $httpcode . ' method=' . $method
-                . ' body=' . $snippet . ' curl_err=' . ($curlerr ?: 'none'));
-            \local_jedomi_log('E002: Telegram API HTTP error: method=' . $method
-                . ' http=' . $httpcode . ' body=' . $snippet . ' curl=' . ($curlerr ?: 'none'));
-            return null;
-        }
-
-        $decoded = json_decode($response, true);
-        if (json_last_error() !== JSON_ERROR_NONE) {
-            \local_jedomi_log('[TELEGRAM API ERR] JSON decode: ' . json_last_error_msg() . ' method=' . $method);
-            \local_jedomi_log('E003: Telegram JSON error: ' . json_last_error_msg());
-            return null;
-        }
-
-        if (!($decoded['ok'] ?? false)) {
-            $desc = $decoded['description'] ?? 'unknown';
-            \local_jedomi_log('Telegram API error: ' . $desc);
-            \local_jedomi_log('[TELEGRAM API ERR] method=' . $method . ' desc=' . $desc);
-        }
-
-        return $decoded;
+    /**
+     * Text with the bot token hidden, for the log: an error may quote the address, which holds the token.
+     *
+     * @param string $text Text to log.
+     * @return string
+     */
+    private function redact(string $text): string {
+        return $this->token === '' ? $text : str_replace($this->token, '[token]', $text);
     }
 }

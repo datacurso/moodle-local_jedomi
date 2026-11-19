@@ -86,7 +86,7 @@ final class admin_settings_service_test extends \advanced_testcase {
         unset_config('spt_secret', 'local_jedomi');
 
         $this->assertSame(
-            ['spt_secret' => '', 'profiler_slow_ms' => 1000, 'profiler_retention_days' => 30, 'sql_row_limit_web' => 100,
+            ['profiler_slow_ms' => 1000, 'profiler_retention_days' => 30, 'sql_row_limit_web' => 100,
                 'chat_rate_limit' => 10],
             admin_settings_service::get_general_settings()
         );
@@ -102,13 +102,44 @@ final class admin_settings_service_test extends \advanced_testcase {
 
         admin_settings_service::save_general_settings('s3cret');
 
-        $this->assertSame('s3cret', get_config('local_jedomi', 'spt_secret'));
+        $stored = (string) get_config('local_jedomi', 'spt_secret');
+        $this->assertTrue(\local_jedomi\local\secret_store::is_encrypted($stored), 'JEDOMI-SEC-010: stored encrypted');
+        $this->assertStringNotContainsString('s3cret', $stored);
+        $this->assertSame('s3cret', \local_jedomi\local\secret_store::get('spt_secret'));
         $this->assertFalse(get_config('local_jedomi', 'collect_training_data'));
         $this->assertSame(
-            ['spt_secret' => 's3cret', 'profiler_slow_ms' => 1000, 'profiler_retention_days' => 30, 'sql_row_limit_web' => 100,
+            ['profiler_slow_ms' => 1000, 'profiler_retention_days' => 30, 'sql_row_limit_web' => 100,
                 'chat_rate_limit' => 10],
             admin_settings_service::get_general_settings()
         );
+    }
+
+    /**
+     * JEDOMI-SEC-010: the permission token secret is never sent to the form, an empty field keeps the stored secret and
+     * a new one replaces it.
+     *
+     * @return void
+     */
+    public function test_general_settings_never_show_the_secret_and_empty_keeps_it(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        admin_settings_service::save_general_settings('kept-spt-secret');
+
+        $settings = admin_settings_service::get_general_settings();
+        $this->assertArrayNotHasKey('spt_secret', $settings);
+        $form = new \local_jedomi\form\general_settings_form();
+        $form->set_data($settings);
+        $html = $form->render();
+        $this->assertStringNotContainsString('kept-spt-secret', $html);
+        $this->assertStringNotContainsString((string) get_config('local_jedomi', 'spt_secret'), $html);
+
+        admin_settings_service::save_general_settings('');
+        $this->assertSame('kept-spt-secret', \local_jedomi\local\secret_store::get('spt_secret'), 'An empty field keeps it');
+        admin_settings_service::save_general_settings('  ');
+        $this->assertSame('kept-spt-secret', \local_jedomi\local\secret_store::get('spt_secret'), 'Blanks keep it too');
+
+        admin_settings_service::save_general_settings('new-spt-secret');
+        $this->assertSame('new-spt-secret', \local_jedomi\local\secret_store::get('spt_secret'));
     }
 
     /**

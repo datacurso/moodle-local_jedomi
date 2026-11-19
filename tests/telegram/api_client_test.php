@@ -26,6 +26,236 @@ namespace local_jedomi\telegram;
  * @covers     \local_jedomi\telegram\api_client
  */
 final class api_client_test extends \advanced_testcase {
+    #[\Override]
+    public static function setUpBeforeClass(): void {
+        global $CFG;
+        parent::setUpBeforeClass();
+        require_once($CFG->libdir . '/filelib.php');
+    }
+
+    /**
+     * Client whose transport records each request instead of sending it, and answers with a fixed status and body.
+     *
+     * @param int $status HTTP status of every answer.
+     * @param string $body Body of every answer.
+     * @return api_client Client with a public $requests array of [method, url, options].
+     */
+    private static function recording_client(int $status, string $body): api_client {
+        return new class ('123:secret-token', $status, $body) extends api_client {
+            /** @var array Requests made, as [method, url, options]. */
+            public array $requests = [];
+            /** @var int HTTP status of every answer. */
+            private int $status;
+            /** @var string Body of every answer. */
+            private string $body;
+
+            /**
+             * Client with the answer its transport gives.
+             *
+             * @param string $token Bot token.
+             * @param int $status HTTP status.
+             * @param string $body Body.
+             */
+            public function __construct(string $token, int $status, string $body) {
+                parent::__construct($token);
+                $this->status = $status;
+                $this->body = $body;
+            }
+
+            #[\Override]
+            protected function new_curl(): \curl {
+                $client = $this;
+                return new class ($client, $this->status, $this->body) extends \curl {
+                    /** @var object Client that records the requests. */
+                    private object $client;
+                    /** @var int HTTP status. */
+                    private int $status;
+                    /** @var string Body. */
+                    private string $answer;
+
+                    /**
+                     * Transport with a fixed answer.
+                     *
+                     * @param object $client Recording client.
+                     * @param int $status HTTP status.
+                     * @param string $answer Body.
+                     */
+                    public function __construct(object $client, int $status, string $answer) {
+                        parent::__construct();
+                        $this->client = $client;
+                        $this->status = $status;
+                        $this->answer = $answer;
+                    }
+
+                    #[\Override]
+                    protected function request($url, $options = []) {
+                        $this->client->requests[] = [isset($options['CURLOPT_HTTPGET']) ? 'GET' : 'POST', $url, $options];
+                        $this->info = ['http_code' => $this->status];
+                        $this->error = '';
+                        $this->errno = 0;
+                        return $this->answer;
+                    }
+                };
+            }
+        };
+    }
+
+    /**
+     * JEDOMI-SEC-018: every request goes through Moodle's \curl with redirects off and TLS verified, so the proxy and
+     * the cURL security of the site apply and the bot token is never sent to another host.
+     */
+    public function test_requests_use_moodle_curl_without_redirects(): void {
+        $client = self::recording_client(200, '{"ok":true,"result":{"id":1,"username":"bot","first_name":"Bot"}}');
+
+        $this->assertSame(['id' => 1, 'username' => 'bot', 'first_name' => 'Bot'], $client->get_me());
+
+        $this->assertCount(1, $client->requests);
+        [$method, $url, $options] = $client->requests[0];
+        $this->assertSame('POST', $method);
+        $this->assertSame('https://api.telegram.org/bot123:secret-token/getMe', $url);
+        $this->assertFalse($options['CURLOPT_FOLLOWLOCATION']);
+        $this->assertSame(0, $options['CURLOPT_MAXREDIRS']);
+        $this->assertTrue($options['CURLOPT_SSL_VERIFYPEER']);
+        $this->assertSame(2, $options['CURLOPT_SSL_VERIFYHOST']);
+        $this->assertSame(30, $options['CURLOPT_TIMEOUT']);
+    }
+
+    /**
+     * JEDOMI-SEC-018: a file download that gets a redirect fails instead of following it with the token in the address.
+     */
+    public function test_download_with_a_redirect_fails(): void {
+        $this->resetAfterTest();
+        $client = new class ('123:secret-token') extends api_client {
+            /** @var array Options of the download request. */
+            public array $downloadoptions = [];
+
+            #[\Override]
+            protected function post(string $method, array $params): ?array {
+                return ['ok' => true, 'result' => ['file_path' => 'documents/file_1.pdf']];
+            }
+
+            #[\Override]
+            protected function new_curl(): \curl {
+                $client = $this;
+                return new class ($client) extends \curl {
+                    /** @var object Client that records the options. */
+                    private object $client;
+
+                    /**
+                     * Transport that answers every request with a redirect.
+                     *
+                     * @param object $client Recording client.
+                     */
+                    public function __construct(object $client) {
+                        parent::__construct();
+                        $this->client = $client;
+                    }
+
+                    #[\Override]
+                    protected function request($url, $options = []) {
+                        $this->client->downloadoptions = $options;
+                        $this->info = ['http_code' => 302, 'redirect_url' => 'https://attacker.example/steal'];
+                        $this->error = '';
+                        $this->errno = 0;
+                        return '';
+                    }
+                };
+            }
+        };
+
+        $this->assertNull($client->download_file('file-id'));
+        $this->assertFalse($client->downloadoptions['CURLOPT_FOLLOWLOCATION']);
+        $this->assertSame(0, $client->downloadoptions['CURLOPT_MAXREDIRS']);
+    }
+
+    /**
+     * JEDOMI-SEC-018: a download answered with 200 is saved to a temporary file.
+     */
+    public function test_download_saves_the_file(): void {
+        $this->resetAfterTest();
+        $client = new class ('123:secret-token') extends api_client {
+            #[\Override]
+            protected function post(string $method, array $params): ?array {
+                return ['ok' => true, 'result' => ['file_path' => 'documents/file_2.txt']];
+            }
+        };
+        \curl::mock_response('file content');
+
+        $path = $client->download_file('file-id');
+
+        $this->assertNotNull($path);
+        $this->assertSame('file content', file_get_contents($path));
+        unlink($path);
+    }
+
+    /**
+     * JEDOMI-SEC-018: a host blocked by curlsecurityblockedhosts is refused, so no request reaches it, and the bot
+     * token does not reach the site logs through the url_blocked event of \curl.
+     */
+    public function test_blocked_host_is_refused(): void {
+        global $CFG;
+        $this->resetAfterTest();
+        set_config('curlsecurityblockedhosts', 'api.telegram.org');
+        $client = new class ('123:secret-token') extends api_client {
+            /** @var int Transports created, that is requests about to be sent. */
+            public int $requests = 0;
+
+            #[\Override]
+            protected function new_curl(): \curl {
+                $this->requests++;
+                return parent::new_curl();
+            }
+        };
+        $logfile = $CFG->dataroot . '/local/jedomi/jedomi.log';
+        if (file_exists($logfile)) {
+            unlink($logfile);
+        }
+        $sink = $this->redirectEvents();
+
+        $this->assertNull($client->get_me());
+
+        $events = $sink->get_events();
+        $sink->close();
+        $this->assertSame(0, $client->requests, 'No request was sent to the blocked host');
+        $this->assertEmpty(array_filter($events, static fn($event) => $event instanceof \core\event\url_blocked));
+        $log = file_exists($logfile) ? (string) file_get_contents($logfile) : '';
+        $this->assertStringContainsString('blocked by the cURL security', $log);
+        $this->assertStringNotContainsString('secret-token', $log);
+    }
+
+    /**
+     * JEDOMI-SEC-018: a failed request never logs the bot token, even when the error quotes the address.
+     */
+    public function test_failure_never_logs_the_token(): void {
+        global $CFG;
+        $this->resetAfterTest();
+        $client = new class ('123:secret-token') extends api_client {
+            #[\Override]
+            protected function new_curl(): \curl {
+                return new class extends \curl {
+                    #[\Override]
+                    protected function request($url, $options = []) {
+                        $this->info = ['http_code' => 0];
+                        $this->errno = 6;
+                        $this->error = 'Could not resolve ' . $url;
+                        return $this->error;
+                    }
+                };
+            }
+        };
+        $logfile = $CFG->dataroot . '/local/jedomi/jedomi.log';
+        if (file_exists($logfile)) {
+            unlink($logfile);
+        }
+
+        $this->assertNull($client->get_me());
+
+        $log = file_exists($logfile) ? (string) file_get_contents($logfile) : '';
+        $this->assertStringContainsString('E002', $log);
+        $this->assertStringContainsString('[token]', $log);
+        $this->assertStringNotContainsString('secret-token', $log);
+    }
+
     /**
      * The request body separates fields with a plain "&" even though Moodle sets arg_separator.output to "&amp;".
      * MDL-CTR-009: the body of the Telegram calls separates the fields correctly.
@@ -47,14 +277,11 @@ final class api_client_test extends \advanced_testcase {
      * cannot block the caller for long.
      */
     public function test_requests_have_a_connect_timeout_and_a_total_timeout(): void {
-        $options = (new api_client('123:abc'))->curl_options('a=1');
+        $options = (new api_client('123:abc'))->curl_options();
 
-        $this->assertSame(api_client::CONNECT_TIMEOUT, $options[CURLOPT_CONNECTTIMEOUT]);
+        $this->assertSame(api_client::CONNECT_TIMEOUT, $options['CURLOPT_CONNECTTIMEOUT']);
         $this->assertSame(5, api_client::CONNECT_TIMEOUT);
-        $this->assertSame(30, $options[CURLOPT_TIMEOUT]);
-        $this->assertSame('a=1', $options[CURLOPT_POSTFIELDS]);
-        $this->assertTrue($options[CURLOPT_POST]);
-        $this->assertTrue($options[CURLOPT_RETURNTRANSFER]);
+        $this->assertSame(30, $options['CURLOPT_TIMEOUT']);
     }
 
     /**
@@ -65,12 +292,12 @@ final class api_client_test extends \advanced_testcase {
         $client = new api_client('123:abc');
 
         $client->set_timeout(10);
-        $this->assertSame(10, $client->curl_options('')[CURLOPT_TIMEOUT]);
-        $this->assertSame(5, $client->curl_options('')[CURLOPT_CONNECTTIMEOUT]);
+        $this->assertSame(10, $client->curl_options()['CURLOPT_TIMEOUT']);
+        $this->assertSame(5, $client->curl_options()['CURLOPT_CONNECTTIMEOUT']);
 
         $client->set_timeout(3);
-        $this->assertSame(3, $client->curl_options('')[CURLOPT_TIMEOUT]);
-        $this->assertSame(3, $client->curl_options('')[CURLOPT_CONNECTTIMEOUT]);
+        $this->assertSame(3, $client->curl_options()['CURLOPT_TIMEOUT']);
+        $this->assertSame(3, $client->curl_options()['CURLOPT_CONNECTTIMEOUT']);
     }
 
     /**
@@ -83,7 +310,7 @@ final class api_client_test extends \advanced_testcase {
 
             #[\Override]
             protected function post(string $method, array $params): ?array {
-                $this->timeouts[] = $this->curl_options('')[CURLOPT_TIMEOUT];
+                $this->timeouts[] = $this->curl_options()['CURLOPT_TIMEOUT'];
                 return ['ok' => true];
             }
         };

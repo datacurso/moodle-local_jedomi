@@ -259,10 +259,12 @@ $string['cli_backup_destination_outside_dataroot'] = 'La copia de seguridad solo
 $string['close'] = 'Cerrar (Esc)';
 $string['component_all'] = 'Todos los componentes';
 $string['config_key_blocked_msg'] = 'Esta clave de configuración está bloqueada por seguridad.';
+$string['config_key_not_allowed_msg'] = 'Este ajuste no está en la lista de ajustes que Jedomi puede cambiar. Cámbielo en su página de ajustes. Ajustes que Jedomi puede cambiar: {$a}.';
 $string['config_key_secret_msg'] = 'Este ajuste contiene un secreto (una contraseña, clave o token) y no se puede cambiar desde aquí: cámbielo en su página de ajustes, donde se guarda cifrado.';
 $string['config_load_error'] = 'No se pudo cargar el panel de Jedomi. Inténtelo de nuevo o, si el problema continúa, comuníquese con el administrador del sitio.';
 $string['config_load_retry'] = 'Reintentar';
 $string['config_updated_msg'] = 'Config \'{$a}\' actualizada correctamente.';
+$string['config_value_invalid_msg'] = 'El valor no es válido para el ajuste \'{$a}\'. No se cambió nada.';
 $string['confirm_btn_no'] = 'Cancelar';
 $string['confirm_btn_yes'] = 'Confirmar';
 $string['confirm_cancelled'] = 'Acción cancelada.';
@@ -436,6 +438,7 @@ $string['error_unknown_action'] = 'Acción desconocida: {$a}';
 $string['error_unknown_tool'] = 'Herramienta desconocida: {$a}';
 $string['error_value_range'] = 'Introduzca un valor entre {$a->min} y {$a->max}.';
 $string['error_voice_requires_audio'] = 'La conversación por voz necesita el procesamiento de audio: habilítelo también.';
+$string['error_ws_capability'] = 'Usted no tiene ninguna de las capacidades que requiere la función de servicio web {$a}.';
 $string['error_ws_describe_failed'] = 'ws_describe failed: {$a}';
 $string['error_ws_execute_failed'] = 'ws_execute failed: {$a}';
 $string['error_ws_restricted'] = 'Mientras haya cursos fuera de Jedomi, solo está disponible un conjunto reducido de '
@@ -493,6 +496,7 @@ $string['invalid_signature'] = 'Los permisos del chat no son válidos. Recargue 
 $string['jedomi:companion_api'] = 'Usar las funciones del servicio complementario de Jedomi';
 $string['jedomi:manageagents'] = 'Gestionar los agentes de Jedomi';
 $string['keyboard_shortcuts'] = 'Atajos de teclado: Alt+Mayús+J abre o cierra Jedomi, Alt+Mayús+N inicia una conversación nueva y Esc cierra el panel.';
+$string['link_external'] = 'Sitio externo, se abre en una ventana nueva';
 $string['link_type_admin'] = 'Administración';
 $string['link_type_assign'] = 'Tarea';
 $string['link_type_course'] = 'Curso';
@@ -846,10 +850,20 @@ $string['speech_voice'] = 'Voz';
 $string['speech_voice_help'] = 'Voz del modelo de voz elegido que lee las respuestas. Cada modelo tiene sus propias voces.';
 $string['spt_secret'] = 'Secreto del token de permisos';
 $string['spt_secret_help'] = 'Secreto usado para firmar los tokens de permisos del chat. Se genera automáticamente para este '
-    . 'sitio y se guarda en Moodle, por lo que no hace falta configurarlo. Cambiarlo invalida los tokens ya emitidos: los usuarios '
-    . 'deben recargar la página para seguir chateando.';
+    . 'sitio y se guarda en Moodle, cifrado, por lo que no hace falta configurarlo. Nunca se muestra: deje el campo vacío para '
+    . 'conservar el secreto actual o escriba uno nuevo para reemplazarlo. Cambiarlo invalida los tokens ya emitidos: los '
+    . 'usuarios deben recargar la página para seguir chateando.';
+$string['sql_activity_rejected'] = 'La consulta lee actividades, calificaciones o registros de un curso que sus permisos en '
+    . 'Moodle no le permiten ver (como una actividad oculta, una actividad que no puede ver o las calificaciones sin los permisos '
+    . 'del informe de calificaciones), por lo que no se ejecutó. Consulte las tablas de los demás tipos de actividad o '
+    . 'pida ayuda a un administrador.';
+$string['sql_blind_marking_rejected'] = 'La consulta lee quién envió o fue calificado en una tarea con envíos anónimos cuyas '
+    . 'identidades no se han revelado, por lo que no se ejecutó. Consulte la tarea sin los identificadores de los estudiantes '
+    . 'o revele primero las identidades en la tarea.';
 $string['sql_carriage_return_rejected'] = 'La consulta contiene un retorno de carro (\\r), por lo que no se ejecutó. '
     . 'Escriba los saltos de línea solo como \\n.';
+$string['sql_category_rejected'] = 'La consulta lee categorías de cursos y algunas están ocultas para usted, por lo que no '
+    . 'se ejecutó. Limite las categorías a las visibles (por ejemplo, WHERE cc.visible = 1).';
 $string['sql_construct_rejected'] = 'La consulta usa una sintaxis fuera del subconjunto de solo lectura permitido, por lo que no '
     . 'se ejecutó. Escriba un único SELECT con FROM, [LEFT] JOIN ... ON, condiciones WHERE unidas solo con AND (=, <>, <, >, '
     . 'IN (números), IS [NOT] NULL, LIKE \'texto\'), GROUP BY, HAVING, ORDER BY y LIMIT, y solo las funciones COUNT, SUM, '

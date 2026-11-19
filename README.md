@@ -205,6 +205,11 @@ webhook with a new secret. An update Telegram delivers again (same `update_id`) 
 The bot token is stored encrypted with the encryption key of the site, kept in dataroot; the 1.7.0 upgrade encrypts a
 token saved before again with that key.
 
+The other secrets of Jedomi are stored encrypted with the same key since 1.8.0: the webhook secret, the secret that
+signs the chat permission tokens and the HMAC secret of the companion web service. The 1.8.0 upgrade encrypts the
+values saved before in clear text without changing them. The permission token secret is never shown in the General
+tab: leave the field empty to keep it, or type a new one to replace it.
+
 ## Telegram link security
 
 - **Expiry**: a link unused for 30 days expires. The next message tells the user to link again from the profile, and
@@ -241,7 +246,11 @@ logged with their class and error code, never their message, which can quote a q
 generic message with a reference that finds the entry.
 
 Changes of the course, privacy and Telegram role settings, and settings written by the companion web service
-(`jedomi_set_site_config`), also appear in the "Config changes" report of Moodle.
+(`jedomi_set_site_config`), also appear in the "Config changes" report of Moodle. The companion web service writes only
+an allowlist of presentation and course default settings (site names, default timezone, country, city, language and
+first day of the week, defaults of new courses), each checked against its type of value; any other setting, including
+every setting of an AI provider of Moodle (`aiprovider_*`) and of Jedomi itself, is refused with the list of the settings
+it may change.
 
 ## Database queries and their limits
 

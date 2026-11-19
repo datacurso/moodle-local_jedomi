@@ -928,6 +928,8 @@ class webhook_handler {
             'callbackid' => $callbackid,
             'chatid' => $chatid,
             'actionjson' => json_encode(['name' => $name, 'params' => $args, 'userid' => $userid], JSON_UNESCAPED_UNICODE),
+            // Course the role is computed in when it is confirmed, decided here from the server's checks (unit 7b).
+            'courseid' => pending_action_service::course_of_args($userid, $args),
             'timecreated' => time(),
         ]);
 
@@ -1215,7 +1217,15 @@ class webhook_handler {
         $USER = $user;
         pending_action_service::action_event(true, (string) ($action['name'] ?? ''), 'telegram', (int) $user->id);
         try {
-            $result = self::execute_tool((string) ($action['name'] ?? ''), (array) ($action['params'] ?? []), (int) $user->id);
+            $result = self::execute_tool(
+                (string) ($action['name'] ?? ''),
+                (array) ($action['params'] ?? []),
+                (int) $user->id,
+                '',
+                [],
+                null,
+                (int) ($pending->courseid ?? 0)
+            );
         } catch (\Throwable $e) {
             return get_string('pending_action_failed', 'local_jedomi');
         }
@@ -1228,7 +1238,7 @@ class webhook_handler {
     }
 
     /**
-     * Self-ping: fire a cURL to our own webhook so a new PHP-FPM worker
+     * Self-ping: fire a request to our own webhook so a new PHP-FPM worker
      * continues the checkpointed tool loop. The webhook responds 200 OK
      * immediately (fastcgi_finish_request), so this returns in <1s.
      *
@@ -1236,48 +1246,43 @@ class webhook_handler {
      */
     private static function self_ping(string $chatid): void {
         $request = self::self_ping_request($chatid);
-        $ch = curl_init($request['url']);
-        curl_setopt_array($ch, $request['options']);
-        curl_exec($ch);
-        $err = curl_error($ch);
-        curl_close($ch);
+        // The address is the site itself, built from wwwroot only: the cURL security of the site, which blocks private
+        // and local addresses by default, would stop the ping of a site on such an address. The proxy still applies.
+        $curl = new \curl(['ignoresecurity' => true]);
+        $curl->setHeader($request['headers']);
+        $curl->post($request['url'], '{}', $request['options']);
 
-        if ($err) {
-            \local_jedomi_log('[TELEGRAM SELF-PING] cURL error: ' . $err . ' for chat=' . self::chatref($chatid));
+        if (!empty($curl->errno) || (string) $curl->error !== '') {
+            \local_jedomi_log('[TELEGRAM SELF-PING] cURL error: ' . $curl->error . ' for chat=' . self::chatref($chatid));
         }
     }
 
     /**
-     * Address and cURL options of the self-ping to our own webhook.
+     * Address, headers and \curl options of the self-ping to our own webhook.
      *
      * The secret goes in the same header Telegram uses, never in the address, and TLS is verified (JEDOMI-SEC-004).
+     * Redirects are not followed, so the secret never reaches another address (JEDOMI-SEC-018).
      *
      * @param string $chatid Telegram chat id whose tool loop continues.
-     * @return array ['url' => string, 'options' => array of cURL options].
+     * @return array ['url' => string, 'headers' => string[], 'options' => array of \curl options keyed by name].
      */
     public static function self_ping_request(string $chatid): array {
         global $CFG;
+        require_once($CFG->libdir . '/filelib.php');
         $secret = \local_jedomi\telegram\manager::get_webhook_secret();
         $stateself = session::get_context('tool_loop_' . $chatid);
         $sessiongen = (int) ($stateself['session_gen'] ?? 0);
         $url = $CFG->wwwroot . '/local/jedomi/telegram_webhook.php?internal_ping=1&chat_id=' . urlencode($chatid)
             . '&session_gen=' . $sessiongen;
         $options = [
-            CURLOPT_TIMEOUT        => 5,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_SSL_VERIFYPEER => true,
-            CURLOPT_SSL_VERIFYHOST => 2,
-            CURLOPT_POST           => true,
-            CURLOPT_POSTFIELDS     => '{}',
-            CURLOPT_HTTPHEADER     => ['Content-Type: application/json', 'X-Telegram-Bot-Api-Secret-Token: ' . $secret],
+            'CURLOPT_TIMEOUT'        => 5,
+            'CURLOPT_SSL_VERIFYPEER' => true,
+            'CURLOPT_SSL_VERIFYHOST' => 2,
+            'CURLOPT_FOLLOWLOCATION' => false,
+            'CURLOPT_MAXREDIRS'      => 0,
         ];
-        // The certificate authorities Moodle uses for its own requests, when the site has them.
-        require_once($CFG->libdir . '/filelib.php');
-        $cacert = \curl::get_cacert();
-        if (!empty($cacert)) {
-            $options[CURLOPT_CAINFO] = $cacert;
-        }
-        return ['url' => $url, 'options' => $options];
+        $headers = ['Content-Type: application/json', 'X-Telegram-Bot-Api-Secret-Token: ' . $secret];
+        return ['url' => $url, 'headers' => $headers, 'options' => $options];
     }
 
     /**
@@ -2226,6 +2231,7 @@ class webhook_handler {
      * @param array $courseidsowned Course ids the user manages
      * @param anonymizer|null $anonymizer Anonymiser of the conversation; the rows of a database query are anonymised
      *                                    by column name with it before they are formatted.
+     * @param int $courseid Course stored with a confirmed held action: the role is computed in it; 0 outside a course.
      * @return string Tool execution result formatted for Telegram
      */
     public static function execute_tool(
@@ -2234,13 +2240,14 @@ class webhook_handler {
         int $userid = 0,
         string $role = '',
         array $courseidsowned = [],
-        ?anonymizer $anonymizer = null
+        ?anonymizer $anonymizer = null,
+        int $courseid = 0
     ): string {
         global $DB, $CFG;
 
         // Re-derive the authoritative role from $userid — never trust the
         // caller-supplied $role string for authorization decisions.
-        $role = self::derive_authoritative_role($userid);
+        $role = self::derive_authoritative_role($userid, $courseid);
 
         switch ($name) {
             case 'describe_table':
@@ -2421,8 +2428,8 @@ class webhook_handler {
                 if (empty($query)) {
                     return "Search query required.";
                 }
-                // Only the functions of the list of the role, the same list that gates the execution.
-                $allowed = \local_jedomi\local\ws_runner::searchable_functions($role);
+                // Only the functions the role may call: its list, the course rule and the declared capabilities.
+                $allowed = \local_jedomi\local\ws_runner::searchable_functions($role, $userid);
                 if ($allowed === []) {
                     return get_string('note_ws_none_configured', 'local_jedomi');
                 }
@@ -2450,7 +2457,7 @@ class webhook_handler {
                 if (empty($wsname)) {
                     return "Web service name required.";
                 }
-                if (!\local_jedomi\local\ws_runner::role_allows($role, (string) $wsname)) {
+                if (!\local_jedomi\local\ws_runner::describable($role, (string) $wsname, $userid)) {
                     return json_encode(['error' => 'permission_denied: function not in allowlist']);
                 }
                 $info = ws_indexer::describe($wsname);
@@ -2648,102 +2655,6 @@ class webhook_handler {
     }
 
     /**
-     * Execute a pending action directly (bypass LLM).
-     *
-     * Internal: exposed as a testable entry point; not a stable plugin API.
-     *
-     * @param array $action Pending action payload (action name and params)
-     * @param string $chatid Telegram chat id
-     * @return string Result message formatted for Telegram
-     */
-    public static function execute_pending_action(array $action, string $chatid): string {
-        global $DB;
-
-        $toolname = $action['name'] ?? '';
-        $params = $action['params'] ?? [];
-
-        // Resolve user role from chat link for permission checks.
-        $link = self::get_link_by_chat_id($chatid);
-        $role = $link ? \local_jedomi_get_user_role_for_user((int) $link->userid) : '';
-
-        // Map action names to actual execution.
-        switch ($toolname) {
-            case 'cache_purge':
-            case 'purge_caches':
-                if ($role !== 'admin') {
-                    return "❌ Permission denied. Admin only.";
-                }
-                purge_all_caches();
-                return "✅ <b>Cache purged</b> successfully.";
-
-            case 'run_task':
-            case 'cron_run':
-                if ($role !== 'admin') {
-                    return "❌ Permission denied. Admin only.";
-                }
-                $taskname = $params['task'] ?? $params['task_name'] ?? '';
-                if (empty($taskname)) {
-                    return "❌ Task name required.";
-                }
-                // Block tasks that send communications or could cause side effects
-                // when run out-of-band via Telegram.
-                $blockedtasks = [
-                    '\\core\\task\\send_failed_login_notifications_task',
-                    '\\core\\task\\send_new_user_passwords_task',
-                    '\\core\\task\\send_login_notifications_task',
-                    '\\core\\task\\send_user_password_reset_notifications_task',
-                    '\\core\\task\\send_sms_to_user_task',
-                    '\\core\\task\\message_cleanup_task',
-                ];
-                foreach ($blockedtasks as $blocked) {
-                    if (strcasecmp($taskname, $blocked) === 0) {
-                        return "❌ Task <b>" . s($taskname) . "</b> is blocked for Telegram execution.";
-                    }
-                }
-                $task = \core\task\manager::get_scheduled_task($taskname);
-                if (!$task) {
-                    return "❌ Task not found: " . s($taskname);
-                }
-                $task->execute();
-                return "✅ Task <b>" . s($taskname) . "</b> executed.";
-
-            case 'get_config':
-                if ($role !== 'admin') {
-                    return "❌ Permission denied. Admin only.";
-                }
-                $key = $params['key'] ?? '';
-                // Allowlist matching get_site_config pattern: only non-sensitive keys.
-                $safekeys = [
-                    'enabled', 'model', 'version',
-                    'anonymization_level',
-                    'course_mode', 'course_list',
-                    'telegram_enabled', 'telegram_bot_username', 'telegram_bot_firstname',
-                    'telegram_bot_verified', 'telegram_rate_limit', 'telegram_cooldown',
-                    'telegram_max_turns', 'telegram_gateway_timeout',
-                    'telegram_hidden_roles',
-                ];
-                if (!in_array($key, $safekeys, true)) {
-                    return "❌ Config key not in allowlist: " . s($key);
-                }
-                $value = get_config('local_jedomi', $key);
-                if ($value === false) {
-                    return "❌ Config key not found: " . s($key);
-                }
-                return "⚙️ <b>" . s($key) . "</b> = " . s($value);
-
-            default:
-                // Try to execute via tool execution system.
-                try {
-                    $result = self::execute_tool($toolname, $params, 0, '', []);
-                    return $result;
-                } catch (\Exception $e) {
-                    return "❌ Action <b>" . s($toolname) . "</b> not implemented.\n\n"
-                        . s(\local_jedomi\local\safe_error::for_model($e));
-                }
-        }
-    }
-
-    /**
      * Check if text has the exact format of a link code: six characters of the code alphabet with at least one digit
      * (see manager::generate_link_code()). A greeting or another short word is never taken as a code.
      *
@@ -2885,13 +2796,14 @@ class webhook_handler {
      * It is computed on every call, as in the web chat, so a role removed from the user stops applying at once.
      *
      * @param  int $userid Moodle user id. <= 0 always denies (returns '').
+     * @param  int $courseid Course stored server side with a held action; 0 outside a course.
      * @return string The authoritative role ('admin'|'manager'|'teacher'|'student'|'').
      */
-    private static function derive_authoritative_role(int $userid): string {
+    private static function derive_authoritative_role(int $userid, int $courseid = 0): string {
         if ($userid <= 0) {
             return '';
         }
-        return \local_jedomi_get_user_role_for_user($userid);
+        return pending_action_service::role_in_course($userid, $courseid);
     }
 
     /**

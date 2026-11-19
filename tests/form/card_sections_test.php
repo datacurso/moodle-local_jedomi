@@ -62,6 +62,8 @@ final class card_sections_test extends \advanced_testcase {
             'General' => [general_settings_form::class, [], [
                 ['security_heading', 'security_heading_help', 'red'],
                 ['profiler_heading', 'profiler_heading_help', 'amber'],
+                ['sql_heading', 'sql_heading_help', 'blue'],
+                ['chat_limit_heading', 'chat_limit_heading_help', 'green'],
             ]],
             'Course availability' => [course_settings_form::class, [], [
                 ['course_availability_heading', 'course_availability_heading_help', 'green'],

@@ -247,9 +247,12 @@ final class webhook_secret_test extends \advanced_testcase {
         $this->assertStringNotContainsString($secret, $request['url']);
         $this->assertStringContainsString('internal_ping=1', $request['url']);
         $options = $request['options'];
-        $this->assertTrue($options[CURLOPT_SSL_VERIFYPEER]);
-        $this->assertSame(2, $options[CURLOPT_SSL_VERIFYHOST]);
-        $this->assertContains('X-Telegram-Bot-Api-Secret-Token: ' . $secret, $options[CURLOPT_HTTPHEADER]);
+        $this->assertTrue($options['CURLOPT_SSL_VERIFYPEER']);
+        $this->assertSame(2, $options['CURLOPT_SSL_VERIFYHOST']);
+        $this->assertContains('X-Telegram-Bot-Api-Secret-Token: ' . $secret, $request['headers']);
+        // JEDOMI-SEC-018: sent with Moodle's \curl, which never follows a redirect with the secret.
+        $this->assertFalse($options['CURLOPT_FOLLOWLOCATION']);
+        $this->assertSame(0, $options['CURLOPT_MAXREDIRS']);
     }
 
     /**

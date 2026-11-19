@@ -348,8 +348,8 @@ final class upgradelib_test extends \advanced_testcase {
             'url' => \local_jedomi\telegram\manager::get_webhook_url(),
             'secret_token' => $newsecret,
         ]]], $client->requests);
-        $this->assertSame(10, $client->curl_options('')[CURLOPT_TIMEOUT]);
-        $this->assertSame(5, $client->curl_options('')[CURLOPT_CONNECTTIMEOUT]);
+        $this->assertSame(10, $client->curl_options()['CURLOPT_TIMEOUT']);
+        $this->assertSame(5, $client->curl_options()['CURLOPT_CONNECTTIMEOUT']);
         $this->assertFalse(\local_jedomi\telegram\manager::needs_webhook_registration());
         $this->assertSame([], \core\task\manager::get_adhoc_tasks(\local_jedomi\task\register_telegram_webhook::class));
         $this->expectOutputString('');
@@ -630,12 +630,60 @@ final class upgradelib_test extends \advanced_testcase {
      * JEDOMI-SEC-010: without secrets saved the upgrade saves nothing.
      */
     public function test_upgrade_without_secrets_saves_nothing(): void {
-        unset_config('custom_api_key', 'local_jedomi');
-        unset_config('telegram_bot_token', 'local_jedomi');
+        $names = ['custom_api_key', 'telegram_bot_token', 'hmac_secret', 'spt_secret', 'telegram_webhook_secret'];
+        foreach ($names as $name) {
+            unset_config($name, 'local_jedomi');
+        }
 
         local_jedomi_upgrade_encrypt_secrets();
 
-        $this->assertFalse(get_config('local_jedomi', 'custom_api_key'));
-        $this->assertFalse(get_config('local_jedomi', 'telegram_bot_token'));
+        foreach ($names as $name) {
+            $this->assertFalse(get_config('local_jedomi', $name), $name);
+        }
+    }
+
+    /**
+     * JEDOMI-SEC-010: the upgrade encrypts the companion HMAC secret, the permission token secret and the Telegram
+     * webhook secret saved in clear text, keeps their values and leaves encrypted values as they are.
+     */
+    public function test_upgrade_encrypts_the_signing_secrets(): void {
+        $secrets = ['hmac_secret' => str_repeat('ab', 32), 'spt_secret' => str_repeat('cd', 32),
+            'telegram_webhook_secret' => str_repeat('ef', 16)];
+        foreach ($secrets as $name => $plain) {
+            set_config($name, $plain, 'local_jedomi');
+        }
+
+        local_jedomi_upgrade_encrypt_secrets();
+
+        $stored = [];
+        foreach ($secrets as $name => $plain) {
+            $stored[$name] = (string) get_config('local_jedomi', $name);
+            $this->assertTrue(\local_jedomi\local\secret_store::is_encrypted($stored[$name]), $name);
+            $this->assertStringNotContainsString($plain, $stored[$name]);
+            $this->assertSame($plain, \local_jedomi\local\secret_store::get($name));
+        }
+        $this->assertSame($secrets['telegram_webhook_secret'], \local_jedomi\telegram\manager::get_webhook_secret());
+
+        local_jedomi_upgrade_encrypt_secrets();
+        foreach ($stored as $name => $value) {
+            $this->assertSame($value, get_config('local_jedomi', $name), "$name: an encrypted value is left as it is");
+        }
+    }
+
+    /**
+     * JEDOMI-SEC-010: the upgrade step of 1.8.0 encrypts the signing secrets saved in clear text.
+     */
+    public function test_upgrade_step_encrypts_the_signing_secrets(): void {
+        global $CFG;
+        require_once($CFG->libdir . '/upgradelib.php');
+        require_once($CFG->dirroot . '/local/jedomi/db/upgrade.php');
+        set_config('hmac_secret', 'plain-hmac-before-upgrade', 'local_jedomi');
+        set_config('version', 2026111905, 'local_jedomi');
+
+        $this->assertTrue(xmldb_local_jedomi_upgrade(2026111905));
+
+        $stored = (string) get_config('local_jedomi', 'hmac_secret');
+        $this->assertTrue(\local_jedomi\local\secret_store::is_encrypted($stored));
+        $this->assertSame('plain-hmac-before-upgrade', \local_jedomi\local\secret_store::get('hmac_secret'));
     }
 }

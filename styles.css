@@ -803,6 +803,16 @@
     font-size: 11px;
     opacity: 0.7;
 }
+/* Links to other sites show their host, so a link written by the AI never looks like a page of the site. */
+.jedomi-external-badge {
+    font-size: 11px;
+    padding: 0 4px;
+    margin-left: 2px;
+    border: 1px dashed currentColor;
+    border-radius: 4px;
+    opacity: 0.8;
+    white-space: nowrap;
+}
 
 /* ── Drop zone overlay ────────────────────────────────────────────────────── */
 .jedomi-dropzone {

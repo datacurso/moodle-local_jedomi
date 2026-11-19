@@ -247,6 +247,37 @@ final class preview_runner_test extends \advanced_testcase {
     }
 
     /**
+     * Phase 23 unit 6: a preview answered from its cache sends the cached answer anonymised with the placeholders of the
+     * cached run, even when the identifier it shows changed since; the reformulated answer gets the real values.
+     */
+    public function test_cached_preview_replay_sends_the_cached_answer_anonymised(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $student = $this->getDataGenerator()->create_user(['idnumber' => 'ZX9-4471']);
+        $fake = new fake_ai_client();
+        $fake->enqueue_tool_calls([
+            ['id' => 'call_1', 'type' => 'function', 'function' => ['name' => 'execute_sql',
+                'arguments' => json_encode(['query' => 'SELECT idnumber FROM {user} WHERE id = ' . (int) $student->id])]],
+        ]);
+        $fake->enqueue_text('The code is ZX9-4471.');
+        $fake->enqueue_text('The code is still the same.');
+        client::set_instance_for_testing($fake);
+        $first = preview_runner::run('What is the code of the student?', (int) get_admin()->id);
+        $this->assertStringContainsString('ZX9-4471', $first['answer'], 'Control: the creator sees the real value');
+        $DB->set_field('user', 'idnumber', 'QQ7-0001', ['id' => $student->id]);
+
+        $again = preview_runner::run('What is the code of the student?', (int) get_admin()->id);
+
+        $this->assertTrue($again['reformulated'] ?? false, 'Control: the cached plan was replayed');
+        $reform = end($fake->calls)['messages'];
+        $sent = json_encode($reform, JSON_UNESCAPED_UNICODE);
+        $this->assertStringNotContainsString('ZX9-4471', $sent, 'The cached answer reaches the AI anonymised');
+        $this->assertStringNotContainsString('QQ7-0001', $sent, 'The fresh results reach the AI anonymised');
+        $this->assertMatchesRegularExpression('/Previous answer:\nThe code is \[id_\d+\]\./', $reform[1]['content']);
+    }
+
+    /**
      * MDL-INT-026: a preview never runs an action that changes data without confirmation.
      */
     public function test_preview_does_not_run_writing_actions_without_confirmation(): void {

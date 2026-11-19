@@ -589,4 +589,125 @@ final class anonymizer_test extends \advanced_testcase {
         $this->assertStringNotContainsString('[Email 1]', $sent[0]['content']);
         $this->assertSame('Mail ana.diaz@example.com about [Email 1]', $other->restore($sent[0]['content']));
     }
+
+    /**
+     * JEDOMI-SEC-005: a web address of another site keeps its placeholders in the answer, so a link the AI was asked to
+     * write by untrusted content carries no real value; the rest of the answer and the addresses of the site get them.
+     */
+    public function test_placeholders_in_external_addresses_are_not_restored(): void {
+        global $CFG;
+        $this->resetAfterTest();
+        $map = ['[person_1]' => 'Ximena', '[email_1]' => 'xq@example.com'];
+        $anonymizer = anonymizer::from_map($map, anonymizer::LEVEL_BASIC);
+        $site = $CFG->wwwroot . '/user/profile.php?name=';
+        $sitehost = parse_url($CFG->wwwroot, PHP_URL_HOST);
+
+        $external = [
+            'https://attacker.example/r?n=[person_1]',
+            'http://attacker.example/[Person 1]x',
+            '//attacker.example/r?n=[person_1]',
+            'https:/attacker.example/r?n=[person_1]',
+            '/\\attacker.example/r?n=[person_1]',
+            'attacker.example/r?n=[person_1]',
+            'https://[person_1].attacker.example/',
+            'https://' . $sitehost . '@attacker.example/r?n=[person_1]',
+            'https://attacker.example\\@' . $sitehost . '/r?n=[person_1]',
+            'https://attacker.example/?n=\\[person\\_1\\]&e=[email_1]',
+        ];
+        foreach ($external as $url) {
+            $answer = "See [the feedback]({$url}) of [person_1].";
+            $this->assertSame(
+                "See [the feedback]({$url}) of Ximena.",
+                $anonymizer->restore($answer),
+                "No real value in {$url}"
+            );
+        }
+
+        $this->assertSame(
+            "Profile of Ximena: [Ximena]({$site}Ximena) and <a href=\"https://attacker.example/?n=[email_1]\">Ximena</a>",
+            $anonymizer->restore(
+                "Profile of [person_1]: [[person_1]]({$site}[person_1]) and "
+                    . '<a href="https://attacker.example/?n=[email_1]">[person_1]</a>'
+            )
+        );
+        $this->assertSame(
+            'Ximena wrote from /user/view.php?n=Ximena',
+            $anonymizer->restore('[person_1] wrote from /user/view.php?n=[person_1]')
+        );
+        $this->assertSame('Mail xq@example.com today', $anonymizer->restore('Mail [email_1] today'));
+    }
+
+    /**
+     * JEDOMI-SEC-005: tool arguments run on the site, so an address in them still gets the real values.
+     */
+    public function test_tool_arguments_keep_restoring_addresses(): void {
+        $this->resetAfterTest();
+        $anonymizer = anonymizer::from_map(['[person_1]' => 'Ximena'], anonymizer::LEVEL_BASIC);
+
+        $this->assertSame(
+            ['url' => 'https://example.org/Ximena'],
+            $anonymizer->restore_value(['url' => 'https://example.org/[person_1]'])
+        );
+    }
+
+    /**
+     * Phase 23 unit 6: at the Basic level an identifier shown in a previous answer goes back to the AI as its placeholder
+     * in a later turn; only values already in the map are replaced, as whole words.
+     *
+     * @return void
+     */
+    public function test_history_gets_the_placeholders_of_the_map(): void {
+        $this->resetAfterTest();
+        $anonymizer = new anonymizer(anonymizer::LEVEL_BASIC);
+        $result = $anonymizer->anonymize_tool_result(json_encode(['idnumber' => 'ZX9-4471', 'phone1' => '555123']));
+        $this->assertSame(['idnumber' => '[id_1]', 'phone1' => '[id_2]'], json_decode($result, true));
+        $answer = $anonymizer->restore('The code of the student is [id_1], phone [id_2].');
+        $continued = anonymizer::from_map($anonymizer->export_map(), anonymizer::LEVEL_BASIC);
+
+        $messages = $continued->anonymize_messages([
+            ['role' => 'user', 'content' => 'Show the code'],
+            ['role' => 'assistant', 'content' => $answer],
+            ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Is ZX9-4471 right? Not ZX9-44712 nor 5551234']]],
+        ]);
+
+        $this->assertSame('The code of the student is [id_1], phone [id_2].', $messages[1]['content']);
+        $this->assertSame('Is [id_1] right? Not ZX9-44712 nor 5551234', $messages[2]['content'][0]['text']);
+        $this->assertStringNotContainsString('ZX9-4471', $continued->anonymize_history_text('Code ZX9-4471'));
+        $this->assertSame('The code of the student is ZX9-4471, phone 555123.', $continued->restore($messages[1]['content']));
+    }
+
+    /**
+     * Phase 23 unit 6: short values of the map only replace whole words, and values under three characters are never
+     * looked for in the history, so common text around them is kept.
+     *
+     * @return void
+     */
+    public function test_history_short_values_only_match_whole_words(): void {
+        $this->resetAfterTest();
+        $anonymizer = anonymizer::from_map(['[person_1]' => 'Ann', '[id_1]' => '12'], anonymizer::LEVEL_BASIC);
+
+        $this->assertSame(
+            'Annual report for [person_1]: 12 tasks, Anne and Joann agree.',
+            $anonymizer->anonymize_history_text('Annual report for Ann: 12 tasks, Anne and Joann agree.')
+        );
+    }
+
+    /**
+     * Phase 23 unit 6: a real value with carriage returns restored in a query gets plain line breaks, so the guard does
+     * not refuse a correct query.
+     *
+     * @return void
+     */
+    public function test_restore_sql_normalises_carriage_returns(): void {
+        $this->resetAfterTest();
+        $anonymizer = anonymizer::from_map(['[id_1]' => "Main St 1\r\nFloor 2\rBack"], anonymizer::LEVEL_BASIC);
+        $where = 'SELECT id FROM {user} WHERE address = ';
+
+        foreach (['postgres', 'mysql'] as $family) {
+            $this->assertSame($where . "'Main St 1\nFloor 2\nBack'", $anonymizer->restore_sql($where . '[id_1]', $family));
+            $this->assertSame($where . "'Main St 1\nFloor 2\nBack'", $anonymizer->restore_sql($where . "'[id_1]'", $family));
+        }
+        $this->assertSame(['address' => "Main St 1\r\nFloor 2\rBack"], $anonymizer->restore_value(['address' => '[id_1]']),
+            'Other arguments keep the value as it is');
+    }
 }

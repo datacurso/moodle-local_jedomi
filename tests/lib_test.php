@@ -232,7 +232,7 @@ final class lib_test extends \advanced_testcase {
         $this->assertNotEmpty($result['signature']);
 
         // Verify signature: reconstruct payload without signature and check HMAC.
-        $staticsecret = get_config('local_jedomi', 'spt_secret') ?: 'jedomi-spt-secret';
+        $staticsecret = local_jedomi_get_spt_secret();
         $signature = $result['signature'];
         unset($result['signature']);
 
@@ -804,7 +804,7 @@ final class lib_test extends \advanced_testcase {
             $secret = local_jedomi_get_spt_secret();
             $this->assertNotSame($old, $secret);
             $this->assertGreaterThanOrEqual(64, strlen($secret));
-            $this->assertSame($secret, get_config('local_jedomi', 'spt_secret'), 'The new secret is saved');
+            $this->assertSame($secret, \local_jedomi\local\secret_store::get('spt_secret'), 'The new secret is saved');
         }
         set_config('spt_secret', str_repeat('c0ffee', 12), 'local_jedomi');
         $this->assertSame(str_repeat('c0ffee', 12), local_jedomi_get_spt_secret(), 'An own secret is kept');

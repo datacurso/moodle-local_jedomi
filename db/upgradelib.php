@@ -278,8 +278,7 @@ function local_jedomi_upgrade_agentwrites_email_default(): void {
  */
 function local_jedomi_upgrade_encrypt_secrets(): void {
     \local_jedomi\telegram\manager::reencrypt_legacy_bot_token();
-    $stored = (string) get_config('local_jedomi', 'custom_api_key');
-    if ($stored !== '' && !\local_jedomi\local\secret_store::is_encrypted($stored)) {
-        \local_jedomi\local\secret_store::set('custom_api_key', $stored);
+    foreach (['custom_api_key', 'hmac_secret', 'spt_secret', 'telegram_webhook_secret'] as $name) {
+        \local_jedomi\local\secret_store::encrypt_legacy($name);
     }
 }

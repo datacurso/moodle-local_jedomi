@@ -100,7 +100,7 @@ class ws_describe_tool implements agent_tool {
 
         try {
             $role = \local_jedomi_get_user_role_for_user($this->userid);
-            if (!\local_jedomi\local\ws_runner::role_allows($role, $wsname)) {
+            if (!\local_jedomi\local\ws_runner::describable($role, $wsname, $this->userid)) {
                 return json_encode(['error' => 'WS not in allowlist for role: ' . $role]);
             }
             $info = ws_indexer::describe($wsname);

@@ -47,9 +47,9 @@ class hook_callbacks {
     public static function before_footer(before_footer_html_generation $hook): void {
         global $PAGE;
 
-        // Auto-generate the HMAC secret for the CompanionWS on first boot.
+        // Auto-generate the HMAC secret for the CompanionWS on first boot, encrypted (JEDOMI-SEC-010).
         if (!get_config('local_jedomi', 'hmac_secret')) {
-            set_config('hmac_secret', bin2hex(random_bytes(32)), 'local_jedomi');
+            \local_jedomi\local\secret_store::set('hmac_secret', bin2hex(random_bytes(32)));
         }
 
         if (!isloggedin() || isguestuser()) {

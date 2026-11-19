@@ -238,4 +238,105 @@ final class execute_sql_test extends \advanced_testcase {
         }
         $this->fail('A query reading sensitive tables must be rejected; it returned ' . $result['row_count'] . ' row(s)');
     }
+
+    /**
+     * A user with the companion API permission at the site level who manages course A only, and course B with a graded
+     * student and a grade item named SECRET-ITEM-B.
+     *
+     * @return array{a: string, b: string}
+     */
+    private function companion_teacher(): array {
+        global $DB;
+        $gen = $this->getDataGenerator();
+        $a = $gen->create_course();
+        $b = $gen->create_course();
+        $student = $gen->create_and_enrol($b, 'student');
+        $item = $gen->create_grade_item(['courseid' => $b->id, 'itemname' => 'SECRET-ITEM-B']);
+        $DB->insert_record('grade_grades', (object) ['itemid' => $item->id, 'userid' => $student->id,
+            'finalgrade' => 66.0, 'timecreated' => time(), 'timemodified' => time()]);
+        $teacher = $gen->create_and_enrol($a, 'editingteacher');
+        $system = \context_system::instance();
+        $roleid = create_role('Companion client', 'companionclient', '');
+        assign_capability('local/jedomi:companion_api', CAP_ALLOW, $roleid, $system->id, true);
+        role_assign($roleid, $teacher->id, $system->id);
+        accesslib_clear_all_caches_for_unit_testing();
+        $this->setUser($teacher);
+        return ['a' => (string) $a->id, 'b' => (string) $b->id];
+    }
+
+    /**
+     * Parameters that the database could read differently from the guard, as the companion client sends them.
+     *
+     * @return array<string, array{0: string, 1: string}>
+     */
+    public static function companion_ambiguous_params_provider(): array {
+        $grades = 'SELECT gi.itemname, gg.finalgrade FROM {grade_items} gi JOIN {grade_grades} gg ON gg.itemid = gi.id '
+            . 'WHERE gi.courseid = :c';
+        $positional = 'SELECT gi.itemname FROM {grade_items} gi WHERE gi.courseid = ?';
+        return [
+            'plain key and colon key' => [$grades, 'colon'],
+            'colon key alone' => [$grades, 'colononly'],
+            'uppercase key' => [$grades, 'uppercase'],
+            'numeric key for a named placeholder' => [$grades, 'numeric'],
+            'extra value' => [$positional, 'extra'],
+            'mixed question mark and named placeholder' => [
+                'SELECT gi.itemname FROM {grade_items} gi WHERE gi.courseid = ? AND gi.courseid = :c',
+                'mixedplaceholders',
+            ],
+            'placeholder written twice' => [
+                'SELECT gi.itemname FROM {grade_items} gi WHERE gi.courseid = :c AND gi.courseid = :c',
+                'plain',
+            ],
+        ];
+    }
+
+    /**
+     * JEDOMI-SEC-015 (regression of the companion web service): ambiguous parameters are refused with
+     * sql_params_rejected and never return the grades of course B.
+     *
+     * @dataProvider companion_ambiguous_params_provider
+     * @param string $sql Query.
+     * @param string $shape Shape of the parameters.
+     */
+    public function test_companion_refuses_ambiguous_params(string $sql, string $shape): void {
+        $this->resetAfterTest();
+        $ids = $this->companion_teacher();
+        $params = [
+            'colon' => ['c' => $ids['b'], ':c' => $ids['a']],
+            'colononly' => [':c' => $ids['a']],
+            'uppercase' => ['C' => $ids['a']],
+            'numeric' => [0 => $ids['a']],
+            'extra' => [$ids['a'], $ids['b']],
+            'mixedplaceholders' => [$ids['a'], 'c' => $ids['a']],
+            'plain' => ['c' => $ids['a']],
+        ][$shape];
+
+        try {
+            $result = execute_sql::execute($sql, $params, '', 0, '', true);
+            $this->fail('Ambiguous parameters must be refused; got ' . json_encode($result['rows']));
+        } catch (\moodle_exception $e) {
+            $this->assertSame('sql_params_rejected', $e->errorcode);
+            $this->assertStringNotContainsString('SECRET-ITEM-B', $e->getMessage() . ($e->debuginfo ?? ''));
+        }
+    }
+
+    /**
+     * JEDOMI-SEC-015: through the companion web service the plain parameters of the own course run, and course B given
+     * with a numbered key is checked as course B and refused.
+     */
+    public function test_companion_checks_the_params_it_runs_with(): void {
+        $this->resetAfterTest();
+        $ids = $this->companion_teacher();
+        $sql = 'SELECT gi.itemname FROM {grade_items} gi WHERE gi.courseid = ?';
+
+        $result = execute_sql::execute($sql, [$ids['a']], '', 0, '', true);
+        $this->assertSame(0, $result['row_count']);
+
+        try {
+            execute_sql::execute($sql, [1 => $ids['b']], '', 0, '', true);
+            $this->fail('Course B must be refused');
+        } catch (\moodle_exception $e) {
+            $this->assertSame('sql_course_rejected', $e->errorcode);
+        }
+    }
 }

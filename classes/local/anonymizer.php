@@ -83,6 +83,16 @@ class anonymizer {
      */
     private const SQL_LITERAL_PLACEHOLDER_PATTERN = '/()(\[[a-z]+_\d+\])/';
 
+    /**
+     * @var string Pattern of a web address in a text (group 1): http or https with any slashes, two slashes or backslashes
+     *      (read by browsers as another host), or a domain name followed by a path, which Telegram makes a link too. It
+     *      runs to the next space, "<" or ">", so a placeholder written in the address is always inside it.
+     */
+    private const URL_PATTERN = '~((?:https?:|[/\\\\]{2})[^\s<>]+|(?<![\w./@\\\\-])(?:[a-z0-9-]+\.)+[a-z]{2,}(?::\d+)?/[^\s<>]*)~i';
+
+    /** @var int Shortest real value of the map replaced in the texts of a conversation (anonymize_history_text()). */
+    private const MIN_KNOWN_VALUE_LENGTH = 3;
+
     /** @var string Applied level. */
     private string $level;
 
@@ -174,7 +184,53 @@ class anonymizer {
         // They are escaped in every message before any placeholder is created, so none of them can be taken for a
         // placeholder created later in this call and be "restored" into a real value it never stood for.
         $messages = $this->map_message_texts($messages, fn(string $text): string => $this->escape_foreign_placeholders($text));
-        return $this->map_message_texts($messages, fn(string $text): string => $this->anonymize_string($text));
+        return $this->map_message_texts($messages, fn(string $text): string => $this->anonymize_history_text($text));
+    }
+
+    /**
+     * Anonymise a text of the conversation, such as a previous answer, before the AI receives it again.
+     *
+     * Besides what {@see self::anonymize_text()} replaces, every real value already in the map of this anonymiser (an
+     * identifier of a tool result shown in a previous answer, at any level) gets its placeholder back, so no identifier
+     * the user was shown leaves the site in a later turn. Only values already in the map are replaced: no new pattern
+     * is looked for.
+     *
+     * @param string $text Text.
+     * @return string
+     */
+    public function anonymize_history_text(string $text): string {
+        return $this->anonymize_string($this->replace_known_values($text));
+    }
+
+    /**
+     * Replace the real values already in the map by their placeholders, as whole words, longest first.
+     *
+     * @param string $text Text.
+     * @return string
+     */
+    private function replace_known_values(string $text): string {
+        $values = [];
+        foreach ($this->originals as $placeholder => $value) {
+            // A literal stands for a placeholder-shaped token, already escaped; very short values would match any text.
+            if (strpos($placeholder, '[literal_') === 0 || \core_text::strlen($value) < self::MIN_KNOWN_VALUE_LENGTH) {
+                continue;
+            }
+            if (strpos($text, $value) !== false) {
+                $values[$value] = $placeholder;
+            }
+        }
+        if (empty($values)) {
+            return $text;
+        }
+        uksort($values, static fn(string $a, string $b): int => strlen($b) <=> strlen($a));
+        $alternatives = implode('|', array_map(static fn(string $v): string => preg_quote($v, '/'), array_keys($values)));
+        // One pass, so a placeholder written in place of a value is never matched by another value.
+        $replaced = preg_replace_callback(
+            '/(?<![\p{L}\d_\[])(?:' . $alternatives . ')(?![\p{L}\d_\]])/u',
+            static fn(array $m): string => $values[$m[0]],
+            $text
+        );
+        return $replaced ?? $text;
     }
 
     /**
@@ -226,6 +282,10 @@ class anonymizer {
     /**
      * Put the real values back in a text written from anonymised data (the answer shown to the user).
      *
+     * A web address of another site keeps its placeholders (JEDOMI-SEC-005): content the AI read may ask it for a link
+     * that carries data of the conversation, and the real values must not leave the site when the link is opened.
+     * Addresses of the site and the rest of the text get the real values.
+     *
      * @param string $text Text with placeholders.
      * @return string
      */
@@ -233,7 +293,30 @@ class anonymizer {
         if (empty($this->originals) || strpos($text, '[') === false) {
             return $text;
         }
-        return $this->replace_placeholders($text, static fn(string $value): string => $value);
+        $parts = preg_split(self::URL_PATTERN, $text, -1, PREG_SPLIT_DELIM_CAPTURE);
+        if ($parts === false) {
+            // Not split: nothing is restored rather than risking a real value in an external address.
+            return $text;
+        }
+        $restored = '';
+        foreach ($parts as $index => $part) {
+            if ($index % 2 === 1 && external_link::is_external(self::address_with_host($part))) {
+                $restored .= $part;
+                continue;
+            }
+            $restored .= $this->replace_placeholders($part, static fn(string $value): string => $value);
+        }
+        return $restored;
+    }
+
+    /**
+     * An address found in a text, with two slashes before a bare domain name so its host can be read.
+     *
+     * @param string $address Address matched by URL_PATTERN.
+     * @return string
+     */
+    private static function address_with_host(string $address): string {
+        return preg_match('~^(?:https?:|[/\\\\]{2})~i', $address) ? $address : '//' . $address;
     }
 
     /**
@@ -424,7 +507,7 @@ class anonymizer {
     }
 
     /**
-     * Escape a value for the inside of a quoted SQL string or identifier.
+     * Escape a value for the inside of a quoted SQL string or identifier, with its line breaks written as "\n".
      *
      * @param string $value Value.
      * @param string $quote Quote character of the string or identifier.
@@ -432,6 +515,8 @@ class anonymizer {
      * @return string
      */
     private static function escape_sql_text(string $value, string $quote, bool $backslash): string {
+        // A value with a carriage return (an address typed on Windows) would make the guard refuse a correct query.
+        $value = str_replace(["\r\n", "\r"], "\n", $value);
         if ($backslash) {
             $value = str_replace('\\', '\\\\', $value);
         }
@@ -459,7 +544,11 @@ class anonymizer {
         if (is_array($value)) {
             return array_map(fn($item) => $this->restore_value($item), $value);
         }
-        return is_string($value) ? $this->restore($value) : $value;
+        // Tool arguments run on the site, so a web address in them gets its real values too (unlike the answer).
+        if (!is_string($value) || empty($this->originals) || strpos($value, '[') === false) {
+            return $value;
+        }
+        return $this->replace_placeholders($value, static fn(string $v): string => $v);
     }
 
     /**

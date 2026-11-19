@@ -257,10 +257,12 @@ $string['cli_backup_destination_outside_dataroot'] = 'The backup can only be sto
 $string['close'] = 'Close (Esc)';
 $string['component_all'] = 'All components';
 $string['config_key_blocked_msg'] = 'Key is blocked for security reasons.';
+$string['config_key_not_allowed_msg'] = 'This setting is not in the list of settings Jedomi may change. Change it on its settings page. Settings Jedomi may change: {$a}.';
 $string['config_key_secret_msg'] = 'This setting holds a secret (a password, key or token) and cannot be changed from here: change it on its settings page, where it is kept encrypted.';
 $string['config_load_error'] = 'The Jedomi panel could not be loaded. Try again, or contact the site administrator if the problem continues.';
 $string['config_load_retry'] = 'Try again';
 $string['config_updated_msg'] = 'Config \'{$a}\' updated successfully.';
+$string['config_value_invalid_msg'] = 'The value is not valid for the setting \'{$a}\'. Nothing was changed.';
 $string['confirm_btn_no'] = 'Cancel';
 $string['confirm_btn_yes'] = 'Confirm';
 $string['confirm_cancelled'] = 'Action cancelled.';
@@ -432,6 +434,7 @@ $string['error_unknown_action'] = 'Unknown action: {$a}';
 $string['error_unknown_tool'] = 'Unknown tool: {$a}';
 $string['error_value_range'] = 'Enter a value between {$a->min} and {$a->max}.';
 $string['error_voice_requires_audio'] = 'The voice conversation needs audio processing: enable it too.';
+$string['error_ws_capability'] = 'You do not have any of the capabilities that the web service function {$a} requires.';
 $string['error_ws_describe_failed'] = 'ws_describe failed: {$a}';
 $string['error_ws_execute_failed'] = 'ws_execute failed: {$a}';
 $string['error_ws_restricted'] = 'While some courses are outside Jedomi, only a reduced set of web service functions is '
@@ -489,6 +492,7 @@ $string['invalid_signature'] = 'The chat permissions are not valid. Reload the p
 $string['jedomi:companion_api'] = 'Use the Jedomi companion service functions';
 $string['jedomi:manageagents'] = 'Manage Jedomi agents';
 $string['keyboard_shortcuts'] = 'Keyboard shortcuts: Alt+Shift+J opens or closes Jedomi, Alt+Shift+N starts a new conversation and Escape closes the panel.';
+$string['link_external'] = 'External site, opens in a new window';
 $string['link_type_admin'] = 'Administration';
 $string['link_type_assign'] = 'Assignment';
 $string['link_type_course'] = 'Course';
@@ -840,10 +844,19 @@ $string['speech_voice'] = 'Voice';
 $string['speech_voice_help'] = 'Voice of the chosen voice model that reads the answers. Each model has its own voices.';
 $string['spt_secret'] = 'Permission token secret';
 $string['spt_secret_help'] = 'Secret used to sign the chat permission tokens. It is generated automatically for this site and '
-    . 'stored in Moodle, so it does not need to be set. Changing it invalidates the tokens already issued: users must reload '
-    . 'the page to keep chatting.';
+    . 'stored in Moodle, encrypted, so it does not need to be set. It is never shown: leave the field empty to keep the current '
+    . 'secret, or type a new one to replace it. Changing it invalidates the tokens already issued: users must reload the page '
+    . 'to keep chatting.';
+$string['sql_activity_rejected'] = 'The query reads activities, grades or logs of a course that your permissions in Moodle '
+    . 'do not let you see (such as a hidden activity, an activity you may not view, or the grades without the grade report '
+    . 'permissions), so it was not run. Read the tables of the other activity types, or ask an administrator.';
+$string['sql_blind_marking_rejected'] = 'The query reads who submitted or was graded in an assignment with anonymous '
+    . 'submissions whose identities are not revealed, so it was not run. Read the assignment without the student ids, or '
+    . 'reveal the identities in the assignment first.';
 $string['sql_carriage_return_rejected'] = 'The query contains a carriage return (\\r), so it was not run. '
     . 'Write line breaks as \\n only.';
+$string['sql_category_rejected'] = 'The query reads course categories, and some are hidden from you, so it was not run. '
+    . 'Limit the categories to the visible ones (for example WHERE cc.visible = 1).';
 $string['sql_construct_rejected'] = 'The query uses syntax outside the allowed read-only subset, so it was not run. Write a single '
     . 'SELECT with FROM, [LEFT] JOIN ... ON, WHERE conditions joined only by AND (=, <>, <, >, IN (numbers), IS [NOT] NULL, '
     . 'LIKE \'text\'), GROUP BY, HAVING, ORDER BY and LIMIT, and only the functions COUNT, SUM, AVG, MIN, MAX, ROUND and '

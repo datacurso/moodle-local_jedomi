@@ -164,6 +164,7 @@ function local_jedomi_get_sidebar_config(array $page = []): array {
             'export_role_assistant'  => get_string('export_role_assistant', 'local_jedomi'),
             'export_role_user'       => get_string('export_role_user', 'local_jedomi'),
             'export_title'           => get_string('export_title', 'local_jedomi'),
+            'link_external'          => get_string('link_external', 'local_jedomi'),
             'link_type_admin'        => get_string('link_type_admin', 'local_jedomi'),
             'link_type_assign'       => get_string('link_type_assign', 'local_jedomi'),
             'link_type_course'       => get_string('link_type_course', 'local_jedomi'),
@@ -1178,16 +1179,13 @@ function local_jedomi_get_tool_definitions(string $role, ?int $userid = null, st
  *
  * There is no built-in key: when no secret is saved (or the legacy built-in key is), a random
  * one is generated and saved, so permissions can never be signed with a key known from the code.
+ * The secret is kept encrypted with the key of the site (JEDOMI-SEC-010); one saved in clear text
+ * before 1.8.0 is still read.
  *
  * @return string The site secret, at least 64 characters when generated.
  */
 function local_jedomi_get_spt_secret(): string {
-    $secret = (string) get_config('local_jedomi', 'spt_secret');
-    if ($secret === '' || $secret === 'jedomi-spt-secret') {
-        $secret = bin2hex(random_bytes(32));
-        set_config('spt_secret', $secret, 'local_jedomi');
-    }
-    return $secret;
+    return \local_jedomi\local\secret_store::get_or_generate('spt_secret', 32, ['jedomi-spt-secret']);
 }
 
 /**

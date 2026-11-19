@@ -20,7 +20,8 @@ namespace local_jedomi\local;
  * Secrets of local_jedomi kept encrypted in the plugin settings with the key of the site (JEDOMI-SEC-010).
  *
  * The values are encrypted with \core\encryption, whose key is a file in dataroot: a dump of the database alone (a
- * backup, a replica) does not reveal them. A value saved before 1.7.0 in clear text is still read, and the upgrade
+ * backup, a replica) does not reveal them. A value saved in clear text before it was kept encrypted (1.7.0 for the bot
+ * token and the custom API key, 1.8.0 for the HMAC, permission token and webhook secrets) is still read, and the upgrade
  * encrypts it (local_jedomi_upgrade_encrypt_secrets()).
  *
  * @package    local_jedomi
@@ -55,7 +56,7 @@ final class secret_store {
     }
 
     /**
-     * Read a stored secret: decrypted when encrypted, as it is when saved in clear text before 1.7.0.
+     * Read a stored secret: decrypted when encrypted, as it is when saved in clear text before it was kept encrypted.
      *
      * @param string $stored Stored value.
      * @return string
@@ -130,6 +131,41 @@ final class secret_store {
     public static function is_unreadable(string $name): bool {
         self::get($name);
         return (bool) get_config(self::COMPONENT, self::unreadable_flag($name));
+    }
+
+    /**
+     * Read a secret the plugin generates itself, generating and saving a random one (encrypted) when none is saved,
+     * when the saved one cannot be decrypted or when it is a rejected value (a former built-in key). A secret saved in
+     * clear text before 1.8.0 is read as it is.
+     *
+     * @param string $name Setting name.
+     * @param int $bytes Random bytes of a generated secret; the secret is their hexadecimal form.
+     * @param string[] $rejected Values that are never accepted as the secret.
+     * @return string Never empty.
+     */
+    public static function get_or_generate(string $name, int $bytes, array $rejected = []): string {
+        $secret = self::get($name);
+        if ($secret === '' || in_array($secret, $rejected, true)) {
+            $secret = bin2hex(random_bytes($bytes));
+            self::set($name, $secret);
+        }
+        return $secret;
+    }
+
+    /**
+     * Encrypt a secret setting saved in clear text before it was kept encrypted; an empty or encrypted value is left
+     * as it is. No config log row is added: the value does not change.
+     *
+     * @param string $name Setting name.
+     * @return bool Whether the value was encrypted now.
+     */
+    public static function encrypt_legacy(string $name): bool {
+        $stored = (string) get_config(self::COMPONENT, $name);
+        if ($stored === '' || self::is_encrypted($stored)) {
+            return false;
+        }
+        self::set($name, $stored);
+        return true;
     }
 
     /**

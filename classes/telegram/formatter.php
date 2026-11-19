@@ -142,6 +142,9 @@ final class formatter {
      * Keep the allowed tags (with their allowed attributes only), drop other HTML tags, escape every other
      * <, > and & and close or drop unbalanced tags. Text between < and > that is not an HTML tag is shown as written.
      *
+     * A link to another site is followed by its host, such as " (↗ example.com)", so the reader sees where it goes
+     * before opening it (JEDOMI-SEC-005).
+     *
      * @param string $html Text with HTML tags.
      * @return string
      */
@@ -149,6 +152,11 @@ final class formatter {
         $parts = preg_split('/(' . self::TAG_PATTERN . ')/', $html, -1, PREG_SPLIT_DELIM_CAPTURE);
         $output = '';
         $open = [];
+        // Text written after each open tag when it closes: the host of an external link, empty otherwise.
+        $after = [];
+        $close = static function () use (&$open, &$after): string {
+            return '</' . array_pop($open) . '>' . array_pop($after);
+        };
         foreach ($parts as $index => $part) {
             if ($index % 2 === 0) {
                 $output .= self::escape_text($part);
@@ -176,7 +184,7 @@ final class formatter {
                 }
                 // Close the tags opened inside it, then the tag itself.
                 while (count($open) > $position) {
-                    $output .= '</' . array_pop($open) . '>';
+                    $output .= $close();
                 }
                 continue;
             }
@@ -186,11 +194,30 @@ final class formatter {
             }
             $output .= $opening;
             $open[] = $tag;
+            $after[] = $tag === 'a' ? self::external_host_note($opening) : '';
         }
         while ($open) {
-            $output .= '</' . array_pop($open) . '>';
+            $output .= $close();
         }
         return $output;
+    }
+
+    /**
+     * Note shown after a link to another site: its host.
+     *
+     * @param string $opening Opening tag of the link as written in the output, with its escaped href.
+     * @return string " (↗ host)" escaped, or empty for a link to the site, a relative link or another scheme.
+     */
+    private static function external_host_note(string $opening): string {
+        if (!preg_match('/href="([^"]*)"/', $opening, $m)) {
+            return '';
+        }
+        $href = html_entity_decode($m[1], ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $host = \local_jedomi\local\external_link::host($href);
+        if (!\local_jedomi\local\external_link::is_external($href) || $host === '') {
+            return '';
+        }
+        return ' (↗ ' . htmlspecialchars($host, ENT_NOQUOTES, 'UTF-8') . ')';
     }
 
     /**

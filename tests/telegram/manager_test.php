@@ -292,7 +292,7 @@ final class manager_test extends \advanced_testcase {
         $secret = manager::get_webhook_secret();
 
         $this->assertNotSame('', $secret);
-        $this->assertSame($secret, (string) get_config('local_jedomi', 'telegram_webhook_secret'));
+        $this->assertSame($secret, \local_jedomi\local\secret_store::get('telegram_webhook_secret'));
         $this->assertSame($CFG->wwwroot . '/local/jedomi/telegram_webhook.php', $url);
         $this->assertSame($secret, manager::get_webhook_secret(), 'The secret is kept once generated');
     }

@@ -104,9 +104,11 @@ class ws_search_tool implements agent_tool {
         $limit = isset($params->limit) ? min((int) $params->limit, 20) : 8;
 
         try {
-            // Only the functions of the list of the role of the creator, the same list that gates the execution.
+            // Only the functions the creator may call: the list of the role, the course rule and the declared
+            // capabilities, as the execution checks them.
             $allowed = \local_jedomi\local\ws_runner::searchable_functions(
-                \local_jedomi_get_user_role_for_user($this->userid)
+                \local_jedomi_get_user_role_for_user($this->userid),
+                $this->userid
             );
             if ($allowed === []) {
                 return json_encode(['success' => true, 'count' => 0, 'row_count' => 0, 'functions' => [],

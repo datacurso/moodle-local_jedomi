@@ -909,4 +909,32 @@ final class sidebar_templates_test extends \advanced_testcase {
         $this->assertStringNotContainsString('data-type="file"', $html);
         $this->assertStringNotContainsString('id="jedomi-file-input"', $html);
     }
+
+    /**
+     * JEDOMI-SEC-005: a link of the answer to another site is marked as external with its host and an accessible label
+     * in the user language, opens in a new window without referrer, and only the origin of the site counts as internal.
+     * The format runs in the browser; the rules of local_jedomi/sidebar are checked here.
+     *
+     * @return void
+     */
+    public function test_external_links_are_marked(): void {
+        global $CFG, $PAGE;
+        $this->resetAfterTest();
+        require_once($CFG->dirroot . '/local/jedomi/lib.php');
+        $source = file_get_contents(__DIR__ . '/../../amd/src/sidebar.js');
+
+        $this->assertStringContainsString('class="jedomi-external-link" target="_blank" rel="noopener noreferrer"', $source);
+        $this->assertStringContainsString('<span class="jedomi-external-badge" aria-hidden="true">↗ ${host}</span>', $source);
+        $this->assertStringContainsString('<span class="sr-only">(${label}: ${host})</span>', $source);
+        $this->assertStringContainsString('S.link_external', $source, 'The label is a language string');
+        $this->assertStringContainsString('new URL(url).origin === new URL(cfg.wwwroot).origin', $source);
+        $this->assertStringNotContainsString('url.includes(wwwroot)', $source, 'An address holding the site address');
+        $this->assertStringContainsString('\/(?![\/\\\\]))/i.test(url)', $source, '/\ is not a relative path');
+
+        $this->setUser($this->getDataGenerator()->create_user());
+        $PAGE->set_url(new \moodle_url('/local/jedomi/ajax/sidebar_config.php'));
+        $strings = \local_jedomi_get_sidebar_config()['strings'];
+        $this->assertSame(get_string('link_external', 'local_jedomi'), $strings['link_external']);
+        $this->assertNotSame($strings['link_external'], self::plugin_spanish_string('link_external'), 'Translated');
+    }
 }
