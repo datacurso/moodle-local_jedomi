@@ -115,7 +115,8 @@ class client {
             'model' => $model,
             'messages' => $messages,
             'stream' => false,
-            'max_tokens' => model_settings::get_max_tokens(),
+            // Never more than half the known context window of the custom service, as the trimming reserves.
+            'max_tokens' => context_window::answer_tokens(),
             'userid' => $userid,
         ];
         if (!empty($tools)) {

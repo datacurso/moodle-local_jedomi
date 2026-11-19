@@ -174,6 +174,19 @@ class context_window {
     }
 
     /**
+     * Max tokens sent with a chat request: with the custom service and a known context window, the answer reservation
+     * ({@see self::answer_reservation()}), so a saved max tokens larger than half the window is never sent; otherwise
+     * the max tokens of the service in use.
+     *
+     * @return int
+     */
+    public static function answer_tokens(): int {
+        $maxtokens = model_settings::get_max_tokens();
+        $window = ai_service::is_custom() ? ai_service::get_custom_context_window() : 0;
+        return $window > 0 ? self::answer_reservation($window, $maxtokens) : $maxtokens;
+    }
+
+    /**
      * Estimated tokens of one message.
      *
      * @param mixed $message Message.

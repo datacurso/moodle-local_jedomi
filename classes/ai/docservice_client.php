@@ -32,10 +32,12 @@ require_once($CFG->libdir . '/filelib.php');
  * The address follows the policy of the custom service ({@see custom_endpoint}): HTTPS, plain HTTP only for a local
  * host with "Allow HTTP for local models" (then pinned to the checked address), the cURL security of the site,
  * no redirects, no credentials, query or fragment. Each request has a connection timeout, a total timeout and a cap
- * on the size of the answer enforced while it arrives; at most MAX_PAGES images are kept. The contract has no
- * page selection, so the whole document is converted and the pages asked are chosen by their number before that
- * cap. Errors keep only a status, an
- * error number or a reason: never the address, the body of the answer or the libcurl text.
+ * on the size of the answer enforced by the write callback while it arrives (independent of the progress callback,
+ * which sends the signals of life of the question, {@see heartbeat}); at most MAX_PAGES images are kept. The contract
+ * has no page selection, so the whole document is converted and the pages asked are chosen by their number before that
+ * cap; the pages left out are freed while the answer is read, and the body as soon as it is decoded. A dropped
+ * connection or a busy service (502, 503, 504) is tried once more after a short pause while time is left. Errors keep
+ * only a status, an error number or a reason: never the address, the body of the answer or the libcurl text.
  *
  * @package    local_jedomi
  * @copyright  2026 Jedomi Project
@@ -63,8 +65,8 @@ class docservice_client {
     /** @var int Largest answer accepted, in bytes (32 MB). */
     public const MAX_RESPONSE_BYTES = 33554432;
 
-    /** @var int Largest page image accepted, in bytes (10 MB, as an image attached to the chat). */
-    public const MAX_IMAGE_BYTES = 10485760;
+    /** @var int Largest page image accepted, in bytes: the cap of an image read by the custom service. */
+    public const MAX_IMAGE_BYTES = \local_jedomi\local\service\vision_service::MAX_CUSTOM_IMAGE_BYTES;
 
     /** @var int Most page images kept from one document. */
     public const MAX_PAGES = 20;
@@ -75,8 +77,20 @@ class docservice_client {
     /** @var array<string, string> Content type of each image format of the answer. */
     private const TYPES = ['JPEG' => 'image/jpeg', 'JPG' => 'image/jpeg', 'PNG' => 'image/png'];
 
-    /** @var int[] libcurl errors of an answer stopped for its size: file size exceeded, aborted by the progress check. */
-    private const SIZE_ERRORS = [42, 63];
+    /** @var int libcurl error of an answer stopped for its size: maximum file size exceeded. */
+    private const FILESIZE_ERROR = 63;
+
+    /** @var int[] libcurl errors worth one more try: no connection, send or receive failure, empty reply. */
+    private const RETRY_ERRNOS = [7, 52, 55, 56];
+
+    /** @var int[] HTTP statuses worth one more try: the service or a proxy in front of it is busy. */
+    private const RETRY_STATUSES = [502, 503, 504];
+
+    /** @var int Pause before the retry, in seconds. */
+    private const RETRY_PAUSE = 1;
+
+    /** @var int Fewest seconds left worth a retry. */
+    private const MIN_RETRY_SECONDS = 5;
 
     /** @var \Closure|null Builds the transport in PHPUnit tests: fn(bool $bypass): \curl. */
     private static ?\Closure $testcurlfactory = null;
@@ -148,61 +162,124 @@ class docservice_client {
             throw new \moodle_exception('file_error_too_large', 'local_jedomi');
         }
 
-        // The cURL security of the site is skipped only for a request pinned to a checked local address.
         $timeout = max(1, min(self::TIMEOUT, $timeout));
+        $start = microtime(true);
+        $body = $this->post($endpoint, $path, $filename, $timeout);
+        if (is_int($body)) {
+            $left = (int) floor($timeout - (microtime(true) - $start)) - self::RETRY_PAUSE;
+            if ($left < self::MIN_RETRY_SECONDS) {
+                self::raise_transient($body);
+            }
+            sleep(self::RETRY_PAUSE);
+            $body = $this->post($endpoint, $path, $filename, $left);
+            if (is_int($body)) {
+                self::raise_transient($body);
+            }
+        }
+        $answer = json_decode($body, true);
+        // The decoded answer replaces the body: up to 32 MB less held while the pages are checked.
+        unset($body);
+        return self::parse($answer, $wanted);
+    }
+
+    /**
+     * Send the PDF once.
+     *
+     * @param string $endpoint Address of the conversion.
+     * @param string $path Path of the PDF on disk.
+     * @param string $filename File name, already clean.
+     * @param int $timeout Total request timeout, in seconds.
+     * @return string|int Body of a successful answer, or a failure worth one more try: the libcurl error number, or the
+     *         negated HTTP status.
+     * @throws \moodle_exception docservice_error_too_large, docservice_error_unreachable or docservice_error_http.
+     */
+    private function post(string $endpoint, string $path, string $filename, int $timeout) {
+        // The cURL security of the site is skipped only for a request pinned to a checked local address.
         $options = custom_endpoint::curl_options($endpoint, $this->allowhttp, $timeout);
         $options['CURLOPT_CONNECTTIMEOUT'] = min(self::CONNECT_TIMEOUT, $timeout);
         $options['CURLOPT_MAXFILESIZE'] = self::MAX_RESPONSE_BYTES;
-        $options['CURLOPT_NOPROGRESS'] = false;
-        $options['CURLOPT_PROGRESSFUNCTION'] = static fn($handle, $downtotal, $downloaded, $uptotal, $uploaded): int =>
-            (int) ($downloaded > self::MAX_RESPONSE_BYTES);
+        // The size cap is held by the write callback, whatever the progress callback does.
+        $buffer = '';
+        $overflow = false;
+        $options['CURLOPT_WRITEFUNCTION'] = static function ($handle, string $data) use (&$buffer, &$overflow): int {
+            if (strlen($buffer) + strlen($data) > self::MAX_RESPONSE_BYTES) {
+                $overflow = true;
+                return 0;
+            }
+            $buffer .= $data;
+            return strlen($data);
+        };
+        // While a question waits, the progress of the request sends its signals of life ({@see heartbeat}).
+        $options += heartbeat::curl_options();
         $bypass = isset($options['CURLOPT_RESOLVE']);
         $curl = self::$testcurlfactory !== null
             ? (self::$testcurlfactory)($bypass)
             : new \curl(['ignoresecurity' => $bypass]);
         $query = http_build_query(['dpi' => self::DPI, 'fmt' => self::FORMAT], '', '&');
-        $body = $curl->post(
-            $endpoint . '?' . $query,
-            ['file' => new \CURLFile($path, 'application/pdf', $filename)],
-            $options
-        );
+        $curl->post($endpoint . '?' . $query, ['file' => new \CURLFile($path, 'application/pdf', $filename)], $options);
 
         $status = (int) ($curl->get_info()['http_code'] ?? 0);
-        if (!empty($curl->errno) && in_array((int) $curl->errno, self::SIZE_ERRORS, true)) {
+        $errno = (int) $curl->errno;
+        if ($overflow || $errno === self::FILESIZE_ERROR) {
             throw new \moodle_exception('docservice_error_too_large', 'local_jedomi');
         }
-        if (!empty($curl->errno) || $status === 0) {
+        if (in_array($errno, self::RETRY_ERRNOS, true)) {
+            return $errno;
+        }
+        if ($errno !== 0 || $status === 0) {
             // The libcurl text may hold the host: only its number is kept.
-            throw new \moodle_exception('docservice_error_unreachable', 'local_jedomi', '', (int) $curl->errno);
+            throw new \moodle_exception('docservice_error_unreachable', 'local_jedomi', '', $errno);
+        }
+        if (in_array($status, self::RETRY_STATUSES, true)) {
+            return -$status;
         }
         if ($status < 200 || $status >= 300) {
             // The body is never kept: it may hold internals of the service.
             throw new \moodle_exception('docservice_error_http', 'local_jedomi', '', $status);
         }
-        if (strlen((string) $body) > self::MAX_RESPONSE_BYTES) {
-            throw new \moodle_exception('docservice_error_too_large', 'local_jedomi');
-        }
-        return self::parse((string) $body, $wanted);
+        return $buffer;
     }
 
     /**
-     * Check and keep the pages of an answer.
+     * Raise the failure of a request that was not tried again, or failed again.
      *
-     * @param string $body Body of the answer.
+     * @param int $failure libcurl error number, or the negated HTTP status.
+     * @return void
+     * @throws \moodle_exception docservice_error_unreachable or docservice_error_http.
+     */
+    private static function raise_transient(int $failure): void {
+        if ($failure < 0) {
+            throw new \moodle_exception('docservice_error_http', 'local_jedomi', '', -$failure);
+        }
+        throw new \moodle_exception('docservice_error_unreachable', 'local_jedomi', '', $failure);
+    }
+
+    /**
+     * Check and keep the pages of a decoded answer; the answer is released and the pages left out are freed as they
+     * are read.
+     *
+     * @param mixed $answer Decoded answer, by reference so it is released here; null afterwards.
      * @param int[]|null $wanted Page numbers to keep; null for every page.
      * @return array{total_pages: int, truncated: bool, pages: array<int, array{page: int, type: string, data: string}>}
      * @throws \moodle_exception docservice_error_invalid, or docservice_error_too_large for an image over its cap.
      */
-    private static function parse(string $body, ?array $wanted): array {
-        $answer = json_decode($body, true);
+    private static function parse(&$answer, ?array $wanted): array {
         if (!is_array($answer) || !is_array($answer['pages'] ?? null) || empty($answer['pages'])) {
             throw new \moodle_exception('docservice_error_invalid', 'local_jedomi');
         }
+        $all = $answer['pages'];
+        $total = $answer['total_pages'] ?? null;
+        $answer = null;
+        $count = min(count($all), self::MAX_TOTAL_PAGES);
         $pages = [];
         $left = 0;
-        foreach (array_values($answer['pages']) as $index => $page) {
+        $index = 0;
+        foreach (array_keys($all) as $key) {
+            $page = $all[$key];
+            unset($all[$key]);
             $number = is_array($page) ? ($page['page'] ?? null) : null;
             $number = is_int($number) && $number > 0 ? $number : $index + 1;
+            $index++;
             if ($wanted !== null && !in_array($number, $wanted, true)) {
                 continue;
             }
@@ -218,7 +295,7 @@ class docservice_client {
             if (intdiv(strlen($image), 4) * 3 > self::MAX_IMAGE_BYTES) {
                 throw new \moodle_exception('docservice_error_too_large', 'local_jedomi');
             }
-            if (base64_decode($image, true) === false) {
+            if (!self::is_base64($image)) {
                 throw new \moodle_exception('docservice_error_invalid', 'local_jedomi');
             }
             $pages[] = [
@@ -227,10 +304,19 @@ class docservice_client {
                 'data' => $image,
             ];
         }
-        $count = min(count($answer['pages']), self::MAX_TOTAL_PAGES);
-        $total = $answer['total_pages'] ?? null;
         $total = is_int($total) && $total >= $count ? min($total, self::MAX_TOTAL_PAGES) : $count;
         $truncated = $wanted !== null ? $left > 0 : count($pages) < $total;
         return ['total_pages' => $total, 'truncated' => $truncated, 'pages' => $pages];
+    }
+
+    /**
+     * Whether a text is base64, with the same rules as before 1.7.0 (PHP strict decoding, which also accepts line breaks
+     * and missing padding), so a document service that wraps its base64 keeps working.
+     *
+     * @param string $text Text.
+     * @return bool
+     */
+    private static function is_base64(string $text): bool {
+        return base64_decode($text, true) !== false;
     }
 }

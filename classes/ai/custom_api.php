@@ -35,6 +35,29 @@ require_once($CFG->libdir . '/filelib.php');
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class custom_api {
+    /** @var string Token parameter of the answer limit understood by most services. */
+    public const TOKEN_PARAM_MAX = 'max_tokens';
+
+    /** @var string Token parameter of the answer limit of newer OpenAI models, which refuse max_tokens. */
+    public const TOKEN_PARAM_COMPLETION = 'max_completion_tokens';
+
+    /** @var int Answer limit of the probe requests of the verification, in tokens. */
+    public const PROBE_TOKENS = 16;
+
+    /**
+     * @var string Words of a 400 that refuses a parameter (OpenAI "Unsupported parameter", Pydantic "Extra inputs are not
+     *      permitted"); an answer that only says the value is too large is not one.
+     */
+    private const PARAM_REFUSED_PATTERN = '/unsupported|not supported|unknown|unrecognized|not allowed|not permitted|extra/i';
+
+    /**
+     * @var string Answers of a model or server that cannot call tools: Ollama "does not support tools", vLLM without
+     *      --enable-auto-tool-choice, and the usual "tools are not supported" or "function calling" refusals.
+     */
+    private const TOOLS_UNSUPPORTED_PATTERN = '/does ?n[o\']t support (tools|tool[ _]?(calls|calling|use)|function[ _]calling)'
+        . '|(tools?|tool[ _]calls?|tool[ _]?choice|function[ _]calling)\W{0,3}(is |are )?(not supported|unsupported)'
+        . '|enable-auto-tool-choice|tool[ _]choice requires/i';
+
     /** @var \Closure|null Builds the transport in PHPUnit tests: fn(bool $bypass): \curl. */
     private static ?\Closure $testcurlfactory = null;
 
@@ -47,26 +70,59 @@ class custom_api {
     /** @var bool Whether "Allow HTTP for local models" is on. */
     private bool $allowhttp;
 
+    /** @var string Token parameter of the answer limit: TOKEN_PARAM_MAX or TOKEN_PARAM_COMPLETION. */
+    private string $tokenparam;
+
+    /** @var \Closure|null Keeps the token parameter a retry found: fn(string $param): void; null to keep nothing. */
+    private ?\Closure $ontokenparam;
+
     /**
      * Constructor.
      *
      * @param string $baseurl Base address of the service, as the provider documents it.
      * @param string $apikey API key; empty to send no Authorization header.
      * @param bool $allowhttp Whether "Allow HTTP for local models" is on.
+     * @param string $tokenparam Token parameter of the answer limit: TOKEN_PARAM_MAX or TOKEN_PARAM_COMPLETION.
+     * @param \Closure|null $ontokenparam Called with the other token parameter when the service refused this one and
+     *        accepted the other; null to keep nothing.
      */
-    public function __construct(string $baseurl, string $apikey, bool $allowhttp) {
+    public function __construct(
+        string $baseurl,
+        string $apikey,
+        bool $allowhttp,
+        string $tokenparam = self::TOKEN_PARAM_MAX,
+        ?\Closure $ontokenparam = null
+    ) {
         $this->baseurl = custom_endpoint::normalise($baseurl);
         $this->apikey = trim($apikey);
         $this->allowhttp = $allowhttp;
+        $this->tokenparam = $tokenparam === self::TOKEN_PARAM_COMPLETION ? $tokenparam : self::TOKEN_PARAM_MAX;
+        $this->ontokenparam = $ontokenparam;
     }
 
     /**
-     * Client of the saved custom service.
+     * Client of the saved custom service, with the saved token parameter; a token parameter a retry finds is saved.
      *
      * @return custom_api
      */
     public static function from_settings(): custom_api {
-        return new custom_api(ai_service::get_custom_url(), ai_service::get_custom_key(), ai_service::allows_custom_http());
+        $url = ai_service::get_custom_url();
+        return new custom_api(
+            $url,
+            ai_service::get_custom_key(),
+            ai_service::allows_custom_http(),
+            ai_service::get_custom_token_param(),
+            static fn(string $param) => ai_service::remember_token_param($url, $param)
+        );
+    }
+
+    /**
+     * Token parameter of the answer limit this client sends.
+     *
+     * @return string TOKEN_PARAM_MAX or TOKEN_PARAM_COMPLETION.
+     */
+    public function get_token_param(): string {
+        return $this->tokenparam;
     }
 
     /**
@@ -150,6 +206,10 @@ class custom_api {
     /**
      * Send a chat completion request and return the decoded answer.
      *
+     * The answer limit (max_tokens of the payload) is sent with the token parameter of this client. When the service
+     * answers 400 or 422 refusing that parameter, the request is sent once more with the other one, which is kept when
+     * it is accepted (decision 3).
+     *
      * @param array $payload OpenAI chat completion body; a userid in it is removed.
      * @param int $timeout Total request timeout, in seconds.
      * @return array
@@ -158,19 +218,100 @@ class custom_api {
      */
     public function chat(array $payload, int $timeout): array {
         unset($payload['userid']);
-        [$status, $body] = $this->send(
+        $limit = $payload[self::TOKEN_PARAM_MAX] ?? $payload[self::TOKEN_PARAM_COMPLETION] ?? null;
+        unset($payload[self::TOKEN_PARAM_MAX], $payload[self::TOKEN_PARAM_COMPLETION]);
+
+        [$status, $body] = $this->post_chat($payload, $limit, $this->tokenparam, $timeout);
+        if ($limit !== null && self::refuses_param($status, $body, $this->tokenparam)) {
+            $other = $this->tokenparam === self::TOKEN_PARAM_MAX ? self::TOKEN_PARAM_COMPLETION : self::TOKEN_PARAM_MAX;
+            [$retrystatus, $retrybody] = $this->post_chat($payload, $limit, $other, $timeout);
+            if (!self::refuses_param($retrystatus, $retrybody, $other)) {
+                [$status, $body] = [$retrystatus, $retrybody];
+                if ($status >= 200 && $status < 300) {
+                    $this->tokenparam = $other;
+                    if ($this->ontokenparam !== null) {
+                        ($this->ontokenparam)($other);
+                    }
+                }
+            }
+        }
+        $refused = in_array($status, [400, 422], true) && preg_match(self::TOOLS_UNSUPPORTED_PATTERN, $body);
+        if (!empty($payload['tools']) && $refused) {
+            // Servers such as vLLM and Ollama answer 400 when the model cannot call tools; Jedomi needs them.
+            throw new \moodle_exception('ai_error_tools_unsupported', 'local_jedomi');
+        }
+        self::require_success($status);
+        return self::decode($body);
+    }
+
+    /**
+     * Probe a model for the verification: a tiny answer finds the token parameter it accepts (decision 3), then a
+     * request with one tool tells whether it can call tools.
+     *
+     * @param string $model Chat model id.
+     * @param int $timeout Total timeout of each request, in seconds.
+     * @return array{tokenparam: string, tools: bool|null} The token parameter accepted, and whether the model can call
+     *         tools (null when the tool request failed for another reason).
+     * @throws \moodle_exception custom_error_* or ai_error_invalidanswer when the model does not answer at all.
+     */
+    public function probe(string $model, int $timeout): array {
+        $messages = [['role' => 'user', 'content' => 'Reply with OK.']];
+        $this->chat(['model' => $model, 'messages' => $messages, 'max_tokens' => self::PROBE_TOKENS, 'stream' => false], $timeout);
+        $tool = ['type' => 'function', 'function' => [
+            'name' => 'ping',
+            'description' => 'Check that tools work.',
+            'parameters' => ['type' => 'object', 'properties' => new \stdClass()],
+        ]];
+        try {
+            $this->chat([
+                'model' => $model,
+                'messages' => $messages,
+                'max_tokens' => self::PROBE_TOKENS,
+                'stream' => false,
+                'tools' => [$tool],
+                'tool_choice' => 'auto',
+            ], $timeout);
+            $tools = true;
+        } catch (\moodle_exception $e) {
+            $tools = $e->errorcode === 'ai_error_tools_unsupported' ? false : null;
+        }
+        return ['tokenparam' => $this->tokenparam, 'tools' => $tools];
+    }
+
+    /**
+     * Post a chat completion with the answer limit under a token parameter.
+     *
+     * @param array $payload Body without any token parameter.
+     * @param mixed $limit Answer limit; null to send none.
+     * @param string $param Token parameter.
+     * @param int $timeout Total request timeout, in seconds.
+     * @return array HTTP status and body.
+     * @throws \moodle_exception custom_error_url or custom_error_unreachable.
+     */
+    private function post_chat(array $payload, $limit, string $param, int $timeout): array {
+        if ($limit !== null) {
+            $payload[$param] = $limit;
+        }
+        return $this->send(
             'POST',
             '/chat/completions',
             json_encode($payload, JSON_UNESCAPED_UNICODE),
             ['Content-Type: application/json'],
             $timeout
         );
-        if (!empty($payload['tools']) && in_array($status, [400, 422], true) && stripos($body, 'tool') !== false) {
-            // Servers such as vLLM and Ollama answer 400 when the model cannot call tools; Jedomi needs them.
-            throw new \moodle_exception('ai_error_tools_unsupported', 'local_jedomi');
-        }
-        self::require_success($status);
-        return self::decode($body);
+    }
+
+    /**
+     * Whether an answer refuses a token parameter: 400 or 422 naming it as unsupported, unknown or not permitted.
+     *
+     * @param int $status HTTP status.
+     * @param string $body Body.
+     * @param string $param Token parameter sent.
+     * @return bool
+     */
+    private static function refuses_param(int $status, string $body, string $param): bool {
+        return in_array($status, [400, 422], true) && stripos($body, $param) !== false
+            && preg_match(self::PARAM_REFUSED_PATTERN, $body);
     }
 
     /**

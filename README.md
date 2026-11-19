@@ -69,7 +69,11 @@ Choose the service on the Jedomi page of the Datacurso AI Provider settings, wit
   model list, shows the fields of the service. The verification lists the ids of the models of the service (up to
   100, sorted, only ids the fields accept) and offers them as suggestions in the model fields, which stay free text; an
   id that is not listed can still be typed. The settings can only be saved while the address and key are the last pair
-  verified.
+  verified. With a chat model typed, the verification also probes it with two tiny requests: the first finds the token
+  parameter it accepts (`max_tokens`, or `max_completion_tokens` for newer OpenAI models), which every request then
+  uses; the second, with one tool, tells whether it can call tools. Warnings say when the model cannot call tools,
+  did not answer, or has no known context window; they never make the verification fail. A chat request refused for
+  its token parameter is retried once with the other one, which is then kept.
 
 Once verified, the custom service mirrors the Datacurso fields:
 
@@ -94,9 +98,11 @@ images (`POST {url}/api/v1/pdf/to-images?dpi=150&fmt=JPEG`, multipart field `fil
 by the image model. The document service URL follows the same rules as the service URL (HTTPS, HTTP only for a local
 host with "Allow HTTP for local models", the cURL security of the site, no redirects); its requests have a 5 s
 connection timeout and a 120 s total timeout, and the PDF (20 MB), the answer (32 MB) and each image (10 MB) have a
-size cap. The pages asked (`document_read` with `pages`) are chosen before the 20-page cap. The whole read of a PDF has one
+size cap; the answer cap is held while it arrives. A dropped connection or a busy service (502, 503, 504) is tried once
+more after a short pause while time is left. The pages asked (`document_read` with `pages`) are chosen before the 20-page cap. The whole read of a PDF has one
 deadline, the AI request timeout: the pages left when it runs out are skipped, and a page the image model fails on is
-skipped while the others are kept. On a site behind a proxy (Cloudflare closes requests after 100 seconds), ask for
+skipped while the others are kept; when the time runs out before any page is read, the user is told the document took
+too long. On a site behind a proxy (Cloudflare closes requests after 100 seconds), ask for
 fewer pages of long documents. Text files (`.txt`, `.csv`, `.md`, up to 2 MB, cut at 200,000 characters) are read on
 the site, also only with "Documents" on and the document service URL. Word and
 PowerPoint files are refused with a message asking for a PDF. With "Documents" off or no document service URL,
@@ -109,8 +115,9 @@ Jedomi estimates the tokens (about four characters per token), keeps the max tok
 for the answer, and drops the
 oldest messages that do not fit. The system message and the latest question (with the tool calls of the current
 answer) always stay, an assistant tool call is dropped together with its results, and the kept history starts with a
-user message. The technical log records each trimming (`CONTEXT_TRIMMED`, counts only). Empty and nothing detected
-means no trimming.
+user message. The technical log records each trimming (`CONTEXT_TRIMMED`, counts only). The max tokens sent with each
+request is also at most half the known window. Empty and nothing detected means no trimming, and the settings page
+warns about it.
 
 **AI request timeout.** "AI request timeout (seconds)", after the fields of either service, sets how long the web chat
 and the CLI wait for each AI answer, for both services: 10 to 600 seconds, 180 by default. Telegram and the scheduled
@@ -130,6 +137,8 @@ About the custom service:
 
 - The address must use HTTPS and respects the blocked hosts and allowed ports of the site cURL security settings. Only
   a loopback or private network host may use HTTP, with "Allow HTTP for local models" on. Redirects are never followed.
+  A host name is looked up once per minute, and a lookup slower than 2 seconds is not trusted (the host then counts as
+  not local).
 - The API key never goes back to the browser, the Jedomi log or the events, and is only sent to the saved address:
   changing the address asks for the key again.
 - PDF and text files can be read with "Documents" on (see above); Word and PowerPoint files cannot.
@@ -231,7 +240,10 @@ channel it works in:
 
 The row limit is applied by the database on every supported database. The time limit is applied by the database on
 MySQL, MariaDB and PostgreSQL only: SQL Server and Oracle have no per-query time limit that can be set safely from
-Moodle, so there a slow query runs until the database or PHP stops it. The query profiler (Query profiler tab) records
+Moodle, so there a slow query runs until the database or PHP stops it. The SQL tool stays available on SQL Server and
+Oracle with the row limit only: the risk is a long query of the AI on the production database. On those databases keep
+the row limits low, watch the slow queries in the Query profiler tab, and set a time limit in the database itself if it
+offers one (the help of the SQL settings says so too). The query profiler (Query profiler tab) records
 the queries of the agents; its slow query threshold and the days its records are kept are set in the General tab, and
 the scheduled task "Purge old query profiler records" removes the old records once a day. The row limit of the web chat
 is set in the General tab too ("Maximum rows per query (web chat)", `sql_row_limit_web`); the other channels keep their

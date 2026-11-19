@@ -96,6 +96,21 @@ final class client_custom_service_test extends \advanced_testcase {
     }
 
     /**
+     * The max tokens sent never takes more than half the known context window.
+     *
+     * @return void
+     */
+    public function test_sent_max_tokens_fit_the_context_window(): void {
+        set_config('custom_max_tokens', '16384', 'local_jedomi');
+        set_config('custom_context_window', '8192', 'local_jedomi');
+        $this->curl->enqueue(json_encode(['choices' => [['message' => ['content' => 'Hello'], 'finish_reason' => 'stop']]]));
+
+        $this->make_client()->complete([['role' => 'user', 'content' => 'Hi']], 5, [], 30);
+
+        $this->assertSame(4096, $this->curl->last_body()['max_tokens']);
+    }
+
+    /**
      * A model without tool calling gives a clear error.
      *
      * @return void

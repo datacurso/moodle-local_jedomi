@@ -134,7 +134,8 @@ final class docservice_client_test extends \advanced_testcase {
 
     /**
      * Every request has the security options: TLS checks, no redirects, a connection timeout, a total timeout and a cap
-     * on the size of the answer, enforced while it is received.
+     * on the size of the answer, enforced while it is received by the write callback (RES-005: not by the progress
+     * callback, which belongs to the signals of life).
      *
      * @return void
      */
@@ -150,10 +151,60 @@ final class docservice_client_test extends \advanced_testcase {
         $this->assertSame(docservice_client::CONNECT_TIMEOUT, $options['CURLOPT_CONNECTTIMEOUT']);
         $this->assertSame(docservice_client::TIMEOUT, $options['CURLOPT_TIMEOUT']);
         $this->assertSame(docservice_client::MAX_RESPONSE_BYTES, $options['CURLOPT_MAXFILESIZE']);
-        $this->assertFalse($options['CURLOPT_NOPROGRESS']);
-        $progress = $options['CURLOPT_PROGRESSFUNCTION'];
-        $this->assertSame(0, $progress(null, 0, docservice_client::MAX_RESPONSE_BYTES, 0, 0));
-        $this->assertNotSame(0, $progress(null, 0, docservice_client::MAX_RESPONSE_BYTES + 1, 0, 0));
+        $this->assertIsCallable($options['CURLOPT_WRITEFUNCTION']);
+        $this->assertArrayNotHasKey('CURLOPT_PROGRESSFUNCTION', $options, 'No progress callback without signals of life');
+    }
+
+    /**
+     * While a question sends signals of life, the request beats through the progress callback of the heartbeat and the
+     * size cap still holds.
+     *
+     * @return void
+     */
+    public function test_size_cap_and_signals_of_life_coexist(): void {
+        $beats = 0;
+        heartbeat::start(1, function () use (&$beats): void {
+            $beats++;
+        });
+        try {
+            $this->curl->enqueue(str_repeat('x', docservice_client::MAX_RESPONSE_BYTES + 1));
+            $this->assert_failure(
+                fn() => (new docservice_client('https://docs.example.com', false))->to_images($this->pdf(), 'doc.pdf'),
+                'docservice_error_too_large'
+            );
+            $options = $this->curl->calls[0]['options'];
+            $this->assertSame(heartbeat::curl_options()['CURLOPT_NOPROGRESS'], $options['CURLOPT_NOPROGRESS']);
+            $this->assertSame(0, $options['CURLOPT_PROGRESSFUNCTION'](null, 0, docservice_client::MAX_RESPONSE_BYTES + 1, 0, 0));
+            $this->assertIsCallable($options['CURLOPT_WRITEFUNCTION']);
+        } finally {
+            heartbeat::stop();
+        }
+    }
+
+    /**
+     * RES-003: a dropped connection or a busy service (502, 503, 504) is tried once more after a short pause, while time
+     * is left; other failures are not.
+     *
+     * @return void
+     */
+    public function test_transient_failures_are_retried_once(): void {
+        $client = new docservice_client('https://docs.example.com', false);
+
+        $this->curl->enqueue('', 503);
+        $this->curl->enqueue(self::answer(1));
+        $this->assertCount(1, $client->to_images($this->pdf(), 'doc.pdf')['pages']);
+        $this->assertCount(2, $this->curl->calls);
+
+        $this->curl->calls = [];
+        $this->curl->enqueue('', 0, 'Connection refused', 7);
+        $this->curl->enqueue('', 0, 'Connection refused', 7);
+        $this->assert_failure(fn() => $client->to_images($this->pdf(), 'doc.pdf'), 'docservice_error_unreachable', 7);
+        $this->assertCount(2, $this->curl->calls, 'Only one retry');
+
+        $this->curl->calls = [];
+        $this->curl->enqueue('', 502);
+        $this->assert_failure(fn() => $client->to_images($this->pdf(), 'doc.pdf', null, 3), 'docservice_error_http', 502);
+        $this->assertCount(1, $this->curl->calls, 'No retry without time left');
     }
 
     /**
@@ -232,8 +283,8 @@ final class docservice_client_test extends \advanced_testcase {
     }
 
     /**
-     * An answer over the size cap is refused, whether libcurl stopped it (file size exceeded, aborted by the progress
-     * callback) or it arrived whole.
+     * An answer over the size cap is refused, whether libcurl stopped it (file size exceeded) or the write callback did;
+     * a request aborted by the progress callback (the user left) is no size problem.
      *
      * @return void
      */
@@ -243,11 +294,23 @@ final class docservice_client_test extends \advanced_testcase {
         $this->curl->enqueue('', 0, 'Maximum file size exceeded', 63);
         $this->assert_failure(fn() => $client->to_images($this->pdf(), 'doc.pdf'), 'docservice_error_too_large');
 
-        $this->curl->enqueue('', 0, 'Callback aborted', 42);
-        $this->assert_failure(fn() => $client->to_images($this->pdf(), 'doc.pdf'), 'docservice_error_too_large');
-
         $this->curl->enqueue(str_repeat('x', docservice_client::MAX_RESPONSE_BYTES + 1));
         $this->assert_failure(fn() => $client->to_images($this->pdf(), 'doc.pdf'), 'docservice_error_too_large');
+
+        $this->curl->enqueue('', 0, 'Callback aborted', 42);
+        $this->assert_failure(fn() => $client->to_images($this->pdf(), 'doc.pdf'), 'docservice_error_unreachable', 42);
+
+        $this->curl->enqueue(str_repeat('x', docservice_client::MAX_RESPONSE_BYTES), 200);
+        $this->assert_failure(fn() => $client->to_images($this->pdf(), 'doc.pdf'), 'docservice_error_invalid');
+    }
+
+    /**
+     * READ-010: the cap of a page image is the one of an image read by the custom service.
+     *
+     * @return void
+     */
+    public function test_image_cap_is_shared(): void {
+        $this->assertSame(\local_jedomi\local\service\vision_service::MAX_CUSTOM_IMAGE_BYTES, docservice_client::MAX_IMAGE_BYTES);
     }
 
     /**

@@ -1290,4 +1290,32 @@ final class settings_extension_test extends \advanced_testcase {
         set_config('custom_max_tokens', '2048', 'local_jedomi');
         $this->assertSame('2048', (new settings_extension())->get_data()['custom_max_tokens']);
     }
+
+    /**
+     * RES-006: with a chat model and no context window known (neither saved nor detected), the page warns that the
+     * conversation is never trimmed; the warning hides while a window is typed.
+     *
+     * @return void
+     */
+    public function test_unknown_context_window_is_warned(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $form = function (): \MoodleQuickForm {
+            $mform = new \MoodleQuickForm('jedomitest', 'post', '');
+            (new settings_extension())->add_fields($mform);
+            return $mform;
+        };
+
+        $this->assertFalse($form()->elementExists('custom_context_window_unknown'), 'No chat model yet');
+
+        set_config('custom_model', 'chat-model', 'local_jedomi');
+        $mform = $form();
+        $this->assertTrue($mform->elementExists('custom_context_window_unknown'));
+        $html = $mform->getElement('custom_context_window_unknown')->toHtml();
+        $this->assertStringContainsString(get_string('custom_context_window_unknown', 'local_jedomi'), $html);
+        $this->assertStringContainsString('alert-warning', $html);
+
+        set_config('custom_context_lengths', json_encode(['chat-model' => 8192]), 'local_jedomi');
+        $this->assertFalse($form()->elementExists('custom_context_window_unknown'));
+    }
 }

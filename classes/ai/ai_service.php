@@ -163,6 +163,37 @@ class ai_service {
     }
 
     /**
+     * Token parameter of the answer limit the custom service accepts (decision 3): found by "Verify connection", or by a
+     * chat request that was refused with the other one. It belongs to the address it was found for, so another address
+     * starts again from max_tokens.
+     *
+     * @return string custom_api::TOKEN_PARAM_COMPLETION when saved for the saved address, otherwise
+     *         custom_api::TOKEN_PARAM_MAX.
+     */
+    public static function get_custom_token_param(): string {
+        $saved = json_decode((string) get_config(self::COMPONENT, 'custom_token_param'), true);
+        $found = is_array($saved) && ($saved['url'] ?? null) === self::get_custom_url() && self::get_custom_url() !== '';
+        return $found && ($saved['param'] ?? null) === custom_api::TOKEN_PARAM_COMPLETION
+            ? custom_api::TOKEN_PARAM_COMPLETION
+            : custom_api::TOKEN_PARAM_MAX;
+    }
+
+    /**
+     * Keep the token parameter of the answer limit a custom service accepts.
+     *
+     * @param string $url Address of the service, normalised ({@see custom_endpoint::normalise()}).
+     * @param string $param custom_api::TOKEN_PARAM_MAX or custom_api::TOKEN_PARAM_COMPLETION.
+     * @return void
+     */
+    public static function remember_token_param(string $url, string $param): void {
+        $param = $param === custom_api::TOKEN_PARAM_COMPLETION ? $param : custom_api::TOKEN_PARAM_MAX;
+        $value = json_encode(['url' => custom_endpoint::normalise($url), 'param' => $param]);
+        if (get_config(self::COMPONENT, 'custom_token_param') !== $value) {
+            set_config('custom_token_param', $value, self::COMPONENT);
+        }
+    }
+
+    /**
      * Saved address of the document service of the custom service (PDF to page images), without trailing slashes.
      *
      * @return string Empty when none is saved.

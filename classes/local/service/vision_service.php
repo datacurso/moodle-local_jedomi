@@ -94,6 +94,7 @@ class vision_service {
         'docservice_error_invalid' => ['documents_unavailable', 'documents_error_service'],
         'docservice_error_too_large' => ['file_too_large', 'file_error_too_large'],
         'documents_error_service' => ['documents_unavailable', 'documents_error_service'],
+        'documents_error_deadline' => ['documents_unavailable', 'documents_error_deadline'],
     ];
 
     /**
@@ -269,7 +270,8 @@ class vision_service {
      * service and each page get the time left (at most their own timeout), and the pages left when less than
      * MIN_REQUEST_SECONDS remain are skipped. A page the vision model fails on is skipped and the read goes on, except
      * after a failure that would repeat on every page (no answer, timeout, refused address), which stops it. The pages
-     * read are always kept; a failure is raised only when no page could be read. Each page is logged with its number,
+     * read are always kept; a failure is raised only when no page could be read: the error of the first failed page, or
+     * documents_error_deadline when the deadline ran out before any page was sent. Each page is logged with its number,
      * duration and outcome, never its content.
      *
      * @param string $path Path of the PDF on disk.
@@ -280,8 +282,8 @@ class vision_service {
      *     pages_skipped_total: int, truncated: bool} The pages read and the pages of the document left unread (at most
      *     MAX_SKIPPED_LISTED listed, all of them counted).
      * @throws \moodle_exception documents_error_custom, documents_error_pages (no asked page is in the document),
-     *         file_error_too_large, docservice_error_*, or the custom service error of the first page when no page was
-     *         read.
+     *         file_error_too_large, docservice_error_*, documents_error_deadline (no time left for any page), or the
+     *         custom service error of the first page when no page was read.
      */
     private static function read_pdf_with_custom_service(string $path, string $filename, string $pages, string $question): array {
         self::require_custom_documents();
@@ -326,7 +328,8 @@ class vision_service {
             $read[] = $page['page'];
         }
         if (empty($read)) {
-            throw $failure ?? new \moodle_exception('documents_error_service', 'local_jedomi');
+            // No failed page means the deadline ran out before the first one.
+            throw $failure ?? new \moodle_exception('documents_error_deadline', 'local_jedomi');
         }
 
         // Skipped: every page of the document, or of the request, that was not read (the total is capped by
