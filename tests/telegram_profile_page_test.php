@@ -83,4 +83,51 @@ final class telegram_profile_page_test extends \advanced_testcase {
             'A manager generated the Telegram link code of the admin account.'
         );
     }
+
+    /**
+     * Link the admin account to a chat and require the PIN.
+     *
+     * @return int Admin user id.
+     */
+    private function link_admin_with_pin_required(): int {
+        global $DB;
+        $this->configure_bot();
+        set_config('telegram_require_pin', 1, 'local_jedomi');
+        $adminid = (int) get_admin()->id;
+        $DB->insert_record('local_jedomi_telegram_links', (object) ['userid' => $adminid, 'chatid' => '1001',
+            'username' => 'ada', 'confirmed' => 1, 'timecreated' => time()]);
+        return $adminid;
+    }
+
+    /**
+     * Decision 7: the PIN block is a Moodle form, and a valid PIN typed twice is saved.
+     */
+    public function test_pin_form_saves_a_valid_pin(): void {
+        $this->resetAfterTest();
+        $adminid = $this->link_admin_with_pin_required();
+
+        $page = $this->request_page('admin', ['userid' => $adminid]);
+        $this->assertStringContainsString('name="_qf__local_jedomi_form_telegram_pin_form"', $page, $page);
+
+        $this->request_page('admin', ['userid' => $adminid, '_qf__local_jedomi_form_telegram_pin_form' => 1,
+            'pin' => '135790', 'pinconfirm' => '135790', 'submitbutton' => 'Save PIN']);
+
+        $this->assertTrue(\local_jedomi\local\service\telegram_pin_service::has_pin($adminid));
+    }
+
+    /**
+     * Decision 7: a PIN that is not only digits, or typed differently twice, is not saved.
+     */
+    public function test_pin_form_refuses_invalid_or_mismatched_pin(): void {
+        $this->resetAfterTest();
+        $adminid = $this->link_admin_with_pin_required();
+
+        $this->request_page('admin', ['userid' => $adminid, '_qf__local_jedomi_form_telegram_pin_form' => 1,
+            'pin' => '12ab56', 'pinconfirm' => '12ab56', 'submitbutton' => 'Save PIN']);
+        $output = $this->request_page('admin', ['userid' => $adminid, '_qf__local_jedomi_form_telegram_pin_form' => 1,
+            'pin' => '135790', 'pinconfirm' => '135791', 'submitbutton' => 'Save PIN']);
+
+        $this->assertFalse(\local_jedomi\local\service\telegram_pin_service::has_pin($adminid));
+        $this->assertStringContainsString(get_string('telegram_pin_mismatch', 'local_jedomi'), $output, $output);
+    }
 }

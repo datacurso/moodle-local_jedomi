@@ -28,6 +28,7 @@ require_once(__DIR__ . '/../../config.php');
 require_once(__DIR__ . '/lib.php');
 
 use aiprovider_datacurso\local\plugin_settings;
+use local_jedomi\form\telegram_pin_form;
 use local_jedomi\local\service\telegram_link_service;
 use local_jedomi\local\service\telegram_pin_service;
 use local_jedomi\output\telegram_profile;
@@ -69,25 +70,16 @@ if ($action === 'unlink') {
     telegram_link_service::unlink($userid);
     redirect($pageurl, get_string('telegram_msg_unlinked', 'local_jedomi'), null, \core\output\notification::NOTIFY_SUCCESS);
 }
-if ($action === 'setpin') {
+$pinform = null;
+if (telegram_link_service::get_confirmed_link($userid) && telegram_pin_service::is_required($userid)) {
     // Decision 7: the PIN of an administrator or manager, set only by the user and stored only as a hash.
-    require_sesskey();
-    $pin = (string) optional_param('pin', '', PARAM_RAW);
-    $pinconfirm = (string) optional_param('pinconfirm', '', PARAM_RAW);
-    if (!telegram_pin_service::is_required($userid)) {
-        redirect($pageurl);
+    $pinform = new telegram_pin_form($pageurl);
+    if ($pindata = $pinform->get_data()) {
+        if (telegram_pin_service::set_pin($userid, (string) $pindata->pin)) {
+            redirect($pageurl, get_string('telegram_pin_saved', 'local_jedomi'), null, \core\output\notification::NOTIFY_SUCCESS);
+        }
+        redirect($pageurl, telegram_pin_form::format_description(), null, \core\output\notification::NOTIFY_ERROR);
     }
-    if ($pin !== $pinconfirm) {
-        $message = get_string('telegram_pin_mismatch', 'local_jedomi');
-    } else if (!telegram_pin_service::set_pin($userid, $pin)) {
-        $message = get_string('telegram_pin_invalid', 'local_jedomi', (object) [
-            'min' => telegram_pin_service::MIN_LENGTH,
-            'max' => telegram_pin_service::MAX_LENGTH,
-        ]);
-    } else {
-        redirect($pageurl, get_string('telegram_pin_saved', 'local_jedomi'), null, \core\output\notification::NOTIFY_SUCCESS);
-    }
-    redirect($pageurl, $message, null, \core\output\notification::NOTIFY_ERROR);
 }
 if ($bot['available'] && $roleok && $action === 'generate') {
     require_sesskey();
@@ -109,7 +101,7 @@ if ($link) {
 
 $renderer = $PAGE->get_renderer('local_jedomi');
 echo $OUTPUT->header();
-$pinrequired = $link !== null && telegram_pin_service::is_required($userid);
+$pinrequired = $link !== null && $pinform !== null;
 echo $renderer->render(new telegram_profile(
     $state,
     $bot['username'],
@@ -119,6 +111,7 @@ echo $renderer->render(new telegram_profile(
     $codeexpiry,
     $pageurl,
     $pinrequired,
-    $pinrequired && telegram_pin_service::has_pin($userid)
+    $pinrequired && telegram_pin_service::has_pin($userid),
+    $pinrequired ? $pinform->render() : ''
 ));
 echo $OUTPUT->footer();

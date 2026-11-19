@@ -51,6 +51,8 @@ class telegram_profile implements \core\output\named_templatable, \renderable, \
     protected bool $pinrequired;
     /** @var bool Whether the user has set the PIN. */
     protected bool $pinset;
+    /** @var string Rendered HTML of the PIN form; empty when the PIN does not apply. */
+    protected string $pinformhtml;
 
     /**
      * Store the page state.
@@ -64,6 +66,7 @@ class telegram_profile implements \core\output\named_templatable, \renderable, \
      * @param \moodle_url $pageurl URL the page forms post to.
      * @param bool $pinrequired Whether the user confirms Telegram writes with a PIN.
      * @param bool $pinset Whether the user has set the PIN.
+     * @param string $pinformhtml Rendered HTML of the PIN form; empty when the PIN does not apply.
      */
     public function __construct(
         string $state,
@@ -74,7 +77,8 @@ class telegram_profile implements \core\output\named_templatable, \renderable, \
         int $codeexpiry,
         \moodle_url $pageurl,
         bool $pinrequired = false,
-        bool $pinset = false
+        bool $pinset = false,
+        string $pinformhtml = ''
     ) {
         $this->state = $state;
         $this->botusername = $botusername;
@@ -85,6 +89,7 @@ class telegram_profile implements \core\output\named_templatable, \renderable, \
         $this->pageurl = $pageurl;
         $this->pinrequired = $pinrequired;
         $this->pinset = $pinset;
+        $this->pinformhtml = $pinformhtml;
     }
 
     /**
@@ -120,10 +125,7 @@ class telegram_profile implements \core\output\named_templatable, \renderable, \
             'codeexpiry' => $this->codeexpiry,
             'pinrequired' => $this->pinrequired,
             'pinset' => $this->pinset,
-            'pinminlength' => \local_jedomi\local\service\telegram_pin_service::MIN_LENGTH,
-            'pinmaxlength' => \local_jedomi\local\service\telegram_pin_service::MAX_LENGTH,
-            'pinpattern' => '[0-9]{' . \local_jedomi\local\service\telegram_pin_service::MIN_LENGTH . ','
-                . \local_jedomi\local\service\telegram_pin_service::MAX_LENGTH . '}',
+            'pinformhtml' => $this->pinformhtml,
         ];
     }
 

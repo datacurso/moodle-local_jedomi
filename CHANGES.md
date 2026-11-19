@@ -57,6 +57,7 @@
 - Changed (REL-004): an administrator without a saved web service list is notified, when they create or enable an agent, that it cannot use any web service function
 - Changed (REL-005): the summary of each agent run is no longer sent by email by default (popup only); the 2026111903 upgrade removes email from the site default, users' own preferences are kept
 - Upgrade (2026111903): message default of `agentwrites` (no data change)
+- Changed: the Telegram PIN is set with a standard Moodle form that can show the PIN and explains it is numeric only
 
 ## 1.6.3 (2026-11-17)
 
