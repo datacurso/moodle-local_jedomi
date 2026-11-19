@@ -117,6 +117,27 @@ final class telegram_webhook_test extends \advanced_testcase {
         );
     }
 
+    /**
+     * REL-010: a request without the right secret gets a 403 and stops before the payload, the self-ping or the handler
+     * are read or run.
+     */
+    public function test_wrong_secret_gets_a_403_before_any_processing(): void {
+        $source = file_get_contents(__DIR__ . '/../telegram_webhook.php');
+        $this->assertSame(1, preg_match(
+            '/if \(!manager::is_valid_webhook_request\(\$_SERVER\)\) \{(.*?)\n\}/s',
+            $source,
+            $guard
+        ), 'The secret guard is a single block');
+        $this->assertStringContainsString('http_response_code(403);', $guard[1]);
+        $this->assertStringContainsString('exit;', $guard[1]);
+        $this->assertStringNotContainsString('webhook_handler', $guard[1]);
+
+        $guardend = strpos($source, $guard[0]) + strlen($guard[0]);
+        foreach (['optional_param(', "file_get_contents('php://input')", 'webhook_handler::'] as $processing) {
+            $this->assertGreaterThan($guardend, strpos($source, $processing), "{$processing} runs only after the guard");
+        }
+    }
+
     // ... ========================
     // E007 in secret mismatch
     // ========================

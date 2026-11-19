@@ -1,6 +1,6 @@
 # Changes
 
-## Unreleased (1.7.0)
+## 1.7.0 (2026-11-19)
 
 - Added (unit 9): signals of life while a slow AI round waits: the web chat sends `_jedomi_heartbeat` every 15 s (the panel shows "Jedomi is still working on your answer…"), so a proxy such as Cloudflare does not close the request; Telegram shows "typing" again every 4 s (`\local_jedomi\ai\heartbeat`, through the cURL progress callback). Closing the web chat aborts the waiting AI call (RES-001); a failing listener never stops the AI call, and Telegram "typing" uses a 2 s timeout and is not sent again after a failure (RES-002)
 - Added (unit 9): time limit per question: three times `ai_timeout` in the web chat (9 minutes by default; the last round only gets the time left) and 10 minutes in Telegram over all its workers, whose AI call only gets the time left, at least 5 s (REL-003), then a clear message
@@ -82,6 +82,11 @@
 - Fixed (unit 12, RES-001/002): a saved API key or bot token that cannot be decrypted (the encryption key of the site changed) is recorded (`secret_unreadable_<name>`, cleared when it is saved again or decrypts) and the AI provider settings page and the Integrations tab ask to enter it again; the webhook registration task keeps the registration pending and records the real cause, and removing an unreadable token warns that its webhook may remain registered in Telegram
 - Fixed (unit 12, RES-003): a backup whose copy to its `destination` fails keeps the backup file and returns an error instead of `stored_at`; a destination that is a link is reported as such
 - Changed (unit 12, READ-002, READ-003): the tools of an agent run or preview are an instance (`new tool_executor($agentid, $userid, $channel)`) instead of static state, and the "last tool result" fallback is one helper (`agent_runner::last_tool_result()`) shared by the scheduled run and the preview
+
+- Security (unit 13): `jedomi_set_site_config` also refuses the core settings that decide privileges (`config_key_blocked_msg`, nothing written): `siteadmins`, `siteguest`, `defaultuserroleid`, `notloggedinroleid`, `guestroleid`, `creatornewroleid`, `alternateloginurl`, `auth` and `registerauth`. Names are compared in lower case, since the config table is case-insensitive on MySQL and MariaDB (`SiteAdmins` would write `siteadmins`)
+- Security (unit 13): the instructions of the web chat, the agents and Telegram say that the AI never grants or removes site administrator status nor escalates privileges in any other way; when asked, it gives the steps of Site administration > Users > Permissions > Site administrators (`/admin/roles/admins.php`) and explains that "Assign system roles" gives the Manager role, which is not site administrator. When an action cannot be done from the chat, it gives the steps in Moodle
+- Requires the Datacurso AI provider 1.9.0 (`aiprovider_datacurso` 2026111900)
+- Tests (unit 13, REL-009/010): the scope of an agent whose context was deleted, and the 403 of the Telegram webhook before any processing
 
 ## 1.6.3 (2026-11-17)
 

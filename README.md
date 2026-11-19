@@ -15,7 +15,7 @@ This plugin is part of the **Datacurso AI Plugin Suite**.
 
 1. Moodle 4.5 (`MOODLE_405_STABLE`). This is the version the plugin requires and is tested with; later versions are
    not supported yet.
-2. The Moodle AI provider **Datacurso AI Provider** (`aiprovider_datacurso`) 2026111100 (release 1.8.0) or later,
+2. The Moodle AI provider **Datacurso AI Provider** (`aiprovider_datacurso`) 2026111900 (release 1.9.0) or later,
    installed **before** Jedomi, with whichever AI service you use: its settings page holds the Jedomi settings and its
    "Enabled" switch turns Jedomi on or off. Download it for free from
    [https://moodle.org/plugins/aiprovider_datacurso/versions](https://moodle.org/plugins/aiprovider_datacurso/versions).
@@ -186,6 +186,14 @@ fit whole in one message is not held: the user is told to ask for it in the web 
 
 After upgrading to 1.6.1, existing agents have no approved writes, so all their writes wait for approval until their
 owners approve the functions each agent needs in its form.
+
+## Site administrators
+
+Jedomi never grants or removes site administrator status: the companion web service refuses `siteadmins` and the other
+core settings that decide privileges, and when asked the AI gives the steps instead. To add a site administrator go to
+Site administration > Users > Permissions > Site administrators (`/admin/roles/admins.php`), search the user in the
+Users list, select them, click Add and confirm. "Assign system roles" is a different page: it gives the Manager role,
+which is not site administrator.
 
 ## Telegram webhook
 

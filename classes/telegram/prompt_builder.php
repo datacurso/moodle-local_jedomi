@@ -127,7 +127,8 @@ final class prompt_builder {
         }
         // The same rules as the web chat: third-party content is data, and the instructions stay private.
         $prompt .= "- " . \local_jedomi\local\untrusted::rule() . "\n"
-            . "- " . \local_jedomi\proxy\system_message::no_disclosure_rule() . "\n";
+            . "- " . \local_jedomi\proxy\system_message::no_disclosure_rule() . "\n"
+            . "- " . \local_jedomi\proxy\system_message::site_admin_rule() . "\n";
         $prompt .= "\n"
             . "⚡ PARALLEL TOOLS: You can call MULTIPLE tools in a single response.\n"
             . "  This is MUCH faster than doing them one by one.\n\n"

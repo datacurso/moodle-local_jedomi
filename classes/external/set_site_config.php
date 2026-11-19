@@ -54,12 +54,17 @@ class set_site_config extends external_api {
 
     /**
      * Keys that can NEVER be written via this function.
-     * Changing them could break or expose the site.
+     * Changing them could break or expose the site. The last ones decide privileges: who is a site administrator or the
+     * guest user, the roles every user, visitor, guest or course creator gets, where and how users log in (enabled
+     * authentication plugins: "none" would allow logins without a password). The AI never grants site administrator
+     * status; it gives the steps of the Site administrators page instead. Lower case: names are compared in lower case.
      */
     private const BLOCKED_KEYS = [
         'wwwroot', 'dbtype', 'dbhost', 'dbname', 'dbuser', 'dbpass',
         'dirroot', 'dataroot', 'admin', 'passwordsaltmain',
         'secret', 'hmac_secret',
+        'siteadmins', 'siteguest', 'defaultuserroleid', 'notloggedinroleid', 'guestroleid', 'creatornewroleid',
+        'alternateloginurl', 'auth', 'registerauth',
     ];
 
     /**
@@ -156,8 +161,10 @@ class set_site_config extends external_api {
 
         $start = microtime(true);
 
-        // Block dangerous keys unconditionally.
-        if (in_array($name, self::BLOCKED_KEYS, true)) {
+        // Block dangerous keys unconditionally. The config table is case-insensitive on MySQL and MariaDB, so "SiteAdmins"
+        // would write the real "siteadmins" row: the checks use the lower-case name.
+        $key = \core_text::strtolower($name);
+        if (in_array($key, self::BLOCKED_KEYS, true)) {
             $executionms = (int) ((microtime(true) - $start) * 1000);
             \local_jedomi_log(sprintf(
                 '[local_jedomi] set_site_config BLOCKED: name=%s ip=%s',
@@ -173,7 +180,7 @@ class set_site_config extends external_api {
         }
 
         // Refuse secrets: written here they would be stored unencrypted and shown in the config log.
-        if (self::is_secret_setting($plugin, $name)) {
+        if (self::is_secret_setting(\core_text::strtolower($plugin), $key)) {
             $executionms = (int) ((microtime(true) - $start) * 1000);
             \local_jedomi_log(sprintf(
                 '[local_jedomi] set_site_config SECRET BLOCKED: plugin=%s name=%s ip=%s',

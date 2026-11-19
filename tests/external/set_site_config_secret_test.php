@@ -98,6 +98,50 @@ final class set_site_config_secret_test extends \advanced_testcase {
     }
 
     /**
+     * Core settings that grant or decide privileges.
+     *
+     * @return array
+     */
+    public static function privilege_provider(): array {
+        return [
+            'site administrators' => ['siteadmins'],
+            'guest user' => ['siteguest'],
+            'role of authenticated users' => ['defaultuserroleid'],
+            'role of visitors not logged in' => ['notloggedinroleid'],
+            'role of the guest user' => ['guestroleid'],
+            'role of course creators in new courses' => ['creatornewroleid'],
+            'alternate login address' => ['alternateloginurl'],
+            'enabled authentication plugins' => ['auth'],
+            'self registration plugin' => ['registerauth'],
+            'site administrators in mixed case' => ['SiteAdmins'],
+            'site administrators in upper case' => ['SITEADMINS'],
+            'role of the guest user in mixed case' => ['GuestRoleId'],
+        ];
+    }
+
+    /**
+     * The AI never grants site administrator status nor changes the settings that decide privileges: they are refused
+     * and nothing is written.
+     *
+     * @dataProvider privilege_provider
+     * @param string $name Core setting name.
+     * @return void
+     */
+    public function test_privilege_setting_is_refused(string $name): void {
+        global $DB;
+        $before = get_config('core', $name);
+        $logs = $DB->count_records('config_log');
+        $value = $name === 'alternateloginurl' ? 'https://attacker.example/login' : (string) get_admin()->id . ',999';
+
+        $result = $this->call($name, $value, '');
+
+        $this->assertSame('error', $result['status']);
+        $this->assertSame(get_string('config_key_blocked_msg', 'local_jedomi'), $result['message']);
+        $this->assertSame($before, get_config('core', $name), 'The setting is not changed');
+        $this->assertSame($logs, $DB->count_records('config_log'), 'Nothing is written to the config log');
+    }
+
+    /**
      * An ordinary setting is still written.
      *
      * @return void
