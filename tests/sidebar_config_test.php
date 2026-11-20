@@ -175,7 +175,10 @@ final class sidebar_config_test extends \advanced_testcase {
         $this->assertSame('admin', $config['context']['location'], 'The admin quick actions of the administration');
         $this->assertSame(0, $config['context']['course_id']);
 
-        $source = file_get_contents(__DIR__ . '/../amd/src/sidebar.js');
+        $source = implode("\n", array_map(
+            'file_get_contents',
+            array_merge([__DIR__ . '/../amd/src/sidebar.js'], glob(__DIR__ . '/../amd/src/local/sidebar/*.js'))
+        ));
         $this->assertStringNotContainsString('getCourseidFromUrl', $source, 'The course is never read from the address');
         $this->assertStringNotContainsString('getCurrentLocation', $source, 'The location is never read from the address');
         $this->assertStringNotContainsString('buildSystemPrompt', $source, 'The system prompt is built on the server');
@@ -271,7 +274,7 @@ final class sidebar_config_test extends \advanced_testcase {
         $renewed = local_jedomi_generate_spt('student');
         $this->assertNull(local_jedomi_signed_request_course($renewed, 0)['error'], 'Renewed permissions are accepted');
 
-        $source = file_get_contents(__DIR__ . '/../amd/src/sidebar.js');
+        $source = file_get_contents(__DIR__ . '/../amd/src/local/sidebar/permissions.js');
         foreach (['SPT_RENEW_MARGIN_MS', 'ensureFreshPermissions', 'renewPermissions', 'server_time'] as $needle) {
             $this->assertStringContainsString($needle, $source, $needle);
         }

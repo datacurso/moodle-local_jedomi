@@ -89,6 +89,11 @@ final class pending_action_service_test extends \advanced_testcase {
             'read that sets favourites' => ['core_course_set_favourite_courses', 'high'],
             'read that creates evidence' => ['core_competency_create_user_evidence_competency', 'high'],
             'unknown function' => ['core_no_such_function', null],
+            'plugin state change' => ['core_admin_set_plugin_state', 'critical'],
+            'role assignment' => ['core_role_assign_roles', 'critical'],
+            'role unassignment' => ['core_role_unassign_roles', 'critical'],
+            'user creation' => ['core_user_create_users', 'critical'],
+            'user update' => ['core_user_update_users', 'critical'],
         ];
     }
 
@@ -706,5 +711,120 @@ final class pending_action_service_test extends \advanced_testcase {
         $this->assertSame(1, pending_action_service::purge_expired());
         $this->assertFalse($DB->record_exists(pending_action_service::TABLE, ['id' => $orphan]));
         $this->assertTrue($DB->record_exists(pending_action_service::TABLE, ['id' => $kept['id']]));
+    }
+
+    /**
+     * Course in a category where a user holds the manager role (moodle/course:manageactivities through the category,
+     * without an enrolment), with the web service lists of the teacher and the student set.
+     *
+     * @return array{0: \stdClass, 1: \stdClass, 2: \context_coursecat} The user, the course and the category context.
+     */
+    private function category_teacher(): array {
+        global $DB;
+        $category = $this->getDataGenerator()->create_category();
+        $course = $this->getDataGenerator()->create_course(['category' => $category->id, 'fullname' => 'Original name']);
+        $user = $this->getDataGenerator()->create_user();
+        $catcontext = \context_coursecat::instance($category->id);
+        role_assign((int) $DB->get_field('role', 'id', ['shortname' => 'manager']), (int) $user->id, $catcontext->id);
+        set_config('ws_allowlist_teacher', json_encode(['core_course_update_courses']), 'local_jedomi');
+        set_config('ws_allowlist_student', json_encode([]), 'local_jedomi');
+        $this->setUser($user);
+        return [$user, $course, $catcontext];
+    }
+
+    /**
+     * Hold the renaming of a course by a user, held in a course.
+     *
+     * @param int $userid User.
+     * @param int $targetid Course renamed.
+     * @param int $courseid Course the action is held in.
+     * @return int Pending action id.
+     */
+    private function hold_rename(int $userid, int $targetid, int $courseid): int {
+        return (int) pending_action_service::hold($userid, 'ws_execute', ['wsname' => 'core_course_update_courses',
+            'params' => json_encode(['courses' => [['id' => $targetid, 'fullname' => 'Renamed']]])], 0, $courseid)['id'];
+    }
+
+    /**
+     * Unit 7b: a teacher of a course through a category role, without an enrolment, holds a write in that course and
+     * confirms it: the role is computed again in the course stored with the action, so it runs.
+     */
+    public function test_category_teacher_confirms_a_write_held_in_the_course(): void {
+        global $DB;
+        $this->resetAfterTest();
+        [$user, $course] = $this->category_teacher();
+        $this->assertSame('teacher', \local_jedomi_user_role((int) $user->id, (int) $course->id));
+
+        $id = $this->hold_rename((int) $user->id, (int) $course->id, (int) $course->id);
+        $this->assertSame((int) $course->id, (int) $DB->get_field(pending_action_service::TABLE, 'courseid', ['id' => $id]));
+
+        pending_action_service::resolve($id, (int) $user->id, true, \core_text::strtoupper(get_string(
+            'confirm_btn_yes',
+            'local_jedomi'
+        )));
+        $this->assertSame('Renamed', $DB->get_field('course', 'fullname', ['id' => $course->id]));
+    }
+
+    /**
+     * Unit 7b: the role is computed when the action is confirmed, so a teacher who lost the capability is refused.
+     */
+    public function test_write_held_in_a_course_is_refused_after_losing_the_capability(): void {
+        global $DB;
+        $this->resetAfterTest();
+        [$user, $course, $catcontext] = $this->category_teacher();
+        $id = $this->hold_rename((int) $user->id, (int) $course->id, (int) $course->id);
+        role_unassign((int) $DB->get_field('role', 'id', ['shortname' => 'manager']), (int) $user->id, $catcontext->id);
+
+        pending_action_service::resolve($id, (int) $user->id, true, \core_text::strtoupper(get_string(
+            'confirm_btn_yes',
+            'local_jedomi'
+        )));
+        $this->assertSame('Original name', $DB->get_field('course', 'fullname', ['id' => $course->id]));
+    }
+
+    /**
+     * Unit 7b: an action held outside a course keeps the role outside a course, where the user without enrolments is a
+     * student, so the write does not run.
+     */
+    public function test_write_held_without_a_course_keeps_the_role_outside_a_course(): void {
+        global $DB;
+        $this->resetAfterTest();
+        [$user, $course] = $this->category_teacher();
+        $id = $this->hold_rename((int) $user->id, (int) $course->id, 0);
+        $this->assertSame(0, (int) $DB->get_field(pending_action_service::TABLE, 'courseid', ['id' => $id]));
+
+        pending_action_service::resolve($id, (int) $user->id, true, \core_text::strtoupper(get_string(
+            'confirm_btn_yes',
+            'local_jedomi'
+        )));
+        $this->assertSame('Original name', $DB->get_field('course', 'fullname', ['id' => $course->id]));
+    }
+
+    /**
+     * Unit 7b: a course excluded from Jedomi gives no role, and the course of Telegram comes only from a course the user
+     * can access.
+     */
+    public function test_excluded_or_inaccessible_course_gives_no_course_role(): void {
+        $this->resetAfterTest();
+        [$user, $course] = $this->category_teacher();
+        $other = $this->getDataGenerator()->create_course();
+        $this->assertSame('teacher', pending_action_service::role_in_course((int) $user->id, (int) $course->id));
+        $this->assertSame((int) $course->id, pending_action_service::course_of_args(
+            (int) $user->id,
+            ['courseid' => $course->id]
+        ));
+        $this->assertSame(0, pending_action_service::course_of_args((int) $user->id, ['courseid' => $other->id]));
+        $this->assertSame(0, pending_action_service::course_of_args((int) $user->id, []));
+    }
+
+    /**
+     * Unit 7b: the upgrade adds the course of the held action to both tables of held actions.
+     */
+    public function test_both_tables_of_held_actions_have_the_course(): void {
+        global $DB;
+        $dbman = $DB->get_manager();
+        foreach (['local_jedomi_pending_actions', 'local_jedomi_telegram_pending_actions'] as $table) {
+            $this->assertTrue($dbman->field_exists(new \xmldb_table($table), new \xmldb_field('courseid')), $table);
+        }
     }
 }

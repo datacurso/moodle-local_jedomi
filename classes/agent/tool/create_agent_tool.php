@@ -98,7 +98,11 @@ class create_agent_tool implements agent_tool {
      */
     public function execute(\stdClass $params): string {
         $role = $this->actor_role();
-        if (!in_array($role, ['admin', 'manager'], true)) {
+        // The role and the capability of the agents page are both required.
+        if (
+            !in_array($role, ['admin', 'manager'], true)
+                || !has_capability('local/jedomi:manageagents', \context_system::instance(), $this->actor_id())
+        ) {
             return json_encode(['error' => 'permission_denied']);
         }
 

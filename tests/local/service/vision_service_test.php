@@ -105,6 +105,30 @@ final class vision_service_test extends \advanced_testcase {
     }
 
     /**
+     * The question reaches the vision model anonymised: with the anonymiser of the conversation when given, so its
+     * placeholder restores, and with one of the request otherwise.
+     */
+    public function test_question_is_anonymised_before_the_vision_model(): void {
+        $userid = $this->setup_user();
+        $curl = new fake_curl();
+        $answer = json_encode(['text' => 'A form', 'model' => 'm', 'pages_total' => null, 'pages_vision' => [],
+            'pages_skipped' => []]);
+        $curl->enqueue($answer);
+        $curl->enqueue($answer);
+        $question = 'Is the e-mail ana.secret@example.com in this form?';
+        $anonymizer = new \local_jedomi\local\anonymizer();
+
+        $api = new testable_provider_api(30, $curl);
+        vision_service::read_upload($userid, $this->upload(), 'form.png', $question, $api, $anonymizer);
+        vision_service::read_upload($userid, $this->upload(), 'form.png', $question, new testable_provider_api(30, $curl));
+
+        $sent = $curl->calls[0]['params']['question'];
+        $this->assertStringNotContainsString('ana.secret@example.com', $sent);
+        $this->assertSame($question, $anonymizer->restore($sent));
+        $this->assertStringNotContainsString('ana.secret@example.com', $curl->calls[1]['params']['question']);
+    }
+
+    /**
      * M8: a stored PDF is sent with the requested pages.
      * MDL-CTR-010: a PDF is sent with its pages to the image model.
      */

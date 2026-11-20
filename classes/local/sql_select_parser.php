@@ -116,13 +116,11 @@ class sql_select_parser {
      * @throws \moodle_exception sql_construct_rejected when the regular expression fails, so no query is read in part.
      */
     public static function tokenize(string $sql, array $params): array {
-        $positional = array_values(array_filter($params, static fn($key): bool => is_int($key), ARRAY_FILTER_USE_KEY));
-        $named = [];
-        foreach ($params as $key => $value) {
-            if (is_string($key)) {
-                $named[ltrim($key, ':')] = $value;
-            }
-        }
+        // The values the database binds, read as moodle_database::fix_sql_params() reads them: question marks take the
+        // values in order whatever their keys, a named placeholder takes the value of its exact key (JEDOMI-SEC-015).
+        // sql_guard::params_rejection() refuses beforehand any parameters that could be read in another way.
+        $positional = array_values($params);
+        $named = $params;
         $pattern = '/\G(?:(?<space>[ \t\r\n]+)|(?<comment>\/\*.*?(?:\*\/|$)|--[^\n]*|#[^\n]*)'
             . '|(?<table>\{[a-z][a-z0-9_]*\})|(?<word>[A-Za-z_][A-Za-z0-9_]*)|(?<number>\d+(?:\.\d+)?)(?![A-Za-z0-9_.])'
             . "|(?<string>'(?:[^'\\\\]|\\\\.|'')*')|(?<op><=>|<=|>=|<>|!=|[=<>])|(?<punct>[,.()*])"

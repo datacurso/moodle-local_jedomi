@@ -45,6 +45,17 @@ final class telegram_profile_page_test extends \advanced_testcase {
     }
 
     /**
+     * Skip the test when aiprovider_datacurso is not installed (as in the CI without the provider).
+     *
+     * @return void
+     */
+    private function require_provider(): void {
+        if (!class_exists(\aiprovider_datacurso\httpclient\ai_services_api::class)) {
+            $this->markTestSkipped('aiprovider_datacurso is not installed; this test needs it.');
+        }
+    }
+
+    /**
      * Configure an available Telegram bot.
      */
     private function configure_bot(): void {
@@ -58,6 +69,7 @@ final class telegram_profile_page_test extends \advanced_testcase {
      * MDL-INT-059: each user can generate the link code of their own account.
      */
     public function test_user_can_generate_own_link_code(): void {
+        $this->require_provider();
         $this->resetAfterTest();
         $this->configure_bot();
         $user = $this->getDataGenerator()->create_user(['username' => 'jedomistudent']);
@@ -103,6 +115,7 @@ final class telegram_profile_page_test extends \advanced_testcase {
      * Decision 7: the PIN block is a Moodle form, and a valid PIN typed twice is saved.
      */
     public function test_pin_form_saves_a_valid_pin(): void {
+        $this->require_provider();
         $this->resetAfterTest();
         $adminid = $this->link_admin_with_pin_required();
 
@@ -119,6 +132,7 @@ final class telegram_profile_page_test extends \advanced_testcase {
      * Decision 7: a PIN that is not only digits, or typed differently twice, is not saved.
      */
     public function test_pin_form_refuses_invalid_or_mismatched_pin(): void {
+        $this->require_provider();
         $this->resetAfterTest();
         $adminid = $this->link_admin_with_pin_required();
 

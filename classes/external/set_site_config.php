@@ -22,8 +22,9 @@
  * HMAC-authenticated. Audit logged.
  *
  * Security:
- *  - Allowlist of writeable keys (server-side enforcement)
- *  - Dangerous keys (wwwroot, dbtype, dirroot, dataroot) are hardcoded-blocked
+ *  - Only the settings of the allowlist are written, each with a value of its type (\local_jedomi\local\site_config_policy);
+ *    no setting of an AI provider of Moodle is ever written (JEDOMI-SEC-011)
+ *  - Dangerous keys (wwwroot, dbtype, dirroot, dataroot, privileges) and secrets stay blocked as a second barrier
  *  - Purges relevant cache after write
  *
  * @package    local_jedomi
@@ -44,10 +45,11 @@ use core_external\external_function_parameters;
 use core_external\external_single_structure;
 use core_external\external_value;
 use local_jedomi\companion_hmac;
+use local_jedomi\local\site_config_policy;
 
 /**
- * External function that writes a site configuration value, blocking dangerous keys and logging each change in the
- * config log of Moodle.
+ * External function that writes a site configuration value of the allowlist, blocking dangerous keys and logging each
+ * change in the config log of Moodle.
  */
 class set_site_config extends external_api {
     use companion_hmac;
@@ -198,6 +200,35 @@ class set_site_config extends external_api {
                 'execution_ms' => $executionms,
             ];
         }
+
+        // Only the settings of the allowlist are written, with a value of their type: anything else, such as the endpoint
+        // of an AI provider of Moodle, is refused (JEDOMI-SEC-011).
+        if (!site_config_policy::is_allowed($plugin, $name)) {
+            $executionms = (int) ((microtime(true) - $start) * 1000);
+            \local_jedomi_log(sprintf(
+                '[local_jedomi] set_site_config NOT ALLOWED: plugin=%s name=%s ip=%s',
+                $plugin,
+                $name,
+                getremoteaddr()
+            ));
+            return [
+                'status'       => 'error',
+                'name'         => $name,
+                'message'      => get_string('config_key_not_allowed_msg', 'local_jedomi', site_config_policy::allowed_keys_list()),
+                'execution_ms' => $executionms,
+            ];
+        }
+        if (!site_config_policy::is_valid_value($plugin, $name, $value)) {
+            return [
+                'status'       => 'error',
+                'name'         => $name,
+                'message'      => get_string('config_value_invalid_msg', 'local_jedomi', $name),
+                'execution_ms' => (int) ((microtime(true) - $start) * 1000),
+            ];
+        }
+        // Stored under its own name and component, whatever the case they were sent in.
+        $name = site_config_policy::canonical_name($name);
+        $plugin = \core_text::strtolower($plugin);
 
         // Write the config value. A change is recorded in the config log of Moodle (the "Config changes" report and the
         // config_log_created event), as when an administrator saves the setting (JEDOMI-SEC-011).

@@ -261,7 +261,15 @@ class preview_runner {
                 $msg['content'] = $anonymizer->restore($untrusted->unwrap($msg['content']));
             }
         });
-        self::save_cache($cachehash, $userid, $finalanswer, $profilerentries, $cachablemessages, $plan);
+        self::save_cache(
+            $cachehash,
+            $userid,
+            $finalanswer,
+            $profilerentries,
+            $cachablemessages,
+            $plan,
+            $anonymizer->export_map()
+        );
 
         return [
             'ok' => true,
@@ -286,8 +294,10 @@ class preview_runner {
         $plan = !empty($cached->plan_json) ? json_decode($cached->plan_json, true) : null;
         if (is_array($plan) && !empty($plan)) {
             // The AI gets the fresh results and the previous answer anonymised, as in the scheduled run; the profiler
-            // and the reformulated answer show the real values.
-            $anonymizer = new anonymizer();
+            // and the reformulated answer show the real values. The placeholders of the cached run are loaded first, so
+            // the identifiers shown in the cached answer go back as placeholders, even when the data changed since.
+            $cachedresult = json_decode($cached->result_json, true);
+            $anonymizer = anonymizer::from_map(is_array($cachedresult) ? (array) ($cachedresult['anonymizer'] ?? []) : []);
             // The fresh results reach the AI as untrusted data, as in a run that is not cached (REL-008).
             $untrusted = new \local_jedomi\local\untrusted();
             $replayprofiler = [];
@@ -329,8 +339,9 @@ class preview_runner {
                     $freshctx .= "\n" . $untrusted->wrap('tool ' . $fr['tool'], $fr['result']) . "\n";
                 }
 
-                $cachedresult = json_decode($cached->result_json, true);
-                $cachedanswer = $anonymizer->anonymize_text((string) ($cachedresult['answer'] ?? $cached->result_json));
+                $cachedanswer = $anonymizer->anonymize_history_text(
+                    (string) (is_array($cachedresult) ? ($cachedresult['answer'] ?? '') : $cached->result_json)
+                );
 
                 $reformmessages = [
                     ['role' => 'system', 'content' => 'You previously answered a question. Below are updated tool results.'
@@ -387,6 +398,7 @@ class preview_runner {
      * @param array $profiler Profiler entries.
      * @param array $conversation Conversation without tool payloads.
      * @param array $plan Tool plan.
+     * @param array $anonymizermap Placeholders of the run, so a replay sends the cached answer anonymised with them.
      */
     private static function save_cache(
         string $cachehash,
@@ -394,7 +406,8 @@ class preview_runner {
         string $answer,
         array $profiler,
         array $conversation,
-        array $plan
+        array $plan,
+        array $anonymizermap = []
     ): void {
         global $DB;
 
@@ -403,6 +416,7 @@ class preview_runner {
             'answer' => $answer,
             'profiler' => $profiler,
             'conversation' => $conversation,
+            'anonymizer' => $anonymizermap,
         ]);
 
         // Only save semantic plan if all tools are readonly.

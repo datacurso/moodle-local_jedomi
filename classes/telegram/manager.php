@@ -197,17 +197,13 @@ class manager {
     }
 
     /**
-     * Generate or retrieve the webhook secret.
+     * Generate or retrieve the webhook secret, kept encrypted with the key of the site (JEDOMI-SEC-010); one saved in
+     * clear text before 1.8.0 is still read.
      *
      * @return string 32-char hex random secret
      */
     public static function get_webhook_secret(): string {
-        $secret = get_config('local_jedomi', 'telegram_webhook_secret');
-        if (empty($secret)) {
-            $secret = self::new_webhook_secret();
-            set_config('telegram_webhook_secret', $secret, 'local_jedomi');
-        }
-        return $secret;
+        return \local_jedomi\local\secret_store::get_or_generate('telegram_webhook_secret', 16);
     }
 
     /**
@@ -225,7 +221,7 @@ class manager {
      * @return void
      */
     public static function replace_webhook_secret(): void {
-        set_config('telegram_webhook_secret', self::new_webhook_secret(), 'local_jedomi');
+        \local_jedomi\local\secret_store::set('telegram_webhook_secret', self::new_webhook_secret());
     }
 
     /**
@@ -242,7 +238,7 @@ class manager {
      */
     public static function regenerate_webhook_secret(): string {
         $secret = self::new_webhook_secret();
-        set_config('telegram_webhook_secret', $secret, 'local_jedomi');
+        \local_jedomi\local\secret_store::set('telegram_webhook_secret', $secret);
 
         // Update Telegram webhook with the new secret.
         self::register_webhook(null, true);
@@ -266,7 +262,7 @@ class manager {
     public static function register_webhook(?api_client $client = null, bool $droppending = false): bool {
         $token = self::get_bot_token();
         if (!$token) {
-            self::set_last_webhook_error('No bot token configured — webhook not registered');
+            self::set_last_webhook_error('telegram_token_not_configured');
             return false;
         }
 
@@ -275,7 +271,7 @@ class manager {
         if ($ok) {
             self::clear_last_webhook_error();
         } else {
-            self::set_last_webhook_error('setWebhook failed — check the URL is HTTPS and reachable');
+            self::set_last_webhook_error('telegram_webhook_set_failed');
         }
 
         return $ok;
@@ -294,17 +290,17 @@ class manager {
     public static function register_webhook_with_new_secret(?api_client $client = null, bool $droppending = false): bool {
         $token = self::get_bot_token();
         if (!$token) {
-            self::set_last_webhook_error('No bot token configured — webhook not registered');
+            self::set_last_webhook_error('telegram_token_not_configured');
             return false;
         }
 
         $client = $client ?? new api_client($token);
         $secret = self::new_webhook_secret();
         if (!$client->set_webhook(self::get_webhook_url(), $secret, $droppending)) {
-            self::set_last_webhook_error('setWebhook failed — check the URL is HTTPS and reachable');
+            self::set_last_webhook_error('telegram_webhook_set_failed');
             return false;
         }
-        set_config('telegram_webhook_secret', $secret, 'local_jedomi');
+        \local_jedomi\local\secret_store::set('telegram_webhook_secret', $secret);
         self::clear_last_webhook_error();
         return true;
     }
@@ -326,9 +322,12 @@ class manager {
     }
 
     /**
-     * Persist the last webhook API error message so it's visible in the admin UI.
+     * Persist the last webhook error so it is visible in the admin UI.
      *
-     * @param string $message
+     * The identifier of a language string of local_jedomi is stored, so the Integrations tab shows it in the language of
+     * whoever opens it ({@see self::get_last_webhook_error()}).
+     *
+     * @param string $message Identifier of a language string of local_jedomi.
      */
     public static function set_last_webhook_error(string $message): void {
         set_config('telegram_webhook_last_error', $message, 'local_jedomi');
@@ -401,12 +400,18 @@ class manager {
     }
 
     /**
-     * Get the last webhook error message (empty string if none).
+     * Get the last webhook error message (empty string if none), in the language of the current user.
+     *
+     * A stored language string identifier is translated; a text stored by an earlier version is returned as it is.
      *
      * @return string
      */
     public static function get_last_webhook_error(): string {
-        return (string) get_config('local_jedomi', 'telegram_webhook_last_error');
+        $error = (string) get_config('local_jedomi', 'telegram_webhook_last_error');
+        if (preg_match('/^[a-z_]+$/', $error) && get_string_manager()->string_exists($error, 'local_jedomi')) {
+            return get_string($error, 'local_jedomi');
+        }
+        return $error;
     }
 
     /**

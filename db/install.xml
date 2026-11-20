@@ -47,6 +47,7 @@
                 <FIELD NAME="callbackid" TYPE="char" LENGTH="64" NOTNULL="true" SEQUENCE="false"/>
                 <FIELD NAME="chatid" TYPE="char" LENGTH="32" NOTNULL="true" SEQUENCE="false"/>
                 <FIELD NAME="actionjson" TYPE="text" NOTNULL="true" SEQUENCE="false"/>
+                <FIELD NAME="courseid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Course the role is computed in when the action is confirmed; 0 outside a course"/>
                 <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
             </FIELDS>
             <KEYS>
@@ -166,6 +167,7 @@
                 <FIELD NAME="tool" TYPE="char" LENGTH="64" NOTNULL="true" SEQUENCE="false" COMMENT="Tool the model called"/>
                 <FIELD NAME="argsjson" TYPE="text" NOTNULL="true" SEQUENCE="false" COMMENT="Tool arguments as JSON"/>
                 <FIELD NAME="severity" TYPE="char" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="critical, high or medium"/>
+                <FIELD NAME="courseid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Course the role is computed in when the action is confirmed; 0 outside a course"/>
                 <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
             </FIELDS>
             <KEYS>

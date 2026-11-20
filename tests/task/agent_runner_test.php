@@ -286,8 +286,8 @@ final class agent_runner_test extends \advanced_testcase {
      */
     public function test_repeated_identical_tool_call_is_cut(): void {
         $this->resetAfterTest();
-        $creator = $this->getDataGenerator()->create_user();
-        $this->create_due_agent((int) $creator->id);
+        // An administrator: describe_table is offered only to the roles that can query the database.
+        $this->create_due_agent((int) get_admin()->id);
         $fake = new fake_ai_client();
         // A tool that works: a failing one is stopped earlier, after the same error repeats.
         for ($i = 1; $i <= 7; $i++) {

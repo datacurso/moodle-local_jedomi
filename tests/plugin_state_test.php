@@ -137,6 +137,9 @@ final class plugin_state_test extends \advanced_testcase {
      * the required one.
      */
     public function test_installation_requires_moodle_and_the_provider(): void {
+        if (!class_exists(\aiprovider_datacurso\httpclient\ai_services_api::class)) {
+            $this->markTestSkipped('aiprovider_datacurso is not installed; the dependency cannot be checked.');
+        }
         $info = \core_plugin_manager::instance()->get_plugin_info('local_jedomi');
 
         $this->assertGreaterThanOrEqual(2024100700, (int) $info->versionrequires);

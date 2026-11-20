@@ -580,5 +580,26 @@ function xmldb_local_jedomi_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2026111904, 'local', 'jedomi');
     }
 
+    if ($oldversion < 2026111906) {
+        // The companion HMAC secret, the permission token secret and the Telegram webhook secret are encrypted with the
+        // key of the site too (JEDOMI-SEC-010); values already encrypted are left as they are.
+        require_once($CFG->dirroot . '/local/jedomi/db/upgradelib.php');
+        local_jedomi_upgrade_encrypt_secrets();
+        upgrade_plugin_savepoint(true, 2026111906, 'local', 'jedomi');
+    }
+
+    if ($oldversion < 2026111907) {
+        // Held actions keep the course their role was computed in, so the confirmation computes it in the same course
+        // (unit 7b).
+        foreach (['local_jedomi_pending_actions', 'local_jedomi_telegram_pending_actions'] as $tablename) {
+            $table = new xmldb_table($tablename);
+            $field = new xmldb_field('courseid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            if (!$dbman->field_exists($table, $field)) {
+                $dbman->add_field($table, $field);
+            }
+        }
+        upgrade_plugin_savepoint(true, 2026111907, 'local', 'jedomi');
+    }
+
     return true;
 }

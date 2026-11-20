@@ -250,12 +250,12 @@ final class companion_signature_test extends \advanced_testcase {
         $hash = self::payload_hash(['sql' => self::SQL, 'params' => []]);
 
         $this->assertSame('unauthorized', $this->outcome(fn() => $this->query(str_repeat('0', 64), $now, $hash)));
-        $secret = get_config('local_jedomi', 'hmac_secret');
+        $secret = \local_jedomi\local\secret_store::get('hmac_secret');
         $this->assertMatchesRegularExpression('/^[0-9a-f]{64}$/', $secret);
 
         $result = $this->query(self::sign('jedomi_execute_sql', $now, $hash, $secret), $now, $hash);
         $this->assertArrayHasKey('row_count', $result);
-        $this->assertSame($secret, get_config('local_jedomi', 'hmac_secret'));
+        $this->assertSame($secret, \local_jedomi\local\secret_store::get('hmac_secret'));
     }
 
     /**
@@ -351,26 +351,27 @@ final class companion_signature_test extends \advanced_testcase {
 
     /**
      * JEDOMI-SEC-011: a setting changed through the companion is recorded in the config log of Moodle, with its old and
-     * new value; writing the same value again adds no row.
+     * new value; writing the same value again adds no row. The setting is one of the allowlist of the web service.
      */
     public function test_signed_setting_change_is_recorded_in_the_config_log(): void {
         global $DB;
-        set_config('jedomi_signature_probe', 'before', 'local_jedomi');
-        $params = ['name' => 'jedomi_signature_probe', 'value' => 'after', 'plugin' => 'local_jedomi'];
+        set_config('defaultcity', 'before');
+        $lastlog = (int) $DB->get_field_sql('SELECT MAX(id) FROM {config_log}');
+        $params = ['name' => 'defaultcity', 'value' => 'after', 'plugin' => ''];
         $now = time();
         $hash = self::payload_hash($params);
 
         $result = set_site_config::execute(
-            'jedomi_signature_probe',
+            'defaultcity',
             'after',
-            'local_jedomi',
+            '',
             self::sign('jedomi_set_site_config', $now, $hash),
             $now,
             $hash
         );
 
         $this->assertSame('success', $result['status']);
-        $logs = $DB->get_records('config_log', ['name' => 'jedomi_signature_probe', 'plugin' => 'local_jedomi']);
+        $logs = $DB->get_records_select('config_log', 'id > :lastlog', ['lastlog' => $lastlog]);
         $this->assertCount(1, $logs);
         $log = reset($logs);
         $this->assertSame('before', $log->oldvalue);
@@ -380,14 +381,14 @@ final class companion_signature_test extends \advanced_testcase {
         $again = $this->start_of_a_new_second();
         $hash = self::payload_hash($params);
         set_site_config::execute(
-            'jedomi_signature_probe',
+            'defaultcity',
             'after',
-            'local_jedomi',
+            '',
             self::sign('jedomi_set_site_config', $again, $hash),
             $again,
             $hash
         );
-        $this->assertSame(1, $DB->count_records('config_log', ['name' => 'jedomi_signature_probe']));
+        $this->assertSame(1, $DB->count_records_select('config_log', 'id > :lastlog', ['lastlog' => $lastlog]));
     }
 
     /**

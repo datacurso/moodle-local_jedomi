@@ -160,7 +160,7 @@ class handler {
         $requestcontext = $courseid > SITEID
             ? (\context_course::instance($courseid, IGNORE_MISSING) ?: \context_system::instance())
             : \context_system::instance();
-        if (self::run(array_merge([$system], $messages), $role, $userid, $anonymizer, $requestcontext)) {
+        if (self::run(array_merge([$system], $messages), $role, $userid, $anonymizer, $requestcontext, $courseid)) {
             // Audit trail without the conversation: who was answered, where and through which channel.
             \local_jedomi\event\chat_answered::create_for_channel('web', $requestcontext, $userid)->trigger();
         }
@@ -371,6 +371,7 @@ class handler {
      * @param \local_jedomi\local\anonymizer|null $anonymizer Anonymiser of the request; null for a new one.
      * @param \context|null $toolcontext Context the tools of other plugins are offered in (the signed course or the
      *                                   system); null offers none.
+     * @param int    $courseid Course signed in the permissions (0 outside a course): held actions keep it.
      * @return bool True when an answer of the AI was sent to the user, false on an error or a stopped answer.
      */
     public static function run(
@@ -378,7 +379,8 @@ class handler {
         string $role,
         int $userid,
         ?\local_jedomi\local\anonymizer $anonymizer = null,
-        ?\context $toolcontext = null
+        ?\context $toolcontext = null,
+        int $courseid = 0
     ): bool {
         require_once(__DIR__ . '/../../lib.php');
         \local_jedomi_log('RUN_START', ['role' => $role, 'user_message_count' => count($messages)]);
@@ -391,7 +393,7 @@ class handler {
             self::send_event(['_jedomi_heartbeat' => ['elapsed' => self::now() - $started]]);
         }, $abortcheck);
         try {
-            return self::run_rounds($messages, $role, $userid, $anonymizer, $started, $toolcontext);
+            return self::run_rounds($messages, $role, $userid, $anonymizer, $started, $toolcontext, $courseid);
         } finally {
             \local_jedomi\ai\heartbeat::stop();
         }
@@ -415,6 +417,7 @@ class handler {
      * @param \local_jedomi\local\anonymizer|null $anonymizer Anonymiser of the request; null for a new one.
      * @param int    $started  Time the question started.
      * @param \context|null $toolcontext Context the tools of other plugins are offered in; null offers none.
+     * @param int    $courseid Course signed in the permissions (0 outside a course).
      * @return bool True when an answer of the AI was sent to the user.
      */
     private static function run_rounds(
@@ -423,7 +426,8 @@ class handler {
         int $userid,
         ?\local_jedomi\local\anonymizer $anonymizer,
         int $started,
-        ?\context $toolcontext
+        ?\context $toolcontext,
+        int $courseid = 0
     ): bool {
 
         $tools = spt_validator::get_tool_definitions($role);
@@ -549,7 +553,7 @@ class handler {
                 } else if (isset($plugintools[$name]) && !\local_jedomi\local\plugin_tools::is_read_only($plugintools[$name])) {
                     $pending = pending_action_service::hold_plugin_tool($userid, $name, $args, $toolcontext);
                 } else {
-                    $pending = pending_action_service::hold($userid, $name, $args);
+                    $pending = pending_action_service::hold($userid, $name, $args, 0, $courseid);
                 }
                 if ($pending !== null) {
                     \local_jedomi_log('TOOL_HELD', ['tool' => $name, 'severity' => $pending['severity']]);
@@ -739,9 +743,12 @@ class handler {
 
         switch ($name) {
             case 'describe_table':
-                return self::describe_table_tool($args);
             case 'search_tables':
-                return self::search_tables_tool($args);
+                // Same gate as Telegram: table structures and names only for the roles that can query the database.
+                if (!\local_jedomi\local\query_runner::role_can_query($role)) {
+                    return json_encode(['error' => 'permission_denied']);
+                }
+                return $name === 'describe_table' ? self::describe_table_tool($args) : self::search_tables_tool($args);
             case 'execute_sql':
                 return self::execute_sql_tool($args, $role);
             case 'get_site_config':
@@ -875,6 +882,11 @@ class handler {
     private static function describe_table_tool(array $args): string {
         try {
             $tablename = $args['tablename'] ?? $args['table_name'] ?? $args['table'] ?? '';
+            // A sensitive table is never described, as it is never read (see sql_guard).
+            $bare = preg_replace('/^\{(\w+)\}$/', '$1', trim((string) $tablename));
+            if ($bare !== '' && \local_jedomi\local\sql_guard::is_sensitive_table($bare)) {
+                return json_encode(['error' => 'permission_denied']);
+            }
             $result = \local_jedomi\schema\table_descriptor::describe($tablename);
             return json_encode($result);
         } catch (\Exception $e) {
@@ -964,6 +976,7 @@ class handler {
                 return json_encode(['error' => 'query is required']);
             }
 
+            // Only the functions the role may call: its list, the course rule and the declared capabilities.
             $allowed = \local_jedomi\local\ws_runner::searchable_functions($role);
             if ($allowed === []) {
                 return json_encode(['results' => [], 'note' => get_string('note_ws_none_configured', 'local_jedomi')]);
@@ -1009,8 +1022,8 @@ class handler {
                 return json_encode(['error' => 'wsname is required']);
             }
 
-            // The same list that gates the execution: an empty list allows no description at all.
-            if (!\local_jedomi\local\ws_runner::role_allows($role, $wsname)) {
+            // The same rules as the search: an empty list allows no description at all.
+            if (!\local_jedomi\local\ws_runner::describable($role, $wsname)) {
                 return json_encode(['error' => 'permission_denied: function not in allowlist']);
             }
 
@@ -1126,7 +1139,12 @@ class handler {
      * @return string       JSON result.
      */
     private static function create_agent_tool(array $args, string $role): string {
-        if (!in_array($role, ['admin', 'manager'], true)) {
+        global $USER;
+        // The role and the capability of the agents page are both required, as in the agents page itself.
+        if (
+            !in_array($role, ['admin', 'manager'], true)
+                || !has_capability('local/jedomi:manageagents', \context_system::instance(), (int) $USER->id)
+        ) {
             return json_encode(['error' => 'permission_denied']);
         }
         $prompt = trim($args['prompt'] ?? '');
@@ -1134,7 +1152,6 @@ class handler {
         if (empty($prompt) || empty($schedule)) {
             return json_encode(['error' => 'Both prompt and schedule_cron are required.']);
         }
-        global $USER;
         $data = new \stdClass();
         $data->userid = (int) ($args['userid'] ?? $USER->id);
         // The agent runs with the permissions of its owner: nobody creates one on behalf of another user without permission.

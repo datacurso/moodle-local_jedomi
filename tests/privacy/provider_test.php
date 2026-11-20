@@ -210,7 +210,7 @@ final class provider_test extends provider_testcase {
         $this->assertStringContainsString('page images', $files);
         $this->assertStringContainsString('not anonymised', $files);
         $this->assertStringContainsString(
-            'not anonymised',
+            'replaced by placeholders',
             get_string('privacy:metadata:jedomi_custom_ai_service:question', 'local_jedomi')
         );
     }
@@ -235,7 +235,7 @@ final class provider_test extends provider_testcase {
             get_string('privacy:metadata:jedomi_file_service:file', 'local_jedomi')
         );
         $this->assertStringContainsString(
-            'not anonymised',
+            'replaced by placeholders',
             get_string('privacy:metadata:jedomi_file_service:question', 'local_jedomi')
         );
         $this->assertStringContainsStringIgnoringCase(

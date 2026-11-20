@@ -399,6 +399,38 @@ final class handler_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-CTR-011: in the web chat the text the vision model read (composed by read_file.php and sent back by the browser
+     * as a user message) reaches the AI with its "person_1" and "Person 1" as literal placeholders, so the answer gives
+     * them back as written and never as the real value of [person_1].
+     */
+    public function test_placeholders_invented_by_the_vision_model_are_not_restored(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $this->getDataGenerator()->create_user(['firstname' => 'Bruno', 'lastname' => 'Valderrama']);
+        $fake = new fake_ai_client();
+        $fake->enqueue_text('It shows [literal_1] and [literal_2], not [person_1].');
+        client::set_instance_for_testing($fake);
+        $read = \local_jedomi\local\service\vision_service::compose_message(
+            'What is this?',
+            'photo.jpg',
+            'The photo shows person_1 and Person 1.'
+        );
+
+        $output = $this->capture(fn() => handler::run([
+            ['role' => 'user', 'content' => 'Who has 9?'],
+            ['role' => 'assistant', 'content' => 'Bruno has 9.'],
+            ['role' => 'user', 'content' => $read],
+        ], 'admin', (int) get_admin()->id));
+
+        $sent = json_encode($fake->calls[0]['messages']);
+        $this->assertStringContainsString('The photo shows [literal_1] and [literal_2].', $sent);
+        $this->assertStringContainsString('[person_1] has 9.', $sent);
+        $chunks = array_filter($this->events($output), static fn($e) => is_array($e) && isset($e['choices']));
+        $text = implode('', array_map(static fn($e) => $e['choices'][0]['delta']['content'], $chunks));
+        $this->assertSame('It shows person_1 and Person 1, not Bruno.', $text);
+    }
+
+    /**
      * M11: the chat model never receives image parts; their text parts are kept.
      */
     public function test_chat_model_receives_only_text(): void {
@@ -1053,6 +1085,52 @@ final class handler_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-041: like in Telegram, the table tools go only to the roles that can query the database: a student is not
+     * offered describe_table nor search_tables and is refused when the AI calls them anyway.
+     */
+    public function test_student_is_not_offered_and_cannot_use_the_table_tools(): void {
+        $this->resetAfterTest();
+        $course = $this->getDataGenerator()->create_course();
+        $this->setUser($this->getDataGenerator()->create_and_enrol($course, 'student'));
+
+        $offered = array_map(
+            static fn(array $tool): string => $tool['function']['name'],
+            \local_jedomi_get_tool_definitions('student')
+        );
+        $described = json_decode(handler::run_tool('describe_table', ['tablename' => 'course'], 'student'), true);
+        $searched = json_decode(handler::run_tool('search_tables', ['query' => 'user'], 'student'), true);
+
+        $this->assertNotContains('describe_table', $offered);
+        $this->assertNotContains('search_tables', $offered);
+        $this->assertSame(['error' => 'permission_denied'], $described);
+        $this->assertSame(['error' => 'permission_denied'], $searched);
+    }
+
+    /**
+     * MDL-INT-041: teachers and administrators are offered the table tools and they work.
+     */
+    public function test_teacher_and_admin_are_offered_and_use_the_table_tools(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+
+        foreach (['teacher', 'admin'] as $role) {
+            $offered = array_map(
+                static fn(array $tool): string => $tool['function']['name'],
+                \local_jedomi_get_tool_definitions($role)
+            );
+            $described = json_decode(handler::run_tool('describe_table', ['tablename' => 'course'], $role), true);
+            $searched = json_decode(handler::run_tool('search_tables', ['query' => 'user'], $role), true);
+
+            $this->assertContains('describe_table', $offered, $role);
+            $this->assertContains('search_tables', $offered, $role);
+            $this->assertArrayNotHasKey('error', $described, $role);
+            $this->assertNotEmpty($described, $role);
+            $this->assertArrayNotHasKey('error', $searched, $role);
+            $this->assertGreaterThan(0, $searched['count'], $role);
+        }
+    }
+
+    /**
      * MDL-INT-041 / MDL-INT-017: like in Telegram, a teacher without the companion API permission runs from the web chat
      * the web service functions of the teacher list, and not the others.
      */
@@ -1121,6 +1199,7 @@ final class handler_test extends \advanced_testcase {
      * @return void
      */
     public function test_teacher_can_notify_the_group_of_the_course(): void {
+        $this->require_provider();
         global $PAGE;
         $this->resetAfterTest();
         $this->preventResetByRollback();
@@ -1482,6 +1561,27 @@ final class handler_test extends \advanced_testcase {
         $this->capture(fn() => handler::run_from_request($input, 'student', ['course_id' => 0], (int) $user->id));
 
         $this->assertDoesNotMatchRegularExpression('/\b' . (int) $user->id . '\b/', $fake->calls[0]['messages'][0]['content']);
+    }
+
+    /**
+     * A manager without local/jedomi:manageagents cannot create an agent from the web chat: the role alone is not enough.
+     */
+    public function test_chat_create_agent_requires_the_manageagents_capability(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $manager = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->role_assign('manager', $manager->id);
+        $managerroleid = (int) $DB->get_field('role', 'id', ['shortname' => 'manager']);
+        assign_capability('local/jedomi:manageagents', CAP_PROHIBIT, $managerroleid, \context_system::instance()->id, true);
+        $this->setUser($manager);
+
+        $result = json_decode(
+            handler::run_tool('create_agent', ['prompt' => 'Report', 'schedule_cron' => '0 8 * * *'], 'manager'),
+            true
+        );
+
+        $this->assertSame('permission_denied', $result['error'] ?? null);
+        $this->assertSame(0, $DB->count_records('local_jedomi_agents', ['userid' => $manager->id]));
     }
 
     /**

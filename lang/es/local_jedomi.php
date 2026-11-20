@@ -259,10 +259,12 @@ $string['cli_backup_destination_outside_dataroot'] = 'La copia de seguridad solo
 $string['close'] = 'Cerrar (Esc)';
 $string['component_all'] = 'Todos los componentes';
 $string['config_key_blocked_msg'] = 'Esta clave de configuración está bloqueada por seguridad.';
+$string['config_key_not_allowed_msg'] = 'Este ajuste no está en la lista de ajustes que Jedomi puede cambiar. Cámbielo en su página de ajustes. Ajustes que Jedomi puede cambiar: {$a}.';
 $string['config_key_secret_msg'] = 'Este ajuste contiene un secreto (una contraseña, clave o token) y no se puede cambiar desde aquí: cámbielo en su página de ajustes, donde se guarda cifrado.';
 $string['config_load_error'] = 'No se pudo cargar el panel de Jedomi. Inténtelo de nuevo o, si el problema continúa, comuníquese con el administrador del sitio.';
 $string['config_load_retry'] = 'Reintentar';
 $string['config_updated_msg'] = 'Config \'{$a}\' actualizada correctamente.';
+$string['config_value_invalid_msg'] = 'El valor no es válido para el ajuste \'{$a}\'. No se cambió nada.';
 $string['confirm_btn_no'] = 'Cancelar';
 $string['confirm_btn_yes'] = 'Confirmar';
 $string['confirm_cancelled'] = 'Acción cancelada.';
@@ -436,6 +438,7 @@ $string['error_unknown_action'] = 'Acción desconocida: {$a}';
 $string['error_unknown_tool'] = 'Herramienta desconocida: {$a}';
 $string['error_value_range'] = 'Introduzca un valor entre {$a->min} y {$a->max}.';
 $string['error_voice_requires_audio'] = 'La conversación por voz necesita el procesamiento de audio: habilítelo también.';
+$string['error_ws_capability'] = 'Usted no tiene ninguna de las capacidades que requiere la función de servicio web {$a}.';
 $string['error_ws_describe_failed'] = 'ws_describe failed: {$a}';
 $string['error_ws_execute_failed'] = 'ws_execute failed: {$a}';
 $string['error_ws_restricted'] = 'Mientras haya cursos fuera de Jedomi, solo está disponible un conjunto reducido de '
@@ -493,6 +496,7 @@ $string['invalid_signature'] = 'Los permisos del chat no son válidos. Recargue 
 $string['jedomi:companion_api'] = 'Usar las funciones del servicio complementario de Jedomi';
 $string['jedomi:manageagents'] = 'Gestionar los agentes de Jedomi';
 $string['keyboard_shortcuts'] = 'Atajos de teclado: Alt+Mayús+J abre o cierra Jedomi, Alt+Mayús+N inicia una conversación nueva y Esc cierra el panel.';
+$string['link_external'] = 'Sitio externo, se abre en una ventana nueva';
 $string['link_type_admin'] = 'Administración';
 $string['link_type_assign'] = 'Tarea';
 $string['link_type_course'] = 'Curso';
@@ -517,7 +521,7 @@ $string['new_conversation'] = 'Nueva conversación';
 $string['new_conversation_confirm'] = '¿Desea iniciar una conversación nueva? Se borrará la conversación actual.';
 $string['new_conversation_msg'] = 'Nueva conversación iniciada. ¿En qué le ayudo?';
 $string['no_messages_sent'] = 'No se enviaron mensajes.';
-$string['non_select_rejected'] = 'Solo se permiten queries SELECT.';
+$string['non_select_rejected'] = 'Solo se permiten consultas SELECT.';
 $string['note_tables_found'] = 'Use el nombre exacto con describe_table o execute_sql. Los nombres de tabla se muestran como '
     . 'están — use {tablename} en las consultas SQL.';
 $string['note_tables_not_found'] = 'No se encontraron tablas. Pruebe con otras palabras clave.';
@@ -593,7 +597,7 @@ $string['privacy:metadata:jedomi_custom_ai_service:files'] = 'Las imágenes y la
 $string['privacy:metadata:jedomi_custom_ai_service:language'] = 'El idioma del usuario, que se indica al modelo de audio para transcribir la grabación.';
 $string['privacy:metadata:jedomi_custom_ai_service:messages'] = 'Los mensajes de la conversación y los resultados de las herramientas usadas para responderlos, anonimizados con el nivel de la pestaña Privacidad de Jedomi.';
 $string['privacy:metadata:jedomi_custom_ai_service:mimetype'] = 'El tipo de la imagen, por ejemplo image/png.';
-$string['privacy:metadata:jedomi_custom_ai_service:question'] = 'La pregunta que el usuario hace sobre una imagen o un archivo, o el pie de una foto de Telegram, que se envía tal como se escribió: no se anonimiza.';
+$string['privacy:metadata:jedomi_custom_ai_service:question'] = 'La pregunta que el usuario hace sobre una imagen o un archivo, o el pie de una foto de Telegram, que se envía con los datos personales reemplazados por marcadores (anonimizada con el nivel de la pestaña Privacidad de Jedomi). La imagen o el archivo en sí se sigue enviando tal cual.';
 $string['privacy:metadata:jedomi_custom_ai_service:text'] = 'El texto de la respuesta que se lee en voz alta en la conversación por voz, anonimizado en el sitio antes de enviarse.';
 $string['privacy:metadata:jedomi_custom_document_service'] = 'Cuando el administrador del sitio elige un servicio de IA personalizado y activa sus documentos, los archivos PDF adjuntos al chat, enviados por Telegram o leídos de las actividades del curso se envían al servicio de documentos configurado por el administrador, fuera de Datacurso, para convertirlos en imágenes de sus páginas. No se envía ningún identificador del usuario ni del sitio.';
 $string['privacy:metadata:jedomi_custom_document_service:filename'] = 'El nombre del archivo PDF.';
@@ -604,7 +608,7 @@ $string['privacy:metadata:jedomi_file_service:filename'] = 'El nombre del archiv
 $string['privacy:metadata:jedomi_file_service:lang'] = 'El idioma del usuario.';
 $string['privacy:metadata:jedomi_file_service:language'] = 'El idioma del usuario, que se indica al modelo de audio para transcribir la grabación.';
 $string['privacy:metadata:jedomi_file_service:mimetype'] = 'El tipo del archivo, por ejemplo application/pdf o image/png.';
-$string['privacy:metadata:jedomi_file_service:question'] = 'La pregunta que el usuario hace sobre una imagen o un archivo, o el pie de una foto de Telegram, que se envía tal como se escribió: no se anonimiza.';
+$string['privacy:metadata:jedomi_file_service:question'] = 'La pregunta que el usuario hace sobre una imagen o un archivo, o el pie de una foto de Telegram, que se envía con los datos personales reemplazados por marcadores (anonimizada con el nivel de la pestaña Privacidad de Jedomi). La imagen o el archivo en sí se sigue enviando tal cual.';
 $string['privacy:metadata:jedomi_file_service:site_id'] = 'Un identificador del sitio, que el servicio de IA usa para separar las solicitudes de cada sitio.';
 $string['privacy:metadata:jedomi_file_service:site_url'] = 'La dirección del sitio.';
 $string['privacy:metadata:jedomi_file_service:userid'] = 'Un identificador seudónimo del usuario, derivado por el proveedor de IA de Datacurso.';
@@ -847,10 +851,20 @@ $string['speech_voice'] = 'Voz';
 $string['speech_voice_help'] = 'Voz del modelo de voz elegido que lee las respuestas. Cada modelo tiene sus propias voces.';
 $string['spt_secret'] = 'Secreto del token de permisos';
 $string['spt_secret_help'] = 'Secreto usado para firmar los tokens de permisos del chat. Se genera automáticamente para este '
-    . 'sitio y se guarda en Moodle, por lo que no hace falta configurarlo. Cambiarlo invalida los tokens ya emitidos: los usuarios '
-    . 'deben recargar la página para seguir chateando.';
+    . 'sitio y se guarda en Moodle, cifrado, por lo que no hace falta configurarlo. Nunca se muestra: deje el campo vacío para '
+    . 'conservar el secreto actual o escriba uno nuevo para reemplazarlo. Cambiarlo invalida los tokens ya emitidos: los '
+    . 'usuarios deben recargar la página para seguir chateando.';
+$string['sql_activity_rejected'] = 'La consulta lee actividades, calificaciones o registros de un curso que sus permisos en '
+    . 'Moodle no le permiten ver (como una actividad oculta, una actividad que no puede ver o las calificaciones sin los permisos '
+    . 'del informe de calificaciones), por lo que no se ejecutó. Consulte las tablas de los demás tipos de actividad o '
+    . 'pida ayuda a un administrador.';
+$string['sql_blind_marking_rejected'] = 'La consulta lee quién envió o fue calificado en una tarea con envíos anónimos cuyas '
+    . 'identidades no se han revelado, por lo que no se ejecutó. Consulte la tarea sin los identificadores de los estudiantes '
+    . 'o revele primero las identidades en la tarea.';
 $string['sql_carriage_return_rejected'] = 'La consulta contiene un retorno de carro (\\r), por lo que no se ejecutó. '
     . 'Escriba los saltos de línea solo como \\n.';
+$string['sql_category_rejected'] = 'La consulta lee categorías de cursos y algunas están ocultas para usted, por lo que no '
+    . 'se ejecutó. Limite las categorías a las visibles (por ejemplo, WHERE cc.visible = 1).';
 $string['sql_construct_rejected'] = 'La consulta usa una sintaxis fuera del subconjunto de solo lectura permitido, por lo que no '
     . 'se ejecutó. Escriba un único SELECT con FROM, [LEFT] JOIN ... ON, condiciones WHERE unidas solo con AND (=, <>, <, >, '
     . 'IN (números), IS [NOT] NULL, LIKE \'texto\'), GROUP BY, HAVING, ORDER BY y LIMIT, y solo las funciones COUNT, SUM, '
@@ -866,10 +880,15 @@ $string['sql_function_rejected'] = 'La consulta usa una función o cláusula que
     . 'BENCHMARK, INTO OUTFILE, @@ o FOR UPDATE), por lo que no se ejecutó.';
 $string['sql_heading'] = 'Consultas del chat web';
 $string['sql_heading_help'] = 'Límites de las consultas a la base de datos que la IA ejecuta en el chat web. El tiempo límite por consulta se aplica en MySQL, MariaDB y PostgreSQL; SQL Server y Oracle conservan la herramienta SQL solo con el límite de filas.';
+$string['sql_params_rejected'] = 'Los parámetros de la consulta no coinciden uno a uno con sus marcadores, por lo que no se '
+    . 'ejecutó. Use una lista con un valor por cada ? o una clave por cada :nombre, escrita sin los dos puntos, y ningún otro valor.';
 $string['sql_row_limit_web'] = 'Máximo de filas por consulta (chat web)';
 $string['sql_row_limit_web_help'] = 'Máximo de filas que una consulta a la base de datos del chat web devuelve a la IA, de 10 a 1000 (valor predeterminado: 100). Más filas dan respuestas más completas a preguntas amplias, pero hacen cada respuesta más lenta y más extensa. Telegram, el servicio web complementario y los agentes programados conservan sus propios límites. En SQL Server y Oracle solo se aplica el límite de filas: Moodle no puede fijar allí un tiempo límite por consulta, así que una consulta lenta de la IA se ejecuta sobre la base de datos del sitio hasta que la base de datos o PHP la detengan. Mantenga un límite bajo en esos motores.';
 $string['sql_row_limit_web_invalid'] = 'Escriba un número entero entre 10 y 1000.';
 $string['sql_sensitive_rejected'] = 'La consulta lee credenciales, claves, tokens, configuración del sitio o sesiones, por lo que no se ejecutó.';
+$string['sql_separate_groups_rejected'] = 'La consulta lee estudiantes, calificaciones o entregas de un curso o actividad en '
+    . 'modo de grupos separados, y usted no puede acceder a todos los grupos, por lo que no se ejecutó. Consulte solo la '
+    . 'estructura del curso o pida ayuda a un administrador.';
 $string['sql_table_not_allowed'] = 'La consulta lee una tabla que no está disponible para los cursos que usted gestiona (como '
     . 'mensajes, notificaciones, preferencias de usuario o la lista completa de usuarios), por lo que no se ejecutó. Lea tablas de '
     . 'cursos limitadas a sus cursos, y lea nombres de usuarios solo uniendo {user} a las matriculaciones, roles o calificaciones '
@@ -997,11 +1016,13 @@ $string['telegram_msg_unlinked'] = 'Desvinculado. Envíe /start para volver a vi
 $string['telegram_new_conversation_greeting'] = 'Hola, soy {$a}';
 $string['telegram_no_app_desc'] = 'Si está en una computadora sin la app, abra Telegram en su teléfono, busque <strong>@{$a}</strong> y envíe este mensaje:';
 $string['telegram_no_app_title'] = '¿No tiene la app de Telegram?';
+$string['telegram_no_tables_found'] = 'No se encontraron tablas que coincidan con: {$a}';
 $string['telegram_not_linked'] = 'Sin vincular';
 $string['telegram_notify_graded'] = '📝 Su tarea <b>{$a->assignment}</b> del curso <b>{$a->course}</b> ha sido calificada.';
 $string['telegram_open_auto'] = 'Abrir en Telegram (automático)';
 $string['telegram_open_auto_help'] = 'Lo lleva directamente a @{$a} con su código listo para vincular.';
-$string['telegram_pin_info'] = 'Los cambios que pida a Jedomi en Telegram se confirman con este PIN en lugar del botón Confirmar. Tras el PIN correcto no se vuelve a pedir durante 15 minutos; 3 PIN incorrectos bloquean sus cambios por Telegram durante 15 minutos. Las consultas no necesitan el PIN.';
+$string['telegram_permission_denied'] = '❌ Usted no tiene permiso para hacer esto.';
+$string['telegram_pin_info'] = 'Los cambios que pida a Jedomi en Telegram se confirman con este PIN en lugar del botón Confirmar. Tras el PIN correcto no se vuelve a pedir durante 15 minutos, pero cada cambio sigue mostrando su tarjeta y solo se ejecuta cuando usted lo confirma con el botón o la palabra de confirmación; 3 PIN incorrectos bloquean sus cambios por Telegram durante 15 minutos. Las consultas no necesitan el PIN.';
 $string['telegram_pin_invalid'] = 'El PIN es solo numérico: de {$a->min} a {$a->max} dígitos, sin letras, espacios ni símbolos.';
 $string['telegram_pin_is_set'] = 'Hay un PIN definido. Si guarda uno nuevo, lo reemplaza.';
 $string['telegram_pin_locked'] = 'Demasiados PIN incorrectos: sus cambios por Telegram quedan bloqueados durante {$a} minuto(s) más. Las consultas siguen funcionando.';
@@ -1028,13 +1049,15 @@ $string['telegram_remove_token'] = 'Eliminar el token del bot';
 $string['telegram_remove_token_desc'] = 'Desconectar el bot: se borra el token y se elimina el webhook en Telegram.';
 $string['telegram_require_pin'] = 'Exigir PIN en Telegram para las acciones de administradores y gestores';
 $string['telegram_require_pin_desc'] = 'Los administradores y gestores confirman sus cambios en Telegram con un PIN que definen en su perfil.';
-$string['telegram_require_pin_help'] = 'Con la casilla marcada, cada administrador y gestor define un PIN de 6 a 8 dígitos en la página Telegram de Jedomi de su perfil. Sus cambios por Telegram se confirman con el PIN en lugar del botón Confirmar; tras el PIN correcto no se les vuelve a pedir durante 15 minutos, y 3 PIN incorrectos bloquean sus cambios por Telegram durante 15 minutos. Mientras no definan el PIN, sus cambios por Telegram se rechazan y las consultas siguen funcionando. No afecta a profesores ni estudiantes.';
+$string['telegram_require_pin_help'] = 'Con la casilla marcada, cada administrador y gestor define un PIN de 6 a 8 dígitos en la página Telegram de Jedomi de su perfil. Sus cambios por Telegram se confirman con el PIN en lugar del botón Confirmar; tras el PIN correcto no se les vuelve a pedir durante 15 minutos, pero cada cambio sigue mostrando su tarjeta y solo se ejecuta cuando lo confirman con el botón o la palabra de confirmación, y 3 PIN incorrectos bloquean sus cambios por Telegram durante 15 minutos. Mientras no definan el PIN, sus cambios por Telegram se rechazan y las consultas siguen funcionando. No afecta a profesores ni estudiantes.';
 $string['telegram_role_visibility_help'] = 'Desactive para evitar que usuarios con este rol vinculen o reciban mensajes de '
     . 'Telegram. Los admins siempre tienen acceso.';
+$string['telegram_search_query_required'] = 'Se requiere el texto de búsqueda.';
 $string['telegram_secret_regenerated'] = 'Se regeneró el secreto del webhook y se registró la nueva URL del webhook en Telegram.';
 $string['telegram_secret_regenerated_unregistered'] = 'Se regeneró el secreto del webhook, pero la nueva URL del webhook no pudo registrarse '
     . 'en Telegram. Revise el estado del webhook.';
 $string['telegram_setup_guide'] = 'Guía de configuración';
+$string['telegram_sql_query_required'] = 'Se requiere la consulta SQL.';
 $string['telegram_status_connected'] = 'Conectado';
 $string['telegram_status_disconnected'] = 'Desconectado';
 $string['telegram_status_invalid_token'] = 'token no válido, péguelo de nuevo y guarde.';
@@ -1065,6 +1088,7 @@ $string['telegram_stepU4_desc'] = 'Envíe cualquier mensaje al bot. Jedomi respo
 $string['telegram_stepU4_title'] = 'Empezar a chatear';
 $string['telegram_step_admin_title'] = 'Configuración del administrador';
 $string['telegram_step_user_title'] = 'Configuración del usuario (cada usuario lo hace una vez)';
+$string['telegram_table_name_required'] = 'Se requiere el nombre de la tabla.';
 $string['telegram_task_alert_failing'] = '{$a->name}: con errores (siguiente intento en {$a->delay} s)';
 $string['telegram_task_alert_footer'] = 'Revíselas en la página de tareas programadas: {$a}';
 $string['telegram_task_alert_heading'] = '⚠️ <b>Tareas programadas con problemas</b>';
@@ -1090,6 +1114,7 @@ $string['telegram_webhook_retry_failed'] = 'No se pudo registrar el webhook de T
 $string['telegram_webhook_secret'] = 'Secreto del webhook';
 $string['telegram_webhook_secret_help'] = 'Secreto aleatorio que Telegram envía en una cabecera con cada mensaje, nunca en la URL '
     . 'del webhook. Regenérelo si se filtra.';
+$string['telegram_webhook_set_failed'] = 'Telegram no aceptó el webhook. Compruebe que la URL del sitio use HTTPS y sea accesible desde internet.';
 $string['telegram_webhook_status'] = 'Estado del webhook';
 $string['telegram_webhook_url'] = 'URL del webhook';
 $string['telegram_webhook_url_help'] = 'Se registra en Telegram automáticamente al guardar el token del bot. Si cambia la URL '

@@ -46,6 +46,49 @@ final class preview_runner_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-CTR-011: in the preview, a "person_1" or "Person 1" in the text the document reading returns reaches the AI as
+     * a literal placeholder, so the answer gives it back as written and never as the real value of [person_1].
+     */
+    public function test_placeholders_in_a_read_document_are_not_restored(): void {
+        if (!class_exists(\aiprovider_datacurso\httpclient\ai_services_api::class)) {
+            $this->markTestSkipped('aiprovider_datacurso is not installed; the provider client cannot be built.');
+        }
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $GLOBALS['CFG']->forced_plugin_settings['aiprovider_datacurso']['licensekey'] = 'test-license';
+        \core\plugininfo\aiprovider::enable_plugin('datacurso', 1);
+        $curl = new fake_curl();
+        \local_jedomi\local\service\provider_upload_service::set_api_for_testing(new testable_provider_api(30, $curl));
+        $this->getDataGenerator()->create_user(['firstname' => 'Bruno', 'lastname' => 'Valderrama']);
+        $course = $this->getDataGenerator()->create_course();
+        $page = $this->getDataGenerator()->create_module('page', ['course' => $course->id]);
+        get_file_storage()->create_file_from_string([
+            'contextid' => \context_module::instance($page->cmid)->id, 'component' => 'mod_page', 'filearea' => 'content',
+            'itemid' => 0, 'filepath' => '/', 'filename' => 'syllabus.pdf',
+        ], '%PDF-1.4 fake');
+        $curl->enqueue(json_encode(['text' => 'Bruno signed for person_1 and Person 1.', 'model' => 'm',
+            'pages_total' => 1, 'pages_vision' => [], 'pages_skipped' => []]));
+        $fake = new fake_ai_client();
+        $fake->enqueue_tool_calls([
+            ['id' => 'call_1', 'type' => 'function', 'function' => ['name' => 'document_read',
+                'arguments' => json_encode(['cmid' => (int) $page->cmid])]],
+        ]);
+        $fake->enqueue_text('[person_1] signed for [literal_1] and [literal_2].');
+        client::set_instance_for_testing($fake);
+
+        try {
+            $result = preview_runner::run('Who signed the syllabus?', (int) get_admin()->id);
+        } finally {
+            \local_jedomi\local\service\provider_upload_service::set_api_for_testing(null);
+        }
+
+        $this->assertCount(1, $curl->calls, 'The document was read');
+        $tool = json_encode($fake->calls[1]['messages']);
+        $this->assertStringContainsString('[person_1] signed for [literal_1] and [literal_2].', $tool);
+        $this->assertSame('Bruno signed for person_1 and Person 1.', $result['answer']);
+    }
+
+    /**
      * MDL-UNIT-083: assistant tool calls precede the messages with their results.
      * M6: the assistant message with its tool_calls goes before the tool messages.
      */
@@ -244,6 +287,37 @@ final class preview_runner_test extends \advanced_testcase {
         $this->assertMatchesRegularExpression('/<<<UNTRUSTED_DATA id=(\w+) source="tool execute_sql">>>\n.*\n'
             . '<<<END_UNTRUSTED_DATA id=\1>>>/s', $reform[1]['content']);
         $this->assertStringNotContainsString('--- execute_sql ---', $reform[1]['content']);
+    }
+
+    /**
+     * Phase 23 unit 6: a preview answered from its cache sends the cached answer anonymised with the placeholders of the
+     * cached run, even when the identifier it shows changed since; the reformulated answer gets the real values.
+     */
+    public function test_cached_preview_replay_sends_the_cached_answer_anonymised(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $student = $this->getDataGenerator()->create_user(['idnumber' => 'ZX9-4471']);
+        $fake = new fake_ai_client();
+        $fake->enqueue_tool_calls([
+            ['id' => 'call_1', 'type' => 'function', 'function' => ['name' => 'execute_sql',
+                'arguments' => json_encode(['query' => 'SELECT idnumber FROM {user} WHERE id = ' . (int) $student->id])]],
+        ]);
+        $fake->enqueue_text('The code is ZX9-4471.');
+        $fake->enqueue_text('The code is still the same.');
+        client::set_instance_for_testing($fake);
+        $first = preview_runner::run('What is the code of the student?', (int) get_admin()->id);
+        $this->assertStringContainsString('ZX9-4471', $first['answer'], 'Control: the creator sees the real value');
+        $DB->set_field('user', 'idnumber', 'QQ7-0001', ['id' => $student->id]);
+
+        $again = preview_runner::run('What is the code of the student?', (int) get_admin()->id);
+
+        $this->assertTrue($again['reformulated'] ?? false, 'Control: the cached plan was replayed');
+        $reform = end($fake->calls)['messages'];
+        $sent = json_encode($reform, JSON_UNESCAPED_UNICODE);
+        $this->assertStringNotContainsString('ZX9-4471', $sent, 'The cached answer reaches the AI anonymised');
+        $this->assertStringNotContainsString('QQ7-0001', $sent, 'The fresh results reach the AI anonymised');
+        $this->assertMatchesRegularExpression('/Previous answer:\nThe code is \[id_\d+\]\./', $reform[1]['content']);
     }
 
     /**

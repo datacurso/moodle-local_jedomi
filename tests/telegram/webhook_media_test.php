@@ -242,6 +242,45 @@ final class webhook_media_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-CTR-011: the caption of a photo is anonymised with the placeholders of the conversation, so a value already in
+     * the conversation keeps its placeholder and another one gets a new placeholder, never one of another value; the chat
+     * model receives the same placeholders.
+     */
+    public function test_photo_caption_uses_the_placeholders_of_the_conversation(): void {
+        $this->getDataGenerator()->create_user(['firstname' => 'Bruno', 'lastname' => 'Valderrama']);
+        $this->getDataGenerator()->create_user(['firstname' => 'Ximena', 'lastname' => 'Quintanilla']);
+        session::set_context('tool_loop_' . self::CHATID, ['anonymizer' => ['[person_1]' => 'Bruno']]);
+        $this->curl->enqueue(json_encode(['text' => 'A grade report', 'model' => 'm', 'pages_total' => null,
+            'pages_vision' => [], 'pages_skipped' => []]));
+        $this->ai->enqueue_text('It is a grade report.');
+
+        $this->receive(['photo' => $this->photo(), 'caption' => 'Compare Ximena and Bruno']);
+
+        $this->assertSame('Compare [person_2] and [person_1]', $this->curl->calls[0]['params']['question']);
+        $sent = (string) $this->last_user_content();
+        $this->assertStringContainsString('Compare [person_2] and [person_1]', $sent);
+        $this->assertStringNotContainsString('Ximena', $sent);
+    }
+
+    /**
+     * MDL-CTR-011: a "person_1" or "Person 1" the vision model writes in what it read is not a placeholder of the
+     * conversation: the chat model gets it as a literal placeholder and the answer gives it back as written, never as
+     * the real value of [person_1].
+     */
+    public function test_placeholders_invented_by_the_vision_model_are_not_restored(): void {
+        session::set_context('tool_loop_' . self::CHATID, ['anonymizer' => ['[person_1]' => 'Bruno']]);
+        $this->curl->enqueue(json_encode(['text' => 'The photo shows person_1 and Person 1.', 'model' => 'm',
+            'pages_total' => null, 'pages_vision' => [], 'pages_skipped' => []]));
+        $this->ai->enqueue_text('It shows [literal_1] and [literal_2], not [person_1].');
+
+        $texts = $this->receive(['photo' => $this->photo(), 'caption' => 'What is this?']);
+
+        $sent = (string) $this->last_user_content();
+        $this->assertStringContainsString('The photo shows [literal_1] and [literal_2].', $sent);
+        $this->assertStringContainsString('It shows person_1 and Person 1, not Bruno.', end($texts));
+    }
+
+    /**
      * MDL-UNIT-080: a document goes to the document reading.
      * M8: a PDF document is read through files/read with its own name.
      * MDL-INT-064: a PDF is read with the reading service.

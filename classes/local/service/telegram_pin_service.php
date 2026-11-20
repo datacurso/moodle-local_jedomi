@@ -43,7 +43,7 @@ class telegram_pin_service {
     public const MAX_ATTEMPTS = 3;
     /** @var int Seconds the writes stay locked after too many wrong PINs. */
     public const LOCK_TIME = 15 * MINSECS;
-    /** @var int Seconds after a right PIN during which the writes run without asking it again. */
+    /** @var int Seconds after a right PIN during which it is not asked again (the writes are still confirmed). */
     public const WINDOW = 15 * MINSECS;
 
     /** @var string The PIN is right. */
@@ -134,7 +134,7 @@ class telegram_pin_service {
     }
 
     /**
-     * Whether a right PIN was given in the last 15 minutes, so writes run without asking it again.
+     * Whether a right PIN was given in the last 15 minutes, so it is not asked again (writes are still confirmed).
      *
      * @param int $userid Moodle user id.
      * @return bool

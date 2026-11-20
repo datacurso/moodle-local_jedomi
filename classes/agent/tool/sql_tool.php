@@ -133,7 +133,9 @@ class sql_tool implements agent_tool {
         }
 
         // ... ── Sensitive tables and courses the user does not manage (shared by every channel) ──
-        $rejection = \local_jedomi\local\sql_guard::rejection_reason($query, $this->userid);
+        // The guard checks exactly the parameters the database runs with (JEDOMI-SEC-015).
+        $queryparams = self::query_params($params);
+        $rejection = \local_jedomi\local\sql_guard::rejection_reason($query, $this->userid, $queryparams);
         if ($rejection !== null) {
             return json_encode(['error' => get_string($rejection, 'local_jedomi')]);
         }
@@ -144,7 +146,7 @@ class sql_tool implements agent_tool {
         try {
             $result = \local_jedomi\local\query_runner::fetch(
                 $query,
-                self::query_params($params),
+                $queryparams,
                 \local_jedomi\local\query_runner::row_limit('agent'),
                 \local_jedomi\local\query_runner::time_limit_ms('agent')
             );
@@ -195,10 +197,11 @@ class sql_tool implements agent_tool {
     }
 
     /**
-     * Parameters of the query sent by the AI (the "params" list of the tool), as positional values.
+     * Parameters of the query sent by the AI (the "params" of the tool) with their keys, so the guard and the database
+     * read the same values: a list for ? placeholders or an object for :name placeholders.
      *
      * @param \stdClass $params Decoded tool arguments.
-     * @return array Positional parameters; empty when none were sent.
+     * @return array Parameters; empty when none were sent.
      */
     public static function query_params(\stdClass $params): array {
         $values = $params->params ?? [];
@@ -208,9 +211,9 @@ class sql_tool implements agent_tool {
         if (!is_array($values)) {
             $values = [$values];
         }
-        return array_values(array_map(
+        return array_map(
             static fn($value) => is_scalar($value) || $value === null ? $value : json_encode($value),
             $values
-        ));
+        );
     }
 }

@@ -23,8 +23,11 @@ require_once(__DIR__ . '/../../lib.php');
 /**
  * Runs a Moodle web service function for the AI, shared by the web chat, Telegram and the companion web service.
  *
- * The role gate (the web service list saved for the role) is the same in every channel; the target function still
- * checks the real Moodle capabilities of the user.
+ * The role gate (the web service list saved for the role) is the same in every channel. Before the function runs,
+ * call() applies the checks of \core_external\external_api::call_external_function() that fit a call made inside
+ * Moodle (the function must be described, login when the function requires it, a fresh $PAGE and $COURSE) and refuses a
+ * user who holds none of the capabilities the function declares (JEDOMI-SEC-019); the target function still checks the
+ * real Moodle capabilities of the user in its own context.
  *
  * @package    local_jedomi
  * @copyright  2026 Jedomi Project
@@ -145,16 +148,165 @@ class ws_runner {
     }
 
     /**
-     * Functions the web service search of a role may return, the same list that gates description and execution.
+     * Functions the web service search of a role may return: the list that gates execution, limited to the functions
+     * run while some course is outside Jedomi (RESTRICTED_ALLOWLIST, the same list call() applies) and to the functions
+     * whose declared capabilities the user may hold (the same check call() applies).
      *
      * @param string $role Jedomi role (admin, manager, teacher, student).
+     * @param int|null $userid User whose capabilities are checked; null for the session user.
      * @return string[]|null Null when the role may call every function; otherwise its list (empty: none).
      */
-    public static function searchable_functions(string $role): ?array {
+    public static function searchable_functions(string $role, ?int $userid = null): ?array {
+        global $USER;
+        $restricted = \local_jedomi\course_access::is_restricted();
         if (\local_jedomi_role_has_full_ws_access($role)) {
-            return null;
+            if (!$restricted) {
+                // Only a site administrator has full access, and holds every capability.
+                return null;
+            }
+            $names = array_keys(self::RESTRICTED_ALLOWLIST);
+        } else {
+            $names = array_values(array_filter(\local_jedomi_get_role_allowlist($role), 'is_string'));
+            if ($restricted) {
+                $names = array_values(array_intersect($names, array_keys(self::RESTRICTED_ALLOWLIST)));
+            }
         }
-        return array_values(array_filter(\local_jedomi_get_role_allowlist($role), 'is_string'));
+        return self::callable_by($names, $userid ?? (int) ($USER->id ?? 0));
+    }
+
+    /**
+     * Whether the web service tools may describe a function to a role: the same rules as searchable_functions().
+     *
+     * @param string $role Jedomi role (admin, manager, teacher, student).
+     * @param string $wsname Web service function name.
+     * @param int|null $userid User whose capabilities are checked; null for the session user.
+     * @return bool
+     */
+    public static function describable(string $role, string $wsname, ?int $userid = null): bool {
+        global $USER;
+        if (!self::role_allows($role, $wsname)) {
+            return false;
+        }
+        if (\local_jedomi\course_access::is_restricted() && !isset(self::RESTRICTED_ALLOWLIST[$wsname])) {
+            return false;
+        }
+        if (\local_jedomi_role_has_full_ws_access($role) && !\local_jedomi\course_access::is_restricted()) {
+            // A site administrator holds every capability; an unknown function is reported by the description.
+            return true;
+        }
+        return self::callable_by([$wsname], $userid ?? (int) ($USER->id ?? 0)) !== [];
+    }
+
+    /**
+     * Refuse a call that Moodle would refuse before running the function (JEDOMI-SEC-019).
+     *
+     * These are the checks of \core_external\external_api::call_external_function() that fit a call made inside Moodle:
+     * the function must be described (external_function_info()), and a function that requires login needs a logged-in
+     * user who is not the guest. The session key and the session lock of that method belong to an AJAX request and do
+     * not apply to the chat, Telegram, the agents or the companion web service, which authenticate the user themselves.
+     * Moodle does not enforce the capabilities that a function declares; Jedomi refuses a user who holds none of them
+     * (see holds_declared_capability()).
+     *
+     * @param string $wsname Web service function name.
+     * @throws \moodle_exception ws_not_found, servicerequireslogin or error_ws_capability.
+     */
+    public static function require_access(string $wsname): void {
+        global $USER;
+        $info = false;
+        if ($wsname !== '') {
+            try {
+                $info = \core_external\external_api::external_function_info($wsname, IGNORE_MISSING);
+            } catch (\coding_exception $e) {
+                // A function without its parameter or return description is not run (fail closed).
+                $info = false;
+            }
+        }
+        if (!$info) {
+            throw new \moodle_exception('ws_not_found', 'local_jedomi');
+        }
+        if (($info->loginrequired ?? true) && (!isloggedin() || isguestuser())) {
+            throw new \moodle_exception('servicerequireslogin', 'webservice');
+        }
+        if (!self::holds_declared_capability((string) ($info->capabilities ?? ''), (int) ($USER->id ?? 0))) {
+            throw new \moodle_exception('error_ws_capability', 'local_jedomi', '', $wsname);
+        }
+    }
+
+    /**
+     * Whether a user holds at least one of the capabilities a web service function declares in db/services.php.
+     *
+     * The declared list names every capability that some path of the function may check, often as alternatives
+     * (core_calendar_get_calendar_events declares manageentries, manageownentries and managegroupentries), so requiring
+     * all of them would refuse users Moodle serves. A capability counts when the user holds it in the system context or
+     * in some course or category; the function still checks the exact capability in its own context. A function that
+     * declares nothing passes; an unknown capability counts as not held (fail closed).
+     *
+     * @param string $declared Comma-separated capabilities (external_functions.capabilities).
+     * @param int $userid Moodle user id.
+     * @param array $held Capabilities already checked for this user (capability => bool), to reuse within one request.
+     * @return bool
+     */
+    public static function holds_declared_capability(string $declared, int $userid, array &$held = []): bool {
+        $capabilities = array_values(array_filter(array_map('trim', explode(',', $declared)), 'strlen'));
+        if (empty($capabilities)) {
+            return true;
+        }
+        if ($userid <= 0) {
+            return false;
+        }
+        foreach ($capabilities as $capability) {
+            if (!array_key_exists($capability, $held)) {
+                $held[$capability] = self::holds_capability_somewhere($capability, $userid);
+            }
+            if ($held[$capability]) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Whether a user holds a capability in the system context or in some course or course category.
+     *
+     * @param string $capability Capability name.
+     * @param int $userid Moodle user id.
+     * @return bool
+     */
+    private static function holds_capability_somewhere(string $capability, int $userid): bool {
+        if (get_capability_info($capability, false) === null) {
+            return false;
+        }
+        if (has_capability($capability, \context_system::instance(), $userid)) {
+            return true;
+        }
+        [$categories, $courses] = get_user_capability_contexts($capability, true, $userid, true, '', '', '', '', 1);
+        return !empty($categories) || !empty($courses);
+    }
+
+    /**
+     * The functions of a list that are installed and whose declared capabilities the user may hold, in their order.
+     *
+     * @param string[] $names Web service function names.
+     * @param int $userid Moodle user id.
+     * @return string[]
+     */
+    private static function callable_by(array $names, int $userid): array {
+        global $DB;
+        if (empty($names)) {
+            return [];
+        }
+        $declared = $DB->get_records_list('external_functions', 'name', $names, '', 'name, capabilities');
+        $held = [];
+        $callable = [];
+        foreach ($names as $name) {
+            if (!isset($declared[$name])) {
+                continue;
+            }
+            if (self::holds_declared_capability((string) $declared[$name]->capabilities, $userid, $held)) {
+                $callable[] = $name;
+            }
+        }
+        return $callable;
     }
 
     /**
@@ -238,18 +390,22 @@ class ws_runner {
      * @param array $args Arguments by name.
      * @param bool $intransaction Run inside a delegated transaction committed only when the call succeeds.
      * @return mixed Result of the function, shaped by its return description, without records of excluded courses.
-     * @throws \moodle_exception error_ws_restricted, missingparam, ws_invalid_parameters, error_course_excluded,
-     *     error_argument_unplaced, ws_execute_error or the error of the function.
+     * @throws \moodle_exception error_ws_restricted, ws_not_found, servicerequireslogin, error_ws_capability,
+     *     missingparam, ws_invalid_parameters, error_course_excluded, error_argument_unplaced, ws_execute_error or the
+     *     error of the function.
      */
     public static function call(\ReflectionMethod $method, array $args, bool $intransaction = false) {
-        global $DB;
+        global $DB, $PAGE, $COURSE, $SITE, $CFG;
         $restricted = \local_jedomi\course_access::is_restricted();
-        $wsname = $restricted ? self::function_name($method) : '';
+        $function = self::function_name($method);
+        $wsname = $restricted ? $function : '';
         if ($restricted && !isset(self::RESTRICTED_ALLOWLIST[$wsname])) {
             // Only functions whose course the gate can read and whose result is filtered run (RESTRICTED_ALLOWLIST).
             $name = $wsname !== '' ? $wsname : $method->getDeclaringClass()->getName() . '::' . $method->getName();
             throw new \moodle_exception('error_ws_restricted', 'local_jedomi', '', $name);
         }
+        // Login and declared capabilities, as Moodle checks them before a web service call (JEDOMI-SEC-019).
+        self::require_access($function);
         $missing = self::missing_parameter($method, $args);
         if ($missing !== null) {
             throw new \moodle_exception('missingparam', 'error', '', $missing);
@@ -271,7 +427,21 @@ class ws_runner {
             $callargs[] = array_key_exists($name, $args) ? $args[$name] : $parameter->getDefaultValue();
         }
         $transaction = $intransaction ? $DB->start_delegated_transaction() : null;
+        // As call_external_function(): the function runs with a fresh $PAGE and $COURSE, restored afterwards, so the
+        // context it sets (validate_context()) does not leak into the caller or the next call.
+        $currentpage = $PAGE;
+        $currentcourse = $COURSE;
         try {
+            require_once($CFG->libdir . '/pagelib.php');
+            $pageclass = 'moodle_page';
+            if (!empty($CFG->moodlepageclass)) {
+                if (!empty($CFG->moodlepageclassfile)) {
+                    require_once($CFG->moodlepageclassfile);
+                }
+                $pageclass = $CFG->moodlepageclass;
+            }
+            $PAGE = new $pageclass();
+            $COURSE = clone($SITE);
             $result = $method->invokeArgs(null, $callargs);
             if ($transaction) {
                 $transaction->allow_commit();
@@ -297,6 +467,9 @@ class ws_runner {
             }
             // JEDOMI-SEC-009: the message of an unexpected error can quote a query or a path; only its class is given.
             throw new \moodle_exception('ws_execute_error', 'local_jedomi', '', safe_error::for_model($e));
+        } finally {
+            $PAGE = $currentpage;
+            $COURSE = $currentcourse;
         }
         return self::without_excluded_courses(self::clean_result($method, $result), $wsname);
     }

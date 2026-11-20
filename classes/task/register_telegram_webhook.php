@@ -69,8 +69,7 @@ class register_telegram_webhook extends adhoc_task {
         if (manager::is_bot_token_unreadable()) {
             // The token exists but cannot be decrypted: retrying cannot help and the registration stays pending until
             // the administrator enters the token again, which registers the webhook.
-            manager::set_last_webhook_error('The bot token could not be decrypted (the encryption key of the site changed); '
-                . 'enter the token again');
+            manager::set_last_webhook_error('telegram_token_unreadable');
             \local_jedomi_log('[local_jedomi] Telegram webhook not registered: the bot token could not be decrypted');
             mtrace('[local_jedomi] Telegram webhook not registered: the bot token could not be decrypted.');
             return;

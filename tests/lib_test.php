@@ -232,7 +232,7 @@ final class lib_test extends \advanced_testcase {
         $this->assertNotEmpty($result['signature']);
 
         // Verify signature: reconstruct payload without signature and check HMAC.
-        $staticsecret = get_config('local_jedomi', 'spt_secret') ?: 'jedomi-spt-secret';
+        $staticsecret = local_jedomi_get_spt_secret();
         $signature = $result['signature'];
         unset($result['signature']);
 
@@ -675,8 +675,9 @@ final class lib_test extends \advanced_testcase {
      * @return array
      */
     public static function tools_by_role_provider(): array {
-        $common = ['describe_table', 'search_tables', 'ws_describe', 'ws_search'];
-        $teacher = array_merge($common, ['document_read', 'execute_sql', 'ws_execute']);
+        // The table tools go only to the roles that can query the database, as execute_sql.
+        $common = ['ws_describe', 'ws_search'];
+        $teacher = array_merge($common, ['describe_table', 'document_read', 'execute_sql', 'search_tables', 'ws_execute']);
         $manager = array_merge($teacher, ['admin_describe', 'admin_execute', 'admin_search', 'create_agent', 'delete_agent',
             'list_agents', 'site_overview']);
         $admin = array_merge($manager, ['get_site_config']);
@@ -804,7 +805,7 @@ final class lib_test extends \advanced_testcase {
             $secret = local_jedomi_get_spt_secret();
             $this->assertNotSame($old, $secret);
             $this->assertGreaterThanOrEqual(64, strlen($secret));
-            $this->assertSame($secret, get_config('local_jedomi', 'spt_secret'), 'The new secret is saved');
+            $this->assertSame($secret, \local_jedomi\local\secret_store::get('spt_secret'), 'The new secret is saved');
         }
         set_config('spt_secret', str_repeat('c0ffee', 12), 'local_jedomi');
         $this->assertSame(str_repeat('c0ffee', 12), local_jedomi_get_spt_secret(), 'An own secret is kept');

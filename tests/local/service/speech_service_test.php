@@ -656,7 +656,8 @@ final class speech_service_test extends \advanced_testcase {
         $this->assertSame(get_string('speech_error_disabled', 'local_jedomi'), $message($this->request()));
 
         // The sidebar shows the message of the refusal, or the string of its code, not the generic notice.
-        $source = file_get_contents(__DIR__ . '/../../../amd/src/sidebar.js');
+        $source = file_get_contents(__DIR__ . '/../../../amd/src/local/sidebar/voice_playback.js')
+            . file_get_contents(__DIR__ . '/../../../amd/src/local/sidebar/voice_text.js');
         $this->assertStringContainsString("error.reason = data.error?.message || '';", $source);
         $this->assertStringContainsString('${voiceSpeechErrorReason(err)}', $source, 'The notice shows the reason');
         $codes = [

@@ -248,7 +248,7 @@ switch ($tab) {
         if ($data = $form->get_data()) {
             require_sesskey();
             admin_settings_service::save_general_settings(
-                $data->spt_secret,
+                (string) $data->spt_secret,
                 (int) $data->profiler_slow_ms,
                 (int) $data->profiler_retention_days,
                 (int) $data->sql_row_limit_web,

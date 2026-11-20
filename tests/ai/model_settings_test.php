@@ -54,7 +54,7 @@ final class model_settings_test extends \advanced_testcase {
      */
     private function assert_other_settings_unchanged(): void {
         $this->assertSame('4096', get_config('local_jedomi', 'max_tokens'));
-        $this->assertSame('spt-secret-value', get_config('local_jedomi', 'spt_secret'));
+        $this->assertSame('spt-secret-value', \local_jedomi\local\secret_store::get('spt_secret'));
         $this->assertSame('1', get_config('local_jedomi', 'enabled'));
     }
 

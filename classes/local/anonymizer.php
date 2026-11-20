@@ -67,6 +67,27 @@ class anonymizer {
     private const LOOSE_PLACEHOLDER_PATTERN = '/\\\\?\[\s*([a-z]+)\s*(?:\\\\?[_\- ])?\s*(\d+)\s*\\\\?\]/i';
 
     /**
+     * @var string Pattern of the answer text: a placeholder as {@see self::LOOSE_PLACEHOLDER_PATTERN} reads it (groups 1
+     *      and 2), or one the AI wrote without its brackets as a whole word of the exact form "type_N" ("person_1",
+     *      "Email_2"; groups 3 and 4), not next to a letter (any non-ASCII byte counts as one), a digit, "_", "/", "[" or
+     *      "]". It also reads "Person N" or "Persona N" (group 5), with exactly that capitalisation, one space and the same
+     *      word limits; no other spaced or translated form ("ID 2", "persona 1", "Texto 1"). The bracketless forms are
+     *      restored only when that placeholder exists in this anonymiser (CTR-011).
+     */
+    private const ANSWER_PLACEHOLDER_PATTERN = '/\\\\?\[\s*([a-z]+)\s*(?:\\\\?[_\- ])?\s*(\d+)\s*\\\\?\]'
+        . '|' . self::BARE_PLACEHOLDER . '|' . self::SPACED_PERSON_PLACEHOLDER . '/i';
+
+    /** @var string Pattern part of a placeholder written without its brackets, "type_N" (groups 3 and 4). */
+    private const BARE_PLACEHOLDER = '(?<![a-z0-9_\/\[\]\x80-\xff])([a-z]+)_([1-9]\d*)(?![a-z0-9_\/\[\]\x80-\xff])';
+
+    /** @var string Pattern part of "Person N" or "Persona N", case-sensitive even inside a /i pattern (group 5). */
+    private const SPACED_PERSON_PLACEHOLDER = '(?<![a-z0-9_\/\[\]\x80-\xff])(?-i:Persona? ([1-9]\d*))'
+        . '(?![a-z0-9_\/\[\]\x80-\xff])';
+
+    /** @var string[] Kinds of placeholder this anonymiser creates and restores, besides "literal". */
+    private const RESTORED_KINDS = ['person', 'email', 'id', 'text'];
+
+    /**
      * @var string Pattern of a placeholder exactly as this anonymiser writes it, the only form restored in a query, after
      *      no backslash (group 1 is empty, group 2 the placeholder).
      */
@@ -82,6 +103,23 @@ class anonymizer {
      * @var string The same inside a quoted identifier, or a string of a database that reads no backslash escapes.
      */
     private const SQL_LITERAL_PLACEHOLDER_PATTERN = '/()(\[[a-z]+_\d+\])/';
+
+    /**
+     * @var string Pattern of a web address in a text (group 1): http or https with any slashes, two slashes or backslashes
+     *      (read by browsers as another host), or a domain name followed by a path, which Telegram makes a link too. It
+     *      runs to the next space, "<" or ">", so a placeholder written in the address is always inside it.
+     */
+    private const URL_PATTERN = '~((?:https?:|[/\\\\]{2})[^\s<>]+|(?<![\w./@\\\\-])(?:[a-z0-9-]+\.)+[a-z]{2,}(?::\d+)?/[^\s<>]*)~i';
+
+    /**
+     * @var string A Markdown link ("[text](destination)", the text with nested brackets, the destination up to the closing
+     *     ")" or the end of the text, with balanced parentheses) or an href attribute value (to its quote or the end).
+     */
+    private const LINK_PATTERN = '~(?<label>\[(?>[^\[\]]++|(?&label))*+\])\((?<destination>(?:[^()]++|\([^()]*\)|\()*)(?:\)|\z)'
+        . '|\bhref\s*=\s*(?:"(?<double>[^"]*)"?|\'(?<single>[^\']*)\'?)~i';
+
+    /** @var int Shortest real value of the map replaced in the texts of a conversation (anonymize_history_text()). */
+    private const MIN_KNOWN_VALUE_LENGTH = 3;
 
     /** @var string Applied level. */
     private string $level;
@@ -174,7 +212,53 @@ class anonymizer {
         // They are escaped in every message before any placeholder is created, so none of them can be taken for a
         // placeholder created later in this call and be "restored" into a real value it never stood for.
         $messages = $this->map_message_texts($messages, fn(string $text): string => $this->escape_foreign_placeholders($text));
-        return $this->map_message_texts($messages, fn(string $text): string => $this->anonymize_string($text));
+        return $this->map_message_texts($messages, fn(string $text): string => $this->anonymize_history_text($text));
+    }
+
+    /**
+     * Anonymise a text of the conversation, such as a previous answer, before the AI receives it again.
+     *
+     * Besides what {@see self::anonymize_text()} replaces, every real value already in the map of this anonymiser (an
+     * identifier of a tool result shown in a previous answer, at any level) gets its placeholder back, so no identifier
+     * the user was shown leaves the site in a later turn. Only values already in the map are replaced: no new pattern
+     * is looked for.
+     *
+     * @param string $text Text.
+     * @return string
+     */
+    public function anonymize_history_text(string $text): string {
+        return $this->anonymize_string($this->replace_known_values($text));
+    }
+
+    /**
+     * Replace the real values already in the map by their placeholders, as whole words, longest first.
+     *
+     * @param string $text Text.
+     * @return string
+     */
+    private function replace_known_values(string $text): string {
+        $values = [];
+        foreach ($this->originals as $placeholder => $value) {
+            // A literal stands for a placeholder-shaped token, already escaped; very short values would match any text.
+            if (strpos($placeholder, '[literal_') === 0 || \core_text::strlen($value) < self::MIN_KNOWN_VALUE_LENGTH) {
+                continue;
+            }
+            if (strpos($text, $value) !== false) {
+                $values[$value] = $placeholder;
+            }
+        }
+        if (empty($values)) {
+            return $text;
+        }
+        uksort($values, static fn(string $a, string $b): int => strlen($b) <=> strlen($a));
+        $alternatives = implode('|', array_map(static fn(string $v): string => preg_quote($v, '/'), array_keys($values)));
+        // One pass, so a placeholder written in place of a value is never matched by another value.
+        $replaced = preg_replace_callback(
+            '/(?<![\p{L}\d_\[])(?:' . $alternatives . ')(?![\p{L}\d_\]])/u',
+            static fn(array $m): string => $values[$m[0]],
+            $text
+        );
+        return $replaced ?? $text;
     }
 
     /**
@@ -226,14 +310,174 @@ class anonymizer {
     /**
      * Put the real values back in a text written from anonymised data (the answer shown to the user).
      *
+     * A web address of another site keeps its placeholders (JEDOMI-SEC-005): content the AI read may ask it for a link
+     * that carries data of the conversation, and the real values must not leave the site when the link is opened.
+     * Addresses of the site and the rest of the text get the real values. The whole destination of a Markdown link or an
+     * href attribute counts as the address, and any scheme other than http or https (mailto:, tg:...) counts as external.
+     *
      * @param string $text Text with placeholders.
      * @return string
      */
     public function restore(string $text): string {
-        if (empty($this->originals) || strpos($text, '[') === false) {
+        if (empty($this->originals) || !preg_match('/\d/', $text)) {
             return $text;
         }
-        return $this->replace_placeholders($text, static fn(string $value): string => $value);
+        // Not split: nothing is restored rather than risking a real value in an external address.
+        return $this->restore_links($text) ?? $text;
+    }
+
+    /**
+     * Restore a text read as Markdown links and href attributes first, each as a whole unit, and then as web addresses.
+     *
+     * A Markdown link is "[text](destination)", the destination running to the closing ")" (or to the end of the text)
+     * across spaces, "<" and new lines, so an address at the end of the link text cannot run into it. A destination that
+     * leaves the site keeps its placeholders; any other one, and the link text, are restored as the rest of the text. A
+     * link written right after an external address (part of it when the address is made a link) is kept as written.
+     *
+     * @param string $text Text with placeholders.
+     * @return string|null Restored text, or null when a pattern fails.
+     */
+    private function restore_links(string $text): ?string {
+        if (
+            preg_match_all(
+                self::LINK_PATTERN,
+                $text,
+                $matches,
+                PREG_SET_ORDER | PREG_OFFSET_CAPTURE | PREG_UNMATCHED_AS_NULL
+            ) === false
+        ) {
+            return null;
+        }
+        $restored = '';
+        $offset = 0;
+        foreach ($matches as $match) {
+            [$unit, $start] = $match[0];
+            $before = $this->restore_addresses(substr($text, $offset, $start - $offset), $glued);
+            if ($before === null) {
+                return null;
+            }
+            $restored .= $before;
+            $offset = $start + strlen($unit);
+            if ($glued) {
+                $restored .= $unit;
+                continue;
+            }
+            if (isset($match['destination'][0])) {
+                [$value, $valuestart] = $match['destination'];
+                $label = $this->restore_label(substr($match['label'][0], 1, -1));
+                if ($label === null) {
+                    return null;
+                }
+                $labellength = strlen($match['label'][0]);
+                $prefix = '[' . $label . ']' . substr($unit, $labellength, $valuestart - $start - $labellength);
+            } else {
+                [$value, $valuestart] = isset($match['double'][0]) ? $match['double'] : $match['single'];
+                $prefix = substr($unit, 0, $valuestart - $start);
+            }
+            $destination = external_link::leaves_site($value) ? $value : $this->restore_addresses($value, $glued);
+            if ($destination === null) {
+                return null;
+            }
+            $restored .= $prefix . $destination . substr($unit, $valuestart - $start + strlen($value));
+        }
+        $after = $this->restore_addresses(substr($text, $offset), $glued);
+        return $after === null ? null : $restored . $after;
+    }
+    /**
+     * Restore the text of a Markdown link: kept as written when it starts with an address that leaves the site, since it
+     * is shown as that address; otherwise restored as any other text (links inside it included).
+     *
+     * @param string $label Link text without its brackets.
+     * @return string|null Restored text, or null when a pattern fails.
+     */
+    private function restore_label(string $label): ?string {
+        $found = preg_match('~^\s*' . substr(self::URL_PATTERN, 1, -2) . '~i', $label, $m);
+        if ($found === false) {
+            return null;
+        }
+        if ($found && self::address_leaves_site($m[1])) {
+            return $label;
+        }
+        return $this->restore_links($label);
+    }
+
+    /**
+     * Restore a text with no links: web addresses that leave the site keep their placeholders, the rest gets the values.
+     *
+     * @param string $text Text with placeholders.
+     * @param bool|null $glued Set to whether the text ends in an address that leaves the site.
+     * @return string|null Restored text, or null when the pattern fails.
+     */
+    private function restore_addresses(string $text, ?bool &$glued = null): ?string {
+        $glued = false;
+        if (preg_match_all(self::URL_PATTERN, $text, $matches, PREG_OFFSET_CAPTURE) === false) {
+            return null;
+        }
+        $restored = '';
+        $offset = 0;
+        foreach ($matches[0] as [$address, $start]) {
+            $before = $this->restore_answer_placeholders(substr($text, $offset, $start - $offset));
+            $leaves = self::address_leaves_site($address);
+            $inside = $leaves ? $address : $this->restore_answer_placeholders($address);
+            if ($before === null || $inside === null) {
+                return null;
+            }
+            $restored .= $before . $inside;
+            $offset = $start + strlen($address);
+            $glued = $leaves && $offset === strlen($text);
+        }
+        $after = $this->restore_answer_placeholders(substr($text, $offset));
+        return $after === null ? null : $restored . $after;
+    }
+
+    /**
+     * Replace the placeholders of this anonymiser in a part of the answer that stays on the site by their real values.
+     *
+     * One pass, so a restored value that looks like a placeholder is never replaced again. Besides the forms read by
+     * {@see self::replace_placeholders()}, a placeholder the AI wrote without its brackets ("person_1") gets its real
+     * value when it is a whole word and that placeholder exists in this anonymiser; a "literal_N" placeholder written
+     * that way is kept as written. "Person N" and "Persona N", with that exact capitalisation, are read the same way
+     * as "[person_N]"; no other spaced or translated form is (CTR-011).
+     *
+     * @param string $text Text with placeholders.
+     * @return string|null Restored text, or null when the pattern fails.
+     */
+    private function restore_answer_placeholders(string $text): ?string {
+        return preg_replace_callback(
+            self::ANSWER_PLACEHOLDER_PATTERN,
+            function (array $m): string {
+                if (isset($m[5]) && $m[5] !== '') {
+                    return $this->originals['[person_' . $m[5] . ']'] ?? $m[0];
+                }
+                if (isset($m[3]) && $m[3] !== '') {
+                    $kind = strtolower($m[3]);
+                    $placeholder = '[' . $kind . '_' . $m[4] . ']';
+                    if ($kind === 'literal' || !isset($this->originals[$placeholder])) {
+                        return $m[0];
+                    }
+                    return $this->originals[$placeholder];
+                }
+                $placeholder = self::canonical_placeholder($m[1], $m[2]);
+                return $this->originals[$placeholder] ?? $m[0];
+            },
+            $text
+        );
+    }
+
+    /**
+     * Whether an address found in a text leaves the site. An address followed by "](" outside a whole Markdown link
+     * ("site/x](https://attacker.example/?n=...") counts as leaving when any part of it does.
+     *
+     * @param string $address Address found in the text.
+     * @return bool
+     */
+    private static function address_leaves_site(string $address): bool {
+        foreach (explode('](', $address) as $part) {
+            if (external_link::leaves_site($part)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -424,7 +668,7 @@ class anonymizer {
     }
 
     /**
-     * Escape a value for the inside of a quoted SQL string or identifier.
+     * Escape a value for the inside of a quoted SQL string or identifier, with its line breaks written as "\n".
      *
      * @param string $value Value.
      * @param string $quote Quote character of the string or identifier.
@@ -432,6 +676,8 @@ class anonymizer {
      * @return string
      */
     private static function escape_sql_text(string $value, string $quote, bool $backslash): string {
+        // A value with a carriage return (an address typed on Windows) would make the guard refuse a correct query.
+        $value = str_replace(["\r\n", "\r"], "\n", $value);
         if ($backslash) {
             $value = str_replace('\\', '\\\\', $value);
         }
@@ -459,7 +705,11 @@ class anonymizer {
         if (is_array($value)) {
             return array_map(fn($item) => $this->restore_value($item), $value);
         }
-        return is_string($value) ? $this->restore($value) : $value;
+        // Tool arguments run on the site, so a web address in them gets its real values too (unlike the answer).
+        if (!is_string($value) || empty($this->originals) || strpos($value, '[') === false) {
+            return $value;
+        }
+        return $this->replace_placeholders($value, static fn(string $v): string => $v);
     }
 
     /**
@@ -617,7 +867,8 @@ class anonymizer {
     /**
      * Replace the placeholder-shaped tokens of an incoming text that this anonymiser did not create.
      *
-     * A document or a record can contain a token such as "[person_1]" (an export that was anonymised before). Left as
+     * A document or a record can contain a token such as "[person_1]" (an export that was anonymised before), or a vision
+     * model can write "person_1" or "Person 1" in what it read (CTR-011). Left as
      * it is, the AI could not tell it from a placeholder of this anonymiser, and the answer would show the real value of
      * that placeholder where the text had the token. Each such token gets its own "[literal_N]" placeholder, so the AI
      * sees a distinct token and the answer gets the original token back. Placeholders created by this anonymiser (or
@@ -627,13 +878,23 @@ class anonymizer {
      * @return string
      */
     private function escape_foreign_placeholders(string $text): string {
-        if (strpos($text, '[') === false) {
+        if (!preg_match('/\d/', $text)) {
             return $text;
         }
-        // Also the loose forms ("[Person 1]"), which restore() would otherwise turn into the real value of a placeholder.
+        // Every form restore() reads (ANSWER_PLACEHOLDER_PATTERN): the loose bracketed one ("[Person 1]"), the bare
+        // "person_1" and "Person 1" / "Persona 1". A bare or spaced form is never created by this anonymiser, so it is
+        // always foreign; a bare token of another kind ("step_2") is never restored and is kept.
         return (string) preg_replace_callback(
-            self::LOOSE_PLACEHOLDER_PATTERN,
-            fn(array $m): string => isset($this->originals[$m[0]]) ? $m[0] : $this->placeholder('literal', $m[0]),
+            self::ANSWER_PLACEHOLDER_PATTERN,
+            function (array $m): string {
+                if (isset($m[1]) && $m[1] !== '' && isset($this->originals[$m[0]])) {
+                    return $m[0];
+                }
+                if (isset($m[3]) && $m[3] !== '' && !in_array(strtolower($m[3]), self::RESTORED_KINDS, true)) {
+                    return $m[0];
+                }
+                return $this->placeholder('literal', $m[0]);
+            },
             $text
         );
     }

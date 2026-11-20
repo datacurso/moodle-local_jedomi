@@ -1100,4 +1100,73 @@ final class webhook_conversation_test extends \advanced_testcase {
         $this->assertCount(2, $this->ai->calls);
         $this->assertStringContainsString('Second answer.', end($this->telegram->sent)['text']);
     }
+
+    /**
+     * Hold in Telegram the renaming of a course by a user who manages it through a category role, without an enrolment.
+     *
+     * @param string $chatid Chat id.
+     * @return array{0: \stdClass, 1: \stdClass, 2: \context_coursecat, 3: string} User, course, category context and
+     *                                                                        the callback id of the held action.
+     */
+    private function held_rename_by_category_teacher(string $chatid): array {
+        global $DB;
+        $category = $this->getDataGenerator()->create_category();
+        $course = $this->getDataGenerator()->create_course(['category' => $category->id, 'fullname' => 'Original name']);
+        $user = $this->fresh_user();
+        $catcontext = \context_coursecat::instance($category->id);
+        role_assign((int) $DB->get_field('role', 'id', ['shortname' => 'manager']), (int) $user->id, $catcontext->id);
+        set_config('ws_allowlist_teacher', json_encode(['core_course_update_courses']), 'local_jedomi');
+        set_config('ws_allowlist_student', json_encode([]), 'local_jedomi');
+        $this->link((int) $user->id, $chatid);
+        $hold = new \ReflectionMethod(webhook_handler::class, 'hold_action');
+        $hold->setAccessible(true);
+        $hold->invoke(null, $chatid, (int) $user->id, 'ws_execute', ['wsname' => 'core_course_update_courses',
+            'courseid' => (int) $course->id,
+            'params' => json_encode(['courses' => [['id' => (int) $course->id, 'fullname' => 'Renamed']]])]);
+        $pending = $DB->get_record('local_jedomi_telegram_pending_actions', ['chatid' => $chatid], '*', MUST_EXIST);
+        return [$user, $course, $catcontext, (string) $pending->callbackid];
+    }
+
+    /**
+     * Confirm a held action with its button or, for a critical one, with the confirmation word.
+     *
+     * @param string $chatid Chat id.
+     * @param string $callbackid Callback id of the held action.
+     * @return void
+     */
+    private function confirm_held(string $chatid, string $callbackid): void {
+        $confirm = new \ReflectionMethod(webhook_handler::class, 'resolve_held_action');
+        $confirm->setAccessible(true);
+        $mode = new \ReflectionClassConstant(webhook_handler::class, 'RESOLVE_KEYWORD');
+        $confirm->invoke(null, $chatid, $callbackid, $mode->getValue());
+    }
+
+    /**
+     * Unit 7b: a teacher of a course through a category role holds a write of that course in Telegram and confirms it:
+     * the course is kept with the action and the role is computed in it again, so the write runs.
+     */
+    public function test_category_teacher_confirms_a_write_of_the_course_in_telegram(): void {
+        global $DB;
+        [, $course, , $callbackid] = $this->held_rename_by_category_teacher('779000090');
+        $this->assertSame((int) $course->id, (int) $DB->get_field(
+            'local_jedomi_telegram_pending_actions',
+            'courseid',
+            ['callbackid' => $callbackid]
+        ));
+
+        $this->confirm_held('779000090', $callbackid);
+        $this->assertSame('Renamed', $DB->get_field('course', 'fullname', ['id' => $course->id]));
+    }
+
+    /**
+     * Unit 7b: a teacher who lost the capability before confirming in Telegram is refused.
+     */
+    public function test_write_confirmed_in_telegram_after_losing_the_capability_is_refused(): void {
+        global $DB;
+        [$user, $course, $catcontext, $callbackid] = $this->held_rename_by_category_teacher('779000091');
+        role_unassign((int) $DB->get_field('role', 'id', ['shortname' => 'manager']), (int) $user->id, $catcontext->id);
+
+        $this->confirm_held('779000091', $callbackid);
+        $this->assertSame('Original name', $DB->get_field('course', 'fullname', ['id' => $course->id]));
+    }
 }

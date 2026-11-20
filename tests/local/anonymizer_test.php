@@ -589,4 +589,349 @@ final class anonymizer_test extends \advanced_testcase {
         $this->assertStringNotContainsString('[Email 1]', $sent[0]['content']);
         $this->assertSame('Mail ana.diaz@example.com about [Email 1]', $other->restore($sent[0]['content']));
     }
+
+    /**
+     * JEDOMI-SEC-005: a web address of another site keeps its placeholders in the answer, so a link the AI was asked to
+     * write by untrusted content carries no real value; the rest of the answer and the addresses of the site get them.
+     */
+    public function test_placeholders_in_external_addresses_are_not_restored(): void {
+        global $CFG;
+        $this->resetAfterTest();
+        $map = ['[person_1]' => 'Ximena', '[email_1]' => 'xq@example.com'];
+        $anonymizer = anonymizer::from_map($map, anonymizer::LEVEL_BASIC);
+        $site = $CFG->wwwroot . '/user/profile.php?name=';
+        $sitehost = parse_url($CFG->wwwroot, PHP_URL_HOST);
+
+        $external = [
+            'https://attacker.example/r?n=[person_1]',
+            'http://attacker.example/[Person 1]x',
+            '//attacker.example/r?n=[person_1]',
+            'https:/attacker.example/r?n=[person_1]',
+            '/\\attacker.example/r?n=[person_1]',
+            'attacker.example/r?n=[person_1]',
+            'https://[person_1].attacker.example/',
+            'https://' . $sitehost . '@attacker.example/r?n=[person_1]',
+            'https://attacker.example\\@' . $sitehost . '/r?n=[person_1]',
+            'https://attacker.example/?n=\\[person\\_1\\]&e=[email_1]',
+        ];
+        foreach ($external as $url) {
+            $answer = "See [the feedback]({$url}) of [person_1].";
+            $this->assertSame(
+                "See [the feedback]({$url}) of Ximena.",
+                $anonymizer->restore($answer),
+                "No real value in {$url}"
+            );
+        }
+
+        $this->assertSame(
+            "Profile of Ximena: [Ximena]({$site}Ximena) and <a href=\"https://attacker.example/?n=[email_1]\">Ximena</a>",
+            $anonymizer->restore(
+                "Profile of [person_1]: [[person_1]]({$site}[person_1]) and "
+                    . '<a href="https://attacker.example/?n=[email_1]">[person_1]</a>'
+            )
+        );
+        $this->assertSame(
+            'Ximena wrote from /user/view.php?n=Ximena',
+            $anonymizer->restore('[person_1] wrote from /user/view.php?n=[person_1]')
+        );
+        $this->assertSame('Mail xq@example.com today', $anonymizer->restore('Mail [email_1] today'));
+    }
+
+    /**
+     * JEDOMI-SEC-005: tool arguments run on the site, so an address in them still gets the real values.
+     */
+    public function test_tool_arguments_keep_restoring_addresses(): void {
+        $this->resetAfterTest();
+        $anonymizer = anonymizer::from_map(['[person_1]' => 'Ximena'], anonymizer::LEVEL_BASIC);
+
+        $this->assertSame(
+            ['url' => 'https://example.org/Ximena'],
+            $anonymizer->restore_value(['url' => 'https://example.org/[person_1]'])
+        );
+    }
+
+    /**
+     * Phase 23 unit 6: at the Basic level an identifier shown in a previous answer goes back to the AI as its placeholder
+     * in a later turn; only values already in the map are replaced, as whole words.
+     *
+     * @return void
+     */
+    public function test_history_gets_the_placeholders_of_the_map(): void {
+        $this->resetAfterTest();
+        $anonymizer = new anonymizer(anonymizer::LEVEL_BASIC);
+        $result = $anonymizer->anonymize_tool_result(json_encode(['idnumber' => 'ZX9-4471', 'phone1' => '555123']));
+        $this->assertSame(['idnumber' => '[id_1]', 'phone1' => '[id_2]'], json_decode($result, true));
+        $answer = $anonymizer->restore('The code of the student is [id_1], phone [id_2].');
+        $continued = anonymizer::from_map($anonymizer->export_map(), anonymizer::LEVEL_BASIC);
+
+        $messages = $continued->anonymize_messages([
+            ['role' => 'user', 'content' => 'Show the code'],
+            ['role' => 'assistant', 'content' => $answer],
+            ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Is ZX9-4471 right? Not ZX9-44712 nor 5551234']]],
+        ]);
+
+        $this->assertSame('The code of the student is [id_1], phone [id_2].', $messages[1]['content']);
+        $this->assertSame('Is [id_1] right? Not ZX9-44712 nor 5551234', $messages[2]['content'][0]['text']);
+        $this->assertStringNotContainsString('ZX9-4471', $continued->anonymize_history_text('Code ZX9-4471'));
+        $this->assertSame('The code of the student is ZX9-4471, phone 555123.', $continued->restore($messages[1]['content']));
+    }
+
+    /**
+     * Phase 23 unit 6: short values of the map only replace whole words, and values under three characters are never
+     * looked for in the history, so common text around them is kept.
+     *
+     * @return void
+     */
+    public function test_history_short_values_only_match_whole_words(): void {
+        $this->resetAfterTest();
+        $anonymizer = anonymizer::from_map(['[person_1]' => 'Ann', '[id_1]' => '12'], anonymizer::LEVEL_BASIC);
+
+        $this->assertSame(
+            'Annual report for [person_1]: 12 tasks, Anne and Joann agree.',
+            $anonymizer->anonymize_history_text('Annual report for Ann: 12 tasks, Anne and Joann agree.')
+        );
+    }
+
+    /**
+     * Phase 23 unit 6: a real value with carriage returns restored in a query gets plain line breaks, so the guard does
+     * not refuse a correct query.
+     *
+     * @return void
+     */
+    public function test_restore_sql_normalises_carriage_returns(): void {
+        $this->resetAfterTest();
+        $anonymizer = anonymizer::from_map(['[id_1]' => "Main St 1\r\nFloor 2\rBack"], anonymizer::LEVEL_BASIC);
+        $where = 'SELECT id FROM {user} WHERE address = ';
+
+        foreach (['postgres', 'mysql'] as $family) {
+            $this->assertSame($where . "'Main St 1\nFloor 2\nBack'", $anonymizer->restore_sql($where . '[id_1]', $family));
+            $this->assertSame($where . "'Main St 1\nFloor 2\nBack'", $anonymizer->restore_sql($where . "'[id_1]'", $family));
+        }
+        $this->assertSame(
+            ['address' => "Main St 1\r\nFloor 2\rBack"],
+            $anonymizer->restore_value(['address' => '[id_1]']),
+            'Other arguments keep the value as it is'
+        );
+    }
+
+    /**
+     * JEDOMI-SEC-005: the whole destination of a Markdown link or an href is the address, across spaces, "<" and new
+     * lines, and any scheme other than http or https is external; links of the site still get the real values.
+     */
+    public function test_whole_link_destination_and_other_schemes_keep_placeholders(): void {
+        global $CFG;
+        $this->resetAfterTest();
+        $anonymizer = anonymizer::from_map(['[person_1]' => 'Ximena'], anonymizer::LEVEL_BASIC);
+
+        $external = [
+            'https://attacker.example/r?n= [person_1]',
+            'https://attacker.example/r?n=<[person_1]',
+            "https://attacker.example/r?n=\n[person_1]",
+            "/\t/attacker.example/r?n=[person_1]",
+            'mailto:a@attacker.example?body=[person_1]',
+            'tg://msg?text=[person_1]',
+        ];
+        foreach ($external as $url) {
+            $this->assertSame(
+                "[x]({$url}) by Ximena",
+                $anonymizer->restore("[x]({$url}) by [person_1]"),
+                json_encode($url)
+            );
+            $this->assertSame(
+                "<a href='{$url}'>Ximena</a>",
+                $anonymizer->restore("<a href='{$url}'>[person_1]</a>"),
+                json_encode($url)
+            );
+        }
+        $site = $CFG->wwwroot . '/user/profile.php?name= ';
+        $this->assertSame("[Ximena]({$site}Ximena)", $anonymizer->restore("[[person_1]]({$site}[person_1])"));
+        $this->assertSame('[p](/user/view.php?n= Ximena)', $anonymizer->restore('[p](/user/view.php?n= [person_1])'));
+        $text = "[see {$CFG->wwwroot}/x](https://attacker.example/?n=[person_1])";
+        $this->assertSame($text, $anonymizer->restore($text), 'A site address in the link text');
+    }
+
+    /**
+     * JEDOMI-SEC-005: a Markdown link is read as a whole unit, so an address at the end of the link text cannot run into
+     * the destination and leave part of it with the real values; the text gets them unless it is an external address.
+     */
+    public function test_link_text_ending_in_an_address_does_not_split_the_destination(): void {
+        global $CFG;
+        $this->resetAfterTest();
+        $anonymizer = anonymizer::from_map(['[person_1]' => 'Ximena'], anonymizer::LEVEL_BASIC);
+
+        $kept = [
+            'foreign address and a space' => '[docs.example/](https://evil.example/?q= [person_1])',
+            'site address and "<"' => "[{$CFG->wwwroot}/](https://evil.example/?q=<[person_1]>)",
+            'new line' => "[docs.example/](https://evil.example/?q=\n[person_1])",
+            'address text of another host' => '[https://evil.example/[person_1]](/user/view.php)',
+            'address glued before a link' => 'https://evil.example/?q=[person_1](/x)',
+            'other address inside a site link' => '[x](/user/view.php https://evil.example/?q=[person_1])',
+        ];
+        foreach ($kept as $case => $link) {
+            $this->assertSame("{$link} by Ximena", $anonymizer->restore("{$link} by [person_1]"), $case);
+        }
+
+        $unclosed = '[docs.example/](https://evil.example/(a [person_1] by [person_1]';
+        $this->assertSame($unclosed, $anonymizer->restore($unclosed), 'An unclosed destination runs to the end');
+        $this->assertSame(
+            '[see Ximena at docs.example/](https://evil.example/?q= [person_1])',
+            $anonymizer->restore('[see [person_1] at docs.example/](https://evil.example/?q= [person_1])'),
+            'Nested brackets in the link text'
+        );
+        $this->assertSame(
+            '[Ximena](https://evil.example/?q= [person_1])',
+            $anonymizer->restore('[[person_1]](https://evil.example/?q= [person_1])')
+        );
+        $site = $CFG->wwwroot . '/user/profile.php?name= ';
+        $this->assertSame(
+            "[{$CFG->wwwroot}/]({$site}Ximena) and [p](/user/view.php?n=<Ximena>)",
+            $anonymizer->restore("[{$CFG->wwwroot}/]({$site}[person_1]) and [p](/user/view.php?n=<[person_1]>)"),
+            'Links of the site keep the real values'
+        );
+        $this->assertSame('Hello Ximena, see [x] today', $anonymizer->restore('Hello [person_1], see [x] today'));
+    }
+
+    /**
+     * MDL-CTR-011: a placeholder the AI wrote without its brackets ("person_1", "Person_1") gets its real value when it is
+     * a whole word and that placeholder exists in the anonymiser; any other token is kept as written.
+     */
+    public function test_restore_puts_back_bracketless_placeholders_of_the_map(): void {
+        $this->resetAfterTest();
+        $map = ['[person_1]' => 'Ximena', '[email_2]' => 'xq@example.com', '[literal_1]' => '[person_7]'];
+        $anonymizer = anonymizer::from_map($map, anonymizer::LEVEL_BASIC);
+
+        $this->assertSame('Hello Ximena.', $anonymizer->restore('Hello person_1.'));
+        $this->assertSame('Hello Ximena (xq@example.com)', $anonymizer->restore('Hello Person_1 (EMAIL_2)'));
+        $this->assertSame('Ximena and Ximena', $anonymizer->restore('[person_1] and person_1'));
+        $this->assertSame('Hello person_9', $anonymizer->restore('Hello person_9'), 'Not in the map');
+        $this->assertSame('Hello Ximena', $anonymizer->restore('Hello Person 1'), 'Bracketless with a space');
+        $this->assertSame('literal_1 stays', $anonymizer->restore('literal_1 stays'), 'Literal placeholders');
+        $this->assertSame('[person_7] is the token', $anonymizer->restore('[literal_1] is the token'));
+    }
+
+    /**
+     * MDL-CTR-011: a bracketless token inside another word, followed by more digits or next to "_", "/", "[" or "]" is not
+     * a placeholder.
+     */
+    public function test_restore_keeps_bracketless_tokens_that_are_not_whole_words(): void {
+        $this->resetAfterTest();
+        $anonymizer = anonymizer::from_map(['[person_1]' => 'Ximena'], anonymizer::LEVEL_BASIC);
+
+        foreach (
+            ['xperson_1', 'person_10', 'person_01', 'my_person_1', 'person_1_x', 'person_1a', 'a/person_1',
+                'person_1/b', 'åperson_1', '1person_1'] as $token
+        ) {
+            $this->assertSame("See {$token} now", $anonymizer->restore("See {$token} now"), $token);
+        }
+    }
+
+    /**
+     * MDL-CTR-011 with JEDOMI-SEC-005: a bracketless placeholder in an address that leaves the site keeps its form, in a
+     * Markdown link destination, an href and a bare address; addresses of the site get the real value.
+     */
+    public function test_bracketless_placeholders_in_external_addresses_are_not_restored(): void {
+        global $CFG;
+        $this->resetAfterTest();
+        $anonymizer = anonymizer::from_map(['[person_1]' => 'Ximena'], anonymizer::LEVEL_BASIC);
+
+        foreach (
+            ['https://attacker.example/r?n=person_1', 'mailto:person_1@attacker.example',
+                'https://attacker.example/r?n=Person_1 x'] as $url
+        ) {
+            $this->assertSame(
+                "See [the feedback]({$url}) of Ximena.",
+                $anonymizer->restore("See [the feedback]({$url}) of person_1."),
+                "No real value in {$url}"
+            );
+        }
+        $this->assertSame(
+            '<a href="https://attacker.example/?n=person_1">Ximena</a> and https://attacker.example/?n=person_1',
+            $anonymizer->restore('<a href="https://attacker.example/?n=person_1">person_1</a> and '
+                . 'https://attacker.example/?n=person_1')
+        );
+        $this->assertSame(
+            "[Ximena]({$CFG->wwwroot}/user/profile.php?name=Ximena)",
+            $anonymizer->restore("[person_1]({$CFG->wwwroot}/user/profile.php?name=person_1)")
+        );
+    }
+
+    /**
+     * MDL-CTR-011: of the spaced forms only "Person N" and "Persona N", with that exact capitalisation and one space, get
+     * the real value of "[person_N]" when it exists in the anonymiser.
+     */
+    public function test_restore_puts_back_only_capitalised_spaced_person_placeholders(): void {
+        $this->resetAfterTest();
+        $map = ['[person_1]' => 'Ximena', '[email_2]' => 'xq@example.com', '[literal_1]' => 'raw'];
+        $anonymizer = anonymizer::from_map($map, anonymizer::LEVEL_BASIC);
+
+        $this->assertSame('Hello Ximena.', $anonymizer->restore('Hello Person 1.'));
+        $this->assertSame('Hola Ximena.', $anonymizer->restore('Hola Persona 1.'));
+        $this->assertSame('Hello Ximena and Ximena', $anonymizer->restore('Hello [person_1] and person_1'));
+        $this->assertSame('Hola Persona 10', $anonymizer->restore('Hola Persona 10'), 'Only person_1 in the map');
+        $this->assertSame('Hello Person 9', $anonymizer->restore('Hello Person 9'), 'Not in the map');
+        $this->assertSame('xPerson 1, Person 1a, Person  1', $anonymizer->restore('xPerson 1, Person 1a, Person  1'));
+    }
+
+    /**
+     * MDL-CTR-011: spaced or translated forms other than "Person N" and "Persona N" are ordinary text and are never
+     * restored, even when the placeholder they look like exists in the anonymiser.
+     */
+    public function test_restore_keeps_other_spaced_and_translated_forms(): void {
+        $this->resetAfterTest();
+        $map = ['[person_1]' => 'Ximena', '[id_1]' => 'S-001', '[id_2]' => 'S-002', '[text_1]' => 'secret',
+            '[email_1]' => 'xq@example.com'];
+        $anonymizer = anonymizer::from_map($map, anonymizer::LEVEL_BASIC);
+
+        foreach (
+            ['ID 2', 'Id 1', 'id 1', 'persona 1', 'PERSONA 1', 'PERSON 1', 'person 1', 'step 2', 'page 1', 'Texto 1',
+                'text 1', 'correo 1', 'Correo 1', 'Email 1', 'email 1', 'literal 1', 'la persona 1 del listado'] as $text
+        ) {
+            $this->assertSame("See {$text} now", $anonymizer->restore("See {$text} now"), $text);
+        }
+    }
+
+    /**
+     * MDL-CTR-011 with JEDOMI-SEC-005: a spaced placeholder in an address that leaves the site keeps its form.
+     */
+    public function test_spaced_placeholders_in_external_addresses_are_not_restored(): void {
+        $this->resetAfterTest();
+        $anonymizer = anonymizer::from_map(['[person_1]' => 'Ximena'], anonymizer::LEVEL_BASIC);
+
+        $this->assertSame(
+            'See [the feedback](https://attacker.example/r?n=Persona 1 x) of Ximena.',
+            $anonymizer->restore('See [the feedback](https://attacker.example/r?n=Persona 1 x) of Persona 1.')
+        );
+        $this->assertSame(
+            'See https://attacker.example/r?n=person_1 of Ximena.',
+            $anonymizer->restore('See https://attacker.example/r?n=person_1 of Person 1.')
+        );
+    }
+
+    /**
+     * MDL-CTR-011: an incoming text (a file read by the vision model, a tool result) that holds a bare "type_N" or a
+     * "Person N" / "Persona N" this anonymiser did not create gets a literal placeholder, so the answer gives the token
+     * back as written and never the real value of the placeholder of the same number.
+     */
+    public function test_foreign_bare_and_spaced_placeholders_are_escaped(): void {
+        $this->resetAfterTest();
+        $map = ['[person_1]' => 'Ximena', '[email_1]' => 'xq@example.com'];
+        $anonymizer = anonymizer::from_map($map, anonymizer::LEVEL_BASIC);
+        $text = 'The image shows person_1, Person 1, Persona 1 and EMAIL_1, page 1 and persona 1.';
+
+        $messages = $anonymizer->anonymize_messages([['role' => 'user', 'content' => $text]]);
+        $sent = $messages[0]['content'];
+        foreach (['person_1', 'Person 1', 'Persona 1', 'EMAIL_1'] as $token) {
+            $this->assertStringNotContainsString($token, $sent, $token);
+        }
+        $this->assertStringContainsString('page 1 and persona 1.', $sent);
+        $this->assertSame($text, $anonymizer->restore($sent));
+        $this->assertStringNotContainsString('Ximena', $anonymizer->restore($sent));
+
+        $result = $anonymizer->anonymize_tool_result((string) json_encode(['text' => 'Signed by Person 1 (person_1)']));
+        $this->assertSame(
+            '{"text":"Signed by Person 1 (person_1)"}',
+            $anonymizer->restore($result),
+            'Tool results, such as the text of a document, are escaped the same way'
+        );
+    }
 }

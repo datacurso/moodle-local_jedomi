@@ -73,11 +73,19 @@ class describe_table_tool implements agent_tool {
      * @return string JSON-encoded column list with counts and duration, or an error if the table is missing.
      */
     public function execute(\stdClass $params): string {
-        global $DB;
+        global $CFG, $DB;
 
         $tablename = trim($params->tablename ?? '');
         if (empty($tablename)) {
-            return json_encode(['error' => 'Table name required.']);
+            return json_encode(['error' => get_string('telegram_table_name_required', 'local_jedomi')]);
+        }
+        // A sensitive table is never described, as it is never read (see sql_guard), as in the web chat.
+        $bare = preg_replace('/^\{(\w+)\}$/', '$1', $tablename);
+        if ((string) $CFG->prefix !== '' && strpos($bare, $CFG->prefix) === 0) {
+            $bare = substr($bare, strlen($CFG->prefix));
+        }
+        if ($bare !== '' && \local_jedomi\local\sql_guard::is_sensitive_table($bare)) {
+            return json_encode(['error' => 'permission_denied']);
         }
 
         $start = microtime(true);
@@ -85,7 +93,7 @@ class describe_table_tool implements agent_tool {
         $columns = $DB->get_columns($tablename);
         if ($columns === false || empty($columns)) {
             return json_encode([
-                'error' => "Table not found: {$tablename}",
+                'error' => get_string('table_not_found', 'local_jedomi', $tablename),
                 'duration_ms' => round((microtime(true) - $start) * 1000, 2),
             ]);
         }
