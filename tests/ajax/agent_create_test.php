@@ -35,6 +35,14 @@ use local_jedomi\agent\agent_manager;
  * @coversNothing
  */
 final class agent_create_test extends \advanced_testcase {
+    #[\Override]
+    protected function setUp(): void {
+        parent::setUp();
+        // The endpoints run in a separate PHP process, which only sees committed data (PostgreSQL included).
+        $this->resetAfterTest();
+        $this->preventResetByRollback();
+    }
+
     /**
      * Submit the agent form to the endpoint as the admin.
      *
