@@ -233,6 +233,21 @@ final class plugin_tools_test extends \advanced_testcase {
     }
 
     /**
+     * A database error of a plugin tool never gives the AI the query or its parameters, whatever the debugging level.
+     */
+    public function test_database_error_never_reaches_the_ai_with_its_query(): void {
+        $failure = new \dml_read_exception('Unknown column', 'SELECT secretcolumn FROM {user} WHERE id = ?', [42]);
+        $tool = new fake_plugin_tool('demo_db', true, null, $failure);
+
+        $result = json_decode(plugin_tools::execute($tool, []), true);
+
+        $this->assertSame('tool_failed', $result['error']);
+        $this->assertSame('demo_db', $result['tool']);
+        $this->assertStringNotContainsString('SELECT', $result['detail']);
+        $this->assertStringNotContainsString('secretcolumn', $result['detail']);
+    }
+
+    /**
      * A result larger than the limit never reaches the AI service: the AI gets a controlled error instead.
      */
     public function test_oversized_result_is_replaced_by_an_error(): void {

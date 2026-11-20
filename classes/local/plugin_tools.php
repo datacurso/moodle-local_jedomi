@@ -135,7 +135,8 @@ final class plugin_tools {
             $params = json_decode(json_encode((object) $args));
             $result = $tool->execute($params instanceof \stdClass ? $params : new \stdClass());
         } catch (\moodle_exception $e) {
-            return json_encode($error + ['detail' => $e->getMessage()]);
+            // Same filter as the Jedomi tools (JEDOMI-SEC-009): a debug message can carry a query and its parameters.
+            return json_encode($error + ['detail' => safe_error::for_model($e)]);
         } catch (\Throwable $e) {
             debugging('Jedomi plugin tool ' . $tool->get_name() . ' failed: ' . $e->getMessage(), DEBUG_DEVELOPER);
             return json_encode($error);
