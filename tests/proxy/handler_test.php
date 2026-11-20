@@ -1198,6 +1198,7 @@ final class handler_test extends \advanced_testcase {
      * @return void
      */
     public function test_teacher_can_notify_the_group_of_the_course(): void {
+        $this->require_provider();
         global $PAGE;
         $this->resetAfterTest();
         $this->preventResetByRollback();

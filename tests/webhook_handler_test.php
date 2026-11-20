@@ -1929,6 +1929,7 @@ final class webhook_handler_test extends \advanced_testcase {
      * @param string $chatid Chat id.
      * @param fake_ai_client $fake AI client double.
      * @param array $extrastate Extra keys of the saved state.
+     * @param fake_telegram_api_client|null $telegram Telegram client double; null for a new one.
      * @return fake_telegram_api_client
      */
     private function continue_question(

@@ -166,6 +166,9 @@ final class sql_params_guard_test extends \advanced_testcase {
      * JEDOMI-SEC-015 (NEW-POC-1c): in the web chat the model gets the refusal, never the grades of course B.
      */
     public function test_web_chat_refuses_ambiguous_params(): void {
+        if (!class_exists(\aiprovider_datacurso\httpclient\ai_services_api::class)) {
+            $this->markTestSkipped('aiprovider_datacurso is not installed; the web chat needs its plugin state.');
+        }
         $s = $this->scenario();
         $this->setUser($s['teacher']);
         $fake = new fake_ai_client();

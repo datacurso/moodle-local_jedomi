@@ -57,6 +57,17 @@ final class verify_custom_service_test extends \advanced_testcase {
     }
 
     /**
+     * Skip the test when aiprovider_datacurso is not installed (as in the CI without the provider).
+     *
+     * @return void
+     */
+    private function require_provider(): void {
+        if (!class_exists(\aiprovider_datacurso\httpclient\ai_services_api::class)) {
+            $this->markTestSkipped('aiprovider_datacurso is not installed; this test needs it.');
+        }
+    }
+
+    /**
      * Call the web service and clean its result like the AJAX layer does.
      *
      * @param string $url Address.
@@ -77,6 +88,7 @@ final class verify_custom_service_test extends \advanced_testcase {
      * @return void
      */
     public function test_valid_openai_service(): void {
+        $this->require_provider();
         $this->curl->enqueue(json_encode(['object' => 'list', 'data' => [['id' => 'a'], ['id' => 'b']]]));
 
         $result = $this->call('https://203.0.113.10/v1/');
@@ -127,6 +139,7 @@ final class verify_custom_service_test extends \advanced_testcase {
      * @return void
      */
     public function test_model_ids_are_filtered_deduplicated_and_sorted(): void {
+        $this->require_provider();
         $ids = ['z-model', 'meta-llama/Llama-3.3-70B-Instruct', 'bad id', '<img src=x onerror=alert(1)>', 'a/b:1', 'z-model',
             'm@v+1', str_repeat('x', 201), '"quoted"', "newline\n"];
         $this->curl->enqueue(json_encode(['object' => 'list', 'data' => array_map(fn($id) => ['id' => $id], $ids)]));
@@ -145,6 +158,7 @@ final class verify_custom_service_test extends \advanced_testcase {
      * @return void
      */
     public function test_model_ids_are_capped(): void {
+        $this->require_provider();
         $ids = array_map(fn(int $i): string => sprintf('model-%03d', $i), range(149, 0));
         $this->curl->enqueue(json_encode(['object' => 'list', 'data' => array_map(fn($id) => ['id' => $id], $ids)]));
 
@@ -199,6 +213,7 @@ final class verify_custom_service_test extends \advanced_testcase {
      * @return void
      */
     public function test_local_model_over_http(): void {
+        $this->require_provider();
         $this->curl->enqueue(json_encode(['object' => 'list', 'data' => [['id' => 'llama3']]]));
 
         $result = $this->call('http://127.0.0.1:11434', '', true);
@@ -213,6 +228,7 @@ final class verify_custom_service_test extends \advanced_testcase {
      * @return void
      */
     public function test_saved_key_only_goes_to_the_saved_address(): void {
+        $this->require_provider();
         set_config('custom_gateway_url', 'https://203.0.113.10', 'local_jedomi');
         set_config('custom_api_key', 'sk-saved', 'local_jedomi');
         $this->curl->enqueue(json_encode(['object' => 'list', 'data' => [['id' => 'a']]]));
@@ -279,6 +295,7 @@ final class verify_custom_service_test extends \advanced_testcase {
      * @return void
      */
     public function test_context_lengths_are_returned_and_kept(): void {
+        $this->require_provider();
         $this->curl->enqueue(json_encode(['object' => 'list', 'data' => [
             ['id' => 'b', 'max_model_len' => 16384],
             ['id' => 'a', 'context_length' => 131072],
@@ -324,6 +341,7 @@ final class verify_custom_service_test extends \advanced_testcase {
      * @return void
      */
     public function test_chat_model_is_probed(): void {
+        $this->require_provider();
         $this->curl->enqueue(json_encode(['object' => 'list', 'data' => [['id' => 'o-model']]]));
         $this->curl->enqueue('{"error":{"message":"Unsupported parameter: \'max_tokens\' is not supported"}}', 400);
         $this->curl->enqueue(json_encode(['choices' => [['message' => ['content' => 'OK']]]]));
@@ -352,6 +370,7 @@ final class verify_custom_service_test extends \advanced_testcase {
      * @return void
      */
     public function test_probe_without_warnings(): void {
+        $this->require_provider();
         $ok = json_encode(['choices' => [['message' => ['content' => 'OK']]]]);
         $this->curl->enqueue(json_encode(['object' => 'list', 'data' => [['id' => 'm', 'max_model_len' => 32768]]]));
         $this->curl->enqueue($ok);
@@ -381,6 +400,7 @@ final class verify_custom_service_test extends \advanced_testcase {
      * @return void
      */
     public function test_probe_failure_and_no_model(): void {
+        $this->require_provider();
         $this->curl->enqueue(json_encode(['object' => 'list', 'data' => [['id' => 'a', 'max_model_len' => 4096]]]));
         $this->curl->enqueue('{"error":"model not found"}', 404);
 

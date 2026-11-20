@@ -970,7 +970,7 @@ class webhook_handler {
      * @param string $name Tool name.
      * @param array $args Tool arguments.
      * @param string $severity One of the pending_action_service::SEVERITY_* constants.
-     * @param bool $askpin Whether the user confirms with the PIN instead.
+     * @param bool $pinrequired Whether the user must type the PIN first.
      * @return string HTML text for Telegram.
      */
     private static function confirmation_text(
