@@ -675,8 +675,9 @@ final class lib_test extends \advanced_testcase {
      * @return array
      */
     public static function tools_by_role_provider(): array {
-        $common = ['describe_table', 'search_tables', 'ws_describe', 'ws_search'];
-        $teacher = array_merge($common, ['document_read', 'execute_sql', 'ws_execute']);
+        // The table tools go only to the roles that can query the database, as execute_sql.
+        $common = ['ws_describe', 'ws_search'];
+        $teacher = array_merge($common, ['describe_table', 'document_read', 'execute_sql', 'search_tables', 'ws_execute']);
         $manager = array_merge($teacher, ['admin_describe', 'admin_execute', 'admin_search', 'create_agent', 'delete_agent',
             'list_agents', 'site_overview']);
         $admin = array_merge($manager, ['get_site_config']);

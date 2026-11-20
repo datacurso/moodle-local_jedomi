@@ -1052,6 +1052,52 @@ final class handler_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-INT-041: like in Telegram, the table tools go only to the roles that can query the database: a student is not
+     * offered describe_table nor search_tables and is refused when the AI calls them anyway.
+     */
+    public function test_student_is_not_offered_and_cannot_use_the_table_tools(): void {
+        $this->resetAfterTest();
+        $course = $this->getDataGenerator()->create_course();
+        $this->setUser($this->getDataGenerator()->create_and_enrol($course, 'student'));
+
+        $offered = array_map(
+            static fn(array $tool): string => $tool['function']['name'],
+            \local_jedomi_get_tool_definitions('student')
+        );
+        $described = json_decode(handler::run_tool('describe_table', ['tablename' => 'course'], 'student'), true);
+        $searched = json_decode(handler::run_tool('search_tables', ['query' => 'user'], 'student'), true);
+
+        $this->assertNotContains('describe_table', $offered);
+        $this->assertNotContains('search_tables', $offered);
+        $this->assertSame(['error' => 'permission_denied'], $described);
+        $this->assertSame(['error' => 'permission_denied'], $searched);
+    }
+
+    /**
+     * MDL-INT-041: teachers and administrators are offered the table tools and they work.
+     */
+    public function test_teacher_and_admin_are_offered_and_use_the_table_tools(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+
+        foreach (['teacher', 'admin'] as $role) {
+            $offered = array_map(
+                static fn(array $tool): string => $tool['function']['name'],
+                \local_jedomi_get_tool_definitions($role)
+            );
+            $described = json_decode(handler::run_tool('describe_table', ['tablename' => 'course'], $role), true);
+            $searched = json_decode(handler::run_tool('search_tables', ['query' => 'user'], $role), true);
+
+            $this->assertContains('describe_table', $offered, $role);
+            $this->assertContains('search_tables', $offered, $role);
+            $this->assertArrayNotHasKey('error', $described, $role);
+            $this->assertNotEmpty($described, $role);
+            $this->assertArrayNotHasKey('error', $searched, $role);
+            $this->assertGreaterThan(0, $searched['count'], $role);
+        }
+    }
+
+    /**
      * MDL-INT-041 / MDL-INT-017: like in Telegram, a teacher without the companion API permission runs from the web chat
      * the web service functions of the teacher list, and not the others.
      */

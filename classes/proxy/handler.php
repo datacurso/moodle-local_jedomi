@@ -709,9 +709,12 @@ class handler {
 
         switch ($name) {
             case 'describe_table':
-                return self::describe_table_tool($args);
             case 'search_tables':
-                return self::search_tables_tool($args);
+                // Same gate as Telegram: table structures and names only for the roles that can query the database.
+                if (!\local_jedomi\local\query_runner::role_can_query($role)) {
+                    return json_encode(['error' => 'permission_denied']);
+                }
+                return $name === 'describe_table' ? self::describe_table_tool($args) : self::search_tables_tool($args);
             case 'execute_sql':
                 return self::execute_sql_tool($args, $role);
             case 'get_site_config':

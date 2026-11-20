@@ -67,6 +67,15 @@ class anonymizer {
     private const LOOSE_PLACEHOLDER_PATTERN = '/\\\\?\[\s*([a-z]+)\s*(?:\\\\?[_\- ])?\s*(\d+)\s*\\\\?\]/i';
 
     /**
+     * @var string Pattern of the answer text: a placeholder as {@see self::LOOSE_PLACEHOLDER_PATTERN} reads it (groups 1
+     *      and 2), or one the AI wrote without its brackets as a whole word of the exact form "type_N" ("person_1",
+     *      "Email_2"; groups 3 and 4), not next to a letter (any non-ASCII byte counts as one), a digit, "_", "/", "[" or
+     *      "]". The bracketless form is restored only when that placeholder exists in this anonymiser (CTR-011).
+     */
+    private const ANSWER_PLACEHOLDER_PATTERN = '/\\\\?\[\s*([a-z]+)\s*(?:\\\\?[_\- ])?\s*(\d+)\s*\\\\?\]'
+        . '|(?<![a-z0-9_\/\[\]\x80-\xff])([a-z]+)_([1-9]\d*)(?![a-z0-9_\/\[\]\x80-\xff])/i';
+
+    /**
      * @var string Pattern of a placeholder exactly as this anonymiser writes it, the only form restored in a query, after
      *      no backslash (group 1 is empty, group 2 the placeholder).
      */
@@ -298,7 +307,7 @@ class anonymizer {
      * @return string
      */
     public function restore(string $text): string {
-        if (empty($this->originals) || strpos($text, '[') === false) {
+        if (empty($this->originals) || (strpos($text, '[') === false && strpos($text, '_') === false)) {
             return $text;
         }
         // Not split: nothing is restored rather than risking a real value in an external address.
@@ -392,17 +401,51 @@ class anonymizer {
         if (preg_match_all(self::URL_PATTERN, $text, $matches, PREG_OFFSET_CAPTURE) === false) {
             return null;
         }
-        $same = static fn(string $value): string => $value;
         $restored = '';
         $offset = 0;
         foreach ($matches[0] as [$address, $start]) {
-            $restored .= $this->replace_placeholders(substr($text, $offset, $start - $offset), $same);
+            $before = $this->restore_answer_placeholders(substr($text, $offset, $start - $offset));
             $leaves = self::address_leaves_site($address);
-            $restored .= $leaves ? $address : $this->replace_placeholders($address, $same);
+            $inside = $leaves ? $address : $this->restore_answer_placeholders($address);
+            if ($before === null || $inside === null) {
+                return null;
+            }
+            $restored .= $before . $inside;
             $offset = $start + strlen($address);
             $glued = $leaves && $offset === strlen($text);
         }
-        return $restored . $this->replace_placeholders(substr($text, $offset), $same);
+        $after = $this->restore_answer_placeholders(substr($text, $offset));
+        return $after === null ? null : $restored . $after;
+    }
+
+    /**
+     * Replace the placeholders of this anonymiser in a part of the answer that stays on the site by their real values.
+     *
+     * One pass, so a restored value that looks like a placeholder is never replaced again. Besides the forms read by
+     * {@see self::replace_placeholders()}, a placeholder the AI wrote without its brackets ("person_1") gets its real
+     * value when it is a whole word and that placeholder exists in this anonymiser; a "literal_N" placeholder written
+     * that way is kept as written (CTR-011).
+     *
+     * @param string $text Text with placeholders.
+     * @return string|null Restored text, or null when the pattern fails.
+     */
+    private function restore_answer_placeholders(string $text): ?string {
+        return preg_replace_callback(
+            self::ANSWER_PLACEHOLDER_PATTERN,
+            function (array $m): string {
+                if (isset($m[3]) && $m[3] !== '') {
+                    $kind = strtolower($m[3]);
+                    $placeholder = '[' . $kind . '_' . $m[4] . ']';
+                    if ($kind === 'literal' || !isset($this->originals[$placeholder])) {
+                        return $m[0];
+                    }
+                    return $this->originals[$placeholder];
+                }
+                $placeholder = self::canonical_placeholder($m[1], $m[2]);
+                return $this->originals[$placeholder] ?? $m[0];
+            },
+            $text
+        );
     }
 
     /**

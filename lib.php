@@ -859,47 +859,49 @@ function local_jedomi_get_tool_definitions(string $role, ?int $userid = null, st
     $tools = [];
     $userid = $userid ?? (int) ($USER->id ?? 0);
 
-    // Describe_table — every role.
-    $tools[] = [
-        'type' => 'function',
-        'function' => [
-            'name'        => 'describe_table',
-            'description' => get_string('tool_describe_table_desc', 'local_jedomi'),
-            'parameters'  => [
-                'type'       => 'object',
-                'properties' => [
-                    'tablename' => [
-                        'type'        => 'string',
-                        'description' => get_string('tool_describe_table_tablename', 'local_jedomi'),
+    // Describe_table and search_tables — only the roles that can query the database (the same rule as Telegram):
+    // table structures and names are of no use to who cannot query them.
+    if (\local_jedomi\local\query_runner::role_can_query($role)) {
+        $tools[] = [
+            'type' => 'function',
+            'function' => [
+                'name'        => 'describe_table',
+                'description' => get_string('tool_describe_table_desc', 'local_jedomi'),
+                'parameters'  => [
+                    'type'       => 'object',
+                    'properties' => [
+                        'tablename' => [
+                            'type'        => 'string',
+                            'description' => get_string('tool_describe_table_tablename', 'local_jedomi'),
+                        ],
                     ],
+                    'required' => ['tablename'],
                 ],
-                'required' => ['tablename'],
             ],
-        ],
-    ];
+        ];
 
-    // Search_tables — every role.
-    $tools[] = [
-        'type' => 'function',
-        'function' => [
-            'name'        => 'search_tables',
-            'description' => get_string('tool_search_tables_desc', 'local_jedomi'),
-            'parameters'  => [
-                'type'       => 'object',
-                'properties' => [
-                    'query' => [
-                        'type'        => 'string',
-                        'description' => get_string('tool_search_tables_query', 'local_jedomi'),
+        $tools[] = [
+            'type' => 'function',
+            'function' => [
+                'name'        => 'search_tables',
+                'description' => get_string('tool_search_tables_desc', 'local_jedomi'),
+                'parameters'  => [
+                    'type'       => 'object',
+                    'properties' => [
+                        'query' => [
+                            'type'        => 'string',
+                            'description' => get_string('tool_search_tables_query', 'local_jedomi'),
+                        ],
+                        'limit' => [
+                            'type'        => 'integer',
+                            'description' => get_string('tool_search_tables_limit', 'local_jedomi'),
+                        ],
                     ],
-                    'limit' => [
-                        'type'        => 'integer',
-                        'description' => get_string('tool_search_tables_limit', 'local_jedomi'),
-                    ],
+                    'required' => ['query'],
                 ],
-                'required' => ['query'],
             ],
-        ],
-    ];
+        ];
+    }
 
     // Execute_sql — admin, manager, teacher.
     if (in_array($role, ['admin', 'manager', 'teacher'], true)) {

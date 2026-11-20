@@ -48,7 +48,7 @@ require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/fake_telegram_api_cli
  * - "Linked" means a confirmed row in local_jedomi_telegram_links for the
  *   chat id; the role is derived from the linked userid (site admins in
  *   get_admins() => 'admin', then manager/teacher/student by capability).
- * - Open (no role gate): search_tables, ws_search, ws_describe. describe_table needs a role with SQL access.
+ * - Open (no role gate): ws_search, ws_describe. describe_table and search_tables need a role with SQL access.
  * - teacher/manager/admin: execute_sql (plus per-course ownership checks).
  * - manager/admin: admin_search, admin_describe, admin_execute,
  *   create_agent, list_agents, delete_agent, site_overview.
@@ -286,7 +286,7 @@ final class webhook_handler_test extends \advanced_testcase {
      * Test execute_tool search_tables returns error for empty query.
      */
     public function test_execute_tool_search_tables_no_query(): void {
-        $result = \local_jedomi\telegram\webhook_handler::execute_tool('search_tables', []);
+        $result = \local_jedomi\telegram\webhook_handler::execute_tool('search_tables', [], (int) get_admin()->id);
         $this->assertStringContainsString('Search query required', $result);
     }
 
@@ -295,7 +295,7 @@ final class webhook_handler_test extends \advanced_testcase {
      * Test execute_tool search_tables finds tables matching query.
      */
     public function test_execute_tool_search_tables_success(): void {
-        $result = \local_jedomi\telegram\webhook_handler::execute_tool('search_tables', ['query' => 'user']);
+        $result = \local_jedomi\telegram\webhook_handler::execute_tool('search_tables', ['query' => 'user'], (int) get_admin()->id);
         $this->assertStringContainsString('Tables', $result);
     }
 
@@ -304,7 +304,11 @@ final class webhook_handler_test extends \advanced_testcase {
      * Test execute_tool search_tables respects limit.
      */
     public function test_execute_tool_search_tables_limit(): void {
-        $result = \local_jedomi\telegram\webhook_handler::execute_tool('search_tables', ['query' => 'course', 'limit' => 5]);
+        $result = \local_jedomi\telegram\webhook_handler::execute_tool(
+            'search_tables',
+            ['query' => 'course', 'limit' => 5],
+            (int) get_admin()->id
+        );
         // Should not error — just returns results.
         $this->assertIsString($result);
     }
@@ -313,8 +317,10 @@ final class webhook_handler_test extends \advanced_testcase {
      * MDL-UNIT-079: the table search returns at most the requested number of results, capped at the maximum.
      */
     public function test_search_tables_results_respect_the_limit(): void {
-        $few = \local_jedomi\telegram\webhook_handler::execute_tool('search_tables', ['query' => 'course', 'limit' => 5]);
-        $many = \local_jedomi\telegram\webhook_handler::execute_tool('search_tables', ['query' => 'course', 'limit' => 500]);
+        $handler = \local_jedomi\telegram\webhook_handler::class;
+        $adminid = (int) get_admin()->id;
+        $few = $handler::execute_tool('search_tables', ['query' => 'course', 'limit' => 5], $adminid);
+        $many = $handler::execute_tool('search_tables', ['query' => 'course', 'limit' => 500], $adminid);
 
         $this->assertGreaterThan(0, substr_count($few, '•'));
         $this->assertLessThanOrEqual(5, substr_count($few, '•'));
@@ -390,13 +396,15 @@ final class webhook_handler_test extends \advanced_testcase {
             'list_agents (manager+)'      => ['list_agents', [], 'permission_denied'],
             'site_overview (manager+)'    => ['site_overview', [], 'permission_denied'],
             'delete_agent (manager+)'     => ['delete_agent', [], 'permission_denied'],
+            'describe_table (teacher+)'   => ['describe_table', ['tablename' => 'course'], 'Permission denied'],
+            'search_tables (teacher+)'    => ['search_tables', ['query' => 'user'], 'Permission denied'],
         ];
     }
 
     /**
      * Test every role-gated tool denies an unprivileged (student) role.
      *
-     * Open tools (describe_table, search_tables, ws_search, ws_describe) are
+     * Open tools (ws_search, ws_describe) are
      * covered by the roleless success tests above.
      *
      * @dataProvider gated_tools_provider

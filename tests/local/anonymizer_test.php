@@ -790,4 +790,68 @@ final class anonymizer_test extends \advanced_testcase {
         );
         $this->assertSame('Hello Ximena, see [x] today', $anonymizer->restore('Hello [person_1], see [x] today'));
     }
+
+    /**
+     * MDL-CTR-011: a placeholder the AI wrote without its brackets ("person_1", "Person_1") gets its real value when it is
+     * a whole word and that placeholder exists in the anonymiser; any other token is kept as written.
+     */
+    public function test_restore_puts_back_bracketless_placeholders_of_the_map(): void {
+        $this->resetAfterTest();
+        $map = ['[person_1]' => 'Ximena', '[email_2]' => 'xq@example.com', '[literal_1]' => '[person_7]'];
+        $anonymizer = anonymizer::from_map($map, anonymizer::LEVEL_BASIC);
+
+        $this->assertSame('Hello Ximena.', $anonymizer->restore('Hello person_1.'));
+        $this->assertSame('Hello Ximena (xq@example.com)', $anonymizer->restore('Hello Person_1 (EMAIL_2)'));
+        $this->assertSame('Ximena and Ximena', $anonymizer->restore('[person_1] and person_1'));
+        $this->assertSame('Hello person_9', $anonymizer->restore('Hello person_9'), 'Not in the map');
+        $this->assertSame('Hello Person 1', $anonymizer->restore('Hello Person 1'), 'Bracketless with a space');
+        $this->assertSame('literal_1 stays', $anonymizer->restore('literal_1 stays'), 'Literal placeholders');
+        $this->assertSame('[person_7] is the token', $anonymizer->restore('[literal_1] is the token'));
+    }
+
+    /**
+     * MDL-CTR-011: a bracketless token inside another word, followed by more digits or next to "_", "/", "[" or "]" is not
+     * a placeholder.
+     */
+    public function test_restore_keeps_bracketless_tokens_that_are_not_whole_words(): void {
+        $this->resetAfterTest();
+        $anonymizer = anonymizer::from_map(['[person_1]' => 'Ximena'], anonymizer::LEVEL_BASIC);
+
+        foreach (
+            ['xperson_1', 'person_10', 'person_01', 'my_person_1', 'person_1_x', 'person_1a', 'a/person_1',
+                'person_1/b', 'åperson_1', '1person_1'] as $token
+        ) {
+            $this->assertSame("See {$token} now", $anonymizer->restore("See {$token} now"), $token);
+        }
+    }
+
+    /**
+     * MDL-CTR-011 with JEDOMI-SEC-005: a bracketless placeholder in an address that leaves the site keeps its form, in a
+     * Markdown link destination, an href and a bare address; addresses of the site get the real value.
+     */
+    public function test_bracketless_placeholders_in_external_addresses_are_not_restored(): void {
+        global $CFG;
+        $this->resetAfterTest();
+        $anonymizer = anonymizer::from_map(['[person_1]' => 'Ximena'], anonymizer::LEVEL_BASIC);
+
+        foreach (
+            ['https://attacker.example/r?n=person_1', 'mailto:person_1@attacker.example',
+                'https://attacker.example/r?n=Person_1 x'] as $url
+        ) {
+            $this->assertSame(
+                "See [the feedback]({$url}) of Ximena.",
+                $anonymizer->restore("See [the feedback]({$url}) of person_1."),
+                "No real value in {$url}"
+            );
+        }
+        $this->assertSame(
+            '<a href="https://attacker.example/?n=person_1">Ximena</a> and https://attacker.example/?n=person_1',
+            $anonymizer->restore('<a href="https://attacker.example/?n=person_1">person_1</a> and '
+                . 'https://attacker.example/?n=person_1')
+        );
+        $this->assertSame(
+            "[Ximena]({$CFG->wwwroot}/user/profile.php?name=Ximena)",
+            $anonymizer->restore("[person_1]({$CFG->wwwroot}/user/profile.php?name=person_1)")
+        );
+    }
 }

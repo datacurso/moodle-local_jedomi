@@ -2,6 +2,8 @@
 
 ## 1.8.0 (2026-11-19)
 
+- Security (unit 11, CTR-011): a placeholder the AI writes back without its brackets (`person_1`, `Email_2`) is restored in the answer when it is a whole word of the exact form `type_N` and that placeholder exists in the conversation; never in an address that leaves the site, never a `literal_N` placeholder, and not the forms with a space (`Person 1`). The SQL restoration is unchanged
+- Security (unit 11): describe_table and search_tables are offered only to the roles that can query the database (`query_runner::role_can_query()`), in the web chat, Telegram and agents, and refused with `permission_denied` when a student's AI calls them anyway (web chat and Telegram)
 - Security (JEDOMI-SEC-005): Markdown links and href values are restored as whole units: a link destination that leaves the site keeps its placeholders even when the link text ends in an address
 - Security: the describe_table tool of the agents refuses sensitive tables (`permission_denied`), as the web chat does; table names in braces or with the database prefix are recognised
 - Security (privacy): the question about an image or PDF file is anonymised at the level of the Privacy tab before it reaches the vision model (web upload, Telegram and agent reads); `vision_service::read_upload()` and `read_stored_file()` accept the anonymiser of the conversation

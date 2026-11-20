@@ -2273,6 +2273,10 @@ class webhook_handler {
                 return "📋 <b>" . s($tablename) . "</b> (" . count($result) . " columns):\n" . implode("\n", $result);
 
             case 'search_tables':
+                // Table names, like table structures, only for the roles that can query the database.
+                if (!\local_jedomi\local\query_runner::role_can_query($role)) {
+                    return "❌ Permission denied.";
+                }
                 $query = $args['query'] ?? '';
                 $limit = min((int)($args['limit'] ?? 10), 20);
                 if (empty($query)) {
