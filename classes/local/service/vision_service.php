@@ -22,6 +22,7 @@ use local_jedomi\ai\client;
 use local_jedomi\ai\custom_api;
 use local_jedomi\ai\docservice_client;
 use local_jedomi\ai\model_settings;
+use local_jedomi\local\anonymizer;
 
 /**
  * Reads images and PDF files with the vision model of Jedomi, through POST /jedomi/v1/files/read.
@@ -105,6 +106,7 @@ class vision_service {
      * @param string $filename Original file name; its extension decides the type.
      * @param string $question Question of the user about the file; empty for none.
      * @param ai_services_api|null $api Provider client; null for Jedomi's own.
+     * @param anonymizer|null $anonymizer Anonymiser of the conversation for the question; null for one of the request.
      * @return array{text: string, model: string, pages_total: int|null, pages_vision: int[], pages_skipped: int[]}
      *         A PDF read with the custom service also has truncated, true when pages were left out.
      * @throws \moodle_exception file_error_upload_too_large (above provider_upload_service::MAX_UPLOAD_BYTES, before
@@ -117,9 +119,11 @@ class vision_service {
         string $path,
         string $filename,
         string $question = '',
-        ?ai_services_api $api = null
+        ?ai_services_api $api = null,
+        ?anonymizer $anonymizer = null
     ): array {
         provider_upload_service::require_upload_size($path);
+        $question = self::anonymize_question($question, $anonymizer);
         self::require_enabled();
         $filename = self::check_filename($filename);
         if (!is_readable($path)) {
@@ -151,6 +155,7 @@ class vision_service {
      * @param string $pages Pages to read, such as "1,3-5"; empty for the whole file.
      * @param string $question Question about the file; empty for none.
      * @param ai_services_api|null $api Provider client; null for Jedomi's own.
+     * @param anonymizer|null $anonymizer Anonymiser of the conversation for the question; null for one of the request.
      * @return array{text: string, model: string, pages_total: int|null, pages_vision: int[], pages_skipped: int[]}
      * @throws \moodle_exception files_error_disabled, image_error_unsupported, documents_error_custom (a PDF with the
      *         custom service), file_error_too_large, or any provider or custom service error.
@@ -159,9 +164,11 @@ class vision_service {
         \stored_file $file,
         string $pages = '',
         string $question = '',
-        ?ai_services_api $api = null
+        ?ai_services_api $api = null,
+        ?anonymizer $anonymizer = null
     ): array {
         self::require_enabled();
+        $question = self::anonymize_question($question, $anonymizer);
         $filename = self::check_filename($file->get_filename());
         if (ai_service::is_custom() && self::is_pdf($filename)) {
             self::require_custom_documents();
@@ -486,6 +493,20 @@ class vision_service {
             throw new \moodle_exception('image_error_unsupported', 'local_jedomi');
         }
         return $filename;
+    }
+
+    /**
+     * Anonymise the question before it reaches the vision model, at the level of the Privacy tab.
+     *
+     * @param string $question Question of the user.
+     * @param anonymizer|null $anonymizer Anonymiser of the conversation; null for one of the request.
+     * @return string Question with e-mails and names of site users replaced.
+     */
+    private static function anonymize_question(string $question, ?anonymizer $anonymizer): string {
+        if (trim($question) === '') {
+            return $question;
+        }
+        return ($anonymizer ?? new anonymizer())->anonymize_text($question);
     }
 
     /**

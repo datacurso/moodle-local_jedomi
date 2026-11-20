@@ -521,7 +521,7 @@ $string['new_conversation'] = 'Nueva conversación';
 $string['new_conversation_confirm'] = '¿Desea iniciar una conversación nueva? Se borrará la conversación actual.';
 $string['new_conversation_msg'] = 'Nueva conversación iniciada. ¿En qué le ayudo?';
 $string['no_messages_sent'] = 'No se enviaron mensajes.';
-$string['non_select_rejected'] = 'Solo se permiten queries SELECT.';
+$string['non_select_rejected'] = 'Solo se permiten consultas SELECT.';
 $string['note_tables_found'] = 'Use el nombre exacto con describe_table o execute_sql. Los nombres de tabla se muestran como '
     . 'están — use {tablename} en las consultas SQL.';
 $string['note_tables_not_found'] = 'No se encontraron tablas. Pruebe con otras palabras clave.';
