@@ -48,7 +48,7 @@ require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/fake_telegram_api_cli
  * - "Linked" means a confirmed row in local_jedomi_telegram_links for the
  *   chat id; the role is derived from the linked userid (site admins in
  *   get_admins() => 'admin', then manager/teacher/student by capability).
- * - Open (no role gate): describe_table, search_tables, ws_search, ws_describe.
+ * - Open (no role gate): search_tables, ws_search, ws_describe. describe_table needs a role with SQL access.
  * - teacher/manager/admin: execute_sql (plus per-course ownership checks).
  * - manager/admin: admin_search, admin_describe, admin_execute,
  *   create_agent, list_agents, delete_agent, site_overview.
@@ -182,6 +182,26 @@ final class webhook_handler_test extends \advanced_testcase {
     }
 
     /**
+     * A student cannot see the structure of a table from Telegram, and nobody sees the structure of a sensitive table.
+     */
+    public function test_describe_table_is_refused_to_students_and_for_sensitive_tables(): void {
+        $this->resetAfterTest();
+        $student = $this->getDataGenerator()->create_user();
+        $course = $this->getDataGenerator()->create_course();
+        $this->getDataGenerator()->enrol_user($student->id, $course->id, 'student');
+
+        $handler = \local_jedomi\telegram\webhook_handler::class;
+        $adminid = (int) get_admin()->id;
+        $studentresult = $handler::execute_tool('describe_table', ['tablename' => 'course'], (int) $student->id);
+        $adminresult = $handler::execute_tool('describe_table', ['tablename' => 'course'], $adminid);
+        $sensitive = $handler::execute_tool('describe_table', ['tablename' => 'local_jedomi_agents'], $adminid);
+
+        $this->assertStringContainsString('Permission denied', $studentresult);
+        $this->assertStringNotContainsString('Permission denied', $adminresult);
+        $this->assertStringContainsString('Permission denied', $sensitive);
+    }
+
+    /**
      * MDL-UNIT-035: "/start" with a code that does not have the code format gets the invalid code message.
      * MDL-INT-062: an invalid code gets the corresponding notice.
      */
@@ -231,7 +251,7 @@ final class webhook_handler_test extends \advanced_testcase {
      * Test execute_tool describe_table returns error for missing table name.
      */
     public function test_execute_tool_describe_table_no_name(): void {
-        $result = \local_jedomi\telegram\webhook_handler::execute_tool('describe_table', []);
+        $result = \local_jedomi\telegram\webhook_handler::execute_tool('describe_table', [], (int) get_admin()->id);
         $this->assertStringContainsString('Table name required', $result);
     }
 
@@ -243,7 +263,7 @@ final class webhook_handler_test extends \advanced_testcase {
         global $DB;
 
         // Use a standard Moodle table that always exists.
-        $result = \local_jedomi\telegram\webhook_handler::execute_tool('describe_table', ['tablename' => 'user']);
+        $result = \local_jedomi\telegram\webhook_handler::execute_tool('describe_table', ['tablename' => 'user'], (int) get_admin()->id);
         $this->assertStringContainsString('user', $result);
         $this->assertStringContainsString('columns', $result);
     }
@@ -253,7 +273,11 @@ final class webhook_handler_test extends \advanced_testcase {
      * Test execute_tool describe_table returns not found for non-existent table.
      */
     public function test_execute_tool_describe_table_not_found(): void {
-        $result = \local_jedomi\telegram\webhook_handler::execute_tool('describe_table', ['tablename' => 'nonexistent_table_xyz']);
+        $result = \local_jedomi\telegram\webhook_handler::execute_tool(
+            'describe_table',
+            ['tablename' => 'nonexistent_table_xyz'],
+            (int) get_admin()->id
+        );
         $this->assertStringContainsString('not found', $result);
     }
 

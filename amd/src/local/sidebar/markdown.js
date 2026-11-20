@@ -23,14 +23,21 @@
 
 import {cfg} from './state';
 
-// Whether an address opens a page of this site: a site-relative path, or an absolute address with the origin of the
-// site. An address that merely contains the site address (in its query, or as user name before an @) is external.
+// An address as the browser reads it: TAB, LF and CR are removed anywhere ("/<TAB>/evil.example" opens
+// "//evil.example"), and control characters and spaces at both ends (JEDOMI-SEC-005).
+// eslint-disable-next-line no-control-regex
+const normaliseUrl = (url) => url.replace(/[\t\n\r]/g, '').replace(/^[\u0000-\u0020]+|[\u0000-\u0020]+$/g, '');
+
+// Whether an address opens a page of this site: a site-relative path, or an address with the origin of the site once
+// resolved against it. An address that merely contains the site address (in its query, or as user name before an @)
+// is external.
 const isSiteUrl = (url) => {
+    url = normaliseUrl(url);
     if (/^\/(?![\/\\])/.test(url)) {
         return true;
     }
     try {
-        return !!cfg.wwwroot && new URL(url).origin === new URL(cfg.wwwroot).origin;
+        return !!cfg.wwwroot && new URL(url, cfg.wwwroot).origin === new URL(cfg.wwwroot).origin;
     } catch (e) {
         return false;
     }
@@ -96,6 +103,7 @@ export const renderMarkdown = (text) => {
         .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
         // Rich Moodle links [text](url): a preview card for Moodle URLs.
         .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, linkText, url) => {
+            url = normaliseUrl(url);
             // Only web and site-relative links: model output can carry javascript: or data: URLs. A path starting
             // with /\ is not site-relative: browsers read it as another host.
             if (!/^(https?:\/\/|\/(?![\/\\]))/i.test(url)) {

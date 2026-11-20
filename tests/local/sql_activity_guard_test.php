@@ -89,6 +89,76 @@ final class sql_activity_guard_test extends \advanced_testcase {
     }
 
     /**
+     * JEDOMI-SEC-017: a teacher reads only the allowlisted course tables: the private notes of other teachers, the search
+     * index and the tables of other plugins stay out of reach, while the standard course tables keep working.
+     */
+    public function test_teacher_reads_only_allowlisted_course_tables(): void {
+        $s = $this->scenario();
+        $refused = [
+            'SELECT p.id, p.subject FROM {post} p WHERE p.courseid = OWN',
+            'SELECT i.id, i.content FROM {search_simpledb_index} i WHERE i.courseid = OWN',
+            'SELECT f.id, f.name FROM {feedback} f WHERE f.course = OWN',
+            'SELECT b.id, b.name FROM {block_instances} b WHERE b.parentcontextid = OWN',
+        ];
+        foreach ($refused as $sql) {
+            $this->assertSame('sql_table_not_allowed', sql_guard::rejection_reason(
+                self::own($sql, $s['course']),
+                $s['teacher']
+            ), $sql);
+        }
+        $this->assertNull(sql_guard::rejection_reason(
+            self::own('SELECT cs.id, cs.name FROM {course_sections} cs WHERE cs.course = OWN', $s['course']),
+            $s['teacher']
+        ));
+    }
+
+    /**
+     * JEDOMI-SEC-017: in separate groups mode a teacher without moodle/site:accessallgroups does not read the rows per
+     * student, but still reads the course structure; with the capability the rows are read.
+     */
+    public function test_separate_groups_without_accessallgroups_refuses_student_rows(): void {
+        global $DB;
+        $s = $this->scenario();
+        $DB->set_field('course', 'groupmode', SEPARATEGROUPS, ['id' => $s['course']->id]);
+        rebuild_course_cache($s['course']->id, true);
+        $this->override('moodle/site:accessallgroups', CAP_PROHIBIT, \context_course::instance($s['course']->id));
+
+        $this->assertSame('sql_separate_groups_rejected', sql_guard::rejection_reason(
+            self::own(self::SUBMISSIONS_SQL, $s['course']),
+            $s['teacher']
+        ));
+        $this->assertNull(sql_guard::rejection_reason(
+            self::own('SELECT a.id, a.name FROM {assign} a WHERE a.course = OWN', $s['course']),
+            $s['teacher']
+        ));
+
+        $this->override('moodle/site:accessallgroups', CAP_ALLOW, \context_course::instance($s['course']->id));
+        $this->assertNull(sql_guard::rejection_reason(self::own(self::SUBMISSIONS_SQL, $s['course']), $s['teacher']));
+    }
+
+    /**
+     * JEDOMI-SEC-017: the submissions and grades of an assignment need mod/assign:grade besides the view capability.
+     */
+    public function test_assignment_submissions_need_the_grade_capability(): void {
+        $s = $this->scenario();
+        $this->override('mod/assign:grade', CAP_PROHIBIT, \context_module::instance($s['assign']->cmid));
+
+        $this->assertSame('sql_activity_rejected', sql_guard::rejection_reason(
+            self::own(self::SUBMISSIONS_SQL, $s['course']),
+            $s['teacher']
+        ));
+        $this->assertSame('sql_activity_rejected', sql_guard::rejection_reason(self::own(
+            'SELECT a.name, g.grade FROM {assign} a JOIN {assign_grades} g ON g.assignment = a.id WHERE a.course = OWN',
+            $s['course']
+        ), $s['teacher']));
+        $this->assertNull(sql_guard::rejection_reason(
+            self::own('SELECT a.id, a.name FROM {assign} a WHERE a.course = OWN', $s['course']),
+            $s['teacher']
+        ));
+        $this->assertNull(sql_guard::rejection_reason(self::own(self::POSTS_SQL, $s['course']), $s['teacher']));
+    }
+
+    /**
      * Control: with the default permissions the teacher reads the forum posts, the submissions and the grades of the
      * own course.
      */
@@ -110,8 +180,10 @@ final class sql_activity_guard_test extends \advanced_testcase {
         $s = $this->scenario();
         $this->override('mod/forum:viewdiscussion', CAP_PROHIBIT, \context_module::instance($s['forum']->cmid));
 
-        $this->assertSame('sql_activity_rejected', sql_guard::rejection_reason(self::own(self::POSTS_SQL, $s['course']),
-            $s['teacher']));
+        $this->assertSame('sql_activity_rejected', sql_guard::rejection_reason(
+            self::own(self::POSTS_SQL, $s['course']),
+            $s['teacher']
+        ));
         $this->assertSame('sql_activity_rejected', sql_guard::rejection_reason(
             self::own('SELECT cm.id, cm.instance FROM {course_modules} cm WHERE cm.course = OWN', $s['course']),
             $s['teacher']
@@ -151,8 +223,10 @@ final class sql_activity_guard_test extends \advanced_testcase {
         $s = $this->scenario();
         $this->override('moodle/grade:viewall', CAP_PROHIBIT, \context_course::instance($s['course']->id));
 
-        $this->assertSame('sql_activity_rejected', sql_guard::rejection_reason(self::own(self::GRADES_SQL, $s['course']),
-            $s['teacher']));
+        $this->assertSame('sql_activity_rejected', sql_guard::rejection_reason(
+            self::own(self::GRADES_SQL, $s['course']),
+            $s['teacher']
+        ));
     }
 
     /**
@@ -197,8 +271,10 @@ final class sql_activity_guard_test extends \advanced_testcase {
         $s = $this->scenario();
         $this->getDataGenerator()->create_category(['name' => 'HIDDEN-CATEGORY', 'visible' => 0]);
 
-        $this->assertSame('sql_category_rejected', sql_guard::rejection_reason('SELECT id, name FROM {course_categories}',
-            $s['teacher']));
+        $this->assertSame('sql_category_rejected', sql_guard::rejection_reason(
+            'SELECT id, name FROM {course_categories}',
+            $s['teacher']
+        ));
         $this->assertSame('sql_category_rejected', sql_guard::rejection_reason(
             self::own('SELECT c.fullname, cc.name FROM {course} c JOIN {course_categories} cc ON cc.id = c.category '
                 . 'WHERE c.id = OWN', $s['course']),

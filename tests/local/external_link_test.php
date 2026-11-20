@@ -73,4 +73,27 @@ final class external_link_test extends \advanced_testcase {
         $this->assertNull(external_link::host('/relative'));
         $this->assertNull(external_link::host('javascript:alert(1)'));
     }
+
+    /**
+     * JEDOMI-SEC-005: TAB, LF and CR are removed as a browser removes them, so "/<TAB>/attacker.example" is another
+     * host; any scheme other than http and https leaves the site, and only site paths and site addresses stay.
+     */
+    public function test_leaves_site(): void {
+        global $CFG;
+        $this->resetAfterTest();
+        $host = parse_url($CFG->wwwroot, PHP_URL_HOST);
+
+        $this->assertSame('attacker.example', external_link::host("/\t/attacker.example/x"));
+        $this->assertSame('attacker.example', external_link::host("https:/\n/attacker.example/x"));
+        $external = ["/\t/attacker.example/x", "/\r\n/attacker.example/x", " //attacker.example/x", 'mailto:a@attacker.example',
+            'tg://resolve?domain=x', 'tel:123', 'sms:123', 'data:text/html,x', "java\tscript:alert(1)", 'attacker.example/x',
+            'https://' . $host . '@attacker.example/'];
+        foreach ($external as $url) {
+            $this->assertTrue(external_link::leaves_site($url), json_encode($url));
+        }
+        $internal = ['/user/profile.php', " /course/view.php?id=2\n", $CFG->wwwroot . '/x?n= y', '', 'HTTPS://' . $host . '/'];
+        foreach ($internal as $url) {
+            $this->assertFalse(external_link::leaves_site($url), json_encode($url));
+        }
+    }
 }

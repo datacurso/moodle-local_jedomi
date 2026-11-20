@@ -2251,9 +2251,16 @@ class webhook_handler {
 
         switch ($name) {
             case 'describe_table':
+                // Only the roles that can query the database see table structures; sensitive tables are never described.
+                if (!\local_jedomi\local\query_runner::role_can_query($role)) {
+                    return "❌ Permission denied.";
+                }
                 $tablename = $args['tablename'] ?? '';
                 if (empty($tablename)) {
                     return "Table name required.";
+                }
+                if (\local_jedomi\local\sql_guard::is_sensitive_table(preg_replace('/^\{(\w+)\}$/', '$1', $tablename))) {
+                    return "❌ Permission denied.";
                 }
                 $columns = $DB->get_columns($tablename);
                 if (!$columns) {
@@ -2560,7 +2567,11 @@ class webhook_handler {
 
             case 'create_agents':   // Model sometimes hallucinates plural form.
             case 'create_agent':
-                if (!in_array($role, ['admin', 'manager'], true)) {
+                // The role and the capability of the agents page are both required, as in the web chat.
+                if (
+                    !in_array($role, ['admin', 'manager'], true)
+                        || !has_capability('local/jedomi:manageagents', \context_system::instance(), $userid)
+                ) {
                     return json_encode(['error' => 'permission_denied']);
                 }
                 $prompt = trim($args['prompt'] ?? '');

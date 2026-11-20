@@ -54,8 +54,10 @@ final class sidebar_templates_test extends \advanced_testcase {
         if (!$modules) {
             $files = array_merge([$dir . '/sidebar.js'], glob($dir . '/local/sidebar/*.js'));
         } else {
-            $files = array_map(fn($module) => $module === 'sidebar' ? "{$dir}/sidebar.js" : "{$dir}/local/sidebar/{$module}.js",
-                $modules);
+            $files = array_map(
+                fn($module) => $module === 'sidebar' ? "{$dir}/sidebar.js" : "{$dir}/local/sidebar/{$module}.js",
+                $modules
+            );
         }
         return implode("\n", array_map('file_get_contents', $files));
     }
@@ -948,7 +950,9 @@ final class sidebar_templates_test extends \advanced_testcase {
         $this->assertStringContainsString('<span class="jedomi-external-badge" aria-hidden="true">↗ ${host}</span>', $source);
         $this->assertStringContainsString('<span class="sr-only">(${label}: ${host})</span>', $source);
         $this->assertStringContainsString('S.link_external', $source, 'The label is a language string');
-        $this->assertStringContainsString('new URL(url).origin === new URL(cfg.wwwroot).origin', $source);
+        $this->assertStringContainsString('new URL(url, cfg.wwwroot).origin === new URL(cfg.wwwroot).origin', $source);
+        $this->assertStringContainsString("url.replace(/[\\t\\n\\r]/g, '')", $source, 'TAB, LF and CR removed as browsers do');
+        $this->assertSame(2, substr_count($source, 'url = normaliseUrl(url);'), 'Site check and link both normalise');
         $this->assertStringNotContainsString('url.includes(wwwroot)', self::sidebar_source(), 'An address holding the site address');
         $this->assertStringContainsString('\/(?![\/\\\\]))/i.test(url)', $source, '/\ is not a relative path');
 

@@ -261,8 +261,15 @@ class preview_runner {
                 $msg['content'] = $anonymizer->restore($untrusted->unwrap($msg['content']));
             }
         });
-        self::save_cache($cachehash, $userid, $finalanswer, $profilerentries, $cachablemessages, $plan,
-            $anonymizer->export_map());
+        self::save_cache(
+            $cachehash,
+            $userid,
+            $finalanswer,
+            $profilerentries,
+            $cachablemessages,
+            $plan,
+            $anonymizer->export_map()
+        );
 
         return [
             'ok' => true,

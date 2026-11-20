@@ -877,6 +877,9 @@ $string['sql_row_limit_web'] = 'Maximum rows per query (web chat)';
 $string['sql_row_limit_web_help'] = 'Most rows a database query of the web chat returns to the AI, from 10 to 1000 (default: 100). More rows give more complete answers to large questions but make each answer slower and larger. Telegram, the companion web service and the scheduled agents keep their own limits. On SQL Server and Oracle only the row limit applies: Moodle cannot set a time limit per query there, so a slow query of the AI runs on the database of the site until the database or PHP stops it. Keep the limit low on those databases.';
 $string['sql_row_limit_web_invalid'] = 'Enter a whole number from 10 to 1000.';
 $string['sql_sensitive_rejected'] = 'The query reads credentials, keys, tokens, site configuration or sessions, so it was not run.';
+$string['sql_separate_groups_rejected'] = 'The query reads students, grades or submissions of a course or activity in separate '
+    . 'groups mode, and you may not access all groups, so it was not run. Read the course structure only, or ask an '
+    . 'administrator.';
 $string['sql_table_not_allowed'] = 'The query reads a table that is not available for the courses you manage (such as messages, '
     . 'notifications, user preferences or the whole user list), so it was not run. Read course tables limited to your courses, '
     . 'and read user names only by joining {user} to the enrolments, roles or grades of one of your courses (for example JOIN '

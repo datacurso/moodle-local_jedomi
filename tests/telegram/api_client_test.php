@@ -224,6 +224,46 @@ final class api_client_test extends \advanced_testcase {
     }
 
     /**
+     * A file download to a host blocked by curlsecurityblockedhosts is refused before any request, and the log does not
+     * hold the bot token.
+     */
+    public function test_download_from_blocked_host_is_refused(): void {
+        global $CFG;
+        $this->resetAfterTest();
+        set_config('curlsecurityblockedhosts', 'api.telegram.org');
+        $client = new class ('123:secret-token') extends api_client {
+            /** @var int Transports created, that is requests about to be sent. */
+            public int $requests = 0;
+
+            #[\Override]
+            protected function new_curl(): \curl {
+                $this->requests++;
+                return parent::new_curl();
+            }
+
+            #[\Override]
+            protected function post(string $method, array $params): ?array {
+                return ['ok' => true, 'result' => ['file_path' => 'documents/file_1.pdf']];
+            }
+        };
+        $logfile = $CFG->dataroot . '/local/jedomi/jedomi.log';
+        if (file_exists($logfile)) {
+            unlink($logfile);
+        }
+        $sink = $this->redirectEvents();
+
+        $this->assertNull($client->download_file('file-id'));
+
+        $events = $sink->get_events();
+        $sink->close();
+        $this->assertSame(0, $client->requests, 'No download was sent to the blocked host');
+        $this->assertEmpty(array_filter($events, static fn($event) => $event instanceof \core\event\url_blocked));
+        $log = file_exists($logfile) ? (string) file_get_contents($logfile) : '';
+        $this->assertStringContainsString('download blocked by the cURL security', $log);
+        $this->assertStringNotContainsString('secret-token', $log);
+    }
+
+    /**
      * JEDOMI-SEC-018: a failed request never logs the bot token, even when the error quotes the address.
      */
     public function test_failure_never_logs_the_token(): void {
@@ -343,5 +383,31 @@ final class api_client_test extends \advanced_testcase {
             'secret_token' => 'abc123',
             'drop_pending_updates' => 'true',
         ]]], $client->requests);
+    }
+
+    /**
+     * JEDOMI-SEC-005: sent and edited messages ask Telegram for no link preview, so its servers never open a link of
+     * an answer.
+     */
+    public function test_messages_disable_the_link_preview(): void {
+        $this->resetAfterTest();
+        $client = new class ('123:secret-token') extends api_client {
+            /** @var array Methods and parameters posted. */
+            public array $posted = [];
+
+            #[\Override]
+            protected function post(string $method, array $params): ?array {
+                $this->posted[] = [$method, $params];
+                return ['ok' => true, 'result' => []];
+            }
+        };
+
+        $this->assertTrue($client->send_message(42, 'See https://attacker.example/x'));
+        $this->assertTrue($client->edit_message_text(42, 7, 'See https://attacker.example/x'));
+        $this->assertSame(['sendMessage', 'editMessageText'], array_column($client->posted, 0));
+        foreach ($client->posted as [$method, $params]) {
+            $this->assertSame(['is_disabled' => true], json_decode($params['link_preview_options'], true), $method);
+            $this->assertSame('true', $params['disable_web_page_preview'], $method);
+        }
     }
 }

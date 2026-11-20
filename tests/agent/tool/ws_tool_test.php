@@ -151,8 +151,11 @@ final class ws_tool_test extends \advanced_testcase {
      */
     public function test_restricted_mode_refuses_functions_outside_the_allowlist(): void {
         $this->resetAfterTest();
-        set_config('ws_allowlist_admin', json_encode(['core_role_assign_roles', 'core_webservice_get_site_info']),
-            'local_jedomi');
+        set_config(
+            'ws_allowlist_admin',
+            json_encode(['core_role_assign_roles', 'core_webservice_get_site_info']),
+            'local_jedomi'
+        );
         $adminid = (int) get_admin()->id;
         $this->exclude_a_course();
 
@@ -167,8 +170,11 @@ final class ws_tool_test extends \advanced_testcase {
      */
     public function test_search_and_description_follow_the_course_rule(): void {
         $this->resetAfterTest();
-        set_config('ws_allowlist_admin', json_encode(['core_user_delete_users', 'core_webservice_get_site_info']),
-            'local_jedomi');
+        set_config(
+            'ws_allowlist_admin',
+            json_encode(['core_user_delete_users', 'core_webservice_get_site_info']),
+            'local_jedomi'
+        );
         $adminid = (int) get_admin()->id;
         $search = new ws_search_tool($adminid);
         $describe = new ws_describe_tool($adminid);

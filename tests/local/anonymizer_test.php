@@ -707,7 +707,46 @@ final class anonymizer_test extends \advanced_testcase {
             $this->assertSame($where . "'Main St 1\nFloor 2\nBack'", $anonymizer->restore_sql($where . '[id_1]', $family));
             $this->assertSame($where . "'Main St 1\nFloor 2\nBack'", $anonymizer->restore_sql($where . "'[id_1]'", $family));
         }
-        $this->assertSame(['address' => "Main St 1\r\nFloor 2\rBack"], $anonymizer->restore_value(['address' => '[id_1]']),
-            'Other arguments keep the value as it is');
+        $this->assertSame(
+            ['address' => "Main St 1\r\nFloor 2\rBack"],
+            $anonymizer->restore_value(['address' => '[id_1]']),
+            'Other arguments keep the value as it is'
+        );
+    }
+
+    /**
+     * JEDOMI-SEC-005: the whole destination of a Markdown link or an href is the address, across spaces, "<" and new
+     * lines, and any scheme other than http or https is external; links of the site still get the real values.
+     */
+    public function test_whole_link_destination_and_other_schemes_keep_placeholders(): void {
+        global $CFG;
+        $this->resetAfterTest();
+        $anonymizer = anonymizer::from_map(['[person_1]' => 'Ximena'], anonymizer::LEVEL_BASIC);
+
+        $external = [
+            'https://attacker.example/r?n= [person_1]',
+            'https://attacker.example/r?n=<[person_1]',
+            "https://attacker.example/r?n=\n[person_1]",
+            "/\t/attacker.example/r?n=[person_1]",
+            'mailto:a@attacker.example?body=[person_1]',
+            'tg://msg?text=[person_1]',
+        ];
+        foreach ($external as $url) {
+            $this->assertSame(
+                "[x]({$url}) by Ximena",
+                $anonymizer->restore("[x]({$url}) by [person_1]"),
+                json_encode($url)
+            );
+            $this->assertSame(
+                "<a href='{$url}'>Ximena</a>",
+                $anonymizer->restore("<a href='{$url}'>[person_1]</a>"),
+                json_encode($url)
+            );
+        }
+        $site = $CFG->wwwroot . '/user/profile.php?name= ';
+        $this->assertSame("[Ximena]({$site}Ximena)", $anonymizer->restore("[[person_1]]({$site}[person_1])"));
+        $this->assertSame('[p](/user/view.php?n= Ximena)', $anonymizer->restore('[p](/user/view.php?n= [person_1])'));
+        $text = "[see {$CFG->wwwroot}/x](https://attacker.example/?n=[person_1])";
+        $this->assertSame($text, $anonymizer->restore($text), 'A site address in the link text');
     }
 }

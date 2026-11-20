@@ -215,8 +215,10 @@ final class secrets_at_rest_test extends \advanced_testcase {
         $this->assertSame($secret, manager::get_webhook_secret(), 'The secret is kept once generated');
         if (!manager::needs_webhook_registration()) {
             $this->assertTrue(manager::is_valid_webhook_request([self::HEADER => $secret]));
-            $this->assertFalse(manager::is_valid_webhook_request([self::HEADER => (string) get_config('local_jedomi',
-                'telegram_webhook_secret')]), 'The stored value is not the secret');
+            $this->assertFalse(manager::is_valid_webhook_request([self::HEADER => (string) get_config(
+                'local_jedomi',
+                'telegram_webhook_secret'
+            )]), 'The stored value is not the secret');
         }
     }
 

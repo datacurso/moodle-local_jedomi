@@ -84,6 +84,11 @@ final class pending_action_service_test extends \advanced_testcase {
             'read that sets favourites' => ['core_course_set_favourite_courses', 'high'],
             'read that creates evidence' => ['core_competency_create_user_evidence_competency', 'high'],
             'unknown function' => ['core_no_such_function', null],
+            'plugin state change' => ['core_admin_set_plugin_state', 'critical'],
+            'role assignment' => ['core_role_assign_roles', 'critical'],
+            'role unassignment' => ['core_role_unassign_roles', 'critical'],
+            'user creation' => ['core_user_create_users', 'critical'],
+            'user update' => ['core_user_update_users', 'critical'],
         ];
     }
 
@@ -658,8 +663,10 @@ final class pending_action_service_test extends \advanced_testcase {
         $id = $this->hold_rename((int) $user->id, (int) $course->id, (int) $course->id);
         $this->assertSame((int) $course->id, (int) $DB->get_field(pending_action_service::TABLE, 'courseid', ['id' => $id]));
 
-        pending_action_service::resolve($id, (int) $user->id, true, \core_text::strtoupper(get_string('confirm_btn_yes',
-            'local_jedomi')));
+        pending_action_service::resolve($id, (int) $user->id, true, \core_text::strtoupper(get_string(
+            'confirm_btn_yes',
+            'local_jedomi'
+        )));
         $this->assertSame('Renamed', $DB->get_field('course', 'fullname', ['id' => $course->id]));
     }
 
@@ -673,8 +680,10 @@ final class pending_action_service_test extends \advanced_testcase {
         $id = $this->hold_rename((int) $user->id, (int) $course->id, (int) $course->id);
         role_unassign((int) $DB->get_field('role', 'id', ['shortname' => 'manager']), (int) $user->id, $catcontext->id);
 
-        pending_action_service::resolve($id, (int) $user->id, true, \core_text::strtoupper(get_string('confirm_btn_yes',
-            'local_jedomi')));
+        pending_action_service::resolve($id, (int) $user->id, true, \core_text::strtoupper(get_string(
+            'confirm_btn_yes',
+            'local_jedomi'
+        )));
         $this->assertSame('Original name', $DB->get_field('course', 'fullname', ['id' => $course->id]));
     }
 
@@ -689,8 +698,10 @@ final class pending_action_service_test extends \advanced_testcase {
         $id = $this->hold_rename((int) $user->id, (int) $course->id, 0);
         $this->assertSame(0, (int) $DB->get_field(pending_action_service::TABLE, 'courseid', ['id' => $id]));
 
-        pending_action_service::resolve($id, (int) $user->id, true, \core_text::strtoupper(get_string('confirm_btn_yes',
-            'local_jedomi')));
+        pending_action_service::resolve($id, (int) $user->id, true, \core_text::strtoupper(get_string(
+            'confirm_btn_yes',
+            'local_jedomi'
+        )));
         $this->assertSame('Original name', $DB->get_field('course', 'fullname', ['id' => $course->id]));
     }
 
@@ -703,8 +714,10 @@ final class pending_action_service_test extends \advanced_testcase {
         [$user, $course] = $this->category_teacher();
         $other = $this->getDataGenerator()->create_course();
         $this->assertSame('teacher', pending_action_service::role_in_course((int) $user->id, (int) $course->id));
-        $this->assertSame((int) $course->id, pending_action_service::course_of_args((int) $user->id,
-            ['courseid' => $course->id]));
+        $this->assertSame((int) $course->id, pending_action_service::course_of_args(
+            (int) $user->id,
+            ['courseid' => $course->id]
+        ));
         $this->assertSame(0, pending_action_service::course_of_args((int) $user->id, ['courseid' => $other->id]));
         $this->assertSame(0, pending_action_service::course_of_args((int) $user->id, []));
     }

@@ -233,7 +233,13 @@ final class formatter {
                 if (!preg_match('/href\s*=\s*(["\'])(.*?)\1/i', $source, $m)) {
                     return null;
                 }
-                return '<a href="' . s(html_entity_decode($m[2], ENT_QUOTES | ENT_HTML5, 'UTF-8')) . '">';
+                $href = html_entity_decode($m[2], ENT_QUOTES | ENT_HTML5, 'UTF-8');
+                $href = \local_jedomi\local\external_link::normalise($href);
+                // Only web links and site paths (JEDOMI-SEC-005): tg:, mailto:, tel: and other schemes are shown as text.
+                if (!preg_match('~^(?:https?://|/(?![/\\\\]))~i', $href)) {
+                    return null;
+                }
+                return '<a href="' . s($href) . '">';
             case 'code':
                 if (preg_match('/class\s*=\s*["\']language-([a-zA-Z0-9_+-]+)["\']/i', $source, $m)) {
                     return '<code class="language-' . $m[1] . '">';

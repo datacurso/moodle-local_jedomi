@@ -78,6 +78,20 @@ class pending_action_service {
     private const DESTRUCTIVE_WORDS = ['delete', 'remove', 'unenrol'];
 
     /**
+     * @var string[] Web service functions that change the state of the site at plugin, role or account level: always
+     *     critical, so they need the confirmation keyword.
+     */
+    private const CRITICAL_FUNCTIONS = ['core_admin_set_plugin_state', 'core_role_assign_roles', 'core_role_unassign_roles',
+        'core_user_create_users', 'core_user_update_users', 'core_user_delete_users', 'core_auth_set_plugin_state',
+        'core_enrol_set_plugin_state'];
+
+    /**
+     * @var string[] Parts of a web service function name that mark a change of site configuration or plugin state:
+     *     always critical.
+     */
+    private const CRITICAL_PARTS = ['set_plugin', 'set_config', 'enable_plugin', 'disable_plugin', 'plugin_state'];
+
+    /**
      * @var string[] Words of a web service function name, after its component, that mark it as a write even when it is
      *     declared as reading (SEC-JD-039): a function wrongly declared as reading still needs confirmation.
      */
@@ -155,12 +169,35 @@ class pending_action_service {
         if (($info->type ?? '') === 'read' && !self::has_write_word($wsname, (string) ($info->component ?? ''))) {
             return null;
         }
+        if (self::is_critical_function($wsname)) {
+            return self::SEVERITY_CRITICAL;
+        }
         foreach (self::DESTRUCTIVE_WORDS as $word) {
             if (stripos($wsname, $word) !== false) {
                 return self::SEVERITY_CRITICAL;
             }
         }
         return self::SEVERITY_HIGH;
+    }
+
+    /**
+     * Whether a web service function changes the site at plugin, configuration, role or account level (see
+     * CRITICAL_FUNCTIONS and CRITICAL_PARTS).
+     *
+     * @param string $wsname Function name.
+     * @return bool
+     */
+    private static function is_critical_function(string $wsname): bool {
+        $name = strtolower($wsname);
+        if (in_array($name, self::CRITICAL_FUNCTIONS, true)) {
+            return true;
+        }
+        foreach (self::CRITICAL_PARTS as $part) {
+            if (strpos($name, $part) !== false) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -546,8 +583,10 @@ class pending_action_service {
     public static function course_of_args(int $userid, array $args): int {
         global $DB;
         $courseid = isset($args['courseid']) && is_numeric($args['courseid']) ? (int) $args['courseid'] : 0;
-        if ($courseid <= SITEID || !$DB->record_exists('course', ['id' => $courseid])
-                || !\local_jedomi\course_access::is_course_in_jedomi($courseid)) {
+        if (
+            $courseid <= SITEID || !$DB->record_exists('course', ['id' => $courseid])
+                || !\local_jedomi\course_access::is_course_in_jedomi($courseid)
+        ) {
             return 0;
         }
         $context = \context_course::instance($courseid);

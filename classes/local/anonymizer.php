@@ -284,7 +284,8 @@ class anonymizer {
      *
      * A web address of another site keeps its placeholders (JEDOMI-SEC-005): content the AI read may ask it for a link
      * that carries data of the conversation, and the real values must not leave the site when the link is opened.
-     * Addresses of the site and the rest of the text get the real values.
+     * Addresses of the site and the rest of the text get the real values. The whole destination of a Markdown link or an
+     * href attribute counts as the address, and any scheme other than http or https (mailto:, tg:...) counts as external.
      *
      * @param string $text Text with placeholders.
      * @return string
@@ -293,30 +294,39 @@ class anonymizer {
         if (empty($this->originals) || strpos($text, '[') === false) {
             return $text;
         }
-        $parts = preg_split(self::URL_PATTERN, $text, -1, PREG_SPLIT_DELIM_CAPTURE);
-        if ($parts === false) {
+        // The whole destination of a Markdown link (to the closing ")", across spaces, "<" and new lines) and of an
+        // href attribute is one address, as are the web addresses of the text.
+        $pattern = '~\]\(\K(?:\([^)]*\)|[^)])*|\bhref\s*=\s*"\K[^"]*|\bhref\s*=\s*\'\K[^\']*|'
+            . substr(self::URL_PATTERN, 1, -2) . '~i';
+        if (preg_match_all($pattern, $text, $matches, PREG_OFFSET_CAPTURE) === false) {
             // Not split: nothing is restored rather than risking a real value in an external address.
             return $text;
         }
+        $same = static fn(string $value): string => $value;
         $restored = '';
-        foreach ($parts as $index => $part) {
-            if ($index % 2 === 1 && external_link::is_external(self::address_with_host($part))) {
-                $restored .= $part;
-                continue;
-            }
-            $restored .= $this->replace_placeholders($part, static fn(string $value): string => $value);
+        $offset = 0;
+        foreach ($matches[0] as [$address, $start]) {
+            $restored .= $this->replace_placeholders(substr($text, $offset, $start - $offset), $same);
+            $restored .= self::address_leaves_site($address) ? $address : $this->replace_placeholders($address, $same);
+            $offset = $start + strlen($address);
         }
-        return $restored;
+        return $restored . $this->replace_placeholders(substr($text, $offset), $same);
     }
 
     /**
-     * An address found in a text, with two slashes before a bare domain name so its host can be read.
+     * Whether an address found in a text leaves the site. A web address written in a link text runs into the
+     * destination ("[https://site/x](https://attacker.example/?n=...)"), so every destination inside it counts too.
      *
-     * @param string $address Address matched by URL_PATTERN.
-     * @return string
+     * @param string $address Address found by restore().
+     * @return bool
      */
-    private static function address_with_host(string $address): string {
-        return preg_match('~^(?:https?:|[/\\\\]{2})~i', $address) ? $address : '//' . $address;
+    private static function address_leaves_site(string $address): bool {
+        foreach (explode('](', $address) as $address) {
+            if (external_link::leaves_site($address)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

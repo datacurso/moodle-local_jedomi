@@ -152,6 +152,40 @@ class sql_guard {
      */
     private const MODULE_VIEW_CAPABILITIES = ['forum' => 'mod/forum:viewdiscussion', 'wiki' => 'mod/wiki:viewpage'];
 
+    /**
+     * @var string[] Course tables a user who does not manage every course may read, besides course, context and
+     *      CHILD_TABLES (JEDOMI-SEC-017): the course structure, enrolments, groups, grade book, logs and the tables of the
+     *      standard activities. Any other table with a course or context column (such as post with the private notes of
+     *      other teachers, search_simpledb_index with the text of hidden content, feedback answers or the tables of other
+     *      plugins) is refused: the list fails closed.
+     */
+    private const TEACHER_COURSE_TABLES = [
+        'enrol', 'role_assignments', 'groups', 'groupings', 'groupings_groups', 'course_sections', 'course_modules',
+        'course_completions', 'course_completion_criteria', 'event', 'grade_items', 'grade_categories', 'grade_letters',
+        'scale', 'logstore_standard_log',
+        'assign', 'book', 'choice', 'data', 'folder', 'forum', 'forum_discussions', 'glossary', 'h5pactivity', 'label',
+        'lesson', 'lti', 'page', 'quiz', 'resource', 'scorm', 'url', 'wiki', 'workshop',
+    ];
+
+    /**
+     * @var string[] Course tables with a row per student (JEDOMI-SEC-017): a teacher in separate groups mode without
+     *      moodle/site:accessallgroups may not read them, because the guard cannot limit them to the own groups.
+     */
+    private const USER_LEVEL_TABLES = [
+        'user_enrolments', 'role_assignments', 'groups_members', 'course_modules_completion', 'course_completions',
+        'grade_grades', 'grade_grades_history', 'logstore_standard_log', 'assign_submission', 'assign_grades',
+        'assign_user_flags', 'assign_user_mapping', 'quiz_attempts', 'quiz_grades', 'forum_posts', 'forum_discussions',
+    ];
+
+    /**
+     * @var array<string, string[]> Tables with the submissions or grades of an activity type, and the capability to grade
+     *      or review that type that every activity of the type must grant besides its view capability (JEDOMI-SEC-017).
+     */
+    private const MODULE_GRADE_CAPABILITIES = [
+        'assign' => ['mod/assign:grade', 'assign_submission', 'assign_grades', 'assign_user_flags', 'assign_user_mapping'],
+        'quiz' => ['mod/quiz:viewreports', 'quiz_attempts', 'quiz_grades'],
+    ];
+
     /** @var string[] Columns of the user table that a user who does not manage every course may read: the identity. */
     private const USER_COLUMNS = ['id', 'firstname', 'lastname', 'middlename', 'alternatename', 'firstnamephonetic',
         'lastnamephonetic'];
@@ -738,12 +772,20 @@ class sql_guard {
      * @param array[] $instances Table instances of the query.
      * @param int[] $courseids Courses the query reads.
      * @param int $userid User the query runs for.
-     * @return string|null sql_activity_rejected, sql_blind_marking_rejected or null.
+     * @return string|null sql_activity_rejected, sql_blind_marking_rejected, sql_separate_groups_rejected or null.
      */
     private static function activity_rejection(array $instances, array $courseids, int $userid): ?string {
         // The activities of each course are checked once per query.
         $limits = [];
         foreach ($instances as $instance) {
+            if (in_array($instance['table'], self::USER_LEVEL_TABLES, true)) {
+                foreach ($courseids as $courseid) {
+                    $limits[$courseid] = $limits[$courseid] ?? self::activity_limits($userid, $courseid);
+                    if ($limits[$courseid]['separate']) {
+                        return 'sql_separate_groups_rejected';
+                    }
+                }
+            }
             $rule = self::activity_rule($instance['table']);
             if ($rule === null) {
                 continue;
@@ -760,6 +802,9 @@ class sql_guard {
                 if ($rule['module'] === null ? !empty($hidden) : isset($hidden[$rule['module']])) {
                     return 'sql_activity_rejected';
                 }
+                if ($rule['graded'] && isset($limits[$courseid]['ungraded'][$rule['module']])) {
+                    return 'sql_activity_rejected';
+                }
                 if ($rule['identity'] && $limits[$courseid]['blind']) {
                     return 'sql_blind_marking_rejected';
                 }
@@ -773,21 +818,23 @@ class sql_guard {
      *
      * @param string $table Table name without prefix.
      * @return array|null module (activity type, or null for every activity), capabilities needed in the course, and
-     *      identity (true for the tables of assignments with a user column, hidden by blind marking).
+     *      identity (true for the tables of assignments with a user column, hidden by blind marking), and graded (true
+     *      for the tables of MODULE_GRADE_CAPABILITIES, which need the grade capability of every activity of the type).
      */
     private static function activity_rule(string $table): ?array {
         foreach (self::TABLE_CAPABILITIES as $prefix => $capabilities) {
             if (strpos($table, $prefix) === 0) {
-                return ['module' => null, 'capabilities' => $capabilities, 'identity' => false];
+                return ['module' => null, 'capabilities' => $capabilities, 'identity' => false, 'graded' => false];
             }
         }
         if (in_array($table, self::ACTIVITY_TABLES, true)) {
-            return ['module' => null, 'capabilities' => [], 'identity' => false];
+            return ['module' => null, 'capabilities' => [], 'identity' => false, 'graded' => false];
         }
         foreach (array_keys(\core_component::get_plugin_list('mod')) as $module) {
             if ($table === $module || strpos($table, $module . '_') === 0) {
                 $identity = $module === 'assign' && $table !== 'assign' && in_array('userid', self::table_columns($table), true);
-                return ['module' => $module, 'capabilities' => [], 'identity' => $identity];
+                $graded = in_array($table, array_slice(self::MODULE_GRADE_CAPABILITIES[$module] ?? [], 1), true);
+                return ['module' => $module, 'capabilities' => [], 'identity' => $identity, 'graded' => $graded];
             }
         }
         return null;
@@ -799,7 +846,8 @@ class sql_guard {
      *
      * @param int $userid User id.
      * @param int $courseid Course id.
-     * @return array{hidden: array<string, bool>, blind: bool}
+     * @return array{hidden: array<string, bool>, blind: bool, ungraded: array<string, bool>, separate: bool} separate is
+     *      true when the course or one of its activities uses separate groups and the user may not access all groups.
      */
     private static function activity_limits(int $userid, int $courseid): array {
         global $DB;
@@ -812,8 +860,21 @@ class sql_guard {
                 [$courseid]
             ));
         }
-        $limits = ['hidden' => [], 'blind' => false];
-        foreach (get_fast_modinfo($courseid, $userid)->get_cms() as $cm) {
+        $modinfo = get_fast_modinfo($courseid, $userid);
+        $allgroups = has_capability('moodle/site:accessallgroups', \context_course::instance($courseid), $userid);
+        $limits = ['hidden' => [], 'blind' => false, 'ungraded' => [],
+            'separate' => (int) $modinfo->get_course()->groupmode === SEPARATEGROUPS && !$allgroups];
+        foreach ($modinfo->get_cms() as $cm) {
+            if (
+                (int) $cm->effectivegroupmode === SEPARATEGROUPS
+                    && !has_capability('moodle/site:accessallgroups', $cm->context, $userid)
+            ) {
+                $limits['separate'] = true;
+            }
+            $grade = self::MODULE_GRADE_CAPABILITIES[$cm->modname][0] ?? null;
+            if ($grade !== null && !has_capability($grade, $cm->context, $userid)) {
+                $limits['ungraded'][$cm->modname] = true;
+            }
             $capability = self::MODULE_VIEW_CAPABILITIES[$cm->modname] ?? 'mod/' . $cm->modname . ':view';
             $viewable = get_capability_info($capability, false) === null || has_capability($capability, $cm->context, $userid);
             if (!$cm->uservisible || !$viewable) {
@@ -1039,6 +1100,9 @@ class sql_guard {
         if (isset(self::CHILD_TABLES[$table])) {
             [$column, $parent] = self::CHILD_TABLES[$table];
             return ['type' => 'child', 'column' => $column, 'parent' => $parent];
+        }
+        if (!in_array($table, self::TEACHER_COURSE_TABLES, true)) {
+            return null;
         }
         $columns = self::table_columns($table);
         foreach (self::COURSE_COLUMNS as $column) {

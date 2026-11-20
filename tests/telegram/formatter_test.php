@@ -69,4 +69,16 @@ final class formatter_test extends \advanced_testcase {
             $html
         );
     }
+
+    /**
+     * JEDOMI-SEC-005: a link of another scheme (tg:, mailto:) is shown as its text, never as a link.
+     */
+    public function test_links_of_other_schemes_are_plain_text(): void {
+        $this->assertSame(
+            'Open the chat and write to us',
+            formatter::to_html('Open [the chat](tg://resolve?domain=x&text=[person_1]) and '
+                . '<a href="mailto:a@attacker.example">write to us</a>')
+        );
+        $this->assertSame('call', formatter::to_html("<a href=\"java\tscript:alert(1)\">call</a>"));
+    }
 }

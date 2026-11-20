@@ -845,6 +845,11 @@ class handler {
     private static function describe_table_tool(array $args): string {
         try {
             $tablename = $args['tablename'] ?? $args['table_name'] ?? $args['table'] ?? '';
+            // A sensitive table is never described, as it is never read (see sql_guard).
+            $bare = preg_replace('/^\{(\w+)\}$/', '$1', trim((string) $tablename));
+            if ($bare !== '' && \local_jedomi\local\sql_guard::is_sensitive_table($bare)) {
+                return json_encode(['error' => 'permission_denied']);
+            }
             $result = \local_jedomi\schema\table_descriptor::describe($tablename);
             return json_encode($result);
         } catch (\Exception $e) {
@@ -1097,7 +1102,12 @@ class handler {
      * @return string       JSON result.
      */
     private static function create_agent_tool(array $args, string $role): string {
-        if (!in_array($role, ['admin', 'manager'], true)) {
+        global $USER;
+        // The role and the capability of the agents page are both required, as in the agents page itself.
+        if (
+            !in_array($role, ['admin', 'manager'], true)
+                || !has_capability('local/jedomi:manageagents', \context_system::instance(), (int) $USER->id)
+        ) {
             return json_encode(['error' => 'permission_denied']);
         }
         $prompt = trim($args['prompt'] ?? '');
@@ -1105,7 +1115,6 @@ class handler {
         if (empty($prompt) || empty($schedule)) {
             return json_encode(['error' => 'Both prompt and schedule_cron are required.']);
         }
-        global $USER;
         $data = new \stdClass();
         $data->userid = (int) ($args['userid'] ?? $USER->id);
         // The agent runs with the permissions of its owner: nobody creates one on behalf of another user without permission.

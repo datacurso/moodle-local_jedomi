@@ -38,6 +38,15 @@ require_once(__DIR__ . '/../../lib.php');
  * address, so it must never be sent to another host. The token is never logged.
  */
 class api_client {
+    /**
+     * @var array Parameters that stop Telegram from fetching the links of a message to show a preview (JEDOMI-SEC-005):
+     *      a link in an answer may carry data, and the preview would open it with no click.
+     */
+    private const NO_LINK_PREVIEW = [
+        'link_preview_options' => '{"is_disabled":true}',
+        'disable_web_page_preview' => 'true',
+    ];
+
     /** @var int Seconds a request may take to connect to Telegram. */
     public const CONNECT_TIMEOUT = 5;
     /** @var int Seconds an upload (sendDocument) may take in total. */
@@ -239,7 +248,7 @@ class api_client {
                 'chat_id' => $chatid,
                 'text' => $chunk,
                 'parse_mode' => 'HTML',
-            ];
+            ] + self::NO_LINK_PREVIEW;
             if ($replymarkup !== null) {
                 $params['reply_markup'] = json_encode($replymarkup);
             }
@@ -276,7 +285,7 @@ class api_client {
             'message_id' => $messageid,
             'text'       => $text,
             'parse_mode' => 'HTML',
-        ];
+        ] + self::NO_LINK_PREVIEW;
         if ($replymarkup !== null) {
             $params['reply_markup'] = json_encode($replymarkup);
         }
@@ -331,6 +340,12 @@ class api_client {
         // Step 2: Download from Telegram CDN.
         $downloadurl = 'https://api.telegram.org/file/bot' . $this->token . '/' . $filepath;
         $tmppath = make_temp_directory('local_jedomi') . '/' . basename($filepath);
+        // A blocked host is refused before \curl sees the address: its url_blocked event would log the bot token.
+        if ((new \core\files\curl_security_helper())->url_is_blocked($downloadurl)) {
+            \local_jedomi_log('E005: Telegram file download blocked by the cURL security of the site: file='
+                . $this->redact(basename($filepath)));
+            return null;
+        }
 
         // A redirect is not followed: the download fails (its status is not 200).
         $curl = $this->new_curl();

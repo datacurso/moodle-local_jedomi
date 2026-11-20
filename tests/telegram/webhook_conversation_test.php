@@ -1148,8 +1148,11 @@ final class webhook_conversation_test extends \advanced_testcase {
     public function test_category_teacher_confirms_a_write_of_the_course_in_telegram(): void {
         global $DB;
         [, $course, , $callbackid] = $this->held_rename_by_category_teacher('779000090');
-        $this->assertSame((int) $course->id, (int) $DB->get_field('local_jedomi_telegram_pending_actions', 'courseid',
-            ['callbackid' => $callbackid]));
+        $this->assertSame((int) $course->id, (int) $DB->get_field(
+            'local_jedomi_telegram_pending_actions',
+            'courseid',
+            ['callbackid' => $callbackid]
+        ));
 
         $this->confirm_held('779000090', $callbackid);
         $this->assertSame('Renamed', $DB->get_field('course', 'fullname', ['id' => $course->id]));

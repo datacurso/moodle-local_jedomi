@@ -209,8 +209,11 @@ final class ws_runner_access_test extends \advanced_testcase {
     public function test_search_and_description_leave_out_functions_without_declared_capability(): void {
         $this->resetAfterTest();
         $teacherid = (int) $this->teacher()->id;
-        set_config('ws_allowlist_teacher', json_encode(['core_user_create_users', 'core_webservice_get_site_info']),
-            'local_jedomi');
+        set_config(
+            'ws_allowlist_teacher',
+            json_encode(['core_user_create_users', 'core_webservice_get_site_info']),
+            'local_jedomi'
+        );
 
         $this->assertSame(['core_webservice_get_site_info'], ws_runner::searchable_functions('teacher', $teacherid));
         $this->assertFalse(ws_runner::describable('teacher', 'core_user_create_users', $teacherid));

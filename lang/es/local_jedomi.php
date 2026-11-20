@@ -885,6 +885,9 @@ $string['sql_row_limit_web'] = 'Máximo de filas por consulta (chat web)';
 $string['sql_row_limit_web_help'] = 'Máximo de filas que una consulta a la base de datos del chat web devuelve a la IA, de 10 a 1000 (valor predeterminado: 100). Más filas dan respuestas más completas a preguntas amplias, pero hacen cada respuesta más lenta y más extensa. Telegram, el servicio web complementario y los agentes programados conservan sus propios límites. En SQL Server y Oracle solo se aplica el límite de filas: Moodle no puede fijar allí un tiempo límite por consulta, así que una consulta lenta de la IA se ejecuta sobre la base de datos del sitio hasta que la base de datos o PHP la detengan. Mantenga un límite bajo en esos motores.';
 $string['sql_row_limit_web_invalid'] = 'Escriba un número entero entre 10 y 1000.';
 $string['sql_sensitive_rejected'] = 'La consulta lee credenciales, claves, tokens, configuración del sitio o sesiones, por lo que no se ejecutó.';
+$string['sql_separate_groups_rejected'] = 'La consulta lee estudiantes, calificaciones o entregas de un curso o actividad en '
+    . 'modo de grupos separados, y usted no puede acceder a todos los grupos, por lo que no se ejecutó. Consulte solo la '
+    . 'estructura del curso o pida ayuda a un administrador.';
 $string['sql_table_not_allowed'] = 'La consulta lee una tabla que no está disponible para los cursos que usted gestiona (como '
     . 'mensajes, notificaciones, preferencias de usuario o la lista completa de usuarios), por lo que no se ejecutó. Lea tablas de '
     . 'cursos limitadas a sus cursos, y lea nombres de usuarios solo uniendo {user} a las matriculaciones, roles o calificaciones '

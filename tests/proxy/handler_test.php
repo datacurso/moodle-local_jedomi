@@ -1484,6 +1484,27 @@ final class handler_test extends \advanced_testcase {
     }
 
     /**
+     * A manager without local/jedomi:manageagents cannot create an agent from the web chat: the role alone is not enough.
+     */
+    public function test_chat_create_agent_requires_the_manageagents_capability(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $manager = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->role_assign('manager', $manager->id);
+        $managerroleid = (int) $DB->get_field('role', 'id', ['shortname' => 'manager']);
+        assign_capability('local/jedomi:manageagents', CAP_PROHIBIT, $managerroleid, \context_system::instance()->id, true);
+        $this->setUser($manager);
+
+        $result = json_decode(
+            handler::run_tool('create_agent', ['prompt' => 'Report', 'schedule_cron' => '0 8 * * *'], 'manager'),
+            true
+        );
+
+        $this->assertSame('permission_denied', $result['error'] ?? null);
+        $this->assertSame(0, $DB->count_records('local_jedomi_agents', ['userid' => $manager->id]));
+    }
+
+    /**
      * MDL-INT-032: from the web chat a manager cannot create an agent on behalf of an administrator nor delete theirs.
      */
     public function test_chat_cannot_create_or_delete_agents_of_users_with_more_permissions(): void {

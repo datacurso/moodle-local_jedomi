@@ -175,8 +175,10 @@ final class sidebar_config_test extends \advanced_testcase {
         $this->assertSame('admin', $config['context']['location'], 'The admin quick actions of the administration');
         $this->assertSame(0, $config['context']['course_id']);
 
-        $source = implode("\n", array_map('file_get_contents',
-            array_merge([__DIR__ . '/../amd/src/sidebar.js'], glob(__DIR__ . '/../amd/src/local/sidebar/*.js'))));
+        $source = implode("\n", array_map(
+            'file_get_contents',
+            array_merge([__DIR__ . '/../amd/src/sidebar.js'], glob(__DIR__ . '/../amd/src/local/sidebar/*.js'))
+        ));
         $this->assertStringNotContainsString('getCourseidFromUrl', $source, 'The course is never read from the address');
         $this->assertStringNotContainsString('getCurrentLocation', $source, 'The location is never read from the address');
         $this->assertStringNotContainsString('buildSystemPrompt', $source, 'The system prompt is built on the server');
