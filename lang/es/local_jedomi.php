@@ -1113,6 +1113,7 @@ $string['telegram_webhook_retry_failed'] = 'No se pudo registrar el webhook de T
 $string['telegram_webhook_secret'] = 'Secreto del webhook';
 $string['telegram_webhook_secret_help'] = 'Secreto aleatorio que Telegram envía en una cabecera con cada mensaje, nunca en la URL '
     . 'del webhook. Regenérelo si se filtra.';
+$string['telegram_webhook_set_failed'] = 'Telegram no aceptó el webhook. Compruebe que la URL del sitio use HTTPS y sea accesible desde internet.';
 $string['telegram_webhook_status'] = 'Estado del webhook';
 $string['telegram_webhook_url'] = 'URL del webhook';
 $string['telegram_webhook_url_help'] = 'Se registra en Telegram automáticamente al guardar el token del bot. Si cambia la URL '

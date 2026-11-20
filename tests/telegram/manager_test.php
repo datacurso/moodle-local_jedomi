@@ -314,8 +314,43 @@ final class manager_test extends \advanced_testcase {
         $this->assertSame($newsecret, manager::get_webhook_secret(), 'Only the new secret is accepted');
         $this->assertFalse(hash_equals(manager::get_webhook_secret(), $oldsecret));
         // Without a bot token the registration is attempted and its result recorded for the administrator.
-        $this->assertNotSame('', manager::get_last_webhook_error());
+        $this->assertSame(get_string('telegram_token_not_configured', 'local_jedomi'), manager::get_last_webhook_error());
         $this->assertGreaterThan(0, manager::get_last_webhook_error_time());
+    }
+
+    /**
+     * The webhook errors shown in the Integrations tab are language strings, read in the language of whoever opens the
+     * tab; an error stored by an earlier version as text is shown as it was stored.
+     */
+    public function test_webhook_errors_are_shown_in_the_language_of_the_reader(): void {
+        $this->resetAfterTest();
+        $client = new class ('123:abc') extends \local_jedomi\telegram\api_client {
+            /**
+             * Telegram refuses the webhook.
+             *
+             * @param string $url
+             * @param string $secrettoken
+             * @param bool $droppending
+             * @return bool
+             */
+            public function set_webhook(string $url, string $secrettoken, bool $droppending = false): bool {
+                return false;
+            }
+        };
+        set_config('telegram_bot_token', '', 'local_jedomi');
+
+        manager::register_webhook($client);
+        $this->assertSame(get_string('telegram_token_not_configured', 'local_jedomi'), manager::get_last_webhook_error());
+
+        manager::set_bot_token('123:abc');
+        manager::register_webhook($client);
+        $this->assertSame(get_string('telegram_webhook_set_failed', 'local_jedomi'), manager::get_last_webhook_error());
+        $this->assertSame('telegram_webhook_set_failed', get_config('local_jedomi', 'telegram_webhook_last_error'));
+        manager::register_webhook_with_new_secret($client);
+        $this->assertSame(get_string('telegram_webhook_set_failed', 'local_jedomi'), manager::get_last_webhook_error());
+
+        manager::set_last_webhook_error('setWebhook failed — legacy text');
+        $this->assertSame('setWebhook failed — legacy text', manager::get_last_webhook_error());
     }
 
     /**

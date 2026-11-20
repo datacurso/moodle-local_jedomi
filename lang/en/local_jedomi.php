@@ -1098,6 +1098,7 @@ $string['telegram_webhook_retry_failed'] = 'The Telegram webhook could not be re
 $string['telegram_webhook_secret'] = 'Webhook secret';
 $string['telegram_webhook_secret_help'] = 'Random secret that Telegram sends in a header with every message, never in the webhook '
     . 'URL. Regenerate it if it is compromised.';
+$string['telegram_webhook_set_failed'] = 'Telegram did not accept the webhook. Check that the site URL uses HTTPS and is reachable from the internet.';
 $string['telegram_webhook_status'] = 'Webhook status';
 $string['telegram_webhook_url'] = 'Webhook URL';
 $string['telegram_webhook_url_help'] = 'Registered in Telegram automatically when the bot token is saved. If the site URL '

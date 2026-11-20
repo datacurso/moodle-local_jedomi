@@ -70,18 +70,22 @@ class anonymizer {
      * @var string Pattern of the answer text: a placeholder as {@see self::LOOSE_PLACEHOLDER_PATTERN} reads it (groups 1
      *      and 2), or one the AI wrote without its brackets as a whole word of the exact form "type_N" ("person_1",
      *      "Email_2"; groups 3 and 4), not next to a letter (any non-ASCII byte counts as one), a digit, "_", "/", "[" or
-     *      "]". It also reads "<Type> <N>" with one space (groups 5 and 6), Type being the name of a kind of placeholder
-     *      this anonymiser creates or its Spanish translation ("Person 1", "persona 1"), with the same word limits. The
-     *      bracketless forms are restored only when that placeholder exists in this anonymiser (CTR-011).
+     *      "]". It also reads "Person N" or "Persona N" (group 5), with exactly that capitalisation, one space and the same
+     *      word limits; no other spaced or translated form ("ID 2", "persona 1", "Texto 1"). The bracketless forms are
+     *      restored only when that placeholder exists in this anonymiser (CTR-011).
      */
     private const ANSWER_PLACEHOLDER_PATTERN = '/\\\\?\[\s*([a-z]+)\s*(?:\\\\?[_\- ])?\s*(\d+)\s*\\\\?\]'
-        . '|(?<![a-z0-9_\/\[\]\x80-\xff])([a-z]+)_([1-9]\d*)(?![a-z0-9_\/\[\]\x80-\xff])'
-        . '|(?<![a-z0-9_\/\[\]\x80-\xff])(person|persona|email|correo|id|text|texto) ([1-9]\d*)'
-        . '(?![a-z0-9_\/\[\]\x80-\xff])/i';
+        . '|' . self::BARE_PLACEHOLDER . '|' . self::SPACED_PERSON_PLACEHOLDER . '/i';
 
-    /** @var array<string, string> Kind of placeholder for each word of the spaced form, English or Spanish. */
-    private const SPACED_KINDS = ['person' => 'person', 'persona' => 'person', 'email' => 'email', 'correo' => 'email',
-        'id' => 'id', 'text' => 'text', 'texto' => 'text'];
+    /** @var string Pattern part of a placeholder written without its brackets, "type_N" (groups 3 and 4). */
+    private const BARE_PLACEHOLDER = '(?<![a-z0-9_\/\[\]\x80-\xff])([a-z]+)_([1-9]\d*)(?![a-z0-9_\/\[\]\x80-\xff])';
+
+    /** @var string Pattern part of "Person N" or "Persona N", case-sensitive even inside a /i pattern (group 5). */
+    private const SPACED_PERSON_PLACEHOLDER = '(?<![a-z0-9_\/\[\]\x80-\xff])(?-i:Persona? ([1-9]\d*))'
+        . '(?![a-z0-9_\/\[\]\x80-\xff])';
+
+    /** @var string[] Kinds of placeholder this anonymiser creates and restores, besides "literal". */
+    private const RESTORED_KINDS = ['person', 'email', 'id', 'text'];
 
     /**
      * @var string Pattern of a placeholder exactly as this anonymiser writes it, the only form restored in a query, after
@@ -432,8 +436,8 @@ class anonymizer {
      * One pass, so a restored value that looks like a placeholder is never replaced again. Besides the forms read by
      * {@see self::replace_placeholders()}, a placeholder the AI wrote without its brackets ("person_1") gets its real
      * value when it is a whole word and that placeholder exists in this anonymiser; a "literal_N" placeholder written
-     * that way is kept as written. "<Type> <N>" with one space, in English or Spanish ("persona 1"), is read the same
-     * way (CTR-011).
+     * that way is kept as written. "Person N" and "Persona N", with that exact capitalisation, are read the same way
+     * as "[person_N]"; no other spaced or translated form is (CTR-011).
      *
      * @param string $text Text with placeholders.
      * @return string|null Restored text, or null when the pattern fails.
@@ -443,8 +447,7 @@ class anonymizer {
             self::ANSWER_PLACEHOLDER_PATTERN,
             function (array $m): string {
                 if (isset($m[5]) && $m[5] !== '') {
-                    $placeholder = '[' . self::SPACED_KINDS[strtolower($m[5])] . '_' . $m[6] . ']';
-                    return $this->originals[$placeholder] ?? $m[0];
+                    return $this->originals['[person_' . $m[5] . ']'] ?? $m[0];
                 }
                 if (isset($m[3]) && $m[3] !== '') {
                     $kind = strtolower($m[3]);
@@ -864,7 +867,8 @@ class anonymizer {
     /**
      * Replace the placeholder-shaped tokens of an incoming text that this anonymiser did not create.
      *
-     * A document or a record can contain a token such as "[person_1]" (an export that was anonymised before). Left as
+     * A document or a record can contain a token such as "[person_1]" (an export that was anonymised before), or a vision
+     * model can write "person_1" or "Person 1" in what it read (CTR-011). Left as
      * it is, the AI could not tell it from a placeholder of this anonymiser, and the answer would show the real value of
      * that placeholder where the text had the token. Each such token gets its own "[literal_N]" placeholder, so the AI
      * sees a distinct token and the answer gets the original token back. Placeholders created by this anonymiser (or
@@ -874,13 +878,23 @@ class anonymizer {
      * @return string
      */
     private function escape_foreign_placeholders(string $text): string {
-        if (strpos($text, '[') === false) {
+        if (!preg_match('/\d/', $text)) {
             return $text;
         }
-        // Also the loose forms ("[Person 1]"), which restore() would otherwise turn into the real value of a placeholder.
+        // Every form restore() reads (ANSWER_PLACEHOLDER_PATTERN): the loose bracketed one ("[Person 1]"), the bare
+        // "person_1" and "Person 1" / "Persona 1". A bare or spaced form is never created by this anonymiser, so it is
+        // always foreign; a bare token of another kind ("step_2") is never restored and is kept.
         return (string) preg_replace_callback(
-            self::LOOSE_PLACEHOLDER_PATTERN,
-            fn(array $m): string => isset($this->originals[$m[0]]) ? $m[0] : $this->placeholder('literal', $m[0]),
+            self::ANSWER_PLACEHOLDER_PATTERN,
+            function (array $m): string {
+                if (isset($m[1]) && $m[1] !== '' && isset($this->originals[$m[0]])) {
+                    return $m[0];
+                }
+                if (isset($m[3]) && $m[3] !== '' && !in_array(strtolower($m[3]), self::RESTORED_KINDS, true)) {
+                    return $m[0];
+                }
+                return $this->placeholder('literal', $m[0]);
+            },
             $text
         );
     }

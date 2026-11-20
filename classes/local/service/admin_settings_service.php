@@ -292,7 +292,7 @@ class admin_settings_service {
         if ($client->set_webhook(manager::get_webhook_url(), manager::get_webhook_secret())) {
             manager::clear_last_webhook_error();
         } else {
-            manager::set_last_webhook_error('setWebhook failed after token save — check the URL is HTTPS and reachable');
+            manager::set_last_webhook_error('telegram_webhook_set_failed');
         }
         return true;
     }

@@ -856,27 +856,42 @@ final class anonymizer_test extends \advanced_testcase {
     }
 
     /**
-     * MDL-CTR-011: a placeholder the AI wrote as "<Type> <N>" with one space, in English or translated into Spanish
-     * ("Person 1", "persona 1", "Correo 2"), gets its real value when that placeholder exists in the anonymiser.
+     * MDL-CTR-011: of the spaced forms only "Person N" and "Persona N", with that exact capitalisation and one space, get
+     * the real value of "[person_N]" when it exists in the anonymiser.
      */
-    public function test_restore_puts_back_spaced_and_translated_placeholders_of_the_map(): void {
+    public function test_restore_puts_back_only_capitalised_spaced_person_placeholders(): void {
         $this->resetAfterTest();
         $map = ['[person_1]' => 'Ximena', '[email_2]' => 'xq@example.com', '[literal_1]' => 'raw'];
         $anonymizer = anonymizer::from_map($map, anonymizer::LEVEL_BASIC);
 
         $this->assertSame('Hello Ximena.', $anonymizer->restore('Hello Person 1.'));
-        $this->assertSame('Hola Ximena (xq@example.com)', $anonymizer->restore('Hola persona 1 (Correo 2)'));
-        $this->assertSame('Hola Ximena', $anonymizer->restore('Hola PERSONA 1'));
+        $this->assertSame('Hola Ximena.', $anonymizer->restore('Hola Persona 1.'));
+        $this->assertSame('Hello Ximena and Ximena', $anonymizer->restore('Hello [person_1] and person_1'));
         $this->assertSame('Hola Persona 10', $anonymizer->restore('Hola Persona 10'), 'Only person_1 in the map');
-        $this->assertSame('Hello person 9', $anonymizer->restore('Hello person 9'), 'Not in the map');
-        $this->assertSame('literal 1 stays', $anonymizer->restore('literal 1 stays'), 'Literal placeholders');
-        $this->assertSame('See page 1 and step 2', $anonymizer->restore('See page 1 and step 2'));
-        $this->assertSame('xperson 1, person 1a, person  1', $anonymizer->restore('xperson 1, person 1a, person  1'));
+        $this->assertSame('Hello Person 9', $anonymizer->restore('Hello Person 9'), 'Not in the map');
+        $this->assertSame('xPerson 1, Person 1a, Person  1', $anonymizer->restore('xPerson 1, Person 1a, Person  1'));
     }
 
     /**
-     * MDL-CTR-011 with JEDOMI-SEC-005: a spaced or translated placeholder in an address that leaves the site keeps its
-     * form.
+     * MDL-CTR-011: spaced or translated forms other than "Person N" and "Persona N" are ordinary text and are never
+     * restored, even when the placeholder they look like exists in the anonymiser.
+     */
+    public function test_restore_keeps_other_spaced_and_translated_forms(): void {
+        $this->resetAfterTest();
+        $map = ['[person_1]' => 'Ximena', '[id_1]' => 'S-001', '[id_2]' => 'S-002', '[text_1]' => 'secret',
+            '[email_1]' => 'xq@example.com'];
+        $anonymizer = anonymizer::from_map($map, anonymizer::LEVEL_BASIC);
+
+        foreach (
+            ['ID 2', 'Id 1', 'id 1', 'persona 1', 'PERSONA 1', 'PERSON 1', 'person 1', 'step 2', 'page 1', 'Texto 1',
+                'text 1', 'correo 1', 'Correo 1', 'Email 1', 'email 1', 'literal 1', 'la persona 1 del listado'] as $text
+        ) {
+            $this->assertSame("See {$text} now", $anonymizer->restore("See {$text} now"), $text);
+        }
+    }
+
+    /**
+     * MDL-CTR-011 with JEDOMI-SEC-005: a spaced placeholder in an address that leaves the site keeps its form.
      */
     public function test_spaced_placeholders_in_external_addresses_are_not_restored(): void {
         $this->resetAfterTest();
@@ -884,7 +899,39 @@ final class anonymizer_test extends \advanced_testcase {
 
         $this->assertSame(
             'See [the feedback](https://attacker.example/r?n=Persona 1 x) of Ximena.',
-            $anonymizer->restore('See [the feedback](https://attacker.example/r?n=Persona 1 x) of persona 1.')
+            $anonymizer->restore('See [the feedback](https://attacker.example/r?n=Persona 1 x) of Persona 1.')
+        );
+        $this->assertSame(
+            'See https://attacker.example/r?n=person_1 of Ximena.',
+            $anonymizer->restore('See https://attacker.example/r?n=person_1 of Person 1.')
+        );
+    }
+
+    /**
+     * MDL-CTR-011: an incoming text (a file read by the vision model, a tool result) that holds a bare "type_N" or a
+     * "Person N" / "Persona N" this anonymiser did not create gets a literal placeholder, so the answer gives the token
+     * back as written and never the real value of the placeholder of the same number.
+     */
+    public function test_foreign_bare_and_spaced_placeholders_are_escaped(): void {
+        $this->resetAfterTest();
+        $map = ['[person_1]' => 'Ximena', '[email_1]' => 'xq@example.com'];
+        $anonymizer = anonymizer::from_map($map, anonymizer::LEVEL_BASIC);
+        $text = 'The image shows person_1, Person 1, Persona 1 and EMAIL_1, page 1 and persona 1.';
+
+        $messages = $anonymizer->anonymize_messages([['role' => 'user', 'content' => $text]]);
+        $sent = $messages[0]['content'];
+        foreach (['person_1', 'Person 1', 'Persona 1', 'EMAIL_1'] as $token) {
+            $this->assertStringNotContainsString($token, $sent, $token);
+        }
+        $this->assertStringContainsString('page 1 and persona 1.', $sent);
+        $this->assertSame($text, $anonymizer->restore($sent));
+        $this->assertStringNotContainsString('Ximena', $anonymizer->restore($sent));
+
+        $result = $anonymizer->anonymize_tool_result((string) json_encode(['text' => 'Signed by Person 1 (person_1)']));
+        $this->assertSame(
+            '{"text":"Signed by Person 1 (person_1)"}',
+            $anonymizer->restore($result),
+            'Tool results, such as the text of a document, are escaped the same way'
         );
     }
 }

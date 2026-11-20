@@ -100,6 +100,23 @@ final class document_read_tool_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-CTR-011: a "person_1" or "Person 1" in the text read from the PDF reaches the AI of the agents (whose tool
+     * results are anonymised with the conversation anonymiser) as a literal placeholder, so an answer that echoes it is
+     * never restored to the real value of [person_1].
+     */
+    public function test_placeholders_in_the_document_text_are_escaped_for_the_agents(): void {
+        $cmid = $this->create_module_with_pdf();
+        $this->curl->enqueue(json_encode(['text' => 'Signed by person_1 and Person 1', 'model' => 'm',
+            'pages_total' => 1, 'pages_vision' => [], 'pages_skipped' => []]));
+        $anonymizer = \local_jedomi\local\anonymizer::from_map(['[person_1]' => 'Bruno']);
+
+        $result = $anonymizer->anonymize_tool_result((new document_read_tool())->execute((object) ['cmid' => $cmid]));
+
+        $this->assertSame('Signed by [literal_1] and [literal_2]', json_decode($result, true)['text']);
+        $this->assertSame('Signed by person_1 and Person 1', $anonymizer->restore('Signed by [literal_1] and [literal_2]'));
+    }
+
+    /**
      * M8: the web chat tool returns the same text, never images.
      * MDL-INT-051: the tool returns the text of the activity PDF in the chat.
      */

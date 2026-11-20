@@ -370,7 +370,10 @@ final class admin_settings_service_test extends \advanced_testcase {
         $this->assertTrue(admin_settings_service::verify_and_save_telegram_token('123:abc', $client));
 
         $this->assertSame('123:abc', \local_jedomi\telegram\manager::get_bot_token());
-        $this->assertNotSame('', \local_jedomi\telegram\manager::get_last_webhook_error());
+        $this->assertSame(
+            get_string('telegram_webhook_set_failed', 'local_jedomi'),
+            \local_jedomi\telegram\manager::get_last_webhook_error()
+        );
     }
 
     /**

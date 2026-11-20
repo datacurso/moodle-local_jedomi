@@ -235,7 +235,7 @@ final class register_telegram_webhook_test extends \advanced_testcase {
 
         $this->assertSame([], $this->client->requests);
         $this->assertTrue(manager::needs_webhook_registration(), 'The pending registration is kept');
-        $this->assertStringContainsString('could not be decrypted', manager::get_last_webhook_error());
+        $this->assertSame(get_string('telegram_token_unreadable', 'local_jedomi'), manager::get_last_webhook_error());
         $this->assertNotSame('', get_config('local_jedomi', 'telegram_bot_token'), 'The stored token is kept');
     }
 }

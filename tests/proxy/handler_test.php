@@ -398,6 +398,38 @@ final class handler_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-CTR-011: in the web chat the text the vision model read (composed by read_file.php and sent back by the browser
+     * as a user message) reaches the AI with its "person_1" and "Person 1" as literal placeholders, so the answer gives
+     * them back as written and never as the real value of [person_1].
+     */
+    public function test_placeholders_invented_by_the_vision_model_are_not_restored(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $this->getDataGenerator()->create_user(['firstname' => 'Bruno', 'lastname' => 'Valderrama']);
+        $fake = new fake_ai_client();
+        $fake->enqueue_text('It shows [literal_1] and [literal_2], not [person_1].');
+        client::set_instance_for_testing($fake);
+        $read = \local_jedomi\local\service\vision_service::compose_message(
+            'What is this?',
+            'photo.jpg',
+            'The photo shows person_1 and Person 1.'
+        );
+
+        $output = $this->capture(fn() => handler::run([
+            ['role' => 'user', 'content' => 'Who has 9?'],
+            ['role' => 'assistant', 'content' => 'Bruno has 9.'],
+            ['role' => 'user', 'content' => $read],
+        ], 'admin', (int) get_admin()->id));
+
+        $sent = json_encode($fake->calls[0]['messages']);
+        $this->assertStringContainsString('The photo shows [literal_1] and [literal_2].', $sent);
+        $this->assertStringContainsString('[person_1] has 9.', $sent);
+        $chunks = array_filter($this->events($output), static fn($e) => is_array($e) && isset($e['choices']));
+        $text = implode('', array_map(static fn($e) => $e['choices'][0]['delta']['content'], $chunks));
+        $this->assertSame('It shows person_1 and Person 1, not Bruno.', $text);
+    }
+
+    /**
      * M11: the chat model never receives image parts; their text parts are kept.
      */
     public function test_chat_model_receives_only_text(): void {

@@ -46,6 +46,49 @@ final class preview_runner_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-CTR-011: in the preview, a "person_1" or "Person 1" in the text the document reading returns reaches the AI as
+     * a literal placeholder, so the answer gives it back as written and never as the real value of [person_1].
+     */
+    public function test_placeholders_in_a_read_document_are_not_restored(): void {
+        if (!class_exists(\aiprovider_datacurso\httpclient\ai_services_api::class)) {
+            $this->markTestSkipped('aiprovider_datacurso is not installed; the provider client cannot be built.');
+        }
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $GLOBALS['CFG']->forced_plugin_settings['aiprovider_datacurso']['licensekey'] = 'test-license';
+        \core\plugininfo\aiprovider::enable_plugin('datacurso', 1);
+        $curl = new fake_curl();
+        \local_jedomi\local\service\provider_upload_service::set_api_for_testing(new testable_provider_api(30, $curl));
+        $this->getDataGenerator()->create_user(['firstname' => 'Bruno', 'lastname' => 'Valderrama']);
+        $course = $this->getDataGenerator()->create_course();
+        $page = $this->getDataGenerator()->create_module('page', ['course' => $course->id]);
+        get_file_storage()->create_file_from_string([
+            'contextid' => \context_module::instance($page->cmid)->id, 'component' => 'mod_page', 'filearea' => 'content',
+            'itemid' => 0, 'filepath' => '/', 'filename' => 'syllabus.pdf',
+        ], '%PDF-1.4 fake');
+        $curl->enqueue(json_encode(['text' => 'Bruno signed for person_1 and Person 1.', 'model' => 'm',
+            'pages_total' => 1, 'pages_vision' => [], 'pages_skipped' => []]));
+        $fake = new fake_ai_client();
+        $fake->enqueue_tool_calls([
+            ['id' => 'call_1', 'type' => 'function', 'function' => ['name' => 'document_read',
+                'arguments' => json_encode(['cmid' => (int) $page->cmid])]],
+        ]);
+        $fake->enqueue_text('[person_1] signed for [literal_1] and [literal_2].');
+        client::set_instance_for_testing($fake);
+
+        try {
+            $result = preview_runner::run('Who signed the syllabus?', (int) get_admin()->id);
+        } finally {
+            \local_jedomi\local\service\provider_upload_service::set_api_for_testing(null);
+        }
+
+        $this->assertCount(1, $curl->calls, 'The document was read');
+        $tool = json_encode($fake->calls[1]['messages']);
+        $this->assertStringContainsString('[person_1] signed for [literal_1] and [literal_2].', $tool);
+        $this->assertSame('Bruno signed for person_1 and Person 1.', $result['answer']);
+    }
+
+    /**
      * MDL-UNIT-083: assistant tool calls precede the messages with their results.
      * M6: the assistant message with its tool_calls goes before the tool messages.
      */
