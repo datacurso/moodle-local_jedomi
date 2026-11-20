@@ -491,13 +491,14 @@ class webhook_handler {
         }
 
         // Photos, documents and audio become text first; nothing without text reaches the AI.
-        $text = self::message_text($message, $chatid, (int) $link->userid, $text);
+        $anonymizermap = [];
+        $text = self::message_text($message, $chatid, (int) $link->userid, $text, $anonymizermap);
         if ($text === null) {
             return;
         }
 
         // Build and forward to Gateway.
-        self::proxy_to_gateway($link->userid, $chatid, $text);
+        self::proxy_to_gateway($link->userid, $chatid, $text, false, $anonymizermap);
     }
 
     /**
@@ -512,9 +513,17 @@ class webhook_handler {
      * @param string $chatid Telegram chat id.
      * @param int $userid Linked Moodle user.
      * @param string $text Text of the message.
+     * @param array $anonymizermap Set to the placeholders of the conversation when the caption of a file read by the
+     *        vision model was anonymised with them (placeholder => real value); left as it is otherwise.
      * @return string|null
      */
-    private static function message_text(array $message, string $chatid, int $userid, string $text): ?string {
+    private static function message_text(
+        array $message,
+        string $chatid,
+        int $userid,
+        string $text,
+        array &$anonymizermap = []
+    ): ?string {
         $client = api_client::instance();
         $caption = trim((string) ($message['caption'] ?? ''));
         $audio = $message['voice'] ?? $message['audio'] ?? null;
@@ -570,16 +579,21 @@ class webhook_handler {
                 return null;
             }
             $client->send_chat_action($chatid, 'typing');
+            // The caption gets the placeholders of the conversation, so a placeholder the vision model writes back is
+            // restored with the value it stands for in this conversation, never with another one (CTR-011).
+            $anonymizer = anonymizer::from_map((array) (session::get_context('tool_loop_' . $chatid)['anonymizer'] ?? []));
             try {
                 $read = self::with_download(
                     $client,
                     (string) ($file['file_id'] ?? ''),
-                    static fn(string $path): array => vision_service::read_upload($userid, $path, $filename, $caption)
+                    static fn(string $path): array =>
+                        vision_service::read_upload($userid, $path, $filename, $caption, null, $anonymizer)
                 );
             } catch (\Throwable $e) {
                 $client->send_message($chatid, vision_service::error_for($e)['message']);
                 return null;
             }
+            $anonymizermap = $anonymizer->export_map();
             return vision_service::compose_message($caption, $filename, $read['text']);
         }
 
@@ -1365,12 +1379,14 @@ class webhook_handler {
      * @param string $chatid       Telegram chat ID.
      * @param string $text          User message text (photos and audio are already text).
      * @param bool   $internalping True if called from self-ping (continue checkpoint).
+     * @param array  $readmap Placeholders the caption of a file got when it was read (placeholder => real value).
      */
     private static function proxy_to_gateway(
         int $userid,
         string $chatid,
         string $text,
-        bool $internalping = false
+        bool $internalping = false,
+        array $readmap = []
     ): void {
         global $CFG, $DB;
 
@@ -1449,6 +1465,9 @@ class webhook_handler {
                     session::set_context($statekey, []);
                 }
             }
+
+            // The placeholders the caption of a file got when it was read keep their values for the whole turn.
+            $anonymizermap = $readmap + $anonymizermap;
 
             // Init state (iteration counter, lock, cached SPT for self-pings).
             $state = [
@@ -2253,18 +2272,18 @@ class webhook_handler {
             case 'describe_table':
                 // Only the roles that can query the database see table structures; sensitive tables are never described.
                 if (!\local_jedomi\local\query_runner::role_can_query($role)) {
-                    return "❌ Permission denied.";
+                    return get_string('telegram_permission_denied', 'local_jedomi');
                 }
                 $tablename = $args['tablename'] ?? '';
                 if (empty($tablename)) {
-                    return "Table name required.";
+                    return get_string('telegram_table_name_required', 'local_jedomi');
                 }
                 if (\local_jedomi\local\sql_guard::is_sensitive_table(preg_replace('/^\{(\w+)\}$/', '$1', $tablename))) {
-                    return "❌ Permission denied.";
+                    return get_string('telegram_permission_denied', 'local_jedomi');
                 }
                 $columns = $DB->get_columns($tablename);
                 if (!$columns) {
-                    return "Table not found: " . s($tablename);
+                    return get_string('table_not_found', 'local_jedomi', s($tablename));
                 }
                 $result = [];
                 foreach ($columns as $col) {
@@ -2275,12 +2294,12 @@ class webhook_handler {
             case 'search_tables':
                 // Table names, like table structures, only for the roles that can query the database.
                 if (!\local_jedomi\local\query_runner::role_can_query($role)) {
-                    return "❌ Permission denied.";
+                    return get_string('telegram_permission_denied', 'local_jedomi');
                 }
                 $query = $args['query'] ?? '';
                 $limit = min((int)($args['limit'] ?? 10), 20);
                 if (empty($query)) {
-                    return "Search query required.";
+                    return get_string('telegram_search_query_required', 'local_jedomi');
                 }
                 $entries = table_indexer::search($query, $limit);
                 $result = [];
@@ -2292,7 +2311,7 @@ class webhook_handler {
                     $result[] = $line;
                 }
                 if (empty($result)) {
-                    return "No tables found matching: " . s($query);
+                    return get_string('telegram_no_tables_found', 'local_jedomi', s($query));
                 }
                 return "📚 <b>Tables</b> (" . count($result) . "):\n" . implode("\n", $result);
 
@@ -2300,16 +2319,16 @@ class webhook_handler {
                 // SQL is ONLY SELECT — safe read-only.
                 $sql = $args['sql'] ?? $args['query'] ?? '';
                 if (empty($sql)) {
-                    return "SQL query required.";
+                    return get_string('telegram_sql_query_required', 'local_jedomi');
                 }
                 $sqlupper = strtoupper(trim($sql));
                 if (!preg_match('/^SELECT\s/i', $sqlupper)) {
-                    return "❌ Only SELECT queries are allowed.";
+                    return '❌ ' . get_string('non_select_rejected', 'local_jedomi');
                 }
 
                 // ... ── Role gate shared with the web chat — admin/manager/teacher only ──
                 if (!\local_jedomi\local\query_runner::role_can_query($role)) {
-                    return "❌ Permission denied.";
+                    return get_string('telegram_permission_denied', 'local_jedomi');
                 }
 
                 // Normalize Moodle table placeholders (FROM course → FROM {course}).
@@ -2437,7 +2456,7 @@ class webhook_handler {
                 $query = $args['query'] ?? '';
                 $limit = min((int)($args['limit'] ?? 10), 20);
                 if (empty($query)) {
-                    return "Search query required.";
+                    return get_string('telegram_search_query_required', 'local_jedomi');
                 }
                 // Only the functions the role may call: its list, the course rule and the declared capabilities.
                 $allowed = \local_jedomi\local\ws_runner::searchable_functions($role, $userid);

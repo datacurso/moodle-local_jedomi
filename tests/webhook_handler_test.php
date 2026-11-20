@@ -196,9 +196,10 @@ final class webhook_handler_test extends \advanced_testcase {
         $adminresult = $handler::execute_tool('describe_table', ['tablename' => 'course'], $adminid);
         $sensitive = $handler::execute_tool('describe_table', ['tablename' => 'local_jedomi_agents'], $adminid);
 
-        $this->assertStringContainsString('Permission denied', $studentresult);
-        $this->assertStringNotContainsString('Permission denied', $adminresult);
-        $this->assertStringContainsString('Permission denied', $sensitive);
+        $denied = get_string('telegram_permission_denied', 'local_jedomi');
+        $this->assertSame($denied, $studentresult);
+        $this->assertStringNotContainsString($denied, $adminresult);
+        $this->assertSame($denied, $sensitive);
     }
 
     /**
@@ -252,7 +253,7 @@ final class webhook_handler_test extends \advanced_testcase {
      */
     public function test_execute_tool_describe_table_no_name(): void {
         $result = \local_jedomi\telegram\webhook_handler::execute_tool('describe_table', [], (int) get_admin()->id);
-        $this->assertStringContainsString('Table name required', $result);
+        $this->assertSame(get_string('telegram_table_name_required', 'local_jedomi'), $result);
     }
 
     /**
@@ -278,7 +279,7 @@ final class webhook_handler_test extends \advanced_testcase {
             ['tablename' => 'nonexistent_table_xyz'],
             (int) get_admin()->id
         );
-        $this->assertStringContainsString('not found', $result);
+        $this->assertSame(get_string('table_not_found', 'local_jedomi', 'nonexistent_table_xyz'), $result);
     }
 
     /**
@@ -287,7 +288,15 @@ final class webhook_handler_test extends \advanced_testcase {
      */
     public function test_execute_tool_search_tables_no_query(): void {
         $result = \local_jedomi\telegram\webhook_handler::execute_tool('search_tables', [], (int) get_admin()->id);
-        $this->assertStringContainsString('Search query required', $result);
+        $this->assertSame(get_string('telegram_search_query_required', 'local_jedomi'), $result);
+        $none = \local_jedomi\telegram\webhook_handler::execute_tool(
+            'search_tables',
+            ['query' => 'zzqqxxnotatable'],
+            (int) get_admin()->id
+        );
+        $this->assertSame(get_string('telegram_no_tables_found', 'local_jedomi', 'zzqqxxnotatable'), $none);
+        $ws = \local_jedomi\telegram\webhook_handler::execute_tool('ws_search', [], (int) get_admin()->id);
+        $this->assertSame(get_string('telegram_search_query_required', 'local_jedomi'), $ws);
     }
 
     /**
@@ -333,7 +342,7 @@ final class webhook_handler_test extends \advanced_testcase {
      */
     public function test_execute_tool_execute_sql_no_query(): void {
         $result = \local_jedomi\telegram\webhook_handler::execute_tool('execute_sql', []);
-        $this->assertStringContainsString('SQL query required', $result);
+        $this->assertSame(get_string('telegram_sql_query_required', 'local_jedomi'), $result);
     }
 
     /**
@@ -341,7 +350,7 @@ final class webhook_handler_test extends \advanced_testcase {
      */
     public function test_execute_tool_execute_sql_rejects_non_select(): void {
         $result = \local_jedomi\telegram\webhook_handler::execute_tool('execute_sql', ['sql' => 'DELETE FROM {user}']);
-        $this->assertStringContainsString('Only SELECT', $result);
+        $this->assertSame('❌ ' . get_string('non_select_rejected', 'local_jedomi'), $result);
     }
 
     /**
@@ -375,7 +384,7 @@ final class webhook_handler_test extends \advanced_testcase {
             'student',
             [],
         );
-        $this->assertStringContainsString('Permission denied', $result);
+        $this->assertSame(get_string('telegram_permission_denied', 'local_jedomi'), $result);
         $this->assertStringNotContainsString('Results', $result);
     }
 
@@ -385,9 +394,9 @@ final class webhook_handler_test extends \advanced_testcase {
      * @return array
      */
     public static function gated_tools_provider(): array {
-        // Marker is the denial text each tool returns for role 'student'.
+        // Marker is the denial text each tool returns for role 'student'; null is the telegram_permission_denied lang string.
         return [
-            'execute_sql (teacher+)'      => ['execute_sql', ['sql' => 'SELECT 1 AS x'], 'Permission denied'],
+            'execute_sql (teacher+)'      => ['execute_sql', ['sql' => 'SELECT 1 AS x'], null],
             'get_site_config (admin)'     => ['get_site_config', [], 'permission_denied'],
             'admin_search (manager+)'     => ['admin_search', ['query' => 'user'], 'permission_denied'],
             'admin_describe (manager+)'   => ['admin_describe', ['setting' => 'x'], 'permission_denied'],
@@ -396,8 +405,8 @@ final class webhook_handler_test extends \advanced_testcase {
             'list_agents (manager+)'      => ['list_agents', [], 'permission_denied'],
             'site_overview (manager+)'    => ['site_overview', [], 'permission_denied'],
             'delete_agent (manager+)'     => ['delete_agent', [], 'permission_denied'],
-            'describe_table (teacher+)'   => ['describe_table', ['tablename' => 'course'], 'Permission denied'],
-            'search_tables (teacher+)'    => ['search_tables', ['query' => 'user'], 'Permission denied'],
+            'describe_table (teacher+)'   => ['describe_table', ['tablename' => 'course'], null],
+            'search_tables (teacher+)'    => ['search_tables', ['query' => 'user'], null],
         ];
     }
 
@@ -410,9 +419,10 @@ final class webhook_handler_test extends \advanced_testcase {
      * @dataProvider gated_tools_provider
      * @param string $tool Tool name under test
      * @param array $args Tool arguments
-     * @param string $marker Expected denial marker in the result
+     * @param string|null $marker Expected denial marker in the result, null for the telegram_permission_denied string
      */
-    public function test_gated_tools_deny_unprivileged_role(string $tool, array $args, string $marker): void {
+    public function test_gated_tools_deny_unprivileged_role(string $tool, array $args, ?string $marker): void {
+        $marker ??= get_string('telegram_permission_denied', 'local_jedomi');
         $user = $this->getDataGenerator()->create_user();
 
         $result = \local_jedomi\telegram\webhook_handler::execute_tool(
@@ -437,13 +447,14 @@ final class webhook_handler_test extends \advanced_testcase {
      * @dataProvider gated_tools_provider
      * @param string $tool Tool name under test
      * @param array $args Tool arguments
-     * @param string $marker Expected denial marker in the result
+     * @param string|null $marker Expected denial marker in the result, null for the telegram_permission_denied string
      */
     public function test_gated_tools_deny_spoofed_admin_role_for_non_admin_userid(
         string $tool,
         array $args,
-        string $marker
+        ?string $marker
     ): void {
+        $marker ??= get_string('telegram_permission_denied', 'local_jedomi');
         $user = $this->getDataGenerator()->create_user();
 
         $result = \local_jedomi\telegram\webhook_handler::execute_tool(

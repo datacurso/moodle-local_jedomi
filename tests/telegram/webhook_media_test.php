@@ -242,6 +242,27 @@ final class webhook_media_test extends \advanced_testcase {
     }
 
     /**
+     * MDL-CTR-011: the caption of a photo is anonymised with the placeholders of the conversation, so a value already in
+     * the conversation keeps its placeholder and another one gets a new placeholder, never one of another value; the chat
+     * model receives the same placeholders.
+     */
+    public function test_photo_caption_uses_the_placeholders_of_the_conversation(): void {
+        $this->getDataGenerator()->create_user(['firstname' => 'Bruno', 'lastname' => 'Valderrama']);
+        $this->getDataGenerator()->create_user(['firstname' => 'Ximena', 'lastname' => 'Quintanilla']);
+        session::set_context('tool_loop_' . self::CHATID, ['anonymizer' => ['[person_1]' => 'Bruno']]);
+        $this->curl->enqueue(json_encode(['text' => 'A grade report', 'model' => 'm', 'pages_total' => null,
+            'pages_vision' => [], 'pages_skipped' => []]));
+        $this->ai->enqueue_text('It is a grade report.');
+
+        $this->receive(['photo' => $this->photo(), 'caption' => 'Compare Ximena and Bruno']);
+
+        $this->assertSame('Compare [person_2] and [person_1]', $this->curl->calls[0]['params']['question']);
+        $sent = (string) $this->last_user_content();
+        $this->assertStringContainsString('Compare [person_2] and [person_1]', $sent);
+        $this->assertStringNotContainsString('Ximena', $sent);
+    }
+
+    /**
      * MDL-UNIT-080: a document goes to the document reading.
      * M8: a PDF document is read through files/read with its own name.
      * MDL-INT-064: a PDF is read with the reading service.

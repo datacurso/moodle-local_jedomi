@@ -70,10 +70,18 @@ class anonymizer {
      * @var string Pattern of the answer text: a placeholder as {@see self::LOOSE_PLACEHOLDER_PATTERN} reads it (groups 1
      *      and 2), or one the AI wrote without its brackets as a whole word of the exact form "type_N" ("person_1",
      *      "Email_2"; groups 3 and 4), not next to a letter (any non-ASCII byte counts as one), a digit, "_", "/", "[" or
-     *      "]". The bracketless form is restored only when that placeholder exists in this anonymiser (CTR-011).
+     *      "]". It also reads "<Type> <N>" with one space (groups 5 and 6), Type being the name of a kind of placeholder
+     *      this anonymiser creates or its Spanish translation ("Person 1", "persona 1"), with the same word limits. The
+     *      bracketless forms are restored only when that placeholder exists in this anonymiser (CTR-011).
      */
     private const ANSWER_PLACEHOLDER_PATTERN = '/\\\\?\[\s*([a-z]+)\s*(?:\\\\?[_\- ])?\s*(\d+)\s*\\\\?\]'
-        . '|(?<![a-z0-9_\/\[\]\x80-\xff])([a-z]+)_([1-9]\d*)(?![a-z0-9_\/\[\]\x80-\xff])/i';
+        . '|(?<![a-z0-9_\/\[\]\x80-\xff])([a-z]+)_([1-9]\d*)(?![a-z0-9_\/\[\]\x80-\xff])'
+        . '|(?<![a-z0-9_\/\[\]\x80-\xff])(person|persona|email|correo|id|text|texto) ([1-9]\d*)'
+        . '(?![a-z0-9_\/\[\]\x80-\xff])/i';
+
+    /** @var array<string, string> Kind of placeholder for each word of the spaced form, English or Spanish. */
+    private const SPACED_KINDS = ['person' => 'person', 'persona' => 'person', 'email' => 'email', 'correo' => 'email',
+        'id' => 'id', 'text' => 'text', 'texto' => 'text'];
 
     /**
      * @var string Pattern of a placeholder exactly as this anonymiser writes it, the only form restored in a query, after
@@ -307,7 +315,7 @@ class anonymizer {
      * @return string
      */
     public function restore(string $text): string {
-        if (empty($this->originals) || (strpos($text, '[') === false && strpos($text, '_') === false)) {
+        if (empty($this->originals) || !preg_match('/\d/', $text)) {
             return $text;
         }
         // Not split: nothing is restored rather than risking a real value in an external address.
@@ -424,7 +432,8 @@ class anonymizer {
      * One pass, so a restored value that looks like a placeholder is never replaced again. Besides the forms read by
      * {@see self::replace_placeholders()}, a placeholder the AI wrote without its brackets ("person_1") gets its real
      * value when it is a whole word and that placeholder exists in this anonymiser; a "literal_N" placeholder written
-     * that way is kept as written (CTR-011).
+     * that way is kept as written. "<Type> <N>" with one space, in English or Spanish ("persona 1"), is read the same
+     * way (CTR-011).
      *
      * @param string $text Text with placeholders.
      * @return string|null Restored text, or null when the pattern fails.
@@ -433,6 +442,10 @@ class anonymizer {
         return preg_replace_callback(
             self::ANSWER_PLACEHOLDER_PATTERN,
             function (array $m): string {
+                if (isset($m[5]) && $m[5] !== '') {
+                    $placeholder = '[' . self::SPACED_KINDS[strtolower($m[5])] . '_' . $m[6] . ']';
+                    return $this->originals[$placeholder] ?? $m[0];
+                }
                 if (isset($m[3]) && $m[3] !== '') {
                     $kind = strtolower($m[3]);
                     $placeholder = '[' . $kind . '_' . $m[4] . ']';

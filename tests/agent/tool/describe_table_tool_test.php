@@ -62,4 +62,16 @@ final class describe_table_tool_test extends \advanced_testcase {
         $this->assertArrayNotHasKey('error', $answer);
         $this->assertStringContainsString('fullname', json_encode($answer));
     }
+
+    /**
+     * An empty table name and an unknown table give errors in the language of the user, not fixed English text.
+     */
+    public function test_errors_use_language_strings(): void {
+        $tool = new describe_table_tool();
+        $empty = json_decode($tool->execute((object) ['tablename' => '  ']), true);
+        $missing = json_decode($tool->execute((object) ['tablename' => 'nonexistent_table_xyz']), true);
+
+        $this->assertSame(get_string('telegram_table_name_required', 'local_jedomi'), $empty['error']);
+        $this->assertSame(get_string('table_not_found', 'local_jedomi', 'nonexistent_table_xyz'), $missing['error']);
+    }
 }
