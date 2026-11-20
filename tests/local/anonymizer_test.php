@@ -749,4 +749,45 @@ final class anonymizer_test extends \advanced_testcase {
         $text = "[see {$CFG->wwwroot}/x](https://attacker.example/?n=[person_1])";
         $this->assertSame($text, $anonymizer->restore($text), 'A site address in the link text');
     }
+
+    /**
+     * JEDOMI-SEC-005: a Markdown link is read as a whole unit, so an address at the end of the link text cannot run into
+     * the destination and leave part of it with the real values; the text gets them unless it is an external address.
+     */
+    public function test_link_text_ending_in_an_address_does_not_split_the_destination(): void {
+        global $CFG;
+        $this->resetAfterTest();
+        $anonymizer = anonymizer::from_map(['[person_1]' => 'Ximena'], anonymizer::LEVEL_BASIC);
+
+        $kept = [
+            'foreign address and a space' => '[docs.example/](https://evil.example/?q= [person_1])',
+            'site address and "<"' => "[{$CFG->wwwroot}/](https://evil.example/?q=<[person_1]>)",
+            'new line' => "[docs.example/](https://evil.example/?q=\n[person_1])",
+            'address text of another host' => '[https://evil.example/[person_1]](/user/view.php)',
+            'address glued before a link' => 'https://evil.example/?q=[person_1](/x)',
+            'other address inside a site link' => '[x](/user/view.php https://evil.example/?q=[person_1])',
+        ];
+        foreach ($kept as $case => $link) {
+            $this->assertSame("{$link} by Ximena", $anonymizer->restore("{$link} by [person_1]"), $case);
+        }
+
+        $unclosed = '[docs.example/](https://evil.example/(a [person_1] by [person_1]';
+        $this->assertSame($unclosed, $anonymizer->restore($unclosed), 'An unclosed destination runs to the end');
+        $this->assertSame(
+            '[see Ximena at docs.example/](https://evil.example/?q= [person_1])',
+            $anonymizer->restore('[see [person_1] at docs.example/](https://evil.example/?q= [person_1])'),
+            'Nested brackets in the link text'
+        );
+        $this->assertSame(
+            '[Ximena](https://evil.example/?q= [person_1])',
+            $anonymizer->restore('[[person_1]](https://evil.example/?q= [person_1])')
+        );
+        $site = $CFG->wwwroot . '/user/profile.php?name= ';
+        $this->assertSame(
+            "[{$CFG->wwwroot}/]({$site}Ximena) and [p](/user/view.php?n=<Ximena>)",
+            $anonymizer->restore("[{$CFG->wwwroot}/]({$site}[person_1]) and [p](/user/view.php?n=<[person_1]>)"),
+            'Links of the site keep the real values'
+        );
+        $this->assertSame('Hello Ximena, see [x] today', $anonymizer->restore('Hello [person_1], see [x] today'));
+    }
 }

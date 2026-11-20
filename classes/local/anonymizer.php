@@ -90,6 +90,13 @@ class anonymizer {
      */
     private const URL_PATTERN = '~((?:https?:|[/\\\\]{2})[^\s<>]+|(?<![\w./@\\\\-])(?:[a-z0-9-]+\.)+[a-z]{2,}(?::\d+)?/[^\s<>]*)~i';
 
+    /**
+     * @var string A Markdown link ("[text](destination)", the text with nested brackets, the destination up to the closing
+     *     ")" or the end of the text, with balanced parentheses) or an href attribute value (to its quote or the end).
+     */
+    private const LINK_PATTERN = '~(?<label>\[(?>[^\[\]]++|(?&label))*+\])\((?<destination>(?:[^()]++|\([^()]*\)|\()*)(?:\)|\z)'
+        . '|\bhref\s*=\s*(?:"(?<double>[^"]*)"?|\'(?<single>[^\']*)\'?)~i';
+
     /** @var int Shortest real value of the map replaced in the texts of a conversation (anonymize_history_text()). */
     private const MIN_KNOWN_VALUE_LENGTH = 3;
 
@@ -294,35 +301,120 @@ class anonymizer {
         if (empty($this->originals) || strpos($text, '[') === false) {
             return $text;
         }
-        // The whole destination of a Markdown link (to the closing ")", across spaces, "<" and new lines) and of an
-        // href attribute is one address, as are the web addresses of the text.
-        $pattern = '~\]\(\K(?:\([^)]*\)|[^)])*|\bhref\s*=\s*"\K[^"]*|\bhref\s*=\s*\'\K[^\']*|'
-            . substr(self::URL_PATTERN, 1, -2) . '~i';
-        if (preg_match_all($pattern, $text, $matches, PREG_OFFSET_CAPTURE) === false) {
-            // Not split: nothing is restored rather than risking a real value in an external address.
-            return $text;
+        // Not split: nothing is restored rather than risking a real value in an external address.
+        return $this->restore_links($text) ?? $text;
+    }
+
+    /**
+     * Restore a text read as Markdown links and href attributes first, each as a whole unit, and then as web addresses.
+     *
+     * A Markdown link is "[text](destination)", the destination running to the closing ")" (or to the end of the text)
+     * across spaces, "<" and new lines, so an address at the end of the link text cannot run into it. A destination that
+     * leaves the site keeps its placeholders; any other one, and the link text, are restored as the rest of the text. A
+     * link written right after an external address (part of it when the address is made a link) is kept as written.
+     *
+     * @param string $text Text with placeholders.
+     * @return string|null Restored text, or null when a pattern fails.
+     */
+    private function restore_links(string $text): ?string {
+        if (
+            preg_match_all(
+                self::LINK_PATTERN,
+                $text,
+                $matches,
+                PREG_SET_ORDER | PREG_OFFSET_CAPTURE | PREG_UNMATCHED_AS_NULL
+            ) === false
+        ) {
+            return null;
+        }
+        $restored = '';
+        $offset = 0;
+        foreach ($matches as $match) {
+            [$unit, $start] = $match[0];
+            $before = $this->restore_addresses(substr($text, $offset, $start - $offset), $glued);
+            if ($before === null) {
+                return null;
+            }
+            $restored .= $before;
+            $offset = $start + strlen($unit);
+            if ($glued) {
+                $restored .= $unit;
+                continue;
+            }
+            if (isset($match['destination'][0])) {
+                [$value, $valuestart] = $match['destination'];
+                $label = $this->restore_label(substr($match['label'][0], 1, -1));
+                if ($label === null) {
+                    return null;
+                }
+                $labellength = strlen($match['label'][0]);
+                $prefix = '[' . $label . ']' . substr($unit, $labellength, $valuestart - $start - $labellength);
+            } else {
+                [$value, $valuestart] = isset($match['double'][0]) ? $match['double'] : $match['single'];
+                $prefix = substr($unit, 0, $valuestart - $start);
+            }
+            $destination = external_link::leaves_site($value) ? $value : $this->restore_addresses($value, $glued);
+            if ($destination === null) {
+                return null;
+            }
+            $restored .= $prefix . $destination . substr($unit, $valuestart - $start + strlen($value));
+        }
+        $after = $this->restore_addresses(substr($text, $offset), $glued);
+        return $after === null ? null : $restored . $after;
+    }
+    /**
+     * Restore the text of a Markdown link: kept as written when it starts with an address that leaves the site, since it
+     * is shown as that address; otherwise restored as any other text (links inside it included).
+     *
+     * @param string $label Link text without its brackets.
+     * @return string|null Restored text, or null when a pattern fails.
+     */
+    private function restore_label(string $label): ?string {
+        $found = preg_match('~^\s*' . substr(self::URL_PATTERN, 1, -2) . '~i', $label, $m);
+        if ($found === false) {
+            return null;
+        }
+        if ($found && self::address_leaves_site($m[1])) {
+            return $label;
+        }
+        return $this->restore_links($label);
+    }
+
+    /**
+     * Restore a text with no links: web addresses that leave the site keep their placeholders, the rest gets the values.
+     *
+     * @param string $text Text with placeholders.
+     * @param bool|null $glued Set to whether the text ends in an address that leaves the site.
+     * @return string|null Restored text, or null when the pattern fails.
+     */
+    private function restore_addresses(string $text, ?bool &$glued = null): ?string {
+        $glued = false;
+        if (preg_match_all(self::URL_PATTERN, $text, $matches, PREG_OFFSET_CAPTURE) === false) {
+            return null;
         }
         $same = static fn(string $value): string => $value;
         $restored = '';
         $offset = 0;
         foreach ($matches[0] as [$address, $start]) {
             $restored .= $this->replace_placeholders(substr($text, $offset, $start - $offset), $same);
-            $restored .= self::address_leaves_site($address) ? $address : $this->replace_placeholders($address, $same);
+            $leaves = self::address_leaves_site($address);
+            $restored .= $leaves ? $address : $this->replace_placeholders($address, $same);
             $offset = $start + strlen($address);
+            $glued = $leaves && $offset === strlen($text);
         }
         return $restored . $this->replace_placeholders(substr($text, $offset), $same);
     }
 
     /**
-     * Whether an address found in a text leaves the site. A web address written in a link text runs into the
-     * destination ("[https://site/x](https://attacker.example/?n=...)"), so every destination inside it counts too.
+     * Whether an address found in a text leaves the site. An address followed by "](" outside a whole Markdown link
+     * ("site/x](https://attacker.example/?n=...") counts as leaving when any part of it does.
      *
-     * @param string $address Address found by restore().
+     * @param string $address Address found in the text.
      * @return bool
      */
     private static function address_leaves_site(string $address): bool {
-        foreach (explode('](', $address) as $address) {
-            if (external_link::leaves_site($address)) {
+        foreach (explode('](', $address) as $part) {
+            if (external_link::leaves_site($part)) {
                 return true;
             }
         }
