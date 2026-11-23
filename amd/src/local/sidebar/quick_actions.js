@@ -17,7 +17,7 @@
  * Page context label and quick actions of the Jedomi sidebar, by the role of the user and the page.
  *
  * @module     local_jedomi/local/sidebar/quick_actions
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 

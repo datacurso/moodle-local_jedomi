@@ -24,7 +24,7 @@ namespace local_jedomi\output\admin;
  * them when those filters change.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class profiler_tab implements \core\output\named_templatable, \renderable, \templatable {

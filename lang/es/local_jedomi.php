@@ -18,7 +18,7 @@
  * Spanish language strings for local_jedomi.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -41,8 +41,7 @@ $string['agent_by_status'] = 'Agentes por estado';
 $string['agent_chart_no_data'] = 'Sin datos';
 $string['agent_context'] = 'Contexto';
 $string['agent_context_id'] = 'ID del contexto';
-$string['agent_context_id_help'] = 'Identificador del contexto de Moodle, no el del curso, la categoría o el usuario: por '
-    . 'ejemplo, el número de contexto que aparece en la dirección de la página Permisos del curso.';
+$string['agent_context_id_help'] = 'Identificador del contexto de Moodle, no el del curso, la categoría o el usuario: por ejemplo, el número de contexto que aparece en la dirección de la página Permisos del curso.';
 $string['agent_context_id_placeholder'] = 'p. ej. 42';
 $string['agent_context_label'] = '{$a->type}: {$a->name}';
 $string['agent_context_missing'] = '{$a->type} #{$a->id} (no encontrado)';
@@ -80,14 +79,12 @@ $string['agent_disabled_reason_no_access'] = 'El creador ya no tiene acceso al c
 $string['agent_edit'] = 'Editar';
 $string['agent_enable'] = 'Activar';
 $string['agent_enabled'] = 'Activo';
-$string['agent_enabled_help'] = 'Los agentes activos se ejecutan según su programación. Un agente desactivado no se ejecuta, ni '
-    . 'siquiera con Ejecutar ahora.';
+$string['agent_enabled_help'] = 'Los agentes activos se ejecutan según su programación. Un agente desactivado no se ejecuta, ni siquiera con Ejecutar ahora.';
 $string['agent_error_create'] = 'Error al crear agente: {$a}';
 $string['agent_error_empty_answer'] = 'La IA no escribió una respuesta, tampoco al pedírsela de nuevo. Pruebe con una instrucción más corta o con un modelo con un límite de respuesta mayor.';
 $string['agent_error_load'] = 'Error al cargar agentes.';
 $string['agent_error_nopermission'] = 'No puede gestionar los agentes de usuarios con más permisos que los suyos.';
-$string['agent_error_run_failed'] = 'La ejecución falló por un error inesperado (referencia {$a}). Los detalles están en el '
-    . 'registro técnico de Jedomi.';
+$string['agent_error_run_failed'] = 'La ejecución falló por un error inesperado (referencia {$a}). Los detalles están en el registro técnico de Jedomi.';
 $string['agent_error_update'] = 'Error al actualizar agente: {$a}';
 $string['agent_every_15min'] = 'Cada 15 minutos';
 $string['agent_every_1h'] = 'Cada hora';
@@ -105,8 +102,7 @@ $string['agent_invalid_approved_write'] = 'la función de escritura "{$a}" no se
 $string['agent_invalid_context_excluded'] = 'el curso de este contexto está excluido de Jedomi en la pestaña Disponibilidad por curso';
 $string['agent_invalid_context_id'] = 'el ID de contexto no corresponde a un contexto de Moodle existente de tipo {$a}';
 $string['agent_invalid_context_type'] = 'tipo de contexto no válido';
-$string['agent_invalid_cron'] = 'programación personalizada no válida: use cinco campos (minuto, hora, día del mes, mes, día de '
-    . 'la semana) con valores dentro de su rango, por ejemplo "30 6 * * 1-5"';
+$string['agent_invalid_cron'] = 'programación personalizada no válida: use cinco campos (minuto, hora, día del mes, mes, día de la semana) con valores dentro de su rango, por ejemplo "30 6 * * 1-5"';
 $string['agent_invalid_prompt'] = 'la instrucción no puede estar vacía';
 $string['agent_lasterror'] = 'Último error';
 $string['agent_lasterror_hidden'] = 'La última ejecución falló.';
@@ -150,20 +146,40 @@ $string['agent_purge_id_required'] = 'Introduzca el ID del contexto de Moodle de
 $string['agent_purge_invalid_type'] = 'Tipo de purga no válido: {$a}';
 $string['agent_purge_role_not_found'] = 'No se encontró el rol.';
 $string['agent_purge_success'] = '{$a} agente(s) eliminados correctamente.';
-$string['agent_roles_help'] = 'El agente solo se ejecuta mientras su creador tenga al menos uno de los roles marcados en el '
-    . 'contexto del agente. Deje todas las casillas sin marcar para que se ejecute siempre.';
+$string['agent_roles_help'] = 'El agente solo se ejecuta mientras su creador tenga al menos uno de los roles marcados en el contexto del agente. Deje todas las casillas sin marcar para que se ejecute siempre.';
 $string['agent_run_disabled'] = 'Este agente está desactivado, por eso no se puso en cola. Actívelo para ejecutarlo.';
 $string['agent_run_now'] = 'Ejecutar ahora';
 $string['agent_run_queued'] = 'Agente encolado para ejecución (próximo ciclo de cron).';
 $string['agent_runner_task'] = 'Jedomi — Ejecutar agentes de IA programados';
 $string['agent_schedule'] = 'Programación';
-$string['agent_skipped_course_excluded'] = 'No se ejecutó: el curso de su contexto está excluido de Jedomi. Volverá a '
-    . 'ejecutarse cuando el curso vuelva a estar en Jedomi.';
-$string['agent_skipped_role'] = 'No se ejecutó: el creador no tiene ninguno de los roles elegidos para el agente en su '
-    . 'contexto.';
+$string['agent_skipped_course_excluded'] = 'No se ejecutó: el curso de su contexto está excluido de Jedomi. Volverá a ejecutarse cuando el curso vuelva a estar en Jedomi.';
+$string['agent_skipped_role'] = 'No se ejecutó: el creador no tiene ninguno de los roles elegidos para el agente en su contexto.';
 $string['agent_status'] = 'Estado';
 $string['agent_summary'] = 'Resumen';
 $string['agent_table'] = 'Todos los agentes';
+$string['agent_tool_agent_deleted'] = 'Agente #{$a} eliminado.';
+$string['agent_tool_agent_id_required'] = 'Se requiere un ID de agente válido.';
+$string['agent_tool_agent_not_found'] = 'No se encontró el agente #{$a}.';
+$string['agent_tool_arguments_not_object'] = 'JSON de argumentos no válido: se espera un objeto';
+$string['agent_tool_cmid_required'] = 'Se requiere cmid';
+$string['agent_tool_document_read_failed'] = 'No se pudo leer el documento: {$a}';
+$string['agent_tool_empty_function_name'] = 'Nombre de función vacío';
+$string['agent_tool_empty_query'] = 'Consulta vacía';
+$string['agent_tool_invalid_arguments'] = 'JSON de argumentos no válido: {$a}';
+$string['agent_tool_key_list_required'] = 'Se requiere una lista de claves.';
+$string['agent_tool_no_config_keys'] = 'No se encontraron claves coincidentes (solo se pueden leer las claves de la lista permitida).';
+$string['agent_tool_no_pdf_files'] = 'no se encontraron archivos PDF en esta actividad';
+$string['agent_tool_no_ws_for_role'] = 'No se permite ningún servicio web para el rol del creador del agente.';
+$string['agent_tool_no_ws_found'] = 'No se encontraron servicios web que coincidan con: {$a}';
+$string['agent_tool_prompt_schedule_required'] = 'Se requieren tanto prompt como schedule_cron.';
+$string['agent_tool_search_tables_failed'] = 'search_tables falló: {$a}';
+$string['agent_tool_select_only'] = 'Solo se permiten consultas SELECT y WITH.';
+$string['agent_tool_unknown_tool'] = 'Herramienta desconocida: {$a}';
+$string['agent_tool_ws_describe_failed'] = 'ws_describe falló: {$a}';
+$string['agent_tool_ws_name_required'] = 'Se requiere el nombre del servicio web.';
+$string['agent_tool_ws_not_allowed_role'] = 'El servicio web no está en la lista permitida del rol: {$a}';
+$string['agent_tool_ws_not_found'] = 'Servicio web no encontrado: {$a}';
+$string['agent_tool_ws_search_failed'] = 'ws_search falló: {$a}';
 $string['agent_unnamed'] = 'Agente';
 $string['agent_update_success'] = 'Agente actualizado correctamente.';
 $string['agent_user_id'] = 'Usuario #{$a}';
@@ -277,23 +293,15 @@ $string['connection_error'] = 'Error de conexión:';
 $string['conversation_cleared'] = 'Conversación borrada.';
 $string['copytoclipboard'] = 'Copiar al portapapeles';
 $string['course_availability_courses'] = 'Cursos seleccionados';
-$string['course_availability_courses_help'] = 'Cursos que están en Jedomi («Solo los cursos seleccionados») o fuera de '
-    . 'Jedomi («Todos los cursos excepto los seleccionados»). Un curso excluido queda fuera de Jedomi, no solo sin el panel: '
-    . 'no le da el rol de profesor en la página principal, en Telegram ni en los agentes, las herramientas de profesor, las '
-    . 'llamadas a servicios web y el SQL de profesor nunca lo devuelven ni lo aceptan, y sus agentes no se '
-    . 'ejecutan. El SQL de administrador de todo el sitio no se limita con esta lista. Busque por nombre o nombre corto del curso.';
+$string['course_availability_courses_help'] = 'Cursos que están en Jedomi («Solo los cursos seleccionados») o fuera de Jedomi («Todos los cursos excepto los seleccionados»). Un curso excluido queda fuera de Jedomi, no solo sin el panel: no le da el rol de profesor en la página principal, en Telegram ni en los agentes, las herramientas de profesor, las llamadas a servicios web y el SQL de profesor nunca lo devuelven ni lo aceptan, y sus agentes no se ejecutan. El SQL de administrador de todo el sitio no se limita con esta lista. Busque por nombre o nombre corto del curso.';
 $string['course_availability_heading'] = 'Disponibilidad por curso';
-$string['course_availability_heading_help'] = 'Controle qué cursos están en Jedomi. Un curso excluido queda fuera de Jedomi en '
-    . 'todos los canales: el chat web, Telegram y los agentes.';
+$string['course_availability_heading_help'] = 'Controle qué cursos están en Jedomi. Un curso excluido queda fuera de Jedomi en todos los canales: el chat web, Telegram y los agentes.';
 $string['course_mode_all'] = 'Todos los cursos (por defecto)';
 $string['course_mode_all_desc'] = 'Todos los cursos están en Jedomi.';
 $string['course_mode_exclude'] = 'Todos los cursos excepto los seleccionados';
-$string['course_mode_exclude_desc'] = 'Los cursos que elija abajo quedan fuera de Jedomi: sin panel, y sin rol de profesor, '
-    . 'herramientas, SQL ni agentes para ellos.';
+$string['course_mode_exclude_desc'] = 'Los cursos que elija abajo quedan fuera de Jedomi: sin panel, y sin rol de profesor, herramientas, SQL ni agentes para ellos.';
 $string['course_mode_include'] = 'Solo los cursos seleccionados';
-$string['course_mode_include_desc'] = 'Todo curso que no elija abajo queda fuera de Jedomi: sin panel, y sin rol de profesor, '
-    . 'herramientas, SQL ni agentes para él. Las páginas que no pertenecen a un curso (área personal, perfil, calendario, '
-    . 'administración del sitio) mantienen el panel.';
+$string['course_mode_include_desc'] = 'Todo curso que no elija abajo queda fuera de Jedomi: sin panel, y sin rol de profesor, herramientas, SQL ni agentes para él. Las páginas que no pertenecen a un curso (área personal, perfil, calendario, administración del sitio) mantienen el panel.';
 $string['course_none_selected'] = 'Todavía no hay cursos seleccionados.';
 $string['course_search_placeholder'] = 'Buscar por nombre o nombre corto...';
 $string['csv_download'] = '📥 Descargar CSV';
@@ -395,14 +403,11 @@ $string['drop_pending_fail'] = '❌ Error al eliminar pendientes — revise la r
 $string['drop_pending_running'] = 'Descartando...';
 $string['drop_pending_success'] = '✅ Pendientes eliminados correctamente.';
 $string['drop_pending_updates'] = 'Eliminar pendientes';
-$string['drop_pending_updates_help'] = 'Limpia la cola de actualizaciones de Telegram para que mensajes viejos no se procesen al '
-    . 'reconectar el webhook. Útil durante pruebas.';
+$string['drop_pending_updates_help'] = 'Limpia la cola de actualizaciones de Telegram para que mensajes viejos no se procesen al reconectar el webhook. Útil durante pruebas.';
 $string['encryption_failed'] = 'Falló la encriptación. Verifique que se pueda leer la clave de cifrado del sitio en dataroot.';
 $string['entity_agent'] = 'Agente';
 $string['entity_query_log'] = 'Consulta registrada';
-$string['error_argument_unplaced'] = 'Esta llamada nombra un registro que Jedomi no puede ubicar en un curso ({$a}) mientras '
-    . 'algunos cursos están fuera de Jedomi, por lo que no se ejecutó. Consulte a un administrador o use una herramienta '
-    . 'más específica o argumentos que nombren el curso.';
+$string['error_argument_unplaced'] = 'Esta llamada nombra un registro que Jedomi no puede ubicar en un curso ({$a}) mientras algunos cursos están fuera de Jedomi, por lo que no se ejecutó. Consulte a un administrador o use una herramienta más específica o argumentos que nombren el curso.';
 $string['error_course_excluded'] = 'Ese curso está excluido de Jedomi.';
 $string['error_course_include_empty'] = 'Seleccione al menos un curso o elija otro modo: sin cursos seleccionados, todos los cursos quedarían fuera de Jedomi.';
 $string['error_custom_model_invalid'] = 'Escriba un id de modelo sin espacios, tal como lo lista el servicio.';
@@ -423,15 +428,13 @@ $string['error_invalid_model'] = 'Seleccione uno de los modelos de la lista.';
 $string['error_invalid_voice'] = 'Seleccione una de las voces del modelo elegido.';
 $string['error_max_tokens_exceed_context'] = 'Los tokens máximos deben ser menores que la ventana de contexto ({$a} tokens), que también contiene la pregunta.';
 $string['error_not_own_course'] = 'Ese curso no es uno de sus cursos.';
-$string['error_own_data_arguments'] = 'Argumento(s) no admitido(s): {$a}. Estas herramientas solo leen los datos del usuario '
-    . 'actual.';
+$string['error_own_data_arguments'] = 'Argumento(s) no admitido(s): {$a}. Estas herramientas solo leen los datos del usuario actual.';
 $string['error_post_required'] = 'Esta solicitud debe enviarse con POST.';
 $string['error_question_time_limit'] = 'Jedomi dejó de trabajar en esta pregunta después de {$a} minutos. Intente con una pregunta más corta o más concreta.';
 $string['error_search_tables_failed'] = 'search_tables failed: {$a}';
 $string['error_telegram_e006'] = '❌ Respuesta inválida del servicio Jedomi (E006). Inténtelo de nuevo.';
 $string['error_telegram_e007'] = '❌ Secreto de webhook inválido (E007). Contacte al administrador.';
-$string['error_tool_loop_detected'] = 'Llamada a herramienta repetida bloqueada. Use otra herramienta o ejecute con nuevos '
-    . 'parámetros.';
+$string['error_tool_loop_detected'] = 'Llamada a herramienta repetida bloqueada. Use otra herramienta o ejecute con nuevos parámetros.';
 $string['error_tool_repeated'] = 'Jedomi se detuvo porque la herramienta {$a} falló varias veces con el mismo error. Intente reformular la pregunta o pedir algo más concreto.';
 $string['error_tool_unexpected'] = 'La herramienta se detuvo por un error inesperado ({$a}).';
 $string['error_unknown_action'] = 'Acción desconocida: {$a}';
@@ -441,8 +444,7 @@ $string['error_voice_requires_audio'] = 'La conversación por voz necesita el pr
 $string['error_ws_capability'] = 'Usted no tiene ninguna de las capacidades que requiere la función de servicio web {$a}.';
 $string['error_ws_describe_failed'] = 'ws_describe failed: {$a}';
 $string['error_ws_execute_failed'] = 'ws_execute failed: {$a}';
-$string['error_ws_restricted'] = 'Mientras haya cursos fuera de Jedomi, solo está disponible un conjunto reducido de '
-    . 'funciones de servicios web. {$a} no es una de ellas.';
+$string['error_ws_restricted'] = 'Mientras haya cursos fuera de Jedomi, solo está disponible un conjunto reducido de funciones de servicios web. {$a} no es una de ellas.';
 $string['error_ws_search_failed'] = 'ws_search failed: {$a}';
 $string['event_action_cancelled'] = 'Acción del asistente cancelada';
 $string['event_action_confirmed'] = 'Acción del asistente confirmada';
@@ -470,8 +472,7 @@ $string['file_audio'] = 'Audio: {seconds} segundos';
 $string['file_csv'] = 'CSV: {rows} filas, {columns} columnas';
 $string['file_error_no_text'] = 'No se pudo leer texto de este archivo.';
 $string['file_error_too_large'] = 'El archivo es demasiado grande para leerlo.';
-$string['file_error_unsupported'] = 'Solo se pueden adjuntar archivos PDF, CSV, TXT, MD, Word (DOC, DOCX) y PowerPoint (PPT, PPTX), '
-    . 'y archivos de audio cuando el procesamiento de audio está habilitado.';
+$string['file_error_unsupported'] = 'Solo se pueden adjuntar archivos PDF, CSV, TXT, MD, Word (DOC, DOCX) y PowerPoint (PPT, PPTX), y archivos de audio cuando el procesamiento de audio está habilitado.';
 $string['file_error_upload_too_large'] = 'El archivo supera los {$a} MB, el tamaño máximo que se puede adjuntar.';
 $string['file_pdf'] = 'PDF: {pages} páginas';
 $string['file_process_error'] = 'No se pudo procesar';
@@ -522,8 +523,7 @@ $string['new_conversation_confirm'] = '¿Desea iniciar una conversación nueva? 
 $string['new_conversation_msg'] = 'Nueva conversación iniciada. ¿En qué le ayudo?';
 $string['no_messages_sent'] = 'No se enviaron mensajes.';
 $string['non_select_rejected'] = 'Solo se permiten consultas SELECT.';
-$string['note_tables_found'] = 'Use el nombre exacto con describe_table o execute_sql. Los nombres de tabla se muestran como '
-    . 'están — use {tablename} en las consultas SQL.';
+$string['note_tables_found'] = 'Use el nombre exacto con describe_table o execute_sql. Los nombres de tabla se muestran como están — use {tablename} en las consultas SQL.';
 $string['note_tables_not_found'] = 'No se encontraron tablas. Pruebe con otras palabras clave.';
 $string['note_ws_found'] = 'Use el campo "name" exacto con ws_execute. Revise "params" para los parámetros requeridos(*).';
 $string['note_ws_none_configured'] = 'No hay servicios web configurados para su rol';
@@ -535,8 +535,7 @@ $string['pending_action_failed'] = 'No se pudo completar la acción.';
 $string['pending_action_needed'] = 'Esta acción necesita su confirmación.';
 $string['pending_action_not_creator'] = 'Solo el creador actual del agente que propuso esta acción puede aprobarla. Todavía puede cancelarla.';
 $string['pending_action_not_found'] = 'Esta acción no existe o ya se resolvió.';
-$string['pending_action_others_not_run'] = 'No se ejecutaron otras {$a} acción(es) propuesta(s) en esta respuesta. Solicítela(s) de nuevo '
-    . 'cuando haya confirmado o cancelado esta.';
+$string['pending_action_others_not_run'] = 'No se ejecutaron otras {$a} acción(es) propuesta(s) en esta respuesta. Solicítela(s) de nuevo cuando haya confirmado o cancelado esta.';
 $string['pending_action_too_long'] = 'Esta acción tiene más datos de los que se pueden mostrar, por lo que no se puede confirmar. Puede cancelarla.';
 $string['pending_action_truncated'] = 'Esta acción tiene más datos de los que se pueden mostrar, por lo que solo se puede cancelar.';
 $string['pending_desc_admin_execute'] = 'Ejecutar la operación de administración "{$a}".';
@@ -673,19 +672,10 @@ $string['privacy:metadata:local_jedomi_telegram_sessions:chatid'] = 'El chat de 
 $string['privacy:metadata:local_jedomi_telegram_sessions:lastactivity'] = 'Cuándo se intercambió el último mensaje.';
 $string['privacy:metadata:local_jedomi_telegram_sessions:messages'] = 'Los mensajes de la conversación y los resultados de las herramientas usadas para responderlos.';
 $string['privacy:metadata:preference:local_jedomi_grade_notifications'] = 'Tareas cuya calificación se notificó recientemente al usuario en Telegram, con la hora de cada notificación.';
-$string['privacy:metadata:technical_log'] = 'El registro técnico del plugin, el archivo local/jedomi/jedomi.log del directorio de '
-    . 'datos del sitio, con su traza de funcionamiento y de seguridad. Nunca guarda identificadores de usuario, números de chat de '
-    . 'Telegram ni los textos de las conversaciones: los usuarios y los chats aparecen como seudónimos (un código calculado con '
-    . 'una clave aleatoria del sitio), y la dirección IP de origen se guarda solo en las peticiones rechazadas por motivos de '
-    . 'seguridad. El archivo tiene un límite de tamaño: se rota al llegar a 5 MB y conserva los cinco archivos anteriores (unos 30 '
-    . 'MB en total), por lo que las entradas más antiguas se eliminan a medida que se escriben otras nuevas; un administrador '
-    . 'puede eliminar los archivos en cualquier momento. Las entradas no se exportan ni se eliminan por usuario porque no '
-    . 'contienen ningún identificador del usuario.';
+$string['privacy:metadata:technical_log'] = 'El registro técnico del plugin, el archivo local/jedomi/jedomi.log del directorio de datos del sitio, con su traza de funcionamiento y de seguridad. Nunca guarda identificadores de usuario, números de chat de Telegram ni los textos de las conversaciones: los usuarios y los chats aparecen como seudónimos (un código calculado con una clave aleatoria del sitio), y la dirección IP de origen se guarda solo en las peticiones rechazadas por motivos de seguridad. El archivo tiene un límite de tamaño: se rota al llegar a 5 MB y conserva los cinco archivos anteriores (unos 30 MB en total), por lo que las entradas más antiguas se eliminan a medida que se escriben otras nuevas; un administrador puede eliminar los archivos en cualquier momento. Las entradas no se exportan ni se eliminan por usuario porque no contienen ningún identificador del usuario.';
 $string['privacy:metadata:technical_log:chat'] = 'Un seudónimo del chat de Telegram, nunca su número.';
-$string['privacy:metadata:technical_log:ipaddress'] = 'La dirección IP de la petición, solo cuando se rechazó por motivos de '
-    . 'seguridad.';
-$string['privacy:metadata:technical_log:user'] = 'Un seudónimo del usuario que creó un agente o usa el bot de Telegram, nunca su '
-    . 'identificador.';
+$string['privacy:metadata:technical_log:ipaddress'] = 'La dirección IP de la petición, solo cuando se rechazó por motivos de seguridad.';
+$string['privacy:metadata:technical_log:user'] = 'Un seudónimo del usuario que creó un agente o usa el bot de Telegram, nunca su identificador.';
 $string['privacy:metadata:telegram'] = 'Las respuestas del bot, las notificaciones y los resultados de los agentes se entregan en el chat de Telegram vinculado.';
 $string['privacy:metadata:telegram:chatid'] = 'El chat de Telegram al que se envían los datos.';
 $string['privacy:metadata:telegram:messages'] = 'Las respuestas, notificaciones y resultados de agentes, que pueden incluir datos del sitio.';
@@ -780,8 +770,7 @@ $string['qa_teacher_my_courses_msg'] = '¿En qué cursos soy profesor actualment
 $string['qa_teacher_never_logged_label'] = 'Nunca accedieron';
 $string['qa_teacher_never_logged_msg'] = '¿Qué estudiantes nunca accedieron al curso {$a}?';
 $string['qa_teacher_notify_group_label'] = 'Notificar grupo';
-$string['qa_teacher_notify_group_msg'] = 'Redacte un mensaje para los estudiantes del curso {$a} recordándoles las actividades '
-    . 'pendientes y envíeselo como mensaje de Moodle con send_messages';
+$string['qa_teacher_notify_group_msg'] = 'Redacte un mensaje para los estudiantes del curso {$a} recordándoles las actividades pendientes y envíeselo como mensaje de Moodle con send_messages';
 $string['qa_teacher_performance_label'] = 'Rendimiento';
 $string['qa_teacher_performance_msg'] = '¿Cuál es el promedio de notas en el curso {$a}?';
 $string['qa_teacher_top_students_label'] = 'Mejores estudiantes';
@@ -790,9 +779,7 @@ $string['query_profiler'] = 'Perfil de consultas';
 $string['query_profiler_avg'] = 'Duración promedio';
 $string['query_profiler_channel'] = 'Canal';
 $string['query_profiler_count'] = 'Ejecuciones';
-$string['query_profiler_desc'] = 'Registra las consultas SQL de todos los canales (agentes, vistas previas de agentes, chat web, '
-    . 'Telegram y el servicio web complementario), con su tiempo de ejecución y cantidad de filas. Use los filtros para '
-    . 'encontrar consultas lentas.';
+$string['query_profiler_desc'] = 'Registra las consultas SQL de todos los canales (agentes, vistas previas de agentes, chat web, Telegram y el servicio web complementario), con su tiempo de ejecución y cantidad de filas. Use los filtros para encontrar consultas lentas.';
 $string['query_profiler_heading'] = 'Perfil de consultas SQL';
 $string['query_profiler_max'] = 'Duración máxima';
 $string['query_profiler_min_ms'] = 'Duración mínima (ms)';
@@ -818,11 +805,7 @@ $string['read_file_blocked'] = 'El acceso a este archivo no está permitido.';
 $string['read_file_not_allowed'] = 'Esta ruta no está en la lista de permitidos.';
 $string['reading_image'] = 'Leyendo la imagen...';
 $string['regenerate'] = 'Regenerar secreto';
-$string['role_visibility_help'] = 'Desactive un rol para ocultar el panel lateral a los usuarios con ese rol. Un usuario queda '
-    . 'bloqueado solo cuando todos los roles que tiene en la página (en la actividad, el curso, sus categorías y el sitio) '
-    . 'están desactivados; un usuario con otro rol activado conserva el panel. Un usuario sin roles asignados se evalúa con el '
-    . 'rol de usuario autenticado. Los administradores del sitio siempre lo ven. Los invitados y los usuarios sin sesión '
-    . 'iniciada nunca lo ven, por eso los roles de invitado no aparecen en la lista.';
+$string['role_visibility_help'] = 'Desactive un rol para ocultar el panel lateral a los usuarios con ese rol. Un usuario queda bloqueado solo cuando todos los roles que tiene en la página (en la actividad, el curso, sus categorías y el sitio) están desactivados; un usuario con otro rol activado conserva el panel. Un usuario sin roles asignados se evalúa con el rol de usuario autenticado. Los administradores del sitio siempre lo ven. Los invitados y los usuarios sin sesión iniciada nunca lo ven, por eso los roles de invitado no aparecen en la lista.';
 $string['role_visibility_label'] = 'Mostrar el panel lateral por rol';
 $string['search_ws_placeholder'] = 'Buscar servicios web...';
 $string['security_heading'] = 'Seguridad';
@@ -849,55 +832,26 @@ $string['speech_placeholder_text'] = 'un texto';
 $string['speech_voice'] = 'Voz';
 $string['speech_voice_help'] = 'Voz del modelo de voz elegido que lee las respuestas. Cada modelo tiene sus propias voces.';
 $string['spt_secret'] = 'Secreto del token de permisos';
-$string['spt_secret_help'] = 'Secreto usado para firmar los tokens de permisos del chat. Se genera automáticamente para este '
-    . 'sitio y se guarda en Moodle, cifrado, por lo que no hace falta configurarlo. Nunca se muestra: deje el campo vacío para '
-    . 'conservar el secreto actual o escriba uno nuevo para reemplazarlo. Cambiarlo invalida los tokens ya emitidos: los '
-    . 'usuarios deben recargar la página para seguir chateando.';
-$string['sql_activity_rejected'] = 'La consulta lee actividades, calificaciones o registros de un curso que sus permisos en '
-    . 'Moodle no le permiten ver (como una actividad oculta, una actividad que no puede ver o las calificaciones sin los permisos '
-    . 'del informe de calificaciones), por lo que no se ejecutó. Consulte las tablas de los demás tipos de actividad o '
-    . 'pida ayuda a un administrador.';
-$string['sql_blind_marking_rejected'] = 'La consulta lee quién envió o fue calificado en una tarea con envíos anónimos cuyas '
-    . 'identidades no se han revelado, por lo que no se ejecutó. Consulte la tarea sin los identificadores de los estudiantes '
-    . 'o revele primero las identidades en la tarea.';
-$string['sql_carriage_return_rejected'] = 'La consulta contiene un retorno de carro (\\r), por lo que no se ejecutó. '
-    . 'Escriba los saltos de línea solo como \\n.';
-$string['sql_category_rejected'] = 'La consulta lee categorías de cursos y algunas están ocultas para usted, por lo que no '
-    . 'se ejecutó. Limite las categorías a las visibles (por ejemplo, WHERE cc.visible = 1).';
-$string['sql_construct_rejected'] = 'La consulta usa una sintaxis fuera del subconjunto de solo lectura permitido, por lo que no '
-    . 'se ejecutó. Escriba un único SELECT con FROM, [LEFT] JOIN ... ON, condiciones WHERE unidas solo con AND (=, <>, <, >, '
-    . 'IN (números), IS [NOT] NULL, LIKE \'texto\'), GROUP BY, HAVING, ORDER BY y LIMIT, y solo las funciones COUNT, SUM, '
-    . 'AVG, MIN, '
-    . 'MAX, ROUND y COALESCE. No use CASE, OR, NOT, subconsultas, UNION, comentarios, nombres entre comillas, variables ni '
-    . 'punto y coma.';
+$string['spt_secret_help'] = 'Secreto usado para firmar los tokens de permisos del chat. Se genera automáticamente para este sitio y se guarda en Moodle, cifrado, por lo que no hace falta configurarlo. Nunca se muestra: deje el campo vacío para conservar el secreto actual o escriba uno nuevo para reemplazarlo. Cambiarlo invalida los tokens ya emitidos: los usuarios deben recargar la página para seguir chateando.';
+$string['sql_activity_rejected'] = 'La consulta lee actividades, calificaciones o registros de un curso que sus permisos en Moodle no le permiten ver (como una actividad oculta, una actividad que no puede ver o las calificaciones sin los permisos del informe de calificaciones), por lo que no se ejecutó. Consulte las tablas de los demás tipos de actividad o pida ayuda a un administrador.';
+$string['sql_blind_marking_rejected'] = 'La consulta lee quién envió o fue calificado en una tarea con envíos anónimos cuyas identidades no se han revelado, por lo que no se ejecutó. Consulte la tarea sin los identificadores de los estudiantes o revele primero las identidades en la tarea.';
+$string['sql_carriage_return_rejected'] = 'La consulta contiene un retorno de carro (\\r), por lo que no se ejecutó. Escriba los saltos de línea solo como \\n.';
+$string['sql_category_rejected'] = 'La consulta lee categorías de cursos y algunas están ocultas para usted, por lo que no se ejecutó. Limite las categorías a las visibles (por ejemplo, WHERE cc.visible = 1).';
+$string['sql_construct_rejected'] = 'La consulta usa una sintaxis fuera del subconjunto de solo lectura permitido, por lo que no se ejecutó. Escriba un único SELECT con FROM, [LEFT] JOIN ... ON, condiciones WHERE unidas solo con AND (=, <>, <, >, IN (números), IS [NOT] NULL, LIKE \'texto\'), GROUP BY, HAVING, ORDER BY y LIMIT, y solo las funciones COUNT, SUM, AVG, MIN, MAX, ROUND y COALESCE. No use CASE, OR, NOT, subconsultas, UNION, comentarios, nombres entre comillas, variables ni punto y coma.';
 $string['sql_course_rejected'] = 'La consulta menciona un curso que usted no gestiona, por lo que no se ejecutó.';
-$string['sql_course_unfiltered_rejected'] = 'La consulta lee datos de cursos sin limitarlos a los cursos que usted gestiona, por '
-    . 'lo que no se ejecutó. Limite cada tabla de cursos al id de uno de sus cursos (por ejemplo WHERE c.id = 12 o WHERE '
-    . 'e.courseid IN (12, 15)) y no use OR, UNION, BETWEEN ni subconsultas.';
-$string['sql_function_rejected'] = 'La consulta usa una función o cláusula que puede leer o escribir archivos del servidor, '
-    . 'pausar o bloquear la base de datos, acceder a otras bases de datos o revelar variables del servidor (como LOAD_FILE, SLEEP, '
-    . 'BENCHMARK, INTO OUTFILE, @@ o FOR UPDATE), por lo que no se ejecutó.';
+$string['sql_course_unfiltered_rejected'] = 'La consulta lee datos de cursos sin limitarlos a los cursos que usted gestiona, por lo que no se ejecutó. Limite cada tabla de cursos al id de uno de sus cursos (por ejemplo WHERE c.id = 12 o WHERE e.courseid IN (12, 15)) y no use OR, UNION, BETWEEN ni subconsultas.';
+$string['sql_function_rejected'] = 'La consulta usa una función o cláusula que puede leer o escribir archivos del servidor, pausar o bloquear la base de datos, acceder a otras bases de datos o revelar variables del servidor (como LOAD_FILE, SLEEP, BENCHMARK, INTO OUTFILE, @@ o FOR UPDATE), por lo que no se ejecutó.';
 $string['sql_heading'] = 'Consultas del chat web';
 $string['sql_heading_help'] = 'Límites de las consultas a la base de datos que la IA ejecuta en el chat web. El tiempo límite por consulta se aplica en MySQL, MariaDB y PostgreSQL; SQL Server y Oracle conservan la herramienta SQL solo con el límite de filas.';
-$string['sql_params_rejected'] = 'Los parámetros de la consulta no coinciden uno a uno con sus marcadores, por lo que no se '
-    . 'ejecutó. Use una lista con un valor por cada ? o una clave por cada :nombre, escrita sin los dos puntos, y ningún otro valor.';
+$string['sql_params_rejected'] = 'Los parámetros de la consulta no coinciden uno a uno con sus marcadores, por lo que no se ejecutó. Use una lista con un valor por cada ? o una clave por cada :nombre, escrita sin los dos puntos, y ningún otro valor.';
 $string['sql_row_limit_web'] = 'Máximo de filas por consulta (chat web)';
 $string['sql_row_limit_web_help'] = 'Máximo de filas que una consulta a la base de datos del chat web devuelve a la IA, de 10 a 1000 (valor predeterminado: 100). Más filas dan respuestas más completas a preguntas amplias, pero hacen cada respuesta más lenta y más extensa. Telegram, el servicio web complementario y los agentes programados conservan sus propios límites. En SQL Server y Oracle solo se aplica el límite de filas: Moodle no puede fijar allí un tiempo límite por consulta, así que una consulta lenta de la IA se ejecuta sobre la base de datos del sitio hasta que la base de datos o PHP la detengan. Mantenga un límite bajo en esos motores.';
 $string['sql_row_limit_web_invalid'] = 'Escriba un número entero entre 10 y 1000.';
 $string['sql_sensitive_rejected'] = 'La consulta lee credenciales, claves, tokens, configuración del sitio o sesiones, por lo que no se ejecutó.';
-$string['sql_separate_groups_rejected'] = 'La consulta lee estudiantes, calificaciones o entregas de un curso o actividad en '
-    . 'modo de grupos separados, y usted no puede acceder a todos los grupos, por lo que no se ejecutó. Consulte solo la '
-    . 'estructura del curso o pida ayuda a un administrador.';
-$string['sql_table_not_allowed'] = 'La consulta lee una tabla que no está disponible para los cursos que usted gestiona (como '
-    . 'mensajes, notificaciones, preferencias de usuario o la lista completa de usuarios), por lo que no se ejecutó. Lea tablas de '
-    . 'cursos limitadas a sus cursos, y lea nombres de usuarios solo uniendo {user} a las matriculaciones, roles o calificaciones '
-    . 'de uno de sus cursos (por ejemplo JOIN {user_enrolments} ue ON ue.userid = u.id JOIN {enrol} e ON e.id = ue.enrolid '
-    . 'WHERE e.courseid = 12).';
-$string['sql_too_long_rejected'] = 'La consulta tiene más de 8000 caracteres, por lo que no se ejecutó. '
-    . 'Escriba una consulta más corta.';
-$string['sql_user_column_rejected'] = 'La consulta lee columnas de usuario distintas del id y los nombres (como el correo, el '
-    . 'teléfono, la dirección o la última IP), o todas las columnas con *, por lo que no se ejecutó. Indique solo u.id, '
-    . 'u.firstname, u.lastname, u.middlename, u.alternatename, u.firstnamephonetic o u.lastnamephonetic.';
+$string['sql_separate_groups_rejected'] = 'La consulta lee estudiantes, calificaciones o entregas de un curso o actividad en modo de grupos separados, y usted no puede acceder a todos los grupos, por lo que no se ejecutó. Consulte solo la estructura del curso o pida ayuda a un administrador.';
+$string['sql_table_not_allowed'] = 'La consulta lee una tabla que no está disponible para los cursos que usted gestiona (como mensajes, notificaciones, preferencias de usuario o la lista completa de usuarios), por lo que no se ejecutó. Lea tablas de cursos limitadas a sus cursos, y lea nombres de usuarios solo uniendo {user} a las matriculaciones, roles o calificaciones de uno de sus cursos (por ejemplo JOIN {user_enrolments} ue ON ue.userid = u.id JOIN {enrol} e ON e.id = ue.enrolid WHERE e.courseid = 12).';
+$string['sql_too_long_rejected'] = 'La consulta tiene más de 8000 caracteres, por lo que no se ejecutó. Escriba una consulta más corta.';
+$string['sql_user_column_rejected'] = 'La consulta lee columnas de usuario distintas del id y los nombres (como el correo, el teléfono, la dirección o la última IP), o todas las columnas con *, por lo que no se ejecutó. Indique solo u.id, u.firstname, u.lastname, u.middlename, u.alternatename, u.firstnamephonetic o u.lastnamephonetic.';
 $string['still_working'] = 'Jedomi sigue trabajando en su respuesta…';
 $string['stop_answer'] = 'Detener la respuesta';
 $string['summary_config_data'] = 'datos de configuración recuperados';
@@ -944,13 +898,10 @@ $string['telegram_drop_pending_failed'] = 'No se pudieron descartar las actualiz
 $string['telegram_enabled'] = 'Habilitar integración con Telegram';
 $string['telegram_enabled_save_failed'] = 'No se pudo guardar el interruptor de la integración con Telegram. Inténtelo de nuevo.';
 $string['telegram_gateway_timeout'] = 'Tiempo máximo de respuesta de la IA (segundos)';
-$string['telegram_gateway_timeout_help'] = 'Segundos máximos de espera de cada petición a la IA del bot de Telegram, enviada a '
-    . 'través del proveedor de IA de Datacurso (5-50). Cada petición debe caber en una ejecución del bot, por lo que no '
-    . 'se aplican esperas mayores.';
+$string['telegram_gateway_timeout_help'] = 'Segundos máximos de espera de cada petición a la IA del bot de Telegram, enviada a través del proveedor de IA de Datacurso (5-50). Cada petición debe caber en una ejecución del bot, por lo que no se aplican esperas mayores.';
 $string['telegram_heading'] = 'Telegram';
 $string['telegram_heading_help'] = 'Conecte Jedomi a un bot de Telegram para que los usuarios conversen vía chat.';
-$string['telegram_help_footer'] = 'Después de vincular, envíe cualquier mensaje y lo reenviaré a Jedomi AI para obtener '
-    . 'una respuesta.';
+$string['telegram_help_footer'] = 'Después de vincular, envíe cualquier mensaje y lo reenviaré a Jedomi AI para obtener una respuesta.';
 $string['telegram_help_heading'] = '🤖 <b>Bot Jedomi — Comandos disponibles</b>';
 $string['telegram_help_help'] = '❓ <b>/help</b> — Mostrar este mensaje de ayuda';
 $string['telegram_help_new'] = '🗑️ <b>/new</b> o <b>/nuevo</b> — Borrar conversación y empezar de nuevo';
@@ -981,8 +932,7 @@ $string['telegram_link_title'] = 'Vincular Telegram';
 $string['telegram_linked_chatid'] = 'chat_id: {$a}';
 $string['telegram_linked_on'] = 'Vinculado el {$a}';
 $string['telegram_max_turns'] = 'Turnos máximos de conversación';
-$string['telegram_max_turns_help'] = 'Cantidad de mensajes guardados en el historial de Telegram (1-100). Valores más bajos '
-    . 'ahorran tokens.';
+$string['telegram_max_turns_help'] = 'Cantidad de mensajes guardados en el historial de Telegram (1-100). Valores más bajos ahorran tokens.';
 $string['telegram_msg_account_inactive'] = 'Su cuenta de Moodle no está activa, por lo que el bot no puede atenderla. Contacte con el administrador del sitio.';
 $string['telegram_msg_audio_disabled'] = 'Los mensajes de voz y audio no están habilitados en este sitio. Envíe su pregunta como texto.';
 $string['telegram_msg_done'] = '✅ Listo.';
@@ -1006,8 +956,7 @@ $string['telegram_msg_role_blocked'] = 'Su rol no tiene acceso a Jedomi Telegram
 $string['telegram_msg_state_save_failed'] = '⚠️ Lo sentimos, no se pudo guardar el avance de su solicitud. Inténtelo de nuevo con /new.';
 $string['telegram_msg_still_processing'] = '⏳ Sigo procesando su solicitud anterior, por lo que este mensaje no se procesó. Envíelo de nuevo cuando haya respondido.';
 $string['telegram_msg_text_only'] = 'Solo puedo leer texto, fotos, documentos y mensajes de voz. Envíe su pregunta como texto.';
-$string['telegram_msg_token_invalid'] = 'El token del bot no es válido y no se guardó. Se eliminó el token anterior y el bot quedó '
-    . 'desconectado; los demás cambios se guardaron. Verifique el token de @BotFather y guárdelo de nuevo.';
+$string['telegram_msg_token_invalid'] = 'El token del bot no es válido y no se guardó. Se eliminó el token anterior y el bot quedó desconectado; los demás cambios se guardaron. Verifique el token de @BotFather y guárdelo de nuevo.';
 $string['telegram_msg_token_removed'] = 'Se eliminó el token del bot y su webhook en Telegram. El bot ya no responde.';
 $string['telegram_msg_token_removed_webhook_kept'] = 'Token del bot eliminado. No se pudo descifrar, por lo que su webhook no se pudo eliminar en Telegram y puede seguir registrado: para eliminarlo, introduzca de nuevo el token y elimínelo, o revoque el token en @BotFather.';
 $string['telegram_msg_unavailable'] = 'El bot de Jedomi no está disponible en este momento. Inténtelo de nuevo más tarde.';
@@ -1049,41 +998,30 @@ $string['telegram_remove_token_desc'] = 'Desconectar el bot: se borra el token y
 $string['telegram_require_pin'] = 'Exigir PIN en Telegram para las acciones de administradores y gestores';
 $string['telegram_require_pin_desc'] = 'Los administradores y gestores confirman sus cambios en Telegram con un PIN que definen en su perfil.';
 $string['telegram_require_pin_help'] = 'Con la casilla marcada, cada administrador y gestor define un PIN de 6 a 8 dígitos en la página Telegram de Jedomi de su perfil. Sus cambios por Telegram se confirman con el PIN en lugar del botón Confirmar; tras el PIN correcto no se les vuelve a pedir durante 15 minutos, pero cada cambio sigue mostrando su tarjeta y solo se ejecuta cuando lo confirman con el botón o la palabra de confirmación, y 3 PIN incorrectos bloquean sus cambios por Telegram durante 15 minutos. Mientras no definan el PIN, sus cambios por Telegram se rechazan y las consultas siguen funcionando. No afecta a profesores ni estudiantes.';
-$string['telegram_role_visibility_help'] = 'Desactive para evitar que usuarios con este rol vinculen o reciban mensajes de '
-    . 'Telegram. Los admins siempre tienen acceso.';
+$string['telegram_role_visibility_help'] = 'Desactive para evitar que usuarios con este rol vinculen o reciban mensajes de Telegram. Los admins siempre tienen acceso.';
 $string['telegram_search_query_required'] = 'Se requiere el texto de búsqueda.';
 $string['telegram_secret_regenerated'] = 'Se regeneró el secreto del webhook y se registró la nueva URL del webhook en Telegram.';
-$string['telegram_secret_regenerated_unregistered'] = 'Se regeneró el secreto del webhook, pero la nueva URL del webhook no pudo registrarse '
-    . 'en Telegram. Revise el estado del webhook.';
+$string['telegram_secret_regenerated_unregistered'] = 'Se regeneró el secreto del webhook, pero la nueva URL del webhook no pudo registrarse en Telegram. Revise el estado del webhook.';
 $string['telegram_setup_guide'] = 'Guía de configuración';
 $string['telegram_sql_query_required'] = 'Se requiere la consulta SQL.';
 $string['telegram_status_connected'] = 'Conectado';
 $string['telegram_status_disconnected'] = 'Desconectado';
 $string['telegram_status_invalid_token'] = 'token no válido, péguelo de nuevo y guarde.';
-$string['telegram_step1_desc'] = 'Abra Telegram, busque <strong>@BotFather</strong>, envíe <code>/newbot</code>, elija nombre '
-    . 'y usuario. Copie el token que le entrega (formato: <code>123456:ABC-DEF...</code>).';
+$string['telegram_step1_desc'] = 'Abra Telegram, busque <strong>@BotFather</strong>, envíe <code>/newbot</code>, elija nombre y usuario. Copie el token que le entrega (formato: <code>123456:ABC-DEF...</code>).';
 $string['telegram_step1_title'] = 'Crear un bot en @BotFather';
-$string['telegram_step2_desc'] = 'Pegue el token en el campo <strong>Token del bot</strong> abajo y haga clic en <strong>Guardar '
-    . 'cambios</strong>. El interruptor de la integración se guarda en cuanto se cambia.';
+$string['telegram_step2_desc'] = 'Pegue el token en el campo <strong>Token del bot</strong> abajo y haga clic en <strong>Guardar cambios</strong>. El interruptor de la integración se guarda en cuanto se cambia.';
 $string['telegram_step2_title'] = 'Pegar el token y guardar';
-$string['telegram_step3_desc'] = 'No hace falta hacer nada: el plugin registra la <strong>URL del webhook</strong> en Telegram '
-    . 'automáticamente al guardar el token del bot. Si cambia la URL del sitio, guarde el token del bot de nuevo para registrar '
-    . 'la nueva URL.';
+$string['telegram_step3_desc'] = 'No hace falta hacer nada: el plugin registra la <strong>URL del webhook</strong> en Telegram automáticamente al guardar el token del bot. Si cambia la URL del sitio, guarde el token del bot de nuevo para registrar la nueva URL.';
 $string['telegram_step3_title'] = 'Registrar el webhook en Telegram';
-$string['telegram_step4_desc'] = 'Use los interruptores de roles abajo para controlar qué roles de Moodle pueden usar Telegram. Los '
-    . 'admins siempre tienen acceso independientemente de esta configuración.';
+$string['telegram_step4_desc'] = 'Use los interruptores de roles abajo para controlar qué roles de Moodle pueden usar Telegram. Los admins siempre tienen acceso independientemente de esta configuración.';
 $string['telegram_step4_title'] = 'Configurar acceso por rol (opcional)';
-$string['telegram_stepU1_desc'] = 'Haga clic en su nombre en la barra superior → <strong>Perfil</strong>. Verá una '
-    . 'sección <strong>{$a}</strong> con el enlace <em>Vincular Telegram</em>.';
+$string['telegram_stepU1_desc'] = 'Haga clic en su nombre en la barra superior → <strong>Perfil</strong>. Verá una sección <strong>{$a}</strong> con el enlace <em>Vincular Telegram</em>.';
 $string['telegram_stepU1_title'] = 'Ir al perfil de Moodle';
-$string['telegram_stepU2_desc'] = 'Haga clic en <strong>Generar código</strong>. Aparece un código de 6 caracteres, válido '
-    . 'por 10 minutos.';
+$string['telegram_stepU2_desc'] = 'Haga clic en <strong>Generar código</strong>. Aparece un código de 6 caracteres, válido por 10 minutos.';
 $string['telegram_stepU2_title'] = 'Generar un código de vinculación';
-$string['telegram_stepU3_desc'] = 'En Telegram, abra el bot de su institución y envíe: <code>/start SU_CODIGO</code>. El bot '
-    . 'confirma el vínculo al instante.';
+$string['telegram_stepU3_desc'] = 'En Telegram, abra el bot de su institución y envíe: <code>/start SU_CODIGO</code>. El bot confirma el vínculo al instante.';
 $string['telegram_stepU3_title'] = 'Enviar /start al bot';
-$string['telegram_stepU4_desc'] = 'Envíe cualquier mensaje al bot. Jedomi responde con datos reales de su Moodle. Para '
-    . 'desvincular, envíe <code>/desvincular</code> o use su página de perfil.';
+$string['telegram_stepU4_desc'] = 'Envíe cualquier mensaje al bot. Jedomi responde con datos reales de su Moodle. Para desvincular, envíe <code>/desvincular</code> o use su página de perfil.';
 $string['telegram_stepU4_title'] = 'Empezar a chatear';
 $string['telegram_step_admin_title'] = 'Configuración del administrador';
 $string['telegram_step_user_title'] = 'Configuración del usuario (cada usuario lo hace una vez)';
@@ -1097,98 +1035,57 @@ $string['telegram_webhook_auto_missing_desc'] = 'Intente guardar el token de nue
 $string['telegram_webhook_auto_missing_title'] = 'Webhook no registrado';
 $string['telegram_webhook_auto_ok_desc'] = 'Al guardar el token, el webhook se registró automáticamente.';
 $string['telegram_webhook_auto_ok_title'] = 'Webhook configurado automáticamente';
-$string['telegram_webhook_failed_body'] = 'El webhook de Telegram de Jedomi no pudo registrarse con su nuevo secreto, por lo que '
-    . 'el bot no recibe mensajes. El sitio lo sigue intentando durante unas 17 horas. Compruebe que el sitio es accesible por '
-    . 'HTTPS y que puede conectarse a api.telegram.org, o guarde de nuevo el token del bot en la pestaña Integraciones de Jedomi.';
-$string['telegram_webhook_failed_final_body'] = 'El webhook de Telegram de Jedomi sigue sin poder registrarse tras unas 17 '
-    . 'horas de intentos y el sitio dejó de intentarlo, por lo que el bot no recibe mensajes. Guarde de nuevo el token del '
-    . 'bot en la pestaña Integraciones de Jedomi para registrarlo.';
+$string['telegram_webhook_failed_body'] = 'El webhook de Telegram de Jedomi no pudo registrarse con su nuevo secreto, por lo que el bot no recibe mensajes. El sitio lo sigue intentando durante unas 17 horas. Compruebe que el sitio es accesible por HTTPS y que puede conectarse a api.telegram.org, o guarde de nuevo el token del bot en la pestaña Integraciones de Jedomi.';
+$string['telegram_webhook_failed_final_body'] = 'El webhook de Telegram de Jedomi sigue sin poder registrarse tras unas 17 horas de intentos y el sitio dejó de intentarlo, por lo que el bot no recibe mensajes. Guarde de nuevo el token del bot en la pestaña Integraciones de Jedomi para registrarlo.';
 $string['telegram_webhook_failed_open'] = 'Abrir la pestaña Integraciones';
 $string['telegram_webhook_failed_subject'] = 'Jedomi: el bot de Telegram no recibe mensajes';
 $string['telegram_webhook_info_failed'] = 'getWebhookInfo falló. Revise el token del bot y el acceso HTTPS saliente.';
-$string['telegram_webhook_needs_registration'] = 'La actualización no pudo volver a registrar el webhook de Telegram con su nuevo '
-    . 'secreto, por lo que el bot no recibe mensajes. El sitio lo reintenta en segundo plano durante unas 17 horas; también '
-    . 'puede guardar de nuevo el token del bot para registrarlo.';
+$string['telegram_webhook_needs_registration'] = 'La actualización no pudo volver a registrar el webhook de Telegram con su nuevo secreto, por lo que el bot no recibe mensajes. El sitio lo reintenta en segundo plano durante unas 17 horas; también puede guardar de nuevo el token del bot para registrarlo.';
 $string['telegram_webhook_retry_failed'] = 'No se pudo registrar el webhook de Telegram; la tarea lo intentará de nuevo.';
 $string['telegram_webhook_secret'] = 'Secreto del webhook';
-$string['telegram_webhook_secret_help'] = 'Secreto aleatorio que Telegram envía en una cabecera con cada mensaje, nunca en la URL '
-    . 'del webhook. Regenérelo si se filtra.';
+$string['telegram_webhook_secret_help'] = 'Secreto aleatorio que Telegram envía en una cabecera con cada mensaje, nunca en la URL del webhook. Regenérelo si se filtra.';
 $string['telegram_webhook_set_failed'] = 'Telegram no aceptó el webhook. Compruebe que la URL del sitio use HTTPS y sea accesible desde internet.';
 $string['telegram_webhook_status'] = 'Estado del webhook';
 $string['telegram_webhook_url'] = 'URL del webhook';
-$string['telegram_webhook_url_help'] = 'Se registra en Telegram automáticamente al guardar el token del bot. Si cambia la URL '
-    . 'del sitio, guarde el token del bot de nuevo para registrar la nueva URL.';
+$string['telegram_webhook_url_help'] = 'Se registra en Telegram automáticamente al guardar el token del bot. Si cambia la URL del sitio, guarde el token del bot de nuevo para registrar la nueva URL.';
 $string['thinking'] = 'Pensando...';
 $string['toggle_thinking'] = 'Mostrar/ocultar animación de pensamiento';
 $string['token_expired'] = 'Los permisos del chat vencieron. Recargue la página para seguir usando Jedomi.';
-$string['tool_admin_describe_desc'] = 'Obtiene la documentación completa (parámetros, tipos, campos obligatorios) de una '
-    . 'operación CLI de administración específica por su nombre. Úsela DESPUÉS de admin_search y ANTES de admin_execute para '
-    . 'verificar los parámetros obligatorios.';
+$string['tool_admin_describe_desc'] = 'Obtiene la documentación completa (parámetros, tipos, campos obligatorios) de una operación CLI de administración específica por su nombre. Úsela DESPUÉS de admin_search y ANTES de admin_execute para verificar los parámetros obligatorios.';
 $string['tool_admin_describe_name'] = 'Nombre de la operación (p. ej. backup, scheduled_task, purge_caches).';
-$string['tool_admin_execute_desc'] = 'Ejecuta una operación CLI de administración para crear o modificar datos de Moodle. '
-    . 'Requiere rol de administrador o gestor. USAR CON PRECAUCIÓN: estas operaciones modifican la base de datos. COMBÍNELA con '
-    . 'las herramientas WS: primero use ws_search/ws_execute para descubrir cursos, secciones, usuarios o verificar datos, y '
-    . 'luego llame a admin_execute con la información obtenida. Flujo de ejemplo: ws_execute(core_course_get_courses_by_field) '
-    . 'para encontrar el curso → admin_execute(create_mod, ...) para crear una actividad.';
+$string['tool_admin_execute_desc'] = 'Ejecuta una operación CLI de administración para crear o modificar datos de Moodle. Requiere rol de administrador o gestor. USAR CON PRECAUCIÓN: estas operaciones modifican la base de datos. COMBÍNELA con las herramientas WS: primero use ws_search/ws_execute para descubrir cursos, secciones, usuarios o verificar datos, y luego llame a admin_execute con la información obtenida. Flujo de ejemplo: ws_execute(core_course_get_courses_by_field) para encontrar el curso → admin_execute(create_mod, ...) para crear una actividad.';
 $string['tool_admin_execute_name'] = 'Nombre de la operación (p. ej. backup, scheduled_task, purge_caches).';
-$string['tool_admin_execute_params'] = 'Objeto JSON con los parámetros de la operación (use primero admin_describe para ver los '
-    . 'campos obligatorios).';
-$string['tool_admin_search_desc'] = 'Busca operaciones CLI disponibles para administradores (p. ej. copia de seguridad, purgar '
-    . 'cachés, ejecutar tareas programadas). Úsela para descubrir qué operaciones existen antes de describirlas o ejecutarlas.';
+$string['tool_admin_execute_params'] = 'Objeto JSON con los parámetros de la operación (use primero admin_describe para ver los campos obligatorios).';
+$string['tool_admin_search_desc'] = 'Busca operaciones CLI disponibles para administradores (p. ej. copia de seguridad, purgar cachés, ejecutar tareas programadas). Úsela para descubrir qué operaciones existen antes de describirlas o ejecutarlas.';
 $string['tool_admin_search_limit'] = 'Número máximo de resultados a devolver (por defecto: 8, máx.: 20).';
 $string['tool_admin_search_query'] = 'Palabras clave de búsqueda para encontrar operaciones de administración relevantes.';
 $string['tool_api_call'] = 'Ejecutando acción en Moodle...';
-$string['tool_create_agent_context_id'] = 'El ID del contexto de Moodle (contexto del curso, la categoría o el usuario), no el '
-    . 'ID del curso, la categoría o el usuario. Obligatorio cuando context_type no es "site".';
-$string['tool_create_agent_context_type'] = 'Ámbito de ejecución: "site" para todo el sitio, "course" para un curso concreto, '
-    . '"category" para una categoría de cursos, "user" para un usuario concreto. Por defecto: "site".';
-$string['tool_create_agent_desc'] = 'Crea un agente de IA programado. El agente ejecutará la instrucción indicada de forma '
-    . 'periódica, guardará los resultados en caché y enviará notificaciones por Telegram (si está vinculado). Solo disponible '
-    . 'para administradores y gestores.';
+$string['tool_create_agent_context_id'] = 'El ID del contexto de Moodle (contexto del curso, la categoría o el usuario), no el ID del curso, la categoría o el usuario. Obligatorio cuando context_type no es "site".';
+$string['tool_create_agent_context_type'] = 'Ámbito de ejecución: "site" para todo el sitio, "course" para un curso concreto, "category" para una categoría de cursos, "user" para un usuario concreto. Por defecto: "site".';
+$string['tool_create_agent_desc'] = 'Crea un agente de IA programado. El agente ejecutará la instrucción indicada de forma periódica, guardará los resultados en caché y enviará notificaciones por Telegram (si está vinculado). Solo disponible para administradores y gestores.';
 $string['tool_create_agent_enabled'] = 'Si el agente empieza activado. Por defecto: true. Use false para crearlo inactivo.';
-$string['tool_create_agent_prompt'] = 'La descripción de la tarea o la instrucción que el agente de IA ejecutará cada vez. '
-    . 'Sea concreto sobre qué datos obtener, analizar o informar. Ejemplo: "Resuma las matriculaciones nuevas de las últimas '
-    . '24 horas" o "Revise los estudiantes en riesgo del curso 42".';
-$string['tool_create_agent_schedule'] = 'Expresión cron que define cada cuánto se ejecuta el agente. Valores habituales: '
-    . '"*/5 * * * *" = cada 5 minutos, "*/30 * * * *" = cada 30 minutos, "0 * * * *" = cada hora, "0 0 * * *" = cada día a '
-    . 'medianoche, "0 0 * * 0" = cada semana el domingo.';
-$string['tool_delete_agent_desc'] = 'Elimina un agente de IA programado por su ID. Es permanente: borra el agente y todos sus '
-    . 'resultados en caché. No se puede deshacer.';
+$string['tool_create_agent_prompt'] = 'La descripción de la tarea o la instrucción que el agente de IA ejecutará cada vez. Sea concreto sobre qué datos obtener, analizar o informar. Ejemplo: "Resuma las matriculaciones nuevas de las últimas 24 horas" o "Revise los estudiantes en riesgo del curso 42".';
+$string['tool_create_agent_schedule'] = 'Expresión cron que define cada cuánto se ejecuta el agente. Valores habituales: "*/5 * * * *" = cada 5 minutos, "*/30 * * * *" = cada 30 minutos, "0 * * * *" = cada hora, "0 0 * * *" = cada día a medianoche, "0 0 * * 0" = cada semana el domingo.';
+$string['tool_delete_agent_desc'] = 'Elimina un agente de IA programado por su ID. Es permanente: borra el agente y todos sus resultados en caché. No se puede deshacer.';
 $string['tool_delete_agent_id'] = 'El ID numérico del agente que se eliminará. Use list_agents para encontrar el ID.';
 $string['tool_describe_table'] = 'Analizando tabla...';
-$string['tool_describe_table_desc'] = 'Obtiene la estructura (columnas, tipos, claves, índices, claves foráneas) de una '
-    . 'tabla de la base de datos de Moodle. Se guarda en caché 24 horas.';
+$string['tool_describe_table_desc'] = 'Obtiene la estructura (columnas, tipos, claves, índices, claves foráneas) de una tabla de la base de datos de Moodle. Se guarda en caché 24 horas.';
 $string['tool_describe_table_tablename'] = 'Nombre de la tabla (ej: course, user, grade_grades)';
-$string['tool_document_read_cmid'] = 'Identificador del módulo del curso (cmid) de la actividad. Obténgalo del contexto de '
-    . 'página o descúbralo vía ws_search/ws_execute.';
-$string['tool_document_read_desc'] = 'Leer el PDF publicado en una actividad del curso (su descripción o contenido, nunca entregas ni '
-    . 'devoluciones de estudiantes) usando su cmid (identificador del módulo del curso). Devuelve el texto de las '
-    . 'páginas; las páginas escaneadas, tablas y diagramas los lee un modelo de visión. Úselo cuando el usuario pida leer, '
-    . 'analizar, resumir o explicar un documento de una actividad.';
+$string['tool_document_read_cmid'] = 'Identificador del módulo del curso (cmid) de la actividad. Obténgalo del contexto de página o descúbralo vía ws_search/ws_execute.';
+$string['tool_document_read_desc'] = 'Leer el PDF publicado en una actividad del curso (su descripción o contenido, nunca entregas ni devoluciones de estudiantes) usando su cmid (identificador del módulo del curso). Devuelve el texto de las páginas; las páginas escaneadas, tablas y diagramas los lee un modelo de visión. Úselo cuando el usuario pida leer, analizar, resumir o explicar un documento de una actividad.';
 $string['tool_document_read_pages'] = 'Páginas opcionales a leer, por ejemplo "1,3-5". Omítalo para leer todo el documento.';
 $string['tool_execute_sql'] = 'Consultando base de datos...';
 $string['tool_execute_sql_desc'] = 'Ejecuta una consulta SELECT en la base de datos de Moodle y devuelve las filas como JSON. Solo lectura. Límites en este canal: como máximo {$a->rows} filas (el resultado indica si se recortó) y {$a->seconds} segundos por consulta en MySQL, MariaDB y PostgreSQL.';
 $string['tool_execute_sql_params'] = 'Parámetros vinculados de la consulta, en el orden de los marcadores ? (opcional)';
-$string['tool_execute_sql_sql'] = 'Consulta SELECT a ejecutar. Use ? como marcador de posición de los parámetros. '
-    . 'Ejemplo: SELECT id, fullname FROM {course} WHERE category = ?';
+$string['tool_execute_sql_sql'] = 'Consulta SELECT a ejecutar. Use ? como marcador de posición de los parámetros. Ejemplo: SELECT id, fullname FROM {course} WHERE category = ?';
 $string['tool_get_site_config'] = 'Obteniendo configuración...';
-$string['tool_get_site_config_desc'] = 'Obtiene configuración del sitio Moodle (sitename, lang, timezone, etc.). Solo disponible '
-    . 'para administradores.';
-$string['tool_get_site_config_keys'] = 'Lista de claves de configuración. Válidas: sitename, siteurl, lang, country, timezone, '
-    . 'maxbytes, passwordpolicy, enrol_plugins_enabled, auth_plugins_enabled';
-$string['tool_list_agents_desc'] = 'Lista todos los agentes de IA programados, con un filtro opcional por estado o contexto. '
-    . 'Devuelve el ID del agente, un extracto de su instrucción, la programación, el contexto, el estado y la última y la '
-    . 'próxima ejecución.';
-$string['tool_list_agents_status'] = 'Filtro opcional: "enabled" para los agentes activos, "disabled" para los inactivos. '
-    . 'Vacío = todos.';
-$string['tool_my_assignments_desc'] = 'Solo lectura. Las tareas de los cursos del usuario actual, con sus fechas de apertura, '
-    . 'entrega y cierre que le aplican (con sus excepciones y la fecha de ampliación cuando se le concedió una) y el estado de la '
-    . 'entrega, y los próximos vencimientos del calendario del usuario. Úsela cuando un '
-    . 'estudiante pregunte por sus tareas o fechas de entrega.';
-$string['tool_my_courses_desc'] = 'Solo lectura. Los cursos en los que el usuario actual tiene una matrícula activa. Úsela cuando '
-    . 'un estudiante pregunte por sus cursos.';
-$string['tool_my_grades_desc'] = 'Solo lectura. Las calificaciones que el usuario actual puede ver en sus cursos (no incluye '
-    . 'calificaciones ocultas ni sin publicar). Úsela cuando un estudiante pregunte por sus calificaciones.';
+$string['tool_get_site_config_desc'] = 'Obtiene configuración del sitio Moodle (sitename, lang, timezone, etc.). Solo disponible para administradores.';
+$string['tool_get_site_config_keys'] = 'Lista de claves de configuración. Válidas: sitename, siteurl, lang, country, timezone, maxbytes, passwordpolicy, enrol_plugins_enabled, auth_plugins_enabled';
+$string['tool_list_agents_desc'] = 'Lista todos los agentes de IA programados, con un filtro opcional por estado o contexto. Devuelve el ID del agente, un extracto de su instrucción, la programación, el contexto, el estado y la última y la próxima ejecución.';
+$string['tool_list_agents_status'] = 'Filtro opcional: "enabled" para los agentes activos, "disabled" para los inactivos. Vacío = todos.';
+$string['tool_my_assignments_desc'] = 'Solo lectura. Las tareas de los cursos del usuario actual, con sus fechas de apertura, entrega y cierre que le aplican (con sus excepciones y la fecha de ampliación cuando se le concedió una) y el estado de la entrega, y los próximos vencimientos del calendario del usuario. Úsela cuando un estudiante pregunte por sus tareas o fechas de entrega.';
+$string['tool_my_courses_desc'] = 'Solo lectura. Los cursos en los que el usuario actual tiene una matrícula activa. Úsela cuando un estudiante pregunte por sus cursos.';
+$string['tool_my_grades_desc'] = 'Solo lectura. Las calificaciones que el usuario actual puede ver en sus cursos (no incluye calificaciones ocultas ni sin publicar). Úsela cuando un estudiante pregunte por sus calificaciones.';
 $string['tool_own_data_courseid'] = 'Opcional: id de uno de los cursos del usuario, para leer solo ese curso.';
 $string['tool_progress_create_agent'] = 'Creando agente';
 $string['tool_progress_create_assign'] = 'Creando tareas';
@@ -1212,54 +1109,29 @@ $string['tool_progress_set_course_sections'] = 'Organizando las secciones del cu
 $string['tool_progress_upload_content_files'] = 'Subiendo archivos';
 $string['tool_schema_lookup'] = 'Buscando tabla...';
 $string['tool_search_tables'] = 'Buscando tablas...';
-$string['tool_search_tables_desc'] = 'Busca tablas de Moodle por intención o palabras clave en INGLÉS. Busca en nombres de '
-    . 'tablas Y sus descripciones COMMENT de install.xml. Devuelve los resultados más relevantes con nombre, descripción, '
-    . 'nombres de campos y comentarios de campos. Use SIEMPRE search_tables antes de describe_table o execute_sql.';
+$string['tool_search_tables_desc'] = 'Busca tablas de Moodle por intención o palabras clave en INGLÉS. Busca en nombres de tablas Y sus descripciones COMMENT de install.xml. Devuelve los resultados más relevantes con nombre, descripción, nombres de campos y comentarios de campos. Use SIEMPRE search_tables antes de describe_table o execute_sql.';
 $string['tool_search_tables_limit'] = 'Máximo de resultados (por defecto: 8, máx.: 15)';
 $string['tool_search_tables_query'] = 'Intención o palabras clave en INGLÉS (ej: "user grades", "course enrolment", "student")';
-$string['tool_send_messages_desc'] = 'Envía un mensaje interno de Moodle a uno o más usuarios. '
-    . 'Solo cuando el usuario pide explícitamente enviar o notificar un mensaje; nunca para responder una pregunta '
-    . 'o analizar datos. Primero busque los ids de usuario '
-    . '(ws_search/ws_execute o execute_sql). El usuario confirma antes del envío: llame a esta herramienta una sola vez '
-    . 'y no pida confirmación en el texto.';
+$string['tool_send_messages_desc'] = 'Envía un mensaje interno de Moodle a uno o más usuarios. Solo cuando el usuario pide explícitamente enviar o notificar un mensaje; nunca para responder una pregunta o analizar datos. Primero busque los ids de usuario (ws_search/ws_execute o execute_sql). El usuario confirma antes del envío: llame a esta herramienta una sola vez y no pida confirmación en el texto.';
 $string['tool_send_messages_message'] = 'Texto plano del mensaje, en el idioma del usuario.';
 $string['tool_send_messages_user_ids'] = 'Ids de usuario de Moodle de los destinatarios.';
 $string['tool_site_overview'] = 'Obteniendo el resumen de la plataforma...';
-$string['tool_site_overview_days'] = 'Días del periodo usado para contar los usuarios activos recientemente '
-    . '(de 1 a 365, por defecto 30).';
-$string['tool_site_overview_desc'] = 'Obtiene en UNA sola llamada un resumen de toda la plataforma: sitio '
-    . '(nombre, dominio, versión de Moodle, idioma, zona horaria, última ejecución del cron), usuarios (total, activos, '
-    . 'suspendidos, con actividad reciente, sin ningún acceso), cursos (total, visibles, ocultos, categorías, sin profesor), '
-    . 'matriculaciones activas, actividades (total y tipos más usados), agentes programados de Jedomi y almacenamiento de '
-    . 'archivos. Llámela PRIMERO para un resumen general o el estado general de la plataforma y responda con sus datos; '
-    . 'use otras herramientas solo para los detalles que no incluya.';
+$string['tool_site_overview_days'] = 'Días del periodo usado para contar los usuarios activos recientemente (de 1 a 365, por defecto 30).';
+$string['tool_site_overview_desc'] = 'Obtiene en UNA sola llamada un resumen de toda la plataforma: sitio (nombre, dominio, versión de Moodle, idioma, zona horaria, última ejecución del cron), usuarios (total, activos, suspendidos, con actividad reciente, sin ningún acceso), cursos (total, visibles, ocultos, categorías, sin profesor), matriculaciones activas, actividades (total y tipos más usados), agentes programados de Jedomi y almacenamiento de archivos. Llámela PRIMERO para un resumen general o el estado general de la plataforma y responda con sus datos; use otras herramientas solo para los detalles que no incluya.';
 $string['tool_sql_read'] = 'Consultando base de datos...';
 $string['tool_unknown'] = 'Ejecutando herramienta...';
 $string['tool_webservice_lookup'] = 'Buscando función API...';
 $string['tool_ws_describe'] = 'Analizando función de servicio web...';
-$string['tool_ws_describe_desc'] = 'Obtiene documentación completa (descripción, parámetros con * = requerido, tipo de '
-    . 'retorno) para una función de servicio web específica cuando ya sabe su nombre exacto. LLAME a esto SIEMPRE DESPUÉS de '
-    . 'ws_search y ANTES de ws_execute para verificar los campos requeridos.';
+$string['tool_ws_describe_desc'] = 'Obtiene documentación completa (descripción, parámetros con * = requerido, tipo de retorno) para una función de servicio web específica cuando ya sabe su nombre exacto. LLAME a esto SIEMPRE DESPUÉS de ws_search y ANTES de ws_execute para verificar los campos requeridos.';
 $string['tool_ws_describe_wsname'] = 'Nombre exacto de la función (ej: core_user_create_users)';
 $string['tool_ws_execute'] = 'Ejecutando acción...';
-$string['tool_ws_execute_desc'] = 'Ejecuta un servicio web de Moodle en nombre del usuario actual. Úselo DESPUÉS de ws_search '
-    . 'para obtener el nombre exacto de la función y los parámetros. Si el primer intento falla por "campo requerido faltante", '
-    . 'reintente con valores predeterminados para los campos opcionales. Para operaciones por lotes (misma acción en varios '
-    . 'elementos), llame a esta función VARIAS VECES, una por cada elemento.';
-$string['tool_ws_execute_params'] = 'Parámetros codificados en JSON para la función del servicio web. DEBE incluir todos los '
-    . 'campos * (requerido). IMPORTANTE: Si el primer intento falla con "Detectado valor de parámetro no válido" o "Missing '
-    . 'required key", significa que la instancia requiere campos que el esquema marca como opcionales. En ese caso, REINTENTE '
-    . 'agregando valores predeterminados para los campos faltantes (ej: description="", enrolmentkey="", idnumber="", '
-    . 'visibility=0, participation=true).';
+$string['tool_ws_execute_desc'] = 'Ejecuta un servicio web de Moodle en nombre del usuario actual. Úselo DESPUÉS de ws_search para obtener el nombre exacto de la función y los parámetros. Si el primer intento falla por "campo requerido faltante", reintente con valores predeterminados para los campos opcionales. Para operaciones por lotes (misma acción en varios elementos), llame a esta función VARIAS VECES, una por cada elemento.';
+$string['tool_ws_execute_params'] = 'Parámetros codificados en JSON para la función del servicio web. DEBE incluir todos los campos * (requerido). IMPORTANTE: Si el primer intento falla con "Detectado valor de parámetro no válido" o "Missing required key", significa que la instancia requiere campos que el esquema marca como opcionales. En ese caso, REINTENTE agregando valores predeterminados para los campos faltantes (ej: description="", enrolmentkey="", idnumber="", visibility=0, participation=true).';
 $string['tool_ws_execute_wsname'] = 'Nombre de la función del servicio web (ej: core_course_get_courses)';
 $string['tool_ws_search'] = 'Buscando funciones de servicios web...';
-$string['tool_ws_search_desc'] = 'Busca funciones de servicios web de Moodle por intención o palabras clave en INGLÉS. Devuelve '
-    . 'las más relevantes con descripción completa, parámetros (* = requerido) y estructura de retorno. Si los resultados '
-    . 'incluyen lo que necesita: DEJE de buscar — llame a ws_describe con el nombre exacto, luego a ws_execute. No llame a '
-    . 'ws_search de nuevo para la misma tarea.';
+$string['tool_ws_search_desc'] = 'Busca funciones de servicios web de Moodle por intención o palabras clave en INGLÉS. Devuelve las más relevantes con descripción completa, parámetros (* = requerido) y estructura de retorno. Si los resultados incluyen lo que necesita: DEJE de buscar — llame a ws_describe con el nombre exacto, luego a ws_execute. No llame a ws_search de nuevo para la misma tarea.';
 $string['tool_ws_search_limit'] = 'Máximo de resultados a devolver (por defecto: 6, máx.: 15)';
-$string['tool_ws_search_query'] = 'Intención o palabras clave en INGLÉS (ej: "create user", "enrol student", "get course '
-    . 'grades")';
+$string['tool_ws_search_query'] = 'Intención o palabras clave en INGLÉS (ej: "create user", "enrol student", "get course grades")';
 $string['transcribing'] = 'Transcribiendo...';
 $string['unauthorized'] = 'No autorizado.';
 $string['unknown_error'] = 'Error desconocido';
@@ -1296,8 +1168,7 @@ $string['voice_too_short'] = 'El mensaje de voz era demasiado corto y se descart
 $string['waiting_voice'] = 'Esperando voz...';
 $string['webhook_checking'] = 'Comprobando...';
 $string['webhook_error'] = 'Último error del webhook:';
-$string['webhook_error_alert_desc'] = 'El token del bot se guardó correctamente, pero no se pudo registrar el webhook en '
-    . 'Telegram.';
+$string['webhook_error_alert_desc'] = 'El token del bot se guardó correctamente, pero no se pudo registrar el webhook en Telegram.';
 $string['webhook_error_alert_title'] = 'Problema con el registro del webhook';
 $string['webhook_error_detail'] = 'Detalles del error:';
 $string['webhook_live_api_error'] = 'Error de la API';
@@ -1310,8 +1181,8 @@ $string['webhook_live_unknown_error'] = 'Error desconocido';
 $string['webhook_live_url'] = 'URL del webhook:';
 $string['webhook_not_checked'] = 'Sin verificar. Haga clic en "Verificar webhook" para comprobar.';
 $string['webhook_ok'] = 'Webhook configurado y funcionando.';
-$string['welcome_message_default'] = "¡Hola, {username}!\nSoy {assistantname}, su asistente IA de Moodle. "
-    . 'Pregúnteme sobre cursos, alumnos, notas o configuraciones.';
+$string['welcome_message_default'] = '¡Hola, {username}!
+Soy {assistantname}, su asistente IA de Moodle. Pregúnteme sobre cursos, alumnos, notas o configuraciones.';
 $string['ws_agent_allowlist_required'] = 'Los agentes no ejecutan ninguna función de servicio web hasta que se guarde una lista de servicios web para el rol de su creador en la pestaña Servicios web.';
 $string['ws_cannot_load_info'] = 'No se puede cargar información de la función: {$a}';
 $string['ws_component'] = 'Componente';

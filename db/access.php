@@ -18,7 +18,7 @@
  * Capability definitions for local_jedomi.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -37,7 +37,7 @@ $capabilities = [
     ],
     // Allows calling the companion API functions (database queries, schema, password check and web services), both
     // from the web chat, which runs them in-process with the user's permissions, and from the companion service.
-    // It is meant for managers and for the jedomi_companion service account, to which an administrator grants it.
+    // It is meant for managers and for the local_jedomi_companion service account, to which an administrator grants it.
     // Other roles do not have it unless an administrator grants it. There is no CAP_PROHIBIT on any archetype: the
     // authenticated user role is held by every logged-in user, so a prohibit there would remove it from managers too.
     // It runs database queries, web services and writes site configuration.

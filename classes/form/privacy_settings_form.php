@@ -29,7 +29,7 @@ use local_jedomi\local\service\admin_settings_service;
  * Custom data: roles (array of ['id' => int, 'shortname' => string, 'name' => string]).
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class privacy_settings_form extends \moodleform {

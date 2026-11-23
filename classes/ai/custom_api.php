@@ -31,7 +31,7 @@ require_once($CFG->libdir . '/filelib.php');
  * the address or the body of the answer.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class custom_api {

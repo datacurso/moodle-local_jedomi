@@ -30,7 +30,7 @@ use local_jedomi\reportbuilder\local\entities\query_log as query_log_entity;
  * filters as the recent queries report.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class query_log_aggregate extends query_log {

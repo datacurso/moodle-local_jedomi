@@ -15,7 +15,7 @@
 // along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
 
 /**
- * jedomi_set_site_config — CompanionWS external function.
+ * local_jedomi_set_site_config — CompanionWS external function.
  *
  * Writes a Moodle site config value via set_config().
  * Requires moodle/site:config capability (admin-level).
@@ -28,7 +28,7 @@
  *  - Purges relevant cache after write
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -157,7 +157,7 @@ class set_site_config extends external_api {
         $payloadhash   = $validated['payload_hash'];
 
         self::verify_hmac(
-            'jedomi_set_site_config',
+            'local_jedomi_set_site_config',
             $hmactimestamp,
             $payloadhash,
             $hmacsignature,

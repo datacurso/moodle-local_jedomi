@@ -21,7 +21,7 @@
  * per second), and its text is sent as the user message. The text typed in the input box is kept for later.
  *
  * @module     local_jedomi/local/sidebar/voice_message
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 

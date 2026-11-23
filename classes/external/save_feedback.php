@@ -29,7 +29,7 @@ use local_jedomi\local\service\feedback_service;
  * Called from the sidebar through core/ajax, which checks the session key.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class save_feedback extends external_api {

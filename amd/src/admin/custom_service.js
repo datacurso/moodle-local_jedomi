@@ -31,7 +31,7 @@
  * calling, no answer, no context window known) are shown under the result, as text only.
  *
  * @module     local_jedomi/admin/custom_service
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 

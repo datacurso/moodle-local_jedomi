@@ -24,7 +24,7 @@ namespace local_jedomi\local;
  * text tells the AI that the content between the markers is data and must never be followed as instructions.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class untrusted {

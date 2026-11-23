@@ -52,7 +52,7 @@ use local_jedomi\aiprovider\settings_extension;
  * never returned, and an empty key uses the saved key only for the saved address.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class verify_custom_service extends external_api {

@@ -29,7 +29,7 @@ use core_external\external_value;
  * without submitting the whole form. The form submit keeps saving the same setting.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class set_telegram_enabled extends external_api {

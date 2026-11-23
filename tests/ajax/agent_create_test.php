@@ -18,7 +18,7 @@
  * Tests for the endpoints of the Agents tab (ajax/agent_create.php, agent_purge.php and agent_clear_cache.php).
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 

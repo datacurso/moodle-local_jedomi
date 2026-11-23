@@ -17,9 +17,9 @@
 /**
  * External function: search courses for the course-availability chip selector.
  *
- * @package   local_jedomi
- * @copyright 2026 Jedomi Project
- * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ * @package    local_jedomi
+ * @copyright  2026 Datacurso <developer@datacurso.com>
+ * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
 namespace local_jedomi\external;

@@ -30,7 +30,7 @@ use local_jedomi\local\service\pending_action_service;
  * resolve an action, once, within its expiry; it runs with the role the user has now.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class resolve_action extends external_api {

@@ -20,7 +20,7 @@ namespace local_jedomi\agent\tool;
  * Tools that check the permissions of the user they run for (the agent creator), not of the session user.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 trait acts_for_user {

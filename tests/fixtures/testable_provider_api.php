@@ -19,7 +19,7 @@
  *
  * @package    local_jedomi
  * @category   test
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -40,7 +40,7 @@ if (!class_exists(\aiprovider_datacurso\httpclient\ai_services_api::class)) {
  * Real provider client stack with the network replaced by {@see fake_curl}.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class testable_provider_api extends provider_api {

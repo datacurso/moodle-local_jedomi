@@ -29,7 +29,7 @@ require_once($CFG->libdir . '/formslib.php');
  * of the queries of the web chat and the messages per user and minute of the web chat.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class general_settings_form extends \moodleform {

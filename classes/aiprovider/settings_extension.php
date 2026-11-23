@@ -55,7 +55,7 @@ use local_jedomi\local\secret_store;
  * one of the chosen model is saved in the single speech_voice setting.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class settings_extension implements plugin_settings_extension {

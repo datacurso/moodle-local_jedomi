@@ -26,7 +26,7 @@ use local_jedomi\ai\model_settings;
  * service, or POST {url}/v1/audio/transcriptions of the custom service.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class audio_service {

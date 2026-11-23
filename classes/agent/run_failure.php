@@ -23,7 +23,7 @@ namespace local_jedomi\agent;
  * generic message with a reference to the technical log (see \local_jedomi\task\agent_runner::last_error_for()).
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class run_failure extends \RuntimeException {

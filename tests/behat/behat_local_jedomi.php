@@ -23,7 +23,7 @@
  *
  * @package    local_jedomi
  * @category   test
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -41,7 +41,7 @@ use Moodle\BehatExtension\Exception\SkippedException;
  *
  * @package    local_jedomi
  * @category   test
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class behat_local_jedomi extends behat_base {

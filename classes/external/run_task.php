@@ -15,7 +15,7 @@
 // along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
 
 /**
- * jedomi_run_task — CompanionWS external function.
+ * local_jedomi_run_task — CompanionWS external function.
  *
  * Requirement CWS-TASK-01:
  *  - Validates HMAC before any execution
@@ -24,7 +24,7 @@
  *  - Optional sync=true with hard 30-second timeout
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -133,7 +133,7 @@ class run_task extends external_api {
 
         // ... --- HMAC authentication ---
         self::verify_hmac(
-            'jedomi_run_task',
+            'local_jedomi_run_task',
             $hmactimestamp,
             $payloadhash,
             $hmacsignature,

@@ -17,7 +17,7 @@
  * Texts of the Jedomi voice conversation: the text read aloud and the notices of its failures.
  *
  * @module     local_jedomi/local/sidebar/voice_text
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 

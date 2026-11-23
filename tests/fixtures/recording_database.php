@@ -19,7 +19,7 @@
  *
  * @package    local_jedomi
  * @category   test
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -36,7 +36,7 @@ require_once(__DIR__ . '/array_recordset.php');
  * Every other call is delegated to the real database.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class recording_database {

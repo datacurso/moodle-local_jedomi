@@ -26,7 +26,7 @@ namespace local_jedomi\ai;
  * server to call the service, and never sent back to a browser, written to a log or put in an event.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class ai_service {

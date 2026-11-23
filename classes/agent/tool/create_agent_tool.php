@@ -18,7 +18,7 @@
  * Create Agent tool — creates a scheduled AI agent.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -109,7 +109,7 @@ class create_agent_tool implements agent_tool {
         $prompt  = trim($params->prompt ?? '');
         $schedule = trim($params->schedule_cron ?? '');
         if (empty($prompt) || empty($schedule)) {
-            return json_encode(['error' => 'Both prompt and schedule_cron are required.']);
+            return json_encode(['error' => get_string('agent_tool_prompt_schedule_required', 'local_jedomi')]);
         }
 
         $data = new \stdClass();

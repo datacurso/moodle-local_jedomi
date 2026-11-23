@@ -35,7 +35,7 @@ use local_jedomi\local\service\telegram_link_service;
  * keyed by chat and belong to the user linked to that chat.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class provider implements

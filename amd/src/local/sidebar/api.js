@@ -17,7 +17,7 @@
  * Requests of the Jedomi sidebar to its endpoints: the streamed chat proxy and the file reading endpoints.
  *
  * @module     local_jedomi/local/sidebar/api
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 

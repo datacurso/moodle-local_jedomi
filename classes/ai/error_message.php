@@ -23,7 +23,7 @@ namespace local_jedomi\ai;
  * Internal details (exception text, hosts, bodies) never reach the message.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class error_message {

@@ -17,7 +17,7 @@
  * Events of the Jedomi sidebar: its buttons, fields and keyboard shortcuts.
  *
  * @module     local_jedomi/local/sidebar/events
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 

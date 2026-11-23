@@ -21,7 +21,7 @@
  * Nothing is persisted: when the user logs out, the data is gone.
  * An admin can never read another user's cache (it is per session).
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -32,9 +32,9 @@ $definitions = [
         'mode'             => cache_store::MODE_SESSION,
         'simplekeys'       => true,
         'simpledata'       => false, // Datos complejos (array de mensajes).
-        'staticacceleration' => true, // Mantener en RAM durante el request.
-        'staticaccelerationsize' => 1, // Solo 1 conversación activa.
-        'ttl'              => 0, // 0 = expira con la sesión (no TTL fijo)
+        'staticacceleration' => true, // Keep in memory during the request.
+        'staticaccelerationsize' => 1, // Only one active conversation.
+        'ttl'              => 0, // 0 = expires with the session (no fixed TTL).
     ],
     // Application-wide cache for Telegram link codes.
     // MUST be MODE_APPLICATION — the Telegram webhook runs in a different HTTP

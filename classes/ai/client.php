@@ -32,7 +32,7 @@ require_once(__DIR__ . '/../../lib.php');
  * Calls are not streamed: the client reads the whole answer.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class client {

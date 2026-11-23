@@ -20,7 +20,7 @@
  * The charts count the agents that match the filters the user saved in the agents report, so they follow the report.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 

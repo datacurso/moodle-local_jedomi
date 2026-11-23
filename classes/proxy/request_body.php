@@ -28,7 +28,7 @@ namespace local_jedomi\proxy;
  * json_decode() holds it in memory several times. Larger histories are trimmed to the context window anyway.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class request_body {

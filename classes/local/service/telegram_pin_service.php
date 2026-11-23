@@ -31,7 +31,7 @@ require_once($CFG->dirroot . '/local/jedomi/lib.php');
  * without asking it again. The PIN is never logged.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class telegram_pin_service {

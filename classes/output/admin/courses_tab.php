@@ -20,7 +20,7 @@ namespace local_jedomi\output\admin;
  * Course availability tab of the Jedomi settings: where the chat is shown.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class courses_tab extends form_tab {

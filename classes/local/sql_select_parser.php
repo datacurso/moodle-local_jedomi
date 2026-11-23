@@ -40,7 +40,7 @@ namespace local_jedomi\local;
  * A violation is reported with a moodle_exception whose error code is the rejection reason of sql_guard.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class sql_select_parser {

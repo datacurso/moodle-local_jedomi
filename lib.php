@@ -25,7 +25,7 @@
  *  4. Fixes body overflow:hidden, which breaks fixed positioning
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -1237,8 +1237,8 @@ function local_jedomi_generate_spt(string $role): array {
     ];
 
     // Courses by role (RBAC scope in the gateway).
-    $courseidsowned   = [];   // Cursos donde el usuario tiene poder (teacher / admin / manager).
-    $courseidsenrolled = [];  // Cursos donde el usuario está inscrito (student).
+    $courseidsowned   = [];   // Courses where the user has authority (teacher / admin / manager).
+    $courseidsenrolled = [];  // Courses where the user is enrolled (student).
 
     if ($role === 'teacher' || $role === 'manager') {
         $courses = enrol_get_users_courses($USER->id, true);
@@ -1273,16 +1273,16 @@ function local_jedomi_generate_spt(string $role): array {
         'course_ids_owned'    => $courseidsowned, // Teacher/manager: sus cursos.
         'course_ids_enrolled' => $courseidsenrolled, // Student: cursos inscritos.
         'capabilities'        => $capabilities,
-        'tools'               => $tools, // Tool defs en OpenAI format — gateway las usa para configurar el modelo.
+        'tools'               => $tools, // Tool definitions in OpenAI format; the gateway uses them to configure the model.
         'moodle_url'          => $CFG->wwwroot,
-        'expires'             => time() + 1800, // 30 minutos (conversaciones con múltiples tool calls)
+        'expires'             => time() + 1800, // 30 minutes (conversations with several tool calls).
     ];
 
     // HMAC signature with the static secret, the same one the Python gateway uses to verify it.
     // sesskey() is part of the payload (not the key) to bind the token to the session:
     // if the session changes, the payload changes and the SPT is invalid anyway.
     $staticsecret = local_jedomi_get_spt_secret();
-    $payload['sesskey_hash'] = substr(hash('sha256', sesskey()), 0, 16); // Binding sin exponer sesskey.
+    $payload['sesskey_hash'] = substr(hash('sha256', sesskey()), 0, 16); // Binding without exposing the sesskey.
 
     ksort($payload);
     $signature = hash_hmac('sha256', local_jedomi_spt_signing_string($payload), $staticsecret);
@@ -1827,7 +1827,8 @@ if (!function_exists('local_jedomi_log')) {
      * WHERE AND RETENTION: entries go to {$CFG->dataroot}/local/jedomi/jedomi.log
      * in a human-readable format with timestamp and structured context. The
      * active file rotates by size once it exceeds LOCAL_JEDOMI_LOG_MAX_BYTES
-     * (5 MB, overridable via $CFG->local_jedomi_logmaxbytes) and up to
+     * (5 MB, overridable with the plugin setting logmaxbytes, or the older
+     * $CFG->local_jedomi_logmaxbytes) and up to
      * LOCAL_JEDOMI_LOG_MAX_FILES (5) rotated files are kept — a deterministic
      * cap of ~30 MB. There is no time-based retention: entries survive until
      * newer traffic displaces them, oldest first.
@@ -1849,7 +1850,18 @@ if (!function_exists('local_jedomi_log')) {
         // Size-based rotation keeps dataroot growth bounded (~30 MB max).
         // Fast path: only touch the lock file when the size looks over the
         // cap; the helper re-checks and rotates under an inter-process lock.
-        $maxbytes = (int) ($CFG->local_jedomi_logmaxbytes ?? LOCAL_JEDOMI_LOG_MAX_BYTES);
+        // The cap is the plugin setting logmaxbytes (for example in config.php:
+        // $CFG->forced_plugin_settings['local_jedomi']['logmaxbytes']); the older
+        // $CFG->local_jedomi_logmaxbytes is still read when the setting is not set.
+        try {
+            $configured = get_config('local_jedomi', 'logmaxbytes');
+        } catch (\Throwable $e) {
+            $configured = false; // Logging must never break the caller.
+        }
+        if ($configured === false || $configured === null || $configured === '') {
+            $configured = $CFG->local_jedomi_logmaxbytes ?? LOCAL_JEDOMI_LOG_MAX_BYTES;
+        }
+        $maxbytes = (int) $configured;
         if ($maxbytes > 0 && (int) @filesize($logfile) > $maxbytes) {
             local_jedomi_rotate_log($logfile, LOCAL_JEDOMI_LOG_MAX_FILES, $maxbytes);
         }

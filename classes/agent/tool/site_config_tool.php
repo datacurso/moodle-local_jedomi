@@ -22,7 +22,7 @@
  * external function to prevent leaking sensitive data.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -109,7 +109,7 @@ class site_config_tool implements agent_tool {
 
         $keys = $params->keys ?? [];
         if (!is_array($keys) || empty($keys)) {
-            return json_encode(['error' => 'Key list required.']);
+            return json_encode(['error' => get_string('agent_tool_key_list_required', 'local_jedomi')]);
         }
 
         $allowset = array_flip(self::ALLOWLIST);
@@ -135,7 +135,7 @@ class site_config_tool implements agent_tool {
             return json_encode([
                 'success' => true,
                 'config' => [],
-                'message' => 'No matching keys found (only allowlisted keys are readable).',
+                'message' => get_string('agent_tool_no_config_keys', 'local_jedomi'),
             ]);
         }
 

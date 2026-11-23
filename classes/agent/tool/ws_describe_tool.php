@@ -23,12 +23,13 @@
  * parameters and return types.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
 namespace local_jedomi\agent\tool;
 
+use local_jedomi\local\safe_error;
 use local_jedomi\schema\ws_indexer;
 
 /**
@@ -93,7 +94,7 @@ class ws_describe_tool implements agent_tool {
     public function execute(\stdClass $params): string {
         $wsname = trim($params->wsname ?? '');
         if (empty($wsname)) {
-            return json_encode(['error' => 'Web service name required.']);
+            return json_encode(['error' => get_string('agent_tool_ws_name_required', 'local_jedomi')]);
         }
 
         $start = microtime(true);
@@ -101,13 +102,13 @@ class ws_describe_tool implements agent_tool {
         try {
             $role = \local_jedomi_get_user_role_for_user($this->userid);
             if (!\local_jedomi\local\ws_runner::describable($role, $wsname, $this->userid)) {
-                return json_encode(['error' => 'WS not in allowlist for role: ' . $role]);
+                return json_encode(['error' => get_string('agent_tool_ws_not_allowed_role', 'local_jedomi', $role)]);
             }
             $info = ws_indexer::describe($wsname);
 
             if (isset($info['error'])) {
                 return json_encode([
-                    'error' => "Web service not found: {$wsname}",
+                    'error' => get_string('agent_tool_ws_not_found', 'local_jedomi', $wsname),
                     'detail' => $info['error'],
                     'duration_ms' => round((microtime(true) - $start) * 1000, 2),
                 ]);
@@ -120,7 +121,7 @@ class ws_describe_tool implements agent_tool {
             ], JSON_UNESCAPED_UNICODE);
         } catch (\Exception $e) {
             return json_encode([
-                'error' => 'ws_describe failed: ' . \local_jedomi\local\safe_error::for_model($e),
+                'error' => get_string('agent_tool_ws_describe_failed', 'local_jedomi', safe_error::for_model($e)),
                 'duration_ms' => round((microtime(true) - $start) * 1000, 2),
             ]);
         }

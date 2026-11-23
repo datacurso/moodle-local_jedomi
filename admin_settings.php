@@ -19,9 +19,9 @@
  *
  * Tabs: general, courses, privacy, integrations, apis, agents, profiler and personalization.
  *
- * @package   local_jedomi
- * @copyright 2026 Jedomi Project
- * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ * @package    local_jedomi
+ * @copyright  2026 Datacurso <developer@datacurso.com>
+ * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
 require_once(__DIR__ . '/../../config.php');

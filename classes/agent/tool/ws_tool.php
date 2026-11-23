@@ -25,7 +25,7 @@
  *      passed so the WS function checks capabilities as that user.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -104,7 +104,7 @@ class ws_tool implements agent_tool {
         // Accept 'wsname' (lib.php definition, shared with the web chat) and 'function' (this class's definition).
         $function = trim((string) ($params->wsname ?? $params->ws_name ?? $params->function ?? ''));
         if ($function === '') {
-            return json_encode(['error' => 'Empty function name']);
+            return json_encode(['error' => get_string('agent_tool_empty_function_name', 'local_jedomi')]);
         }
 
         // ... ── Role list shared with the web chat and Telegram ──
@@ -115,7 +115,7 @@ class ws_tool implements agent_tool {
             return json_encode(['error' => get_string('ws_agent_allowlist_required', 'local_jedomi')]);
         }
         if (!\local_jedomi\local\ws_runner::role_allows($role, $function)) {
-            return json_encode(['error' => 'WS not in allowlist for role: ' . $role]);
+            return json_encode(['error' => get_string('agent_tool_ws_not_allowed_role', 'local_jedomi', $role)]);
         }
 
         $args = self::decode_params($params->params ?? null);

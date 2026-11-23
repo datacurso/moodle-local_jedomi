@@ -33,7 +33,7 @@ require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/fake_ai_client.php');
  *
  * @package    local_jedomi
  * @category   test
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @covers     \local_jedomi\local\sql_guard
  * @covers     \local_jedomi\local\sql_select_parser

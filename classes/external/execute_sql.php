@@ -15,7 +15,7 @@
 // along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
 
 /**
- * jedomi_execute_sql — CompanionWS external function.
+ * local_jedomi_execute_sql — CompanionWS external function.
  *
  * Requirement CWS-SQL-01 / CWS-01 (query-security spec):
  *  - Validates HMAC-SHA256 before touching the DB
@@ -25,7 +25,7 @@
  *  - Never logs raw row data; masks PII column names in log
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -146,7 +146,7 @@ class execute_sql extends external_api {
         // ... --- HMAC authentication (must happen before any business logic) ---
         if (!$skiphmac) {
             self::verify_hmac(
-                'jedomi_execute_sql',
+                'local_jedomi_execute_sql',
                 $hmactimestamp,
                 $payloadhash,
                 $hmacsignature,

@@ -23,7 +23,7 @@ namespace local_jedomi\local\service;
  * agent creator), never from the AI, and returns only what that user can see in the Moodle web interface.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class student_data_service {

@@ -32,7 +32,7 @@ require_once(__DIR__ . '/../../lib.php');
  * Same logic as the scheduled agent runner, plus a preview cache (agentid 0) and a profiler of tool calls.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class preview_runner {

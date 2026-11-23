@@ -21,7 +21,7 @@ namespace local_jedomi\form;
  *
  * @package    local_jedomi
  * @category   test
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @covers     \local_jedomi\form\telegram_settings_form
  */

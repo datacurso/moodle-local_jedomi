@@ -15,14 +15,14 @@
 // along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
 
 /**
- * jedomi_ws_execute — CompanionWS external function.
+ * local_jedomi_ws_execute — CompanionWS external function.
  *
  * Executes a Moodle web service function on behalf of a user, with
  * double-gate security: (1) role-based allowlist from admin settings,
  * (2) native Moodle capabilities in the target WS class.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -116,7 +116,7 @@ class ws_execute extends external_api {
         // ... ── Gate 2: HMAC authentication ──────────────────────────────────────
         if (!$skiphmac) {
             self::verify_hmac(
-                'jedomi_ws_execute',
+                'local_jedomi_ws_execute',
                 $hmactimestamp,
                 $payloadhash,
                 $hmacsignature,

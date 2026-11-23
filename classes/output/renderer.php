@@ -22,7 +22,7 @@ namespace local_jedomi\output;
  * Renderables implement \named_templatable, so render() picks their template without a render_*() method.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class renderer extends \plugin_renderer_base {

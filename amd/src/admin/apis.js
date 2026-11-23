@@ -17,7 +17,7 @@
  * APIs tab of the Jedomi settings: filters, type pills and pagination of the web service table, loaded through AJAX.
  *
  * @module     local_jedomi/admin/apis
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 

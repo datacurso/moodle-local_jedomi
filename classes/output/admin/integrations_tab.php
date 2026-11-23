@@ -20,7 +20,7 @@ namespace local_jedomi\output\admin;
  * Integrations tab of the Jedomi settings: the Telegram bot card.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class integrations_tab extends form_tab {

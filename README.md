@@ -7,7 +7,18 @@ The AI requests go to one of two AI services, chosen by the administrator:
 - **Datacurso service** (the default): through the **Datacurso AI Provider**, which supplies the license, the credits and
   the usage limits.
 - **Custom service**: straight to an OpenAI-compatible endpoint of your choice (OpenAI, DeepInfra, Ollama, LM Studio,
-  vLLM...). No Datacurso license or credits are needed for now.
+  vLLM...), with your own API key.
+
+### Cost and licensing
+
+- This plugin and the Datacurso AI Provider are free to install.
+- With the Datacurso service, every AI request consumes credits of a Datacurso license, which is purchased from
+  Datacurso.
+- With the custom service, the AI requests go to your own OpenAI-compatible service with your own API key and use no
+  Datacurso credits; the costs of that service, if any, are agreed with its provider.
+- Without any AI service configured, the plugin installs and its settings page can be used (roles, privacy, courses,
+  web services, personalization, Telegram and agent settings), but Jedomi cannot answer: questions in the panel or in
+  Telegram, file, image and voice reading and the scheduled agents all need an AI service.
 
 This plugin is part of the **Datacurso AI Plugin Suite**.
 
@@ -21,7 +32,7 @@ This plugin is part of the **Datacurso AI Plugin Suite**.
    [https://moodle.org/plugins/aiprovider_datacurso/versions](https://moodle.org/plugins/aiprovider_datacurso/versions).
 3. Only with the Datacurso service: a valid license key configured in the Datacurso AI Provider settings, as documented
    at [https://docs.datacurso.com/docs/plugins/moodle-aiprovider_datacurso/getting-license-keys](https://docs.datacurso.com/docs/plugins/moodle-aiprovider_datacurso/getting-license-keys).
-   With the custom service no license is needed for now.
+   With the custom service no Datacurso license is needed.
 4. Only with the custom service: the address and API key of an OpenAI-compatible endpoint, and the models to use.
 5. Moodle cron running, for the scheduled agents and the cleanup tasks.
 6. Optional: a Telegram bot created with @BotFather and a public HTTPS address for the site, only if you want to use
@@ -245,8 +256,12 @@ administrator can delete the files at any time. The log is declared in the priva
 logged with their class and error code, never their message, which can quote a query or personal data; the user sees a
 generic message with a reference that finds the entry.
 
+The size at which the file rotates can be changed with the plugin setting `logmaxbytes` (in bytes), for example in
+`config.php`: `$CFG->forced_plugin_settings['local_jedomi']['logmaxbytes'] = 10485760;`. The older
+`$CFG->local_jedomi_logmaxbytes` is still read when that setting is not set.
+
 Changes of the course, privacy and Telegram role settings, and settings written by the companion web service
-(`jedomi_set_site_config`), also appear in the "Config changes" report of Moodle. The companion web service writes only
+(`local_jedomi_set_site_config`), also appear in the "Config changes" report of Moodle. The companion web service writes only
 an allowlist of presentation and course default settings (site names, default timezone, country, city, language and
 first day of the week, defaults of new courses), each checked against its type of value; any other setting, including
 every setting of an AI provider of Moodle (`aiprovider_*`) and of Jedomi itself, is refused with the list of the settings
@@ -261,7 +276,7 @@ channel it works in:
 | --- | --- | --- |
 | Web chat | 100 (setting, 10 to 1000) | 5 s |
 | Telegram | 50 | 5 s |
-| Companion web service (`jedomi_execute_sql`) | 100 | 5 s |
+| Companion web service (`local_jedomi_execute_sql`) | 100 | 5 s |
 | Scheduled agents | 1000 | 30 s |
 
 The row limit is applied by the database on every supported database. The time limit is applied by the database on
@@ -351,6 +366,20 @@ These limits are applied in Moodle, so they hold with the Datacurso AI service a
   its smaller caps for images (10 MB) and text files (2 MB). PHP's `upload_max_filesize` and `post_max_size` must allow
   the size you want to accept.
 
+## Companion web service
+
+The companion web service and its functions use the Moodle component prefix: the service is `local_jedomi_companion`
+and its functions are `local_jedomi_execute_sql`, `local_jedomi_run_task`, `local_jedomi_purge_caches`,
+`local_jedomi_extract_schema`, `local_jedomi_validate_password`, `local_jedomi_get_site_config`,
+`local_jedomi_set_site_config`, `local_jedomi_read_file` and `local_jedomi_ws_execute` (before version 2026111908 they
+were named `jedomi_*`). The upgrade renames the existing service, so its authorised users and tokens keep working;
+clients of the companion web service must call the new function names and sign them with the new names (the HMAC
+signature covers the function name).
+
 ## Documentation
 
 The complete documentation (configuration, roles and permissions, use of the chat, scheduled agents, Telegram and command line tools) is available at [https://docs.datacurso.com/docs/plugins/moodle-local_jedomi](https://docs.datacurso.com/docs/plugins/moodle-local_jedomi).
+
+## Issue tracker
+
+Report issues at [https://github.com/datacurso/moodle-local_jedomi/issues](https://github.com/datacurso/moodle-local_jedomi/issues).

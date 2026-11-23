@@ -29,7 +29,7 @@ use local_jedomi\telegram\manager;
  * failed attempt; the Integrations tab warns until the webhook is registered.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class register_telegram_webhook extends adhoc_task {

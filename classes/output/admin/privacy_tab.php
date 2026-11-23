@@ -20,7 +20,7 @@ namespace local_jedomi\output\admin;
  * Privacy tab of the Jedomi settings: who can use the chat and how data is anonymised.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class privacy_tab extends form_tab {

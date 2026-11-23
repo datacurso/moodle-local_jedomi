@@ -40,7 +40,7 @@ require_once($CFG->libdir . '/filelib.php');
  * only a status, an error number or a reason: never the address, the body of the answer or the libcurl text.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class docservice_client {

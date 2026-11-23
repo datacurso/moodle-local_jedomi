@@ -17,7 +17,7 @@
  * Selectors of the Telegram profile page.
  *
  * @module     local_jedomi/local/telegram_profile/selectors
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 

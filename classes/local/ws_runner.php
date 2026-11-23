@@ -30,7 +30,7 @@ require_once(__DIR__ . '/../../lib.php');
  * real Moodle capabilities of the user in its own context.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class ws_runner {

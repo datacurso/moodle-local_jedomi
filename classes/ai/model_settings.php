@@ -30,7 +30,7 @@ namespace local_jedomi\ai;
  * its own switches, so switching services never turns a feature of the other one on or off.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class model_settings {

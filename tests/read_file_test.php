@@ -15,10 +15,10 @@
 // along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
 
 /**
- * Unit tests for the jedomi_read_file external function path boundary.
+ * Unit tests for the local_jedomi_read_file external function path boundary.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -187,7 +187,7 @@ final class read_file_test extends \advanced_testcase {
         // The payload hash covers the parameters actually sent (JSON, keys sorted).
         $params = ['line_count' => 5, 'line_start' => 1, 'path' => $path];
         $payloadhash = hash('sha256', json_encode($params, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
-        $signature = hash_hmac('sha256', "jedomi_read_file:{$timestamp}:{$payloadhash}", $secret);
+        $signature = hash_hmac('sha256', "local_jedomi_read_file:{$timestamp}:{$payloadhash}", $secret);
 
         return read_file::execute($path, 1, 5, $signature, $timestamp, $payloadhash);
     }

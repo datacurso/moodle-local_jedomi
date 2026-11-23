@@ -18,7 +18,7 @@
  * AJAX endpoint — POST clear preview cache: delete a single cached preview entry.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 

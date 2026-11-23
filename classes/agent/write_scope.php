@@ -49,7 +49,7 @@ namespace local_jedomi\agent;
  * running only because the site agent covers everything.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class write_scope {

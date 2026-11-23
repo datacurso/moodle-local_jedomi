@@ -31,7 +31,7 @@ namespace local_jedomi\ai;
  * slow answer is worth, and the cache keeps a slow resolver from being waited for more than once.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class custom_endpoint {

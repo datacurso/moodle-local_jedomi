@@ -18,7 +18,7 @@
  * edition of the last question.
  *
  * @module     local_jedomi/local/sidebar/messages
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 

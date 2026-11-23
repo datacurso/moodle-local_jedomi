@@ -21,7 +21,7 @@
  * columns, characters or seconds. Until then the file stays in the browser.
  *
  * @module     local_jedomi/local/sidebar/attachments
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 

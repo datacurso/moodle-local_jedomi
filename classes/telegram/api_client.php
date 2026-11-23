@@ -20,7 +20,7 @@
  * Handles: sendMessage, editMessageText, answerCallbackQuery, file downloads.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -550,7 +550,7 @@ class api_client {
     /**
      * Send a chat action (typing indicator) to a chat.
      *
-     * Telegram shows "Jedomi está escribiendo..." for ~6 seconds.
+     * Telegram shows "Jedomi is typing..." for ~6 seconds.
      * Call at start of processing and re-send during long loops.
      *
      * @param string $chatid Telegram chat ID.
