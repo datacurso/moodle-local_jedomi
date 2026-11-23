@@ -195,8 +195,8 @@ Web service functions whose name, after its component, has a write word (such as
 need confirmation in every channel even when they are declared as reading. In Telegram, an action whose data does not
 fit whole in one message is not held: the user is told to ask for it in the web chat.
 
-After upgrading to 1.6.1, existing agents have no approved writes, so all their writes wait for approval until their
-owners approve the functions each agent needs in its form.
+A new agent has no approved writes, so all its writes wait for approval until its owner approves, in the agent form,
+the functions the agent needs.
 
 ## Site administrators
 
@@ -209,16 +209,14 @@ which is not site administrator.
 ## Telegram webhook
 
 Telegram sends the webhook secret in the `X-Telegram-Bot-Api-Secret-Token` header; the secret is not part of the
-webhook address, and a secret in the query string is refused. Upgrading to 1.6.1 rotates the secret and registers the
-webhook again when a bot token is configured. If Telegram cannot be reached at that moment, the Integrations tab shows
-a warning until the bot token is saved again. While that warning is shown, "Drop pending updates" registers the
-webhook with a new secret. An update Telegram delivers again (same `update_id`) is acknowledged and not processed twice.
-The bot token is stored encrypted with the encryption key of the site, kept in dataroot; the 1.7.0 upgrade encrypts a
-token saved before again with that key.
+webhook address, and a secret in the query string is refused. Saving the bot token registers the webhook with a new
+secret. If Telegram cannot be reached at that moment, the Integrations tab shows a warning until the bot token is saved
+again. While that warning is shown, "Drop pending updates" registers the webhook with a new secret. An update Telegram
+delivers again (same `update_id`) is acknowledged and not processed twice.
 
-The other secrets of Jedomi are stored encrypted with the same key since 1.8.0: the webhook secret, the secret that
-signs the chat permission tokens and the HMAC secret of the companion web service. The 1.8.0 upgrade encrypts the
-values saved before in clear text without changing them. The permission token secret is never shown in the General
+The secrets of Jedomi are stored encrypted with the encryption key of the site, kept in dataroot: the bot token, the
+API key of the custom AI service, the webhook secret, the secret that signs the chat permission tokens and the HMAC
+secret of the companion web service. The permission token secret is never shown in the General
 tab: leave the field empty to keep it, or type a new one to replace it.
 
 ## Telegram link security
@@ -371,10 +369,8 @@ These limits are applied in Moodle, so they hold with the Datacurso AI service a
 The companion web service and its functions use the Moodle component prefix: the service is `local_jedomi_companion`
 and its functions are `local_jedomi_execute_sql`, `local_jedomi_run_task`, `local_jedomi_purge_caches`,
 `local_jedomi_extract_schema`, `local_jedomi_validate_password`, `local_jedomi_get_site_config`,
-`local_jedomi_set_site_config`, `local_jedomi_read_file` and `local_jedomi_ws_execute` (before version 2026111908 they
-were named `jedomi_*`). The upgrade renames the existing service, so its authorised users and tokens keep working;
-clients of the companion web service must call the new function names and sign them with the new names (the HMAC
-signature covers the function name).
+`local_jedomi_set_site_config`, `local_jedomi_read_file` and `local_jedomi_ws_execute`. Clients sign each request with
+the function name they call (the HMAC signature covers the function name).
 
 ## Documentation
 
