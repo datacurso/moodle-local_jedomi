@@ -18,7 +18,7 @@
  * Delete Agent tool — deletes a scheduled AI agent by ID.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -79,12 +79,12 @@ class delete_agent_tool implements agent_tool {
 
         $id = (int) ($params->id ?? 0);
         if ($id <= 0) {
-            return json_encode(['error' => 'Valid agent ID required.']);
+            return json_encode(['error' => get_string('agent_tool_agent_id_required', 'local_jedomi')]);
         }
 
         $agent = \local_jedomi\agent\agent_manager::get_agent($id);
         if (!$agent) {
-            return json_encode(['error' => "Agent #{$id} not found."]);
+            return json_encode(['error' => get_string('agent_tool_agent_not_found', 'local_jedomi', $id)]);
         }
         if (!\local_jedomi\agent\agent_manager::can_manage_agent($agent, $this->actor_id())) {
             return json_encode(['error' => 'permission_denied']);
@@ -93,7 +93,7 @@ class delete_agent_tool implements agent_tool {
         \local_jedomi\agent\agent_manager::delete_agent($id);
         return json_encode([
             'success' => true,
-            'message' => "Agent #{$id} deleted.",
+            'message' => get_string('agent_tool_agent_deleted', 'local_jedomi', $id),
         ]);
     }
 }

@@ -19,9 +19,9 @@
  * Automatically deploys the bundled aiprovider_jedomi to the correct
  * Moodle directory so admins only need to install one plugin.
  *
- * @package   local_jedomi
- * @copyright 2026 Jedomi Project
- * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ * @package    local_jedomi
+ * @copyright  2026 Datacurso <developer@datacurso.com>
+ * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
 /**

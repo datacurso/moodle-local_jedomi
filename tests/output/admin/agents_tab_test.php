@@ -21,7 +21,7 @@ namespace local_jedomi\output\admin;
  *
  * @package    local_jedomi
  * @category   test
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @covers     \local_jedomi\output\admin\agents_tab
  */
@@ -242,6 +242,8 @@ final class agents_tab_test extends \advanced_testcase {
     public function test_agent_managers_can_open_the_agents_tab(): void {
         global $CFG;
         $this->resetAfterTest();
+        // The page runs in a separate PHP process, which only sees committed data (PostgreSQL included).
+        $this->preventResetByRollback();
         $manager = $this->getDataGenerator()->create_user(['username' => 'agentmanager']);
         $this->getDataGenerator()->role_assign('manager', $manager->id);
         $this->assertTrue(has_capability('local/jedomi:manageagents', \context_system::instance(), $manager));

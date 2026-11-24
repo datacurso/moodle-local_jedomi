@@ -20,7 +20,7 @@
  * preview, or moving it with the arrow keys, writes its distances back to the form fields, which are what is saved.
  *
  * @module     local_jedomi/admin/personalization
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 

@@ -28,7 +28,7 @@ use local_jedomi\reportbuilder\local\entities\query_log as query_log_entity;
  * download. The user of a query is the one it ran for or, for a scheduled agent, the owner of the agent.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class query_log extends system_report {

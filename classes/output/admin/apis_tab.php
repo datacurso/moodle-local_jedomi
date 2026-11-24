@@ -22,7 +22,7 @@ use local_jedomi\local\service\admin_settings_service;
  * APIs tab of the Jedomi settings: the web services each role may call through the chat.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class apis_tab implements \core\output\named_templatable, \renderable, \templatable {

@@ -26,7 +26,7 @@ namespace local_jedomi\ai;
  * 1.8.0), so the request keeps the provider's licence, rate-limit headers, pseudonymised user and error handling.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class provider_api extends \aiprovider_datacurso\httpclient\ai_services_api {

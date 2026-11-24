@@ -30,7 +30,7 @@ require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/testable_provider_api
  *
  * @package    local_jedomi
  * @category   test
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @covers     \local_jedomi\local\service\vision_service
  * @covers     \local_jedomi\local\service\provider_upload_service

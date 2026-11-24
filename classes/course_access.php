@@ -21,9 +21,9 @@
  * An excluded course is outside Jedomi, not only without the panel: it gives no role outside a course and
  * no course-level tool, signed course list, teacher SQL or agent may use it.
  *
- * @package   local_jedomi
- * @copyright 2026 Jedomi Project
- * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ * @package    local_jedomi
+ * @copyright  2026 Datacurso <developer@datacurso.com>
+ * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
 namespace local_jedomi;

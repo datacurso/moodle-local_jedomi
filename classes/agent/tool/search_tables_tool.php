@@ -23,12 +23,13 @@
  * with the correct table name.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
 namespace local_jedomi\agent\tool;
 
+use local_jedomi\local\safe_error;
 use local_jedomi\schema\table_indexer;
 
 /**
@@ -83,7 +84,7 @@ class search_tables_tool implements agent_tool {
     public function execute(\stdClass $params): string {
         $query = trim($params->query ?? '');
         if (empty($query)) {
-            return json_encode(['error' => 'Search query required.']);
+            return json_encode(['error' => get_string('telegram_search_query_required', 'local_jedomi')]);
         }
 
         $start = microtime(true);
@@ -99,7 +100,7 @@ class search_tables_tool implements agent_tool {
                     'row_count' => 0,
                     'tables' => [],
                     'duration_ms' => round((microtime(true) - $start) * 1000, 2),
-                    'message' => "No tables found matching: {$query}",
+                    'message' => get_string('telegram_no_tables_found', 'local_jedomi', $query),
                 ]);
             }
 
@@ -120,7 +121,7 @@ class search_tables_tool implements agent_tool {
             ], JSON_UNESCAPED_UNICODE);
         } catch (\Exception $e) {
             return json_encode([
-                'error' => 'search_tables failed: ' . \local_jedomi\local\safe_error::for_model($e),
+                'error' => get_string('agent_tool_search_tables_failed', 'local_jedomi', safe_error::for_model($e)),
                 'duration_ms' => round((microtime(true) - $start) * 1000, 2),
             ]);
         }

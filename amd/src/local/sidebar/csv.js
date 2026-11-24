@@ -17,7 +17,7 @@
  * CSV download of the tables of the Jedomi answers.
  *
  * @module     local_jedomi/local/sidebar/csv
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 

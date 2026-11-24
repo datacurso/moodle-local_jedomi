@@ -23,7 +23,7 @@ namespace local_jedomi\agent;
  * translated caps) is kept as the last error.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 final class write_cap_exceeded extends run_failure {

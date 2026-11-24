@@ -24,7 +24,7 @@
  *  - Webhook secret is random hex 32 chars, rotated independently of the token.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 

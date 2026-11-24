@@ -25,7 +25,7 @@
  * Usage: php cli/chat_cli.php
  * Commands: help, debug on/off, exit
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 define('CLI_SCRIPT', true);
@@ -107,7 +107,7 @@ if ($debug) {
  * @param array $tools OpenAI-format tool definitions to offer the model (empty for none)
  * @return array|null the assistant message, or null when the call failed (the error is printed)
  */
-function call_ai(array $messages, array $tools = []): ?array {
+function local_jedomi_chat_cli_call_ai(array $messages, array $tools = []): ?array {
     global $USER;
 
     try {
@@ -136,9 +136,9 @@ function call_ai(array $messages, array $tools = []): ?array {
  * @param array $args decoded tool call arguments
  * @return string JSON-encoded tool result
  */
-function execute_tool(string $name, array $args): string {
+function local_jedomi_chat_cli_execute_tool(string $name, array $args): string {
     $severity = \local_jedomi\local\service\pending_action_service::severity($name, $args);
-    if ($severity !== null && !confirm_tool($name, $args, $severity)) {
+    if ($severity !== null && !local_jedomi_chat_cli_confirm_tool($name, $args, $severity)) {
         return json_encode(['error' => 'The operator cancelled this action; it was not run.']);
     }
     return \local_jedomi\proxy\handler::run_tool($name, $args, 'admin');
@@ -155,7 +155,7 @@ function execute_tool(string $name, array $args): string {
  * @param string $severity severity of the action, as given by pending_action_service::severity()
  * @return bool true when the operator confirmed the action
  */
-function confirm_tool(string $name, array $args, string $severity): bool {
+function local_jedomi_chat_cli_confirm_tool(string $name, array $args, string $severity): bool {
     echo "  \e[1;31m⚠️  {$name} changes data (severity: {$severity}).\e[0m\n";
     // Every argument is shown, never a cut: the operator confirms exactly what runs.
     echo "  Arguments:\n" . json_encode($args, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n";
@@ -216,7 +216,7 @@ while (true) {
         $turn++;
         echo "\n  \e[2m⏳ Turn {$turn}/25 — AI thinking...\e[0m\n";
 
-        $response = call_ai($messages, $openaitools);
+        $response = local_jedomi_chat_cli_call_ai($messages, $openaitools);
         if ($response === null) {
             break;
         }
@@ -242,7 +242,7 @@ while (true) {
 
                 // Execute.
                 echo "  \e[35m⚡ Executing {$tcname}...\e[0m\n";
-                $result = execute_tool($tcname, $tcargs);
+                $result = local_jedomi_chat_cli_execute_tool($tcname, $tcargs);
 
                 // Parse the result to show a summary.
                 $resultparsed = json_decode($result, true);

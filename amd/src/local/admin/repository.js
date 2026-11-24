@@ -17,7 +17,7 @@
  * Server calls of the Jedomi settings tabs: the set_telegram_enabled web service and the plugin AJAX scripts.
  *
  * @module     local_jedomi/local/admin/repository
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 

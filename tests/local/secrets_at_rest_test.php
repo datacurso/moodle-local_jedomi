@@ -32,7 +32,7 @@ require_once($CFG->dirroot . '/local/jedomi/lib.php');
  *
  * @package    local_jedomi
  * @category   test
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @covers     \local_jedomi\local\secret_store
  * @covers     \local_jedomi\companion_hmac
@@ -87,8 +87,8 @@ final class secrets_at_rest_test extends \advanced_testcase {
             public static function check(string $secret): void {
                 $timestamp = time();
                 $hash = self::build_payload_hash(['sql' => 'SELECT 1']);
-                $signature = hash_hmac('sha256', "jedomi_execute_sql:{$timestamp}:{$hash}", $secret);
-                self::verify_hmac('jedomi_execute_sql', $timestamp, $hash, $signature, ['sql' => 'SELECT 1']);
+                $signature = hash_hmac('sha256', "local_jedomi_execute_sql:{$timestamp}:{$hash}", $secret);
+                self::verify_hmac('local_jedomi_execute_sql', $timestamp, $hash, $signature, ['sql' => 'SELECT 1']);
             }
         };
         try {

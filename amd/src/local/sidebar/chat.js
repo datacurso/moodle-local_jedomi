@@ -17,7 +17,7 @@
  * Chat of the Jedomi sidebar: sends a question to the chat proxy and shows its streamed answer.
  *
  * @module     local_jedomi/local/sidebar/chat
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 

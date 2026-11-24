@@ -20,7 +20,7 @@ namespace local_jedomi\local;
  * The site settings Jedomi may write, with the type of value each one takes (JEDOMI-SEC-011).
  *
  * This is the single source of truth for every channel that writes site settings: only the companion web service
- * jedomi_set_site_config writes them today. Any setting not listed here is refused.
+ * local_jedomi_set_site_config writes them today. Any setting not listed here is refused.
  *
  * The list holds only settings of presentation and defaults: the names of the site, its default location, language and
  * first day of the week, and the defaults of new courses. None of them decides who can log in, which privileges anyone
@@ -34,7 +34,7 @@ namespace local_jedomi\local;
  * Names are compared in lower case: the config table is case-insensitive on MySQL and MariaDB.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 final class site_config_policy {

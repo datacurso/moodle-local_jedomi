@@ -20,7 +20,7 @@ namespace local_jedomi\output;
  * Telegram profile page: link status, one-time link code and instructions.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class telegram_profile implements \core\output\named_templatable, \renderable, \templatable {

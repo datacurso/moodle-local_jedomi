@@ -17,7 +17,7 @@
  * Conversation history of the Jedomi sidebar, kept on the server (Moodle session cache).
  *
  * @module     local_jedomi/local/sidebar/history
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 

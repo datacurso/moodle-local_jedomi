@@ -50,7 +50,7 @@ use local_jedomi\local\service\pending_action_service;
  * held (REL-002).
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class write_guard {

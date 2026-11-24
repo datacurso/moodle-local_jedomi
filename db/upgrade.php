@@ -17,9 +17,9 @@
 /**
  * Upgrade file for local_jedomi — adds Telegram integration tables.
  *
- * @package   local_jedomi
- * @copyright 2026 Jedomi Project
- * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ * @package    local_jedomi
+ * @copyright  2026 Datacurso <developer@datacurso.com>
+ * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
 /**
@@ -599,6 +599,23 @@ function xmldb_local_jedomi_upgrade(int $oldversion): bool {
             }
         }
         upgrade_plugin_savepoint(true, 2026111907, 'local', 'jedomi');
+    }
+
+    if ($oldversion < 2026111908) {
+        // The companion service is renamed from jedomi_companion to local_jedomi_companion (frankenstyle). Moodle matches
+        // the services of db/services.php by name after this step and deletes a service whose name is gone, with its
+        // tokens; renaming the record first keeps the service, its authorised users and its tokens. The functions of the
+        // service are replaced by their local_jedomi_* names when Moodle updates the web service descriptions.
+        $existing = $DB->get_record('external_services', ['component' => 'local_jedomi', 'name' => 'jedomi_companion']);
+        $renamed = $DB->record_exists('external_services', ['name' => 'local_jedomi_companion']);
+        $shortnametaken = $DB->record_exists('external_services', ['shortname' => 'local_jedomi_companion']);
+        if ($existing && !$renamed && !$shortnametaken) {
+            $existing->name = 'local_jedomi_companion';
+            $existing->shortname = 'local_jedomi_companion';
+            $existing->timemodified = time();
+            $DB->update_record('external_services', $existing);
+        }
+        upgrade_plugin_savepoint(true, 2026111908, 'local', 'jedomi');
     }
 
     return true;

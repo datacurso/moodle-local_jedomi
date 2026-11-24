@@ -26,7 +26,7 @@ use local_jedomi\local\service\telegram_pin_service;
  * Form of the Telegram profile page that sets the Telegram PIN (Decision 7).
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class telegram_pin_form extends \moodleform {

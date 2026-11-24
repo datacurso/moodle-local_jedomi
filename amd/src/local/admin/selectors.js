@@ -17,7 +17,7 @@
  * Selectors used by the modules of the Jedomi settings tabs.
  *
  * @module     local_jedomi/local/admin/selectors
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 

@@ -7,7 +7,18 @@ The AI requests go to one of two AI services, chosen by the administrator:
 - **Datacurso service** (the default): through the **Datacurso AI Provider**, which supplies the license, the credits and
   the usage limits.
 - **Custom service**: straight to an OpenAI-compatible endpoint of your choice (OpenAI, DeepInfra, Ollama, LM Studio,
-  vLLM...). No Datacurso license or credits are needed for now.
+  vLLM...), with your own API key.
+
+### Cost and licensing
+
+- This plugin and the Datacurso AI Provider are free to install.
+- With the Datacurso service, every AI request consumes credits of a Datacurso license, which is purchased from
+  Datacurso.
+- With the custom service, the AI requests go to your own OpenAI-compatible service with your own API key and use no
+  Datacurso credits; the costs of that service, if any, are agreed with its provider.
+- Without any AI service configured, the plugin installs and its settings page can be used (roles, privacy, courses,
+  web services, personalization, Telegram and agent settings), but Jedomi cannot answer: questions in the panel or in
+  Telegram, file, image and voice reading and the scheduled agents all need an AI service.
 
 This plugin is part of the **Datacurso AI Plugin Suite**.
 
@@ -21,7 +32,7 @@ This plugin is part of the **Datacurso AI Plugin Suite**.
    [https://moodle.org/plugins/aiprovider_datacurso/versions](https://moodle.org/plugins/aiprovider_datacurso/versions).
 3. Only with the Datacurso service: a valid license key configured in the Datacurso AI Provider settings, as documented
    at [https://docs.datacurso.com/docs/plugins/moodle-aiprovider_datacurso/getting-license-keys](https://docs.datacurso.com/docs/plugins/moodle-aiprovider_datacurso/getting-license-keys).
-   With the custom service no license is needed for now.
+   With the custom service no Datacurso license is needed.
 4. Only with the custom service: the address and API key of an OpenAI-compatible endpoint, and the models to use.
 5. Moodle cron running, for the scheduled agents and the cleanup tasks.
 6. Optional: a Telegram bot created with @BotFather and a public HTTPS address for the site, only if you want to use
@@ -184,8 +195,8 @@ Web service functions whose name, after its component, has a write word (such as
 need confirmation in every channel even when they are declared as reading. In Telegram, an action whose data does not
 fit whole in one message is not held: the user is told to ask for it in the web chat.
 
-After upgrading to 1.6.1, existing agents have no approved writes, so all their writes wait for approval until their
-owners approve the functions each agent needs in its form.
+A new agent has no approved writes, so all its writes wait for approval until its owner approves, in the agent form,
+the functions the agent needs.
 
 ## Site administrators
 
@@ -198,16 +209,14 @@ which is not site administrator.
 ## Telegram webhook
 
 Telegram sends the webhook secret in the `X-Telegram-Bot-Api-Secret-Token` header; the secret is not part of the
-webhook address, and a secret in the query string is refused. Upgrading to 1.6.1 rotates the secret and registers the
-webhook again when a bot token is configured. If Telegram cannot be reached at that moment, the Integrations tab shows
-a warning until the bot token is saved again. While that warning is shown, "Drop pending updates" registers the
-webhook with a new secret. An update Telegram delivers again (same `update_id`) is acknowledged and not processed twice.
-The bot token is stored encrypted with the encryption key of the site, kept in dataroot; the 1.7.0 upgrade encrypts a
-token saved before again with that key.
+webhook address, and a secret in the query string is refused. Saving the bot token registers the webhook with a new
+secret. If Telegram cannot be reached at that moment, the Integrations tab shows a warning until the bot token is saved
+again. While that warning is shown, "Drop pending updates" registers the webhook with a new secret. An update Telegram
+delivers again (same `update_id`) is acknowledged and not processed twice.
 
-The other secrets of Jedomi are stored encrypted with the same key since 1.8.0: the webhook secret, the secret that
-signs the chat permission tokens and the HMAC secret of the companion web service. The 1.8.0 upgrade encrypts the
-values saved before in clear text without changing them. The permission token secret is never shown in the General
+The secrets of Jedomi are stored encrypted with the encryption key of the site, kept in dataroot: the bot token, the
+API key of the custom AI service, the webhook secret, the secret that signs the chat permission tokens and the HMAC
+secret of the companion web service. The permission token secret is never shown in the General
 tab: leave the field empty to keep it, or type a new one to replace it.
 
 ## Telegram link security
@@ -245,8 +254,12 @@ administrator can delete the files at any time. The log is declared in the priva
 logged with their class and error code, never their message, which can quote a query or personal data; the user sees a
 generic message with a reference that finds the entry.
 
+The size at which the file rotates can be changed with the plugin setting `logmaxbytes` (in bytes), for example in
+`config.php`: `$CFG->forced_plugin_settings['local_jedomi']['logmaxbytes'] = 10485760;`. The older
+`$CFG->local_jedomi_logmaxbytes` is still read when that setting is not set.
+
 Changes of the course, privacy and Telegram role settings, and settings written by the companion web service
-(`jedomi_set_site_config`), also appear in the "Config changes" report of Moodle. The companion web service writes only
+(`local_jedomi_set_site_config`), also appear in the "Config changes" report of Moodle. The companion web service writes only
 an allowlist of presentation and course default settings (site names, default timezone, country, city, language and
 first day of the week, defaults of new courses), each checked against its type of value; any other setting, including
 every setting of an AI provider of Moodle (`aiprovider_*`) and of Jedomi itself, is refused with the list of the settings
@@ -261,7 +274,7 @@ channel it works in:
 | --- | --- | --- |
 | Web chat | 100 (setting, 10 to 1000) | 5 s |
 | Telegram | 50 | 5 s |
-| Companion web service (`jedomi_execute_sql`) | 100 | 5 s |
+| Companion web service (`local_jedomi_execute_sql`) | 100 | 5 s |
 | Scheduled agents | 1000 | 30 s |
 
 The row limit is applied by the database on every supported database. The time limit is applied by the database on
@@ -351,6 +364,18 @@ These limits are applied in Moodle, so they hold with the Datacurso AI service a
   its smaller caps for images (10 MB) and text files (2 MB). PHP's `upload_max_filesize` and `post_max_size` must allow
   the size you want to accept.
 
+## Companion web service
+
+The companion web service and its functions use the Moodle component prefix: the service is `local_jedomi_companion`
+and its functions are `local_jedomi_execute_sql`, `local_jedomi_run_task`, `local_jedomi_purge_caches`,
+`local_jedomi_extract_schema`, `local_jedomi_validate_password`, `local_jedomi_get_site_config`,
+`local_jedomi_set_site_config`, `local_jedomi_read_file` and `local_jedomi_ws_execute`. Clients sign each request with
+the function name they call (the HMAC signature covers the function name).
+
 ## Documentation
 
 The complete documentation (configuration, roles and permissions, use of the chat, scheduled agents, Telegram and command line tools) is available at [https://docs.datacurso.com/docs/plugins/moodle-local_jedomi](https://docs.datacurso.com/docs/plugins/moodle-local_jedomi).
+
+## Issue tracker
+
+Report issues at [https://github.com/datacurso/moodle-local_jedomi/issues](https://github.com/datacurso/moodle-local_jedomi/issues).

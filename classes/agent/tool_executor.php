@@ -19,7 +19,7 @@
  * and returns results.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -102,19 +102,19 @@ class tool_executor {
         $tool = $this->is_offered($name) ? ($this->instances[$resolved] ?? null) : null;
 
         if (!$tool) {
-            return json_encode(['error' => "Unknown tool: {$name}"]);
+            return json_encode(['error' => get_string('agent_tool_unknown_tool', 'local_jedomi', $name)]);
         }
 
         $decoded = json_decode($arguments);
         if (json_last_error() !== JSON_ERROR_NONE) {
-            return json_encode(['error' => 'Invalid arguments JSON: ' . json_last_error_msg()]);
+            return json_encode(['error' => get_string('agent_tool_invalid_arguments', 'local_jedomi', json_last_error_msg())]);
         }
         if ($decoded === [] || $decoded === null) {
             // No arguments ("[]" from an empty PHP array, or "null").
             $decoded = new \stdClass();
         }
         if (!$decoded instanceof \stdClass) {
-            return json_encode(['error' => 'Invalid arguments JSON: an object is expected']);
+            return json_encode(['error' => get_string('agent_tool_arguments_not_object', 'local_jedomi')]);
         }
 
         return $tool->execute($decoded);

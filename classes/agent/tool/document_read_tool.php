@@ -18,7 +18,7 @@
  * Document Read tool — read the PDF file of a course activity as text.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -157,7 +157,7 @@ class document_read_tool implements agent_tool {
             return json_encode(['error' => get_string('documents_error_custom', 'local_jedomi')]);
         }
         if ($cmid <= 0) {
-            return json_encode(['error' => 'cmid is required']);
+            return json_encode(['error' => get_string('agent_tool_cmid_required', 'local_jedomi')]);
         }
         if (!in_array($role, self::ALLOWED_ROLES, true)) {
             return json_encode(['error' => 'permission_denied']);
@@ -179,10 +179,11 @@ class document_read_tool implements agent_tool {
             }
             $file = self::find_content_pdf($context, $cm->modname);
             if (!$file) {
-                return json_encode(['error' => 'no PDF files found in this activity']);
+                return json_encode(['error' => get_string('agent_tool_no_pdf_files', 'local_jedomi')]);
             }
         } catch (\Throwable $e) {
-            return json_encode(['error' => 'document read failed: ' . \local_jedomi\local\safe_error::for_model($e)]);
+            $error = \local_jedomi\local\safe_error::for_model($e);
+            return json_encode(['error' => get_string('agent_tool_document_read_failed', 'local_jedomi', $error)]);
         }
 
         try {

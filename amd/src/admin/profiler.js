@@ -18,7 +18,7 @@
  * change, so they keep counting the same queries as the report.
  *
  * @module     local_jedomi/admin/profiler
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 

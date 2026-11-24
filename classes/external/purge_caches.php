@@ -15,7 +15,7 @@
 // along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
 
 /**
- * jedomi_purge_caches — CompanionWS external function.
+ * local_jedomi_purge_caches — CompanionWS external function.
  *
  * Requirement CWS-CACHE-01:
  *  - Validates HMAC before execution
@@ -24,7 +24,7 @@
  *  - Returns cache type list and execution time
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -118,7 +118,7 @@ class purge_caches extends external_api {
 
         // ... --- HMAC authentication ---
         self::verify_hmac(
-            'jedomi_purge_caches',
+            'local_jedomi_purge_caches',
             $validated['hmac_timestamp'],
             $validated['payload_hash'],
             $validated['hmac_signature'],

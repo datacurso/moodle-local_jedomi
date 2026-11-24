@@ -18,7 +18,7 @@
  * English language strings for local_jedomi.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -41,8 +41,7 @@ $string['agent_by_status'] = 'Agents by status';
 $string['agent_chart_no_data'] = 'No data';
 $string['agent_context'] = 'Context';
 $string['agent_context_id'] = 'Context ID';
-$string['agent_context_id_help'] = 'ID of the Moodle context, not of the course, category or user: for example, the context '
-    . 'number shown in the address of the Permissions page of the course (contextid).';
+$string['agent_context_id_help'] = 'ID of the Moodle context, not of the course, category or user: for example, the context number shown in the address of the Permissions page of the course (contextid).';
 $string['agent_context_id_placeholder'] = 'e.g. 42';
 $string['agent_context_label'] = '{$a->type}: {$a->name}';
 $string['agent_context_missing'] = '{$a->type} #{$a->id} (not found)';
@@ -85,8 +84,7 @@ $string['agent_error_create'] = 'Error creating agent: {$a}';
 $string['agent_error_empty_answer'] = 'The AI did not write an answer, also after being asked again. Try a shorter instruction or a model with a larger answer limit.';
 $string['agent_error_load'] = 'Error loading agents.';
 $string['agent_error_nopermission'] = 'You cannot manage the agents of users with more permissions than yours.';
-$string['agent_error_run_failed'] = 'The run failed because of an unexpected error (reference {$a}). The details are in the '
-    . 'Jedomi technical log.';
+$string['agent_error_run_failed'] = 'The run failed because of an unexpected error (reference {$a}). The details are in the Jedomi technical log.';
 $string['agent_error_update'] = 'Error updating agent: {$a}';
 $string['agent_every_15min'] = 'Every 15 minutes';
 $string['agent_every_1h'] = 'Every hour';
@@ -104,8 +102,7 @@ $string['agent_invalid_approved_write'] = 'the write function "{$a}" cannot be a
 $string['agent_invalid_context_excluded'] = 'the course of this context is excluded from Jedomi in the Course availability tab';
 $string['agent_invalid_context_id'] = 'the context ID is not the ID of an existing Moodle context of type {$a}';
 $string['agent_invalid_context_type'] = 'invalid context type';
-$string['agent_invalid_cron'] = 'invalid custom schedule: use five fields (minute, hour, day of the month, month, day of the '
-    . 'week) with values in range, for example "30 6 * * 1-5"';
+$string['agent_invalid_cron'] = 'invalid custom schedule: use five fields (minute, hour, day of the month, month, day of the week) with values in range, for example "30 6 * * 1-5"';
 $string['agent_invalid_prompt'] = 'the instruction cannot be empty';
 $string['agent_lasterror'] = 'Last error';
 $string['agent_lasterror_hidden'] = 'The last run failed.';
@@ -149,19 +146,40 @@ $string['agent_purge_id_required'] = 'Enter the Moodle context ID of the course,
 $string['agent_purge_invalid_type'] = 'Invalid purge type: {$a}';
 $string['agent_purge_role_not_found'] = 'Role not found.';
 $string['agent_purge_success'] = '{$a} agent(s) deleted successfully.';
-$string['agent_roles_help'] = 'The agent only runs while its creator holds at least one of the checked roles in the context of '
-    . 'the agent. Leave every box unchecked to run it always.';
+$string['agent_roles_help'] = 'The agent only runs while its creator holds at least one of the checked roles in the context of the agent. Leave every box unchecked to run it always.';
 $string['agent_run_disabled'] = 'This agent is disabled, so it was not queued. Enable it to run it.';
 $string['agent_run_now'] = 'Run now';
 $string['agent_run_queued'] = 'Agent queued for execution (next cron cycle).';
 $string['agent_runner_task'] = 'Jedomi — Execute scheduled AI agents';
 $string['agent_schedule'] = 'Schedule';
-$string['agent_skipped_course_excluded'] = 'Not run: the course of its context is excluded from Jedomi. It runs again when the '
-    . 'course is back in Jedomi.';
+$string['agent_skipped_course_excluded'] = 'Not run: the course of its context is excluded from Jedomi. It runs again when the course is back in Jedomi.';
 $string['agent_skipped_role'] = 'Not run: the creator holds none of the roles chosen for the agent in its context.';
 $string['agent_status'] = 'Status';
 $string['agent_summary'] = 'Summary';
 $string['agent_table'] = 'All agents';
+$string['agent_tool_agent_deleted'] = 'Agent #{$a} deleted.';
+$string['agent_tool_agent_id_required'] = 'Valid agent ID required.';
+$string['agent_tool_agent_not_found'] = 'Agent #{$a} not found.';
+$string['agent_tool_arguments_not_object'] = 'Invalid arguments JSON: an object is expected';
+$string['agent_tool_cmid_required'] = 'cmid is required';
+$string['agent_tool_document_read_failed'] = 'document read failed: {$a}';
+$string['agent_tool_empty_function_name'] = 'Empty function name';
+$string['agent_tool_empty_query'] = 'Empty query';
+$string['agent_tool_invalid_arguments'] = 'Invalid arguments JSON: {$a}';
+$string['agent_tool_key_list_required'] = 'Key list required.';
+$string['agent_tool_no_config_keys'] = 'No matching keys found (only allowlisted keys are readable).';
+$string['agent_tool_no_pdf_files'] = 'no PDF files found in this activity';
+$string['agent_tool_no_ws_for_role'] = 'No web services are allowed for the role of the agent creator.';
+$string['agent_tool_no_ws_found'] = 'No web services found matching: {$a}';
+$string['agent_tool_prompt_schedule_required'] = 'Both prompt and schedule_cron are required.';
+$string['agent_tool_search_tables_failed'] = 'search_tables failed: {$a}';
+$string['agent_tool_select_only'] = 'Only SELECT and WITH queries are allowed.';
+$string['agent_tool_unknown_tool'] = 'Unknown tool: {$a}';
+$string['agent_tool_ws_describe_failed'] = 'ws_describe failed: {$a}';
+$string['agent_tool_ws_name_required'] = 'Web service name required.';
+$string['agent_tool_ws_not_allowed_role'] = 'WS not in allowlist for role: {$a}';
+$string['agent_tool_ws_not_found'] = 'Web service not found: {$a}';
+$string['agent_tool_ws_search_failed'] = 'ws_search failed: {$a}';
 $string['agent_unnamed'] = 'Agent';
 $string['agent_update_success'] = 'Agent updated successfully.';
 $string['agent_user_id'] = 'User #{$a}';
@@ -275,23 +293,15 @@ $string['connection_error'] = 'Connection error:';
 $string['conversation_cleared'] = 'Conversation cleared.';
 $string['copytoclipboard'] = 'Copy to clipboard';
 $string['course_availability_courses'] = 'Selected courses';
-$string['course_availability_courses_help'] = 'Courses that are in Jedomi ("Only the selected courses") or outside it '
-    . '("All courses except the selected ones"). An excluded course is outside Jedomi, not only without the panel: it gives '
-    . 'no teacher role on the site home, in Telegram or in the agents, the teacher tools, web service calls and teacher SQL '
-    . 'never return or accept it, and its agents do not run. Site-wide '
-    . 'administrator SQL is not limited by this list. Search by course name or short name.';
+$string['course_availability_courses_help'] = 'Courses that are in Jedomi ("Only the selected courses") or outside it ("All courses except the selected ones"). An excluded course is outside Jedomi, not only without the panel: it gives no teacher role on the site home, in Telegram or in the agents, the teacher tools, web service calls and teacher SQL never return or accept it, and its agents do not run. Site-wide administrator SQL is not limited by this list. Search by course name or short name.';
 $string['course_availability_heading'] = 'Course availability';
-$string['course_availability_heading_help'] = 'Control which courses are in Jedomi. An excluded course is outside Jedomi in every '
-    . 'channel: the web chat, Telegram and the agents.';
+$string['course_availability_heading_help'] = 'Control which courses are in Jedomi. An excluded course is outside Jedomi in every channel: the web chat, Telegram and the agents.';
 $string['course_mode_all'] = 'All courses (default)';
 $string['course_mode_all_desc'] = 'Every course is in Jedomi.';
 $string['course_mode_exclude'] = 'All courses except the selected ones';
-$string['course_mode_exclude_desc'] = 'The courses you choose below are outside Jedomi: no panel, and no teacher role, tools, '
-    . 'SQL or agents for them.';
+$string['course_mode_exclude_desc'] = 'The courses you choose below are outside Jedomi: no panel, and no teacher role, tools, SQL or agents for them.';
 $string['course_mode_include'] = 'Only the selected courses';
-$string['course_mode_include_desc'] = 'Every course you do not choose below is outside Jedomi: no panel, and no teacher role, '
-    . 'tools, SQL or agents for it. The pages that do not belong to a course (Dashboard, profile, calendar, site '
-    . 'administration) keep the panel.';
+$string['course_mode_include_desc'] = 'Every course you do not choose below is outside Jedomi: no panel, and no teacher role, tools, SQL or agents for it. The pages that do not belong to a course (Dashboard, profile, calendar, site administration) keep the panel.';
 $string['course_none_selected'] = 'No courses selected yet.';
 $string['course_search_placeholder'] = 'Search by name or shortname...';
 $string['csv_download'] = '📥 Download CSV';
@@ -393,14 +403,11 @@ $string['drop_pending_fail'] = '❌ Failed to drop pending updates — check the
 $string['drop_pending_running'] = 'Dropping...';
 $string['drop_pending_success'] = '✅ Pending updates dropped successfully.';
 $string['drop_pending_updates'] = 'Drop pending updates';
-$string['drop_pending_updates_help'] = 'Clears the Telegram update queue so stale messages are not processed when the webhook '
-    . 'reconnects. Useful during testing.';
+$string['drop_pending_updates_help'] = 'Clears the Telegram update queue so stale messages are not processed when the webhook reconnects. Useful during testing.';
 $string['encryption_failed'] = 'Encryption failed. Check that the encryption key of the site can be read in dataroot.';
 $string['entity_agent'] = 'Agent';
 $string['entity_query_log'] = 'Profiled query';
-$string['error_argument_unplaced'] = 'This call names a record that Jedomi cannot place in a course ({$a}) while some '
-    . 'courses are outside Jedomi, so it was not run. Ask an administrator, or use a more specific tool or arguments that '
-    . 'name the course.';
+$string['error_argument_unplaced'] = 'This call names a record that Jedomi cannot place in a course ({$a}) while some courses are outside Jedomi, so it was not run. Ask an administrator, or use a more specific tool or arguments that name the course.';
 $string['error_course_excluded'] = 'That course is excluded from Jedomi.';
 $string['error_course_include_empty'] = 'Select at least one course, or choose another mode: with no course selected, every course would be outside Jedomi.';
 $string['error_custom_model_invalid'] = 'Enter a model id without spaces, as the service lists it.';
@@ -437,8 +444,7 @@ $string['error_voice_requires_audio'] = 'The voice conversation needs audio proc
 $string['error_ws_capability'] = 'You do not have any of the capabilities that the web service function {$a} requires.';
 $string['error_ws_describe_failed'] = 'ws_describe failed: {$a}';
 $string['error_ws_execute_failed'] = 'ws_execute failed: {$a}';
-$string['error_ws_restricted'] = 'While some courses are outside Jedomi, only a reduced set of web service functions is '
-    . 'available. {$a} is not one of them.';
+$string['error_ws_restricted'] = 'While some courses are outside Jedomi, only a reduced set of web service functions is available. {$a} is not one of them.';
 $string['error_ws_search_failed'] = 'ws_search failed: {$a}';
 $string['event_action_cancelled'] = 'Assistant action cancelled';
 $string['event_action_confirmed'] = 'Assistant action confirmed';
@@ -466,8 +472,7 @@ $string['file_audio'] = 'Audio: {seconds} seconds';
 $string['file_csv'] = 'CSV: {rows} rows, {columns} columns';
 $string['file_error_no_text'] = 'No text could be read from this file.';
 $string['file_error_too_large'] = 'The file is too large to be read.';
-$string['file_error_unsupported'] = 'Only PDF, CSV, TXT, MD, Word (DOC, DOCX) and PowerPoint (PPT, PPTX) files, '
-    . 'and audio files when audio processing is enabled, can be attached.';
+$string['file_error_unsupported'] = 'Only PDF, CSV, TXT, MD, Word (DOC, DOCX) and PowerPoint (PPT, PPTX) files, and audio files when audio processing is enabled, can be attached.';
 $string['file_error_upload_too_large'] = 'The file is larger than {$a} MB, the largest file that can be attached.';
 $string['file_pdf'] = 'PDF: {pages} pages';
 $string['file_process_error'] = 'Could not process';
@@ -503,8 +508,7 @@ $string['link_type_profile'] = 'Profile';
 $string['link_type_quiz'] = 'Quiz';
 $string['listening'] = 'Listening...';
 $string['max_tokens'] = 'Max tokens';
-$string['max_tokens_help'] = 'Maximum output tokens per response (default: 16384). Increase for longer responses, decrease for '
-    . 'speed & cost.';
+$string['max_tokens_help'] = 'Maximum output tokens per response (default: 16384). Increase for longer responses, decrease for speed & cost.';
 $string['message_input'] = 'Message Jedomi';
 $string['messageprovider:agentwrites'] = 'Writes of your Jedomi scheduled agents';
 $string['messageprovider:telegramwebhook'] = 'Jedomi Telegram webhook registration failures';
@@ -519,8 +523,7 @@ $string['new_conversation_confirm'] = 'Start a new conversation? The current con
 $string['new_conversation_msg'] = 'New conversation started. How can I help you?';
 $string['no_messages_sent'] = 'No messages sent.';
 $string['non_select_rejected'] = 'Only SELECT queries are allowed.';
-$string['note_tables_found'] = 'Use the exact "name" with describe_table or execute_sql. Table names shown as provided — use '
-    . '{tablename} in SQL queries.';
+$string['note_tables_found'] = 'Use the exact "name" with describe_table or execute_sql. Table names shown as provided — use {tablename} in SQL queries.';
 $string['note_tables_not_found'] = 'No matching tables found. Try different keywords.';
 $string['note_ws_found'] = 'Use the exact "name" field with ws_execute. Check "params" for required(*) parameters.';
 $string['note_ws_none_configured'] = 'No web services configured for your role';
@@ -532,8 +535,7 @@ $string['pending_action_failed'] = 'The action could not be completed.';
 $string['pending_action_needed'] = 'This action needs your confirmation.';
 $string['pending_action_not_creator'] = 'Only the current creator of the agent that proposed this action can approve it. You can still cancel it.';
 $string['pending_action_not_found'] = 'This action does not exist or was already resolved.';
-$string['pending_action_others_not_run'] = '{$a} more action(s) proposed in this answer were not run. Ask for them again once this one is '
-    . 'confirmed or cancelled.';
+$string['pending_action_others_not_run'] = '{$a} more action(s) proposed in this answer were not run. Ask for them again once this one is confirmed or cancelled.';
 $string['pending_action_too_long'] = 'This action has more data than can be shown, so it cannot be confirmed. You can cancel it.';
 $string['pending_action_truncated'] = 'This action has more data than can be shown, so it can only be cancelled.';
 $string['pending_desc_admin_execute'] = 'Run the administration operation "{$a}".';
@@ -671,18 +673,10 @@ $string['privacy:metadata:local_jedomi_telegram_sessions:chatid'] = 'The Telegra
 $string['privacy:metadata:local_jedomi_telegram_sessions:lastactivity'] = 'When the last message was exchanged.';
 $string['privacy:metadata:local_jedomi_telegram_sessions:messages'] = 'The messages of the conversation and the results of the tools used to answer them.';
 $string['privacy:metadata:preference:local_jedomi_grade_notifications'] = 'Assignments whose grade was recently notified to the user in Telegram, with the time of each notification.';
-$string['privacy:metadata:technical_log'] = 'The technical log of the plugin, the file local/jedomi/jedomi.log in the data '
-    . 'directory of the site, with its operational and security trace. It never keeps user ids, Telegram chat ids or the texts of '
-    . 'the conversations: users and chats appear as pseudonyms (a keyed hash with a random key of the site), and the source IP '
-    . 'address is kept only for requests rejected for security reasons. The file is limited by size: it rotates when it reaches 5 '
-    . 'MB and keeps the five previous files (about 30 MB in total), so the oldest entries are deleted as new ones are written; an '
-    . 'administrator can delete the files at any time. The entries are not exported or deleted per user because they hold no '
-    . 'identifier of the user.';
+$string['privacy:metadata:technical_log'] = 'The technical log of the plugin, the file local/jedomi/jedomi.log in the data directory of the site, with its operational and security trace. It never keeps user ids, Telegram chat ids or the texts of the conversations: users and chats appear as pseudonyms (a keyed hash with a random key of the site), and the source IP address is kept only for requests rejected for security reasons. The file is limited by size: it rotates when it reaches 5 MB and keeps the five previous files (about 30 MB in total), so the oldest entries are deleted as new ones are written; an administrator can delete the files at any time. The entries are not exported or deleted per user because they hold no identifier of the user.';
 $string['privacy:metadata:technical_log:chat'] = 'A pseudonym of the Telegram chat, never the chat id.';
-$string['privacy:metadata:technical_log:ipaddress'] = 'The IP address of the request, only when it was rejected for security '
-    . 'reasons.';
-$string['privacy:metadata:technical_log:user'] = 'A pseudonym of the user who created an agent or uses the Telegram bot, never the '
-    . 'user id.';
+$string['privacy:metadata:technical_log:ipaddress'] = 'The IP address of the request, only when it was rejected for security reasons.';
+$string['privacy:metadata:technical_log:user'] = 'A pseudonym of the user who created an agent or uses the Telegram bot, never the user id.';
 $string['privacy:metadata:telegram'] = 'The answers of the bot, the notifications and the results of the agents are delivered to the linked Telegram chat.';
 $string['privacy:metadata:telegram:chatid'] = 'The Telegram chat the data is sent to.';
 $string['privacy:metadata:telegram:messages'] = 'The answers, notifications and agent results, which can include data of the site.';
@@ -777,8 +771,7 @@ $string['qa_teacher_my_courses_msg'] = 'In which courses am I currently a teache
 $string['qa_teacher_never_logged_label'] = 'Never logged in';
 $string['qa_teacher_never_logged_msg'] = 'Which students never accessed course {$a}?';
 $string['qa_teacher_notify_group_label'] = 'Notify group';
-$string['qa_teacher_notify_group_msg'] = 'Draft a message for students in course {$a} reminding them of pending activities, '
-    . 'and send it to them as a Moodle message with send_messages';
+$string['qa_teacher_notify_group_msg'] = 'Draft a message for students in course {$a} reminding them of pending activities, and send it to them as a Moodle message with send_messages';
 $string['qa_teacher_performance_label'] = 'Performance';
 $string['qa_teacher_performance_msg'] = 'What is the average grade in course {$a}?';
 $string['qa_teacher_top_students_label'] = 'Top students';
@@ -787,8 +780,7 @@ $string['query_profiler'] = 'Query profiler';
 $string['query_profiler_avg'] = 'Avg duration';
 $string['query_profiler_channel'] = 'Channel';
 $string['query_profiler_count'] = 'Executions';
-$string['query_profiler_desc'] = 'Logs the SQL queries of every channel (agents, agent previews, web chat, Telegram and the '
-    . 'companion web service), including execution time and row count. Use the filters below to find slow queries.';
+$string['query_profiler_desc'] = 'Logs the SQL queries of every channel (agents, agent previews, web chat, Telegram and the companion web service), including execution time and row count. Use the filters below to find slow queries.';
 $string['query_profiler_heading'] = 'SQL query profiler';
 $string['query_profiler_max'] = 'Max duration';
 $string['query_profiler_min_ms'] = 'Minimum duration (ms)';
@@ -814,10 +806,7 @@ $string['read_file_blocked'] = 'Access to this file is not allowed.';
 $string['read_file_not_allowed'] = 'This path is not in the allowed list.';
 $string['reading_image'] = 'Reading the image...';
 $string['regenerate'] = 'Regenerate secret';
-$string['role_visibility_help'] = 'Turn a role off to hide the Jedomi sidebar from users with that role. A user is blocked only '
-    . 'when every role they hold on the page (in the activity, the course, its categories and the site) is turned off; a user '
-    . 'with another role that is on keeps the sidebar. A user without any assigned role is judged by the Authenticated user '
-    . 'role. Site admins always see it. Guests and users who are not logged in never see it, so the guest roles are not listed.';
+$string['role_visibility_help'] = 'Turn a role off to hide the Jedomi sidebar from users with that role. A user is blocked only when every role they hold on the page (in the activity, the course, its categories and the site) is turned off; a user with another role that is on keeps the sidebar. A user without any assigned role is judged by the Authenticated user role. Site admins always see it. Guests and users who are not logged in never see it, so the guest roles are not listed.';
 $string['role_visibility_label'] = 'Show sidebar by role';
 $string['search_ws_placeholder'] = 'Search web services...';
 $string['security_heading'] = 'Security';
@@ -844,51 +833,26 @@ $string['speech_placeholder_text'] = 'some text';
 $string['speech_voice'] = 'Voice';
 $string['speech_voice_help'] = 'Voice of the chosen voice model that reads the answers. Each model has its own voices.';
 $string['spt_secret'] = 'Permission token secret';
-$string['spt_secret_help'] = 'Secret used to sign the chat permission tokens. It is generated automatically for this site and '
-    . 'stored in Moodle, encrypted, so it does not need to be set. It is never shown: leave the field empty to keep the current '
-    . 'secret, or type a new one to replace it. Changing it invalidates the tokens already issued: users must reload the page '
-    . 'to keep chatting.';
-$string['sql_activity_rejected'] = 'The query reads activities, grades or logs of a course that your permissions in Moodle '
-    . 'do not let you see (such as a hidden activity, an activity you may not view, or the grades without the grade report '
-    . 'permissions), so it was not run. Read the tables of the other activity types, or ask an administrator.';
-$string['sql_blind_marking_rejected'] = 'The query reads who submitted or was graded in an assignment with anonymous '
-    . 'submissions whose identities are not revealed, so it was not run. Read the assignment without the student ids, or '
-    . 'reveal the identities in the assignment first.';
-$string['sql_carriage_return_rejected'] = 'The query contains a carriage return (\\r), so it was not run. '
-    . 'Write line breaks as \\n only.';
-$string['sql_category_rejected'] = 'The query reads course categories, and some are hidden from you, so it was not run. '
-    . 'Limit the categories to the visible ones (for example WHERE cc.visible = 1).';
-$string['sql_construct_rejected'] = 'The query uses syntax outside the allowed read-only subset, so it was not run. Write a single '
-    . 'SELECT with FROM, [LEFT] JOIN ... ON, WHERE conditions joined only by AND (=, <>, <, >, IN (numbers), IS [NOT] NULL, '
-    . 'LIKE \'text\'), GROUP BY, HAVING, ORDER BY and LIMIT, and only the functions COUNT, SUM, AVG, MIN, MAX, ROUND and '
-    . 'COALESCE. '
-    . 'Do not use CASE, OR, NOT, subqueries, UNION, comments, quoted names, variables or semicolons.';
+$string['spt_secret_help'] = 'Secret used to sign the chat permission tokens. It is generated automatically for this site and stored in Moodle, encrypted, so it does not need to be set. It is never shown: leave the field empty to keep the current secret, or type a new one to replace it. Changing it invalidates the tokens already issued: users must reload the page to keep chatting.';
+$string['sql_activity_rejected'] = 'The query reads activities, grades or logs of a course that your permissions in Moodle do not let you see (such as a hidden activity, an activity you may not view, or the grades without the grade report permissions), so it was not run. Read the tables of the other activity types, or ask an administrator.';
+$string['sql_blind_marking_rejected'] = 'The query reads who submitted or was graded in an assignment with anonymous submissions whose identities are not revealed, so it was not run. Read the assignment without the student ids, or reveal the identities in the assignment first.';
+$string['sql_carriage_return_rejected'] = 'The query contains a carriage return (\\r), so it was not run. Write line breaks as \\n only.';
+$string['sql_category_rejected'] = 'The query reads course categories, and some are hidden from you, so it was not run. Limit the categories to the visible ones (for example WHERE cc.visible = 1).';
+$string['sql_construct_rejected'] = 'The query uses syntax outside the allowed read-only subset, so it was not run. Write a single SELECT with FROM, [LEFT] JOIN ... ON, WHERE conditions joined only by AND (=, <>, <, >, IN (numbers), IS [NOT] NULL, LIKE \'text\'), GROUP BY, HAVING, ORDER BY and LIMIT, and only the functions COUNT, SUM, AVG, MIN, MAX, ROUND and COALESCE. Do not use CASE, OR, NOT, subqueries, UNION, comments, quoted names, variables or semicolons.';
 $string['sql_course_rejected'] = 'The query names a course you do not manage, so it was not run.';
-$string['sql_course_unfiltered_rejected'] = 'The query reads course data without limiting it to the courses you manage, so it was '
-    . 'not run. Limit every course table to the id of one of your courses (for example WHERE c.id = 12 or WHERE e.courseid IN '
-    . '(12, 15)), and do not use OR, UNION, BETWEEN or subqueries.';
-$string['sql_function_rejected'] = 'The query uses a function or clause that can read or write server files, pause or lock '
-    . 'the database, reach other databases or reveal server variables (such as LOAD_FILE, SLEEP, BENCHMARK, INTO OUTFILE, '
-    . '@@ or FOR UPDATE), so it was not run.';
+$string['sql_course_unfiltered_rejected'] = 'The query reads course data without limiting it to the courses you manage, so it was not run. Limit every course table to the id of one of your courses (for example WHERE c.id = 12 or WHERE e.courseid IN (12, 15)), and do not use OR, UNION, BETWEEN or subqueries.';
+$string['sql_function_rejected'] = 'The query uses a function or clause that can read or write server files, pause or lock the database, reach other databases or reveal server variables (such as LOAD_FILE, SLEEP, BENCHMARK, INTO OUTFILE, @@ or FOR UPDATE), so it was not run.';
 $string['sql_heading'] = 'Web chat queries';
 $string['sql_heading_help'] = 'Limits of the database queries the AI runs in the web chat. The time limit per query applies on MySQL, MariaDB and PostgreSQL; SQL Server and Oracle keep the SQL tool with the row limit only.';
-$string['sql_params_rejected'] = 'The query parameters do not match its placeholders one to one, so it was not run. Use a list '
-    . 'with one value per ? or one key per :name, written without the colon, and no other values.';
+$string['sql_params_rejected'] = 'The query parameters do not match its placeholders one to one, so it was not run. Use a list with one value per ? or one key per :name, written without the colon, and no other values.';
 $string['sql_row_limit_web'] = 'Maximum rows per query (web chat)';
 $string['sql_row_limit_web_help'] = 'Most rows a database query of the web chat returns to the AI, from 10 to 1000 (default: 100). More rows give more complete answers to large questions but make each answer slower and larger. Telegram, the companion web service and the scheduled agents keep their own limits. On SQL Server and Oracle only the row limit applies: Moodle cannot set a time limit per query there, so a slow query of the AI runs on the database of the site until the database or PHP stops it. Keep the limit low on those databases.';
 $string['sql_row_limit_web_invalid'] = 'Enter a whole number from 10 to 1000.';
 $string['sql_sensitive_rejected'] = 'The query reads credentials, keys, tokens, site configuration or sessions, so it was not run.';
-$string['sql_separate_groups_rejected'] = 'The query reads students, grades or submissions of a course or activity in separate '
-    . 'groups mode, and you may not access all groups, so it was not run. Read the course structure only, or ask an '
-    . 'administrator.';
-$string['sql_table_not_allowed'] = 'The query reads a table that is not available for the courses you manage (such as messages, '
-    . 'notifications, user preferences or the whole user list), so it was not run. Read course tables limited to your courses, '
-    . 'and read user names only by joining {user} to the enrolments, roles or grades of one of your courses (for example JOIN '
-    . '{user_enrolments} ue ON ue.userid = u.id JOIN {enrol} e ON e.id = ue.enrolid WHERE e.courseid = 12).';
+$string['sql_separate_groups_rejected'] = 'The query reads students, grades or submissions of a course or activity in separate groups mode, and you may not access all groups, so it was not run. Read the course structure only, or ask an administrator.';
+$string['sql_table_not_allowed'] = 'The query reads a table that is not available for the courses you manage (such as messages, notifications, user preferences or the whole user list), so it was not run. Read course tables limited to your courses, and read user names only by joining {user} to the enrolments, roles or grades of one of your courses (for example JOIN {user_enrolments} ue ON ue.userid = u.id JOIN {enrol} e ON e.id = ue.enrolid WHERE e.courseid = 12).';
 $string['sql_too_long_rejected'] = 'The query is longer than 8000 characters, so it was not run. Write a shorter query.';
-$string['sql_user_column_rejected'] = 'The query reads user columns other than the id and the names (such as the e-mail, phone, '
-    . 'address or last IP), or every column with *, so it was not run. List only u.id, u.firstname, u.lastname, u.middlename, '
-    . 'u.alternatename, u.firstnamephonetic or u.lastnamephonetic.';
+$string['sql_user_column_rejected'] = 'The query reads user columns other than the id and the names (such as the e-mail, phone, address or last IP), or every column with *, so it was not run. List only u.id, u.firstname, u.lastname, u.middlename, u.alternatename, u.firstnamephonetic or u.lastnamephonetic.';
 $string['still_working'] = 'Jedomi is still working on your answer…';
 $string['stop_answer'] = 'Stop the answer';
 $string['summary_config_data'] = 'config data retrieved';
@@ -935,8 +899,7 @@ $string['telegram_drop_pending_failed'] = 'The pending updates could not be drop
 $string['telegram_enabled'] = 'Enable Telegram integration';
 $string['telegram_enabled_save_failed'] = 'The Telegram integration switch could not be saved. Please try again.';
 $string['telegram_gateway_timeout'] = 'AI response timeout (seconds)';
-$string['telegram_gateway_timeout_help'] = 'Maximum seconds to wait for each AI request of the Telegram bot, sent through the '
-    . 'Datacurso AI provider (5-50). Each request has to fit in one run of the bot, so longer waits cannot apply.';
+$string['telegram_gateway_timeout_help'] = 'Maximum seconds to wait for each AI request of the Telegram bot, sent through the Datacurso AI provider (5-50). Each request has to fit in one run of the bot, so longer waits cannot apply.';
 $string['telegram_heading'] = 'Telegram';
 $string['telegram_heading_help'] = 'Connect Jedomi to a Telegram bot so users can chat via Telegram.';
 $string['telegram_help_footer'] = 'After linking, send any message and I\'ll forward it to Jedomi AI for a response.';
@@ -994,8 +957,7 @@ $string['telegram_msg_role_blocked'] = 'Your role does not have access to Jedomi
 $string['telegram_msg_state_save_failed'] = '⚠️ Sorry, the progress of your request could not be saved. Please try again with /new.';
 $string['telegram_msg_still_processing'] = '⏳ I am still working on your previous request, so this message was not processed. Please send it again once I answer.';
 $string['telegram_msg_text_only'] = 'I can only read text, photos, documents and voice messages. Please send your question as text.';
-$string['telegram_msg_token_invalid'] = 'The bot token is not valid, so it was not saved. The previous token was removed and the bot was '
-    . 'disconnected; the other changes were saved. Check the token from @BotFather and save it again.';
+$string['telegram_msg_token_invalid'] = 'The bot token is not valid, so it was not saved. The previous token was removed and the bot was disconnected; the other changes were saved. Check the token from @BotFather and save it again.';
 $string['telegram_msg_token_removed'] = 'The bot token was removed and its webhook was deleted in Telegram. The bot no longer answers.';
 $string['telegram_msg_token_removed_webhook_kept'] = 'Bot token removed. It could not be decrypted, so its webhook could not be deleted in Telegram and may remain registered: to delete it, enter the token again and remove it, or revoke the token in @BotFather.';
 $string['telegram_msg_unavailable'] = 'The Jedomi bot is not available right now. Please try again later.';
@@ -1037,39 +999,30 @@ $string['telegram_remove_token_desc'] = 'Disconnect the bot: the token is delete
 $string['telegram_require_pin'] = 'Require a PIN in Telegram for actions of administrators and managers';
 $string['telegram_require_pin_desc'] = 'Administrators and managers confirm their changes in Telegram with a PIN they set on their profile.';
 $string['telegram_require_pin_help'] = 'When checked, each administrator and manager sets a PIN of 6 to 8 digits on the Jedomi Telegram page of their profile. Their changes through Telegram are confirmed with the PIN instead of the Confirm button; after the right PIN it is not asked again for 15 minutes, but each change still shows its card and runs only when they confirm it with the button or the confirmation word, and 3 wrong PINs lock their changes through Telegram for 15 minutes. Until they set the PIN their changes through Telegram are refused, while queries keep working. Teachers and students are not affected.';
-$string['telegram_role_visibility_help'] = 'Toggle OFF to prevent users with this role from linking or receiving Telegram '
-    . 'messages. Admins always have access.';
+$string['telegram_role_visibility_help'] = 'Toggle OFF to prevent users with this role from linking or receiving Telegram messages. Admins always have access.';
 $string['telegram_search_query_required'] = 'Search query required.';
 $string['telegram_secret_regenerated'] = 'The webhook secret was regenerated and the new webhook URL was registered in Telegram.';
-$string['telegram_secret_regenerated_unregistered'] = 'The webhook secret was regenerated, but the new webhook URL could not be registered in '
-    . 'Telegram. Check the webhook status.';
+$string['telegram_secret_regenerated_unregistered'] = 'The webhook secret was regenerated, but the new webhook URL could not be registered in Telegram. Check the webhook status.';
 $string['telegram_setup_guide'] = 'Setup guide';
 $string['telegram_sql_query_required'] = 'SQL query required.';
 $string['telegram_status_connected'] = 'Connected';
 $string['telegram_status_disconnected'] = 'Disconnected';
 $string['telegram_status_invalid_token'] = 'invalid token, paste it again and save.';
-$string['telegram_step1_desc'] = 'Open Telegram, search for <strong>@BotFather</strong>, send <code>/newbot</code>, choose a name '
-    . 'and username. Copy the token it gives you (format: <code>123456:ABC-DEF...</code>).';
+$string['telegram_step1_desc'] = 'Open Telegram, search for <strong>@BotFather</strong>, send <code>/newbot</code>, choose a name and username. Copy the token it gives you (format: <code>123456:ABC-DEF...</code>).';
 $string['telegram_step1_title'] = 'Create a bot in @BotFather';
-$string['telegram_step2_desc'] = 'Paste the token in the <strong>Bot token</strong> field below and click <strong>Save changes</strong>. '
-    . 'The integration switch is saved as soon as it is changed.';
+$string['telegram_step2_desc'] = 'Paste the token in the <strong>Bot token</strong> field below and click <strong>Save changes</strong>. The integration switch is saved as soon as it is changed.';
 $string['telegram_step2_title'] = 'Paste the token and save';
-$string['telegram_step3_desc'] = 'Nothing to do: the plugin registers the <strong>Webhook URL</strong> in Telegram '
-    . 'automatically when the bot token is saved. If the site URL changes, save the bot token again to register the new URL.';
+$string['telegram_step3_desc'] = 'Nothing to do: the plugin registers the <strong>Webhook URL</strong> in Telegram automatically when the bot token is saved. If the site URL changes, save the bot token again to register the new URL.';
 $string['telegram_step3_title'] = 'Register the webhook in Telegram';
-$string['telegram_step4_desc'] = 'Use the role toggles below to control which Moodle roles can use Telegram. Site admins always '
-    . 'have access regardless of this setting.';
+$string['telegram_step4_desc'] = 'Use the role toggles below to control which Moodle roles can use Telegram. Site admins always have access regardless of this setting.';
 $string['telegram_step4_title'] = 'Configure role access (optional)';
-$string['telegram_stepU1_desc'] = 'Click your name in the top bar → <strong>Profile</strong>. You will see a <strong>{$a}</strong> '
-    . 'section with the <em>Link Telegram</em> link.';
+$string['telegram_stepU1_desc'] = 'Click your name in the top bar → <strong>Profile</strong>. You will see a <strong>{$a}</strong> section with the <em>Link Telegram</em> link.';
 $string['telegram_stepU1_title'] = 'Go to your Moodle profile';
 $string['telegram_stepU2_desc'] = 'Click <strong>Generate code</strong>. A 6-character code appears, valid for 10 minutes.';
 $string['telegram_stepU2_title'] = 'Generate a linking code';
-$string['telegram_stepU3_desc'] = 'In Telegram, open your institution\'s bot and send: <code>/start YOUR_CODE</code>. The bot '
-    . 'confirms the link instantly.';
+$string['telegram_stepU3_desc'] = 'In Telegram, open your institution\'s bot and send: <code>/start YOUR_CODE</code>. The bot confirms the link instantly.';
 $string['telegram_stepU3_title'] = 'Send /start to the bot';
-$string['telegram_stepU4_desc'] = 'Send any message to the bot. Jedomi answers with real data from your Moodle. To unlink, send '
-    . '<code>/desvincular</code> or use your profile page.';
+$string['telegram_stepU4_desc'] = 'Send any message to the bot. Jedomi answers with real data from your Moodle. To unlink, send <code>/desvincular</code> or use your profile page.';
 $string['telegram_stepU4_title'] = 'Start chatting';
 $string['telegram_step_admin_title'] = 'Administrator setup';
 $string['telegram_step_user_title'] = 'User setup (each user does this once)';
@@ -1083,96 +1036,57 @@ $string['telegram_webhook_auto_missing_desc'] = 'Try saving the token again.';
 $string['telegram_webhook_auto_missing_title'] = 'Webhook not registered';
 $string['telegram_webhook_auto_ok_desc'] = 'When the token was saved, the webhook was registered automatically.';
 $string['telegram_webhook_auto_ok_title'] = 'Webhook registered automatically';
-$string['telegram_webhook_failed_body'] = 'The Telegram webhook of Jedomi could not be registered with its new secret, so the bot '
-    . 'does not receive messages. The site keeps trying for about 17 hours. Check that the site is reachable over HTTPS and '
-    . 'can reach api.telegram.org, or save the bot token again in the Integrations tab of Jedomi.';
-$string['telegram_webhook_failed_final_body'] = 'The Telegram webhook of Jedomi could still not be registered after '
-    . 'about 17 hours of attempts, and the site stopped trying, so the bot does not receive messages. Save the bot token '
-    . 'again in the Integrations tab of Jedomi to register it.';
+$string['telegram_webhook_failed_body'] = 'The Telegram webhook of Jedomi could not be registered with its new secret, so the bot does not receive messages. The site keeps trying for about 17 hours. Check that the site is reachable over HTTPS and can reach api.telegram.org, or save the bot token again in the Integrations tab of Jedomi.';
+$string['telegram_webhook_failed_final_body'] = 'The Telegram webhook of Jedomi could still not be registered after about 17 hours of attempts, and the site stopped trying, so the bot does not receive messages. Save the bot token again in the Integrations tab of Jedomi to register it.';
 $string['telegram_webhook_failed_open'] = 'Open the Integrations tab';
 $string['telegram_webhook_failed_subject'] = 'Jedomi: the Telegram bot does not receive messages';
 $string['telegram_webhook_info_failed'] = 'getWebhookInfo failed. Check the bot token and outbound HTTPS access.';
-$string['telegram_webhook_needs_registration'] = 'The update could not register the Telegram webhook again with its new secret, so the bot '
-    . 'does not receive messages. The site retries it in the background for about 17 hours; you can also save the bot token '
-    . 'again to register it.';
+$string['telegram_webhook_needs_registration'] = 'The update could not register the Telegram webhook again with its new secret, so the bot does not receive messages. The site retries it in the background for about 17 hours; you can also save the bot token again to register it.';
 $string['telegram_webhook_retry_failed'] = 'The Telegram webhook could not be registered; the task will try again.';
 $string['telegram_webhook_secret'] = 'Webhook secret';
-$string['telegram_webhook_secret_help'] = 'Random secret that Telegram sends in a header with every message, never in the webhook '
-    . 'URL. Regenerate it if it is compromised.';
+$string['telegram_webhook_secret_help'] = 'Random secret that Telegram sends in a header with every message, never in the webhook URL. Regenerate it if it is compromised.';
 $string['telegram_webhook_set_failed'] = 'Telegram did not accept the webhook. Check that the site URL uses HTTPS and is reachable from the internet.';
 $string['telegram_webhook_status'] = 'Webhook status';
 $string['telegram_webhook_url'] = 'Webhook URL';
-$string['telegram_webhook_url_help'] = 'Registered in Telegram automatically when the bot token is saved. If the site URL '
-    . 'changes, save the bot token again to register the new URL.';
+$string['telegram_webhook_url_help'] = 'Registered in Telegram automatically when the bot token is saved. If the site URL changes, save the bot token again to register the new URL.';
 $string['thinking'] = 'Thinking...';
 $string['toggle_thinking'] = 'Toggle thinking animation';
 $string['token_expired'] = 'The chat permissions have expired. Reload the page to keep using Jedomi.';
-$string['tool_admin_describe_desc'] = 'Get full documentation (parameters, types, required fields) for a specific admin CLI '
-    . 'operation by name. Use this AFTER admin_search and BEFORE admin_execute to verify required parameters.';
+$string['tool_admin_describe_desc'] = 'Get full documentation (parameters, types, required fields) for a specific admin CLI operation by name. Use this AFTER admin_search and BEFORE admin_execute to verify required parameters.';
 $string['tool_admin_describe_name'] = 'Operation name (e.g. backup, scheduled_task, purge_caches).';
-$string['tool_admin_execute_desc'] = 'Execute an admin CLI operation to create or modify Moodle data. Requires admin or manager '
-    . 'role. USE WITH CAUTION — these operations modify the database. COMBINE with WS tools: first use ws_search/ws_execute to '
-    . 'discover courses, sections, users, or verify data, then call admin_execute with the gathered info. Example flow: '
-    . 'ws_execute(core_course_get_courses_by_field) to find course → admin_execute(create_mod, ...) to create an activity.';
+$string['tool_admin_execute_desc'] = 'Execute an admin CLI operation to create or modify Moodle data. Requires admin or manager role. USE WITH CAUTION — these operations modify the database. COMBINE with WS tools: first use ws_search/ws_execute to discover courses, sections, users, or verify data, then call admin_execute with the gathered info. Example flow: ws_execute(core_course_get_courses_by_field) to find course → admin_execute(create_mod, ...) to create an activity.';
 $string['tool_admin_execute_name'] = 'Operation name (e.g. backup, scheduled_task, purge_caches).';
-$string['tool_admin_execute_params'] = 'JSON object of parameters for the operation (use admin_describe first to see required '
-    . 'fields).';
-$string['tool_admin_search_desc'] = 'Search for CLI operations available to administrators (e.g. backup, purge caches, run '
-    . 'scheduled tasks). Use this to discover what operations exist before describing or executing them.';
+$string['tool_admin_execute_params'] = 'JSON object of parameters for the operation (use admin_describe first to see required fields).';
+$string['tool_admin_search_desc'] = 'Search for CLI operations available to administrators (e.g. backup, purge caches, run scheduled tasks). Use this to discover what operations exist before describing or executing them.';
 $string['tool_admin_search_limit'] = 'Maximum number of results to return (default: 8, max: 20).';
 $string['tool_admin_search_query'] = 'Search keywords to find relevant admin operations.';
 $string['tool_api_call'] = 'Executing Moodle action...';
-$string['tool_create_agent_context_id'] = 'The ID of the Moodle context (course, category or user context), not the ID of the '
-    . 'course, category or user. Required when context_type is not "site".';
-$string['tool_create_agent_context_type'] = 'Scope of execution: "site" for global, "course" to limit to a specific course, '
-    . '"category" for a course category, "user" for a specific user. Defaults to "site".';
-$string['tool_create_agent_desc'] = 'Create a scheduled AI agent. The agent will execute the given prompt on a recurring '
-    . 'schedule, cache results, and send notifications via Telegram (if linked). Only available to admins and managers. Use this '
-    . 'when a user wants to automate recurring AI tasks like daily summaries, monitoring, or periodic reports. Returns the new '
-    . 'agent ID.';
-$string['tool_create_agent_enabled'] = 'Whether the agent starts enabled. Default: true. Set to false to create but not activate '
-    . 'yet.';
-$string['tool_create_agent_prompt'] = 'The task description or instruction the AI agent will execute each time it runs. Be '
-    . 'specific about what data to fetch, analyze, or report. Example: "Summarize new enrollments and activity from the last 24 '
-    . 'hours" or "Check for students at risk of failing in course 42 and notify me".';
-$string['tool_create_agent_schedule'] = 'Cron expression defining how often the agent runs. Common presets: "*/5 * * * *" = every '
-    . '5 minutes, "*/30 * * * *" = every 30 minutes, "0 * * * *" = hourly, "0 0 * * *" = daily at midnight, "0 0 * * 0" = weekly '
-    . 'on Sunday.';
-$string['tool_delete_agent_desc'] = 'Delete a scheduled AI agent by its ID. This permanently removes the agent and all its cached '
-    . 'results. Cannot be undone.';
+$string['tool_create_agent_context_id'] = 'The ID of the Moodle context (course, category or user context), not the ID of the course, category or user. Required when context_type is not "site".';
+$string['tool_create_agent_context_type'] = 'Scope of execution: "site" for global, "course" to limit to a specific course, "category" for a course category, "user" for a specific user. Defaults to "site".';
+$string['tool_create_agent_desc'] = 'Create a scheduled AI agent. The agent will execute the given prompt on a recurring schedule, cache results, and send notifications via Telegram (if linked). Only available to admins and managers. Use this when a user wants to automate recurring AI tasks like daily summaries, monitoring, or periodic reports. Returns the new agent ID.';
+$string['tool_create_agent_enabled'] = 'Whether the agent starts enabled. Default: true. Set to false to create but not activate yet.';
+$string['tool_create_agent_prompt'] = 'The task description or instruction the AI agent will execute each time it runs. Be specific about what data to fetch, analyze, or report. Example: "Summarize new enrollments and activity from the last 24 hours" or "Check for students at risk of failing in course 42 and notify me".';
+$string['tool_create_agent_schedule'] = 'Cron expression defining how often the agent runs. Common presets: "*/5 * * * *" = every 5 minutes, "*/30 * * * *" = every 30 minutes, "0 * * * *" = hourly, "0 0 * * *" = daily at midnight, "0 0 * * 0" = weekly on Sunday.';
+$string['tool_delete_agent_desc'] = 'Delete a scheduled AI agent by its ID. This permanently removes the agent and all its cached results. Cannot be undone.';
 $string['tool_delete_agent_id'] = 'The numeric ID of the agent to delete. Use list_agents to find the ID.';
 $string['tool_describe_table'] = 'Analyzing table...';
-$string['tool_describe_table_desc'] = 'Obtiene la estructura (columnas, tipos, claves, indices, foreign keys) de una tabla de la '
-    . 'base de datos de Moodle. Cacheado 24h.';
+$string['tool_describe_table_desc'] = 'Obtiene la estructura (columnas, tipos, claves, indices, foreign keys) de una tabla de la base de datos de Moodle. Cacheado 24h.';
 $string['tool_describe_table_tablename'] = 'Nombre de la tabla (ej: course, user, grade_grades)';
-$string['tool_document_read_cmid'] = 'Course module ID (cmid) of the activity. Get it from the page context when viewing an '
-    . 'activity, or discover it via ws_search/ws_execute first.';
-$string['tool_document_read_desc'] = 'Read the PDF published in a course activity (its description or content, never student submissions or '
-    . 'feedback) using its cmid (course module ID). Returns the text of the pages; '
-    . 'scanned pages, tables and diagrams are read by a vision model. Use this when the user asks to read, analyze, summarize '
-    . 'or explain a document of an activity.';
+$string['tool_document_read_cmid'] = 'Course module ID (cmid) of the activity. Get it from the page context when viewing an activity, or discover it via ws_search/ws_execute first.';
+$string['tool_document_read_desc'] = 'Read the PDF published in a course activity (its description or content, never student submissions or feedback) using its cmid (course module ID). Returns the text of the pages; scanned pages, tables and diagrams are read by a vision model. Use this when the user asks to read, analyze, summarize or explain a document of an activity.';
 $string['tool_document_read_pages'] = 'Optional pages to read, for example "1,3-5". Leave it out to read the whole document.';
 $string['tool_execute_sql'] = 'Querying database...';
 $string['tool_execute_sql_desc'] = 'Run a SELECT query on the Moodle database and return the rows as JSON. Read only. Limits in this channel: at most {$a->rows} rows (the result says when it was truncated) and {$a->seconds} seconds per query on MySQL, MariaDB and PostgreSQL.';
 $string['tool_execute_sql_params'] = 'Bound parameters of the query, in the order of the ? placeholders (optional)';
 $string['tool_execute_sql_sql'] = 'SELECT query to run. Use ? as the placeholder of each parameter. Example: SELECT id, fullname FROM {course} WHERE category = ?';
 $string['tool_get_site_config'] = 'Getting site configuration...';
-$string['tool_get_site_config_desc'] = 'Obtiene configuracion del sitio Moodle (sitename, lang, timezone, etc.). Solo disponible '
-    . 'para administradores.';
-$string['tool_get_site_config_keys'] = 'Lista de claves de configuracion. Validas: sitename, siteurl, lang, country, timezone, '
-    . 'maxbytes, passwordpolicy, enrol_plugins_enabled, auth_plugins_enabled';
-$string['tool_list_agents_desc'] = 'List all configured scheduled AI agents, optionally filtered by status or context. Returns '
-    . 'agent ID, prompt excerpt, schedule, context, status, last run, and next run.';
-$string['tool_list_agents_status'] = 'Optional filter: "enabled" to show only active agents, "disabled" for inactive ones. Leave '
-    . 'empty to show all.';
-$string['tool_my_assignments_desc'] = 'Read-only. The assignments of the courses of the current user, with their opening, due and '
-    . 'cut-off dates as they apply to the user (with their overrides, and the extended due date when one was granted) and the '
-    . 'submission status, and the upcoming deadlines of the user calendar. Use it when a student asks about '
-    . 'their assignments, homework or deadlines.';
-$string['tool_my_courses_desc'] = 'Read-only. The courses in which the current user has an active enrolment. Use it when a '
-    . 'student asks about their courses.';
-$string['tool_my_grades_desc'] = 'Read-only. The grades the current user can see in their courses (hidden or unreleased grades '
-    . 'are not included). Use it when a student asks about their grades.';
+$string['tool_get_site_config_desc'] = 'Obtiene configuracion del sitio Moodle (sitename, lang, timezone, etc.). Solo disponible para administradores.';
+$string['tool_get_site_config_keys'] = 'Lista de claves de configuracion. Validas: sitename, siteurl, lang, country, timezone, maxbytes, passwordpolicy, enrol_plugins_enabled, auth_plugins_enabled';
+$string['tool_list_agents_desc'] = 'List all configured scheduled AI agents, optionally filtered by status or context. Returns agent ID, prompt excerpt, schedule, context, status, last run, and next run.';
+$string['tool_list_agents_status'] = 'Optional filter: "enabled" to show only active agents, "disabled" for inactive ones. Leave empty to show all.';
+$string['tool_my_assignments_desc'] = 'Read-only. The assignments of the courses of the current user, with their opening, due and cut-off dates as they apply to the user (with their overrides, and the extended due date when one was granted) and the submission status, and the upcoming deadlines of the user calendar. Use it when a student asks about their assignments, homework or deadlines.';
+$string['tool_my_courses_desc'] = 'Read-only. The courses in which the current user has an active enrolment. Use it when a student asks about their courses.';
+$string['tool_my_grades_desc'] = 'Read-only. The grades the current user can see in their courses (hidden or unreleased grades are not included). Use it when a student asks about their grades.';
 $string['tool_own_data_courseid'] = 'Optional: id of one of the courses of the user, to read only that course.';
 $string['tool_progress_create_agent'] = 'Creating agent';
 $string['tool_progress_create_assign'] = 'Creating assignments';
@@ -1196,48 +1110,27 @@ $string['tool_progress_set_course_sections'] = 'Organising course sections';
 $string['tool_progress_upload_content_files'] = 'Uploading files';
 $string['tool_schema_lookup'] = 'Looking up table...';
 $string['tool_search_tables'] = 'Searching tables...';
-$string['tool_search_tables_desc'] = 'Search Moodle tables by intent or keywords in ENGLISH. FALLBACK for when web services '
-    . 'cannot provide the needed data. Only use this AFTER confirming no relevant web service exists. Searches across table names '
-    . 'AND their COMMENT descriptions from install.xml. Returns name, comment, field names, and field comments.';
+$string['tool_search_tables_desc'] = 'Search Moodle tables by intent or keywords in ENGLISH. FALLBACK for when web services cannot provide the needed data. Only use this AFTER confirming no relevant web service exists. Searches across table names AND their COMMENT descriptions from install.xml. Returns name, comment, field names, and field comments.';
 $string['tool_search_tables_limit'] = 'Maximum results (default: 8, max: 15)';
 $string['tool_search_tables_query'] = 'Intent or keywords in ENGLISH (e.g. "user grades", "course enrolment", "student")';
-$string['tool_send_messages_desc'] = 'Send a Moodle internal message to one or more users. '
-    . 'Only when the user explicitly asks to send or notify a message; never to answer a question or analyse data. '
-    . 'Find the user ids first '
-    . '(ws_search/ws_execute or execute_sql). The user confirms before the messages are sent: call this tool once '
-    . 'and do not ask for confirmation in text.';
+$string['tool_send_messages_desc'] = 'Send a Moodle internal message to one or more users. Only when the user explicitly asks to send or notify a message; never to answer a question or analyse data. Find the user ids first (ws_search/ws_execute or execute_sql). The user confirms before the messages are sent: call this tool once and do not ask for confirmation in text.';
 $string['tool_send_messages_message'] = 'Plain text of the message, in the user\'s language.';
 $string['tool_send_messages_user_ids'] = 'Moodle user ids of the recipients.';
 $string['tool_site_overview'] = 'Getting the platform overview...';
 $string['tool_site_overview_days'] = 'Days of the activity window used to count recently active users (1-365, default 30).';
-$string['tool_site_overview_desc'] = 'Get in ONE call an overview of the whole platform: site (name, host, '
-    . 'Moodle release, language, time zone, last cron run), users (total, active, suspended, recently active, never logged '
-    . 'in), courses (total, visible, hidden, categories, without a teacher), active enrolments, activities (total and most '
-    . 'used types), scheduled Jedomi agents and file storage. Call it FIRST for a general summary or the overall state of '
-    . 'the platform and answer from it; use other tools only for details it does not give.';
+$string['tool_site_overview_desc'] = 'Get in ONE call an overview of the whole platform: site (name, host, Moodle release, language, time zone, last cron run), users (total, active, suspended, recently active, never logged in), courses (total, visible, hidden, categories, without a teacher), active enrolments, activities (total and most used types), scheduled Jedomi agents and file storage. Call it FIRST for a general summary or the overall state of the platform and answer from it; use other tools only for details it does not give.';
 $string['tool_sql_read'] = 'Querying database...';
 $string['tool_unknown'] = 'Running tool...';
 $string['tool_webservice_lookup'] = 'Looking up API function...';
 $string['tool_ws_describe'] = 'Getting webservice function details...';
-$string['tool_ws_describe_desc'] = 'Get full documentation (description, parameters with * = required, return type) for a '
-    . 'specific web service function when you already know its exact name. ALWAYS call this AFTER ws_search and BEFORE ws_execute '
-    . 'to verify required fields.';
+$string['tool_ws_describe_desc'] = 'Get full documentation (description, parameters with * = required, return type) for a specific web service function when you already know its exact name. ALWAYS call this AFTER ws_search and BEFORE ws_execute to verify required fields.';
 $string['tool_ws_describe_wsname'] = 'Exact function name (e.g. core_user_create_users)';
 $string['tool_ws_execute'] = 'Executing web service...';
-$string['tool_ws_execute_desc'] = 'Execute a Moodle web service function on behalf of the current user. Use AFTER ws_search to '
-    . 'get the exact function name and parameters. If the first attempt fails with "Missing required key" or "invalid parameter", '
-    . 'retry with default values for optional fields. For batch operations (same action on multiple items), call this function '
-    . 'MULTIPLE times — once per item.';
-$string['tool_ws_execute_params'] = 'JSON-encoded parameters for the web service function. MUST include every * (required) field. '
-    . 'IMPORTANT: If the first attempt fails with "Detectado valor de parámetro no válido" or "Missing required key", the '
-    . 'instance requires fields that the schema marks as optional. In that case, RETRY by adding default values for missing '
-    . 'optional fields (e.g. description="", enrolmentkey="", idnumber="", visibility=0, participation=true).';
+$string['tool_ws_execute_desc'] = 'Execute a Moodle web service function on behalf of the current user. Use AFTER ws_search to get the exact function name and parameters. If the first attempt fails with "Missing required key" or "invalid parameter", retry with default values for optional fields. For batch operations (same action on multiple items), call this function MULTIPLE times — once per item.';
+$string['tool_ws_execute_params'] = 'JSON-encoded parameters for the web service function. MUST include every * (required) field. IMPORTANT: If the first attempt fails with "Detectado valor de parámetro no válido" or "Missing required key", the instance requires fields that the schema marks as optional. In that case, RETRY by adding default values for missing optional fields (e.g. description="", enrolmentkey="", idnumber="", visibility=0, participation=true).';
 $string['tool_ws_execute_wsname'] = 'Web service function name (e.g. core_course_get_courses)';
 $string['tool_ws_search'] = 'Looking up webservice functions...';
-$string['tool_ws_search_desc'] = 'Search Moodle web service functions by intent or keywords in ENGLISH. Returns the most relevant '
-    . 'matches with full description, parameters (* = required), and return structure. If results include what you need: STOP '
-    . 'searching entirely — call ws_describe on the exact name, then ws_execute. Do NOT call SQL tools (search_tables, '
-    . 'describe_table, execute_sql) when WS already covers your need. Do NOT call ws_search again for the same task.';
+$string['tool_ws_search_desc'] = 'Search Moodle web service functions by intent or keywords in ENGLISH. Returns the most relevant matches with full description, parameters (* = required), and return structure. If results include what you need: STOP searching entirely — call ws_describe on the exact name, then ws_execute. Do NOT call SQL tools (search_tables, describe_table, execute_sql) when WS already covers your need. Do NOT call ws_search again for the same task.';
 $string['tool_ws_search_limit'] = 'Máximo de resultados a devolver (default: 6, max: 15)';
 $string['tool_ws_search_query'] = 'Intent or keywords in ENGLISH (e.g. "create user", "enrol student", "get course grades")';
 $string['transcribing'] = 'Transcribing...';
@@ -1276,8 +1169,7 @@ $string['voice_too_short'] = 'The voice message was too short and was discarded.
 $string['waiting_voice'] = 'Waiting for voice...';
 $string['webhook_checking'] = 'Checking...';
 $string['webhook_error'] = 'Last webhook error:';
-$string['webhook_error_alert_desc'] = 'The bot token was saved and validated, but the webhook could not be registered with '
-    . 'Telegram.';
+$string['webhook_error_alert_desc'] = 'The bot token was saved and validated, but the webhook could not be registered with Telegram.';
 $string['webhook_error_alert_title'] = 'Webhook registration issue';
 $string['webhook_error_detail'] = 'Error details:';
 $string['webhook_live_api_error'] = 'API error';
@@ -1290,8 +1182,8 @@ $string['webhook_live_unknown_error'] = 'Unknown error';
 $string['webhook_live_url'] = 'Webhook URL:';
 $string['webhook_not_checked'] = 'Not checked yet. Click "Check webhook" to verify.';
 $string['webhook_ok'] = 'Webhook is configured and healthy.';
-$string['welcome_message_default'] = "Hi, {username}!\nI'm {assistantname}, your Moodle AI assistant. "
-    . 'Ask me about courses, users, grades or settings.';
+$string['welcome_message_default'] = 'Hi, {username}!
+I\'m {assistantname}, your Moodle AI assistant. Ask me about courses, users, grades or settings.';
 $string['ws_agent_allowlist_required'] = 'Agents run no web service function until a web service list is saved for the role of their creator in the Web services tab.';
 $string['ws_cannot_load_info'] = 'Cannot load function info: {$a}';
 $string['ws_component'] = 'Component';

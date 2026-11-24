@@ -18,7 +18,7 @@
  * Tests for the endpoints of the Agents tab (ajax/agent_create.php, agent_purge.php and agent_clear_cache.php).
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -35,6 +35,14 @@ use local_jedomi\agent\agent_manager;
  * @coversNothing
  */
 final class agent_create_test extends \advanced_testcase {
+    #[\Override]
+    protected function setUp(): void {
+        parent::setUp();
+        // The endpoints run in a separate PHP process, which only sees committed data (PostgreSQL included).
+        $this->resetAfterTest();
+        $this->preventResetByRollback();
+    }
+
     /**
      * Submit the agent form to the endpoint as the admin.
      *

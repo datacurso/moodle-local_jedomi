@@ -56,7 +56,7 @@ namespace local_jedomi\local;
  * Site administrators and users who manage every course keep reading every table except the sensitive ones.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class sql_guard {

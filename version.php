@@ -18,17 +18,18 @@
  * Version details for the local_jedomi plugin.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'local_jedomi';
-$plugin->version   = 2026111909;
+$plugin->version   = 2026112300;
 $plugin->requires = 2024100700; // Moodle 4.5.
+$plugin->supported = [405, 405];
 $plugin->maturity  = MATURITY_STABLE;
-$plugin->release   = '1.8.0';
+$plugin->release   = '1.0.0';
 $plugin->dependencies = [
     'aiprovider_datacurso' => 2026111900,
 ];

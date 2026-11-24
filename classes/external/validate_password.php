@@ -15,7 +15,7 @@
 // along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
 
 /**
- * jedomi_validate_password — CompanionWS external function.
+ * local_jedomi_validate_password — CompanionWS external function.
  *
  * Requirement CWS-PWD-01:
  *  - Validates HMAC before execution
@@ -24,7 +24,7 @@
  *  - Returns {valid, violations[]} with specific policy rules broken
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -138,7 +138,7 @@ class validate_password extends external_api {
         // The gateway hashes the body BEFORE the password is in plaintext on the wire
         // (TLS handles transport); here we just verify the signature.
         self::verify_hmac(
-            'jedomi_validate_password',
+            'local_jedomi_validate_password',
             $hmactimestamp,
             $payloadhash,
             $hmacsignature,

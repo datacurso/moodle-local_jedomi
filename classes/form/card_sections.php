@@ -31,7 +31,7 @@ namespace local_jedomi\form;
  * form rendered later in the same request, so the header names must be unique in the request, not only in the form.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 trait card_sections {

@@ -17,11 +17,11 @@
 /**
  * Adhoc task wrapper: re-fires a scheduled task asynchronously.
  *
- * Used by jedomi_run_task when sync=false (default).
+ * Used by local_jedomi_run_task when sync=false (default).
  * The task classname is passed via custom data.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 

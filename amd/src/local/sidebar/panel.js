@@ -17,7 +17,7 @@
  * Panel of the Jedomi sidebar: opening, closing, width and keyboard focus.
  *
  * @module     local_jedomi/local/sidebar/panel
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 

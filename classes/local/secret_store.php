@@ -25,7 +25,7 @@ namespace local_jedomi\local;
  * encrypts it (local_jedomi_upgrade_encrypt_secrets()).
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 final class secret_store {

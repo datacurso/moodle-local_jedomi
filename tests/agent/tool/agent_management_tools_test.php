@@ -24,7 +24,7 @@ use local_jedomi\agent\tool_executor;
  *
  * @package    local_jedomi
  * @category   test
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @covers     \local_jedomi\agent\tool\create_agent_tool
  * @covers     \local_jedomi\agent\tool\delete_agent_tool

@@ -24,7 +24,7 @@ namespace local_jedomi\ai;
  * maximum tokens (custom_max_tokens with the custom service), it only asks for a short answer.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 final class empty_answer {

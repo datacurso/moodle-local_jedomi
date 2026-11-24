@@ -23,7 +23,7 @@
  * can find the right WS to call.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -97,7 +97,7 @@ class ws_search_tool implements agent_tool {
     public function execute(\stdClass $params): string {
         $query = trim($params->query ?? '');
         if (empty($query)) {
-            return json_encode(['error' => 'Search query required.']);
+            return json_encode(['error' => get_string('telegram_search_query_required', 'local_jedomi')]);
         }
 
         $start = microtime(true);
@@ -112,7 +112,7 @@ class ws_search_tool implements agent_tool {
             );
             if ($allowed === []) {
                 return json_encode(['success' => true, 'count' => 0, 'row_count' => 0, 'functions' => [],
-                    'message' => 'No web services are allowed for the role of the agent creator.']);
+                    'message' => get_string('agent_tool_no_ws_for_role', 'local_jedomi')]);
             }
             $entries = ws_indexer::search($query, $allowed ?? [], $limit);
 
@@ -123,7 +123,7 @@ class ws_search_tool implements agent_tool {
                     'row_count' => 0,
                     'functions' => [],
                     'duration_ms' => round((microtime(true) - $start) * 1000, 2),
-                    'message' => "No web services found matching: {$query}",
+                    'message' => get_string('agent_tool_no_ws_found', 'local_jedomi', $query),
                 ]);
             }
 
@@ -148,7 +148,7 @@ class ws_search_tool implements agent_tool {
             ], JSON_UNESCAPED_UNICODE);
         } catch (\Exception $e) {
             return json_encode([
-                'error' => 'ws_search failed: ' . \local_jedomi\local\safe_error::for_model($e),
+                'error' => get_string('agent_tool_ws_search_failed', 'local_jedomi', \local_jedomi\local\safe_error::for_model($e)),
                 'duration_ms' => round((microtime(true) - $start) * 1000, 2),
             ]);
         }

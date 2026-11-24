@@ -24,7 +24,7 @@ namespace local_jedomi\local;
  * hashes are kept, so the counts can be saved in the Telegram state without personal data.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 final class repeated_tool_error {

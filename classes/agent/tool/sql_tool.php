@@ -24,7 +24,7 @@
  *  - Blocklisted tables: config, sessions, oauth, tokens, private keys.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -120,7 +120,7 @@ class sql_tool implements agent_tool {
         // Accept both 'query' (this class's definition) and 'sql' (lib.php definition — web chat compat).
         $query = trim($params->query ?? $params->sql ?? '');
         if (empty($query)) {
-            return json_encode(['error' => 'Empty query']);
+            return json_encode(['error' => get_string('agent_tool_empty_query', 'local_jedomi')]);
         }
 
         // ... ── Validate read-only ────────────────────────────────────────────────
@@ -128,7 +128,7 @@ class sql_tool implements agent_tool {
         $allowed = ['SELECT', 'WITH'];
         if (!in_array($firstword, $allowed, true)) {
             return json_encode([
-                'error' => 'Only SELECT and WITH queries are allowed.',
+                'error' => get_string('agent_tool_select_only', 'local_jedomi'),
             ]);
         }
 

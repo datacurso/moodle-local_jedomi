@@ -15,7 +15,7 @@
 // along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
 
 /**
- * jedomi_extract_schema — CompanionWS external function.
+ * local_jedomi_extract_schema — CompanionWS external function.
  *
  * Requirement CWS-SCHEMA-01:
  *  - Returns the complete Moodle DB schema in the same JSON format as moodle_schema.json
@@ -24,7 +24,7 @@
  *  - Optional domain filter (table name prefix matching)
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -145,7 +145,7 @@ class extract_schema extends external_api {
 
         // ... --- HMAC authentication ---
         self::verify_hmac(
-            'jedomi_extract_schema',
+            'local_jedomi_extract_schema',
             $hmactimestamp,
             $payloadhash,
             $hmacsignature,

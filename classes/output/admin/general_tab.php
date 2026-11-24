@@ -20,7 +20,7 @@ namespace local_jedomi\output\admin;
  * General tab of the Jedomi settings: link to the AI service settings in the provider and the general form.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class general_tab extends form_tab {

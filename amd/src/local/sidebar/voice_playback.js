@@ -20,7 +20,7 @@
  * each requested while the one before plays, and the full text stays in the chat.
  *
  * @module     local_jedomi/local/sidebar/voice_playback
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 

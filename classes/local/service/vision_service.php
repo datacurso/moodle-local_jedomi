@@ -37,7 +37,7 @@ use local_jedomi\local\anonymizer;
  * service (its switch or the address of its document service), PDF files are refused with documents_error_custom.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class vision_service {

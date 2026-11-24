@@ -28,7 +28,7 @@ use local_jedomi\ai\provider_api;
  * The provider adds the licence, the X-Plugin-* headers and the pseudonymised user and site.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class provider_upload_service {

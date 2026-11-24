@@ -23,7 +23,7 @@ namespace local_jedomi\agent\tool;
  * creator in the agents. Any argument the definition does not declare, such as a user id, is rejected.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 abstract class own_data_tool implements agent_tool {

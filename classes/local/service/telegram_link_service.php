@@ -20,7 +20,7 @@ namespace local_jedomi\local\service;
  * Bot availability and account links shown on the Telegram profile page.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class telegram_link_service {

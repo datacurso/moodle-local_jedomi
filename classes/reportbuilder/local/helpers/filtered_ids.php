@@ -26,7 +26,7 @@ use core_reportbuilder\system_report;
  * active filter with the saved values.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class filtered_ids {

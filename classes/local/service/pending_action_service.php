@@ -26,7 +26,7 @@ use local_jedomi\proxy\handler;
  * when its owner confirms it within {@see EXPIRY} seconds, with the role the user has then.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class pending_action_service {

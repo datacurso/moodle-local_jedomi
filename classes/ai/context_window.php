@@ -33,7 +33,7 @@ namespace local_jedomi\ai;
  * request is still too large, it is sent as small as it can be and the service decides.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class context_window {

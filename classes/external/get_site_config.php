@@ -15,7 +15,7 @@
 // along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
 
 /**
- * jedomi_get_site_config — CompanionWS external function.
+ * local_jedomi_get_site_config — CompanionWS external function.
  *
  * Requirement CWS-CONFIG-01:
  *  - Validates HMAC before execution
@@ -25,7 +25,7 @@
  *  - Allowlist is enforced server-side; client cannot override it
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -157,7 +157,7 @@ class get_site_config extends external_api {
         // ... --- HMAC authentication ---
         if (!$skiphmac) {
             self::verify_hmac(
-                'jedomi_get_site_config',
+                'local_jedomi_get_site_config',
                 $hmactimestamp,
                 $payloadhash,
                 $hmacsignature,

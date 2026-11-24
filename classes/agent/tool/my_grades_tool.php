@@ -22,7 +22,7 @@ use local_jedomi\local\service\student_data_service;
  * Read-only tool that gives a user their own grades.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class my_grades_tool extends own_data_tool {

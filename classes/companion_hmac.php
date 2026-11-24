@@ -32,7 +32,7 @@
  *  - All HMAC failures return the same generic message ("Unauthorized")
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -60,7 +60,7 @@ trait companion_hmac {
      * (everything except the auth fields themselves), hex-encoded. It must match the
      * hash recomputed from the received parameters: the signature then covers them.
      *
-     * @param  string $functionname  WS function name, e.g. "jedomi_execute_sql"
+     * @param  string $functionname  WS function name, e.g. "local_jedomi_execute_sql"
      * @param  int    $timestamp      Unix timestamp from the request header
      * @param  string $payloadhash   Payload hash sent by the gateway, hex
      * @param  string $signature      HMAC-SHA256 hex digest from the gateway

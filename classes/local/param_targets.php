@@ -30,7 +30,7 @@ namespace local_jedomi\local;
  * participants, touser, tousers, to) are user ids when they hold ids; any other value in them is unknown.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class param_targets {

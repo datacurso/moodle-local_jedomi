@@ -25,7 +25,7 @@ namespace local_jedomi\event;
  * - bool success: whether the run produced an answer.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class agent_run extends \core\event\base {

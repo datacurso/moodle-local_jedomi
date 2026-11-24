@@ -22,7 +22,7 @@ namespace local_jedomi\event;
  * No conversation text, prompt or answer is stored in the event.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class agent_updated extends \core\event\base {

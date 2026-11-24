@@ -28,7 +28,7 @@ namespace local_jedomi\local;
  * into real data before showing it to the user ({@see self::restore()}).
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class anonymizer {

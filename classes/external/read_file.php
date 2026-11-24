@@ -15,7 +15,7 @@
 // along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
 
 /**
- * jedomi_read_file — CompanionWS external function.
+ * local_jedomi_read_file — CompanionWS external function.
  *
  * Reads a Moodle source file for diagnosis.
  * 23% of the cases in the corpus need PHP code to be read to
@@ -31,7 +31,7 @@
  *  - Never returns config.php or files with passwords
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -183,7 +183,7 @@ class read_file extends external_api {
         $payloadhash   = $validated['payload_hash'];
 
         self::verify_hmac(
-            'jedomi_read_file',
+            'local_jedomi_read_file',
             $hmactimestamp,
             $payloadhash,
             $hmacsignature,

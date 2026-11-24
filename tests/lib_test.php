@@ -18,7 +18,7 @@
  * Unit tests for lib.php functions in local_jedomi.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -484,6 +484,23 @@ final class lib_test extends \advanced_testcase {
         $active = file_get_contents($logfile);
         $this->assertStringContainsString('after-rotation marker', $active);
         $this->assertLessThan(1024, strlen($active), 'Active log should restart small after rotation');
+    }
+
+    /**
+     * Test the plugin setting logmaxbytes sets the size cap and wins over the older $CFG value.
+     */
+    public function test_log_rotates_with_plugin_setting(): void {
+        global $CFG;
+        $this->resetAfterTest();
+        $CFG->local_jedomi_logmaxbytes = 100000;
+        set_config('logmaxbytes', 1024, 'local_jedomi');
+        $logfile = $this->get_log_path();
+
+        local_jedomi_log(str_repeat('x', 2048));
+        local_jedomi_log('after-rotation marker');
+
+        $this->assertFileExists($logfile . '.1', 'The plugin setting caps the log size');
+        $this->assertStringContainsString('after-rotation marker', file_get_contents($logfile));
     }
 
     /**

@@ -26,7 +26,7 @@ require_once($CFG->dirroot . '/local/jedomi/lib.php');
  *
  * @package    local_jedomi
  * @category   test
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @covers     \local_jedomi\companion_hmac
  * @covers     \local_jedomi\external\execute_sql
@@ -145,7 +145,7 @@ final class companion_signature_test extends \advanced_testcase {
         $now = time();
         $hash = self::payload_hash(['sql' => self::SQL, 'params' => []]);
 
-        $result = $this->query(self::sign('jedomi_execute_sql', $now, $hash), $now, $hash);
+        $result = $this->query(self::sign('local_jedomi_execute_sql', $now, $hash), $now, $hash);
 
         $this->assertArrayHasKey('row_count', $result);
     }
@@ -175,10 +175,10 @@ final class companion_signature_test extends \advanced_testcase {
         $now = time();
         $hash = self::payload_hash(['sql' => self::SQL, 'params' => []]);
         $signature = match ($wrong) {
-            'secret' => self::sign('jedomi_execute_sql', $now, $hash, str_repeat('f', 64)),
-            'function' => self::sign('jedomi_read_file', $now, $hash),
-            'moment' => self::sign('jedomi_execute_sql', $now - 1, $hash),
-            'hash' => self::sign('jedomi_execute_sql', $now, hash('sha256', 'other content')),
+            'secret' => self::sign('local_jedomi_execute_sql', $now, $hash, str_repeat('f', 64)),
+            'function' => self::sign('local_jedomi_read_file', $now, $hash),
+            'moment' => self::sign('local_jedomi_execute_sql', $now - 1, $hash),
+            'hash' => self::sign('local_jedomi_execute_sql', $now, hash('sha256', 'other content')),
         };
 
         $this->assertSame('unauthorized', $this->outcome(fn() => $this->query($signature, $now, $hash)));
@@ -193,7 +193,7 @@ final class companion_signature_test extends \advanced_testcase {
         foreach ([-self::MARGIN, -self::MARGIN - 1, self::MARGIN, self::MARGIN + 1] as $offset) {
             $moment = $this->start_of_a_new_second() + $offset;
             $results[$offset] = $this->outcome(fn() => $this->query(
-                self::sign('jedomi_execute_sql', $moment, $hash),
+                self::sign('local_jedomi_execute_sql', $moment, $hash),
                 $moment,
                 $hash
             ));
@@ -219,8 +219,8 @@ final class companion_signature_test extends \advanced_testcase {
 
         foreach (
             [
-            [self::sign('jedomi_execute_sql', $now, $hash, str_repeat('f', 64)), $now],
-            [self::sign('jedomi_execute_sql', $now - 600, $hash), $now - 600],
+            [self::sign('local_jedomi_execute_sql', $now, $hash, str_repeat('f', 64)), $now],
+            [self::sign('local_jedomi_execute_sql', $now - 600, $hash), $now - 600],
             ] as [$signature, $moment]
         ) {
             try {
@@ -253,7 +253,7 @@ final class companion_signature_test extends \advanced_testcase {
         $secret = \local_jedomi\local\secret_store::get('hmac_secret');
         $this->assertMatchesRegularExpression('/^[0-9a-f]{64}$/', $secret);
 
-        $result = $this->query(self::sign('jedomi_execute_sql', $now, $hash, $secret), $now, $hash);
+        $result = $this->query(self::sign('local_jedomi_execute_sql', $now, $hash, $secret), $now, $hash);
         $this->assertArrayHasKey('row_count', $result);
         $this->assertSame($secret, \local_jedomi\local\secret_store::get('hmac_secret'));
     }
@@ -265,31 +265,31 @@ final class companion_signature_test extends \advanced_testcase {
      */
     public static function signed_function_provider(): array {
         return [
-            'database query' => ['execute_sql', 'jedomi_execute_sql',
+            'database query' => ['execute_sql', 'local_jedomi_execute_sql',
                 ['sql' => 'SELECT id FROM {course} WHERE id = 1', 'params' => []],
                 ['sql' => 'SELECT id, username FROM {user}', 'params' => []]],
-            'database schema' => ['extract_schema', 'jedomi_extract_schema',
+            'database schema' => ['extract_schema', 'local_jedomi_extract_schema',
                 ['include_row_counts' => false, 'domains' => ['course']],
                 ['include_row_counts' => true, 'domains' => ['user']]],
-            'web service execution' => ['ws_execute', 'jedomi_ws_execute',
+            'web service execution' => ['ws_execute', 'local_jedomi_ws_execute',
                 ['wsname' => 'core_webservice_get_site_info', 'params' => '{}'],
                 ['wsname' => 'core_user_get_users_by_field', 'params' => '{"field":"id","values":[2]}']],
-            'file reading' => ['read_file', 'jedomi_read_file',
+            'file reading' => ['read_file', 'local_jedomi_read_file',
                 ['path' => 'version.php', 'line_start' => 1, 'line_count' => 5],
                 ['path' => 'local/jedomi/version.php', 'line_start' => 1, 'line_count' => 5]],
-            'site settings reading' => ['get_site_config', 'jedomi_get_site_config',
+            'site settings reading' => ['get_site_config', 'local_jedomi_get_site_config',
                 ['keys' => ['sitename']],
                 ['keys' => ['wwwroot', 'sitename', 'lang']]],
-            'site settings change' => ['set_site_config', 'jedomi_set_site_config',
+            'site settings change' => ['set_site_config', 'local_jedomi_set_site_config',
                 ['name' => 'jedomi_signature_probe', 'value' => 'signed', 'plugin' => 'local_jedomi'],
                 ['name' => 'jedomi_signature_probe', 'value' => 'tampered', 'plugin' => 'local_jedomi']],
-            'task execution' => ['run_task', 'jedomi_run_task',
+            'task execution' => ['run_task', 'local_jedomi_run_task',
                 ['task_class' => '\\core\\task\\cache_cron_task', 'sync' => false],
                 ['task_class' => '\\local_jedomi\\task\\no_such_task', 'sync' => false]],
-            'cache purge' => ['purge_caches', 'jedomi_purge_caches',
+            'cache purge' => ['purge_caches', 'local_jedomi_purge_caches',
                 ['scope' => 'signed-for-another-request'],
                 []],
-            'password validation' => ['validate_password', 'jedomi_validate_password',
+            'password validation' => ['validate_password', 'local_jedomi_validate_password',
                 ['password' => 'Signed#Pass1', 'username' => 'alice'],
                 ['password' => 'other', 'username' => 'bob']],
         ];
@@ -331,7 +331,7 @@ final class companion_signature_test extends \advanced_testcase {
     public function test_rejected_request_does_not_change_the_setting(): void {
         $now = time();
         $hash = self::payload_hash(['name' => 'jedomi_signature_probe', 'value' => 'signed', 'plugin' => 'local_jedomi']);
-        $signature = self::sign('jedomi_set_site_config', $now, $hash);
+        $signature = self::sign('local_jedomi_set_site_config', $now, $hash);
 
         $this->outcome(fn() => set_site_config::execute(
             'jedomi_signature_probe',
@@ -365,7 +365,7 @@ final class companion_signature_test extends \advanced_testcase {
             'defaultcity',
             'after',
             '',
-            self::sign('jedomi_set_site_config', $now, $hash),
+            self::sign('local_jedomi_set_site_config', $now, $hash),
             $now,
             $hash
         );
@@ -384,7 +384,7 @@ final class companion_signature_test extends \advanced_testcase {
             'defaultcity',
             'after',
             '',
-            self::sign('jedomi_set_site_config', $again, $hash),
+            self::sign('local_jedomi_set_site_config', $again, $hash),
             $again,
             $hash
         );
@@ -402,7 +402,8 @@ final class companion_signature_test extends \advanced_testcase {
         $now = time();
         $hash = self::payload_hash(['password' => 'abc', 'username' => 'alice']);
 
-        $result = validate_password::execute('abc', 'alice', self::sign('jedomi_validate_password', $now, $hash), $now, $hash);
+        $signature = self::sign('local_jedomi_validate_password', $now, $hash);
+        $result = validate_password::execute('abc', 'alice', $signature, $now, $hash);
 
         $this->assertFalse($result['valid']);
         $this->assertNotEmpty($result['violations'], 'A weak password reports at least one policy violation');
@@ -417,7 +418,7 @@ final class companion_signature_test extends \advanced_testcase {
     public function test_signed_request_can_only_run_once(): void {
         $now = time();
         $hash = self::payload_hash(['sql' => self::SQL, 'params' => []]);
-        $signature = self::sign('jedomi_execute_sql', $now, $hash);
+        $signature = self::sign('local_jedomi_execute_sql', $now, $hash);
 
         $first = $this->outcome(fn() => $this->query($signature, $now, $hash));
         $replay = $this->outcome(fn() => $this->query($signature, $now, $hash));
@@ -436,11 +437,11 @@ final class companion_signature_test extends \advanced_testcase {
         @unlink($this->logfile());
         $now = time();
         $hash = self::payload_hash(['sql' => self::SQL, 'params' => []]);
-        $signature = self::sign('jedomi_execute_sql', $now, $hash);
+        $signature = self::sign('local_jedomi_execute_sql', $now, $hash);
         $this->query($signature, $now, $hash);
 
         $replay = $this->outcome(fn() => $this->query($signature, $now, $hash));
-        $renewed = $this->outcome(fn() => $this->query(self::sign('jedomi_execute_sql', $now - 1, $hash), $now - 1, $hash));
+        $renewed = $this->outcome(fn() => $this->query(self::sign('local_jedomi_execute_sql', $now - 1, $hash), $now - 1, $hash));
 
         $this->assertSame('unauthorized', $replay);
         $this->assertSame('accepted', $renewed, 'A new signature of the same query runs');
@@ -468,7 +469,7 @@ final class companion_signature_test extends \advanced_testcase {
             $hash = self::payload_hash(['sql' => self::SQL, 'params' => []]);
             execute_sql::set_signature_store_for_testing($store);
             try {
-                $outcome = $this->outcome(fn() => $this->query(self::sign('jedomi_execute_sql', $now, $hash), $now, $hash));
+                $outcome = $this->outcome(fn() => $this->query(self::sign('local_jedomi_execute_sql', $now, $hash), $now, $hash));
             } finally {
                 execute_sql::set_signature_store_for_testing(null);
             }

@@ -17,7 +17,7 @@
  * Markdown format of the Jedomi answers: code, links (site and external), tables with CSV, lists and headings.
  *
  * @module     local_jedomi/local/sidebar/markdown
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 

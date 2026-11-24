@@ -19,11 +19,11 @@ namespace local_jedomi\external;
 use local_jedomi\local\site_config_policy;
 
 /**
- * Tests that jedomi_set_site_config writes only the settings of its allowlist (JEDOMI-SEC-011).
+ * Tests that local_jedomi_set_site_config writes only the settings of its allowlist (JEDOMI-SEC-011).
  *
  * @package    local_jedomi
  * @category   test
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @covers     \local_jedomi\external\set_site_config
  * @covers     \local_jedomi\local\site_config_policy
@@ -56,7 +56,7 @@ final class set_site_config_allowlist_test extends \advanced_testcase {
         ksort($params);
         $hash = hash('sha256', json_encode($params, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
         $now = time();
-        $signature = hash_hmac('sha256', "jedomi_set_site_config:{$now}:{$hash}", self::SECRET);
+        $signature = hash_hmac('sha256', "local_jedomi_set_site_config:{$now}:{$hash}", self::SECRET);
         return set_site_config::execute($name, $value, $plugin, $signature, $now, $hash);
     }
 

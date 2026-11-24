@@ -34,7 +34,7 @@
  *   - Logged-in users only
  *   - MODE_SESSION: nobody else can read this cache
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -51,7 +51,7 @@ if (!isloggedin() || isguestuser()) {
 }
 
 require_login(null, false);
-require_sesskey();  // CSRF: valida que el request viene de una página Moodle real.
+require_sesskey();  // CSRF: checks that the request comes from a real Moodle page.
 
 $disabled = local_jedomi_plugin_disabled_error();
 if ($disabled !== null) {
@@ -74,7 +74,7 @@ if ($denied !== null) {
 
 $action = required_param('action', PARAM_ALPHA);
 $cache  = cache::make('local_jedomi', 'conversation');
-$key    = 'conv_' . $USER->id;  // Clave única por usuario.
+$key    = 'conv_' . $USER->id;  // One key per user.
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -157,5 +157,5 @@ switch ($action) {
 
     default:
         http_response_code(400);
-        echo json_encode(['ok' => false, 'error' => 'acción desconocida']);
+        echo json_encode(['ok' => false, 'error' => get_string('error_unknown_action', 'local_jedomi', s($action))]);
 }

@@ -23,7 +23,7 @@ namespace local_jedomi\privacy;
  * the site privacy registry shows for any other item.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class technical_log implements \core_privacy\local\metadata\types\type {

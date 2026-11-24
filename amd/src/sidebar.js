@@ -26,7 +26,7 @@
  * The parts of the panel live in local_jedomi/local/sidebar/*; their shared state is local_jedomi/local/sidebar/state.
  *
  * @module     local_jedomi/sidebar
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 

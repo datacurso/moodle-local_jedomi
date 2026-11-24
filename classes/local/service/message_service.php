@@ -23,7 +23,7 @@ namespace local_jedomi\local\service;
  * always waits for the user's confirmation ({@see pending_action_service}).
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class message_service {

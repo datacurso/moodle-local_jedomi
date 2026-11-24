@@ -20,7 +20,7 @@
  * Routes: message (text, photo, document, voice or audio), callback_query (inline buttons), /start command.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -1345,7 +1345,7 @@ class webhook_handler {
 
         // Validate session_gen (TOCTOU guard for /new race).
         $expectedgen = (int)($state['session_gen'] ?? 0);
-        $incominggen = (int)($_GET['session_gen'] ?? 0);
+        $incominggen = optional_param('session_gen', 0, PARAM_INT);
         if ($expectedgen > 0 && $incominggen > 0 && $incominggen !== $expectedgen) {
             \local_jedomi_log('[GATELOOP] session_gen mismatch chat=' . self::chatref($chatid) . ' expected=' . $expectedgen
                 . ' got=' . $incominggen . ' — aborting stale self-ping');

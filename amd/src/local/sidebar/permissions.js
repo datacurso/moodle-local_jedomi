@@ -17,7 +17,7 @@
  * Configuration of the Jedomi sidebar and renewal of its signed permissions (SPT).
  *
  * @module     local_jedomi/local/sidebar/permissions
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
