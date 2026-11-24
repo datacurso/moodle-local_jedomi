@@ -21,16 +21,22 @@
  * on failure instead of using die().
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
 namespace local_jedomi\proxy;
 
-defined('MOODLE_INTERNAL') || die();
-
+/**
+ * Validates Signed Permission Tokens: signature, TTL and sesskey binding.
+ *
+ * An SPT is multi-use by design: the sidebar gets one when the page loads and sends it with every chat, history,
+ * file and speech request of that page for up to 30 minutes. It is not a single-use request signature (unlike the
+ * signatures of the companion web services, see \local_jedomi\companion_hmac): a copy is only usable with the same
+ * Moodle session, because the token is bound to the session key, and every request using it must still pass the
+ * session, session key, course and role checks of its endpoint.
+ */
 class spt_validator {
-
     /**
      * Validate an SPT (Signed Permission Token).
      *
@@ -39,25 +45,33 @@ class spt_validator {
      * @throws \moodle_exception
      */
     public static function validate(array $spt): string {
-        // Check sesskey binding.
-        $expectedHash = substr(hash('sha256', sesskey()), 0, 16);
-        if (!hash_equals($expectedHash, $spt['sesskey_hash'] ?? '')) {
+        require_once(__DIR__ . '/../../lib.php');
+
+        // Guests and users not logged in never get usable chat permissions.
+        if (!isloggedin() || isguestuser()) {
+            throw new \moodle_exception('chat_error_guest', 'local_jedomi');
+        }
+
+        // Check sesskey binding. The fields come from the client, so a value of another type is rejected cleanly.
+        $expectedhash = substr(hash('sha256', sesskey()), 0, 16);
+        $sesskeyhash = $spt['sesskey_hash'] ?? null;
+        if (!is_string($sesskeyhash) || !hash_equals($expectedhash, $sesskeyhash)) {
             throw new \moodle_exception('invalid_session', 'local_jedomi');
         }
 
-        // Check TTL.
-        if (time() >= ($spt['expires'] ?? 0)) {
+        // Check TTL: only a whole number of seconds (or its digits) is an expiry.
+        $expires = $spt['expires'] ?? null;
+        $validexpiry = is_int($expires) || (is_string($expires) && ctype_digit($expires));
+        if (!$validexpiry || time() >= (int) $expires) {
             throw new \moodle_exception('token_expired', 'local_jedomi');
         }
 
         // Reconstruct and verify signature.
-        $secret = get_config('local_jedomi', 'spt_secret') ?: 'jedomi-spt-secret';
-        $payload = $spt;
-        unset($payload['signature']);
-        ksort($payload);
-        $expected = hash_hmac('sha256', json_encode($payload), $secret);
+        $secret = \local_jedomi_get_spt_secret();
+        $expected = hash_hmac('sha256', \local_jedomi_spt_signing_string($spt), $secret);
 
-        if (!hash_equals($expected, $spt['signature'] ?? '')) {
+        $signature = $spt['signature'] ?? null;
+        if (!is_string($signature) || !hash_equals($expected, $signature)) {
             throw new \moodle_exception('invalid_signature', 'local_jedomi');
         }
 

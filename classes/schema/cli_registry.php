@@ -1,4 +1,19 @@
 <?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
 /**
  * CLI Operations Registry — index of admin actions not exposed via web services.
  *
@@ -7,16 +22,17 @@
  * registry, following the same pattern as ws_indexer for web services.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
 namespace local_jedomi\schema;
 
-defined('MOODLE_INTERNAL') || die();
-
+/**
+ * Registry of admin CLI operations the AI can search, describe,
+ * and execute, mirroring the ws_indexer pattern for web services.
+ */
 class cli_registry {
-
     /**
      * Return all registered CLI operations.
      *
@@ -38,7 +54,8 @@ class cli_registry {
                     'destination' => [
                         'type'        => 'string',
                         'required'    => false,
-                        'description' => 'Optional filesystem path to store the backup file.',
+                        'description' => 'Optional folder inside the Moodle data directory (dataroot) to store the backup '
+                            . 'file, relative to dataroot or absolute. Any other folder is refused.',
                     ],
                 ],
             ],
@@ -60,7 +77,8 @@ class cli_registry {
             ],
             [
                 'name'        => 'create_mod',
-                'description' => 'Create a course module (activity/resource) inside a course using natural-language-generated parameters.',
+                'description' => 'Create a course module (activity/resource) inside a course'
+                    . ' using natural-language-generated parameters.',
                 'params'      => [
                     'courseid' => [
                         'type'        => 'int',
@@ -70,12 +88,21 @@ class cli_registry {
                     'resource_type' => [
                         'type'        => 'string',
                         'required'    => true,
-                        'description' => 'Module plugin name (e.g. page, assign, quiz, forum, resource, label, folder, glossary, choice).',
+                        'description' => 'Module plugin name (e.g. page, assign, quiz, forum,'
+                            . ' resource, label, folder, glossary, choice).',
                     ],
                     'parameters' => [
                         'type'        => 'object',
                         'required'    => true,
-                        'description' => 'JSON object of module creation parameters. Required fields for every module type: name (string, the activity title) and intro (HTML string, the description). Content fields depend on the resource_type: for "page" use content (HTML), for "assign" use activity (HTML) and duedate (timestamp), for "quiz" use question and answer structures. Standard fields supported: name, intro, introformat (0=MOODLE, 1=HTML, 2=PLAIN), visible (0/1), timemodified, section. Module-specific fields are passed through as-is.',
+                        'description' => 'JSON object of module creation parameters.'
+                            . ' Required fields for every module type: name (string, the activity'
+                            . ' title) and intro (HTML string, the description). Content fields'
+                            . ' depend on the resource_type: for "page" use content (HTML), for'
+                            . ' "assign" use activity (HTML) and duedate (timestamp), for "quiz"'
+                            . ' use question and answer structures. Standard fields supported:'
+                            . ' name, intro, introformat (0=MOODLE, 1=HTML, 2=PLAIN), visible'
+                            . ' (0/1), timemodified, section. Module-specific fields are passed'
+                            . ' through as-is.',
                     ],
                     'section' => [
                         'type'        => 'int',
@@ -161,13 +188,43 @@ class cli_registry {
     }
 
     /**
+     * Whether a user may run the administration operations: a site administrator or a user with moodle/site:config.
+     *
+     * @param int $userid Moodle user id.
+     * @return bool
+     */
+    public static function can_execute(int $userid): bool {
+        if ($userid <= 0) {
+            return false;
+        }
+        return is_siteadmin($userid) || has_capability('moodle/site:config', \context_system::instance(), $userid);
+    }
+
+    /**
      * Execute a CLI operation.
+     *
+     * Defense in depth: every operation here (purge_caches, scheduled tasks,
+     * backups, create_mod) is a privileged admin action. Callers are expected
+     * to have already role-gated the call, but this check is enforced again
+     * here — independently of any caller-supplied role — so a bug or bypass
+     * upstream cannot reach these operations without real Moodle capability.
      *
      * @param  string $name   Operation name.
      * @param  array  $params Operation parameters.
+     * @param  int    $userid Moodle user id performing the operation.
      * @return array           Result with success/error + data.
      */
-    public static function execute(string $name, array $params = []): array {
+    public static function execute(string $name, array $params, int $userid): array {
+        if (!self::can_execute($userid)) {
+            return ['error' => 'permission_denied'];
+        }
+        if (self::names_excluded_course($params)) {
+            return [
+                'error' => 'error_course_excluded',
+                'message' => get_string('error_course_excluded', 'local_jedomi'),
+            ];
+        }
+
         return match ($name) {
             'backup'         => self::execute_backup($params),
             'scheduled_task' => self::execute_scheduled_task($params),
@@ -178,23 +235,110 @@ class cli_registry {
     }
 
     /**
+     * Whether the parameters of an operation name a course outside Jedomi (RISK-001): the course of "courseid" (backup,
+     * create_mod) or the course of the activity "beforemod" (create_mod). Operations without a course (scheduled_task,
+     * purge_caches) name none.
+     *
+     * @param array $params Operation parameters.
+     * @return bool
+     */
+    private static function names_excluded_course(array $params): bool {
+        global $DB;
+        if (!\local_jedomi\course_access::is_restricted()) {
+            return false;
+        }
+        $courseids = [];
+        if (isset($params['courseid']) && is_numeric($params['courseid'])) {
+            $courseids[] = (int) $params['courseid'];
+        }
+        if (isset($params['beforemod']) && is_numeric($params['beforemod']) && (int) $params['beforemod'] > 0) {
+            $courseids[] = (int) $DB->get_field('course_modules', 'course', ['id' => (int) $params['beforemod']]);
+        }
+        foreach ($courseids as $courseid) {
+            if (!\local_jedomi\course_access::is_course_in_jedomi($courseid)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Real path of the folder a backup may be copied to, or null when it is not an existing folder inside dataroot
+     * (SEC-JD-029).
+     *
+     * A relative path is read from dataroot. The path is resolved with realpath(), so "..", and a symbolic link that
+     * leads out of dataroot, are refused like any other folder outside it.
+     *
+     * @param string $destination Folder given by the AI.
+     * @return string|null
+     */
+    public static function backup_folder(string $destination): ?string {
+        global $CFG;
+        $root = realpath($CFG->dataroot);
+        if ($root === false || $destination === '' || strpos($destination, "\0") !== false) {
+            return null;
+        }
+        $absolute = $destination[0] === '/' || preg_match('/^[A-Za-z]:[\\\\\/]/', $destination) === 1;
+        $real = realpath($absolute ? $destination : $CFG->dataroot . DIRECTORY_SEPARATOR . $destination);
+        if ($real === false || !is_dir($real)) {
+            return null;
+        }
+        return ($real === $root || strpos($real, $root . DIRECTORY_SEPARATOR) === 0) ? $real : null;
+    }
+
+    /**
+     * Copy a backup file to a folder inside dataroot; the stored backup file is deleted only once the copy succeeded.
+     *
+     * @param \stored_file $file Backup file made by the backup.
+     * @param string $dir Destination folder.
+     * @param string $filename Name of the copy.
+     * @return array ['stored_at' => path] or ['error' => reason]; on an error the stored backup file is kept.
+     */
+    public static function store_backup_copy(\stored_file $file, string $dir, string $filename): array {
+        $target = $dir . DIRECTORY_SEPARATOR . $filename;
+        if (is_link($target)) {
+            return ['error' => 'destination is a link'];
+        }
+        if (!is_writable($dir)) {
+            return ['error' => 'destination not writable'];
+        }
+        if (!$file->copy_content_to($target)) {
+            return ['error' => 'copy to the destination failed'];
+        }
+        $file->delete();
+        return ['stored_at' => $target];
+    }
+
+    /**
      * Execute a course backup.
+     *
+     * @param  array $params Operation parameters (courseid, destination).
+     * @return array         Result with success/error + data.
      */
     private static function execute_backup(array $params): array {
         global $CFG, $DB;
         require_once($CFG->dirroot . '/backup/util/includes/backup_includes.php');
 
         $courseid    = (int) ($params['courseid'] ?? 0);
-        $destination = trim($params['destination'] ?? '');
+        $destination = trim((string) ($params['destination'] ?? ''));
 
         if ($courseid <= 1) {
             return ['error' => 'invalid course id'];
+        }
+        // SEC-JD-029: the backup is copied only into an existing folder inside dataroot, checked before it is made.
+        $dir = null;
+        if ($destination !== '') {
+            $dir = self::backup_folder($destination);
+            if ($dir === null) {
+                return ['error' => 'destination_outside_dataroot',
+                    'message' => get_string('cli_backup_destination_outside_dataroot', 'local_jedomi')];
+            }
         }
 
         try {
             $course = $DB->get_record('course', ['id' => $courseid], '*', MUST_EXIST);
         } catch (\Exception $e) {
-            return ['error' => 'course not found: ' . $e->getMessage()];
+            return ['error' => 'course not found: ' . \local_jedomi\local\safe_error::for_model($e)];
         }
 
         $admin = get_admin();
@@ -231,15 +375,13 @@ class cli_registry {
                 'mimetype' => $file->get_mimetype(),
             ] : [];
 
-            if (!empty($destination) && $file) {
-                $dir = rtrim($destination, '/');
-                if (!is_dir($dir) || !is_writable($dir)) {
+            if ($dir !== null && $file) {
+                $stored = self::store_backup_copy($file, $dir, $filename);
+                if (isset($stored['error'])) {
                     $bc->destroy();
-                    return ['error' => 'destination not writable', 'backup' => $filedetails];
+                    return ['error' => $stored['error'], 'backup' => $filedetails];
                 }
-                $file->copy_content_to($dir . '/' . $filename);
-                $file->delete();
-                $filedetails['stored_at'] = $dir . '/' . $filename;
+                $filedetails['stored_at'] = $stored['stored_at'];
             }
 
             $bc->destroy();
@@ -247,19 +389,22 @@ class cli_registry {
             return [
                 'success'   => true,
                 'courseid'  => $course->id,
-                'coursename'=> $course->fullname,
+                'coursename' => $course->fullname,
                 'backup'    => $filedetails,
             ];
         } catch (\Throwable $e) {
             if (isset($bc)) {
                 $bc->destroy();
             }
-            return ['error' => 'backup failed: ' . $e->getMessage()];
+            return ['error' => 'backup failed: ' . \local_jedomi\local\safe_error::for_model($e)];
         }
     }
 
     /**
      * Execute a scheduled task.
+     *
+     * @param  array $params Operation parameters (task_class).
+     * @return array         Result with success/error + data.
      */
     private static function execute_scheduled_task(array $params): array {
         global $CFG;
@@ -288,24 +433,30 @@ class cli_registry {
             \core\task\manager::run_from_cli($task);
             return ['success' => true, 'task' => $taskclass];
         } catch (\Throwable $e) {
-            return ['error' => 'task execution failed: ' . $e->getMessage()];
+            return ['error' => 'task execution failed: ' . \local_jedomi\local\safe_error::for_model($e)];
         }
     }
 
     /**
      * Purge all Moodle caches.
+     *
+     * @param  array $params Operation parameters (unused).
+     * @return array         Result with success/error + data.
      */
     private static function execute_purge_caches(array $params): array {
         try {
             purge_all_caches();
             return ['success' => true, 'message' => 'All Moodle caches purged successfully.'];
         } catch (\Throwable $e) {
-            return ['error' => 'cache purge failed: ' . $e->getMessage()];
+            return ['error' => 'cache purge failed: ' . \local_jedomi\local\safe_error::for_model($e)];
         }
     }
 
     /**
      * Create a course module using local_coursegen's mod_manager.
+     *
+     * @param  array $params Operation parameters (courseid, resource_type, ...).
+     * @return array         Result with success/error + data.
      */
     private static function execute_create_mod(array $params): array {
         global $CFG, $DB;
@@ -332,7 +483,7 @@ class cli_registry {
         try {
             $course = $DB->get_record('course', ['id' => $courseid], '*', MUST_EXIST);
         } catch (\Exception $e) {
-            return ['error' => 'course not found: ' . $e->getMessage()];
+            return ['error' => 'course not found: ' . \local_jedomi\local\safe_error::for_model($e)];
         }
 
         try {
@@ -358,10 +509,10 @@ class cli_registry {
                 'modname'      => $newcm->modname ?? $resourcetype,
                 'instance'     => (int) ($newcm->instance ?? 0),
                 'sectionnum'   => $sectionnum,
-                'resource_type'=> $resourcetype,
+                'resource_type' => $resourcetype,
             ];
         } catch (\Throwable $e) {
-            return ['error' => 'create_mod failed: ' . $e->getMessage()];
+            return ['error' => 'create_mod failed: ' . \local_jedomi\local\safe_error::for_model($e)];
         }
     }
 }

@@ -1,0 +1,256 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template local_jedomi/admin/agents_tab
+
+    Agents tab of the Jedomi settings: charts, the agents report, the create/edit form with preview and the purge
+    form. The charts follow the filters of the agents report; they and the row actions of the report are handled by
+    the local_jedomi/admin/agents module.
+
+    Classes required for JS:
+    * none
+
+    Data attributes required for JS:
+    * data-region="local_jedomi/admin/agents" on the root, with data-edit-agent-id
+    * data-region="local_jedomi/admin/agents/chart" on each canvas, with data-chart (role, status, executions)
+    * data-region="local_jedomi/admin/agents/table-message" above the report, and data-region="core_reportbuilder/report"
+      on the report, whose row actions have data-agent-action (details, edit, run, toggle, delete) and data-agent-id
+    * data-form="local_jedomi/admin/agents/create" on the agent form and data-form="local_jedomi/admin/agents/purge" on the purge form
+    * data-region="local_jedomi/admin/agents/form-heading", "form-message", "edit-id", "submit-label", "custom-cron", "enabled",
+      "approved-writes",
+      "context-id-wrap", "preview-panel", "preview-spinner", "preview-body", "purge-id-wrap", "purge-role-wrap" and
+      "purge-message"
+    * data-action="local_jedomi/admin/agents/schedule", "context-type", "preview", "cancel-edit" and "purge-context"
+
+    Context variables required for this template:
+    * roles array - Roles: id int, name string
+    * approvablewrites array - Write functions the current user may approve for a new agent: name string, checked bool
+    * approvedwriteshelp string - Help of the approved writes, with the caps of one run
+    * schedules array - Schedule options: value string, label string
+    * contexttypes array - Context types: value string, label string
+    * editagentid int - Agent to open in the form when the page loads; 0 for none
+    * report string - HTML of the agents report
+
+    Example context (json):
+    {
+        "roles": [{"id": 5, "name": "Student"}],
+        "approvablewrites": [{"name": "core_message_send_instant_messages", "checked": false}],
+        "approvedwriteshelp": "Web service functions that change data and that this agent may run without your confirmation.",
+        "schedules": [{"value": "0 * * * *", "label": "Every hour"}, {"value": "custom", "label": "Custom"}],
+        "contexttypes": [{"value": "site", "label": "Site"}],
+        "editagentid": 0,
+        "report": "<div data-region=\"core_reportbuilder/report\"></div>"
+    }
+}}
+<div class="local_jedomi-admin local_jedomi-admin-agents_tab" data-region="local_jedomi/admin/agents" data-edit-agent-id="{{editagentid}}">
+    {{< local_jedomi/admin/card }}
+        {{$icon}}{{#pix}} i/report, core {{/pix}}{{/icon}}
+        {{$color}}indigo{{/color}}
+        {{$title}}{{#str}} agent_summary, local_jedomi {{/str}}{{/title}}
+        {{$body}}
+            <div class="row">
+                <div class="col-md-4">
+                    <div class="local_jedomi-admin-chart"><canvas data-region="local_jedomi/admin/agents/chart" data-chart="role"></canvas></div>
+                    <p class="text-center text-muted small mt-2">{{#str}} agent_by_role, local_jedomi {{/str}}</p>
+                </div>
+                <div class="col-md-4">
+                    <div class="local_jedomi-admin-chart"><canvas data-region="local_jedomi/admin/agents/chart" data-chart="status"></canvas></div>
+                    <p class="text-center text-muted small mt-2">{{#str}} agent_by_status, local_jedomi {{/str}}</p>
+                </div>
+                <div class="col-md-4">
+                    <div class="local_jedomi-admin-chart"><canvas data-region="local_jedomi/admin/agents/chart" data-chart="executions"></canvas></div>
+                    <p class="text-center text-muted small mt-2">{{#str}} agent_executions_30d, local_jedomi {{/str}}</p>
+                </div>
+            </div>
+        {{/body}}
+    {{/ local_jedomi/admin/card }}
+
+    {{< local_jedomi/admin/card }}
+        {{$icon}}{{#pix}} i/grading, core {{/pix}}{{/icon}}
+        {{$color}}purple{{/color}}
+        {{$title}}{{#str}} agent_table, local_jedomi {{/str}}{{/title}}
+        {{$body}}
+            <div class="alert d-none" role="alert" data-region="local_jedomi/admin/agents/table-message"></div>
+            {{{report}}}
+        {{/body}}
+    {{/ local_jedomi/admin/card }}
+
+    <div class="card local_jedomi-admin-card mb-4">
+        <div class="card-header local_jedomi-admin-card-header">
+            <span class="local_jedomi-admin-card-icon local_jedomi-admin-card-icon-blue">{{#pix}} t/add, core {{/pix}}</span>
+            <h5 class="mb-0" data-region="local_jedomi/admin/agents/form-heading">{{#str}} agent_create, local_jedomi {{/str}}</h5>
+        </div>
+        <div class="card-body">
+            <div class="alert alert-info small" role="status">{{#str}} agent_approved_writes_notice, local_jedomi {{/str}}</div>
+            <div class="alert d-none" role="alert" data-region="local_jedomi/admin/agents/form-message"></div>
+            <form data-form="local_jedomi/admin/agents/create">
+                <input type="hidden" name="id" value="" data-region="local_jedomi/admin/agents/edit-id">
+
+                <div class="form-group mb-3">
+                    <label class="font-weight-bold fw-bold" for="{{uniqid}}-agent-prompt">{{#str}} agent_prompt, local_jedomi {{/str}}</label>
+                    <textarea id="{{uniqid}}-agent-prompt" name="prompt" class="form-control" rows="3" required
+                              placeholder="{{#cleanstr}} agent_prompt_placeholder, local_jedomi {{/cleanstr}}"></textarea>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="form-group mb-3">
+                            <label class="font-weight-bold fw-bold" for="{{uniqid}}-agent-name">{{#str}} agent_name, local_jedomi {{/str}}</label>
+                            <input type="text" id="{{uniqid}}-agent-name" name="name" class="form-control"
+                                   placeholder="{{#str}} agent_name_placeholder, local_jedomi {{/str}}">
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="form-group mb-3">
+                            <label class="font-weight-bold fw-bold" for="{{uniqid}}-agent-schedule">{{#str}} agent_schedule, local_jedomi {{/str}}</label>
+                            <select id="{{uniqid}}-agent-schedule" name="schedule_cron" class="custom-select form-select w-100" data-action="local_jedomi/admin/agents/schedule">
+                                {{#schedules}}<option value="{{value}}">{{label}}</option>{{/schedules}}
+                            </select>
+                            <div class="mt-2 d-none" data-region="local_jedomi/admin/agents/custom-cron">
+                                <label class="sr-only visually-hidden" for="{{uniqid}}-agent-custom-cron">{{#str}} agent_custom_cron, local_jedomi {{/str}}</label>
+                                <input type="text" id="{{uniqid}}-agent-custom-cron" name="custom_cron" class="form-control form-control-sm" placeholder="* * * * *">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="form-group mb-3">
+                            <label class="font-weight-bold fw-bold" for="{{uniqid}}-agent-context-type">{{#str}} agent_filter_context, local_jedomi {{/str}}</label>
+                            <select id="{{uniqid}}-agent-context-type" name="context_type" class="custom-select form-select w-100" data-action="local_jedomi/admin/agents/context-type">
+                                {{#contexttypes}}<option value="{{value}}">{{label}}</option>{{/contexttypes}}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-md-4 d-none" data-region="local_jedomi/admin/agents/context-id-wrap">
+                        <div class="form-group mb-3">
+                            <label class="font-weight-bold fw-bold" for="{{uniqid}}-agent-context-id">{{#str}} agent_context_id, local_jedomi {{/str}}</label>
+                            <input type="text" id="{{uniqid}}-agent-context-id" name="context_id" class="form-control" inputmode="numeric"
+                                   aria-describedby="{{uniqid}}-agent-context-id-help"
+                                   placeholder="{{#str}} agent_context_id_placeholder, local_jedomi {{/str}}">
+                            <small id="{{uniqid}}-agent-context-id-help" class="form-text text-muted">{{#str}} agent_context_id_help, local_jedomi {{/str}}</small>
+                        </div>
+                    </div>
+                </div>
+
+                <fieldset class="form-group mb-3" aria-describedby="{{uniqid}}-agent-roles-help">
+                    <legend class="font-weight-bold fw-bold col-form-label p-0">{{#str}} agent_filter_role, local_jedomi {{/str}}</legend>
+                    <small id="{{uniqid}}-agent-roles-help" class="form-text text-muted mt-0 mb-1">{{#str}} agent_roles_help, local_jedomi {{/str}}</small>
+                    {{! A hidden 0 is always sent, so unchecking every box clears the roles of the agent. }}
+                    <input type="hidden" name="role_filter[]" value="0">
+                    <div class="local_jedomi-admin-role-scroll">
+                        {{#roles}}
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="role_filter[]" value="{{id}}" id="{{uniqid}}-agent-role-{{id}}">
+                            <label class="form-check-label" for="{{uniqid}}-agent-role-{{id}}">{{name}}</label>
+                        </div>
+                        {{/roles}}
+                    </div>
+                </fieldset>
+
+                <fieldset class="form-group mb-3" aria-describedby="{{uniqid}}-agent-writes-help">
+                    <legend class="font-weight-bold fw-bold col-form-label p-0">{{#str}} agent_approved_writes, local_jedomi {{/str}}</legend>
+                    <small id="{{uniqid}}-agent-writes-help" class="form-text text-muted mt-0 mb-1">{{approvedwriteshelp}}</small>
+                    <div class="local_jedomi-admin-role-scroll" data-region="local_jedomi/admin/agents/approved-writes">
+                        {{> local_jedomi/admin/agent_approved_writes }}
+                    </div>
+                </fieldset>
+
+                <div class="form-check mb-3">
+                    {{! A hidden 0 is sent before the box, so an unchecked box disables the agent. }}
+                    <input type="hidden" name="enabled" value="0">
+                    <input class="form-check-input" type="checkbox" name="enabled" value="1" id="{{uniqid}}-agent-enabled" checked
+                           data-region="local_jedomi/admin/agents/enabled" aria-describedby="{{uniqid}}-agent-enabled-help">
+                    <label class="form-check-label font-weight-bold fw-bold" for="{{uniqid}}-agent-enabled">{{#str}} agent_enabled, local_jedomi {{/str}}</label>
+                    <small id="{{uniqid}}-agent-enabled-help" class="form-text text-muted">{{#str}} agent_enabled_help, local_jedomi {{/str}}</small>
+                </div>
+
+                <div class="local_jedomi-admin-save-row d-flex align-items-center flex-wrap">
+                    <button type="submit" class="btn btn-primary mr-2">
+                        {{#pix}} t/add, core {{/pix}}<span data-region="local_jedomi/admin/agents/submit-label">{{#str}} agent_create, local_jedomi {{/str}}</span>
+                    </button>
+                    <button type="button" class="btn btn-outline-info mr-2" data-action="local_jedomi/admin/agents/preview">
+                        {{#pix}} t/preview, core {{/pix}}{{#str}} agent_preview, local_jedomi {{/str}}
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary d-none" data-action="local_jedomi/admin/agents/cancel-edit">
+                        {{#str}} cancel, moodle {{/str}}
+                    </button>
+                </div>
+
+                <div class="local_jedomi-admin-preview d-none" data-region="local_jedomi/admin/agents/preview-panel">
+                    <div class="local_jedomi-admin-preview-header">
+                        {{#pix}} i/grading, core {{/pix}}{{#str}} agent_preview_result, local_jedomi {{/str}}
+                        <span class="ml-2 d-none" data-region="local_jedomi/admin/agents/preview-spinner">
+                            {{#pix}} i/loading, core {{/pix}}
+                            <span class="sr-only visually-hidden">{{#str}} loading, admin {{/str}}</span>
+                        </span>
+                    </div>
+                    <div class="local_jedomi-admin-preview-body" data-region="local_jedomi/admin/agents/preview-body" aria-live="polite"></div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    {{< local_jedomi/admin/card }}
+        {{$icon}}{{#pix}} t/delete, core {{/pix}}{{/icon}}
+        {{$color}}red{{/color}}
+        {{$title}}{{#str}} agent_purge, local_jedomi {{/str}}{{/title}}
+        {{$body}}
+            <form data-form="local_jedomi/admin/agents/purge">
+                <div class="row align-items-end">
+                    <div class="col-md-5">
+                        <div class="form-group mb-3">
+                            <label class="font-weight-bold fw-bold" for="{{uniqid}}-purge-type">{{#str}} agent_purge_context, local_jedomi {{/str}}</label>
+                            <select id="{{uniqid}}-purge-type" name="type" class="custom-select form-select w-100" data-action="local_jedomi/admin/agents/purge-context">
+                                <option value="site">{{#str}} agent_context_type_site, local_jedomi {{/str}}</option>
+                                <option value="course">{{#str}} agent_context_type_course, local_jedomi {{/str}}</option>
+                                <option value="category">{{#str}} agent_context_type_category, local_jedomi {{/str}}</option>
+                                <option value="user">{{#str}} agent_context_type_user, local_jedomi {{/str}}</option>
+                                <option value="role">{{#str}} agent_filter_role, local_jedomi {{/str}}</option>
+                            </select>
+                            <p class="form-text text-muted small">{{#str}} agent_purge_context_help, local_jedomi {{/str}}</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4 d-none" data-region="local_jedomi/admin/agents/purge-id-wrap">
+                        <div class="form-group mb-3">
+                            <label class="font-weight-bold fw-bold" for="{{uniqid}}-purge-id">{{#str}} agent_context_id, local_jedomi {{/str}}</label>
+                            <input type="text" id="{{uniqid}}-purge-id" name="id" class="form-control"
+                                   placeholder="{{#str}} agent_context_id_placeholder, local_jedomi {{/str}}">
+                        </div>
+                    </div>
+                    <div class="col-md-4 d-none" data-region="local_jedomi/admin/agents/purge-role-wrap">
+                        <div class="form-group mb-3">
+                            <label class="font-weight-bold fw-bold" for="{{uniqid}}-purge-role">{{#str}} agent_filter_role, local_jedomi {{/str}}</label>
+                            <select id="{{uniqid}}-purge-role" name="roleid" class="custom-select form-select w-100">
+                                {{#roles}}<option value="{{id}}">{{name}}</option>{{/roles}}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <button type="submit" class="btn btn-danger mb-3">
+                            {{#pix}} t/delete, core {{/pix}}{{#str}} agent_purge_btn, local_jedomi {{/str}}
+                        </button>
+                    </div>
+                </div>
+            </form>
+            <div class="alert d-none mt-2" role="alert" data-region="local_jedomi/admin/agents/purge-message"></div>
+        {{/body}}
+    {{/ local_jedomi/admin/card }}
+</div>
+{{#js}}
+require(['local_jedomi/admin/agents'], function(Agents) {
+    Agents.init();
+});
+{{/js}}

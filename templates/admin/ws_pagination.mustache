@@ -1,0 +1,50 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template local_jedomi/admin/ws_pagination
+
+    Page summary and page links of the web service table of the APIs tab. Rendered by the page and again by the
+    local_jedomi/admin/apis module when the filters change.
+
+    Classes required for JS:
+    * none
+
+    Data attributes required for JS:
+    * data-action="local_jedomi/admin/apis/page" on each page link, with data-page
+
+    Context variables required for this template:
+    * page int - Current page
+    * pages int - Number of pages
+    * total int - Number of functions that match the filters
+    * pagelinks array - Page links: page int, active bool
+
+    Example context (json):
+    {
+        "page": 1, "pages": 2, "total": 30,
+        "pagelinks": [{"page": 1, "active": true}, {"page": 2, "active": false}]
+    }
+}}
+<span class="text-muted small">{{#str}} ws_pagination, local_jedomi, { "page": {{page}}, "pages": {{pages}}, "total": {{total}} } {{/str}}</span>
+<nav aria-label="{{#str}} page, moodle {{/str}}">
+    <ul class="pagination pagination-sm mb-0 flex-wrap">
+        {{#pagelinks}}
+        <li class="page-item{{#active}} active{{/active}}">
+            <a class="page-link" href="#" data-action="local_jedomi/admin/apis/page" data-page="{{page}}"{{#active}} aria-current="page"{{/active}}>{{page}}</a>
+        </li>
+        {{/pagelinks}}
+    </ul>
+</nav>

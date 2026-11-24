@@ -1,0 +1,245 @@
+<?php
+// This file is part of Moodle - http://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+
+namespace local_jedomi;
+
+use core\hook\output\before_footer_html_generation;
+
+/**
+ * Tests for the Jedomi state kept by the Datacurso AI provider (S6) and the removal of the old setting (S7).
+ *
+ * @package    local_jedomi
+ * @category   test
+ * @copyright  2026 Datacurso <developer@datacurso.com>
+ * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ * @covers     \local_jedomi\hook_callbacks
+ */
+final class plugin_state_test extends \advanced_testcase {
+    /**
+     * Run the sidebar hook as a logged-in admin and tell whether the sidebar was injected.
+     *
+     * @return bool True when the sidebar AMD module was requested.
+     */
+    private function sidebar_injected(): bool {
+        global $PAGE;
+        // The hook reads the plugin state from aiprovider_datacurso.
+        if (!class_exists(\aiprovider_datacurso\httpclient\ai_services_api::class)) {
+            $this->markTestSkipped('aiprovider_datacurso is not installed; the plugin state is not available.');
+        }
+        $this->setAdminUser();
+        $PAGE->set_url(new \moodle_url('/my/'));
+        $PAGE->set_context(\context_system::instance());
+
+        hook_callbacks::before_footer(new before_footer_html_generation($PAGE->get_renderer('core')));
+
+        return str_contains($PAGE->requires->get_end_code(), 'local_jedomi/sidebar');
+    }
+
+    /**
+     * MDL-INT-002: enabled again, the side panel is injected.
+     * MDL-UNIT-004: with no state saved in the provider, Jedomi is enabled and the sidebar is injected.
+     *
+     * @return void
+     */
+    public function test_sidebar_is_injected_when_enabled_in_provider(): void {
+        $this->resetAfterTest();
+        unset_config('plugin_enabled_local_jedomi', 'aiprovider_datacurso');
+
+        $this->assertTrue($this->sidebar_injected());
+    }
+
+    /**
+     * MDL-INT-002: with Jedomi disabled the side panel is not injected.
+     * S6: disabled in the provider, the sidebar is not injected (as when the old setting was off).
+     *
+     * @return void
+     */
+    public function test_sidebar_is_not_injected_when_disabled_in_provider(): void {
+        $this->resetAfterTest();
+        set_config('plugin_enabled_local_jedomi', '0', 'aiprovider_datacurso');
+
+        $this->assertFalse($this->sidebar_injected());
+    }
+
+    /**
+     * S6: the old local_jedomi/enabled setting is ignored; only the provider state counts.
+     *
+     * @return void
+     */
+    public function test_old_enabled_setting_is_ignored(): void {
+        $this->resetAfterTest();
+        set_config('enabled', '0', 'local_jedomi');
+        set_config('plugin_enabled_local_jedomi', '1', 'aiprovider_datacurso');
+
+        $this->assertTrue($this->sidebar_injected());
+    }
+
+    /**
+     * S7: the 2026102902 upgrade step deletes the old setting and keeps the AI service settings.
+     * MDL-INT-086: the update removes the plugin's own enabled switch.
+     *
+     * @return void
+     */
+    public function test_upgrade_removes_old_enabled_setting(): void {
+        global $CFG;
+        require_once($CFG->libdir . '/upgradelib.php');
+        require_once($CFG->dirroot . '/local/jedomi/db/upgrade.php');
+        $this->resetAfterTest();
+        set_config('enabled', '1', 'local_jedomi');
+        set_config('model', 'jedomi/zai-org/GLM-5.3-Flash', 'local_jedomi');
+        set_config('max_tokens', 4096, 'local_jedomi');
+        set_config('plugin_enabled_local_jedomi', '0', 'aiprovider_datacurso');
+        set_config('version', 2026102901, 'local_jedomi');
+
+        $this->assertTrue(xmldb_local_jedomi_upgrade(2026102901));
+
+        $this->assertFalse(get_config('local_jedomi', 'enabled'));
+        $this->assertSame('jedomi/zai-org/GLM-5.3-Flash', get_config('local_jedomi', 'model'));
+        $this->assertSame('4096', get_config('local_jedomi', 'max_tokens'));
+        $this->assertSame('0', get_config('aiprovider_datacurso', 'plugin_enabled_local_jedomi'));
+        $this->assertGreaterThanOrEqual(2026102902, (int) get_config('local_jedomi', 'version'));
+    }
+
+    /**
+     * MDL-INT-020: the AI service card links to the Jedomi settings page of the provider.
+     * S7: the General tab links to the Jedomi settings page in the provider instead of the removed fields.
+     *
+     * @return void
+     */
+    public function test_provider_settings_link_template_points_to_provider_page(): void {
+        global $OUTPUT, $PAGE;
+        $this->resetAfterTest();
+        $PAGE->set_url(new \moodle_url('/local/jedomi/admin_settings.php'));
+        $url = (new \moodle_url('/ai/provider/datacurso/admin/plugin_settings.php', ['component' => 'local_jedomi']))->out(false);
+
+        $html = $OUTPUT->render_from_template('local_jedomi/provider_settings_link', ['url' => $url]);
+
+        $this->assertStringContainsString('href="' . s($url) . '"', $html);
+        $this->assertStringContainsString(get_string('provider_settings_link', 'local_jedomi'), $html);
+        $this->assertStringContainsString(get_string('provider_settings_info', 'local_jedomi'), $html);
+    }
+
+    /**
+     * MDL-INT-001: the installation requires Moodle 4.5 and the Datacurso AI provider, and the provider version present meets
+     * the required one.
+     */
+    public function test_installation_requires_moodle_and_the_provider(): void {
+        if (!class_exists(\aiprovider_datacurso\httpclient\ai_services_api::class)) {
+            $this->markTestSkipped('aiprovider_datacurso is not installed; the dependency cannot be checked.');
+        }
+        $info = \core_plugin_manager::instance()->get_plugin_info('local_jedomi');
+
+        $this->assertGreaterThanOrEqual(2024100700, (int) $info->versionrequires);
+        $this->assertArrayHasKey('aiprovider_datacurso', $info->dependencies);
+        $provider = \core_plugin_manager::instance()->get_plugin_info('aiprovider_datacurso');
+        $this->assertNotNull($provider, 'The Datacurso AI provider must be installed');
+        $this->assertGreaterThanOrEqual((int) $info->dependencies['aiprovider_datacurso'], (int) $provider->versiondisk);
+        $this->assertTrue($info->is_core_dependency_satisfied((int) $GLOBALS['CFG']->version));
+    }
+
+    /**
+     * MDL-INT-001: Jedomi keeps no connection settings of its own (service address or API key).
+     */
+    public function test_plugin_has_no_connection_settings_of_its_own(): void {
+        $config = (array) get_config('local_jedomi');
+
+        foreach (array_keys($config) as $name) {
+            $this->assertDoesNotMatchRegularExpression(
+                '/(gateway|api_?key|api_?url|service_?url|docservice)/i',
+                $name,
+                "Setting {$name} looks like a connection setting; the connection belongs to the provider"
+            );
+        }
+    }
+
+    /**
+     * MDL-INT-087: a new installation has the same data structure as an updated one and the protection against
+     * overwrites between processes works in both.
+     *
+     * The test site is installed from db/install.xml, so its columns are the ones of a new installation; every field
+     * that an upgrade step adds must be among them.
+     *
+     * @return void
+     */
+    public function test_new_installation_matches_an_updated_one(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $added = [
+            'local_jedomi_telegram_sessions' => ['iteration'],
+            'local_jedomi_agents' => ['lastresult', 'lasterror'],
+        ];
+        foreach ($added as $table => $fields) {
+            $columns = $DB->get_columns($table);
+            foreach ($fields as $field) {
+                $this->assertArrayHasKey($field, $columns, "{$table}.{$field} is created by a new installation");
+            }
+        }
+
+        // The protection against stale writes works: an older iteration does not overwrite a newer one.
+        \local_jedomi\telegram\session::set_context('776000001', ['step' => 'newer', 'iteration' => 3]);
+        \local_jedomi\telegram\session::set_context('776000001', ['step' => 'stale', 'iteration' => 2]);
+        $this->assertSame('newer', \local_jedomi\telegram\session::get_context('776000001')['step']);
+        \local_jedomi\telegram\session::set_context('776000001', ['step' => 'reset', 'iteration' => 0]);
+        $this->assertSame('reset', \local_jedomi\telegram\session::get_context('776000001')['step']);
+    }
+    /**
+     * MDL-INT-078: the Telegram processing, the task alert, the profiler and the chat and agent queries work the same on
+     * every database supported by Moodle, with their time limits applied. SQL Server and Oracle have no per-query
+     * time limit: that is documented (README) and the AI is told the time limit only for MySQL, MariaDB and PostgreSQL.
+     *
+     * @return void
+     */
+    public function test_features_work_on_every_supported_database(): void {
+        global $CFG;
+        $this->resetAfterTest();
+
+        // The Telegram lock uses the Moodle lock API, never the MySQL-only GET_LOCK.
+        $lock = \local_jedomi\telegram\webhook_handler::acquire_chat_lock('778000001');
+        $this->assertInstanceOf(\core\lock\lock::class, $lock);
+        $lock->release();
+
+        // No query of the plugin writes a LIMIT clause: the limits go through the $DB limit parameters.
+        $iterator = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($CFG->dirroot . '/local/jedomi/classes'));
+        foreach ($iterator as $file) {
+            if ($file->isFile() && $file->getExtension() === 'php') {
+                $source = file_get_contents($file->getPathname());
+                $this->assertDoesNotMatchRegularExpression('/\bGET_LOCK\s*\(/', $source, $file->getFilename());
+                $this->assertDoesNotMatchRegularExpression('/^\s*LIMIT\s+\d+/mi', $source, $file->getFilename());
+            }
+        }
+
+        // The profiler statistics run on the current database.
+        \local_jedomi\agent\query_profiler::log_query(1, 'SELECT 1', 12.5, 1);
+        $aggregate = \local_jedomi\agent\query_profiler::get_aggregate();
+        $this->assertSame(1, $aggregate->total_queries);
+        // The slowest queries report groups by query on the current database.
+        $this->setAdminUser();
+        $source = \local_jedomi\reportbuilder\local\systemreports\query_log_aggregate::class;
+        \core_reportbuilder\system_report_factory::create($source, \context_system::instance());
+        $slowest = \core_reportbuilder\external\systemreports\retrieve::execute(
+            $source,
+            ['contextid' => \context_system::instance()->id]
+        );
+        $this->assertCount(1, $slowest['data']['rows']);
+
+        // Each channel has a time limit, and the README documents the databases without one.
+        foreach (['web', 'telegram', 'companion', 'agent'] as $channel) {
+            $this->assertGreaterThan(0, \local_jedomi\local\query_runner::time_limit_ms($channel));
+        }
+        $readme = file_get_contents($CFG->dirroot . '/local/jedomi/README.md');
+        $this->assertStringContainsString('SQL Server and Oracle have no per-query time limit', $readme);
+    }
+}

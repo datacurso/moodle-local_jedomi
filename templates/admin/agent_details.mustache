@@ -1,0 +1,88 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template local_jedomi/admin/agent_details
+
+    Full configuration of an agent, shown in a modal by the local_jedomi/admin/agents module.
+
+    Classes required for JS:
+    * none
+
+    Data attributes required for JS:
+    * none
+
+    Context variables required for this template:
+    * id int - Agent id
+    * name string - Agent name (may be empty)
+    * creator string - Full name of the owner (may be empty)
+    * userid int - Owner user id
+    * enabled bool - Whether the agent is enabled
+    * failcount int - Consecutive failed runs (0 when the last run succeeded)
+    * lasterror string - Reason of the last failed run (may be empty)
+    * lastresult string - Answer of the last successful run (empty when none or when hidden)
+    * contexttype string - Context type
+    * contextid int - Context instance id (0 when none)
+    * contextlabel string - Readable context: type and name
+    * schedule string - Cron expression
+    * schedulelabel string - Readable schedule, such as "Every day at 08:00"
+    * lastrun int - Last run time (0 when never)
+    * nextrun int - Next run time (0 when unknown)
+    * prompt string - Agent prompt (empty when hidden)
+    * prompthidden bool - Whether the user may not read the prompt
+    * approvedwrites array - Web service functions the agent may run without confirmation (strings)
+
+    Example context (json):
+    {
+        "id": 3, "name": "Daily report", "creator": "Admin User", "userid": 2, "enabled": true, "contexttype": "course",
+        "contextid": 4, "contextlabel": "Course: Algebra", "schedule": "0 0 * * *",
+        "schedulelabel": "Every day at 00:00", "lastrun": 1700000000, "nextrun": 1700086400, "prompt": "Summarise new enrolments.",
+        "prompthidden": false, "failcount": 2, "lasterror": "The AI service did not answer in time.",
+        "lastresult": "There were 12 new enrolments.", "approvedwrites": ["core_message_send_instant_messages"]
+    }
+}}
+<table class="table table-sm mb-0 local_jedomi-admin-agent-details">
+    <tbody>
+        <tr><th scope="row" class="text-nowrap align-top">{{#str}} agent_name, local_jedomi {{/str}}</th>
+            <td><strong>{{#name}}{{name}}{{/name}}{{^name}}{{#str}} agent_unnamed, local_jedomi {{/str}} #{{id}}{{/name}}</strong></td></tr>
+        <tr><th scope="row" class="text-nowrap align-top">{{#str}} agent_creator, local_jedomi {{/str}}</th>
+            <td>{{#creator}}{{creator}}{{/creator}}{{^creator}}{{#str}} agent_user_id, local_jedomi, {{userid}} {{/str}}{{/creator}}</td></tr>
+        <tr><th scope="row" class="text-nowrap align-top">{{#str}} agent_status, local_jedomi {{/str}}</th>
+            <td>{{#enabled}}<span class="badge badge-success bg-success">{{#str}} agent_enabled, local_jedomi {{/str}}</span>{{/enabled}}{{^enabled}}<span class="badge badge-secondary bg-secondary">{{#str}} agent_disabled, local_jedomi {{/str}}</span>{{/enabled}}
+                {{#failcount}}<span class="badge badge-danger bg-danger">{{#str}} agent_failing, local_jedomi {{/str}}</span>
+                <span class="small">{{#str}} agent_failing_count, local_jedomi, {{failcount}} {{/str}}</span>{{/failcount}}</td></tr>
+        {{#lasterror}}
+        <tr><th scope="row" class="text-nowrap align-top">{{#str}} agent_lasterror, local_jedomi {{/str}}</th>
+            <td class="text-danger">{{lasterror}}</td></tr>
+        {{/lasterror}}
+        <tr><th scope="row" class="text-nowrap align-top">{{#str}} agent_context, local_jedomi {{/str}}</th>
+            <td>{{#contextlabel}}{{contextlabel}}{{/contextlabel}}{{^contextlabel}}-{{/contextlabel}}</td></tr>
+        <tr><th scope="row" class="text-nowrap align-top">{{#str}} agent_schedule, local_jedomi {{/str}}</th>
+            <td>{{#schedulelabel}}{{schedulelabel}}{{/schedulelabel}}{{^schedulelabel}}-{{/schedulelabel}}{{#schedule}} <code class="small text-muted">{{schedule}}</code>{{/schedule}}</td></tr>
+        <tr><th scope="row" class="text-nowrap align-top">{{#str}} agent_lastrun, local_jedomi {{/str}}</th>
+            <td>{{#lastrun}}{{#userdate}} {{lastrun}}, {{#str}} strftimedatetime, core_langconfig {{/str}} {{/userdate}}{{/lastrun}}{{^lastrun}}-{{/lastrun}}</td></tr>
+        <tr><th scope="row" class="text-nowrap align-top">{{#str}} agent_nextrun, local_jedomi {{/str}}</th>
+            <td>{{#nextrun}}{{#userdate}} {{nextrun}}, {{#str}} strftimedatetime, core_langconfig {{/str}} {{/userdate}}{{/nextrun}}{{^nextrun}}-{{/nextrun}}</td></tr>
+        <tr><th scope="row" class="text-nowrap align-top">{{#str}} agent_approved_writes, local_jedomi {{/str}}</th>
+            <td>{{#approvedwrites}}<code class="d-block">{{.}}</code>{{/approvedwrites}}{{^approvedwrites}}<span class="text-muted">{{#str}} agent_approved_writes_empty, local_jedomi {{/str}}</span>{{/approvedwrites}}</td></tr>
+        <tr><th scope="row" class="text-nowrap align-top">{{#str}} agent_prompt, local_jedomi {{/str}}</th>
+            <td>{{#prompthidden}}<span class="text-muted font-italic fst-italic">{{#str}} agent_prompt_hidden, local_jedomi {{/str}}</span>{{/prompthidden}}{{^prompthidden}}<pre class="mb-0 p-2 bg-light border rounded local_jedomi-admin-pre">{{#prompt}}{{prompt}}{{/prompt}}{{^prompt}}-{{/prompt}}</pre>{{/prompthidden}}</td></tr>
+        {{^prompthidden}}
+        <tr><th scope="row" class="text-nowrap align-top">{{#str}} agent_lastresult, local_jedomi {{/str}}</th>
+            <td>{{#lastresult}}<pre class="mb-0 p-2 bg-light border rounded local_jedomi-admin-pre">{{lastresult}}</pre>{{/lastresult}}{{^lastresult}}<span class="text-muted">{{#str}} agent_lastresult_none, local_jedomi {{/str}}</span>{{/lastresult}}</td></tr>
+        {{/prompthidden}}
+    </tbody>
+</table>

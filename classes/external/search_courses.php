@@ -17,9 +17,9 @@
 /**
  * External function: search courses for the course-availability chip selector.
  *
- * @package   local_jedomi
- * @copyright 2026 Jedomi Project
- * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ * @package    local_jedomi
+ * @copyright  2026 Datacurso <developer@datacurso.com>
+ * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
 namespace local_jedomi\external;
@@ -38,9 +38,10 @@ use external_multiple_structure;
  * Searches courses by shortname or fullname (admin-only, max 20 results).
  */
 class search_courses extends external_api {
-
     /**
      * Declare input parameters.
+     *
+     * @return external_function_parameters
      */
     public static function execute_parameters(): external_function_parameters {
         return new external_function_parameters([
@@ -73,7 +74,7 @@ class search_courses extends external_api {
         }
 
         $like1 = $DB->sql_like('c.shortname', ':q1', false);
-        $like2 = $DB->sql_like('c.fullname',  ':q2', false);
+        $like2 = $DB->sql_like('c.fullname', ':q2', false);
 
         $sql = "SELECT c.id, c.shortname, c.fullname, cc.name AS categoryname
                   FROM {course} c
@@ -104,12 +105,14 @@ class search_courses extends external_api {
 
     /**
      * Declare return structure.
+     *
+     * @return external_single_structure
      */
     public static function execute_returns(): external_single_structure {
         return new external_single_structure([
             'courses' => new external_multiple_structure(
                 new external_single_structure([
-                    'id'           => new external_value(PARAM_INT,  'Course ID'),
+                    'id'           => new external_value(PARAM_INT, 'Course ID'),
                     'shortname'    => new external_value(PARAM_TEXT, 'Short name'),
                     'fullname'     => new external_value(PARAM_TEXT, 'Full name'),
                     'categoryname' => new external_value(PARAM_TEXT, 'Category name'),

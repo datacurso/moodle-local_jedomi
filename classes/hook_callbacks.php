@@ -12,7 +12,7 @@
 // GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License
-// along with Moodle.  If not, see <http://www.gnu.org/copyleft/gpl.html>.
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
 
 /**
  * Hook callbacks for local_jedomi.
@@ -21,7 +21,7 @@
  * instead of the legacy local_jedomi_before_footer() function.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -29,12 +29,15 @@ namespace local_jedomi;
 
 use core\hook\output\before_footer_html_generation;
 
-defined('MOODLE_INTERNAL') || die();
-
 /**
  * Hook callbacks for the Jedomi Moodle plugin.
  */
 class hook_callbacks {
+    /** @var string[] Page layouts where the panel is never shown: pop-up, embedded and secure (exam) windows. */
+    private const EXCLUDED_LAYOUTS = ['popup', 'embedded', 'secure', 'frametop'];
+
+    /** @var string[] Page types of a quiz attempt in progress, where the panel is never shown. */
+    private const EXCLUDED_PAGETYPES = ['mod-quiz-attempt', 'mod-quiz-summary'];
 
     /**
      * Inject the Jedomi sidebar before the footer is rendered.
@@ -44,16 +47,24 @@ class hook_callbacks {
     public static function before_footer(before_footer_html_generation $hook): void {
         global $PAGE;
 
-        // Auto-generate the HMAC secret for the CompanionWS on first boot.
+        // Auto-generate the HMAC secret for the CompanionWS on first boot, encrypted (JEDOMI-SEC-010).
         if (!get_config('local_jedomi', 'hmac_secret')) {
-            set_config('hmac_secret', bin2hex(random_bytes(32)), 'local_jedomi');
+            \local_jedomi\local\secret_store::set('hmac_secret', bin2hex(random_bytes(32)));
         }
 
         if (!isloggedin() || isguestuser()) {
             return;
         }
 
-        if (get_config('local_jedomi', 'enabled') === '0') {
+        // Never during a quiz attempt nor in pop-up, embedded or secure windows.
+        if (
+            in_array($PAGE->pagelayout, self::EXCLUDED_LAYOUTS, true)
+                || in_array($PAGE->pagetype, self::EXCLUDED_PAGETYPES, true)
+        ) {
+            return;
+        }
+
+        if (!\aiprovider_datacurso\local\plugin_settings::is_enabled('local_jedomi')) {
             return;
         }
 
@@ -65,12 +76,39 @@ class hook_callbacks {
             return;
         }
 
-        $configUrl = (new \moodle_url('/local/jedomi/ajax/sidebar_config.php', [
+        // The page the panel is on, read here from the page itself: the configuration is requested by AJAX, where the
+        // page is the endpoint. The server checks these values again before using them.
+        $configurl = (new \moodle_url('/local/jedomi/ajax/sidebar_config.php', [
             'sesskey' => sesskey(),
+            'courseid' => (int) $PAGE->course->id,
+            'cmid' => !empty($PAGE->cm) ? (int) $PAGE->cm->id : 0,
+            'pagetype' => (string) $PAGE->pagetype,
+            'pagepath' => self::page_path(),
         ]))->out(false);
 
+        // The notice shown when the configuration cannot be loaded needs its texts before the configuration.
         $PAGE->requires->js_call_amd('local_jedomi/sidebar', 'init', [[
-            'configUrl' => $configUrl,
+            'configUrl' => $configurl,
+            'strings' => [
+                'config_load_error' => get_string('config_load_error', 'local_jedomi'),
+                'config_load_retry' => get_string('config_load_retry', 'local_jedomi'),
+            ],
         ]]);
+    }
+
+    /**
+     * Path of the current page relative to the site, without its query string (for example "/user/files.php").
+     *
+     * @return string Path, or '' when the page has no address.
+     */
+    private static function page_path(): string {
+        global $PAGE;
+
+        try {
+            $url = $PAGE->url->out_as_local_url(false);
+        } catch (\Throwable $e) {
+            return '';
+        }
+        return (string) preg_replace('/[?#].*$/s', '', $url);
     }
 }

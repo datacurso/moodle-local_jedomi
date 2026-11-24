@@ -1,11 +1,26 @@
 <?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
 /**
  * Telegram Bot API client — thin wrapper around Telegram HTTP API.
  *
  * Handles: sendMessage, editMessageText, answerCallbackQuery, file downloads.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -13,79 +28,130 @@ namespace local_jedomi\telegram;
 
 defined('MOODLE_INTERNAL') || die();
 
+require_once(__DIR__ . '/../../lib.php');
+
+/**
+ * Thin HTTP client for the Telegram Bot API: sending and editing messages, callbacks and file downloads.
+ *
+ * Every request goes through Moodle's \curl (JEDOMI-SEC-018), so the proxy of the site and its cURL security
+ * (curlsecurityblockedhosts, allowed ports) apply, and redirects are never followed: the bot token is part of every
+ * address, so it must never be sent to another host. The token is never logged.
+ */
 class api_client {
+    /**
+     * @var array Parameters that stop Telegram from fetching the links of a message to show a preview (JEDOMI-SEC-005):
+     *      a link in an answer may carry data, and the preview would open it with no click.
+     */
+    private const NO_LINK_PREVIEW = [
+        'link_preview_options' => '{"is_disabled":true}',
+        'disable_web_page_preview' => 'true',
+    ];
 
+    /** @var int Seconds a request may take to connect to Telegram. */
+    public const CONNECT_TIMEOUT = 5;
+    /** @var int Seconds an upload (sendDocument) may take in total. */
+    public const UPLOAD_TIMEOUT = 60;
+    /** @var int Seconds a request may take in total, connection included. */
+    private int $timeout = 30;
+    /** @var string Telegram bot token used to authenticate API calls. */
     private string $token;
-    private string $base_url;
-    private int $last_http_code = 0;
+    /** @var string Base URL for the bot's Telegram API endpoints. */
+    private string $baseurl;
+    /** @var int HTTP status code returned by the most recent API call. */
+    private int $lasthttpcode = 0;
 
+    /** @var api_client|null Replacement returned by {@see instance()} in PHPUnit tests. */
+    private static ?api_client $testinstance = null;
+
+    /**
+     * Client to use: the test replacement when one is set, otherwise a client with the configured token.
+     *
+     * @return api_client
+     */
+    public static function instance(): api_client {
+        return self::$testinstance ?? new api_client();
+    }
+
+    /**
+     * Replace the client returned by {@see instance()}. Only for PHPUnit tests.
+     *
+     * @param api_client|null $client Replacement, or null to restore the default.
+     */
+    public static function set_instance_for_testing(?api_client $client): void {
+        if (!defined('PHPUNIT_TEST') || !PHPUNIT_TEST) {
+            throw new \coding_exception('api_client::set_instance_for_testing() is only for PHPUnit tests');
+        }
+        self::$testinstance = $client;
+    }
+
+    /**
+     * Initialise the client with a bot token and build the API base URL.
+     *
+     * @param string|null $token Bot token; falls back to the configured token when null.
+     */
     public function __construct(?string $token = null) {
         $this->token = $token ?? manager::get_bot_token() ?? '';
-        $this->base_url = 'https://api.telegram.org/bot' . $this->token;
+        $this->baseurl = 'https://api.telegram.org/bot' . $this->token;
     }
 
     /**
-     * Split long text into chunks ≤ 4000 chars for Telegram's limit.
-     * Tries to split on \n\n boundaries first, falls back to last space before 4000.
+     * Tags of a text fragment that are still open at its end, as the opening tags written (attributes included),
+     * outermost first. Only the tags Telegram supports with parse_mode=HTML are tracked.
      *
-     * @param string $text The text to split.
-     * @param bool $truncate If true, return single chunk truncated to 4000 + "… (truncated)".
-     * @return array Array of text chunks.
+     * @param string $text Fragment of Telegram HTML.
+     * @return string[]
      */
-    /**
-     * Close any open HTML tags in a text fragment so Telegram's parser
-     * doesn't reject it. Works by tracking which tags from an allowlist
-     * are open and appending closing tags at the end.
-     *
-     * Non-element tags (self-closing, comments, etc.) are ignored.
-     *
-     * @param string $text
-     * @return string
-     */
-    private function close_open_html_tags(string $text): string {
-        // Only close tags that Telegram supports with parse_mode=HTML.
-        $allowed = ['b', 'i', 'u', 's', 'a', 'code', 'pre', 'em', 'strong'];
+    private function open_tags(string $text): array {
+        $allowed = ['b', 'i', 'u', 's', 'a', 'code', 'pre', 'blockquote', 'tg-spoiler', 'tg-emoji', 'span', 'em', 'strong'];
         $open = [];
-
-        // Remove all attributes inside tags for matching purposes.
-        $stripped = preg_replace('/<(\w+)\s[^>]*>/', '<$1>', $text);
-
-        // Find all <tag> and </tag> occurrences.
-        preg_match_all('/<\/?(\w+)[^>]*>/', $stripped, $matches, PREG_SET_ORDER);
-
+        preg_match_all('/<(\/?)([a-zA-Z][a-zA-Z0-9-]*)\b[^<>]*>/', $text, $matches, PREG_SET_ORDER);
         foreach ($matches as $m) {
-            $tag = strtolower($m[1]);
-            if (!in_array($tag, $allowed, true)) {
+            $tag = strtolower($m[2]);
+            if (!in_array($tag, $allowed, true) || substr($m[0], -2) === '/>') {
                 continue;
             }
-            if ($m[0][1] === '/') { // Closing tag </tag>
-                $idx = array_search($tag, $open, true);
-                if ($idx !== false) {
-                    array_splice($open, $idx, 1);
+            if ($m[1] === '/') {
+                for ($i = count($open) - 1; $i >= 0; $i--) {
+                    if ($open[$i][0] === $tag) {
+                        array_splice($open, $i, 1);
+                        break;
+                    }
                 }
-            } else if (substr($m[0], -2) !== '/>') { // Opening tag (not self-closing)
-                $open[] = $tag;
+            } else {
+                $open[] = [$tag, $m[0]];
             }
         }
+        return array_column($open, 1);
+    }
 
-        // Append closing tags in reverse order.
-        foreach (array_reverse($open) as $tag) {
-            $text .= '</' . $tag . '>';
+    /**
+     * Closing tags for the opening tags given, innermost first.
+     *
+     * @param string[] $openings Opening tags, outermost first.
+     * @return string
+     */
+    private function closing_tags(array $openings): string {
+        $closing = '';
+        foreach (array_reverse($openings) as $opening) {
+            preg_match('/^<([a-zA-Z][a-zA-Z0-9-]*)/', $opening, $m);
+            $closing .= '</' . strtolower($m[1]) . '>';
         }
-
-        return $text;
+        return $closing;
     }
 
     /**
      * Split long text into chunks ≤ 4000 chars for Telegram's limit.
-     * Tries to split on \n\n boundaries first, falls back to last space before 4000.
-     * Each chunk (except the last) has open HTML tags closed to prevent 400 errors.
+     * Tries to split on \n\n boundaries first, falls back to last space before 4000; a tag or an entity is never cut.
+     * Each chunk closes the tags still open at its end and the next chunk opens them again, so every chunk is valid
+     * Telegram HTML on its own.
+     *
+     * Internal: exposed as a testable entry point; not a stable plugin API.
      *
      * @param string $text The text to split.
      * @param bool $truncate If true, return single chunk truncated to 4000 + "… (truncated)".
      * @return array Array of text chunks.
      */
-    private function chunk_text(string $text, bool $truncate = false): array {
+    public function chunk_text(string $text, bool $truncate = false): array {
         $max = 4000;
         $text = trim($text);
 
@@ -98,32 +164,60 @@ class api_client {
         }
 
         $chunks = [];
+        $reopen = [];
         $remaining = $text;
 
-        while (mb_strlen($remaining) > $max) {
-            $chunk = mb_substr($remaining, 0, $max);
-
-            // Try to split at \n\n
-            $last_double_nl = mb_strrpos($chunk, "\n\n");
-            if ($last_double_nl !== false && $last_double_nl > $max * 0.5) {
-                $split_at = $last_double_nl + 2;
-            } else {
-                // Fallback: last space
-                $last_space = mb_strrpos($chunk, ' ');
-                $split_at = ($last_space !== false && $last_space > 0) ? $last_space + 1 : $max;
-            }
-
-            $fragment = mb_substr($remaining, 0, $split_at);
-            // Close any HTML tags that were opened but not closed in this fragment.
-            $chunks[] = $this->close_open_html_tags($fragment);
-            $remaining = trim(mb_substr($remaining, $split_at));
+        while (mb_strlen(implode('', $reopen) . $remaining) > $max) {
+            $prefix = implode('', $reopen);
+            $limit = $max - mb_strlen($prefix);
+            do {
+                $fragment = $this->fragment($remaining, $limit);
+                $open = $this->open_tags($prefix . $fragment);
+                $chunk = $prefix . $fragment . $this->closing_tags($open);
+                $limit -= max(1, mb_strlen($chunk) - $max);
+            } while (mb_strlen($chunk) > $max && $limit > 1);
+            $chunks[] = $chunk;
+            $reopen = $open;
+            $remaining = trim(mb_substr($remaining, mb_strlen($fragment)));
         }
 
         if (mb_strlen($remaining) > 0) {
-            $chunks[] = $remaining;
+            $chunks[] = implode('', $reopen) . $remaining;
         }
 
         return $chunks;
+    }
+
+    /**
+     * Start of a text up to a length, cut between paragraphs, else at a space, else at the length, and never
+     * inside a tag or an entity.
+     *
+     * @param string $text Text.
+     * @param int $limit Maximum length.
+     * @return string
+     */
+    private function fragment(string $text, int $limit): string {
+        $limit = max(1, $limit);
+        $chunk = mb_substr($text, 0, $limit);
+        $lastdoublenl = mb_strrpos($chunk, "\n\n");
+        if ($lastdoublenl !== false && $lastdoublenl > $limit * 0.5) {
+            $splitat = $lastdoublenl + 2;
+        } else {
+            $lastspace = mb_strrpos($chunk, ' ');
+            $splitat = ($lastspace !== false && $lastspace > 0) ? $lastspace + 1 : $limit;
+        }
+        $fragment = mb_substr($text, 0, $splitat);
+
+        // A tag or an entity cut in half would be rejected: cut before it.
+        $lt = mb_strrpos($fragment, '<');
+        $gt = mb_strrpos($fragment, '>');
+        if ($lt !== false && $lt > 0 && ($gt === false || $gt < $lt)) {
+            $fragment = mb_substr($fragment, 0, $lt);
+        }
+        if (preg_match('/&[#a-zA-Z0-9]{0,10}$/', $fragment, $m) && mb_strlen($fragment) > mb_strlen($m[0])) {
+            $fragment = mb_substr($fragment, 0, mb_strlen($fragment) - mb_strlen($m[0]));
+        }
+        return $fragment;
     }
 
     /**
@@ -132,83 +226,95 @@ class api_client {
      * @return int
      */
     public function get_last_http_code(): int {
-        return $this->last_http_code;
+        return $this->lasthttpcode;
     }
 
     /**
      * Send a text message to a chat.
      * Splits long messages into multiple chunks if they exceed Telegram's 4000-char limit.
      *
-     * @param int|string $chat_id
+     * @param int|string $chatid
      * @param string     $text
-     * @param array|null $reply_markup  Inline keyboard or other markup
+     * @param array|null $replymarkup  Inline keyboard or other markup
      * @param bool       $truncate      If true, truncate to 4000 chars instead of chunking
      * @return bool
      */
-    public function send_message(int|string $chat_id, string $text, ?array $reply_markup = null, bool $truncate = false): bool {
+    public function send_message(int|string $chatid, string $text, ?array $replymarkup = null, bool $truncate = false): bool {
         $chunks = $this->chunk_text($text, $truncate);
-        $all_success = true;
+        $allsuccess = true;
 
         foreach ($chunks as $chunk) {
             $params = [
-                'chat_id' => $chat_id,
+                'chat_id' => $chatid,
                 'text' => $chunk,
                 'parse_mode' => 'HTML',
-            ];
-            if ($reply_markup !== null) {
-                $params['reply_markup'] = json_encode($reply_markup);
+            ] + self::NO_LINK_PREVIEW;
+            if ($replymarkup !== null) {
+                $params['reply_markup'] = json_encode($replymarkup);
             }
 
             $response = $this->post('sendMessage', $params);
 
             // 400 with HTML parse_mode → retry without parse_mode (plain text).
-            if ($response === null && $this->last_http_code === 400) {
+            if ($response === null && $this->lasthttpcode === 400) {
                 unset($params['parse_mode']);
                 $response = $this->post('sendMessage', $params);
             }
 
             if ($response === null || !($response['ok'] ?? false)) {
-                $all_success = false;
-                \local_jedomi_log('E002: Telegram API error: method=sendMessage http=' . $this->last_http_code);
+                $allsuccess = false;
+                \local_jedomi_log('E002: Telegram API error: method=sendMessage http=' . $this->lasthttpcode);
             }
         }
 
-        return $all_success;
+        return $allsuccess;
     }
 
     /**
      * Edit a message text (used for confirmation results).
      *
-     * @param int|string $chat_id
-     * @param int        $message_id
+     * @param int|string $chatid
+     * @param int        $messageid
      * @param string     $text
-     * @param array|null $reply_markup
+     * @param array|null $replymarkup
      * @return bool
      */
-    public function edit_message_text(int|string $chat_id, int $message_id, string $text, ?array $reply_markup = null): bool {
+    public function edit_message_text(int|string $chatid, int $messageid, string $text, ?array $replymarkup = null): bool {
         $params = [
-            'chat_id'    => $chat_id,
-            'message_id' => $message_id,
+            'chat_id'    => $chatid,
+            'message_id' => $messageid,
             'text'       => $text,
             'parse_mode' => 'HTML',
-        ];
-        if ($reply_markup !== null) {
-            $params['reply_markup'] = json_encode($reply_markup);
+        ] + self::NO_LINK_PREVIEW;
+        if ($replymarkup !== null) {
+            $params['reply_markup'] = json_encode($replymarkup);
         }
         $result = $this->post('editMessageText', $params);
         return $result !== null && ($result['ok'] ?? false);
     }
 
     /**
+     * Delete a message from a chat.
+     *
+     * @param int|string $chatid
+     * @param int        $messageid
+     * @return bool Whether Telegram deleted it.
+     */
+    public function delete_message(int|string $chatid, int $messageid): bool {
+        $result = $this->post('deleteMessage', ['chat_id' => $chatid, 'message_id' => $messageid]);
+        return $result !== null && ($result['ok'] ?? false);
+    }
+
+    /**
      * Answer a callback query (removes the "loading" state from inline buttons).
      *
-     * @param string $callback_id
+     * @param string $callbackid
      * @param string $text  Optional short text shown to the user
      * @return bool
      */
-    public function answer_callback_query(string $callback_id, string $text = ''): bool {
+    public function answer_callback_query(string $callbackid, string $text = ''): bool {
         $params = [
-            'callback_query_id' => $callback_id,
+            'callback_query_id' => $callbackid,
         ];
         if ($text !== '') {
             $params['text'] = $text;
@@ -220,35 +326,39 @@ class api_client {
     /**
      * Download a file from Telegram servers to a local temp path.
      *
-     * @param string $file_id  Telegram file_id
+     * @param string $fileid  Telegram file_id
      * @return string|null  Local temp file path, or null on failure
      */
-    public function download_file(string $file_id): ?string {
-        // Step 1: Get file path
-        $file_info = $this->post('getFile', ['file_id' => $file_id]);
-        if (empty($file_info['result']['file_path'])) {
+    public function download_file(string $fileid): ?string {
+        // Step 1: Get file path.
+        $fileinfo = $this->post('getFile', ['file_id' => $fileid]);
+        if (empty($fileinfo['result']['file_path'])) {
             return null;
         }
-        $file_path = $file_info['result']['file_path'];
+        $filepath = $fileinfo['result']['file_path'];
 
-        // Step 2: Download from Telegram CDN
-        $download_url = 'https://api.telegram.org/file/bot' . $this->token . '/' . $file_path;
-        $tmp_path = make_temp_directory('local_jedomi') . '/' . basename($file_path);
-
-        $ch = curl_init($download_url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-        $data = curl_exec($ch);
-        $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-
-        if ($http_code !== 200 || $data === false) {
+        // Step 2: Download from Telegram CDN.
+        $downloadurl = 'https://api.telegram.org/file/bot' . $this->token . '/' . $filepath;
+        $tmppath = make_temp_directory('local_jedomi') . '/' . basename($filepath);
+        // A blocked host is refused before \curl sees the address: its url_blocked event would log the bot token.
+        if ((new \core\files\curl_security_helper())->url_is_blocked($downloadurl)) {
+            \local_jedomi_log('E005: Telegram file download blocked by the cURL security of the site: file='
+                . $this->redact(basename($filepath)));
             return null;
         }
 
-        file_put_contents($tmp_path, $data);
-        return $tmp_path;
+        // A redirect is not followed: the download fails (its status is not 200).
+        $curl = $this->new_curl();
+        $data = $curl->get($downloadurl, [], $this->curl_options());
+        $httpcode = (int) ($curl->get_info()['http_code'] ?? 0);
+        if ($httpcode !== 200 || !empty($curl->errno) || (string) $curl->error !== '') {
+            \local_jedomi_log('E005: Telegram file download failed: http=' . $httpcode
+                . ' curl=' . $this->redact($curl->error ?: 'none'));
+            return null;
+        }
+
+        file_put_contents($tmppath, $data);
+        return $tmppath;
     }
 
     /**
@@ -261,8 +371,8 @@ class api_client {
         if ($result && ($result['ok'] ?? false)) {
             $bot = $result['result'] ?? [];
             return [
-                'id'         => $bot['id']         ?? 0,
-                'username'   => $bot['username']   ?? '',
+                'id'         => $bot['id'] ?? 0,
+                'username'   => $bot['username'] ?? '',
                 'first_name' => $bot['first_name'] ?? '',
             ];
         }
@@ -285,11 +395,22 @@ class api_client {
     /**
      * Set the webhook URL for this bot.
      *
-     * @param string $url  Full HTTPS URL including the secret query param
+     * The secret is never part of the address: Telegram sends it back in the X-Telegram-Bot-Api-Secret-Token header of
+     * every update, where it does not reach access logs or proxies.
+     *
+     * setWebhook replaces the webhook registered before at once, so the webhook is never deleted first.
+     *
+     * @param string $url Full HTTPS URL of the webhook, without secret.
+     * @param string $secrettoken Secret Telegram sends in the header of every update (1-256 of A-Z, a-z, 0-9, _ and -).
+     * @param bool $droppending Whether Telegram drops the updates waiting to be delivered.
      * @return bool
      */
-    public function set_webhook(string $url): bool {
-        $result = $this->post('setWebhook', ['url' => $url]);
+    public function set_webhook(string $url, string $secrettoken, bool $droppending = false): bool {
+        $params = ['url' => $url, 'secret_token' => $secrettoken];
+        if ($droppending) {
+            $params['drop_pending_updates'] = 'true';
+        }
+        $result = $this->post('setWebhook', $params);
         return $result !== null && ($result['ok'] ?? false);
     }
 
@@ -304,42 +425,115 @@ class api_client {
     }
 
     /**
+     * Build a form-encoded request body.
+     *
+     * Moodle sets arg_separator.output to "&amp;", so the separator is passed explicitly;
+     * otherwise Telegram reads only the first field.
+     *
+     * @param array $params Request fields.
+     * @return string Form-encoded body.
+     */
+    public static function build_body(array $params): string {
+        return http_build_query($params, '', '&');
+    }
+
+    /**
+     * Limit the total time of each request, for callers that must not wait long (the site upgrade).
+     *
+     * @param int $seconds Seconds a request may take in total; the connect timeout never exceeds it.
+     * @return void
+     */
+    public function set_timeout(int $seconds): void {
+        $this->timeout = max(1, $seconds);
+    }
+
+    /**
+     * Options of every request, for Moodle's \curl: the timeouts, redirects never followed and TLS verified (\curl does
+     * not verify the peer by default, and the bot token is in every address).
+     *
+     * @return array \curl options keyed by option name.
+     */
+    public function curl_options(): array {
+        return [
+            'CURLOPT_CONNECTTIMEOUT' => min(self::CONNECT_TIMEOUT, $this->timeout),
+            'CURLOPT_TIMEOUT' => $this->timeout,
+            'CURLOPT_FOLLOWLOCATION' => false,
+            'CURLOPT_MAXREDIRS' => 0,
+            'CURLOPT_SSL_VERIFYPEER' => true,
+            'CURLOPT_SSL_VERIFYHOST' => 2,
+        ];
+    }
+
+    /**
+     * New transport for one request: Moodle's \curl, with the proxy and the cURL security of the site.
+     *
+     * Tests override it to observe the request without network.
+     *
+     * @return \curl
+     */
+    protected function new_curl(): \curl {
+        global $CFG;
+        require_once($CFG->libdir . '/filelib.php');
+        return new \curl();
+    }
+
+    /**
      * Send a POST request to the Telegram Bot API.
      *
      * @param string $method  API method name, e.g. "sendMessage"
      * @param array  $params
      * @return array|null  Decoded JSON response, or null on failure
      */
-    private function post(string $method, array $params): ?array {
+    protected function post(string $method, array $params): ?array {
+        return $this->send($method, self::build_body($params), $this->curl_options());
+    }
+
+    /**
+     * Send a request to the Telegram Bot API and decode its answer.
+     *
+     * @param string $method API method name, e.g. "sendMessage".
+     * @param string|array $body Form-encoded body, or fields for a multipart body (\CURLFile for the files).
+     * @param array $options \curl options.
+     * @return array|null Decoded JSON response, or null on failure.
+     */
+    private function send(string $method, string|array $body, array $options): ?array {
         if (empty($this->token)) {
             \local_jedomi_log('E001: no token configured');
             return null;
         }
 
-        $url = $this->base_url . '/' . $method;
-        $ch = curl_init($url);
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($params));
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/x-www-form-urlencoded']);
+        $url = $this->baseurl . '/' . $method;
+        // A blocked host is refused here: \curl would refuse it too, but its url_blocked event stores and prints the
+        // whole address, bot token included, in the site logs.
+        if ((new \core\files\curl_security_helper())->url_is_blocked($url)) {
+            $this->lasthttpcode = 0;
+            \local_jedomi_log('E002: Telegram API request blocked by the cURL security of the site: method=' . $method);
+            return null;
+        }
 
-        $response = curl_exec($ch);
-        $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $curl_err = curl_error($ch);
-        curl_close($ch);
-        $this->last_http_code = $http_code;
+        $curl = $this->new_curl();
+        if (is_string($body)) {
+            $curl->setHeader('Content-Type: application/x-www-form-urlencoded');
+        }
+        $response = $curl->post($url, $body, $options);
+        $httpcode = (int) ($curl->get_info()['http_code'] ?? 0);
+        $curlerr = $this->redact((string) $curl->error);
+        $failed = !empty($curl->errno) || $curlerr !== '';
+        $this->lasthttpcode = $httpcode;
 
-        if ($http_code !== 200 || $response === false) {
-            $snippet = $response !== false ? mb_substr($response, 0, 500) : 'no_response';
-            error_log('[TELEGRAM API ERR] HTTP ' . $http_code . ' method=' . $method . ' body=' . $snippet . ' curl_err=' . ($curl_err ?: 'none'));
-            \local_jedomi_log('E002: Telegram API HTTP error: method=' . $method . ' http=' . $http_code . ' body=' . $snippet . ' curl=' . ($curl_err ?: 'none'));
+        if ($httpcode !== 200 || $failed) {
+            // On a failure \curl returns its error text instead of a body.
+            $snippet = !$failed && is_string($response) ? $this->redact(mb_substr($response, 0, 500)) : 'no_response';
+            \local_jedomi_log('[TELEGRAM API ERR] HTTP ' . $httpcode . ' method=' . $method
+                . ' body=' . $snippet . ' curl_err=' . ($curlerr ?: 'none'));
+            \local_jedomi_log('E002: Telegram API HTTP error: method=' . $method
+                . ' http=' . $httpcode . ' body=' . $snippet . ' curl=' . ($curlerr ?: 'none'));
             return null;
         }
 
         $decoded = json_decode($response, true);
         if (json_last_error() !== JSON_ERROR_NONE) {
-            error_log('[TELEGRAM API ERR] JSON decode: ' . json_last_error_msg() . ' method=' . $method);
+            \local_jedomi_log('[TELEGRAM API ERR] JSON decode: ' . json_last_error_msg() . ' method=' . $method);
             \local_jedomi_log('E003: Telegram JSON error: ' . json_last_error_msg());
             return null;
         }
@@ -347,7 +541,7 @@ class api_client {
         if (!($decoded['ok'] ?? false)) {
             $desc = $decoded['description'] ?? 'unknown';
             \local_jedomi_log('Telegram API error: ' . $desc);
-            error_log('[TELEGRAM API ERR] method=' . $method . ' desc=' . $desc);
+            \local_jedomi_log('[TELEGRAM API ERR] method=' . $method . ' desc=' . $desc);
         }
 
         return $decoded;
@@ -356,18 +550,27 @@ class api_client {
     /**
      * Send a chat action (typing indicator) to a chat.
      *
-     * Telegram shows "Jedomi está escribiendo..." for ~6 seconds.
+     * Telegram shows "Jedomi is typing..." for ~6 seconds.
      * Call at start of processing and re-send during long loops.
      *
-     * @param string $chat_id Telegram chat ID.
+     * @param string $chatid Telegram chat ID.
      * @param string $action  'typing', 'upload_photo', 'record_video', etc.
+     * @param int|null $timeout Total timeout of this request in seconds; null for the usual one.
      * @return bool True if Telegram accepted the action.
      */
-    public function send_chat_action(string $chat_id, string $action = 'typing'): bool {
-        $result = $this->post('sendChatAction', [
-            'chat_id' => $chat_id,
-            'action'  => $action,
-        ]);
+    public function send_chat_action(string $chatid, string $action = 'typing', ?int $timeout = null): bool {
+        $usual = $this->timeout;
+        if ($timeout !== null) {
+            $this->timeout = max(1, $timeout);
+        }
+        try {
+            $result = $this->post('sendChatAction', [
+                'chat_id' => $chatid,
+                'action'  => $action,
+            ]);
+        } finally {
+            $this->timeout = $usual;
+        }
         return $result !== null && !empty($result['ok']);
     }
 
@@ -377,19 +580,19 @@ class api_client {
      * If the file path does not exist, falls back to send_message with a truncated
      * version of the content so the user never loses the data.
      *
-     * @param  int|string $chat_id   Telegram chat ID.
+     * @param  int|string $chatid   Telegram chat ID.
      * @param  string     $filepath  Absolute path to the file on disk.
      * @param  string     $caption   Optional caption (0-1024 chars, HTML supported).
      * @return bool                  True if Telegram accepted the file.
      */
-    public function send_document(int|string $chat_id, string $filepath, string $caption = ''): bool {
+    public function send_document(int|string $chatid, string $filepath, string $caption = ''): bool {
         if (!file_exists($filepath) || !is_readable($filepath)) {
             \local_jedomi_log('E004: send_document file not found: ' . $filepath);
             return false;
         }
 
         $params = [
-            'chat_id'   => $chat_id,
+            'chat_id'   => $chatid,
             'document'  => new \CURLFile($filepath),
         ];
         if (!empty($caption)) {
@@ -400,7 +603,7 @@ class api_client {
         $response = $this->post_multipart('sendDocument', $params);
 
         // 400 with HTML parse_mode → retry caption as plain text.
-        if ($response === null && $this->last_http_code === 400 && !empty($caption)) {
+        if ($response === null && $this->lasthttpcode === 400 && !empty($caption)) {
             unset($params['parse_mode']);
             $response = $this->post_multipart('sendDocument', $params);
         }
@@ -416,46 +619,17 @@ class api_client {
      * @return array|null          Decoded JSON response, or null on failure.
      */
     private function post_multipart(string $method, array $params): ?array {
-        if (empty($this->token)) {
-            \local_jedomi_log('E001: no token configured');
-            return null;
-        }
+        $options = ['CURLOPT_TIMEOUT' => self::UPLOAD_TIMEOUT] + $this->curl_options();
+        return $this->send($method, $params, $options);
+    }
 
-        $url = $this->base_url . '/' . $method;
-        $ch = curl_init($url);
-        curl_setopt_array($ch, [
-            CURLOPT_POST           => true,
-            CURLOPT_POSTFIELDS     => $params,  // Array → libcurl uses multipart/form-data.
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT        => 60,
-        ]);
-
-        $response = curl_exec($ch);
-        $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $curl_err = curl_error($ch);
-        curl_close($ch);
-        $this->last_http_code = $http_code;
-
-        if ($http_code !== 200 || $response === false) {
-            $snippet = $response !== false ? mb_substr($response, 0, 500) : 'no_response';
-            error_log('[TELEGRAM API ERR] HTTP ' . $http_code . ' method=' . $method . ' body=' . $snippet . ' curl_err=' . ($curl_err ?: 'none'));
-            \local_jedomi_log('E002: Telegram API HTTP error: method=' . $method . ' http=' . $http_code . ' body=' . $snippet . ' curl=' . ($curl_err ?: 'none'));
-            return null;
-        }
-
-        $decoded = json_decode($response, true);
-        if (json_last_error() !== JSON_ERROR_NONE) {
-            error_log('[TELEGRAM API ERR] JSON decode: ' . json_last_error_msg() . ' method=' . $method);
-            \local_jedomi_log('E003: Telegram JSON error: ' . json_last_error_msg());
-            return null;
-        }
-
-        if (!($decoded['ok'] ?? false)) {
-            $desc = $decoded['description'] ?? 'unknown';
-            \local_jedomi_log('Telegram API error: ' . $desc);
-            error_log('[TELEGRAM API ERR] method=' . $method . ' desc=' . $desc);
-        }
-
-        return $decoded;
+    /**
+     * Text with the bot token hidden, for the log: an error may quote the address, which holds the token.
+     *
+     * @param string $text Text to log.
+     * @return string
+     */
+    private function redact(string $text): string {
+        return $this->token === '' ? $text : str_replace($this->token, '[token]', $text);
     }
 }

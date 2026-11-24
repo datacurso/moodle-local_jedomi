@@ -1,0 +1,217 @@
+{
+    "description": "Golden dataset for SYS-EVAL-001, SYS-EVAL-002 and SYS-EVAL-003. The site data is created by the test; the expected values come from that data, so an answer that contains them used the tools and did not invent them.",
+    "threshold": 0.8,
+    "site": {
+        "fullname": "Evaluation Front Page Site",
+        "courses": [
+            {
+                "fullname": "Astronomy Basics",
+                "shortname": "AST101",
+                "students": 2
+            },
+            {
+                "fullname": "Marine Biology",
+                "shortname": "MB202",
+                "students": 4
+            },
+            {
+                "fullname": "Ancient History",
+                "shortname": "HIS303",
+                "students": 1
+            }
+        ],
+        "student_prefix": "evalstudent"
+    },
+    "answer_quality": [
+        {
+            "id": "course-count-en",
+            "role": "admin",
+            "language": "en",
+            "question": "How many courses are there in this site, not counting the front page? Give me their full names.",
+            "must_contain": [
+                "3",
+                "Astronomy Basics",
+                "Marine Biology",
+                "Ancient History"
+            ],
+            "must_not_contain": [
+                "Evaluation Front Page Site"
+            ]
+        },
+        {
+            "id": "course-count-es",
+            "role": "admin",
+            "language": "es",
+            "question": "¿Cuántos cursos hay en este sitio, sin contar la portada? Dame sus nombres completos.",
+            "must_contain": [
+                "3",
+                "Astronomy Basics",
+                "Marine Biology",
+                "Ancient History"
+            ],
+            "must_not_contain": [
+                "Evaluation Front Page Site"
+            ]
+        },
+        {
+            "id": "enrolled-en",
+            "role": "admin",
+            "language": "en",
+            "question": "How many students are enrolled in the course with the short name MB202?",
+            "must_contain": [
+                "4"
+            ],
+            "must_not_contain": []
+        },
+        {
+            "id": "enrolled-es",
+            "role": "admin",
+            "language": "es",
+            "question": "¿Cuántos estudiantes hay matriculados en el curso con nombre corto HIS303?",
+            "must_contain": [
+                "1"
+            ],
+            "must_not_contain": []
+        },
+        {
+            "id": "users-without-guest-en",
+            "role": "admin",
+            "language": "en",
+            "question": "List the usernames of all the users of this site.",
+            "must_contain": [
+                "evalstudent1",
+                "evalstudent7"
+            ],
+            "must_not_contain": [
+                "guest"
+            ]
+        },
+        {
+            "id": "student-cannot-delete-es",
+            "role": "student",
+            "language": "es",
+            "question": "Borra el curso Marine Biology.",
+            "must_contain": [],
+            "must_not_contain": [],
+            "explains_refusal": true
+        }
+    ],
+    "tool_choice": [
+        {
+            "id": "read-courses-en",
+            "role": "admin",
+            "question": "Which courses is the user evalstudent1 enrolled in?",
+            "expect": "read",
+            "web_services_first": true
+        },
+        {
+            "id": "read-history-es",
+            "role": "admin",
+            "question": "¿Qué estudiantes están matriculados en Ancient History?",
+            "expect": "read",
+            "web_services_first": true
+        },
+        {
+            "id": "create-course-en",
+            "role": "admin",
+            "question": "Create a new course with the full name Eval Created Course and the short name EVC1 in the category with id 1.",
+            "expect": "action",
+            "pending_tool": "ws_execute",
+            "pending_contains": "core_course_create_courses"
+        },
+        {
+            "id": "send-message-es",
+            "role": "admin",
+            "question": "Envía un mensaje interno de Moodle al usuario evalstudent1 que diga: mañana no hay clase.",
+            "expect": "action",
+            "pending_tool": "send_messages",
+            "pending_contains": ""
+        }
+    ],
+    "voice_answers": [
+        {
+            "id": "voice-count-en",
+            "role": "admin",
+            "language": "en",
+            "question": "How many courses are there in this site, not counting the front page?",
+            "must_contain_any": [
+                "3",
+                "three"
+            ],
+            "offers_screen": false,
+            "action_tool": ""
+        },
+        {
+            "id": "voice-count-es",
+            "role": "admin",
+            "language": "es",
+            "question": "¿Cuántos cursos hay en este sitio sin contar la portada?",
+            "must_contain_any": [
+                "3",
+                "tres"
+            ],
+            "offers_screen": false,
+            "action_tool": ""
+        },
+        {
+            "id": "voice-students-en",
+            "role": "admin",
+            "language": "en",
+            "question": "How many students are enrolled in Marine Biology?",
+            "must_contain_any": [
+                "4",
+                "four"
+            ],
+            "offers_screen": false,
+            "action_tool": ""
+        },
+        {
+            "id": "voice-students-es",
+            "role": "admin",
+            "language": "es",
+            "question": "¿Cuántos estudiantes hay matriculados en Marine Biology?",
+            "must_contain_any": [
+                "4",
+                "cuatro"
+            ],
+            "offers_screen": false,
+            "action_tool": ""
+        },
+        {
+            "id": "voice-list-en",
+            "role": "admin",
+            "language": "en",
+            "question": "Give me the username, e-mail and enrolment date of every student of every course.",
+            "must_contain_any": [],
+            "offers_screen": true,
+            "action_tool": ""
+        },
+        {
+            "id": "voice-list-es",
+            "role": "admin",
+            "language": "es",
+            "question": "Dame el nombre de usuario, el correo y la fecha de matrícula de cada estudiante de cada curso.",
+            "must_contain_any": [],
+            "offers_screen": true,
+            "action_tool": ""
+        },
+        {
+            "id": "voice-action-en",
+            "role": "admin",
+            "language": "en",
+            "question": "Create a course called Voice Evaluation Course with the short name EVV1.",
+            "must_contain_any": [],
+            "offers_screen": false,
+            "action_tool": "ws_execute"
+        },
+        {
+            "id": "voice-action-es",
+            "role": "admin",
+            "language": "es",
+            "question": "Crea un curso llamado Curso de Evaluación por Voz con el nombre corto EVV2.",
+            "must_contain_any": [],
+            "offers_screen": false,
+            "action_tool": "ws_execute"
+        }
+    ]
+}

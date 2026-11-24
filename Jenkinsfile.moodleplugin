@@ -1,3 +1,4 @@
 @Library('moodle-ci') _
-moodlePluginCI(moodleBranch: 'main')
-// CI test comment: verifying zero-touch auto-trigger
+moodlePluginCI(moodleVersions: [
+  [version: 'MOODLE_405_STABLE', dbs: ['mariadb', 'pgsql']],
+])

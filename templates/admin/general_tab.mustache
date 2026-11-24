@@ -1,0 +1,48 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template local_jedomi/admin/general_tab
+
+    General tab of the Jedomi settings: link to the AI service settings in the Datacurso AI provider
+    and the general settings form.
+
+    Classes required for JS:
+    * none
+
+    Data attributes required for JS:
+    * none
+
+    Context variables required for this template:
+    * provider object - Link to the provider: url string
+    * form string - HTML of the general settings form, rendered by moodleform
+
+    Example context (json):
+    {
+        "provider": {"url": "https://example.com/ai/provider/datacurso/admin/plugin_settings.php?component=local_jedomi"},
+        "form": "<form></form>"
+    }
+}}
+<div class="local_jedomi-admin local_jedomi-admin-general_tab">
+    {{< local_jedomi/admin/card }}
+        {{$icon}}{{#pix}} i/settings, core {{/pix}}{{/icon}}
+        {{$color}}violet{{/color}}
+        {{$title}}{{#str}} ai_heading, local_jedomi {{/str}}{{/title}}
+        {{$subtitle}}{{#str}} ai_heading_help, local_jedomi {{/str}}{{/subtitle}}
+        {{$body}}{{#provider}}{{> local_jedomi/provider_settings_link }}{{/provider}}{{/body}}
+    {{/ local_jedomi/admin/card }}
+    {{{form}}}
+</div>

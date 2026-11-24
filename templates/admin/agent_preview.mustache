@@ -1,0 +1,140 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template local_jedomi/admin/agent_preview
+
+    Result of an agent preview: cache notice, conversation timeline, tool profiler and the answer.
+    Rendered by the local_jedomi/admin/agents module.
+
+    Classes required for JS:
+    * none
+
+    Data attributes required for JS:
+    * data-action="local_jedomi/admin/agents/clear-cache" on the clear cache button, with data-hash
+
+    Context variables required for this template:
+    * ok bool - Whether the preview ran
+    * error string - Error when ok is false
+    * cached bool - Whether the answer came from the cache
+    * cachedat int - Time the cached answer was stored
+    * hash string - Cache key of the prompt
+    * hasconversation bool - Whether there are conversation messages
+    * conversation array - Messages: rolelabel string, roleclass string, round int, hascontent bool, content string,
+      hastoolcalls bool, toolcalls array (name string, args string), hastoolresults bool, toolresults array (index int, text string)
+    * hasprofiler bool - Whether there are profiler entries
+    * profiler array - Tool runs: tool string, duration string, rows int, haserror bool, error string,
+      hasresultpreview bool, resultpreview string, hasarguments bool, arguments string
+    * hastotaltime bool - Whether totaltime is set
+    * totaltime string - Total tool time in milliseconds
+    * answer string - Final answer
+
+    Example context (json):
+    {
+        "ok": true, "error": "", "cached": false, "cachedat": 0, "hash": "",
+        "hasconversation": true,
+        "conversation": [{"rolelabel": "User", "roleclass": "user", "round": 1, "hascontent": true, "content": "How many users?",
+            "hastoolcalls": false, "toolcalls": [], "hastoolresults": false, "toolresults": []}],
+        "hasprofiler": true,
+        "profiler": [{"tool": "execute_sql", "duration": "12.3", "rows": 1, "haserror": false, "error": "",
+            "hasresultpreview": true, "resultpreview": "[{\"count\": 42}]", "hasarguments": true, "arguments": "{\"sql\": \"SELECT 1\"}"}],
+        "hastotaltime": true, "totaltime": "12.3", "answer": "There are 42 users."
+    }
+}}
+{{^ok}}
+<div class="text-danger">{{#pix}} e/cancel_solid_circle, core {{/pix}}{{error}}</div>
+{{/ok}}
+{{#ok}}
+{{#cached}}
+<div class="alert alert-info d-flex align-items-center justify-content-between small p-2 mb-2">
+    <span>{{#pix}} i/db, core {{/pix}}{{#str}} agent_preview_cached, local_jedomi {{/str}} {{#userdate}} {{cachedat}}, {{#str}} strftimedatetime, core_langconfig {{/str}} {{/userdate}}</span>
+    {{#hash}}
+    <button type="button" class="btn btn-sm btn-outline-danger" data-action="local_jedomi/admin/agents/clear-cache" data-hash="{{hash}}">
+        {{#str}} agent_preview_clear_cache, local_jedomi {{/str}}
+    </button>
+    {{/hash}}
+</div>
+{{/cached}}
+
+{{#hasconversation}}
+<div class="local_jedomi-admin-timeline mb-2">
+    <strong class="d-block mb-2">{{#str}} agent_preview_timeline, local_jedomi {{/str}}</strong>
+    {{#conversation}}
+    <div class="local_jedomi-admin-timeline-message">
+        <div class="local_jedomi-admin-timeline-header local_jedomi-admin-timeline-{{roleclass}}">
+            <span class="badge local_jedomi-admin-timeline-badge">{{rolelabel}}</span>
+            {{#str}} agent_preview_round, local_jedomi, {{round}} {{/str}}
+        </div>
+        {{#hascontent}}<div class="local_jedomi-admin-timeline-content">{{content}}</div>{{/hascontent}}
+        {{#hastoolcalls}}
+        <div class="local_jedomi-admin-timeline-tools">
+            {{#toolcalls}}
+            <details class="mb-1">
+                <summary class="local_jedomi-admin-summary-tool">{{#pix}} t/preferences, core {{/pix}}{{name}}</summary>
+                <pre class="local_jedomi-admin-code"><code>{{args}}</code></pre>
+            </details>
+            {{/toolcalls}}
+        </div>
+        {{/hastoolcalls}}
+        {{#hastoolresults}}
+        <div class="local_jedomi-admin-timeline-tools">
+            {{#toolresults}}
+            <details class="mb-1">
+                <summary class="local_jedomi-admin-summary-result">{{#pix}} e/table, core {{/pix}}{{#str}} agent_preview_result_n, local_jedomi, {{index}} {{/str}}</summary>
+                <pre class="local_jedomi-admin-code local_jedomi-admin-code-result"><code>{{text}}</code></pre>
+            </details>
+            {{/toolresults}}
+        </div>
+        {{/hastoolresults}}
+    </div>
+    {{/conversation}}
+</div>
+{{/hasconversation}}
+
+{{#hasprofiler}}
+<div class="mt-2">
+    {{#profiler}}
+    <div class="local_jedomi-admin-profiler-entry{{#haserror}} local_jedomi-admin-profiler-error{{/haserror}}">
+        <div class="d-flex justify-content-between align-items-center flex-wrap">
+            <strong>{{tool}}</strong>
+            <span>{{#str}} agent_preview_tool_stats, local_jedomi, { "duration": "{{duration}}", "rows": {{rows}} } {{/str}}</span>
+            {{#haserror}}<span class="text-danger">{{#pix}} e/cancel_solid_circle, core {{/pix}}{{error}}</span>{{/haserror}}
+        </div>
+        {{#hasresultpreview}}
+        <details class="mt-1">
+            <summary class="local_jedomi-admin-summary-result">{{#str}} agent_preview_result_preview, local_jedomi {{/str}}</summary>
+            <pre class="local_jedomi-admin-code local_jedomi-admin-code-result"><code>{{resultpreview}}</code></pre>
+        </details>
+        {{/hasresultpreview}}
+        {{#hasarguments}}
+        <details class="mt-1">
+            <summary class="text-muted">{{#str}} agent_preview_arguments, local_jedomi {{/str}}</summary>
+            <pre class="local_jedomi-admin-code"><code>{{arguments}}</code></pre>
+        </details>
+        {{/hasarguments}}
+    </div>
+    {{/profiler}}
+    {{#hastotaltime}}
+    <div class="local_jedomi-admin-text-ok font-weight-bold fw-bold small py-1">
+        {{#pix}} i/new, core {{/pix}}{{#str}} agent_preview_total_time, local_jedomi, {{totaltime}} {{/str}}
+    </div>
+    {{/hastotaltime}}
+    <hr class="my-2">
+</div>
+{{/hasprofiler}}
+
+<div class="local_jedomi-admin-preview-answer">{{answer}}</div>
+{{/ok}}

@@ -1,20 +1,41 @@
 <?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
 /**
  * Jedomi CLI Chat — Full pipeline debug tool.
  *
- * Replica EXACTAMENTE el pipeline del chat web (chatproxy.php → handler.php),
- * incluyendo system_message::build(), tool definitions, y native function calling.
+ * Replicates EXACTLY the web chat pipeline (chatproxy.php → handler.php),
+ * including system_message::build(), tool definitions and native function calling.
+ * Tools that change data ask the operator to type "yes" before they run, like the web chat's
+ * confirmation card.
  *
- * Uso: php cli/chat_cli.php
- * Comandos: help, debug on/off, exit
+ * Usage: php cli/chat_cli.php
+ * Commands: help, debug on/off, exit
+ * @package    local_jedomi
+ * @copyright  2026 Datacurso <developer@datacurso.com>
+ * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 define('CLI_SCRIPT', true);
 define('AJAX_SCRIPT', false);
 
-// ── Seguridad: solo CLI ───────────────────────────────────────────────────
+// ... ── Security: CLI only ─────────────────────────────────────────────────────
+// phpcs:ignore moodle.Files.MoodleInternal.MoodleInternalGlobalState -- CLI guard runs before config.php.
 if (isset($_SERVER['REMOTE_ADDR']) || PHP_SAPI !== 'cli') {
     http_response_code(403);
-    die('Acceso denegado. Este script solo puede ejecutarse desde l&iacute;nea de comandos.');
+    die('Access denied. This script can only be run from the command line.');
 }
 
 require_once(__DIR__ . '/../../../config.php');
@@ -23,223 +44,256 @@ require_once(__DIR__ . '/../classes/proxy/system_message.php');
 
 global $DB, $CFG, $USER;
 
-// ── Loguear como admin ────────────────────────────────────────────────────
+// ... ── Jedomi disabled in the Datacurso AI provider: no AI call is made ──────
+$disabled = \local_jedomi_plugin_disabled_error();
+if ($disabled !== null) {
+    cli_error($disabled['message']);
+}
+
+// ... ── Log in as admin ──────────────────────────────────────────────────────
 $admin = get_admin();
 if ($admin) {
     $USER = $admin;
     \core\session\manager::set_user($admin);
 }
 
-// ── Config API ────────────────────────────────────────────────────────────
-$API_URL = rtrim(get_config('local_jedomi', 'gateway_url') ?: 'http://192.168.1.28:8080', '/');
-$API_KEY = get_config('local_jedomi', 'api_key');
-$MODEL   = get_config('local_jedomi', 'model') ?: 'peg-gemma4';
+// ... ── AI settings ───────────────────────────────────────────────────────────
+// Every call goes through the Datacurso AI provider; the model is the site setting.
+$model = \local_jedomi\ai\model_settings::get_model();
 
-// ── State ─────────────────────────────────────────────────────────────────
+// ... ── State ─────────────────────────────────────────────────────────────────
 $debug = true;
 $messages = [];
 
-// ── Header ────────────────────────────────────────────────────────────────
+// ... ── Header ────────────────────────────────────────────────────────────────
 echo "\n" . str_repeat("=", 60) . "\n";
 echo "  JEDOMI CLI CHAT — FULL PIPELINE DEBUG\n";
-echo "  User: " . ($USER->id ?? 'none') . " | Model: {$MODEL}\n";
-echo "  Gateway: {$API_URL}/v1/chat/completions\n";
+echo "  User: " . ($USER->id ?? 'none') . " | Model: {$model}\n";
+echo "  AI route: " . \local_jedomi\ai\client::PATH . " (Datacurso AI provider)\n";
 echo str_repeat("=", 60) . "\n";
-echo "  Comandos: help, debug on/off, exit\n\n";
+echo "  Commands: help, debug on/off, exit\n\n";
 
-// ── Build system message + tools (EXACTAMENTE como chatproxy) ─────────────
+// ... ── Build system message + tools (EXACTLY like chatproxy) ─────────────────
 $role = 'admin';
 $spt  = ['user_id' => $USER->id, 'course_id' => 0, 'role' => $role];
 $context = ['location' => 'cli', 'course_name' => '', 'page_url' => '', 'page_title' => ''];
 
-$systemMsg = \local_jedomi\proxy\system_message::build($role, $spt, $context);
-$messages[] = $systemMsg;
+$systemmsg = \local_jedomi\proxy\system_message::build($role, $spt, $context);
+$messages[] = $systemmsg;
 
 $tools = \local_jedomi_get_tool_definitions($role);
-// Convertir formato tool definition → OpenAI tools array
-$openaiTools = [];
+// Convert the tool definitions into an OpenAI tools array.
+$openaitools = [];
 foreach ($tools as $t) {
-    $openaiTools[] = [
+    $openaitools[] = [
         'type' => 'function',
         'function' => $t['function'],
     ];
 }
 
 if ($debug) {
-    echo "  Tools disponibles: " . count($openaiTools) . "\n";
-    foreach ($openaiTools as $t) {
+    echo "  Available tools: " . count($openaitools) . "\n";
+    foreach ($openaitools as $t) {
         echo "    - {$t['function']['name']}\n";
     }
     echo "\n";
 }
 
-// ── Función: LLamar a la API (sin streaming) ──────────────────────────────
-function call_ai(array $messages, array $tools = []): ?array {
-    global $API_URL, $API_KEY, $MODEL;
-    
-    $payload = [
-        'model'       => $MODEL,
-        'messages'    => $messages,
-        'stream'      => false,
-        'max_tokens'  => 16384,
-    ];
-    if (!empty($tools)) {
-        $payload['tools']       = $tools;
-        $payload['tool_choice'] = 'auto';
-    }
-    
-    $ch = curl_init($API_URL . '/v1/chat/completions');
-    curl_setopt_array($ch, [
-        CURLOPT_POST           => true,
-        CURLOPT_POSTFIELDS     => json_encode($payload, JSON_UNESCAPED_UNICODE),
-        CURLOPT_HTTPHEADER     => [
-            'Content-Type: application/json',
-            'Authorization: Bearer ' . $API_KEY,
-        ],
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT        => 180,
-        CURLOPT_CONNECTTIMEOUT => 10,
-    ]);
-    
-    $buf = curl_exec($ch);
-    $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $error = curl_error($ch);
-    curl_close($ch);
-    
-    if ($http !== 200 || empty($buf)) {
-        echo "  ⚠️  API ERROR: HTTP {$http}" . ($error ? " - {$error}" : '') . "\n";
-        if (!empty($buf)) echo "  Body: " . substr($buf, 0, 500) . "\n";
+// ... ── Function: call the AI service (no streaming) ─────────────────────────
+/**
+ * Sends the conversation to the AI service through the Jedomi AI client and returns the assistant message.
+ *
+ * @param array $messages full conversation history in OpenAI chat format
+ * @param array $tools OpenAI-format tool definitions to offer the model (empty for none)
+ * @return array|null the assistant message, or null when the call failed (the error is printed)
+ */
+function local_jedomi_chat_cli_call_ai(array $messages, array $tools = []): ?array {
+    global $USER;
+
+    try {
+        $answer = \local_jedomi\ai\client::instance()->complete($messages, (int) $USER->id, $tools);
+    } catch (\Throwable $e) {
+        $error = \local_jedomi\ai\error_message::from_exception($e);
+        echo "  ⚠️  AI ERROR ({$error['code']}): {$error['message']}\n";
         return null;
     }
-    
-    $data = json_decode($buf, true);
-    if (!$data || !isset($data['choices'][0])) {
-        echo "  ⚠️  API respuesta inválida\n";
-        return null;
+
+    $message = ['role' => 'assistant', 'content' => $answer['content'] !== '' ? $answer['content'] : null];
+    if (!empty($answer['tool_calls'])) {
+        $message['tool_calls'] = $answer['tool_calls'];
     }
-    
-    return $data['choices'][0]['message'];
+    return $message;
 }
 
-// ── Función: ejecutar tool (EXACTAMENTE como handler.php) ─────────────────
-function execute_tool(string $name, array $args): string {
+// ... ── Function: run a tool (EXACTLY like handler.php) ───────────────────────
+/**
+ * Executes a tool call through the proxy handler using the admin role.
+ *
+ * A tool that changes data (the same ones the web chat holds for confirmation) runs only after the
+ * operator confirms it; otherwise the model receives an error result and nothing is changed.
+ *
+ * @param string $name tool name requested by the model
+ * @param array $args decoded tool call arguments
+ * @return string JSON-encoded tool result
+ */
+function local_jedomi_chat_cli_execute_tool(string $name, array $args): string {
+    $severity = \local_jedomi\local\service\pending_action_service::severity($name, $args);
+    if ($severity !== null && !local_jedomi_chat_cli_confirm_tool($name, $args, $severity)) {
+        return json_encode(['error' => 'The operator cancelled this action; it was not run.']);
+    }
     return \local_jedomi\proxy\handler::run_tool($name, $args, 'admin');
 }
 
-// ── Main Loop ─────────────────────────────────────────────────────────────
+/**
+ * Asks the operator to confirm a tool call that changes data.
+ *
+ * Only an explicit "yes" confirms it; an empty answer, any other answer or a closed input (for example
+ * when the script is not run from an interactive terminal) cancels it.
+ *
+ * @param string $name tool name requested by the model
+ * @param array $args decoded tool call arguments
+ * @param string $severity severity of the action, as given by pending_action_service::severity()
+ * @return bool true when the operator confirmed the action
+ */
+function local_jedomi_chat_cli_confirm_tool(string $name, array $args, string $severity): bool {
+    echo "  \e[1;31m⚠️  {$name} changes data (severity: {$severity}).\e[0m\n";
+    // Every argument is shown, never a cut: the operator confirms exactly what runs.
+    echo "  Arguments:\n" . json_encode($args, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n";
+    echo "  Type \"yes\" to run it, anything else to cancel: ";
+    $answer = readline();
+    $confirmed = $answer !== false && strtolower(trim($answer)) === 'yes';
+    echo $confirmed ? "  Confirmed.\n" : "  \e[33mCancelled.\e[0m\n";
+    return $confirmed;
+}
+
+// ... ── Main Loop ─────────────────────────────────────────────────────────────
 while (true) {
     echo "\n\e[1;33m>>> \e[0m";
     $input = readline();
-    if ($input === false || $input === 'exit') break;
+    if ($input === false || $input === 'exit') {
+        break;
+    }
     $input = trim($input);
-    if (empty($input)) continue;
-    
-    if ($input === 'debug on') { $debug = true; echo "  Debug ON\n"; continue; }
-    if ($input === 'debug off') { $debug = false; echo "  Debug OFF\n"; continue; }
+    if (empty($input)) {
+        continue;
+    }
+
+    if ($input === 'debug on') {
+        $debug = true;
+        echo "  Debug ON\n";
+        continue;
+    }
+    if ($input === 'debug off') {
+        $debug = false;
+        echo "  Debug OFF\n";
+        continue;
+    }
     if ($input === 'help') {
         echo "\n";
-        echo "  ─── COMANDOS ─────────────────────────────────────\n";
-        echo "  help              Mostrá esta ayuda\n";
-        echo "  debug on/off      Mostrá u ocultá los tool calls crudos\n";
-        echo "  exit              Salí\n";
+        echo "  ─── COMMANDS ─────────────────────────────────────\n";
+        echo "  help              Show this help\n";
+        echo "  debug on/off      Show or hide the raw tool calls\n";
+        echo "  exit              Quit\n";
         echo "\n";
-        echo "  Cualquier otra cosa se envía como mensaje al AI.\n";
-        echo "  El AI tiene acceso a " . count($openaiTools) . " herramientas:\n";
-        foreach ($openaiTools as $t) {
+        echo "  Anything else is sent as a message to the AI.\n";
+        echo "  The AI has access to " . count($openaitools) . " tools:\n";
+        foreach ($openaitools as $t) {
             echo "    - {$t['function']['name']}\n";
         }
         echo "\n";
-        echo "  FLUJO TÍPICO:\n";
-        echo "  El AI primero busca (ws_search), describe (ws_describe) y\n";
-        echo "  luego ejecuta (ws_execute). Si un WS falla por parámetros\n";
-        echo "  opcionales faltantes, reintenta automáticamente con defaults.\n";
+        echo "  TYPICAL FLOW:\n";
+        echo "  The AI first searches (ws_search), describes (ws_describe) and\n";
+        echo "  then executes (ws_execute). If a web service fails because of\n";
+        echo "  missing optional parameters, it retries with default values.\n";
         echo "  ──────────────────────────────────────────────────\n";
         continue;
     }
-    
+
     $messages[] = ['role' => 'user', 'content' => $input];
-    
+
     $turn = 0;
     while ($turn < 25) {
         $turn++;
-        echo "\n  \e[2m⏳ Turno {$turn}/25 — AI pensando...\e[0m\n";
-        
-        $response = call_ai($messages, $openaiTools);
-        if ($response === null) break;
-        
+        echo "\n  \e[2m⏳ Turn {$turn}/25 — AI thinking...\e[0m\n";
+
+        $response = local_jedomi_chat_cli_call_ai($messages, $openaitools);
+        if ($response === null) {
+            break;
+        }
+
         $messages[] = $response;
-        
-        // ── Text response ──────────────────────────────────────────────
+
+        // ... ── Text response ──────────────────────────────────────────────
         if (!empty($response['content'])) {
             echo "\n  \e[1;32m🤖:\e[0m {$response['content']}\n";
         }
-        
-        // ── Tool calls ─────────────────────────────────────────────────
+
+        // ... ── Tool calls ─────────────────────────────────────────────────
         if (!empty($response['tool_calls'])) {
             foreach ($response['tool_calls'] as $tc) {
-                $tcId   = $tc['id'];
-                $tcName = $tc['function']['name'];
-                $tcArgs = json_decode($tc['function']['arguments'], true) ?? [];
-                
+                $tcid   = $tc['id'];
+                $tcname = $tc['function']['name'];
+                $tcargs = json_decode($tc['function']['arguments'], true) ?? [];
+
                 if ($debug) {
-                    echo "  \e[36m🔧 Tool call: {$tcName}(" .
-                         json_encode($tcArgs, JSON_UNESCAPED_UNICODE) . ")\e[0m\n";
+                    echo "  \e[36m🔧 Tool call: {$tcname}(" .
+                         json_encode($tcargs, JSON_UNESCAPED_UNICODE) . ")\e[0m\n";
                 }
-                
-                // Ejecutar
-                echo "  \e[35m⚡ Ejecutando {$tcName}...\e[0m\n";
-                $result = execute_tool($tcName, $tcArgs);
-                
-                // Parsear resultado para mostrar resumen
-                $resultParsed = json_decode($result, true);
-                $isError = isset($resultParsed['error']);
-                
-                // Mostrar resultado resumido
-                if ($isError) {
-                    echo "  \e[31m❌ Error: " . mb_substr($resultParsed['error'], 0, 200) . "\e[0m\n";
+
+                // Execute.
+                echo "  \e[35m⚡ Executing {$tcname}...\e[0m\n";
+                $result = local_jedomi_chat_cli_execute_tool($tcname, $tcargs);
+
+                // Parse the result to show a summary.
+                $resultparsed = json_decode($result, true);
+                $iserror = isset($resultparsed['error']);
+
+                // Show a summary of the result.
+                if ($iserror) {
+                    echo "  \e[31m❌ Error: " . mb_substr($resultparsed['error'], 0, 200) . "\e[0m\n";
                 } else {
-                    // Intentar mostrar resumen útil
+                    // Try to show a useful summary.
                     $summary = '';
-                    if (isset($resultParsed['result'])) {
-                        $inner = json_decode($resultParsed['result'], true);
+                    if (isset($resultparsed['result'])) {
+                        $inner = json_decode($resultparsed['result'], true);
                         if (is_array($inner)) {
-                            $summary = count($inner) . ' resultado(s)';
+                            $summary = count($inner) . ' result(s)';
                             if (count($inner) > 0 && is_array($inner[0])) {
                                 $summary .= ' (' . implode(', ', array_slice(array_keys($inner[0]), 0, 4)) . ')';
                             }
                         } else {
-                            $summary = mb_substr($resultParsed['result'], 0, 80);
+                            $summary = mb_substr($resultparsed['result'], 0, 80);
                         }
-                    } elseif (isset($resultParsed['success'])) {
-                        $summary = 'success: ' . (isset($resultParsed['data']) ? 'data received' : 'true');
-                    } elseif (isset($resultParsed['rows'])) {
-                        $summary = count($resultParsed['rows']) . ' filas';
+                    } else if (isset($resultparsed['success'])) {
+                        $summary = 'success: ' . (isset($resultparsed['data']) ? 'data received' : 'true');
+                    } else if (isset($resultparsed['rows'])) {
+                        $summary = count($resultparsed['rows']) . ' rows';
                     } else {
                         $summary = 'OK (' . mb_substr($result, 0, 80) . ')';
                     }
                     echo "  \e[32m✅ {$summary}\e[0m\n";
                 }
-                
+
                 if ($debug && $result) {
                     echo "  \e[2m  Result raw: " . mb_substr($result, 0, 300) . "\e[0m\n";
                 }
-                
-                // Agregar resultado a messages
+
+                // Add the result to the messages.
                 $messages[] = [
                     'role' => 'tool',
-                    'tool_call_id' => $tcId,
+                    'tool_call_id' => $tcid,
                     'content' => $result,
                 ];
             }
         } else {
-            // Sin tool calls → respuesta final
+            // No tool calls → final answer.
             break;
         }
     }
-    
+
     if ($turn >= 25) {
-        echo "  \e[31m✗ Máximo de 25 turnos alcanzado\e[0m\n";
+        echo "  \e[31m✗ Maximum of 25 turns reached\e[0m\n";
     }
 }
 
-echo "\n¡Chau!\n";
+echo "\nBye!\n";

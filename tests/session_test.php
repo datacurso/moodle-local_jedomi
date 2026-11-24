@@ -18,14 +18,11 @@
  * Unit tests for telegram session MAX_TURNS config propagation.
  *
  * @package    local_jedomi
- * @category   phpunit
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-namespace local_jedomi\tests;
-
-defined('MOODLE_INTERNAL') || die();
+namespace local_jedomi;
 
 /**
  * Test cases for session MAX_TURNS config propagation and message trimming.
@@ -33,7 +30,6 @@ defined('MOODLE_INTERNAL') || die();
  * @covers \local_jedomi\telegram\session
  */
 final class session_test extends \advanced_testcase {
-
     /**
      * Setup test environment — clean DB state between tests.
      */
@@ -42,12 +38,12 @@ final class session_test extends \advanced_testcase {
         $this->resetAfterTest();
     }
 
-    // ========================
+    // ... ========================
     // MAX_TURNS config propagation
     // ========================
 
     /**
-     * Test that setting telegram_max_turns affects append behavior.
+     * MDL-UNIT-006: the configured telegram_max_turns reaches the bot conversation.
      *
      * With max_turns=3, appending 5 user messages should trim history to 3,
      * so build_messages_for_gateway returns: system + 3 history + current = 5 total.
@@ -88,7 +84,7 @@ final class session_test extends \advanced_testcase {
     }
 
     /**
-     * Test max_turns defaults to 10 when config is not set.
+     * MDL-UNIT-006: max turns default to 10 when the setting is not saved.
      */
     public function test_max_turns_default(): void {
         // Ensure no config is set.
@@ -116,7 +112,7 @@ final class session_test extends \advanced_testcase {
     }
 
     /**
-     * Test max_turns clamp (0 → 1) instead of crashing.
+     * MDL-UNIT-006: a value below the minimum is clamped to 1 turn instead of crashing.
      */
     public function test_max_turns_clamp_low(): void {
         set_config('telegram_max_turns', 0, 'local_jedomi');
@@ -129,16 +125,19 @@ final class session_test extends \advanced_testcase {
         $messages = \local_jedomi\telegram\session::build_messages_for_gateway('test_clamp_low', 'current');
         $usermsgs = array_filter($messages, fn($m) => $m['role'] === 'user');
 
-        // max_turns clamped to 1, so history has 1 message + current = 2 user messages.
+        // Max_turns clamped to 1, so history has 1 message + current = 2 user messages.
         // Total: system + 1 history + current = 3.
         $this->assertCount(3, $messages, 'Should have system + 1 history + 1 current = 3');
         $this->assertCount(2, $usermsgs);
-        $this->assertEquals('third', $messages[1]['content'],
-            'Only the last message should be kept with max_turns=1');
+        $this->assertEquals(
+            'third',
+            $messages[1]['content'],
+            'Only the last message should be kept with max_turns=1'
+        );
     }
 
     /**
-     * Test max_turns clamp (100) — values above 100 are clamped down.
+     * MDL-UNIT-006: values above the maximum are clamped to 100 turns.
      */
     public function test_max_turns_clamp_high(): void {
         set_config('telegram_max_turns', 999, 'local_jedomi');
@@ -151,12 +150,12 @@ final class session_test extends \advanced_testcase {
         $messages = \local_jedomi\telegram\session::build_messages_for_gateway('test_clamp_high', 'current');
         $usermsgs = array_filter($messages, fn($m) => $m['role'] === 'user');
 
-        // max_turns=100: 100 history msgs + current = 101 user msgs + system = 102 total.
+        // Max_turns=100: 100 history msgs + current = 101 user msgs + system = 102 total.
         $this->assertCount(102, $messages);
         $this->assertCount(101, $usermsgs);
     }
 
-    // ========================
+    // ... ========================
     // Session get/clear
     // ========================
 
@@ -195,7 +194,7 @@ final class session_test extends \advanced_testcase {
 
         $messages = \local_jedomi\telegram\session::build_messages_for_gateway('test_assistant', 'followup');
 
-        // system + user msg + assistant msg + current = 4.
+        // System + user msg + assistant msg + current = 4.
         $this->assertCount(4, $messages);
         $this->assertEquals('assistant', $messages[2]['role']);
         $this->assertEquals('answer', $messages[2]['content']);

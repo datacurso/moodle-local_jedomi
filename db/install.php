@@ -19,15 +19,15 @@
  * Automatically deploys the bundled aiprovider_jedomi to the correct
  * Moodle directory so admins only need to install one plugin.
  *
- * @package   local_jedomi
- * @copyright 2026 Jedomi Project
- * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ * @package    local_jedomi
+ * @copyright  2026 Datacurso <developer@datacurso.com>
+ * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-
-defined('MOODLE_INTERNAL') || die();
 
 /**
  * Runs after local_jedomi is installed.
+ *
+ * @return bool True on success.
  */
 function xmldb_local_jedomi_install(): bool {
     global $DB, $CFG;
@@ -37,6 +37,12 @@ function xmldb_local_jedomi_install(): bool {
     $dbtype = $CFG->dbtype ?? 'mysqli';
     if (in_array($dbtype, ['mysqli', 'mariadb'], true)) {
         $DB->execute("ALTER TABLE {local_jedomi_telegram_sessions} MODIFY COLUMN usercontext MEDIUMTEXT");
+    }
+
+    // Each site signs the chat permissions with its own random secret, never with a known key, kept encrypted with the
+    // key of the site (JEDOMI-SEC-010).
+    if (!get_config('local_jedomi', 'spt_secret')) {
+        \local_jedomi\local\secret_store::set('spt_secret', bin2hex(random_bytes(32)));
     }
 
     return true;

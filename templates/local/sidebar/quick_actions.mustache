@@ -1,0 +1,38 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template local_jedomi/local/sidebar/quick_actions
+
+    Quick action buttons of the Jedomi sidebar, rendered by the local_jedomi/sidebar module for the role and page.
+
+    Classes required for JS:
+    * none
+
+    Data attributes required for JS:
+    * data-msg on each button: the message sent when it is clicked
+
+    Context variables required for this template:
+    * actions array - Buttons: label string, msg string, icon object (see local_jedomi/local/sidebar/icon)
+
+    Example context (json):
+    {
+        "actions": [{"label": "Overview", "msg": "Give me a summary of the platform", "icon": {"chart": true} }]
+    }
+}}
+{{#actions}}
+<button class="jedomi-quick-btn" data-msg="{{msg}}">{{> local_jedomi/local/sidebar/icon }} {{label}}</button>
+{{/actions}}

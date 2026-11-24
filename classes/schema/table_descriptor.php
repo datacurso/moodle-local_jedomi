@@ -1,4 +1,19 @@
 <?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
 /**
  * DB Schema introspection via INFORMATION_SCHEMA.
  *
@@ -6,16 +21,17 @@
  * for any Moodle database table. Results are cached 24h in schema_cache.
  *
  * @package    local_jedomi
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
 namespace local_jedomi\schema;
 
-defined('MOODLE_INTERNAL') || die();
-
+/**
+ * Describes database tables (columns, foreign keys, indices) using
+ * cross-DB introspection, with results cached in schema_cache.
+ */
 class table_descriptor {
-
     /**
      * Describe a single table: columns, foreign keys, indices.
      * Cached 24h in schema_cache.
@@ -38,7 +54,7 @@ class table_descriptor {
             return $cached;
         }
 
-        // --- Columns via Moodle's cross-DB API (works on MySQL, MariaDB, PostgreSQL) ---
+        // ... --- Columns via Moodle's cross-DB API (works on MySQL, MariaDB, PostgreSQL) ---
         // Strip Moodle braces ({course} → course) — get_columns() adds prefix internally.
         $lookup = $tablename;
         if (preg_match('/^\{(\w+)\}$/', $lookup, $m)) {
@@ -62,9 +78,9 @@ class table_descriptor {
             ];
         }
 
-        // --- Foreign keys & indices via INFORMATION_SCHEMA (MySQL/MariaDB only) ---
+        // ... --- Foreign keys & indices via INFORMATION_SCHEMA (MySQL/MariaDB only) ---
         // Fallback gracefully on PostgreSQL — FK/index info is non-critical.
-        $foreign_keys = [];
+        $foreignkeys = [];
         $indices      = [];
 
         if (in_array($CFG->dbtype, ['mysqli', 'mariadb', 'auroramysql'])) {
@@ -74,7 +90,7 @@ class table_descriptor {
 
             try {
                 // Foreign keys.
-                $fks_rs = $DB->get_recordset_sql(
+                $fksrs = $DB->get_recordset_sql(
                     "SELECT kcu.COLUMN_NAME, kcu.REFERENCED_TABLE_NAME, kcu.REFERENCED_COLUMN_NAME
                        FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
                        JOIN INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
@@ -87,17 +103,17 @@ class table_descriptor {
                         AND kcu.REFERENCED_TABLE_NAME IS NOT NULL",
                     [$dbname, $prefixed]
                 );
-                foreach ($fks_rs as $fk) {
-                    $foreign_keys[] = [
+                foreach ($fksrs as $fk) {
+                    $foreignkeys[] = [
                         'column'            => $fk->column_name,
                         'references_table'  => $fk->referenced_table_name,
                         'references_column' => $fk->referenced_column_name,
                     ];
                 }
-                $fks_rs->close();
+                $fksrs->close();
 
                 // Indices.
-                $idx_rs = $DB->get_recordset_sql(
+                $idxrs = $DB->get_recordset_sql(
                     "SELECT INDEX_NAME, COLUMN_NAME, NON_UNIQUE, SEQ_IN_INDEX
                        FROM INFORMATION_SCHEMA.STATISTICS
                       WHERE TABLE_SCHEMA = ?
@@ -105,7 +121,7 @@ class table_descriptor {
                       ORDER BY INDEX_NAME, SEQ_IN_INDEX",
                     [$dbname, $prefixed]
                 );
-                foreach ($idx_rs as $idx) {
+                foreach ($idxrs as $idx) {
                     $name = $idx->index_name;
                     if (!isset($indices[$name])) {
                         $indices[$name] = [
@@ -115,7 +131,8 @@ class table_descriptor {
                     }
                     $indices[$name]['columns'][] = $idx->column_name;
                 }
-                $idx_rs->close();
+                $idxrs->close();
+                // phpcs:ignore Generic.CodeAnalysis.EmptyStatement.DetectedCatch -- comment-only catch.
             } catch (\Exception $e) {
                 // INFORMATION_SCHEMA not available — FK/index info is optional.
             }
@@ -124,7 +141,7 @@ class table_descriptor {
         $result = [
             'tablename'    => $tablename,
             'columns'      => $columns,
-            'foreign_keys' => $foreign_keys,
+            'foreign_keys' => $foreignkeys,
             'indices'      => $indices,
         ];
 

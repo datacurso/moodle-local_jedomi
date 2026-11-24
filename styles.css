@@ -1,253 +1,491 @@
 /* ─────────────────────────────────────────────────────────────────────────────
    Jedomi AI Sidebar — Lovable.dev Design System
-   Paleta: blanco puro / grises suaves / acento violeta único
-   Espaciado: sistema base 4px  (4 · 8 · 12 · 16 · 20 · 24 · 32)
-   Tipografía: Inter / system-ui, 14px cuerpo, 12px labels, 1.5 line-height
+   Palette: pure white / soft greys / single violet accent
+   Spacing: 4px base system  (4 · 8 · 12 · 16 · 20 · 24 · 32)
+   Typography: Inter / system-ui, 14px body, 12px labels, 1.5 line-height
    ───────────────────────────────────────────────────────────────────────────── */
 
-:root {
-    /* ── Superficie ──────────────────────────────────────────────── */
-    --j-bg:          #FFFFFF;
-    --j-surface:     #F9FAFB;
-    --j-surface-2:   #F3F4F6;
-    --j-border:      #E5E7EB;
+/* stylelint-disable declaration-no-important -- The sidebar is injected into
+   arbitrary themes; !important is required so its styles reliably override
+   theme CSS with higher-specificity selectors. */
 
-    /* ── Texto ───────────────────────────────────────────────────── */
-    --j-text:        #111827;
-    --j-text-2:      #374151;
-    --j-muted:       #6B7280;
-    --j-muted-2:     #9CA3AF;
+/* Design tokens are scoped to the plugin's own root elements so they never leak into the theme. */
+.jedomi-sidebar,
+.jedomi-trigger,
+.jedomi-dropzone {
+    /* ── Surface ───────────────────────────────────────────────────── */
+    --j-bg: #fff;
+    --j-surface: #f9fafb;
+    --j-surface-2: #f3f4f6;
+    --j-border: #e5e7eb;
 
-    /* ── Acento único (violeta) ──────────────────────────────────── */
-    --j-accent:      #7C3AED;
-    --j-accent-d:    #6D28D9;
-    --j-accent-l:    #EDE9FE;
+    /* ── Text ────────────────────────────────────────────────────── */
+    --j-text: #111827;
+    --j-text-2: #374151;
+    --j-muted: #6b7280;
+    --j-muted-2: #6b7280;
 
-    /* ── Burbujas ────────────────────────────────────────────────── */
-    --j-user-bg:     #7C3AED;
-    --j-user-text:   #FFFFFF;
-    --j-ai-bg:       #F9FAFB;
-    --j-ai-text:     #111827;
+    /* ── Single accent (violet) ───────────────────────────────────── */
+    --j-accent: #7c3aed;
+    --j-accent-d: #6d28d9;
+    --j-accent-l: #ede9fe;
 
-    /* ── Elevación (soft shadow hacia la derecha) ────────────────── */
-    --j-shadow:      4px 0 20px -4px rgba(0,0,0,0.06), 2px 0 8px -2px rgba(0,0,0,0.04);
+    /* ── Bubbles ─────────────────────────────────────────────────── */
+    --j-user-bg: #7c3aed;
+    --j-user-text: #fff;
+    --j-ai-bg: #f9fafb;
+    --j-ai-text: #111827;
+
+    /* ── Elevation (soft shadow to the right) ─────────────────── */
+    --j-shadow: 4px 0 20px -4px rgba(0, 0, 0, 0.06), 2px 0 8px -2px rgba(0, 0, 0, 0.04);
 
     /* ── Layout ──────────────────────────────────────────────────── */
-    --j-width:       400px;
-    --j-pad:         20px;
+    --j-width: 400px;
+    --j-pad: 20px;
 }
 
 /* ── Utility ───────────────────────────────────────────────────────────────── */
-.jedomi-hidden { display: none !important; }
+.jedomi-hidden {
+    display: none !important;
+}
 
-/* ── Sidebar — pegado al borde izquierdo, sin radio exterior ───────────────── */
+/* ── Sidebar — attached to the left edge, no outer radius ────────────────── */
 .jedomi-sidebar {
-    position: fixed; top: 0; left: 0; height: 100vh;
-    width: var(--j-width); max-width: 100vw;
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    width: var(--j-width);
+    max-width: 100vw;
     background: var(--j-bg);
     border-right: 1px solid var(--j-border);
     box-shadow: var(--j-shadow);
-    z-index: 99999;
-    display: flex; flex-direction: column;
+    /* Above the Boost navbar (1030) and drawers (up to 1035), below core modals (backdrop 1040, modal 1050). */
+    z-index: 1037;
+    display: flex;
+    flex-direction: column;
     font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    font-size: 14px; line-height: 1.5; color: var(--j-text);
-    transition: transform 0.28s cubic-bezier(.22,.61,.36,1);
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--j-text);
+    transition: transform 0.28s cubic-bezier(.22, .61, .36, 1);
 }
-.jedomi-closed { transform: translateX(-100%); }
-.jedomi-open   { transform: translateX(0); }
+.jedomi-closed {
+    transform: translateX(-100%);
+}
+.jedomi-open {
+    transform: translateX(0);
+}
 
-/* ── Overlay (mobile) ──────────────────────────────────────────────────────── */
-#jedomi-overlay {
-    position: fixed; inset: 0; z-index: 99998;
-    background: rgba(0,0,0,0.18);
-    opacity: 0; pointer-events: none;
-    transition: opacity 0.28s ease;
+/* Panel opening from the right side (Personalization tab). */
+.jedomi-sidebar.jedomi-side-right {
+    left: auto;
+    right: 0;
+    border-right: 0;
+    border-left: 1px solid var(--j-border);
 }
-#jedomi-overlay.jedomi-open { opacity: 1; pointer-events: auto; }
+.jedomi-sidebar.jedomi-side-right.jedomi-closed {
+    transform: translateX(100%);
+}
 
 /* ── Trigger FAB ───────────────────────────────────────────────────────────── */
 .jedomi-trigger {
-    position: fixed; bottom: 24px; left: 24px; z-index: 99997;
+    position: fixed;
+    /* Distances set in the Personalization tab: amd/src/sidebar.js sets --j-fab-x and --j-fab-y. */
+    bottom: var(--j-fab-y, 24px);
+    left: var(--j-fab-x, 24px);
+    z-index: 1036;
     background: var(--j-accent);
-    border: 2px solid rgba(255,255,255,0.25);
-    border-radius: 50%; width: 56px; height: 56px;
-    display: flex; align-items: center; justify-content: center;
-    cursor: pointer; overflow: hidden;
-    box-shadow: 0 4px 20px rgba(124,58,237,0.35), 0 0 0 3px rgba(255,255,255,0.12);
+    border: 2px solid rgba(255, 255, 255, 0.25);
+    border-radius: 50%;
+    width: 56px;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    overflow: hidden;
+    box-shadow: 0 4px 20px rgba(124, 58, 237, 0.35), 0 0 0 3px rgba(255, 255, 255, 0.12);
     transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.4s ease;
 }
 .jedomi-trigger:hover {
-    transform: scale(1.07);
-    box-shadow: 0 6px 28px rgba(124,58,237,0.45), 0 0 0 4px rgba(255,255,255,0.2);
+    box-shadow: 0 6px 28px rgba(124, 58, 237, 0.45), 0 0 0 4px rgba(255, 255, 255, 0.2);
 }
-.jedomi-trigger svg { width: 28px; height: 28px; }
-.jedomi-trigger-label { display: none; }
+.jedomi-trigger svg {
+    width: 28px;
+    height: 28px;
+}
 
-/* Glint — franja de luz que barre la superficie cada 15s */
+/* Corner of the button (Personalization tab); bottom left is the default. */
+.jedomi-trigger.jedomi-fab-bottom-right,
+.jedomi-trigger.jedomi-fab-top-right {
+    left: auto;
+    right: var(--j-fab-x, 24px);
+}
+.jedomi-trigger.jedomi-fab-top-left,
+.jedomi-trigger.jedomi-fab-top-right {
+    bottom: auto;
+    top: var(--j-fab-y, 24px);
+}
+
+/* Avatar image on the button and in the header, in place of the Jedomi icon. */
+.jedomi-trigger-avatar {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 50%;
+}
+.jedomi-logo.jedomi-logo-has-avatar {
+    background: transparent;
+    box-shadow: none;
+    overflow: hidden;
+}
+.jedomi-logo-avatar {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 10px;
+}
+
+/* The welcome message is plain text: its line breaks are kept. */
+.jedomi-welcome {
+    white-space: pre-line;
+}
+.jedomi-trigger-label {
+    display: none;
+}
+
+/* Glint — a band of light that sweeps the surface every 15s */
 .jedomi-trigger::before {
     content: '';
-    position: absolute; top: 0; left: -80%; width: 50%; height: 100%;
-    background: linear-gradient(100deg,
-        rgba(255,255,255,0)    0%,
-        rgba(255,255,255,0.10) 50%,
-        rgba(255,255,255,0)    100%);
-    transform: skewX(-20deg); pointer-events: none;
+    position: absolute;
+    top: 0;
+    left: -80%;
+    width: 50%;
+    height: 100%;
+    background:
+        linear-gradient(
+            100deg,
+            rgba(255, 255, 255, 0)    0%,
+            rgba(255, 255, 255, 0.10) 50%,
+            rgba(255, 255, 255, 0)    100%
+        );
+    transform: skewX(-20deg);
+    pointer-events: none;
 }
 .jedomi-trigger.jedomi-glowing::before {
     animation: jedomi-glint 0.85s ease-in-out forwards;
 }
-@keyframes jedomi-glint { from { left: -80%; } to { left: 140%; } }
-.jedomi-trigger.jedomi-glowing { filter: none !important; }
+
+@keyframes jedomi-glint {
+    from {
+        left: -80%;
+    }
+    to {
+        left: 140%;
+    }
+}
+.jedomi-trigger.jedomi-glowing {
+    filter: none !important;
+}
 
 /* ── Header — justify-content space-between ────────────────────────────────── */
 .jedomi-header {
-    display: flex; align-items: center; justify-content: space-between;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
     padding: 16px var(--j-pad);
     border-bottom: 1px solid var(--j-border);
     background: var(--j-bg);
-    flex-shrink: 0; min-height: 56px;
+    flex-shrink: 0;
+    min-height: 56px;
 }
-.jedomi-header-info { display: flex; align-items: center; gap: 10px; }
+.jedomi-header-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
 .jedomi-logo {
-    width: 32px; height: 32px; flex-shrink: 0;
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
     background: var(--j-accent);
     border-radius: 10px;
-    display: flex; align-items: center; justify-content: center;
-    box-shadow: 0 2px 8px rgba(124,58,237,0.25);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 8px rgba(124, 58, 237, 0.25);
 }
-.jedomi-logo svg { width: 18px; height: 18px; color: white; stroke: white; }
+.jedomi-logo svg {
+    width: 18px;
+    height: 18px;
+    color: white;
+    stroke: white;
+}
 .jedomi-header-info strong {
-    font-size: 15px; font-weight: 600;
-    color: var(--j-text); display: block; line-height: 1.2;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--j-text);
+    display: block;
+    line-height: 1.2;
     letter-spacing: -0.01em;
 }
 .jedomi-context-badge {
-    font-size: 11px; color: var(--j-accent); font-weight: 500;
-    background: var(--j-accent-l); padding: 2px 8px;
-    border-radius: 20px; display: inline-block; margin-top: 3px;
-    max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-size: 11px;
+    color: var(--j-accent);
+    font-weight: 500;
+    background: var(--j-accent-l);
+    padding: 2px 8px;
+    border-radius: 20px;
+    display: inline-block;
+    margin-top: 3px;
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
-.jedomi-header-actions { display: flex; gap: 2px; align-items: center; }
+.jedomi-header-actions {
+    display: flex;
+    gap: 2px;
+    align-items: center;
+}
 
 /* ── Icon buttons ──────────────────────────────────────────────────────────── */
 .jedomi-btn-icon {
-    background: none; border: none; border-radius: 8px;
-    padding: 6px; cursor: pointer; color: var(--j-muted);
+    background: none;
+    border: none;
+    border-radius: 8px;
+    padding: 6px;
+    cursor: pointer;
+    color: var(--j-muted);
     transition: background 0.2s, color 0.2s;
-    display: flex; align-items: center; justify-content: center;
-    min-width: 32px; min-height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 32px;
+    min-height: 32px;
 }
-.jedomi-btn-icon:hover { background: var(--j-surface); color: var(--j-text); }
-.jedomi-btn-icon svg { pointer-events: none; }
+.jedomi-btn-icon:hover {
+    background: var(--j-surface);
+    color: var(--j-text);
+}
+.jedomi-btn-icon svg {
+    pointer-events: none;
+}
 
-/* ── Messages — flex-1, cuerpo libre entre header e input ─────────────────── */
+/* ── Messages — flex-1, free body between header and input ──────────────────── */
 .jedomi-messages {
-    flex: 1; overflow-y: auto; overflow-x: hidden;
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
     padding: var(--j-pad);
-    display: flex; flex-direction: column;
-    gap: 16px; scroll-behavior: smooth;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    scroll-behavior: smooth;
 }
-.jedomi-messages::-webkit-scrollbar { width: 3px; }
-.jedomi-messages::-webkit-scrollbar-thumb { background: var(--j-border); border-radius: 4px; }
+.jedomi-messages::-webkit-scrollbar {
+    width: 3px;
+}
+.jedomi-messages::-webkit-scrollbar-thumb {
+    background: var(--j-border);
+    border-radius: 4px;
+}
 
-.jedomi-message { display: flex; max-width: 100%; }
-.jedomi-message-user      { justify-content: flex-end; }
-.jedomi-message-assistant { justify-content: flex-start; }
+.jedomi-message {
+    display: flex;
+    max-width: 100%;
+}
+.jedomi-message-user {
+    justify-content: flex-end;
+}
+.jedomi-message-assistant {
+    justify-content: flex-start;
+}
 
-/* Burbujas con radio 16px */
+/* Bubbles with a 16px radius */
 .jedomi-bubble {
-    padding: 12px 16px; border-radius: 16px;
-    font-size: 14px; line-height: 1.6;
-    max-width: 85%; word-break: break-word;
+    padding: 12px 16px;
+    border-radius: 16px;
+    font-size: 14px;
+    line-height: 1.6;
+    max-width: 85%;
+    word-break: break-word;
 }
 .jedomi-message-user .jedomi-bubble {
-    background: var(--j-user-bg); color: var(--j-user-text);
+    background: var(--j-user-bg);
+    color: var(--j-user-text);
     border-bottom-right-radius: 4px;
 }
 .jedomi-message-assistant .jedomi-bubble {
-    background: var(--j-ai-bg); color: var(--j-ai-text);
+    background: var(--j-ai-bg);
+    color: var(--j-ai-text);
     border-bottom-left-radius: 4px;
     border: 1px solid var(--j-border);
 }
-.jedomi-bubble p { margin: 0 0 8px; }
-.jedomi-bubble p:last-child { margin-bottom: 0; }
-.jedomi-bubble a {
-    color: var(--j-accent); text-decoration: none;
-    font-weight: 500; border-bottom: 1px solid rgba(124,58,237,0.25);
+.jedomi-bubble p {
+    margin: 0 0 8px;
 }
-.jedomi-bubble strong { font-weight: 600; }
+.jedomi-bubble p:last-child {
+    margin-bottom: 0;
+}
+.jedomi-bubble a {
+    color: var(--j-accent);
+    text-decoration: none;
+    font-weight: 500;
+    border-bottom: 1px solid rgba(124, 58, 237, 0.25);
+}
+.jedomi-bubble strong {
+    font-weight: 600;
+}
 .jedomi-bubble code {
-    background: var(--j-accent-l); border-radius: 4px;
-    padding: 1px 5px; font-size: 12.5px; color: var(--j-accent);
+    background: var(--j-accent-l);
+    border-radius: 4px;
+    padding: 1px 5px;
+    font-size: 12.5px;
+    color: var(--j-accent);
     font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
 }
 .jedomi-bubble pre {
-    background: #0F172A; color: #E2E8F0;
-    border-radius: 10px; padding: 14px;
-    overflow-x: auto; font-size: 12px; margin: 8px 0;
+    background: #0f172a;
+    color: #e2e8f0;
+    border-radius: 10px;
+    padding: 14px;
+    overflow-x: auto;
+    font-size: 12px;
+    margin: 8px 0;
 }
-.jedomi-bubble table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 13px; }
-.jedomi-bubble th, .jedomi-bubble td {
-    padding: 8px 12px; border: 1px solid var(--j-border); text-align: left;
+.jedomi-bubble table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 8px 0;
+    font-size: 13px;
+}
+.jedomi-bubble th,
+.jedomi-bubble td {
+    padding: 8px 12px;
+    border: 1px solid var(--j-border);
+    text-align: left;
 }
 .jedomi-bubble th {
-    background: var(--j-surface-2); font-weight: 600;
-    font-size: 11px; text-transform: uppercase;
-    letter-spacing: 0.04em; color: var(--j-muted);
+    background: var(--j-surface-2);
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #4b5563;
 }
 .jedomi-bubble img.jedomi-msg-image {
-    max-width: 100%; border-radius: 10px; margin-top: 8px; display: block;
+    max-width: 100%;
+    border-radius: 10px;
+    margin-top: 8px;
+    display: block;
+}
+.jedomi-bubble .jedomi-msg-image-placeholder {
+    margin-top: 6px;
+    font-size: 0.85em;
+    font-style: italic;
+    opacity: 0.8;
 }
 
-/* ── Thinking colapsable ───────────────────────────────────────────────────── */
-.jedomi-thinking-wrapper { flex-shrink: 0; }
+/* ── Collapsible thinking ────────────────────────────────────────────────────── */
+.jedomi-thinking-wrapper {
+    flex-shrink: 0;
+}
 .jedomi-thinking-bar {
-    width: 100%; display: flex; align-items: center; gap: 8px;
-    padding: 8px var(--j-pad); background: var(--j-bg);
-    border: none; border-top: 1px solid var(--j-border);
-    cursor: pointer; font-family: inherit; text-align: left;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px var(--j-pad);
+    background: var(--j-bg);
+    border: none;
+    border-top: 1px solid var(--j-border);
+    cursor: pointer;
+    font-family: inherit;
+    text-align: left;
     transition: background 0.2s;
 }
-.jedomi-thinking-bar:hover { background: var(--j-surface); }
-.jedomi-thinking-dot {
-    width: 6px; height: 6px; border-radius: 50%;
-    background: var(--j-accent); flex-shrink: 0;
-    animation: jPulse 1.4s infinite ease-in-out;
+.jedomi-thinking-bar:hover {
+    background: var(--j-surface);
 }
-@keyframes jPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+.jedomi-thinking-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--j-accent);
+    flex-shrink: 0;
+    animation: jedomi-pulse 1.4s infinite ease-in-out;
+}
+
+@keyframes jedomi-pulse {
+    0%,
+    100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.35;
+    }
+}
 .jedomi-thinking-lbl {
-    flex: 1; font-size: 12px; color: var(--j-muted);
-    font-style: italic; font-weight: 500;
+    flex: 1;
+    font-size: 12px;
+    color: var(--j-muted);
+    font-style: italic;
+    font-weight: 500;
 }
 .jedomi-thinking-chevron {
-    color: var(--j-muted); flex-shrink: 0;
+    color: var(--j-muted);
+    flex-shrink: 0;
     transition: transform 0.25s ease;
 }
 .jedomi-thinking-wrapper.jedomi-thinking-expanded .jedomi-thinking-chevron {
     transform: rotate(180deg);
 }
 .jedomi-thinking {
-    display: none; gap: 5px;
+    display: none;
+    gap: 5px;
     padding: 8px var(--j-pad) 10px;
     align-items: center;
 }
-.jedomi-thinking-wrapper.jedomi-thinking-expanded .jedomi-thinking { display: flex; }
-.jedomi-thinking span {
-    width: 7px; height: 7px; background: var(--j-accent); border-radius: 50%;
-    animation: jBounce 1.2s infinite ease-in-out; opacity: 0.7;
+.jedomi-thinking-wrapper.jedomi-thinking-expanded .jedomi-thinking {
+    display: flex;
 }
-.jedomi-thinking span:nth-child(2) { animation-delay: 0.18s; }
-.jedomi-thinking span:nth-child(3) { animation-delay: 0.36s; }
-@keyframes jBounce {
-    0%, 80%, 100% { transform: scale(0.65); opacity: 0.4; }
-    40%           { transform: scale(1.15); opacity: 1; }
+.jedomi-thinking span {
+    width: 7px;
+    height: 7px;
+    background: var(--j-accent);
+    border-radius: 50%;
+    animation: jedomi-bounce 1.2s infinite ease-in-out;
+    opacity: 0.7;
+}
+.jedomi-thinking span:nth-child(2) {
+    animation-delay: 0.18s;
+}
+.jedomi-thinking span:nth-child(3) {
+    animation-delay: 0.36s;
+}
+
+@keyframes jedomi-bounce {
+    0%,
+    80%,
+    100% {
+        transform: scale(0.65);
+        opacity: 0.4;
+    }
+    40% {
+        transform: scale(1.15);
+        opacity: 1;
+    }
 }
 
 /* ── Quick actions ─────────────────────────────────────────────────────────── */
 .jedomi-quick-actions {
     padding: 12px var(--j-pad);
     flex-shrink: 0;
-    display: flex; gap: 6px; flex-wrap: wrap;
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
     border-top: 1px solid var(--j-border);
     border-bottom: 1px solid var(--j-border);
     background: var(--j-bg);
@@ -257,27 +495,41 @@
     border: 1px solid var(--j-border);
     border-radius: 20px;
     padding: 5px 12px 5px 8px;
-    font-size: 12px; font-weight: 500; color: var(--j-text-2);
-    cursor: pointer; transition: all 0.2s;
-    white-space: nowrap; display: flex; align-items: center; gap: 5px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--j-text-2);
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 5px;
     font-family: inherit;
 }
-.jedomi-quick-btn svg { color: var(--j-muted); flex-shrink: 0; }
-.jedomi-quick-btn:hover {
-    background: var(--j-accent); color: white;
-    border-color: var(--j-accent); transform: translateY(-1px);
+.jedomi-quick-btn svg {
+    color: var(--j-muted);
+    flex-shrink: 0;
 }
-.jedomi-quick-btn:hover svg { color: rgba(255,255,255,0.85); }
+.jedomi-quick-btn:hover {
+    background: var(--j-accent);
+    color: white;
+    border-color: var(--j-accent);
+}
+.jedomi-quick-btn:hover svg {
+    color: rgba(255, 255, 255, 0.85);
+}
 
-/* ── Input area — protagonista, fijo abajo ─────────────────────────────────── */
+/* ── Input area — main element, fixed at the bottom ──────────────────────────────────── */
 .jedomi-input-area {
     padding: 16px var(--j-pad);
     background: var(--j-bg);
     flex-shrink: 0;
 }
-/* Cápsula redondeada que se ilumina al focus */
+/* Rounded capsule that lights up on focus */
 .jedomi-input-row {
-    display: flex; align-items: flex-end; gap: 8px;
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
     background: var(--j-surface);
     border: 1.5px solid var(--j-border);
     border-radius: 16px;
@@ -287,286 +539,1507 @@
 }
 .jedomi-input-row:focus-within {
     border-color: var(--j-accent);
-    box-shadow: 0 0 0 3px rgba(124,58,237,0.08);
+    box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.35);
     background: var(--j-bg);
 }
+/* The visible focus ring is drawn on the row (:focus-within); the outline below only shows in forced-colors mode. */
 .jedomi-input {
-    flex: 1; border: none; background: transparent;
-    font-size: 14px; color: var(--j-text); resize: none;
-    max-height: 120px; outline: none;
-    font-family: inherit; line-height: 1.5; padding: 0;
+    flex: 1;
+    border: none;
+    background: transparent;
+    font-size: 14px;
+    color: var(--j-text);
+    resize: none;
+    max-height: 120px;
+    outline: 2px solid transparent;
+    font-family: inherit;
+    line-height: 1.5;
+    padding: 0;
     cursor: text;
 }
-.jedomi-input::placeholder { color: var(--j-muted-2); }
-.jedomi-input-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.jedomi-input::placeholder {
+    color: var(--j-muted-2);
+}
+.jedomi-input-actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex-shrink: 0;
+}
 .jedomi-input-icon {
-    background: none; border: none; border-radius: 7px;
-    padding: 6px; cursor: pointer; color: var(--j-muted);
-    display: flex; align-items: center; justify-content: center;
+    background: none;
+    border: none;
+    border-radius: 7px;
+    padding: 6px;
+    cursor: pointer;
+    color: var(--j-muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
     transition: background 0.2s, color 0.2s;
 }
-.jedomi-input-icon:hover { background: var(--j-border); color: var(--j-text); }
-.jedomi-send-btn {
-    background: var(--j-accent); color: white; border: none;
-    border-radius: 10px; padding: 8px 12px; cursor: pointer;
-    display: flex; align-items: center; justify-content: center;
-    transition: background 0.2s, transform 0.1s; flex-shrink: 0;
-    min-width: 36px; min-height: 36px;
+.jedomi-input-icon:hover {
+    background: var(--j-border);
+    color: var(--j-text);
 }
-.jedomi-send-btn:hover { background: var(--j-accent-d); transform: scale(1.05); }
-.jedomi-send-btn:disabled { background: var(--j-border); cursor: not-allowed; transform: none; }
+.jedomi-send-btn {
+    background: var(--j-accent);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    padding: 8px 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s, transform 0.1s;
+    flex-shrink: 0;
+    min-width: 36px;
+    min-height: 36px;
+}
+.jedomi-send-btn:hover {
+    background: var(--j-accent-d);
+}
+.jedomi-send-btn:disabled {
+    background: var(--j-border);
+    cursor: not-allowed;
+    transform: none;
+}
+/* Stop button: replaces the send button while a written answer is in progress. */
+.jedomi-stop-btn {
+    background: #b91c1c;
+}
+.jedomi-stop-btn:hover {
+    background: #991b1b;
+}
+/* Optional comment of an answer rated as in need of improvement. */
+.jedomi-feedback-comment {
+    flex-basis: 100%;
+    margin-top: 6px;
+}
+
 
 /* ── Attach (+) dropdown ──────────────────────────────────────────────────── */
-.jedomi-attach-wrap { position: relative; }
+.jedomi-attach-wrap {
+    position: relative;
+}
 .jedomi-attach-menu {
-    position: absolute; bottom: calc(100% + 6px); left: 50%;
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
     transform: translateX(-50%);
-    background: white; border: 1px solid var(--j-border);
-    border-radius: 10px; box-shadow: 0 4px 16px rgba(0,0,0,0.08);
-    padding: 4px; display: flex; flex-direction: column; gap: 2px;
-    min-width: 120px; z-index: 10;
+    background: white;
+    border: 1px solid var(--j-border);
+    border-radius: 10px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+    padding: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 120px;
+    z-index: 10;
 }
 .jedomi-attach-option {
-    display: flex; align-items: center; gap: 8px;
-    padding: 7px 10px; border: none; background: none;
-    font-size: 12px; font-weight: 500; color: var(--j-text-2);
-    border-radius: 7px; cursor: pointer; transition: background 0.15s;
-    font-family: inherit; text-align: left; white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 10px;
+    border: none;
+    background: none;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--j-text-2);
+    border-radius: 7px;
+    cursor: pointer;
+    transition: background 0.15s;
+    font-family: inherit;
+    text-align: left;
+    white-space: nowrap;
 }
-.jedomi-attach-option:hover { background: var(--j-surface); color: var(--j-text); }
-.jedomi-attach-option svg { width: 14px; height: 14px; flex-shrink: 0; }
+.jedomi-attach-option:hover {
+    background: var(--j-surface);
+    color: var(--j-text);
+}
+.jedomi-attach-option svg {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+}
 
 /* ── Image preview ─────────────────────────────────────────────────────────── */
 .jedomi-image-preview {
-    display: flex; align-items: center; gap: 10px;
-    margin-top: 8px; padding: 8px 12px;
-    background: var(--j-surface); border-radius: 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 8px;
+    padding: 8px 12px;
+    background: var(--j-surface);
+    border-radius: 10px;
     border: 1px solid var(--j-border);
 }
-.jedomi-image-preview img { height: 48px; width: 48px; object-fit: cover; border-radius: 8px; }
-.jedomi-image-preview span { font-size: 12px; color: var(--j-muted); flex: 1; }
+.jedomi-image-preview img {
+    height: 48px;
+    width: 48px;
+    object-fit: cover;
+    border-radius: 8px;
+}
+.jedomi-image-preview span {
+    font-size: 12px;
+    color: var(--j-muted);
+    flex: 1;
+    overflow-wrap: anywhere;
+}
+.jedomi-file-chips .jedomi-file-chip {
+    margin-top: 4px;
+}
 
 /* ── Message actions ───────────────────────────────────────────────────────── */
 .jedomi-msg-actions {
-    display: flex; gap: 4px; padding: 6px 2px 2px;
-    margin-top: 4px; opacity: 0; transition: opacity 0.15s;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 6px 2px 2px;
+    margin-top: 4px;
+    transition: opacity 0.15s;
 }
-.jedomi-message-assistant:hover .jedomi-msg-actions,
-.jedomi-bubble:hover .jedomi-msg-actions { opacity: 1; }
-.jedomi-user-actions { justify-content: flex-end; padding: 4px 0 0; }
-.jedomi-message-user:hover .jedomi-user-actions { opacity: 1; }
+.jedomi-user-actions {
+    justify-content: flex-end;
+    padding: 4px 0 0;
+}
+/* Touch screens have no hover: the actions stay visible there. Only devices that can hover hide them until then. */
+@media (hover: hover) {
+    .jedomi-msg-actions {
+        opacity: 0;
+    }
+    .jedomi-message-assistant:hover .jedomi-msg-actions,
+    .jedomi-message-user:hover .jedomi-msg-actions,
+    .jedomi-bubble:hover .jedomi-msg-actions,
+    .jedomi-msg-actions:focus-within {
+        opacity: 1;
+    }
+}
 .jedomi-action-btn {
-    background: none; border: none; border-radius: 6px;
-    font-size: 11px; cursor: pointer; padding: 3px 6px;
-    color: var(--j-muted); transition: background 0.15s;
-    display: flex; align-items: center; gap: 3px; font-family: inherit;
+    background: none;
+    border: none;
+    border-radius: 6px;
+    font-size: 11px;
+    cursor: pointer;
+    padding: 3px 6px;
+    color: var(--j-muted);
+    transition: background 0.15s;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    font-family: inherit;
 }
-.jedomi-action-btn:hover { background: var(--j-surface-2); color: var(--j-text); }
+.jedomi-action-btn:hover {
+    background: var(--j-surface-2);
+    color: var(--j-text);
+}
+
+.jedomi-btn-icon.jedomi-btn-new {
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.jedomi-btn-icon.jedomi-expand-active {
+    color: var(--j-accent);
+}
+
+.jedomi-action-btn.jedomi-feedback-good,
+.jedomi-action-btn.jedomi-action-done {
+    color: #047857;
+}
+
+.jedomi-action-btn.jedomi-feedback-bad {
+    color: #b91c1c;
+}
+
+.jedomi-bubble a[href] {
+    cursor: pointer;
+}
 
 /* ── Tool status ───────────────────────────────────────────────────────────── */
 .jedomi-tool-status {
-    display: inline-flex; align-items: center; gap: 6px;
-    color: var(--j-accent); font-size: 13px; font-weight: 500;
-    animation: jFade 0.8s infinite alternate;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--j-accent);
+    font-size: 13px;
+    font-weight: 500;
+    animation: jedomi-fade 0.8s infinite alternate;
 }
-@keyframes jFade { from { opacity: 0.5; } to { opacity: 1; } }
+
+@keyframes jedomi-fade {
+    from {
+        opacity: 0.5;
+    }
+    to {
+        opacity: 1;
+    }
+}
 
 /* ── Moodle links ──────────────────────────────────────────────────────────── */
 .jedomi-moodle-link {
-    display: inline-flex; align-items: center; gap: 4px;
-    color: var(--j-accent); text-decoration: none;
-    background: var(--j-accent-l); border-radius: 6px; padding: 2px 8px;
-    font-size: 13px; font-weight: 500; border: 1px solid rgba(124,58,237,0.15);
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--j-accent);
+    text-decoration: none;
+    background: var(--j-accent-l);
+    border-radius: 6px;
+    padding: 2px 8px;
+    font-size: 13px;
+    font-weight: 500;
+    border: 1px solid rgba(124, 58, 237, 0.15);
     transition: background 0.2s;
 }
-.jedomi-moodle-link:hover { background: var(--j-accent); color: white; }
-.jedomi-link-badge { font-size: 11px; opacity: 0.7; }
+.jedomi-moodle-link:hover {
+    background: var(--j-accent);
+    color: white;
+}
+.jedomi-link-badge {
+    font-size: 11px;
+    opacity: 0.7;
+}
+/* Links to other sites show their host, so a link written by the AI never looks like a page of the site. */
+.jedomi-external-badge {
+    font-size: 11px;
+    padding: 0 4px;
+    margin-left: 2px;
+    border: 1px dashed currentColor;
+    border-radius: 4px;
+    opacity: 0.8;
+    white-space: nowrap;
+}
 
 /* ── Drop zone overlay ────────────────────────────────────────────────────── */
 .jedomi-dropzone {
-    position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-    z-index: 100000; pointer-events: none;
-    display: flex; align-items: center; justify-content: center;
-    background: rgba(124,58,237,0.08);
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 100000;
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(124, 58, 237, 0.08);
     backdrop-filter: blur(4px);
     transition: opacity 0.2s ease;
 }
-.jedomi-dropzone.jedomi-hidden { display: none; }
+.jedomi-dropzone.jedomi-hidden {
+    display: none;
+}
 .jedomi-dropzone-inner {
     pointer-events: none;
-    display: flex; flex-direction: column; align-items: center; gap: 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
     padding: 32px 48px;
     background: white;
     border: 2px dashed var(--j-accent);
     border-radius: 16px;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.10);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.10);
 }
 .jedomi-dropzone-inner svg {
     color: var(--j-accent);
-    animation: jDropBounce 1.6s ease-in-out infinite;
+    animation: jedomi-drop-bounce 1.6s ease-in-out infinite;
 }
 .jedomi-dropzone-text {
-    font-size: 16px; font-weight: 600; color: var(--j-text);
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--j-text);
     font-family: 'Inter', system-ui, sans-serif;
 }
-@keyframes jDropBounce {
-    0%, 100% { transform: translateY(0); }
-    50%      { transform: translateY(-6px); }
+
+@keyframes jedomi-drop-bounce {
+    0%,
+    100% {
+        transform: translateY(0);
+    }
+    50% {
+        transform: translateY(-6px);
+    }
 }
 
 /* ── Footer disclaimer ────────────────────────────────────────────────────── */
 .jedomi-footer {
-    flex-shrink: 0; text-align: center;
+    flex-shrink: 0;
+    text-align: center;
     padding: 0 var(--j-pad) 4px;
     margin-top: -4px;
     background: var(--j-bg);
 }
 .jedomi-disclaimer {
-    font-size: 10.5px; color: var(--j-muted-2);
-    line-height: 1.4; letter-spacing: 0.01em;
+    font-size: 10.5px;
+    color: var(--j-muted-2);
+    line-height: 1.4;
+    letter-spacing: 0.01em;
 }
 
-/* ── Overlay ───────────────────────────────────────────────────────────────── */
-.jedomi-overlay {
-    position: fixed !important; inset: 0 !important;
-    background: rgba(0,0,0,0.15) !important; z-index: 99997 !important;
+/* ── Tables ─────────────────────────────────────────────────────────────────── */
+.jedomi-table-wrap {
+    margin: 10px 0;
+    overflow: visible;
 }
-@media (min-width: 768px) { .jedomi-overlay { display: none !important; } }
-
-/* ── Tablas ────────────────────────────────────────────────────────────────── */
-.jedomi-table-wrap { margin: 10px 0; overflow: visible; }
 .jedomi-table-scroll {
-    overflow-x: auto; border-radius: 8px;
+    overflow-x: auto;
+    border-radius: 8px;
     border: 1px solid var(--j-border);
 }
-.jedomi-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-.jedomi-bubble .jedomi-table th, .jedomi-table th {
-    background: var(--j-surface-2) !important; color: var(--j-muted) !important;
-    font-weight: 600 !important; font-size: 11px !important;
-    text-transform: uppercase !important; letter-spacing: 0.04em !important;
-    padding: 8px 12px !important; text-align: left !important;
-    border-bottom: 1px solid var(--j-border) !important; white-space: nowrap !important;
+.jedomi-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12.5px;
 }
-.jedomi-bubble .jedomi-table td, .jedomi-table td {
+.jedomi-bubble .jedomi-table th,
+.jedomi-table th {
+    background: var(--j-surface-2) !important;
+    color: #4b5563 !important;
+    font-weight: 600 !important;
+    font-size: 11px !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.04em !important;
+    padding: 8px 12px !important;
+    text-align: left !important;
+    border-bottom: 1px solid var(--j-border) !important;
+    white-space: nowrap !important;
+}
+.jedomi-bubble .jedomi-table td,
+.jedomi-table td {
     padding: 8px 12px !important;
     border-bottom: 1px solid var(--j-border) !important;
-    color: var(--j-text) !important; font-size: 12.5px !important;
+    color: var(--j-text) !important;
+    font-size: 12.5px !important;
 }
-.jedomi-table tbody tr:nth-child(even) td { background: var(--j-surface) !important; }
-.jedomi-table tbody tr:hover td { background: var(--j-accent-l) !important; }
-.jedomi-table td:last-child { font-weight: 500; }
+.jedomi-table tbody tr:nth-child(even) td {
+    background: var(--j-surface) !important;
+}
+.jedomi-table tbody tr:hover td {
+    background: var(--j-accent-l) !important;
+}
+.jedomi-table td:last-child {
+    font-weight: 500;
+}
 .jedomi-csv-btn {
-    display: inline-flex; align-items: center; gap: 5px;
-    font-size: 11.5px; font-weight: 600; padding: 5px 12px;
-    margin: 6px 0 4px; background: var(--j-surface-2);
-    border: 1px solid var(--j-border); border-radius: 6px;
-    color: var(--j-muted); cursor: pointer; transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11.5px;
+    font-weight: 600;
+    padding: 5px 12px;
+    margin: 6px 0 4px;
+    background: var(--j-surface-2);
+    border: 1px solid var(--j-border);
+    border-radius: 6px;
+    color: #4b5563;
+    cursor: pointer;
+    transition: all 0.2s;
 }
 .jedomi-csv-btn:hover {
-    background: var(--j-accent); border-color: var(--j-accent);
-    color: white; transform: translateY(-1px);
+    background: var(--j-accent);
+    border-color: var(--j-accent);
+    color: white;
 }
 
 /* ── Expand modes ──────────────────────────────────────────────────────────── */
-.jedomi-sidebar.jedomi-expand-half { width: 50vw !important; }
+.jedomi-sidebar.jedomi-expand-half {
+    width: 50vw !important;
+}
 .jedomi-sidebar.jedomi-expand-full {
-    width: 100vw !important; left: 0 !important; border-radius: 0 !important;
+    width: 100vw !important;
+    left: 0 !important;
+    border-radius: 0 !important;
 }
 .jedomi-expand-half .jedomi-messages,
-.jedomi-expand-full .jedomi-messages { padding: 20px 10% !important; }
+.jedomi-expand-full .jedomi-messages {
+    padding: 20px 10% !important;
+}
 .jedomi-expand-half .jedomi-bubble,
-.jedomi-expand-full .jedomi-bubble { max-width: 720px !important; }
+.jedomi-expand-full .jedomi-bubble {
+    max-width: 720px !important;
+}
 
-/* ── Confirmación de envío ─────────────────────────────────────────────────── */
+/* ── Send confirmation ──────────────────────────────────────────────────── */
 .jedomi-send-confirm {
-    margin-top: 12px; padding: 16px;
-    background: var(--j-surface); border: 1.5px solid var(--j-border);
-    border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+    margin-top: 12px;
+    padding: 16px;
+    background: var(--j-surface);
+    border: 1.5px solid var(--j-border);
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
 }
 .jedomi-confirm-msg {
-    font-size: 13.5px; font-weight: 600; color: var(--j-text); margin-bottom: 8px;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--j-text);
+    margin-bottom: 8px;
 }
 .jedomi-confirm-preview {
-    font-size: 12px; color: var(--j-muted); font-style: italic;
-    margin-bottom: 12px; padding: 8px 12px;
-    background: var(--j-bg); border-left: 3px solid var(--j-accent);
-    border-radius: 6px; line-height: 1.5;
+    white-space: pre-line;
+    font-size: 12px;
+    color: var(--j-muted);
+    font-style: italic;
+    margin-bottom: 12px;
+    padding: 8px 12px;
+    background: var(--j-bg);
+    border-left: 3px solid var(--j-accent);
+    border-radius: 6px;
+    line-height: 1.5;
+    max-height: 320px;
+    overflow-y: auto;
+    overflow-wrap: anywhere;
 }
-.jedomi-confirm-btns { display: flex; gap: 8px; margin-top: 4px; }
-.jedomi-confirm-yes, .jedomi-confirm-no {
-    padding: 8px 16px; border-radius: 8px; border: none;
-    font-size: 13px; font-weight: 600; cursor: pointer;
-    transition: all 0.2s; letter-spacing: 0.01em;
+.jedomi-confirm-btns {
+    display: flex;
+    gap: 8px;
+    margin-top: 4px;
 }
-.jedomi-confirm-yes {
-    background: #10B981; color: white;
-    box-shadow: 0 2px 6px rgba(16,185,129,0.3);
-}
-.jedomi-confirm-yes:hover { background: #059669; transform: translateY(-1px); }
+.jedomi-confirm-yes,
 .jedomi-confirm-no {
-    background: var(--j-surface-2); color: var(--j-muted);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    border-radius: 8px;
+    border: none;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    letter-spacing: 0.01em;
+}
+.jedomi-confirm-icon {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+}
+.jedomi-confirm-msg .jedomi-confirm-icon {
+    vertical-align: -2px;
+    margin-right: 4px;
+}
+/* Send and non-critical confirmations: white on #047857 (5.48:1). */
+.jedomi-confirm-yes {
+    background: #047857;
+    color: #fff;
+    box-shadow: 0 2px 6px rgba(4, 120, 87, 0.3);
+}
+.jedomi-confirm-yes:hover {
+    background: #065f46;
+    transform: translateY(-1px);
+}
+/* Critical (destructive) confirmations: white on #b91c1c (6.47:1). */
+.jedomi-action-pending--critical .jedomi-confirm-yes {
+    background: #b91c1c;
+    box-shadow: 0 2px 6px rgba(185, 28, 28, 0.3);
+}
+.jedomi-action-pending--critical .jedomi-confirm-yes:hover {
+    background: #991b1b;
+}
+.jedomi-confirm-no {
+    background: var(--j-surface-2);
+    color: #4b5563;
     border: 1px solid var(--j-border);
 }
-.jedomi-confirm-no:hover { background: var(--j-border); color: var(--j-text); }
+.jedomi-confirm-no:hover {
+    background: var(--j-border);
+    color: var(--j-text);
+}
 
-/* ── Acciones destructivas ─────────────────────────────────────────────────── */
+/* ── Destructive actions ──────────────────────────────────────────────────── */
 .jedomi-action-pending {
-    margin-top: 12px; padding: 14px 16px;
-    border-radius: 12px; border-left: 4px solid;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    margin-top: 12px;
+    padding: 14px 16px;
+    border-radius: 12px;
+    border-left: 4px solid;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
-.jedomi-action-pending--critical { background: #FEF2F2; border-color: #EF4444; }
-.jedomi-action-pending--high     { background: #FFFBEB; border-color: #F59E0B; }
-.jedomi-action-pending--medium   { background: #FEFCE8; border-color: #EAB308; }
+.jedomi-action-pending--critical {
+    background: #fef2f2;
+    border-color: #ef4444;
+}
+.jedomi-action-pending--high {
+    background: #fffbeb;
+    border-color: #f59e0b;
+}
+.jedomi-action-pending--medium {
+    background: #fefce8;
+    border-color: #eab308;
+}
 .jedomi-action-warning {
-    font-size: 13.5px; font-weight: 700; margin-bottom: 10px; line-height: 1.4;
+    font-size: 13.5px;
+    font-weight: 700;
+    margin-bottom: 10px;
+    line-height: 1.4;
 }
-.jedomi-action-pending--critical .jedomi-action-warning { color: #DC2626; }
-.jedomi-action-pending--high     .jedomi-action-warning { color: #D97706; }
-.jedomi-action-pending--medium   .jedomi-action-warning { color: #CA8A04; }
+/* Warning titles: #b91c1c on #fef2f2 (5.91:1); #92400e on #fffbeb (6.84:1) and on #fefce8 (6.85:1). */
+.jedomi-action-pending--critical .jedomi-action-warning {
+    color: #b91c1c;
+}
+.jedomi-action-pending--high .jedomi-action-warning,
+.jedomi-action-pending--medium .jedomi-action-warning {
+    color: #92400e;
+}
 .jedomi-action-desc {
-    font-size: 12.5px; color: var(--j-text-2); padding: 8px 12px;
-    background: rgba(0,0,0,0.04); border-radius: 6px; margin-bottom: 12px;
-    font-family: ui-monospace, monospace; word-break: break-all;
+    font-size: 12.5px;
+    color: var(--j-text-2);
+    padding: 8px 12px;
+    background: rgba(0, 0, 0, 0.04);
+    border-radius: 6px;
+    margin-bottom: 12px;
+    font-family: ui-monospace, monospace;
+    word-break: break-all;
 }
 .jedomi-type-confirm-wrap {
-    margin: 10px 0 12px; font-size: 12px; color: var(--j-muted);
+    margin: 10px 0 12px;
+    font-size: 12px;
+    color: #4b5563;
 }
 .jedomi-type-confirm-wrap label {
-    display: block; margin-bottom: 6px; font-weight: 600; color: var(--j-text);
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 600;
+    color: var(--j-text);
 }
 .jedomi-type-confirm {
-    width: 100%; padding: 8px 12px;
-    background: var(--j-bg); border: 1.5px solid var(--j-border);
-    border-radius: 8px; color: var(--j-text);
-    font-size: 13px; font-family: ui-monospace, monospace;
-    box-sizing: border-box; transition: border-color 0.2s, box-shadow 0.2s;
+    width: 100%;
+    padding: 8px 12px;
+    background: var(--j-bg);
+    border: 1.5px solid var(--j-border);
+    border-radius: 8px;
+    color: var(--j-text);
+    font-size: 13px;
+    font-family: ui-monospace, monospace;
+    box-sizing: border-box;
+    transition: border-color 0.2s, box-shadow 0.2s;
 }
 .jedomi-type-confirm:focus {
-    outline: none; border-color: #EF4444;
-    box-shadow: 0 0 0 3px rgba(239,68,68,0.08);
+    outline: none;
+    border-color: #b91c1c;
+    box-shadow: 0 0 0 3px rgba(185, 28, 28, 0.35);
 }
-.jedomi-action-result { margin-top: 8px; font-size: 12px; min-height: 18px; color: var(--j-muted); }
+/* #4b5563 keeps 6.9:1 or more on every card background. */
+.jedomi-action-result {
+    margin-top: 8px;
+    font-size: 12px;
+    min-height: 18px;
+    color: #4b5563;
+}
 
 /* ── Voice recording ───────────────────────────────────────────────────────── */
 @keyframes jedomi-pulse-rec {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.5); }
-    50%      { box-shadow: 0 0 0 6px rgba(239,68,68,0); }
+    0%,
+    100% {
+        box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5);
+    }
+    50% {
+        box-shadow: 0 0 0 6px rgba(239, 68, 68, 0);
+    }
 }
 .jedomi-input-icon.recording {
-    color: #EF4444 !important;
+    color: #ef4444 !important;
     animation: jedomi-pulse-rec 1s infinite;
-    background: rgba(239,68,68,0.08) !important; border-radius: 50%;
+    background: rgba(239, 68, 68, 0.08) !important;
+    border-radius: 50%;
 }
-#jedomi-voice-btn { position: relative; overflow: visible !important; }
+#jedomi-voice-btn {
+    position: relative;
+    overflow: visible !important;
+}
 #jedomi-voice-btn.recording {
-    color: #EF4444 !important;
-    background: rgba(239,68,68,0.1) !important; border-radius: 50% !important;
+    color: #ef4444 !important;
+    background: rgba(239, 68, 68, 0.1) !important;
+    border-radius: 50% !important;
+}
+
+/* ── Voice message bar (recording and preview) ────────────────────────────── */
+.jedomi-voice-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--j-surface);
+    border: 1.5px solid var(--j-border);
+    border-radius: 16px;
+    padding: 8px 10px;
+    min-height: 54px;
+    color: var(--j-text);
+    font-size: 13px;
+}
+.jedomi-voice-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #ef4444;
+    flex-shrink: 0;
+    animation: jedomi-pulse-rec 1s infinite;
+}
+.jedomi-voice-time {
+    font-variant-numeric: tabular-nums;
+    color: var(--j-muted);
+    flex-shrink: 0;
+}
+.jedomi-voice-label {
+    flex: 1;
+    color: var(--j-muted);
+}
+.jedomi-voice-stop,
+.jedomi-voice-play {
+    border: none;
+    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+.jedomi-voice-stop {
+    background: #b91c1c;
+    color: white;
+}
+.jedomi-voice-play {
+    background: var(--j-accent);
+    color: white;
+}
+.jedomi-voice-play .jedomi-voice-icon-pause,
+.jedomi-voice-play.jedomi-voice-playing .jedomi-voice-icon-play {
+    display: none;
+}
+.jedomi-voice-play.jedomi-voice-playing .jedomi-voice-icon-pause {
+    display: block;
+}
+.jedomi-voice-stop:disabled,
+.jedomi-voice-play:disabled,
+.jedomi-voice-bar .jedomi-input-icon:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+.jedomi-voice-track {
+    flex: 1;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--j-border);
+    overflow: hidden;
+}
+.jedomi-voice-progress {
+    display: block;
+    width: 0;
+    height: 100%;
+    background: var(--j-accent);
+}
+.jedomi-voice-status {
+    color: var(--j-muted);
+    font-size: 12px;
+}
+
+/* ── Voice conversation ───────────────────────────────────────────────────── */
+.jedomi-voice-mode {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--j-surface);
+    border: 1.5px solid var(--j-accent);
+    border-radius: 16px;
+    padding: 10px 12px;
+    min-height: 54px;
+    color: var(--j-text);
+    font-size: 13px;
+}
+.jedomi-voice-mode-orb {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--j-accent);
+    flex-shrink: 0;
+    transition: transform 0.1s linear;
+}
+.jedomi-voice-mode--thinking .jedomi-voice-mode-orb {
+    animation: jedomi-pulse-rec 1.2s infinite;
+    opacity: 0.6;
+}
+.jedomi-voice-mode--speaking .jedomi-voice-mode-orb {
+    background: #10b981;
+}
+.jedomi-voice-mode--paused .jedomi-voice-mode-orb {
+    background: var(--j-muted);
+}
+.jedomi-voice-mode-state {
+    flex: 1;
+    color: var(--j-muted);
+}
+.jedomi-voice-mode-exit {
+    border: none;
+    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+    background: #b91c1c;
+    color: white;
 }
 
 /* ── Responsive ────────────────────────────────────────────────────────────── */
 @media (max-width: 767px) {
-    .jedomi-sidebar { width: 100vw !important; }
-    .jedomi-trigger { bottom: 16px; left: 16px; width: 52px; height: 52px; }
-    .jedomi-bubble  { max-width: 92%; }
+    .jedomi-sidebar {
+        width: 100vw !important;
+    }
+    /* Phase 16 position on phones, whatever corner and distances are configured. */
+    .jedomi-trigger,
+    .jedomi-trigger[class*="jedomi-fab-"] {
+        bottom: 16px;
+        left: 16px;
+        right: auto;
+        top: auto;
+        width: 52px;
+        height: 52px;
+    }
+    .jedomi-bubble {
+        max-width: 92%;
+    }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Jedomi settings page (admin_settings.php) and its tab templates.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.local_jedomi-admin {
+    padding-bottom: 2rem;
+}
+
+.local_jedomi-admin-card {
+    border: 1px solid #e5e7eb;
+    border-radius: 0.5rem;
+}
+
+.local_jedomi-admin-card-header {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    padding: 1rem 1.25rem;
+    font-weight: 600;
+    background: #f9fafb;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.local_jedomi-admin-card-actions {
+    display: flex;
+    align-items: center;
+    margin-left: auto;
+}
+
+.local_jedomi-admin-card-header h5 {
+    font-size: 1rem;
+    color: #111827;
+}
+
+.local_jedomi-admin-card-icon {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 0.375rem;
+}
+
+.local_jedomi-admin-card-icon-violet {
+    color: #7c3aed;
+    background: #ede9fe;
+}
+
+.local_jedomi-admin-card-icon-amber {
+    color: #b45309;
+    background: #fef3c7;
+}
+
+.local_jedomi-admin-card-icon-green {
+    color: #15803d;
+    background: #dcfce7;
+}
+
+.local_jedomi-admin-card-icon-red {
+    color: #dc2626;
+    background: #fee2e2;
+}
+
+.local_jedomi-admin-card-icon-sky {
+    color: #0369a1;
+    background: #e0f2fe;
+}
+
+.local_jedomi-admin-card-icon-indigo {
+    color: #4f46e5;
+    background: #e0e7ff;
+}
+
+.local_jedomi-admin-card-icon-purple {
+    color: #9333ea;
+    background: #f3e8ff;
+}
+
+.local_jedomi-admin-card-icon-blue {
+    color: #2563eb;
+    background: #dbeafe;
+}
+
+/* Sections of the settings forms: a card body holds the standard form rows; subsections have a plain title. */
+.local_jedomi-admin-card .card-body > .fitem:last-child {
+    margin-bottom: 0;
+}
+
+.local_jedomi-admin-subsection-title {
+    margin: 1.5rem 0 1rem;
+    padding-bottom: 0.5rem;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: #111827;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.local_jedomi-admin-int-section form > fieldset:first-of-type .local_jedomi-admin-subsection-title {
+    margin-top: 0;
+}
+
+.local_jedomi-admin-save-row {
+    margin-top: 1.25rem;
+    padding-top: 1rem;
+    border-top: 1px solid #e5e7eb;
+}
+
+.local_jedomi-admin-filter-label {
+    margin-right: 0.5rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: #6b7280;
+}
+
+.local_jedomi-admin-search {
+    flex: 1;
+    min-width: 180px;
+    max-width: 320px;
+}
+
+.local_jedomi-admin-loading {
+    opacity: 0.4;
+}
+
+.local_jedomi-admin-text-ok {
+    color: #166534;
+}
+
+.local_jedomi-admin-text-warn {
+    color: #9a3412;
+}
+
+.local_jedomi-admin-break {
+    word-break: break-all;
+}
+
+.local_jedomi-admin-stat {
+    padding: 0.5rem 1rem;
+    font-size: 1rem;
+}
+
+.local_jedomi-ws-write {
+    background: #fef2f2;
+    border-left: 3px solid #dc2626;
+}
+
+.local_jedomi-ws-description {
+    max-width: 260px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Integrations tab. */
+.local_jedomi-admin-int-badge {
+    padding: 0.25rem 0.6rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #166534;
+    background: #dcfce7;
+    border-radius: 2rem;
+}
+
+.local_jedomi-admin-int-section {
+    padding: 1rem 1.125rem;
+    border-bottom: 1px solid #f1f5f9;
+}
+
+.local_jedomi-admin-int-section:last-child {
+    border-bottom: none;
+}
+
+.local_jedomi-admin-status {
+    padding: 0.4rem 0.7rem;
+    font-size: 0.8125rem;
+    border: 1px solid transparent;
+    border-radius: 0.375rem;
+}
+
+.local_jedomi-admin-status-ok {
+    color: #166534;
+    background: #f0fdf4;
+    border-color: #bbf7d0;
+}
+
+.local_jedomi-admin-status-warn {
+    color: #9a3412;
+    background: #fff7ed;
+    border-color: #fed7aa;
+}
+
+.local_jedomi-admin-webhook-url {
+    max-width: 520px;
+}
+
+.local_jedomi-admin-webhook-box {
+    padding: 0.75rem 1rem;
+    background: #fafafa;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.5rem;
+}
+
+.local_jedomi-admin-webhook-live,
+.local_jedomi-admin-webhook-drop {
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
+    border-top: 1px dashed #d1d5db;
+}
+
+.local_jedomi-admin-guide summary {
+    cursor: pointer;
+}
+
+.local_jedomi-admin-guide-title {
+    font-size: 0.8125rem;
+    font-weight: 700;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.local_jedomi-admin-step-number {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.625rem;
+    height: 1.625rem;
+    margin-right: 0.6rem;
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: #fff;
+    background: #7c3aed;
+    border-radius: 50%;
+}
+
+.local_jedomi-admin-step-number-user {
+    font-size: 0.65rem;
+    background: #0369a1;
+    border-radius: 0.3rem;
+}
+
+.local_jedomi-admin-error-code {
+    display: block;
+    margin-top: 4px;
+    padding: 6px 8px;
+    font-size: 0.8125rem;
+    background: #fff3cd;
+    border-radius: 4px;
+}
+
+/* Agents tab. */
+.local_jedomi-admin-chart {
+    position: relative;
+    min-height: 160px;
+}
+
+.local_jedomi-admin-role-scroll {
+    max-height: 150px;
+    padding: 0.5rem;
+    overflow-y: auto;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.375rem;
+}
+
+.local_jedomi-admin-agent-details th {
+    width: 11rem;
+}
+
+.local_jedomi-admin-pre {
+    max-height: 16rem;
+    overflow: auto;
+    white-space: pre-wrap;
+}
+
+.local_jedomi-admin-preview {
+    margin-top: 1rem;
+    overflow: hidden;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.5rem;
+}
+
+.local_jedomi-admin-preview-header {
+    padding: 0.625rem 0.75rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    background: #f9fafb;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.local_jedomi-admin-preview-body {
+    min-height: 60px;
+    max-height: 600px;
+    padding: 0.75rem;
+    overflow-y: auto;
+    font-size: 0.8125rem;
+    word-break: break-word;
+    background: #fff;
+}
+
+.local_jedomi-admin-preview-answer {
+    max-height: 400px;
+    margin-top: 8px;
+    padding: 10px;
+    overflow-y: auto;
+    line-height: 1.5;
+    color: #1f2937;
+    white-space: pre-wrap;
+    word-break: break-word;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+}
+
+.local_jedomi-admin-timeline-message {
+    margin-bottom: 4px;
+    overflow: hidden;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+}
+
+.local_jedomi-admin-timeline-header {
+    padding: 4px 8px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #6b7280;
+    background: #f9fafb;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.local_jedomi-admin-timeline-badge {
+    margin-right: 4px;
+    padding: 1px 6px;
+    color: #fff;
+    background: #6b7280;
+    border-radius: 3px;
+}
+
+.local_jedomi-admin-timeline-user {
+    color: #2563eb;
+    background: #eff6ff;
+}
+
+.local_jedomi-admin-timeline-user .local_jedomi-admin-timeline-badge {
+    background: #2563eb;
+}
+
+.local_jedomi-admin-timeline-assistant {
+    color: #7c3aed;
+    background: #f5f3ff;
+}
+
+.local_jedomi-admin-timeline-assistant .local_jedomi-admin-timeline-badge {
+    background: #7c3aed;
+}
+
+.local_jedomi-admin-timeline-content {
+    max-height: 200px;
+    padding: 6px 8px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.local_jedomi-admin-timeline-tools {
+    padding: 6px 8px;
+    background: #fafafa;
+    border-top: 1px solid #e5e7eb;
+}
+
+.local_jedomi-admin-summary-tool,
+.local_jedomi-admin-summary-result {
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.local_jedomi-admin-summary-tool {
+    color: #2563eb;
+}
+
+.local_jedomi-admin-summary-result {
+    color: #059669;
+}
+
+.local_jedomi-admin-code {
+    max-height: 200px;
+    margin: 4px 0 0;
+    padding: 6px;
+    overflow-x: auto;
+    font-size: 11px;
+    background: #f3f4f6;
+    border-radius: 4px;
+}
+
+.local_jedomi-admin-code-result {
+    background: #ecfdf5;
+}
+
+.local_jedomi-admin-profiler-entry {
+    margin-bottom: 6px;
+    padding: 8px;
+    font-size: 0.8125rem;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+}
+
+.local_jedomi-admin-profiler-entry.local_jedomi-admin-profiler-error {
+    border-color: #dc3545;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Telegram profile page (telegram_profile.php).
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.local_jedomi-telegram_profile {
+    max-width: 640px;
+    margin: 1.5rem auto;
+    padding: 0 1rem;
+}
+
+.local_jedomi-tg-logo {
+    font-size: 2rem;
+    color: #0284c7;
+}
+
+.local_jedomi-tg-icon {
+    color: #0284c7;
+}
+
+.local_jedomi-tg-linked {
+    border-color: #22c55e;
+}
+
+.local_jedomi-tg-linked .card-header {
+    color: #166534;
+    background: #f0fdf4;
+    border-bottom-color: #22c55e;
+}
+
+.local_jedomi-tg-howto,
+.local_jedomi-tg-box {
+    padding: 1rem;
+    background: #f8fafc;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.5rem;
+}
+
+.local_jedomi-tg-code {
+    margin-bottom: 0.75rem;
+    padding: 1rem 1.5rem;
+    font-family: monospace;
+    font-size: 2.5rem;
+    font-weight: 900;
+    color: #1e40af;
+    text-align: center;
+    letter-spacing: 0.4em;
+    background: #eff6ff;
+    border: 2px dashed #93c5fd;
+    border-radius: 0.75rem;
+}
+
+.local_jedomi-tg-countdown {
+    font-weight: 600;
+    color: #1e40af;
+}
+
+.local_jedomi-tg-step {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.875rem;
+    margin-bottom: 1.25rem;
+}
+
+.local_jedomi-tg-badge {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    min-width: 2.25rem;
+    height: 2.25rem;
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: #fff;
+    background: #0369a1;
+    border-radius: 0.5rem;
+}
+
+.local_jedomi-tg-badge-violet {
+    background: #7c3aed;
+}
+
+.local_jedomi-tg-badge-green {
+    background: #15803d;
+}
+
+.local_jedomi-tg-command {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.375rem 0.75rem;
+    font-family: monospace;
+    font-size: 0.875rem;
+    color: #7dd3fc;
+    background: #1e293b;
+    border-radius: 0.375rem;
+}
+
+.local_jedomi-tg-command .btn-link {
+    color: #7dd3fc;
+}
+
+/* Personalization tab: avatar selector and live preview of the button. */
+.local_jedomi-avatar-option {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    margin: 0 8px 8px 0;
+}
+.local_jedomi-avatar-option-img,
+.local_jedomi-avatar-option-icon {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    object-fit: cover;
+}
+.local_jedomi-avatar-option-icon,
+.local_jedomi-position-preview-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #7c3aed;
+}
+.local_jedomi-avatar-option-label {
+    font-size: 0.8rem;
+}
+.local_jedomi-position-preview {
+    position: relative;
+    width: 100%;
+    max-width: 480px;
+    aspect-ratio: 16 / 10;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    background: #f8f9fa;
+    overflow: hidden;
+}
+.local_jedomi-position-preview-panel {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 30%;
+    height: 100%;
+    background: rgba(124, 58, 237, 0.12);
+    border-right: 1px dashed #7c3aed;
+}
+.local_jedomi-position-preview-panel.local_jedomi-position-preview-panel-right {
+    left: auto;
+    right: 0;
+    border-right: 0;
+    border-left: 1px dashed #7c3aed;
+}
+.local_jedomi-position-preview-button {
+    position: absolute;
+    bottom: 8px;
+    left: 8px;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    overflow: hidden;
+    cursor: grab;
+    touch-action: none;
+    background: #7c3aed;
+}
+.local_jedomi-position-preview-button img,
+.local_jedomi-position-preview-icon {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+.local_jedomi-position-preview-icon svg {
+    width: 18px;
+    height: 18px;
+}
+
+/* ── Accessibility: keyboard focus, reduced motion and forced colours ─────── */
+.jedomi-trigger:focus-visible,
+.jedomi-btn-icon:focus-visible,
+.jedomi-action-btn:focus-visible,
+.jedomi-quick-btn:focus-visible,
+.jedomi-send-btn:focus-visible,
+.jedomi-input-icon:focus-visible,
+.jedomi-attach-option:focus-visible,
+.jedomi-csv-btn:focus-visible,
+.jedomi-thinking-bar:focus-visible,
+.jedomi-voice-stop:focus-visible,
+.jedomi-voice-play:focus-visible,
+.jedomi-voice-mode-exit:focus-visible,
+.jedomi-confirm-yes:focus-visible,
+.jedomi-confirm-no:focus-visible,
+.jedomi-moodle-link:focus-visible,
+.jedomi-bubble a:focus-visible {
+    outline: 2px solid var(--j-accent);
+    outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .jedomi-sidebar,
+    .jedomi-sidebar *,
+    .jedomi-sidebar *::before,
+    .jedomi-sidebar *::after,
+    .jedomi-trigger,
+    .jedomi-trigger::before,
+    .jedomi-dropzone,
+    .jedomi-dropzone * {
+        animation: none !important;
+        transition: none !important;
+    }
+}
+
+/* Windows high contrast and similar modes: hand the palette over to the system colours. */
+@media (forced-colors: active) {
+    .jedomi-sidebar,
+    .jedomi-trigger,
+    .jedomi-dropzone {
+        --j-accent: Highlight;
+        --j-accent-d: Highlight;
+        --j-accent-l: Canvas;
+        --j-user-bg: Highlight;
+        --j-user-text: HighlightText;
+        --j-border: CanvasText;
+    }
+    .jedomi-input-row:focus-within {
+        outline: 2px solid Highlight;
+        outline-offset: 2px;
+    }
+}
+
+/* ── Navbar alignment and RTL (appended) ───────────────────────────────────── */
+
+/* Below Moodle's fixed-top navbar: amd/src/local/sidebar/panel.js sets --j-nav-h to the navbar height. */
+.jedomi-sidebar.jedomi-below-navbar {
+    top: var(--j-nav-h);
+    height: calc(100vh - var(--j-nav-h));
+}
+.jedomi-sidebar.jedomi-below-navbar .jedomi-header {
+    height: var(--j-nav-h);
+    min-height: var(--j-nav-h);
+    padding: 0 14px;
+}
+
+/* Core pix icons inside the round/square icon holders: no trailing margin, logo keeps its size. */
+.local_jedomi-admin-card-icon .icon {
+    margin: 0;
+}
+.local_jedomi-tg-logo .icon {
+    width: auto;
+    height: auto;
+    margin: 0;
+    font-size: inherit;
+}
+
+/*
+ * RTL: the panel and the trigger are anchored to the right edge, mirroring the LTR layout.
+ * Moodle already flips styles.css with RTLCSS when it serves the RTL stylesheet, so every
+ * direction-dependent declaration here is marked rtl:ignore: it states the final RTL value
+ * and must not be flipped a second time.
+ */
+[dir="rtl"] .jedomi-sidebar {
+    /*rtl:ignore*/
+    left: auto;
+    /*rtl:ignore*/
+    right: 0;
+    /*rtl:ignore*/
+    border-right: 0;
+    /*rtl:ignore*/
+    border-left: 1px solid var(--j-border);
+}
+[dir="rtl"] .jedomi-sidebar.jedomi-expand-full {
+    /*rtl:ignore*/
+    left: auto !important;
+    /*rtl:ignore*/
+    right: 0 !important;
+}
+[dir="rtl"] .jedomi-closed {
+    /*rtl:ignore*/
+    transform: translateX(100%);
+}
+[dir="rtl"] .jedomi-sidebar.jedomi-side-right {
+    /*rtl:ignore*/
+    right: auto;
+    /*rtl:ignore*/
+    left: 0;
+    /*rtl:ignore*/
+    border-left: 0;
+    /*rtl:ignore*/
+    border-right: 1px solid var(--j-border);
+}
+[dir="rtl"] .jedomi-sidebar.jedomi-side-right.jedomi-closed {
+    /*rtl:ignore*/
+    transform: translateX(-100%);
+}
+[dir="rtl"] .jedomi-trigger {
+    /*rtl:ignore*/
+    left: auto;
+    /*rtl:ignore*/
+    right: var(--j-fab-x, 24px);
+}
+[dir="rtl"] .jedomi-trigger.jedomi-fab-bottom-right,
+[dir="rtl"] .jedomi-trigger.jedomi-fab-top-right {
+    /*rtl:ignore*/
+    right: auto;
+    /*rtl:ignore*/
+    left: var(--j-fab-x, 24px);
+}
+[dir="rtl"] .jedomi-bubble th,
+[dir="rtl"] .jedomi-bubble td,
+[dir="rtl"] .jedomi-thinking-bar,
+[dir="rtl"] .jedomi-attach-option {
+    text-align: start;
+}
+[dir="rtl"] .jedomi-bubble .jedomi-table th,
+[dir="rtl"] .jedomi-table th {
+    text-align: start !important;
+}
+
+@media (max-width: 767px) {
+    [dir="rtl"] .jedomi-trigger,
+    [dir="rtl"] .jedomi-trigger[class*="jedomi-fab-"] {
+        /*rtl:ignore*/
+        left: auto;
+        /*rtl:ignore*/
+        right: 16px;
+    }
 }

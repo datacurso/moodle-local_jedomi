@@ -1,0 +1,252 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template local_jedomi/admin/integrations_tab
+
+    Integrations tab of the Jedomi settings: the Telegram bot card (local_jedomi/admin/card) with its switch in the
+    header, and the webhook status, settings form and setup guide in its body.
+
+    Classes required for JS:
+    * none
+
+    Data attributes required for JS:
+    * data-region="local_jedomi/admin/integrations/telegram" on the card
+    * data-action="local_jedomi/admin/integrations/toggle-telegram" on the switch, saved at once; it also shows or
+      hides the card body
+    * data-region="local_jedomi/admin/integrations/body" on the card body
+    * data-action="local_jedomi/admin/integrations/check-webhook" and data-region="local_jedomi/admin/integrations/webhook-live"
+    * data-action="local_jedomi/admin/integrations/drop-pending" and data-region="local_jedomi/admin/integrations/drop-pending-result"
+    * data-region="local_jedomi/admin/integrations/button-label" and "button-busy" inside the action buttons
+
+    Context variables required for this template:
+    * enabled bool - Whether the Telegram integration is enabled
+    * tokenset bool - Whether a bot token is stored
+    * tokenunreadable bool - Whether the stored bot token cannot be decrypted
+    * verified bool - Whether the stored token was verified with getMe
+    * botusername string - Bot username
+    * botfirstname string - Bot display name
+    * showbadge bool - Whether to show the @username badge
+    * webhookurl string - Webhook URL to register in Telegram
+    * haslasterror bool - Whether the last webhook registration failed
+    * lasterror string - Error of the last webhook registration
+    * lasterrortime int - Time of the last webhook registration result
+    * haslasterrortime bool - Whether lasterrortime is set
+    * webhookok bool - Whether the last registration succeeded
+    * webhooknotchecked bool - Whether the webhook was never checked
+    * isconfigured bool - Whether the bot is enabled, has a token and was verified
+    * showerroralert bool - Whether to show the webhook error alert below the card
+    * needsregistration bool - Whether the update could not register the webhook again
+    * form string - HTML of the Telegram settings form, rendered by moodleform
+    * adminsteps array - Admin setup steps: number string, titlekey string, title string, desc string (trusted HTML from
+      the language pack), showwebhookstate bool
+    * usersteps array - User setup steps: number string, titlekey string, title string, desc string (trusted HTML)
+
+    Example context (json):
+    {
+        "enabled": true, "tokenset": true, "verified": true, "botusername": "jedomibot", "botfirstname": "Jedomi",
+        "showbadge": true, "webhookurl": "https://example.com/local/jedomi/telegram_webhook.php",
+        "haslasterror": false, "lasterror": "", "lasterrortime": 1700000000, "haslasterrortime": true,
+        "webhookok": true, "webhooknotchecked": false, "isconfigured": true, "showerroralert": false,
+        "needsregistration": false,
+        "form": "<form></form>",
+        "adminsteps": [{"number": "1", "titlekey": "telegram_step1_title", "title": "Create the bot", "desc": "Open @BotFather.",
+            "showwebhookstate": false}],
+        "usersteps": [{"number": "U1", "titlekey": "telegram_stepU1_title", "title": "Link your account", "desc": "Open your profile."}]
+    }
+}}
+<div class="local_jedomi-admin local_jedomi-admin-integrations_tab">
+    {{< local_jedomi/admin/card }}
+        {{$cardattributes}} data-region="local_jedomi/admin/integrations/telegram"{{/cardattributes}}
+        {{$icon}}{{#pix}} t/sendmessage, core {{/pix}}{{/icon}}
+        {{$color}}sky{{/color}}
+        {{$title}}{{#str}} telegram_heading, local_jedomi {{/str}}
+            {{#showbadge}}<span class="local_jedomi-admin-int-badge ml-2">@{{botusername}}</span>{{/showbadge}}{{/title}}
+        {{$subtitle}}{{#str}} telegram_heading_help, local_jedomi {{/str}}{{/subtitle}}
+        {{$actions}}
+            {{< core/toggle }}
+                {{$id}}{{uniqid}}-telegram-enabled{{/id}}
+                {{$extraclasses}}mb-0{{/extraclasses}}
+                {{$attributes}}data-action="local_jedomi/admin/integrations/toggle-telegram"{{#enabled}} checked{{/enabled}}{{/attributes}}
+                {{$label}}{{#str}} telegram_enabled, local_jedomi {{/str}}{{/label}}
+                {{$labelclasses}}sr-only visually-hidden{{/labelclasses}}
+            {{/ core/toggle }}
+        {{/actions}}
+        {{$bodyclasses}} p-0{{^enabled}} d-none{{/enabled}}{{/bodyclasses}}
+        {{$bodyattributes}} data-region="local_jedomi/admin/integrations/body"{{/bodyattributes}}
+        {{$body}}
+            <div class="local_jedomi-admin-int-section">
+                {{#tokenunreadable}}
+                <div class="alert alert-warning mb-3" role="alert">{{#str}} telegram_token_unreadable, local_jedomi {{/str}}</div>
+                {{/tokenunreadable}}
+                {{#tokenset}}
+                <div class="local_jedomi-admin-status mb-3{{#verified}} local_jedomi-admin-status-ok{{/verified}}{{^verified}} local_jedomi-admin-status-warn{{/verified}}">
+                    {{#verified}}
+                    {{#pix}} i/checkedcircle, core {{/pix}}
+                    {{#str}} telegram_status_connected, local_jedomi {{/str}} — <strong>@{{botusername}}</strong> ({{botfirstname}})
+                    {{/verified}}
+                    {{^verified}}
+                    {{#pix}} e/cancel_solid_circle, core {{/pix}}
+                    {{#str}} telegram_status_disconnected, local_jedomi {{/str}} — {{#str}} telegram_status_invalid_token, local_jedomi {{/str}}
+                    {{/verified}}
+                </div>
+                {{/tokenset}}
+
+                <label class="font-weight-bold fw-bold" for="{{uniqid}}-webhook-url">{{#str}} telegram_webhook_url, local_jedomi {{/str}}</label>
+                <div class="input-group local_jedomi-admin-webhook-url">
+                    <input type="text" id="{{uniqid}}-webhook-url" class="form-control" readonly value="{{webhookurl}}">
+                    <div class="input-group-append">
+                        <button type="button" class="btn btn-outline-secondary" data-action="copytoclipboard"
+                                data-clipboard-target="#{{uniqid}}-webhook-url"
+                                title="{{#str}} copytoclipboard, local_jedomi {{/str}}">
+                            {{#pix}} t/copy, core {{/pix}}
+                            <span class="sr-only visually-hidden">{{#str}} copytoclipboard, local_jedomi {{/str}}</span>
+                        </button>
+                    </div>
+                </div>
+                <p class="form-text text-muted small">{{#str}} telegram_webhook_url_help, local_jedomi {{/str}}</p>
+
+                {{#tokenset}}
+                <div class="local_jedomi-admin-webhook-box mt-3">
+                    <div class="d-flex align-items-center justify-content-between mb-2">
+                        <strong>{{#pix}} i/link, core {{/pix}}{{#str}} telegram_webhook_status, local_jedomi {{/str}}</strong>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" data-action="local_jedomi/admin/integrations/check-webhook">
+                            <span data-region="local_jedomi/admin/integrations/button-label">
+                                {{#pix}} i/reload, core {{/pix}}{{#str}} check_webhook, local_jedomi {{/str}}
+                            </span>
+                            <span class="d-none" data-region="local_jedomi/admin/integrations/button-busy">
+                                {{#pix}} i/loading, core {{/pix}}{{#str}} webhook_checking, local_jedomi {{/str}}
+                            </span>
+                        </button>
+                    </div>
+                    <div class="small">
+                        {{#haslasterror}}
+                        <div class="d-flex align-items-start text-warning local_jedomi-admin-text-warn">
+                            {{#pix}} i/warning, core {{/pix}}
+                            <div>
+                                <strong class="d-block">{{#str}} webhook_error, local_jedomi {{/str}}</strong>
+                                <span>{{lasterror}}</span>
+                                {{#haslasterrortime}}
+                                <span class="text-muted d-block">{{#userdate}} {{lasterrortime}}, {{#str}} strftimedatetime, core_langconfig {{/str}} {{/userdate}}</span>
+                                {{/haslasterrortime}}
+                            </div>
+                        </div>
+                        {{/haslasterror}}
+                        {{#webhookok}}
+                        <div class="local_jedomi-admin-text-ok">{{#pix}} i/checkedcircle, core {{/pix}}{{#str}} webhook_ok, local_jedomi {{/str}}</div>
+                        {{/webhookok}}
+                        {{#webhooknotchecked}}
+                        <div class="text-muted">{{#pix}} i/excluded, core {{/pix}}{{#str}} webhook_not_checked, local_jedomi {{/str}}</div>
+                        {{/webhooknotchecked}}
+                    </div>
+
+                    <div class="local_jedomi-admin-webhook-live d-none" data-region="local_jedomi/admin/integrations/webhook-live" aria-live="polite"></div>
+
+                    <div class="local_jedomi-admin-webhook-drop">
+                        <button type="button" class="btn btn-outline-danger btn-sm" data-action="local_jedomi/admin/integrations/drop-pending">
+                            <span data-region="local_jedomi/admin/integrations/button-label">
+                                {{#pix}} t/delete, core {{/pix}}{{#str}} drop_pending_updates, local_jedomi {{/str}}
+                            </span>
+                            <span class="d-none" data-region="local_jedomi/admin/integrations/button-busy">
+                                {{#pix}} i/loading, core {{/pix}}{{#str}} drop_pending_running, local_jedomi {{/str}}
+                            </span>
+                        </button>
+                        <span class="form-text text-muted small">{{#str}} drop_pending_updates_help, local_jedomi {{/str}}</span>
+                        <div class="small mt-1 d-none" data-region="local_jedomi/admin/integrations/drop-pending-result" aria-live="polite"></div>
+                    </div>
+                </div>
+                {{/tokenset}}
+            </div>
+
+            <div class="local_jedomi-admin-int-section">
+                {{{form}}}
+            </div>
+
+            <details class="local_jedomi-admin-int-section local_jedomi-admin-guide">
+                <summary class="font-weight-bold fw-bold">
+                    {{#pix}} e/numbered_list, core {{/pix}}{{#str}} telegram_setup_guide, local_jedomi {{/str}}
+                </summary>
+                <p class="local_jedomi-admin-guide-title mt-3">{{#str}} telegram_step_admin_title, local_jedomi {{/str}}</p>
+                {{#adminsteps}}
+                <div class="d-flex align-items-start mb-3">
+                    <span class="local_jedomi-admin-step-number">{{number}}</span>
+                    <div>
+                        <strong class="d-block">{{title}}</strong>
+                        <p class="small mb-0">{{{desc}}}</p>
+                        {{#showwebhookstate}}
+                        {{#isconfigured}}
+                        <div class="local_jedomi-admin-status local_jedomi-admin-status-ok mt-2">
+                            {{#pix}} i/checkedcircle, core {{/pix}}
+                            <strong>{{#str}} telegram_webhook_auto_ok_title, local_jedomi {{/str}}</strong> — {{#str}} telegram_webhook_auto_ok_desc, local_jedomi {{/str}}
+                        </div>
+                        {{/isconfigured}}
+                        {{^isconfigured}}
+                        {{#tokenset}}
+                        <div class="local_jedomi-admin-status local_jedomi-admin-status-warn mt-2">
+                            {{#pix}} i/warning, core {{/pix}}
+                            <strong>{{#str}} telegram_webhook_auto_missing_title, local_jedomi {{/str}}</strong> — {{#str}} telegram_webhook_auto_missing_desc, local_jedomi {{/str}}
+                        </div>
+                        {{/tokenset}}
+                        {{/isconfigured}}
+                        {{/showwebhookstate}}
+                    </div>
+                </div>
+                {{/adminsteps}}
+                <hr>
+                <p class="local_jedomi-admin-guide-title">{{#str}} telegram_step_user_title, local_jedomi {{/str}}</p>
+                {{#usersteps}}
+                <div class="d-flex align-items-start mb-2">
+                    <span class="local_jedomi-admin-step-number local_jedomi-admin-step-number-user">{{number}}</span>
+                    <div>
+                        <strong class="d-block small">{{title}}</strong>
+                        <p class="small mb-0">{{{desc}}}</p>
+                    </div>
+                </div>
+                {{/usersteps}}
+            </details>
+        {{/body}}
+    {{/ local_jedomi/admin/card }}
+
+    {{#needsregistration}}
+    <div class="alert alert-warning d-flex align-items-start mt-3" role="alert">
+        {{#pix}} i/warning, core {{/pix}}
+        <div>{{#str}} telegram_webhook_needs_registration, local_jedomi {{/str}}</div>
+    </div>
+    {{/needsregistration}}
+    {{#showerroralert}}
+    <div class="alert alert-warning d-flex align-items-start mt-3" role="alert">
+        {{#pix}} i/warning, core {{/pix}}
+        <div>
+            <strong>{{#str}} webhook_error_alert_title, local_jedomi {{/str}}</strong><br>
+            <small>
+                {{#str}} webhook_error_alert_desc, local_jedomi {{/str}}
+                {{#haslasterror}}
+                <strong class="d-block mt-2">{{#str}} webhook_error_detail, local_jedomi {{/str}}</strong>
+                <code class="local_jedomi-admin-error-code">{{lasterror}}</code>
+                {{#haslasterrortime}}
+                <span class="text-muted d-block">{{#userdate}} {{lasterrortime}}, {{#str}} strftimedatetime, core_langconfig {{/str}} {{/userdate}}</span>
+                {{/haslasterrortime}}
+                {{/haslasterror}}
+            </small>
+        </div>
+    </div>
+    {{/showerroralert}}
+</div>
+{{#js}}
+require(['local_jedomi/admin/integrations'], function(Integrations) {
+    Integrations.init();
+});
+{{/js}}

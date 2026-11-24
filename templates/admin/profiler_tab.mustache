@@ -1,0 +1,98 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template local_jedomi/admin/profiler_tab
+
+    Profiler tab of the Jedomi settings: indicators of the queries of every channel, the slowest queries report
+    (grouped by query) and the recent queries report. The indicators follow the filters of the recent queries report.
+
+    Classes required for JS:
+    * none
+
+    Data attributes required for JS:
+    * data-region="local_jedomi/admin/profiler" on the root
+    * data-indicator (total, slow, avg, max) on each indicator value
+    * data-region="local_jedomi/admin/profiler/recent" around the recent queries report
+
+    Context variables required for this template:
+    * total int - Number of queries that match the filters
+    * slow int - Number of slow queries
+    * avg string - Average duration, formatted
+    * max string - Maximum duration, formatted
+    * recentreport string - HTML of the recent queries report
+    * slowestreport string - HTML of the slowest queries report
+
+    Example context (json):
+    {
+        "total": 12, "slow": 2, "avg": "3.50 ms", "max": "1500.00 ms",
+        "recentreport": "<div></div>", "slowestreport": "<div></div>"
+    }
+}}
+<div class="local_jedomi-admin local_jedomi-admin-profiler_tab" data-region="local_jedomi/admin/profiler">
+    {{< local_jedomi/admin/card }}
+        {{$icon}}{{#pix}} i/dashboard, core {{/pix}}{{/icon}}
+        {{$color}}amber{{/color}}
+        {{$title}}{{#str}} query_profiler_heading, local_jedomi {{/str}}{{/title}}
+        {{$body}}
+            <p class="text-muted small">{{#str}} query_profiler_desc, local_jedomi {{/str}}</p>
+
+            <div class="row text-center mb-3" aria-live="polite">
+                <div class="col-md-3">
+                    <span class="badge badge-info bg-info local_jedomi-admin-stat" data-indicator="total">{{total}}</span>
+                    <div class="small text-muted mt-1">{{#str}} query_profiler_total, local_jedomi {{/str}}</div>
+                </div>
+                <div class="col-md-3">
+                    <span class="badge badge-warning bg-warning local_jedomi-admin-stat" data-indicator="slow">{{slow}}</span>
+                    <div class="small text-muted mt-1">{{#str}} query_profiler_slow, local_jedomi {{/str}}</div>
+                </div>
+                <div class="col-md-3">
+                    <span class="badge badge-secondary bg-secondary local_jedomi-admin-stat" data-indicator="avg">{{avg}}</span>
+                    <div class="small text-muted mt-1">{{#str}} query_profiler_avg, local_jedomi {{/str}}</div>
+                </div>
+                <div class="col-md-3">
+                    <span class="badge badge-danger bg-danger local_jedomi-admin-stat" data-indicator="max">{{max}}</span>
+                    <div class="small text-muted mt-1">{{#str}} query_profiler_max, local_jedomi {{/str}}</div>
+                </div>
+            </div>
+        {{/body}}
+    {{/ local_jedomi/admin/card }}
+
+    {{< local_jedomi/admin/card }}
+        {{$icon}}{{#pix}} i/warning, core {{/pix}}{{/icon}}
+        {{$color}}red{{/color}}
+        {{$title}}{{#str}} query_profiler_slowest, local_jedomi {{/str}}{{/title}}
+        {{$body}}
+            {{{slowestreport}}}
+        {{/body}}
+    {{/ local_jedomi/admin/card }}
+
+    {{< local_jedomi/admin/card }}
+        {{$icon}}{{#pix}} i/report, core {{/pix}}{{/icon}}
+        {{$color}}purple{{/color}}
+        {{$title}}{{#str}} query_profiler_recent, local_jedomi {{/str}}{{/title}}
+        {{$body}}
+            <div data-region="local_jedomi/admin/profiler/recent">
+                {{{recentreport}}}
+            </div>
+        {{/body}}
+    {{/ local_jedomi/admin/card }}
+</div>
+{{#js}}
+require(['local_jedomi/admin/profiler'], function(Profiler) {
+    Profiler.init();
+});
+{{/js}}

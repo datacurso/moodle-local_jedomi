@@ -1,0 +1,45 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template local_jedomi/local/sidebar/file_chips
+
+    Chips of the files attached to the next message, each one with its remove button. The files are read only when
+    the message is sent.
+
+    Classes required for JS:
+    * none
+
+    Data attributes required for JS:
+    * data-action="local_jedomi/sidebar/remove-file" - Removes the attached file at data-index
+
+    Context variables required for this template:
+    * files array - Attached files: index (position in the list), name and removelabel (accessible label of the button)
+
+    Example context (json):
+    {
+        "files": [
+            {"index": 0, "name": "notes.txt", "removelabel": "Remove notes.txt"},
+            {"index": 1, "name": "report.pdf", "removelabel": "Remove report.pdf"}
+        ]
+    }
+}}
+{{#files}}
+<div class="jedomi-image-preview jedomi-file-chip">
+    <span>📎 {{name}}</span>
+    <button type="button" class="jedomi-input-icon" data-action="local_jedomi/sidebar/remove-file" data-index="{{index}}" aria-label="{{removelabel}}" title="{{removelabel}}"><svg aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+</div>
+{{/files}}

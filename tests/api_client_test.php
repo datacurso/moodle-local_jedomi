@@ -18,14 +18,11 @@
  * Unit tests for api_client chunking logic.
  *
  * @package    local_jedomi
- * @category   phpunit
- * @copyright  2026 Jedomi Project
+ * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-namespace local_jedomi\tests;
-
-defined('MOODLE_INTERNAL') || die();
+namespace local_jedomi;
 
 /**
  * Test cases for api_client chunk_text and related methods.
@@ -33,7 +30,6 @@ defined('MOODLE_INTERNAL') || die();
  * @covers \local_jedomi\telegram\api_client
  */
 final class api_client_test extends \advanced_testcase {
-
     /**
      * Setup test environment.
      */
@@ -42,7 +38,7 @@ final class api_client_test extends \advanced_testcase {
         $this->resetAfterTest();
     }
 
-    // ========================
+    // ... ========================
     // Data providers
     // ========================
 
@@ -51,7 +47,7 @@ final class api_client_test extends \advanced_testcase {
      *
      * @return array
      */
-    public function chunk_text_provider(): array {
+    public static function chunk_text_provider(): array {
         return [
             'short text' => [
                 'Hello world',
@@ -91,17 +87,20 @@ final class api_client_test extends \advanced_testcase {
         ];
     }
 
-    // ========================
+    // ... ========================
     // chunk_text tests
     // ========================
 
     /**
-     * Test chunk_text returns expected number of chunks.
+     * MDL-UNIT-031: short texts give one message and long ones are split under the Telegram limit.
      *
      * @dataProvider chunk_text_provider
+     * @param string $text Input text to chunk
+     * @param bool $truncate Whether truncation mode is enabled
+     * @param int $expectedcount Expected number of chunks
      */
     public function test_chunk_text_count(string $text, bool $truncate, int $expectedcount): void {
-        $result = $this->call_private_static('chunk_text', [$text, $truncate]);
+        $result = (new \local_jedomi\telegram\api_client(''))->chunk_text($text, $truncate);
         $this->assertIsArray($result);
         $this->assertCount($expectedcount, $result, "Expected $expectedcount chunk(s) for " .
             (mb_strlen($text) > 50 ? mb_substr($text, 0, 50) . '...' : $text) .
@@ -109,11 +108,11 @@ final class api_client_test extends \advanced_testcase {
     }
 
     /**
-     * Test chunk_text with short text returns the original text unchanged.
+     * MDL-UNIT-031: a short text is sent unchanged in a single message.
      */
     public function test_chunk_text_short_content(): void {
         $text = 'Hello world';
-        $result = $this->call_private_static('chunk_text', [$text, false]);
+        $result = (new \local_jedomi\telegram\api_client(''))->chunk_text($text, false);
         $this->assertCount(1, $result);
         $this->assertEquals($text, $result[0]);
     }
@@ -123,7 +122,7 @@ final class api_client_test extends \advanced_testcase {
      */
     public function test_chunk_text_truncate_suffix(): void {
         $text = str_repeat('x', 5000);
-        $result = $this->call_private_static('chunk_text', [$text, true]);
+        $result = (new \local_jedomi\telegram\api_client(''))->chunk_text($text, true);
         $this->assertCount(1, $result);
         $this->assertStringEndsWith('… (truncated)', $result[0]);
         // Truncated output should not exceed 4000.
@@ -131,11 +130,11 @@ final class api_client_test extends \advanced_testcase {
     }
 
     /**
-     * Test chunk_text split at newline boundary preserves the \n\n in the first chunk.
+     * MDL-UNIT-031: a long text is split preferably between paragraphs.
      */
     public function test_chunk_text_newline_boundary_split(): void {
         $text = str_repeat('x', 2500) . "\n\n" . str_repeat('y', 2000);
-        $result = $this->call_private_static('chunk_text', [$text, false]);
+        $result = (new \local_jedomi\telegram\api_client(''))->chunk_text($text, false);
         $this->assertCount(2, $result);
         // First chunk should end with the double newline.
         $this->assertStringEndsWith("\n\n", $result[0]);
@@ -144,11 +143,11 @@ final class api_client_test extends \advanced_testcase {
     }
 
     /**
-     * Test chunk_text hard cut at 4000 when there's no space or newline.
+     * MDL-UNIT-031: without paragraphs or spaces the text is hard cut at the limit.
      */
     public function test_chunk_text_hard_cut(): void {
         $text = str_repeat('a', 4001);
-        $result = $this->call_private_static('chunk_text', [$text, false]);
+        $result = (new \local_jedomi\telegram\api_client(''))->chunk_text($text, false);
         $this->assertCount(2, $result);
         // First chunk should be exactly 4000 chars.
         $this->assertEquals(4000, mb_strlen($result[0]));
@@ -158,26 +157,31 @@ final class api_client_test extends \advanced_testcase {
     }
 
     /**
-     * Test chunk_text preserves total content across chunks (no data loss).
+     * MDL-UNIT-031: joining the fragments keeps all the text except the spaces at the split points.
+     * MDL-CTR-009: a long message is split into fragments that keep the whole text.
      */
     public function test_chunk_text_preserves_content(): void {
         $original = str_repeat('a', 2000) . ' ' . str_repeat('b', 2000) . ' ' . str_repeat('c', 2000);
-        $result = $this->call_private_static('chunk_text', [$original, false]);
+        $result = (new \local_jedomi\telegram\api_client(''))->chunk_text($original, false);
         $reassembled = implode('', $result);
         // Without the spaces that were split boundaries, the core content should match.
         $originalchars = str_replace([' '], '', $original);
         $reassembledchars = str_replace([' '], '', $reassembled);
-        $this->assertEquals($originalchars, $reassembledchars,
-            'All characters should be preserved across chunks (minus whitespace from splits)');
+        $this->assertEquals(
+            $originalchars,
+            $reassembledchars,
+            'All characters should be preserved across chunks (minus whitespace from splits)'
+        );
         $this->assertEquals(mb_strlen($originalchars), mb_strlen($reassembledchars));
     }
 
-    // ========================
+    // ... ========================
     // send_message delegation
     // ========================
 
     /**
      * Test that send_message delegates to chunk_text.
+     * MDL-CTR-009: a long message is sent in several valid calls.
      *
      * We verify this by creating a client with empty token (to avoid real HTTP calls)
      * and checking that send_message returns false (no token) for long text
@@ -191,20 +195,40 @@ final class api_client_test extends \advanced_testcase {
         $this->assertFalse($result, 'send_message with empty token should return false');
     }
 
-    // ========================
-    // Helpers
-    // ========================
+    /**
+     * MDL-UNIT-031: a long text without paragraphs is split at a space and every fragment stays within the limit.
+     */
+    public function test_chunk_text_splits_at_a_space_within_the_limit(): void {
+        $text = trim(str_repeat('word ', 1500));
+
+        $result = (new \local_jedomi\telegram\api_client(''))->chunk_text($text, false);
+
+        $this->assertGreaterThan(1, count($result));
+        foreach ($result as $chunk) {
+            $this->assertLessThanOrEqual(4000, mb_strlen(trim($chunk)));
+            $this->assertMatchesRegularExpression('/^word\b/', trim($chunk), 'Words are never cut in half');
+        }
+        $this->assertSame(str_replace(' ', '', $text), str_replace(' ', '', implode('', $result)));
+    }
 
     /**
-     * Call a private static method on api_client via reflection.
-     *
-     * @param string $methodName
-     * @param array $args
-     * @return mixed
+     * MDL-UNIT-031: each fragment closes the format it opens, so Telegram does not reject it.
+     * MDL-CTR-009: each fragment is a valid Telegram message on its own.
      */
-    private function call_private_static(string $methodName, array $args = []) {
-        $ref = new \ReflectionMethod(\local_jedomi\telegram\api_client::class, $methodName);
-        $ref->setAccessible(true);
-        return $ref->invoke(null, ...$args);
+    public function test_chunk_text_closes_the_format_each_fragment_opens(): void {
+        $text = '<b>' . trim(str_repeat('bold ', 1200)) . '</b> <i>' . trim(str_repeat('italic ', 300)) . '</i>';
+
+        $result = (new \local_jedomi\telegram\api_client(''))->chunk_text($text, false);
+
+        $this->assertGreaterThan(1, count($result));
+        foreach ($result as $index => $chunk) {
+            foreach (['b', 'i'] as $tag) {
+                $this->assertLessThanOrEqual(
+                    substr_count($chunk, '</' . $tag . '>'),
+                    substr_count($chunk, '<' . $tag . '>'),
+                    "Fragment {$index} must close every <{$tag}> it opens"
+                );
+            }
+        }
     }
 }

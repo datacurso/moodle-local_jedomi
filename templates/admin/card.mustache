@@ -1,0 +1,61 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template local_jedomi/admin/card
+
+    Card with an icon, a title and a subtitle, used by the tabs of the Jedomi settings.
+    Callers extend it and fill the blocks.
+
+    Classes required for JS:
+    * none
+
+    Data attributes required for JS:
+    * none
+
+    The header markup must stay the same as local_jedomi/admin/card_header, which the settings forms use for their
+    sections.
+
+    Blocks:
+    * cardattributes - Extra attributes of the card, for example a data-region (optional); not named attributes,
+      which core/toggle and other core templates use for their own blocks
+    * icon - Icon markup, for example the pix helper with i/settings of core (the default)
+    * color - Icon color modifier: violet, amber, green, red, sky, indigo, purple or blue
+    * title - Card title (defaults to the plugin name)
+    * subtitle - Card subtitle (optional)
+    * actions - Controls on the right of the header, for example a switch (optional)
+    * bodyclasses - Extra classes of the card body (optional)
+    * bodyattributes - Extra attributes of the card body, for example a data-region (optional)
+    * body - Card content
+
+    Example context (json):
+    {}
+}}
+<div class="card local_jedomi-admin-card mb-4"{{$cardattributes}}{{/cardattributes}}>
+    <div class="card-header local_jedomi-admin-card-header">
+        <span class="local_jedomi-admin-card-icon local_jedomi-admin-card-icon-{{$color}}violet{{/color}}">
+            {{$icon}}{{#pix}} i/settings, core {{/pix}}{{/icon}}
+        </span>
+        <div>
+            <h5 class="mb-0">{{$title}}{{#str}} pluginname, local_jedomi {{/str}}{{/title}}</h5>
+            <small class="text-muted d-block">{{$subtitle}}{{/subtitle}}</small>
+        </div>
+        <div class="local_jedomi-admin-card-actions">{{$actions}}{{/actions}}</div>
+    </div>
+    <div class="card-body{{$bodyclasses}}{{/bodyclasses}}"{{$bodyattributes}}{{/bodyattributes}}>
+        {{$body}}{{/body}}
+    </div>
+</div>
