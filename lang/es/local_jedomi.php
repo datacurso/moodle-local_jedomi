@@ -541,6 +541,7 @@ $string['pending_action_truncated'] = 'Esta acción tiene más datos de los que 
 $string['pending_desc_admin_execute'] = 'Ejecutar la operación de administración "{$a}".';
 $string['pending_desc_create_agent'] = 'Crear el agente programado "{$a}".';
 $string['pending_desc_delete_agent'] = 'Eliminar el agente programado #{$a}.';
+$string['pending_desc_plugin_tool'] = 'Ejecutar la acción «{$a}» de otro plugin, que cambia datos.';
 $string['pending_desc_send_messages'] = 'Enviar un mensaje de Moodle a {$a} destinatario(s).';
 $string['pending_desc_ws_execute'] = 'Ejecutar la función de servicio web "{$a}".';
 $string['pending_from_agent'] = 'Agente "{$a->agent}": {$a->description}';

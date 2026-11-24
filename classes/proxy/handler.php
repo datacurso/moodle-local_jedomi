@@ -156,12 +156,13 @@ class handler {
 
         $voicemode = !empty($input['voice_mode']) && \local_jedomi\ai\model_settings::is_voice_enabled();
         $system = system_message::build($role, $spt, $context, $voicemode);
-        if (self::run(array_merge([$system], $messages), $role, $userid, $anonymizer, $courseid)) {
+        // The signed course is also the context the tools of other plugins are offered in.
+        $requestcontext = $courseid > SITEID
+            ? (\context_course::instance($courseid, IGNORE_MISSING) ?: \context_system::instance())
+            : \context_system::instance();
+        if (self::run(array_merge([$system], $messages), $role, $userid, $anonymizer, $requestcontext, $courseid)) {
             // Audit trail without the conversation: who was answered, where and through which channel.
-            $eventcontext = $courseid > SITEID
-                ? (\context_course::instance($courseid, IGNORE_MISSING) ?: \context_system::instance())
-                : \context_system::instance();
-            \local_jedomi\event\chat_answered::create_for_channel('web', $eventcontext, $userid)->trigger();
+            \local_jedomi\event\chat_answered::create_for_channel('web', $requestcontext, $userid)->trigger();
         }
     }
 
@@ -368,6 +369,8 @@ class handler {
      * @param string $role     User role (already validated).
      * @param int    $userid   Moodle user the AI calls are made for.
      * @param \local_jedomi\local\anonymizer|null $anonymizer Anonymiser of the request; null for a new one.
+     * @param \context|null $toolcontext Context the tools of other plugins are offered in (the signed course or the
+     *                                   system); null offers none.
      * @param int    $courseid Course signed in the permissions (0 outside a course): held actions keep it.
      * @return bool True when an answer of the AI was sent to the user, false on an error or a stopped answer.
      */
@@ -376,6 +379,7 @@ class handler {
         string $role,
         int $userid,
         ?\local_jedomi\local\anonymizer $anonymizer = null,
+        ?\context $toolcontext = null,
         int $courseid = 0
     ): bool {
         require_once(__DIR__ . '/../../lib.php');
@@ -389,7 +393,7 @@ class handler {
             self::send_event(['_jedomi_heartbeat' => ['elapsed' => self::now() - $started]]);
         }, $abortcheck);
         try {
-            return self::run_rounds($messages, $role, $userid, $anonymizer, $started, $courseid);
+            return self::run_rounds($messages, $role, $userid, $anonymizer, $started, $toolcontext, $courseid);
         } finally {
             \local_jedomi\ai\heartbeat::stop();
         }
@@ -412,6 +416,7 @@ class handler {
      * @param int    $userid   Moodle user the AI calls are made for.
      * @param \local_jedomi\local\anonymizer|null $anonymizer Anonymiser of the request; null for a new one.
      * @param int    $started  Time the question started.
+     * @param \context|null $toolcontext Context the tools of other plugins are offered in; null offers none.
      * @param int    $courseid Course signed in the permissions (0 outside a course).
      * @return bool True when an answer of the AI was sent to the user.
      */
@@ -421,6 +426,7 @@ class handler {
         int $userid,
         ?\local_jedomi\local\anonymizer $anonymizer,
         int $started,
+        ?\context $toolcontext,
         int $courseid = 0
     ): bool {
 
@@ -429,6 +435,10 @@ class handler {
             // Offered only in the web chat, where the user confirms each send.
             $tools[] = message_service::tool_definition();
         }
+        // Tools of other plugins (tool registry hook), offered by each plugin to this user in this context. Only these
+        // can run under their names: a plugin tool that was not offered is an unknown tool.
+        $plugintools = $toolcontext !== null ? \local_jedomi\local\plugin_tools::available($userid, $toolcontext, 'web') : [];
+        $tools = array_merge($tools, \local_jedomi\local\plugin_tools::definitions($plugintools));
         $toolrepeatcounts = [];
         // The same call failing with the same error stops the question (the loop detector cuts identical calls later).
         $toolerrors = new \local_jedomi\local\repeated_tool_error();
@@ -537,7 +547,14 @@ class handler {
 
                 // A tool that changes data does not run now: it waits for the user's confirmation
                 // and the turn ends, so the model cannot act on a result that does not exist yet.
-                $pending = $offered && $unrestored === null ? pending_action_service::hold($userid, $name, $args, 0, $courseid) : null;
+                // A plugin tool that does not declare it only reads waits for the confirmation too.
+                if (!$offered || $unrestored !== null) {
+                    $pending = null;
+                } else if (isset($plugintools[$name]) && !\local_jedomi\local\plugin_tools::is_read_only($plugintools[$name])) {
+                    $pending = pending_action_service::hold_plugin_tool($userid, $name, $args, $toolcontext);
+                } else {
+                    $pending = pending_action_service::hold($userid, $name, $args, 0, $courseid);
+                }
                 if ($pending !== null) {
                     \local_jedomi_log('TOOL_HELD', ['tool' => $name, 'severity' => $pending['severity']]);
                     echo "data: " . json_encode(['_jedomi_pending_action' => $pending], JSON_UNESCAPED_UNICODE) . "\n\n";
@@ -584,7 +601,9 @@ class handler {
                     $result = json_encode(['error' => get_string('error_unknown_tool', 'local_jedomi', $name)]);
                 } else {
                     try {
-                        $result = self::execute_tool_by_name($name, $args, $role);
+                        $result = isset($plugintools[$name])
+                            ? self::execute_plugin_tool($plugintools[$name], $args, $role)
+                            : self::execute_tool_by_name($name, $args, $role);
                     } catch (\Throwable $e) {
                         // JEDOMI-SEC-009: the model gets what it needs to correct the call; the log only the class.
                         \local_jedomi_log('TOOL_FAILED', ['tool' => $name] + \local_jedomi\local\safe_error::log_context($e));
@@ -691,6 +710,21 @@ class handler {
      */
     public static function run_tool(string $name, array $args, string $role): string {
         return self::execute_tool_by_name($name, $args, $role);
+    }
+
+    /**
+     * Run a tool of another plugin as the session user, logged like the tools of Jedomi.
+     *
+     * @param \local_jedomi\agent\tool\agent_tool $tool Tool offered by its plugin for this request.
+     * @param array $args Tool arguments.
+     * @param string $role User role, for the log.
+     * @return string Result of the tool.
+     */
+    private static function execute_plugin_tool(\local_jedomi\agent\tool\agent_tool $tool, array $args, string $role): string {
+        \local_jedomi_log('TOOL_CALL', ['tool' => $tool->get_name(), 'arg_names' => array_keys($args), 'role' => $role,
+            'source' => 'plugin']);
+        // A read-only tool whose data is still being prepared runs again for a short while (see plugin_tool_retry).
+        return \local_jedomi\local\plugin_tool_retry::run($tool, $args);
     }
 
     /**

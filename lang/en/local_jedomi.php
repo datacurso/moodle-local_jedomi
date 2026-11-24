@@ -541,6 +541,7 @@ $string['pending_action_truncated'] = 'This action has more data than can be sho
 $string['pending_desc_admin_execute'] = 'Run the administration operation "{$a}".';
 $string['pending_desc_create_agent'] = 'Create the scheduled agent "{$a}".';
 $string['pending_desc_delete_agent'] = 'Delete the scheduled agent #{$a}.';
+$string['pending_desc_plugin_tool'] = 'Run the action "{$a}" of another plugin, which changes data.';
 $string['pending_desc_send_messages'] = 'Send a Moodle message to {$a} recipient(s).';
 $string['pending_desc_ws_execute'] = 'Run the web service function "{$a}".';
 $string['pending_from_agent'] = 'Agent "{$a->agent}": {$a->description}';

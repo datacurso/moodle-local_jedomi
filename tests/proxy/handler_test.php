@@ -28,6 +28,7 @@ global $CFG;
 require_once($CFG->dirroot . '/local/jedomi/lib.php');
 require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/fake_ai_client.php');
 require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/testable_provider_api.php');
+require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/plugin_tools/fake_tool_plugin.php');
 
 /**
  * Tests for the web chat proxy handler over the AI client.
@@ -2248,6 +2249,195 @@ final class handler_test extends \advanced_testcase {
             ['role' => 'user', 'content' => 'Latest question'],
         ], 'student', (int) get_admin()->id));
         $this->assertCount(4, $fake->calls[1]['messages']);
+    }
+
+    /**
+     * Make the test plugin the only one that answers the tool registry hook, with these tools.
+     *
+     * @param \local_jedomi\agent\tool\agent_tool[] $tools Tools the test plugin registers.
+     */
+    private function register_plugin_tools(array $tools): void {
+        \local_jedomi\fixtures\fake_tool_plugin::reset();
+        \local_jedomi\fixtures\fake_tool_plugin::$tools = $tools;
+        \core\di::set(\core\hook\manager::class, \core\hook\manager::phpunit_get_instance([
+            'fake_toolplugin' => __DIR__ . '/../fixtures/plugin_tools/hooks.php',
+        ]));
+    }
+
+    /**
+     * A tool registered by another plugin is offered to the AI in the web chat, runs as the session user without
+     * confirmation and its result reaches the AI as a tool message.
+     */
+    public function test_plugin_tool_is_offered_and_runs_as_the_session_user(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $course = $this->getDataGenerator()->create_course();
+        $teacher = $this->getDataGenerator()->create_and_enrol($course, 'editingteacher');
+        $this->setUser($teacher);
+        $this->register_plugin_tools([new \local_jedomi\fixtures\fake_plugin_tool('demo_report')]);
+        $fake = new fake_ai_client();
+        $fake->enqueue_tool_calls([
+            ['id' => 'call_1', 'type' => 'function', 'function' => ['name' => 'demo_report', 'arguments' => '{"q":"map"}']],
+        ]);
+        $fake->enqueue_text('Done.');
+        client::set_instance_for_testing($fake);
+
+        $events = $this->events($this->capture(fn() => handler::run(
+            [['role' => 'user', 'content' => 'hi']],
+            'teacher',
+            (int) $teacher->id,
+            null,
+            \context_course::instance($course->id)
+        )));
+
+        $offered = array_column(array_column($fake->calls[0]['tools'], 'function'), 'name');
+        $this->assertContains('demo_report', $offered);
+        $this->assertContains('execute_sql', $offered);
+        $this->assertSame('demo_report', $events[1]['_jedomi_tool_result']['tool']);
+        $this->assertSame(0, $DB->count_records(\local_jedomi\local\service\pending_action_service::TABLE));
+        $toolmessage = $fake->calls[1]['messages'][2];
+        $this->assertSame('tool', $toolmessage['role']);
+        $result = json_decode($this->untrusted_payload($toolmessage['content']), true);
+        $this->assertSame((int) $teacher->id, $result['ran_as']);
+        $this->assertSame(['q' => 'map'], $result['params']);
+        $hook = \local_jedomi\fixtures\fake_tool_plugin::$lasthook;
+        $this->assertSame('web', $hook->get_channel());
+        $this->assertSame(\context_course::instance($course->id)->id, $hook->get_context()->id);
+    }
+
+    /**
+     * A plugin tool that is not offered to the user cannot be run by naming it.
+     */
+    public function test_plugin_tool_not_offered_cannot_be_called(): void {
+        $this->resetAfterTest();
+        $user = $this->getDataGenerator()->create_user();
+        $this->setUser($user);
+        $this->register_plugin_tools([new \local_jedomi\fixtures\fake_plugin_tool('demo_report', false)]);
+        $fake = new fake_ai_client();
+        $fake->enqueue_tool_calls([
+            ['id' => 'call_1', 'type' => 'function', 'function' => ['name' => 'demo_report', 'arguments' => '{}']],
+        ]);
+        $fake->enqueue_text('Done.');
+        client::set_instance_for_testing($fake);
+
+        $this->capture(fn() => handler::run(
+            [['role' => 'user', 'content' => 'hi']],
+            'student',
+            (int) $user->id,
+            null,
+            \context_system::instance()
+        ));
+
+        $offered = array_column(array_column($fake->calls[0]['tools'], 'function'), 'name');
+        $this->assertNotContains('demo_report', $offered);
+        $result = json_decode($this->untrusted_payload($fake->calls[1]['messages'][2]['content']), true);
+        $this->assertArrayNotHasKey('ran_as', $result);
+        $this->assertStringContainsString('demo_report', $result['error']);
+    }
+
+    /**
+     * The signed course of a web chat request is the context the plugin tools are asked for.
+     */
+    public function test_run_from_request_asks_plugin_tools_for_the_signed_course(): void {
+        $this->require_provider();
+        $this->resetAfterTest();
+        \aiprovider_datacurso\local\plugin_settings::set_enabled('local_jedomi', true);
+        $course = $this->getDataGenerator()->create_course();
+        $teacher = $this->getDataGenerator()->create_and_enrol($course, 'editingteacher');
+        $this->setUser($teacher);
+        $this->register_plugin_tools([new \local_jedomi\fixtures\fake_plugin_tool('demo_report')]);
+        $fake = new fake_ai_client();
+        $fake->enqueue_text('Done.');
+        client::set_instance_for_testing($fake);
+        $spt = ['course_id' => (int) $course->id];
+
+        $this->capture(fn() => handler::run_from_request(
+            ['messages' => [['role' => 'user', 'content' => 'hi']], 'context' => ['course_id' => (int) $course->id]],
+            'teacher',
+            $spt,
+            (int) $teacher->id
+        ));
+
+        $hook = \local_jedomi\fixtures\fake_tool_plugin::$lasthook;
+        $this->assertSame(\context_course::instance($course->id)->id, $hook->get_context()->id);
+        $offered = array_column(array_column($fake->calls[0]['tools'], 'function'), 'name');
+        $this->assertContains('demo_report', $offered);
+    }
+
+    /**
+     * A plugin tool that changes something is held for the user's confirmation and does not run; the AI gets nothing
+     * from it and the turn ends with the confirmation card.
+     */
+    public function test_plugin_tool_that_changes_something_waits_for_confirmation(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $course = $this->getDataGenerator()->create_course();
+        $teacher = $this->getDataGenerator()->create_and_enrol($course, 'editingteacher');
+        $this->setUser($teacher);
+        $this->register_plugin_tools([new \local_jedomi\fixtures\fake_plugin_tool('demo_writer', true, null, null, false)]);
+        $fake = new fake_ai_client();
+        $fake->enqueue_tool_calls([
+            ['id' => 'call_1', 'type' => 'function', 'function' => ['name' => 'demo_writer', 'arguments' => '{"q":"go"}']],
+        ]);
+        client::set_instance_for_testing($fake);
+
+        $events = $this->events($this->capture(fn() => handler::run(
+            [['role' => 'user', 'content' => 'hi']],
+            'teacher',
+            (int) $teacher->id,
+            null,
+            \context_course::instance($course->id)
+        )));
+
+        $this->assertSame([], \local_jedomi\fixtures\fake_plugin_tool::$runs);
+        $this->assertCount(1, $fake->calls);
+        $this->assertSame('demo_writer', $events[0]['_jedomi_pending_action']['tool']);
+        $this->assertSame('high', $events[0]['_jedomi_pending_action']['severity']);
+        $held = ['userid' => $teacher->id, 'tool' => 'demo_writer'];
+        $this->assertSame(1, $DB->count_records(\local_jedomi\local\service\pending_action_service::TABLE, $held));
+    }
+
+    /**
+     * A plugin tool that answers that its data is still being prepared runs again after a short wait in the web chat,
+     * and the AI gets the ready answer instead of the pending one.
+     */
+    public function test_pending_plugin_tool_runs_again_before_the_ai_gets_its_result(): void {
+        $this->resetAfterTest();
+        $course = $this->getDataGenerator()->create_course();
+        $teacher = $this->getDataGenerator()->create_and_enrol($course, 'editingteacher');
+        $this->setUser($teacher);
+        $pending = json_encode(['meta' => ['pending' => true, 'message' => 'The data is being prepared.']]);
+        $ready = json_encode(['meta' => ['pending' => false], 'areas' => [['id' => 7]]]);
+        $this->register_plugin_tools([
+            new \local_jedomi\fixtures\fake_plugin_tool('demo_report', answers: [$pending, $ready]),
+        ]);
+        $waits = [];
+        \local_jedomi\local\plugin_tool_retry::set_sleeper_for_testing(function (int $seconds) use (&$waits): void {
+            $waits[] = $seconds;
+        });
+        $fake = new fake_ai_client();
+        $fake->enqueue_tool_calls([
+            ['id' => 'call_1', 'type' => 'function', 'function' => ['name' => 'demo_report', 'arguments' => '{}']],
+        ]);
+        $fake->enqueue_text('Done.');
+        client::set_instance_for_testing($fake);
+
+        try {
+            $this->capture(fn() => handler::run(
+                [['role' => 'user', 'content' => 'hi']],
+                'teacher',
+                (int) $teacher->id,
+                null,
+                \context_course::instance($course->id)
+            ));
+        } finally {
+            \local_jedomi\local\plugin_tool_retry::set_sleeper_for_testing(null);
+        }
+
+        $this->assertSame(['demo_report', 'demo_report'], \local_jedomi\fixtures\fake_plugin_tool::$runs);
+        $this->assertCount(1, $waits);
+        $result = json_decode($this->untrusted_payload($fake->calls[1]['messages'][2]['content']), true);
+        $this->assertSame([['id' => 7]], $result['areas']);
     }
 
     /**

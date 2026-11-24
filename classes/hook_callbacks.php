@@ -94,6 +94,9 @@ class hook_callbacks {
                 'config_load_retry' => get_string('config_load_retry', 'local_jedomi'),
             ],
         ]]);
+        // Mark of the page for local_jedomi/api: the panel is going to start here, so a suggestion of another plugin
+        // made while it is still loading waits for it instead of being refused.
+        $hook->add_html(\html_writer::span('', '', ['data-region' => 'local_jedomi-panel', 'hidden' => 'hidden']));
     }
 
     /**

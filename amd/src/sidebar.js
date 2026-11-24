@@ -32,6 +32,7 @@
 
 import Log from 'core/log';
 import Templates from 'core/templates';
+import {panelFailed, panelReady, panelStarted} from 'local_jedomi/api';
 import {showRestoredActions} from './local/sidebar/actions';
 import {showConfigError} from './local/sidebar/config_error';
 import {fixBodyOverflow} from './local/sidebar/dom';
@@ -42,6 +43,7 @@ import {openSidebar} from './local/sidebar/panel';
 import {fetchConfig, setPermissionsExpiry} from './local/sidebar/permissions';
 import {loadQuickActions, updateContextLabel} from './local/sidebar/quick_actions';
 import {cfg, resetState, setConfig, state} from './local/sidebar/state';
+import {showSuggestion} from './local/sidebar/suggestion';
 
 // A copy of this module loaded again (require.undef) starts with a new state, as the panel it starts is new.
 resetState();
@@ -52,6 +54,8 @@ resetState();
  * @param {Object} config {configUrl} of the panel configuration, or the configuration itself.
  */
 export const init = (config) => {
+    // Other plugins can now ask, through local_jedomi/api, to open the panel with a suggestion.
+    panelStarted();
     const doBootstrap = () => {
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', () => bootstrap());
@@ -74,6 +78,7 @@ export const init = (config) => {
                 // Without its configuration the panel cannot work: it is never started empty. A notice with a
                 // retry button is shown instead.
                 Log.debug('Jedomi: the panel configuration could not be loaded', error);
+                panelFailed();
                 showConfigError(config, init);
             });
     } else {
@@ -143,6 +148,7 @@ const bootstrap = async() => {
     state.injected = true;
     state.injecting = false;
     Log.debug('Jedomi sidebar injected successfully');
+    panelReady(showSuggestion);
 
     // Reopen automatically if it was open before navigating.
     if (sessionStorage.getItem('jedomi_open') === '1' || state.retryOpen) {

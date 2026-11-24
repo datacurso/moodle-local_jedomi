@@ -163,6 +163,34 @@ final class hook_callbacks_test extends \advanced_testcase {
     }
 
     /**
+     * The footer marks a page where the panel is going to start, so local_jedomi/api accepts a suggestion made before
+     * the panel finished loading; a page without the panel has no mark.
+     */
+    public function test_the_footer_marks_the_pages_where_the_panel_starts(): void {
+        global $PAGE;
+        [$course] = $this->student_in_course_with_quiz();
+        set_config('plugin_enabled_local_jedomi', '1', 'aiprovider_datacurso');
+        $url = new \moodle_url('/course/view.php', ['id' => $course->id]);
+
+        foreach (['course' => true, 'popup' => false] as $layout => $expected) {
+            $PAGE = new \moodle_page();
+            $PAGE->set_url($url);
+            $PAGE->set_course($course);
+            $PAGE->set_pagetype('course-view-topics');
+            $PAGE->set_pagelayout($layout);
+            $hook = new before_footer_html_generation($PAGE->get_renderer('core'));
+
+            hook_callbacks::before_footer($hook);
+
+            $this->assertSame(
+                $expected,
+                str_contains($hook->get_output(), 'data-region="local_jedomi-panel"'),
+                "Layout {$layout}"
+            );
+        }
+    }
+
+    /**
      * Id of a standard role.
      *
      * @param string $shortname Role short name.
