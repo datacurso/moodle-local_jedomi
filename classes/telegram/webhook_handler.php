@@ -38,6 +38,7 @@ use local_jedomi\local\service\pending_action_service;
 use local_jedomi\local\service\telegram_link_service;
 use local_jedomi\local\service\telegram_pin_service;
 use local_jedomi\local\service\vision_service;
+use local_jedomi\messaging\plugin_state;
 use local_jedomi\schema\table_indexer;
 use local_jedomi\schema\ws_indexer;
 
@@ -200,7 +201,7 @@ class webhook_handler {
      * @param array $update Decoded JSON from Telegram webhook
      */
     private static function dispatch(array $update): void {
-        $disabled = \local_jedomi_plugin_disabled_error();
+        $disabled = \core\di::get(plugin_state::class)->disabled_error();
         if ($disabled !== null) {
             self::reply_plugin_disabled($update, $disabled['message']);
             return;
@@ -1328,7 +1329,7 @@ class webhook_handler {
             return;
         }
 
-        $disabled = \local_jedomi_plugin_disabled_error();
+        $disabled = \core\di::get(plugin_state::class)->disabled_error();
         if ($disabled !== null) {
             // Disabled in the Datacurso AI provider: do not continue the tool loop with the AI.
             api_client::instance()->send_message($chatid, $disabled['message']);

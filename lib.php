@@ -1515,7 +1515,8 @@ function local_jedomi_telegram_active_user(int $userid): ?stdClass {
  */
 function local_jedomi_telegram_recipient(int $userid): ?stdClass {
     global $DB;
-    if (local_jedomi_plugin_disabled_error() !== null || !\local_jedomi\telegram\manager::is_enabled()) {
+    $pluginstate = \core\di::get(\local_jedomi\messaging\plugin_state::class);
+    if (!$pluginstate->is_enabled() || !\local_jedomi\telegram\manager::is_enabled()) {
         return null;
     }
     $link = $DB->get_record('local_jedomi_telegram_links', ['userid' => $userid, 'confirmed' => 1]);

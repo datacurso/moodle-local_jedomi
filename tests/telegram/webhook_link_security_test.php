@@ -340,25 +340,82 @@ final class webhook_link_security_test extends \advanced_testcase {
         $this->assertTrue((bool) $DB->get_field('user', 'deleted', ['id' => $victim->id]), 'Runs once confirmed');
         $this->assertSame(0, $DB->count_records('local_jedomi_telegram_pending_actions'));
 
-        // A high write: the card has the confirm button, and the button confirms within the window.
+        // A high write (core_group_create_groups): the card has the confirm button, and the button confirms within the
+        // window.
         $course = $this->getDataGenerator()->create_course();
-        $student = $this->getDataGenerator()->create_user();
-        $roleid = (int) $DB->get_field('role', 'id', ['shortname' => 'manager']);
         $this->telegram->sent = [];
-        $this->ai_uses('ws_execute', ['wsname' => 'core_role_assign_roles', 'params' => ['assignments' => [
-            ['roleid' => $roleid, 'userid' => (int) $student->id, 'contextid' => \context_course::instance($course->id)->id]]]]);
-        $this->say('784000015', 'Make them manager of the course');
-        $buttons = array_merge(...array_map(
-            static fn(array $m): array => array_column($m['replymarkup']['inline_keyboard'][0] ?? [], 'callback_data'),
-            $this->telegram->sent
-        ));
-        $confirm = array_values(array_filter($buttons, static fn(string $d): bool => str_starts_with($d, 'confirm:')));
+        $this->ai_uses('ws_execute', ['wsname' => 'core_group_create_groups', 'params' => ['groups' => [
+            ['courseid' => (int) $course->id, 'name' => 'Window group', 'description' => '']]]]);
+        $this->say('784000015', 'Create the Window group in the course');
+        $confirm = $this->sent_buttons('confirm:');
         $this->assertCount(1, $confirm, 'The card has the confirm button');
-        $this->assertFalse($DB->record_exists('role_assignments', ['userid' => $student->id, 'roleid' => $roleid]));
+        $this->assertFalse($DB->record_exists('groups', ['courseid' => $course->id, 'name' => 'Window group']));
 
         webhook_handler::handle(['callback_query' => ['id' => 'cb-016', 'data' => $confirm[0],
             'message' => ['message_id' => self::MESSAGEID, 'chat' => ['id' => '784000015', 'type' => 'private']]]]);
+        $this->assertTrue($DB->record_exists('groups', ['courseid' => $course->id, 'name' => 'Window group']));
+    }
+
+    /**
+     * JEDOMI-SEC-016: within the PIN window a role assignment (core_role_assign_roles) is critical: its card has only the
+     * cancel button, a forged confirm button is refused and keeps the action, and only the confirmation word runs it.
+     */
+    public function test_role_assignment_within_the_pin_window_needs_the_confirmation_word(): void {
+        global $DB;
+        set_config('telegram_require_pin', 1, 'local_jedomi');
+        $adminid = (int) get_admin()->id;
+        $this->link($adminid, '784000016');
+        telegram_pin_service::set_pin($adminid, self::PIN);
+        $this->assertSame(telegram_pin_service::RESULT_OK, telegram_pin_service::verify($adminid, self::PIN)['result']);
+        $this->assertTrue(telegram_pin_service::in_window($adminid));
+        $course = $this->getDataGenerator()->create_course();
+        $student = $this->getDataGenerator()->create_user();
+        $roleid = (int) $DB->get_field('role', 'id', ['shortname' => 'manager']);
+        $keyword = \core_text::strtoupper(get_string('confirm_btn_yes', 'local_jedomi'));
+
+        $this->telegram->sent = [];
+        $this->ai_uses('ws_execute', ['wsname' => 'core_role_assign_roles', 'params' => ['assignments' => [
+            ['roleid' => $roleid, 'userid' => (int) $student->id, 'contextid' => \context_course::instance($course->id)->id]]]]);
+        $this->say('784000016', 'Make them manager of the course');
+
+        $this->assertSame([], $this->sent_buttons('confirm:'), 'The card has no confirm button');
+        $this->assertCount(1, $this->sent_buttons('cancel:'), 'The card has the cancel button');
+        $this->assertStringContainsString(
+            get_string('telegram_confirm_keyword', 'local_jedomi', s($keyword)),
+            implode("\n", $this->texts())
+        );
+        $this->assertFalse($DB->record_exists('role_assignments', ['userid' => $student->id, 'roleid' => $roleid]));
+        $callbackid = (string) $DB->get_field('local_jedomi_telegram_pending_actions', 'callbackid', ['chatid' => '784000016']);
+        $this->assertNotSame('', $callbackid);
+
+        // A confirm button forged for the critical action is refused: the action is kept and asks for the word.
+        webhook_handler::handle(['callback_query' => ['id' => 'cb-017', 'data' => 'confirm:' . $callbackid,
+            'message' => ['message_id' => self::MESSAGEID, 'chat' => ['id' => '784000016', 'type' => 'private']]]]);
+        $this->assertFalse($DB->record_exists('role_assignments', ['userid' => $student->id, 'roleid' => $roleid]));
+        $this->assertTrue($DB->record_exists('local_jedomi_telegram_pending_actions', ['callbackid' => $callbackid]));
+        $this->assertSame(
+            get_string('telegram_confirm_keyword', 'local_jedomi', s($keyword)),
+            end($this->telegram->edited)['text']
+        );
+
+        $this->say('784000016', $keyword);
         $this->assertTrue($DB->record_exists('role_assignments', ['userid' => $student->id, 'roleid' => $roleid]));
+        $this->assertFalse($DB->record_exists('local_jedomi_telegram_pending_actions', ['callbackid' => $callbackid]));
+        $this->assertSame(get_string('confirm_done', 'local_jedomi'), end($this->telegram->sent)['text']);
+    }
+
+    /**
+     * Callback data of the inline buttons sent to the chat that start with a prefix.
+     *
+     * @param string $prefix Callback data prefix, such as 'confirm:' or 'cancel:'.
+     * @return string[]
+     */
+    private function sent_buttons(string $prefix): array {
+        $buttons = array_merge([], ...array_map(
+            static fn(array $m): array => array_column($m['replymarkup']['inline_keyboard'][0] ?? [], 'callback_data'),
+            $this->telegram->sent
+        ));
+        return array_values(array_filter($buttons, static fn(string $d): bool => str_starts_with($d, $prefix)));
     }
 
     /**
