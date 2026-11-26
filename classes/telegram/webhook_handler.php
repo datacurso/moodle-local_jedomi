@@ -15,9 +15,10 @@
 // along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
 
 /**
- * Telegram webhook handler — main orchestrator.
+ * Telegram webhook handler — facade of the Telegram channel.
  *
- * Routes: message (text, photo, document, voice or audio), callback_query (inline buttons), /start command.
+ * Updates are parsed into inbound messages (update_parser); typed messages go to the channel-neutral router, inline
+ * buttons are handled here.
  *
  * @package    local_jedomi
  * @copyright  2026 Datacurso <developer@datacurso.com>
@@ -30,21 +31,19 @@ defined('MOODLE_INTERNAL') || die();
 
 require_once(__DIR__ . '/../../lib.php');
 
-use local_jedomi\ai\model_settings;
 use local_jedomi\local\anonymizer;
-use local_jedomi\local\service\audio_service;
-use local_jedomi\local\service\file_extraction_service;
-use local_jedomi\local\service\pending_action_service;
 use local_jedomi\local\service\telegram_link_service;
-use local_jedomi\local\service\telegram_pin_service;
-use local_jedomi\local\service\vision_service;
 use local_jedomi\messaging\access_guard;
 use local_jedomi\messaging\confirmation_service;
 use local_jedomi\messaging\conversation_engine;
+use local_jedomi\messaging\inbound_message;
+use local_jedomi\messaging\router;
 use local_jedomi\messaging\tool_runner;
 
 /**
- * Main Telegram webhook orchestrator: routes messages, photos, commands and callback queries.
+ * Entry point of the Telegram webhook: acknowledges and deduplicates updates, answers while Jedomi or the integration
+ * is disabled, takes the lock of the chat and hands typed messages to the router; handles inline buttons. Its public
+ * methods are kept for the webhook, the tasks and the tests, and delegate to the Telegram channel.
  */
 class webhook_handler {
     /** Longest AI call that fits in one worker (the hard guard less a margin), the top of the timeout setting. */
@@ -61,6 +60,9 @@ class webhook_handler {
 
     /** A held action is confirmed with the confirmation word typed in the chat. */
     private const RESOLVE_KEYWORD = confirmation_service::MODE_KEYWORD;
+
+    /** Commands that show the help, in lower case: '/help' and its Spanish alias '/ayuda'. */
+    public const HELP_COMMANDS = ['/help', '/ayuda'];
 
     /**
      * Pseudonym of a chat for the technical log, which never keeps the Telegram chat id.
@@ -83,10 +85,7 @@ class webhook_handler {
      * @return string|null The normalised id, or null when invalid.
      */
     private static function normalise_chat_id(string $chatid): ?string {
-        if (!preg_match('/^-?\d{1,20}$/', $chatid)) {
-            return null;
-        }
-        return $chatid;
+        return update_parser::chat_key($chatid);
     }
 
     /**
@@ -186,20 +185,16 @@ class webhook_handler {
             return;
         }
 
-        if (isset($update['callback_query'])) {
-            self::handle_callback_query($update['callback_query']);
+        // An unknown update, a message with an invalid chat id or an incomplete button press is not processed.
+        $message = update_parser::parse($update);
+        if ($message === null) {
             return;
         }
-
-        if (isset($update['message'])) {
-            self::handle_message($update['message']);
+        if ($message->is_action()) {
+            self::handle_callback_query($message);
             return;
         }
-
-        // Unknown update type — silently ignore.
-        if (function_exists('\\local_jedomi_log')) {
-            \local_jedomi_log('Telegram webhook: unknown update type');
-        }
+        self::handle_message($message);
     }
 
     /**
@@ -254,20 +249,12 @@ class webhook_handler {
     /**
      * Handle an incoming message (text, photo, document, voice or audio).
      *
-     * @param array $message Decoded message object from the Telegram update
+     * @param inbound_message $message Typed message of the update, with a validated chat id.
      */
-    private static function handle_message(array $message): void {
-        $chatid = self::normalise_chat_id((string) ($message['chat']['id'] ?? ''));
-        $text = trim($message['text'] ?? '');
+    private static function handle_message(inbound_message $message): void {
+        $chatid = $message->chatkey;
 
-        if ($chatid === null) {
-            // Attacker-controllable value: never log it raw, never let it reach the DB.
-            \local_jedomi_log('[TELEGRAM ENTRY] rejected non-numeric chat id (len='
-                . mb_strlen((string) ($message['chat']['id'] ?? '')) . ')');
-            return;
-        }
-
-        \local_jedomi_log('[TELEGRAM ENTRY] chat=' . self::chatref($chatid) . ' textlen=' . mb_strlen($text));
+        \local_jedomi_log('[TELEGRAM ENTRY] chat=' . self::chatref($chatid) . ' textlen=' . mb_strlen($message->text));
 
         // One message per chat at a time: Telegram retries a slow update, and two workers on the same chat would run
         // the same tool loop twice. The Moodle lock API works on every supported database (the advisory lock used
@@ -280,7 +267,7 @@ class webhook_handler {
             return;
         }
         try {
-            self::process_message($message, $chatid, $text);
+            (new router(manager::channel()))->route($message);
         } finally {
             if ($lock !== null) {
                 $lock->release();
@@ -306,431 +293,6 @@ class webhook_handler {
     }
 
     /**
-     * Handle a message once the per-chat lock is held.
-     *
-     * @param array $message Decoded message object from the Telegram update.
-     * @param string $chatid Normalised Telegram chat id.
-     * @param string $text Trimmed text of the message.
-     */
-    private static function process_message(array $message, string $chatid, string $text): void {
-        global $DB;
-
-        // Handle /help command (always responds, even if rate-limited or unlinked).
-        // Aliases: /ayuda (Spanish).
-        if (in_array(strtolower(trim($text)), ['/help', '/ayuda'], true)) {
-            $client = api_client::instance();
-            $help = get_string('telegram_help_heading', 'local_jedomi') . "\n\n"
-                  . get_string('telegram_help_start', 'local_jedomi') . "\n"
-                  . get_string('telegram_help_help', 'local_jedomi') . "\n"
-                  . get_string('telegram_help_new', 'local_jedomi') . "\n"
-                  . get_string('telegram_help_unlink', 'local_jedomi') . "\n\n"
-                  . get_string('telegram_help_footer', 'local_jedomi');
-            $client->send_message($chatid, $help, self::get_linked_keyboard());
-            return;
-        }
-
-        // Check and record rate limiting atomically.
-        $limited = manager::rate_limiter()->check_and_record($chatid);
-        if ($limited === null) {
-            // The limit could not be checked: the message is not processed, and the user knows it must be sent again.
-            api_client::instance()->send_message($chatid, get_string('telegram_msg_rate_check_failed', 'local_jedomi'));
-            return;
-        }
-        if ($limited) {
-            $cooldown = manager::get_cooldown();
-            $client = api_client::instance();
-            $client->send_message($chatid, get_string('telegram_msg_rate_limited', 'local_jedomi', ['minutes' => $cooldown]));
-            return;
-        }
-
-        if (!self::is_private_chat($chatid, (string) ($message['chat']['type'] ?? ''))) {
-            // In a group every member would act with the account that linked it: groups are not served.
-            api_client::instance()->send_message($chatid, get_string('telegram_msg_private_only', 'local_jedomi'));
-            return;
-        }
-
-        // Check if user is linked.
-        $link = self::get_link_by_chat_id($chatid);
-        if ($link && self::expire_or_touch($link)) {
-            $link = null;
-            // A new link code is handled in the same message (REL-003); anything else is told to link again.
-            if (!preg_match('/^\/start\s+\S+/', $text)) {
-                api_client::instance()->send_message(
-                    $chatid,
-                    get_string('telegram_msg_link_expired', 'local_jedomi'),
-                    self::get_unlinked_keyboard()
-                );
-                return;
-            }
-        }
-        if (!$link) {
-            // Unlinked user — check if it's a /start command with code.
-            if (strpos($text, '/start') === 0) {
-                $username = (string) ($message['chat']['username'] ?? '');
-                self::handle_start_command($chatid, $text, $username);
-                return;
-            }
-            // Check if text looks like a bare link code.
-            if (self::looks_like_link_code($text)) {
-                $username = (string) ($message['chat']['username'] ?? '');
-                self::handle_start_command($chatid, '/start ' . $text, $username);
-                return;
-            }
-            // Otherwise ask them to link first.
-            $client = api_client::instance();
-            $client->send_message(
-                $chatid,
-                get_string('telegram_msg_link_first', 'local_jedomi'),
-                self::get_unlinked_keyboard()
-            );
-            return;
-        }
-
-        // A linked chat can move to another account with a new link code.
-        if (preg_match('/^\/start\s+\S+/', $text)) {
-            self::handle_start_command($chatid, $text, (string) ($message['chat']['username'] ?? ''));
-            return;
-        }
-
-        // Handle /desvincular command: any linked user can unlink, whatever the state of the account.
-        if (strcasecmp($text, '/desvincular') === 0 || strcasecmp($text, '/unlink') === 0) {
-            self::handle_unlink_command($chatid, $link);
-            return;
-        }
-
-        // The account must still be active and able to log in; it is checked on every message.
-        $user = self::get_active_user((int) $link->userid);
-        if ($user === null) {
-            api_client::instance()->send_message($chatid, get_string('telegram_msg_account_inactive', 'local_jedomi'));
-            return;
-        }
-
-        // Check role permission.
-        if (!self::is_user_role_allowed($link->userid)) {
-            $client = api_client::instance();
-            $client->send_message($chatid, get_string('telegram_msg_role_blocked', 'local_jedomi'));
-            return;
-        }
-
-        // ... ── Impersonate the linked Moodle user ─────────────────────────
-        // The Telegram chat is linked to $link->userid. Set $USER so that
-        // Moodle's native permission system (validate_context, require_login,
-        // require_capability, has_capability) works identically to the web
-        // version for the ENTIRE request — proxy_to_gateway, tool loop,
-        // and ALL execute_tool cases.
-        global $USER;
-        $USER = $user;
-
-        // An administrator or manager who needs a PIN confirms with it and the confirmation word does not confirm
-        // (Decision 7), except in the 15 minutes after a right PIN, when actions are confirmed as without the PIN
-        // (JEDOMI-SEC-016). A number is a PIN only while an action waits in the chat; then it never reaches the AI.
-        // Otherwise it is a normal message (RES-003).
-        $confirmations = manager::confirmation_service();
-        $pinrequired = telegram_pin_service::is_required((int) $link->userid);
-        $waiting = $pinrequired ? $confirmations->waiting($chatid) : null;
-        if ($waiting !== null && telegram_pin_service::is_valid_format($text)) {
-            self::handle_pin($chatid, (int) $link->userid, $text, $waiting, (int) ($message['message_id'] ?? 0));
-            return;
-        }
-        if ($pinrequired && !telegram_pin_service::in_window((int) $link->userid)) {
-            if ($waiting !== null && pending_action_service::is_confirm_keyword($text)) {
-                api_client::instance()->send_message($chatid, get_string('telegram_pin_prompt', 'local_jedomi'));
-                return;
-            }
-        } else if (pending_action_service::is_confirm_keyword($text)) {
-            // The confirmation word confirms the newest critical action of the chat that waits for it.
-            $critical = $confirmations->waiting_critical($chatid);
-            if ($critical !== null) {
-                api_client::instance()->send_message(
-                    $chatid,
-                    self::resolve_held_action($chatid, $critical, self::RESOLVE_KEYWORD)
-                );
-                return;
-            }
-        }
-
-        // Handle /new command to start fresh conversation.
-        if (strcasecmp($text, '/new') === 0 || strcasecmp($text, '/nuevo') === 0 || strcasecmp($text, '/clear') === 0) {
-            \local_jedomi_log('[TELEGRAM ENTRY] /new detected, calling proxy_to_gateway user='
-                . \local_jedomi_log_pseudonym('user', $link->userid));
-            self::reset_conversation($chatid);
-            // Get user's name so the model greets them personally.
-            $firstname = (string) $DB->get_field('user', 'firstname', ['id' => $link->userid]);
-            self::proxy_to_gateway(
-                $link->userid,
-                $chatid,
-                get_string('telegram_new_conversation_greeting', 'local_jedomi', $firstname)
-            );
-            return;
-        }
-
-        // Photos, documents and audio become text first; nothing without text reaches the AI.
-        $anonymizermap = [];
-        $text = self::message_text($message, $chatid, (int) $link->userid, $text, $anonymizermap);
-        if ($text === null) {
-            return;
-        }
-
-        // Build and forward to Gateway.
-        self::proxy_to_gateway($link->userid, $chatid, $text, false, $anonymizermap);
-    }
-
-    /**
-     * Text of a message for the chat model: its own text, the transcription of a voice or audio
-     * message, a photo or PDF read by the vision model, or the text of a Word or PowerPoint document
-     * (read for free), with its caption as the question.
-     *
-     * Answers the user and returns null when the message must not reach the AI: the feature is off,
-     * the file cannot be read, or the message has no text (sticker, location...).
-     *
-     * @param array $message Telegram message.
-     * @param string $chatid Telegram chat id.
-     * @param int $userid Linked Moodle user.
-     * @param string $text Text of the message.
-     * @param array $anonymizermap Set to the placeholders of the conversation when the caption of a file read by the
-     *        vision model was anonymised with them (placeholder => real value); left as it is otherwise.
-     * @return string|null
-     */
-    private static function message_text(
-        array $message,
-        string $chatid,
-        int $userid,
-        string $text,
-        array &$anonymizermap = []
-    ): ?string {
-        $client = api_client::instance();
-        $caption = trim((string) ($message['caption'] ?? ''));
-        $audio = $message['voice'] ?? $message['audio'] ?? null;
-        $file = !empty($message['photo']) && is_array($message['photo']) ? end($message['photo']) : ($message['document'] ?? null);
-
-        if (is_array($audio)) {
-            if (!model_settings::is_audio_enabled()) {
-                $client->send_message($chatid, get_string('telegram_msg_audio_disabled', 'local_jedomi'));
-                return null;
-            }
-            $client->send_chat_action($chatid, 'typing');
-            $filename = isset($message['voice']) ? 'voice.ogg' : self::audio_filename($audio);
-            try {
-                $transcription = self::with_download(
-                    $client,
-                    (string) ($audio['file_id'] ?? ''),
-                    static fn(string $path): array => audio_service::transcribe_upload($userid, $path, $filename)
-                );
-            } catch (\Throwable $e) {
-                $client->send_message($chatid, audio_service::error_for($e)['message']);
-                return null;
-            }
-            // The user sees what was understood before the answer.
-            $client->send_message($chatid, get_string('telegram_msg_heard', 'local_jedomi', $transcription['text']));
-            return $transcription['text'];
-        }
-
-        if (is_array($file)) {
-            if (!model_settings::is_files_enabled()) {
-                $client->send_message($chatid, get_string('telegram_msg_files_disabled', 'local_jedomi'));
-                return null;
-            }
-            $filename = isset($message['document'])
-                ? clean_param((string) ($file['file_name'] ?? 'document'), PARAM_FILE)
-                : 'photo.jpg';
-            if (isset($message['document']) && file_extraction_service::is_office_document($filename)) {
-                // Word and PowerPoint: their text is read without a model, so it is not billed.
-                $client->send_chat_action($chatid, 'typing');
-                try {
-                    $extracted = self::with_download(
-                        $client,
-                        (string) ($file['file_id'] ?? ''),
-                        static fn(string $path): array => file_extraction_service::extract_upload($userid, $path, $filename)
-                    );
-                } catch (\Throwable $e) {
-                    $client->send_message($chatid, file_extraction_service::error_for($e)['message']);
-                    return null;
-                }
-                return file_extraction_service::compose_message($caption, $filename, $extracted['text']);
-            }
-            if (!vision_service::is_supported($filename)) {
-                $client->send_message($chatid, get_string('telegram_msg_file_unsupported', 'local_jedomi'));
-                return null;
-            }
-            $client->send_chat_action($chatid, 'typing');
-            // The caption gets the placeholders of the conversation, so a placeholder the vision model writes back is
-            // restored with the value it stands for in this conversation, never with another one (CTR-011).
-            $anonymizer = anonymizer::from_map((array) (session::get_context('tool_loop_' . $chatid)['anonymizer'] ?? []));
-            try {
-                $read = self::with_download(
-                    $client,
-                    (string) ($file['file_id'] ?? ''),
-                    static fn(string $path): array =>
-                        vision_service::read_upload($userid, $path, $filename, $caption, null, $anonymizer)
-                );
-            } catch (\Throwable $e) {
-                $client->send_message($chatid, vision_service::error_for($e)['message']);
-                return null;
-            }
-            $anonymizermap = $anonymizer->export_map();
-            return vision_service::compose_message($caption, $filename, $read['text']);
-        }
-
-        if ($text === '') {
-            $client->send_message($chatid, get_string('telegram_msg_text_only', 'local_jedomi'));
-            return null;
-        }
-        return $text;
-    }
-
-    /**
-     * Download a Telegram file, pass its local path to a callback and remove it afterwards.
-     *
-     * @param api_client $client Telegram client.
-     * @param string $fileid Telegram file id.
-     * @param callable $callback Receives the local path and returns the result.
-     * @return array Result of the callback.
-     * @throws \moodle_exception emptyresponse when the file cannot be downloaded.
-     */
-    private static function with_download(api_client $client, string $fileid, callable $callback): array {
-        $path = $fileid !== '' ? $client->download_file($fileid) : null;
-        if ($path === null || !file_exists($path)) {
-            throw new \moodle_exception('emptyresponse', 'aiprovider_datacurso');
-        }
-        try {
-            return $callback($path);
-        } finally {
-            @unlink($path);
-        }
-    }
-
-    /**
-     * File name of a Telegram audio message, with an extension the transcription service knows.
-     *
-     * @param array $audio Telegram audio object.
-     * @return string
-     */
-    private static function audio_filename(array $audio): string {
-        $filename = clean_param((string) ($audio['file_name'] ?? ''), PARAM_FILE);
-        if ($filename !== '' && audio_service::is_supported($filename)) {
-            return $filename;
-        }
-        $extension = match (strtolower((string) ($audio['mime_type'] ?? ''))) {
-            'audio/mpeg', 'audio/mp3' => 'mp3',
-            'audio/mp4', 'audio/x-m4a', 'audio/m4a' => 'm4a',
-            'audio/wav', 'audio/x-wav', 'audio/wave' => 'wav',
-            'audio/webm' => 'webm',
-            'audio/ogg', 'audio/opus' => 'ogg',
-            default => '',
-        };
-        return $extension !== '' ? 'audio.' . $extension : ($filename !== '' ? $filename : 'audio');
-    }
-
-    /**
-     * Handle /start CODE command for account linking.
-     *
-     * @param string $chatid Telegram chat id
-     * @param string $text Full command text including the linking code
-     * @param string $tgusername Telegram username of the sender
-     */
-    private static function handle_start_command(string $chatid, string $text, string $tgusername): void {
-        $parts = explode(' ', $text, 2);
-        $code  = strtoupper(trim($parts[1] ?? ''));
-        $client = api_client::instance();
-
-        if (empty($code)) {
-            $client->send_message($chatid, get_string('telegram_msg_provide_code', 'local_jedomi'));
-            return;
-        }
-
-        if (strlen($code) < 4 || strlen($code) > 8 || !preg_match('/^[A-Z0-9]+$/', $code)) {
-            $client->send_message($chatid, get_string('telegram_msg_expired_code', 'local_jedomi'));
-            return;
-        }
-
-        global $DB;
-
-        // Resolve code → userid using the APPLICATION-mode cache.
-        // (MODE_SESSION cache would not work here — no user session in webhook context.)
-        $userid = manager::resolve_link_code($code);
-        if ($userid === null) {
-            $client->send_message($chatid, get_string('telegram_msg_expired_code', 'local_jedomi'));
-            return;
-        }
-
-        // Double-validate: the forward mapping must also match.
-        if (!manager::validate_link_code($userid, $code)) {
-            $client->send_message($chatid, get_string('telegram_msg_expired_code', 'local_jedomi'));
-            return;
-        }
-
-        $user = self::get_active_user($userid);
-        if (!$user) {
-            $client->send_message($chatid, get_string('telegram_msg_expired_code', 'local_jedomi'));
-            return;
-        }
-
-        // A chat linked to another account moves to this one: the earlier account loses the link and its data.
-        foreach ($DB->get_fieldset_select('local_jedomi_telegram_links', 'userid', 'chatid = ?', [$chatid]) as $previous) {
-            if ((int) $previous !== $userid) {
-                telegram_link_service::unlink((int) $previous);
-            }
-        }
-
-        // Upsert the link (delete any existing link for this user first).
-        $DB->delete_records('local_jedomi_telegram_links', ['userid' => $userid]);
-        $DB->insert_record('local_jedomi_telegram_links', (object)[
-            'userid'             => $userid,
-            'chatid'             => $chatid,
-            'username'           => $tgusername,
-            'confirmed'          => 1,
-            'timecreated'        => time(),
-            'lastproactivesent'  => 0,
-        ]);
-
-        // Invalidate code so it can't be reused.
-        manager::invalidate_link_code($userid, $code);
-        \local_jedomi\event\telegram_linked::create([
-            'context' => \context_system::instance(),
-            'userid' => $userid,
-            'relateduserid' => $userid,
-        ])->trigger();
-
-        // The chat was not linked when the update arrived: the welcome goes out in the language of the user just linked.
-        $fullname = fullname($user);
-        $welcome = \local_jedomi\local\user_language::run($userid, static function () use ($fullname, $user): string {
-            return get_string('telegram_msg_linked_success', 'local_jedomi', [
-                'fullname' => s($fullname),
-                'username' => s($user->username),
-            ]);
-        });
-        $client->send_message($chatid, $welcome);
-    }
-
-    /**
-     * Handle /desvincular or /unlink command.
-     *
-     * @param string $chatid Telegram chat id
-     * @param \stdClass $link Telegram link record for the user
-     */
-    private static function handle_unlink_command(string $chatid, \stdClass $link): void {
-        // The link, the conversation, the task in progress, the limit and the held actions are removed.
-        telegram_link_service::unlink((int) $link->userid);
-
-        $client = api_client::instance();
-        $client->send_message($chatid, get_string('telegram_msg_unlinked', 'local_jedomi'));
-    }
-
-    /**
-     * Start a new conversation: the history, the cached context and the task in progress are reset, and a new session
-     * generation stops any continuation of the previous task.
-     *
-     * Used by the /new command and the New conversation button.
-     *
-     * @param string $chatid Telegram chat id
-     */
-    private static function reset_conversation(string $chatid): void {
-        session::clear($chatid);
-        session::clear_context($chatid);
-        session::set_context('tool_loop_' . $chatid, ['session_gen' => time()]);
-    }
-
-    /**
      * Execute a command triggered by inline keyboard callback.
      *
      * @param string $command Callback command name
@@ -742,7 +304,7 @@ class webhook_handler {
         switch ($command) {
             case 'new':
                 // The same reset as the /new command.
-                self::reset_conversation($chatid);
+                telegram_commands::reset_conversation($chatid);
                 $client->edit_message_text(
                     $chatid,
                     $messageid,
@@ -750,13 +312,7 @@ class webhook_handler {
                 );
                 break;
             case 'help':
-                $help = get_string('telegram_help_heading', 'local_jedomi') . "\n\n"
-                      . get_string('telegram_help_start', 'local_jedomi') . "\n"
-                      . get_string('telegram_help_help', 'local_jedomi') . "\n"
-                      . get_string('telegram_help_new', 'local_jedomi') . "\n"
-                      . get_string('telegram_help_unlink', 'local_jedomi') . "\n\n"
-                      . get_string('telegram_help_footer', 'local_jedomi');
-                $client->edit_message_text($chatid, $messageid, $help);
+                $client->edit_message_text($chatid, $messageid, telegram_commands::help_text());
                 break;
             case 'unlink':
                 $link = self::get_link_by_chat_id($chatid);
@@ -790,16 +346,7 @@ class webhook_handler {
      * @return array Telegram reply keyboard markup.
      */
     public static function get_linked_keyboard(): array {
-        return [
-            'inline_keyboard' => [[
-                ['text' => get_string('telegram_keyboard_new', 'local_jedomi'),
-                    'callback_data' => 'cmd:new'],
-                ['text' => get_string('telegram_keyboard_help', 'local_jedomi'),
-                    'callback_data' => 'cmd:help'],
-                ['text' => get_string('telegram_keyboard_unlink', 'local_jedomi'),
-                    'callback_data' => 'cmd:unlink'],
-            ]],
-        ];
+        return telegram_commands::linked_keyboard();
     }
 
     /**
@@ -810,33 +357,23 @@ class webhook_handler {
      * @return array Telegram reply keyboard markup.
      */
     public static function get_unlinked_keyboard(): array {
-        return [
-            'inline_keyboard' => [[
-                ['text' => get_string('telegram_keyboard_howto_link', 'local_jedomi'),
-                    'callback_data' => 'cmd:howtolin'],
-                ['text' => get_string('telegram_keyboard_help', 'local_jedomi'),
-                    'callback_data' => 'cmd:help'],
-            ]],
-        ];
+        return telegram_commands::unlinked_keyboard();
     }
 
     /**
      * Handle an inline-keyboard callback query: acknowledge it and dispatch cmd:/confirm: actions.
      *
-     * @param array $callback The callback_query object from the Telegram update.
+     * Buttons stay here: their commands edit the message that carries them, which is particular to Telegram.
+     *
+     * @param inbound_message $callback Pressed button, with its id, its payload and the message that carries it.
      */
-    private static function handle_callback_query(array $callback): void {
-        $callbackid = $callback['id'] ?? '';
-        $data = $callback['data'] ?? '';
-        $chatid = self::normalise_chat_id((string) ($callback['message']['chat']['id'] ?? ''));
-        $messageid = (int) ($callback['message']['message_id'] ?? 0);
-
-        if ($callbackid === '' || $data === '' || $chatid === null) {
-            return;
-        }
+    private static function handle_callback_query(inbound_message $callback): void {
+        $data = (string) $callback->actionpayload;
+        $chatid = $callback->chatkey;
+        $messageid = (int) $callback->messageid;
 
         $client = api_client::instance();
-        $client->answer_callback_query($callbackid);
+        $client->answer_callback_query($callback->externalid);
 
         $link = self::get_link_by_chat_id($chatid);
         if ($link && self::expire_or_touch($link)) {
@@ -867,12 +404,7 @@ class webhook_handler {
      * @return bool True when the link expired and was removed with the data of its chat.
      */
     private static function expire_or_touch(\stdClass $link): bool {
-        if (telegram_link_service::is_expired($link)) {
-            telegram_link_service::unlink((int) $link->userid);
-            return true;
-        }
-        telegram_link_service::touch($link);
-        return false;
+        return manager::commands()->expire_or_touch($link);
     }
 
     /**
@@ -886,26 +418,6 @@ class webhook_handler {
      */
     private static function hold_action(string $chatid, int $userid, string $name, array $args): ?string {
         return manager::confirmation_service()->hold($chatid, $userid, $name, $args);
-    }
-
-    /**
-     * Check a PIN typed in the chat and run the held action with it. The message with the PIN is deleted from the chat
-     * (RISK-001); the PIN is never logged nor sent to the AI.
-     *
-     * @param string $chatid Telegram chat id.
-     * @param int $userid Linked Moodle user.
-     * @param string $pin Typed PIN.
-     * @param string $actionid Callback id of the action waiting in the chat.
-     * @param int $messageid Id of the message with the PIN; 0 when unknown.
-     * @return void
-     */
-    private static function handle_pin(string $chatid, int $userid, string $pin, string $actionid, int $messageid): void {
-        $client = api_client::instance();
-        if ($messageid > 0 && !$client->delete_message($chatid, $messageid)) {
-            // The PIN is still checked: the user is not blocked by a message Telegram cannot delete.
-            \local_jedomi_log('Telegram: the PIN message could not be deleted chat=' . self::chatref($chatid));
-        }
-        $client->send_message($chatid, manager::confirmation_service()->confirm_with_pin($chatid, $userid, $pin, $actionid));
     }
 
     /**
@@ -973,25 +485,6 @@ class webhook_handler {
             return;
         }
         self::engine()->resume($chatid, optional_param('session_gen', 0, PARAM_INT));
-    }
-
-    /**
-     * Run the conversation of a chat with the AI (see conversation_engine::run()).
-     *
-     * @param int    $userid        Moodle user ID.
-     * @param string $chatid       Telegram chat ID.
-     * @param string $text          User message text (photos and audio are already text).
-     * @param bool   $internalping True if called from self-ping (continue checkpoint).
-     * @param array  $readmap Placeholders the caption of a file got when it was read (placeholder => real value).
-     */
-    private static function proxy_to_gateway(
-        int $userid,
-        string $chatid,
-        string $text,
-        bool $internalping = false,
-        array $readmap = []
-    ): void {
-        self::engine()->run($userid, $chatid, $text, $internalping, $readmap);
     }
 
     /**
@@ -1087,33 +580,6 @@ class webhook_handler {
      */
     public static function is_user_role_allowed(int $userid): bool {
         return manager::access_guard()->role_allowed($userid);
-    }
-
-    // ... ── User and chat helpers ──
-
-    /**
-     * Whether a Telegram chat is a private chat with one person. Groups, supergroups and channels have negative
-     * ids, and their messages carry their type.
-     *
-     * @param string $chatid Normalised chat id.
-     * @param string $type Chat type from the update, empty when absent.
-     * @return bool
-     */
-    private static function is_private_chat(string $chatid, string $type): bool {
-        if ($type !== '' && $type !== 'private') {
-            return false;
-        }
-        return strpos($chatid, '-') !== 0;
-    }
-
-    /**
-     * The linked user, when the account still exists, is not suspended and can log in.
-     *
-     * @param int $userid Linked Moodle user.
-     * @return \stdClass|null The user record, or null when the account can no longer be served.
-     */
-    private static function get_active_user(int $userid): ?\stdClass {
-        return manager::access_guard()->active_user($userid);
     }
 
     /**

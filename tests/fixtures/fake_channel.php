@@ -27,7 +27,8 @@ namespace local_jedomi\messaging;
 
 /**
  * Channel that takes everything from another channel except its transport and its continuation, which record what the
- * conversation engine sends and schedules. Its messages are the keys themselves, so a test sees which one was used.
+ * conversation engine sends and schedules, and, when one is set, its media source. Its messages are the keys
+ * themselves, so a test sees which one was used.
  *
  * @package    local_jedomi
  * @copyright  2026 Datacurso <developer@datacurso.com>
@@ -39,6 +40,9 @@ class fake_channel implements channel {
 
     /** @var fake_continuation Recording continuation. */
     public fake_continuation $continuation;
+
+    /** @var media_source|null Media source to use instead of the one of the inner channel; null for that one. */
+    public ?media_source $mediasource = null;
 
     /**
      * Constructor.
@@ -74,6 +78,16 @@ class fake_channel implements channel {
     }
 
     #[\Override]
+    public function rate_limiter(): rate_limiter {
+        return $this->inner->rate_limiter();
+    }
+
+    #[\Override]
+    public function commands(): chat_commands {
+        return $this->inner->commands();
+    }
+
+    #[\Override]
     public function tool_runner(): tool_runner {
         return $this->inner->tool_runner();
     }
@@ -86,6 +100,11 @@ class fake_channel implements channel {
     #[\Override]
     public function transport(): transport {
         return $this->transport;
+    }
+
+    #[\Override]
+    public function media_source(): media_source {
+        return $this->mediasource ?? $this->inner->media_source();
     }
 
     #[\Override]
@@ -114,7 +133,7 @@ class fake_channel implements channel {
     }
 
     #[\Override]
-    public function message(string $key): string {
+    public function message(string $key, mixed $a = null): string {
         return $key;
     }
 

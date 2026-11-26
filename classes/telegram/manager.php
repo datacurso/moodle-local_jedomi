@@ -33,8 +33,10 @@ namespace local_jedomi\telegram;
 use local_jedomi\messaging\access_guard;
 use local_jedomi\messaging\channel;
 use local_jedomi\messaging\channel_limits;
+use local_jedomi\messaging\chat_commands;
 use local_jedomi\messaging\confirmation_service;
 use local_jedomi\messaging\continuation;
+use local_jedomi\messaging\media_source;
 use local_jedomi\messaging\rate_limiter;
 use local_jedomi\messaging\tool_runner;
 use local_jedomi\messaging\transport;
@@ -519,6 +521,24 @@ class manager {
      */
     public static function transport(): transport {
         return new telegram_transport();
+    }
+
+    /**
+     * Media source of the Telegram bot: files downloaded by their file_id through the Bot API client.
+     *
+     * @return media_source
+     */
+    public static function media_source(): media_source {
+        return new telegram_media_source();
+    }
+
+    /**
+     * Commands of the Telegram bot: slash commands, inline keyboards, the links and their codes, and the PIN.
+     *
+     * @return chat_commands
+     */
+    public static function commands(): chat_commands {
+        return new telegram_commands();
     }
 
     /**

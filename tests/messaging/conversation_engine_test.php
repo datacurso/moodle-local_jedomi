@@ -171,6 +171,44 @@ final class conversation_engine_test extends \advanced_testcase {
     }
 
     /**
+     * The transport of the channel decides whether a formatted answer is blank: a blank one is sent as the text the AI
+     * wrote, through send_text, instead of the formatted answer.
+     */
+    public function test_answer_the_transport_finds_blank_is_sent_as_written(): void {
+        $chatkey = '782000011';
+        $userid = $this->linked_user($chatkey);
+        $this->ai->enqueue_text('a < b > c');
+        $this->channel->transport->blank = true;
+
+        $this->with_time_limit(fn() => (new conversation_engine($this->channel))->run($userid, $chatkey, 'pregunta'));
+
+        $this->assertSame(['a < b > c'], $this->channel->transport->blankchecks);
+        $this->assertSame(
+            [['kind' => 'text', 'chatkey' => $chatkey, 'text' => 'a < b > c']],
+            $this->channel->transport->sent
+        );
+    }
+
+    /**
+     * An answer the transport of the channel does not find blank is sent as the answer, even when it would be empty
+     * as HTML: the engine does not judge the format of the channel.
+     */
+    public function test_answer_the_transport_does_not_find_blank_is_sent_as_the_answer(): void {
+        $chatkey = '782000012';
+        $userid = $this->linked_user($chatkey);
+        $this->ai->enqueue_text('<b></b>');
+        $this->channel->transport->blank = false;
+
+        $this->with_time_limit(fn() => (new conversation_engine($this->channel))->run($userid, $chatkey, 'pregunta'));
+
+        $this->assertSame(['<b></b>'], $this->channel->transport->blankchecks);
+        $this->assertSame(
+            [['kind' => 'answer', 'chatkey' => $chatkey, 'text' => '<b></b>']],
+            $this->channel->transport->sent
+        );
+    }
+
+    /**
      * While another worker holds the chat, a new message only gets the "still processing" message of the channel.
      */
     public function test_run_waits_while_the_chat_is_locked(): void {

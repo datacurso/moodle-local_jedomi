@@ -50,6 +50,9 @@ final class confirmation_service_test extends \advanced_testcase {
     /** @var int[] User linked to each chat key, as the channel lookup returns it. */
     private array $links = [];
 
+    /** @var \Closure|null Run once by the next lookup of the linked user, after the service has read the action. */
+    private ?\Closure $beforelookup = null;
+
     #[\Override]
     protected function tearDown(): void {
         global $DB;
@@ -291,6 +294,64 @@ final class confirmation_service_test extends \advanced_testcase {
     }
 
     /**
+     * Two answers to the same action that arrive together (a double press, a callback delivered twice) both read the
+     * action before either removes it: only the first one runs it, the other is told the action is not there.
+     *
+     * The second answer runs to its end while the first one is between reading the action and removing it, which is
+     * the order of two requests served at the same time.
+     *
+     * @dataProvider table_provider
+     * @param string $table
+     */
+    public function test_concurrent_confirmations_run_the_action_once(string $table): void {
+        global $DB;
+        $this->resetAfterTest();
+        $service = $this->service($table);
+        $adminid = (int) get_admin()->id;
+        $this->links[self::CHAT] = $adminid;
+        $args = ['name' => 'Digest', 'prompt' => 'Summarise', 'schedule_cron' => '0 8 * * 1'];
+        $service->hold(self::CHAT, $adminid, 'create_agent', $args);
+        $actionid = $this->ui->shown[0][1]->actionid;
+        $concurrent = null;
+        $this->beforelookup = static function () use ($service, $actionid, &$concurrent): void {
+            $concurrent = $service->resolve(self::CHAT, $actionid, confirmation_service::MODE_KEYWORD);
+        };
+
+        $first = $service->resolve(self::CHAT, $actionid, confirmation_service::MODE_KEYWORD);
+
+        $this->assertSame(get_string('confirm_done', 'local_jedomi'), $concurrent);
+        $this->assertSame(get_string('pending_action_not_found', 'local_jedomi'), $first);
+        $this->assertSame(1, $DB->count_records('local_jedomi_agents', ['name' => 'Digest']), 'The action runs once');
+        $this->assertSame(0, $DB->count_records($table));
+    }
+
+    /**
+     * A cancel and a confirmation of the same action that arrive together: the cancel that removes the action first
+     * wins, and the confirmation that read the action before it was removed does not run it.
+     */
+    public function test_confirmation_racing_a_cancel_does_not_run_the_action(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $service = $this->service(self::TELEGRAM_TABLE);
+        $adminid = (int) get_admin()->id;
+        $this->links[self::CHAT] = $adminid;
+        $args = ['name' => 'Digest', 'prompt' => 'Summarise', 'schedule_cron' => '0 8 * * 1'];
+        $service->hold(self::CHAT, $adminid, 'create_agent', $args);
+        $actionid = $this->ui->shown[0][1]->actionid;
+        $concurrent = null;
+        $this->beforelookup = static function () use ($service, $actionid, &$concurrent): void {
+            $concurrent = $service->resolve(self::CHAT, $actionid, confirmation_service::MODE_CANCEL);
+        };
+
+        $confirm = $service->resolve(self::CHAT, $actionid, confirmation_service::MODE_KEYWORD);
+
+        $this->assertSame(get_string('confirm_cancelled', 'local_jedomi'), $concurrent);
+        $this->assertSame(get_string('pending_action_not_found', 'local_jedomi'), $confirm);
+        $this->assertSame(0, $DB->count_records('local_jedomi_agents', ['name' => 'Digest']));
+        $this->assertSame(0, $DB->count_records(self::TELEGRAM_TABLE));
+    }
+
+    /**
      * An action held for one user never runs for another user linked to the chat later, nor without a link.
      */
     public function test_confirm_is_denied_to_another_or_no_linked_user(): void {
@@ -440,13 +501,19 @@ final class confirmation_service_test extends \advanced_testcase {
             }
         };
         $links = &$this->links;
+        $beforelookup = &$this->beforelookup;
         return new confirmation_service(
             $table,
             'Test channel',
             $this->ui,
             new access_guard('testchannel'),
             new tool_runner('testchannel', 'Test channel', ['create_agent', 'delete_agent', 'list_agents']),
-            static function (string $chatkey) use (&$links): ?int {
+            static function (string $chatkey) use (&$links, &$beforelookup): ?int {
+                if ($beforelookup !== null) {
+                    $run = $beforelookup;
+                    $beforelookup = null;
+                    $run();
+                }
                 return $links[$chatkey] ?? null;
             },
             $pinconfirmation

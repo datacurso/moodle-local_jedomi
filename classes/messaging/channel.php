@@ -25,8 +25,9 @@
 namespace local_jedomi\messaging;
 
 /**
- * The pieces of a messaging channel (Telegram, WhatsApp) the conversation engine runs a chat with: where the
- * conversation is kept, who may be served, the tools and confirmations, how it sends and continues, and its texts.
+ * The pieces of a messaging channel (Telegram, WhatsApp) the router and the conversation engine run a chat with: where
+ * the conversation is kept, who may be served, the message limit, the commands and the link, the tools and
+ * confirmations, how it sends, downloads media and continues, and its texts.
  */
 interface channel {
     /** @var string Message key: another worker still answers the previous message of the chat. */
@@ -46,6 +47,36 @@ interface channel {
 
     /** @var string Message key: the AI answered without text nor tool calls. */
     public const MESSAGE_NO_ANSWER = 'no_answer';
+
+    /** @var string Message key: the message limit could not be checked, the message must be sent again. */
+    public const MESSAGE_RATE_CHECK_FAILED = 'rate_check_failed';
+
+    /** @var string Message key: the chat reached the message limit; its parameter is ['minutes' => waiting time]. */
+    public const MESSAGE_RATE_LIMITED = 'rate_limited';
+
+    /** @var string Message key: the bot only serves private chats. */
+    public const MESSAGE_PRIVATE_ONLY = 'private_only';
+
+    /** @var string Message key: the linked account is no longer active or cannot log in. */
+    public const MESSAGE_ACCOUNT_INACTIVE = 'account_inactive';
+
+    /** @var string Message key: the role of the linked user may not use the channel. */
+    public const MESSAGE_ROLE_BLOCKED = 'role_blocked';
+
+    /** @var string Message key: audio processing is turned off. */
+    public const MESSAGE_AUDIO_DISABLED = 'audio_disabled';
+
+    /** @var string Message key: what was understood of an audio; its parameter is the transcription. */
+    public const MESSAGE_HEARD = 'heard';
+
+    /** @var string Message key: file processing is turned off. */
+    public const MESSAGE_FILES_DISABLED = 'files_disabled';
+
+    /** @var string Message key: the file cannot be read. */
+    public const MESSAGE_FILE_UNSUPPORTED = 'file_unsupported';
+
+    /** @var string Message key: the message has no text nor an attachment that can be read. */
+    public const MESSAGE_TEXT_ONLY = 'text_only';
 
     /**
      * Name of the channel, the prefix of its settings and the channel of its events, e.g. telegram.
@@ -76,6 +107,20 @@ interface channel {
     public function access_guard(): access_guard;
 
     /**
+     * Message limit of the chats of the channel.
+     *
+     * @return rate_limiter
+     */
+    public function rate_limiter(): rate_limiter;
+
+    /**
+     * Commands, link and replies of the channel that the router runs.
+     *
+     * @return chat_commands
+     */
+    public function commands(): chat_commands;
+
+    /**
      * Tools of the channel: signed permissions, user context and execution.
      *
      * @return tool_runner
@@ -95,6 +140,13 @@ interface channel {
      * @return transport
      */
     public function transport(): transport;
+
+    /**
+     * How the channel downloads the attachments of a message.
+     *
+     * @return media_source
+     */
+    public function media_source(): media_source;
 
     /**
      * How the channel hands a long tool loop to the next worker.
@@ -132,13 +184,14 @@ interface channel {
     public function activity_timeout(): int;
 
     /**
-     * Text of the channel for a situation of the loop, in the current language.
+     * Text of the channel for a situation of the router or the loop, in the current language.
      *
      * @param string $key One of the MESSAGE_* constants.
+     * @param mixed $a Parameter of the text, as get_string() takes it; null for none.
      * @return string
      * @throws \coding_exception For an unknown key.
      */
-    public function message(string $key): string;
+    public function message(string $key, mixed $a = null): string;
 
     /**
      * User of the confirmed link of a chat, or null when the chat is not linked.

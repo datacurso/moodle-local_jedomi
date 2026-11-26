@@ -178,72 +178,29 @@ class tool_runner {
         array $courseidsowned = [],
         array $courseidsenrolled = []
     ): array {
-        global $CFG, $DB;
+        global $DB;
 
-        $sysctx = \context_system::instance();
         $user = $DB->get_record('user', ['id' => $userid, 'deleted' => 0], 'id, username, firstname, lastname');
         if (!$user) {
             return [];
         }
-
-        // Capabilities for this specific user (not global $USER).
-        $capabilities = [
-            'can_view_all_grades'   => has_capability('moodle/grade:viewall', $sysctx, $userid),
-            'can_manage_users'      => has_capability('moodle/user:update', $sysctx, $userid),
-            'can_send_messages'     => has_capability('moodle/site:sendmessage', $sysctx, $userid),
-            'can_manage_courses'    => has_capability('moodle/course:update', $sysctx, $userid),
-            'can_view_reports'      => has_capability('moodle/course:viewhiddenactivities', $sysctx, $userid),
-            'can_enrol_users'       => has_capability('enrol/manual:enrol', $sysctx, $userid),
-            'can_access_all_groups' => has_capability('moodle/site:accessallgroups', $sysctx, $userid),
-        ];
-
-        // Course lists — use pre-computed if provided, otherwise compute.
-        // This avoids redundant calls when the caller already has the user context.
-        if (empty($courseidsowned) && empty($courseidsenrolled) && $role !== 'admin') {
-            if ($role === 'teacher' || $role === 'manager') {
-                $courses = enrol_get_users_courses($userid, true, ['id']);
-                foreach ($courses as $c) {
-                    $ctx = \context_course::instance($c->id);
-                    if (has_capability('moodle/course:manageactivities', $ctx, $userid)) {
-                        $courseidsowned[] = (int)$c->id;
-                    }
-                }
-            } else if ($role === 'student') {
-                $courses = enrol_get_users_courses($userid, true, ['id']);
-                foreach ($courses as $c) {
-                    $courseidsenrolled[] = (int)$c->id;
-                }
-            }
+        // Course lists: the ones given by a caller that already has the user context, otherwise computed.
+        if (empty($courseidsowned) && empty($courseidsenrolled)) {
+            [$courseidsowned, $courseidsenrolled] = \local_jedomi\spt::course_ids($userid, $role);
         }
-        // Admin: no course list (full access).
-        // Excluded courses are outside Jedomi: they are never signed as courses of the user.
-        $courseidsowned = \local_jedomi\course_access::filter_course_ids($courseidsowned);
-        $courseidsenrolled = \local_jedomi\course_access::filter_course_ids($courseidsenrolled);
 
-        // Only the tools of the role that the channel can really run are offered.
-        $tools = $this->tool_definitions($role, $userid);
-
-        $payload = [
-            'userid'              => $userid,
-            'username'            => $user->username,
-            'role'                => $role,
-            'course_id'           => 0,
-            'course_ids_owned'    => $courseidsowned,
-            'course_ids_enrolled' => $courseidsenrolled,
-            'capabilities'        => $capabilities,
-            'tools'               => $tools,
-            'moodle_url'          => $CFG->wwwroot,
-            'expires'             => time() + 1800,
-        ];
-
-        // Same HMAC signing as the existing generate_spt function.
-        $staticsecret = \local_jedomi_get_spt_secret();
-
-        ksort($payload);
-        $signature = hash_hmac('sha256', \local_jedomi_spt_signing_string($payload), $staticsecret);
-
-        $payload['signature'] = $signature;
-        return $payload;
+        return \local_jedomi\spt::sign(\local_jedomi\spt::payload(
+            $userid,
+            $user->username,
+            $role,
+            0,
+            $courseidsowned,
+            $courseidsenrolled,
+            // Capabilities for this specific user (not global $USER), at system level.
+            \local_jedomi\spt::capabilities(\context_system::instance(), $userid),
+            // Only the tools of the role that the channel can really run are offered.
+            $this->tool_definitions($role, $userid)
+        ));
     }
 
     /**
@@ -259,8 +216,8 @@ class tool_runner {
      * @param string $name Tool name to execute
      * @param array $args Tool arguments
      * @param int $userid Moodle user id executing the tool
-     * @param string $role Ignored for authorization; kept for signature compatibility.
-     * @param array $courseidsowned Course ids the user manages
+     * @param string $role Ignored: the role is always derived from $userid; kept for signature compatibility.
+     * @param array $courseidsowned Ignored: kept for signature compatibility (webhook_handler::execute_tool()).
      * @param anonymizer|null $anonymizer Anonymiser of the conversation; the rows of a database query are anonymised
      *                                    by column name with it before they are formatted.
      * @param int $courseid Course stored with a confirmed held action: the role is computed in it; 0 outside a course.

@@ -27,10 +27,13 @@ namespace local_jedomi\telegram;
 use local_jedomi\messaging\access_guard;
 use local_jedomi\messaging\channel;
 use local_jedomi\messaging\channel_limits;
+use local_jedomi\messaging\chat_commands;
 use local_jedomi\messaging\confirmation_service;
 use local_jedomi\messaging\continuation;
 use local_jedomi\messaging\conversation_engine;
 use local_jedomi\messaging\conversation_store;
+use local_jedomi\messaging\media_source;
+use local_jedomi\messaging\rate_limiter;
 use local_jedomi\messaging\tool_runner;
 use local_jedomi\messaging\transport;
 
@@ -39,8 +42,9 @@ defined('MOODLE_INTERNAL') || die();
 require_once(__DIR__ . '/../../lib.php');
 
 /**
- * The Telegram bot as a channel: the session table, the telegram_* settings and strings, the Bot API transport, the
- * self-ping and the confirmed links of local_jedomi_telegram_links. Each piece comes from its factory in manager.
+ * The Telegram bot as a channel: the session table, the telegram_* settings and strings, the slash commands and inline
+ * keyboards, the Bot API transport and file downloads, the self-ping and the confirmed links of
+ * local_jedomi_telegram_links. Each piece comes from its factory in manager.
  */
 class telegram_channel implements channel {
     /** @var string[] Telegram string of each message of the engine. */
@@ -51,6 +55,16 @@ class telegram_channel implements channel {
         channel::MESSAGE_STATE_SAVE_FAILED => 'telegram_msg_state_save_failed',
         channel::MESSAGE_MAX_ITERATIONS => 'telegram_msg_max_iterations',
         channel::MESSAGE_NO_ANSWER => 'error_telegram_e006',
+        channel::MESSAGE_RATE_CHECK_FAILED => 'telegram_msg_rate_check_failed',
+        channel::MESSAGE_RATE_LIMITED => 'telegram_msg_rate_limited',
+        channel::MESSAGE_PRIVATE_ONLY => 'telegram_msg_private_only',
+        channel::MESSAGE_ACCOUNT_INACTIVE => 'telegram_msg_account_inactive',
+        channel::MESSAGE_ROLE_BLOCKED => 'telegram_msg_role_blocked',
+        channel::MESSAGE_AUDIO_DISABLED => 'telegram_msg_audio_disabled',
+        channel::MESSAGE_HEARD => 'telegram_msg_heard',
+        channel::MESSAGE_FILES_DISABLED => 'telegram_msg_files_disabled',
+        channel::MESSAGE_FILE_UNSUPPORTED => 'telegram_msg_file_unsupported',
+        channel::MESSAGE_TEXT_ONLY => 'telegram_msg_text_only',
     ];
 
     #[\Override]
@@ -74,6 +88,16 @@ class telegram_channel implements channel {
     }
 
     #[\Override]
+    public function rate_limiter(): rate_limiter {
+        return manager::rate_limiter();
+    }
+
+    #[\Override]
+    public function commands(): chat_commands {
+        return manager::commands();
+    }
+
+    #[\Override]
     public function tool_runner(): tool_runner {
         return manager::tool_runner();
     }
@@ -86,6 +110,11 @@ class telegram_channel implements channel {
     #[\Override]
     public function transport(): transport {
         return manager::transport();
+    }
+
+    #[\Override]
+    public function media_source(): media_source {
+        return manager::media_source();
     }
 
     #[\Override]
@@ -129,11 +158,11 @@ class telegram_channel implements channel {
     }
 
     #[\Override]
-    public function message(string $key): string {
+    public function message(string $key, mixed $a = null): string {
         if (!isset(self::MESSAGES[$key])) {
             throw new \coding_exception('Unknown message of the Telegram channel: ' . $key);
         }
-        return get_string(self::MESSAGES[$key], 'local_jedomi');
+        return get_string(self::MESSAGES[$key], 'local_jedomi', $a);
     }
 
     #[\Override]

@@ -39,6 +39,12 @@ class fake_transport implements transport {
     /** @var array<int, array{chatkey: string, timeout: ?int}> Activity statuses sent, in order. */
     public array $activities = [];
 
+    /** @var bool|null Whether every formatted answer is blank; null to judge it as HTML, as Telegram does. */
+    public ?bool $blank = null;
+
+    /** @var string[] Formatted answers the engine asked about, in order. */
+    public array $blankchecks = [];
+
     #[\Override]
     public function send_text(string $chatkey, string $text): bool {
         $this->sent[] = ['kind' => 'text', 'chatkey' => $chatkey, 'text' => $text];
@@ -54,6 +60,12 @@ class fake_transport implements transport {
     #[\Override]
     public function format_answer(string $markdown): string {
         return $markdown;
+    }
+
+    #[\Override]
+    public function is_blank(string $formatted): bool {
+        $this->blankchecks[] = $formatted;
+        return $this->blank ?? trim(strip_tags($formatted)) === '';
     }
 
     #[\Override]

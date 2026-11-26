@@ -56,6 +56,15 @@ interface transport {
     public function format_answer(string $markdown): string;
 
     /**
+     * Whether a formatted answer has nothing to show in the channel (Telegram: only tags and spaces are left once its
+     * HTML is removed). The engine then sends the answer of the AI as it was written instead.
+     *
+     * @param string $formatted Answer returned by format_answer().
+     * @return bool
+     */
+    public function is_blank(string $formatted): bool;
+
+    /**
      * Send the final answer of the AI, already formatted, as the channel shows answers best (Telegram: a text file for
      * a long or tabular answer).
      *

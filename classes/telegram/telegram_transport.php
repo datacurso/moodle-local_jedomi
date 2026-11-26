@@ -54,6 +54,12 @@ class telegram_transport implements transport {
     }
 
     #[\Override]
+    public function is_blank(string $formatted): bool {
+        // The answer is Telegram HTML: only its text is shown.
+        return trim(strip_tags($formatted)) === '';
+    }
+
+    #[\Override]
     public function send_answer(string $chatkey, string $formatted): bool {
         // If the response is large or contains tabular data (<pre> block), send as a .txt file instead of chunking
         // multiple messages.

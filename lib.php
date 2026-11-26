@@ -1218,77 +1218,27 @@ function local_jedomi_spt_signing_string(array $payload): string {
  * @return array        The signed SPT payload including the 'signature' key.
  */
 function local_jedomi_generate_spt(string $role): array {
-    global $USER, $COURSE, $CFG, $DB;
+    global $USER, $COURSE;
 
-    $sysctx    = context_system::instance();
     $coursectx = (!empty($COURSE->id) && $COURSE->id > 1)
                     ? context_course::instance($COURSE->id)
-                    : $sysctx;
+                    : context_system::instance();
+    [$courseidsowned, $courseidsenrolled] = \local_jedomi\spt::course_ids((int) $USER->id, $role);
 
-    // Real Moodle capabilities, inherited from the role system.
-    $capabilities = [
-        'can_view_all_grades'    => has_capability('moodle/grade:viewall', $coursectx),
-        'can_manage_users'       => has_capability('moodle/user:update', $sysctx),
-        'can_send_messages'      => has_capability('moodle/site:sendmessage', $sysctx),
-        'can_manage_courses'     => has_capability('moodle/course:update', $coursectx),
-        'can_view_reports'       => has_capability('moodle/course:viewhiddenactivities', $coursectx),
-        'can_enrol_users'        => has_capability('enrol/manual:enrol', $coursectx),
-        'can_access_all_groups'  => has_capability('moodle/site:accessallgroups', $coursectx),
-    ];
-
-    // Courses by role (RBAC scope in the gateway).
-    $courseidsowned   = [];   // Courses where the user has authority (teacher / admin / manager).
-    $courseidsenrolled = [];  // Courses where the user is enrolled (student).
-
-    if ($role === 'teacher' || $role === 'manager') {
-        $courses = enrol_get_users_courses($USER->id, true);
-        foreach ($courses as $c) {
-            $ctx = context_course::instance($c->id);
-            if (has_capability('moodle/course:manageactivities', $ctx)) {
-                $courseidsowned[] = (int)$c->id;
-            }
-        }
-    } else if ($role === 'admin') {
-        // An admin needs no course list: they have full access.
-        $courseidsowned = [];
-    } else if ($role === 'student') {
-        // For students: the enrolled courses (used by the gateway to filter).
-        $courses = enrol_get_users_courses($USER->id, true);
-        foreach ($courses as $c) {
-            $courseidsenrolled[] = (int)$c->id;
-        }
-    }
-
-    // Excluded courses are outside Jedomi: they are never signed as courses of the user.
-    $courseidsowned = \local_jedomi\course_access::filter_course_ids($courseidsowned);
-    $courseidsenrolled = \local_jedomi\course_access::filter_course_ids($courseidsenrolled);
-
-    $tools = local_jedomi_get_tool_definitions($role);
-
-    $payload = [
-        'userid'              => (int) $USER->id,
-        'username'            => $USER->username,
-        'role'                => $role,
-        'course_id'           => (int) ($COURSE->id ?? 0),
-        'course_ids_owned'    => $courseidsowned, // Teacher/manager: sus cursos.
-        'course_ids_enrolled' => $courseidsenrolled, // Student: cursos inscritos.
-        'capabilities'        => $capabilities,
-        'tools'               => $tools, // Tool definitions in OpenAI format; the gateway uses them to configure the model.
-        'moodle_url'          => $CFG->wwwroot,
-        'expires'             => time() + 1800, // 30 minutes (conversations with several tool calls).
-    ];
-
-    // HMAC signature with the static secret, the same one the Python gateway uses to verify it.
-    // sesskey() is part of the payload (not the key) to bind the token to the session:
+    $payload = \local_jedomi\spt::payload(
+        (int) $USER->id,
+        $USER->username,
+        $role,
+        (int) ($COURSE->id ?? 0),
+        $courseidsowned,
+        $courseidsenrolled,
+        \local_jedomi\spt::capabilities($coursectx),
+        local_jedomi_get_tool_definitions($role)
+    );
+    // The sesskey() is part of the payload (not the key) to bind the token to the session:
     // if the session changes, the payload changes and the SPT is invalid anyway.
-    $staticsecret = local_jedomi_get_spt_secret();
     $payload['sesskey_hash'] = substr(hash('sha256', sesskey()), 0, 16); // Binding without exposing the sesskey.
-
-    ksort($payload);
-    $signature = hash_hmac('sha256', local_jedomi_spt_signing_string($payload), $staticsecret);
-
-    $payload['signature'] = $signature;
-    return $payload;
+    return \local_jedomi\spt::sign($payload);
 }
 
 /**
@@ -1303,71 +1253,25 @@ function local_jedomi_generate_spt(string $role): array {
  * @return array          The signed SPT payload, or empty array if user not found/deleted.
  */
 function local_jedomi_generate_spt_for_user(int $userid, string $role): array {
-    global $CFG, $DB;
+    global $DB;
 
-    $sysctx = context_system::instance();
     $user = $DB->get_record('user', ['id' => $userid, 'deleted' => 0], 'id, username, firstname, lastname');
     if (!$user) {
         return [];
     }
+    [$courseidsowned, $courseidsenrolled] = \local_jedomi\spt::course_ids($userid, $role);
 
-    // Capabilities for this specific user (not global $USER).
-    $capabilities = [
-        'can_view_all_grades'   => has_capability('moodle/grade:viewall', $sysctx, $userid),
-        'can_manage_users'      => has_capability('moodle/user:update', $sysctx, $userid),
-        'can_send_messages'     => has_capability('moodle/site:sendmessage', $sysctx, $userid),
-        'can_manage_courses'    => has_capability('moodle/course:update', $sysctx, $userid),
-        'can_view_reports'      => has_capability('moodle/course:viewhiddenactivities', $sysctx, $userid),
-        'can_enrol_users'       => has_capability('enrol/manual:enrol', $sysctx, $userid),
-        'can_access_all_groups' => has_capability('moodle/site:accessallgroups', $sysctx, $userid),
-    ];
-
-    // Course lists based on role (same logic as generate_spt but for specific user).
-    $courseidsowned = [];
-    $courseidsenrolled = [];
-
-    if ($role === 'teacher' || $role === 'manager') {
-        $courses = enrol_get_users_courses($userid, true, ['id']);
-        foreach ($courses as $c) {
-            $ctx = context_course::instance($c->id);
-            if (has_capability('moodle/course:manageactivities', $ctx, $userid)) {
-                $courseidsowned[] = (int)$c->id;
-            }
-        }
-    } else if ($role === 'student') {
-        $courses = enrol_get_users_courses($userid, true, ['id']);
-        foreach ($courses as $c) {
-            $courseidsenrolled[] = (int)$c->id;
-        }
-    }
-    // Admin: no course list (full access).
-    // Excluded courses are outside Jedomi: they are never signed as courses of the user.
-    $courseidsowned = \local_jedomi\course_access::filter_course_ids($courseidsowned);
-    $courseidsenrolled = \local_jedomi\course_access::filter_course_ids($courseidsenrolled);
-
-    $tools = local_jedomi_get_tool_definitions($role, (int) $userid);
-
-    $payload = [
-        'userid'              => $userid,
-        'username'            => $user->username,
-        'role'                => $role,
-        'course_id'           => 0,
-        'course_ids_owned'    => $courseidsowned,
-        'course_ids_enrolled' => $courseidsenrolled,
-        'capabilities'        => $capabilities,
-        'tools'               => $tools,
-        'moodle_url'          => $CFG->wwwroot,
-        'expires'             => time() + 1800,
-    ];
-
-    // Same HMAC signing as the existing generate_spt function.
-    $staticsecret = local_jedomi_get_spt_secret();
-
-    ksort($payload);
-    $signature = hash_hmac('sha256', local_jedomi_spt_signing_string($payload), $staticsecret);
-
-    $payload['signature'] = $signature;
-    return $payload;
+    return \local_jedomi\spt::sign(\local_jedomi\spt::payload(
+        $userid,
+        $user->username,
+        $role,
+        0,
+        $courseidsowned,
+        $courseidsenrolled,
+        // Capabilities for this specific user (not global $USER), at system level.
+        \local_jedomi\spt::capabilities(context_system::instance(), $userid),
+        local_jedomi_get_tool_definitions($role, (int) $userid)
+    ));
 }
 
 /**

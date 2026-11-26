@@ -89,6 +89,19 @@ final class telegram_transport_test extends \advanced_testcase {
     }
 
     /**
+     * A formatted answer is blank when only tags and spaces are left of it once the HTML is removed.
+     */
+    public function test_answer_with_only_tags_and_spaces_is_blank(): void {
+        $transport = new telegram_transport();
+
+        $this->assertTrue($transport->is_blank(''));
+        $this->assertTrue($transport->is_blank("  \n "));
+        $this->assertTrue($transport->is_blank('<b> </b><i></i>'));
+        $this->assertFalse($transport->is_blank('<b>Hi</b>'));
+        $this->assertFalse($transport->is_blank('a &lt; b'));
+    }
+
+    /**
      * A formatted answer up to 3800 characters without a <pre> block is sent as a message.
      */
     public function test_short_answer_is_sent_as_a_message(): void {

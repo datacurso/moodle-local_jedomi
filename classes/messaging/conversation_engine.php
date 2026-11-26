@@ -324,7 +324,6 @@ class conversation_engine {
         $toolrepeatcounts = [];
         // The same call failing with the same error stops the question; the counts follow the state across workers.
         $toolerrors = new \local_jedomi\local\repeated_tool_error((array) ($state['tool_errors'] ?? []));
-        $progresssentfirst = false;
         $senttimeoutwarning = false;
         // After a "typing" status fails, no other one is sent for the question in this worker.
         $typingok = true;
@@ -641,9 +640,6 @@ class conversation_engine {
             }
 
             // ... ── Progress messages (icons + lang strings, same as web) ──
-            if (!$progresssentfirst) {
-                $progresssentfirst = true;
-            }
             if ($hastools && ($iteration % 5 === 0 || $iteration === 1)) {
                 $tooldisplay = [];
                 // Each tool has a progress label in the language of the user; a tool without one shows its name.
@@ -692,8 +688,8 @@ class conversation_engine {
                 // Markdown and HTML of the answer become the format of the channel (Telegram: its HTML subset).
                 $display = $this->channel->transport()->format_answer($content);
 
-                // If sanitisation emptied the text, send original as plain text.
-                if (trim(strip_tags($display)) === '') {
+                // If formatting left nothing to show in the channel, send the original as plain text.
+                if ($this->channel->transport()->is_blank($display)) {
                     $fallback = (is_string($content) && $content !== '')
                         ? $content : $this->channel->message(channel::MESSAGE_DONE);
                     $this->channel->store()->set_context($statekey, []);

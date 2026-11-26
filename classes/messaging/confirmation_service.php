@@ -239,8 +239,10 @@ class confirmation_service {
         if ($mode === self::MODE_BUTTON && self::is_critical($action)) {
             return $this->ui->keyword_prompt();
         }
-        // Removed before it runs, so it can run only once.
-        $DB->delete_records($this->table, ['id' => $pending->id]);
+        // Claimed and removed before it runs, so it runs only once even when two answers read it at the same time.
+        if (!$this->claim($pending)) {
+            return get_string('pending_action_not_found', 'local_jedomi');
+        }
         if (!$confirm) {
             if ($linkeduserid !== null) {
                 $tool = (string) ($action['name'] ?? '');
@@ -336,6 +338,32 @@ class confirmation_service {
                 'note' => 'Changes are locked after too many wrong PINs. Do not call it again.']);
         }
         return null;
+    }
+
+    /**
+     * Claim a held action for this request and remove it. Only one of several requests that read the action at the
+     * same time claims it: each one swaps the id of the action for a random token of its own only while the id is
+     * still there, which the database does for one request at a time, so only the request that finds its own token
+     * afterwards has the action. The others get false, as if the action had already been answered.
+     *
+     * @param \stdClass $pending Held action as the request read it.
+     * @return bool Whether this request claimed the action.
+     */
+    private function claim(\stdClass $pending): bool {
+        global $DB;
+        $token = 'claimed:' . random_string(32);
+        $DB->set_field_select(
+            $this->table,
+            'callbackid',
+            $token,
+            'id = :id AND callbackid = :callbackid',
+            ['id' => $pending->id, 'callbackid' => $pending->callbackid]
+        );
+        if (!$DB->record_exists($this->table, ['id' => $pending->id, 'callbackid' => $token])) {
+            return false;
+        }
+        $DB->delete_records($this->table, ['id' => $pending->id, 'callbackid' => $token]);
+        return true;
     }
 
     /**
