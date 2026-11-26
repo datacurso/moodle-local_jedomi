@@ -31,6 +31,7 @@
 namespace local_jedomi\telegram;
 
 use local_jedomi\messaging\access_guard;
+use local_jedomi\messaging\confirmation_service;
 use local_jedomi\messaging\rate_limiter;
 use local_jedomi\messaging\tool_runner;
 
@@ -480,6 +481,28 @@ class manager {
      */
     public static function tool_runner(): tool_runner {
         return new tool_runner('telegram', 'Telegram', self::SUPPORTED_TOOLS);
+    }
+
+    /**
+     * Confirmation service of the Telegram bot: held actions in local_jedomi_telegram_pending_actions, shown with
+     * inline buttons, for the user of the confirmed link of the chat, with the Telegram PIN.
+     *
+     * @return confirmation_service
+     */
+    public static function confirmation_service(): confirmation_service {
+        return new confirmation_service(
+            'local_jedomi_telegram_pending_actions',
+            'Telegram',
+            new telegram_confirmation_ui(),
+            self::access_guard(),
+            self::tool_runner(),
+            static function (string $chatid): ?int {
+                global $DB;
+                $userid = $DB->get_field('local_jedomi_telegram_links', 'userid', ['chatid' => $chatid, 'confirmed' => 1]);
+                return $userid === false ? null : (int) $userid;
+            },
+            true
+        );
     }
 
     /**

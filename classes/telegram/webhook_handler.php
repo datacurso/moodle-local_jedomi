@@ -39,6 +39,7 @@ use local_jedomi\local\service\telegram_link_service;
 use local_jedomi\local\service\telegram_pin_service;
 use local_jedomi\local\service\vision_service;
 use local_jedomi\messaging\access_guard;
+use local_jedomi\messaging\confirmation_service;
 use local_jedomi\messaging\tool_runner;
 
 /**
@@ -63,23 +64,8 @@ class webhook_handler {
     /** Seconds a "typing" status may take while the AI answers, so a slow Telegram never holds the AI call long. */
     public const TYPING_TIMEOUT = 2;
 
-    /** Prefix of the callback data of the confirm button of a held action. */
-    private const CALLBACK_CONFIRM = 'confirm:';
-
-    /** A held action is cancelled. */
-    private const RESOLVE_CANCEL = 'cancel';
-
-    /** A held action is confirmed with the confirm button. */
-    private const RESOLVE_BUTTON = 'button';
-
     /** A held action is confirmed with the confirmation word typed in the chat. */
-    private const RESOLVE_KEYWORD = 'keyword';
-
-    /** A held action is confirmed with the right PIN typed in the chat. */
-    private const RESOLVE_PIN = 'pin';
-
-    /** Prefix of the callback data of the cancel button of a held action. */
-    private const CALLBACK_CANCEL = 'cancel:';
+    private const RESOLVE_KEYWORD = confirmation_service::MODE_KEYWORD;
 
     /**
      * Pseudonym of a chat for the technical log, which never keeps the Telegram chat id.
@@ -444,8 +430,9 @@ class webhook_handler {
         // (Decision 7), except in the 15 minutes after a right PIN, when actions are confirmed as without the PIN
         // (JEDOMI-SEC-016). A number is a PIN only while an action waits in the chat; then it never reaches the AI.
         // Otherwise it is a normal message (RES-003).
+        $confirmations = manager::confirmation_service();
         $pinrequired = telegram_pin_service::is_required((int) $link->userid);
-        $waiting = $pinrequired ? self::waiting_action($chatid) : null;
+        $waiting = $pinrequired ? $confirmations->waiting($chatid) : null;
         if ($waiting !== null && telegram_pin_service::is_valid_format($text)) {
             self::handle_pin($chatid, (int) $link->userid, $text, $waiting, (int) ($message['message_id'] ?? 0));
             return;
@@ -457,7 +444,7 @@ class webhook_handler {
             }
         } else if (pending_action_service::is_confirm_keyword($text)) {
             // The confirmation word confirms the newest critical action of the chat that waits for it.
-            $critical = self::waiting_critical_action($chatid);
+            $critical = $confirmations->waiting_critical($chatid);
             if ($critical !== null) {
                 api_client::instance()->send_message(
                     $chatid,
@@ -870,14 +857,12 @@ class webhook_handler {
             return;
         }
 
-        $confirm = strpos($data, self::CALLBACK_CONFIRM) === 0;
-        if (!$confirm && strpos($data, self::CALLBACK_CANCEL) !== 0) {
+        $reply = manager::confirmation_service()->ui()->parse_reply($data);
+        if ($reply === null) {
             // Unknown action — ignore.
             return;
         }
-        $actionid = substr($data, strlen($confirm ? self::CALLBACK_CONFIRM : self::CALLBACK_CANCEL));
-        $mode = $confirm ? self::RESOLVE_BUTTON : self::RESOLVE_CANCEL;
-        $client->edit_message_text($chatid, $messageid, self::resolve_held_action($chatid, $actionid, $mode));
+        $client->edit_message_text($chatid, $messageid, self::resolve_held_action($chatid, $reply->actionid, $reply->mode));
     }
 
     /**
@@ -896,8 +881,7 @@ class webhook_handler {
     }
 
     /**
-     * Hold a tool call that changes data until the user confirms it with the buttons of the chat, the confirmation word
-     * or, for an administrator or manager who needs a PIN and has not typed it in the last 15 minutes, the PIN.
+     * Hold a tool call that changes data until the user confirms it (see confirmation_service::hold()).
      *
      * @param string $chatid Telegram chat id.
      * @param int $userid Linked Moodle user.
@@ -906,175 +890,7 @@ class webhook_handler {
      * @return string|null Result for the AI when the call is held or refused, or null for a tool that changes nothing.
      */
     private static function hold_action(string $chatid, int $userid, string $name, array $args): ?string {
-        global $DB;
-
-        $severity = pending_action_service::severity($name, $args);
-        if ($severity === null) {
-            return null;
-        }
-        $askpin = false;
-        if (telegram_pin_service::is_required($userid)) {
-            $refusal = self::pin_refusal($chatid, $userid);
-            if ($refusal !== null) {
-                return $refusal;
-            }
-            // A right PIN in the last 15 minutes only skips asking it again: the write is still held and shown with its
-            // card, and the user confirms it with the button or the confirmation word (JEDOMI-SEC-016).
-            $askpin = !telegram_pin_service::in_window($userid);
-        }
-        $card = pending_action_service::card($userid, $name, $args, $severity, pending_action_service::TELEGRAM_DETAILS_LENGTH);
-        if ($card['truncated']) {
-            // The user could not see in Telegram everything the action does, so it is not held here (JEDOMI-SEC-013).
-            return json_encode(['error' => 'action_too_long_for_telegram',
-                'note' => 'The data of this action is too long to show in Telegram. Tell the user to ask for it in the '
-                    . 'Jedomi web chat. Do not call it again.']);
-        }
-        $callbackid = random_string(16);
-        $DB->insert_record('local_jedomi_telegram_pending_actions', (object) [
-            'callbackid' => $callbackid,
-            'chatid' => $chatid,
-            'actionjson' => json_encode(['name' => $name, 'params' => $args, 'userid' => $userid], JSON_UNESCAPED_UNICODE),
-            // Course the role is computed in when it is confirmed, decided here from the server's checks (unit 7b).
-            'courseid' => pending_action_service::course_of_args($userid, $args),
-            'timecreated' => time(),
-        ]);
-
-        api_client::instance()->send_message(
-            $chatid,
-            self::confirmation_text($userid, $name, $args, $severity, $askpin),
-            ['inline_keyboard' => [self::confirmation_buttons($callbackid, $severity, $askpin)]]
-        );
-        if ($askpin) {
-            return json_encode(['status' => 'awaiting_confirmation',
-                'note' => 'The action waits for the user to type their PIN in the chat. Do not call it again.']);
-        }
-        $note = $severity === pending_action_service::SEVERITY_CRITICAL
-            ? 'The action waits for the user to type the confirmation word in the chat. Do not call it again.'
-            : 'The action waits for the user to confirm it with the buttons of the chat. Do not call it again.';
-        return json_encode(['status' => 'awaiting_confirmation', 'note' => $note]);
-    }
-
-    /**
-     * Confirmation message of a held action, with the same readable description and data as the web card; a critical
-     * action asks for the confirmation word, as the web chat does.
-     *
-     * @param int $userid Linked Moodle user.
-     * @param string $name Tool name.
-     * @param array $args Tool arguments.
-     * @param string $severity One of the pending_action_service::SEVERITY_* constants.
-     * @param bool $pinrequired Whether the user must type the PIN first.
-     * @return string HTML text for Telegram.
-     */
-    private static function confirmation_text(
-        int $userid,
-        string $name,
-        array $args,
-        string $severity,
-        bool $pinrequired = false
-    ): string {
-        $card = pending_action_service::card($userid, $name, $args, $severity, pending_action_service::TELEGRAM_DETAILS_LENGTH);
-        $text = '<b>' . s($card['description']) . '</b>';
-        if ($name === 'send_messages') {
-            $text = '<b>' . s(str_replace('{count}', (string) $card['count'], get_string('confirm_send_bulk', 'local_jedomi')))
-                . '</b>';
-            if ($card['preview'] !== '') {
-                $text .= "\n<i>" . s($card['preview']) . '</i>';
-            }
-        }
-        if ($card['details'] !== '') {
-            $text .= "\n" . s($card['details']);
-        }
-        $message = get_string('telegram_confirm_action', 'local_jedomi', $text);
-        if ($pinrequired) {
-            $message .= "\n\n" . get_string('telegram_pin_prompt', 'local_jedomi');
-        } else if ($severity === pending_action_service::SEVERITY_CRITICAL) {
-            $message .= "\n\n" . get_string('telegram_confirm_keyword', 'local_jedomi', s(self::confirm_keyword()));
-        }
-        return $message;
-    }
-
-    /**
-     * Buttons of a held action: a critical action is confirmed only with the confirmation word, so it has no
-     * confirm button.
-     *
-     * @param string $callbackid Callback id of the held action.
-     * @param string $severity One of the pending_action_service::SEVERITY_* constants.
-     * @param bool $pinrequired Whether the action is confirmed with the PIN, which also leaves only the cancel button.
-     * @return array[] One row of inline keyboard buttons.
-     */
-    private static function confirmation_buttons(string $callbackid, string $severity, bool $pinrequired = false): array {
-        $cancel = ['text' => get_string('confirm_btn_no', 'local_jedomi'), 'callback_data' => self::CALLBACK_CANCEL . $callbackid];
-        if ($pinrequired || $severity === pending_action_service::SEVERITY_CRITICAL) {
-            return [$cancel];
-        }
-        return [
-            ['text' => get_string('confirm_btn_yes', 'local_jedomi'), 'callback_data' => self::CALLBACK_CONFIRM . $callbackid],
-            $cancel,
-        ];
-    }
-
-    /**
-     * Confirmation word of critical actions: the confirm button label in capitals, as in the web chat.
-     *
-     * @return string
-     */
-    private static function confirm_keyword(): string {
-        return \core_text::strtoupper(get_string('confirm_btn_yes', 'local_jedomi'));
-    }
-
-    /**
-     * Refuse a write of a user who needs a PIN and cannot confirm one now: no PIN set yet (with a link to set it), or
-     * the writes are locked after too many wrong PINs. The user is told in the chat.
-     *
-     * @param string $chatid Telegram chat id.
-     * @param int $userid Linked Moodle user.
-     * @return string|null Result for the AI when the write is refused, or null when the user can confirm with the PIN.
-     */
-    private static function pin_refusal(string $chatid, int $userid): ?string {
-        if (!telegram_pin_service::has_pin($userid)) {
-            \local_jedomi_log('Telegram: write refused, PIN required but not set user=' . self::userref($userid));
-            api_client::instance()->send_message($chatid, self::pin_missing_message());
-            return json_encode(['status' => 'refused', 'reason' => 'pin_required',
-                'note' => 'The user must set a Telegram PIN in Moodle before any change. Do not call it again.']);
-        }
-        $lockeduntil = telegram_pin_service::locked_until($userid);
-        if ($lockeduntil > 0) {
-            \local_jedomi_log('Telegram: write refused, PIN lockout user=' . self::userref($userid));
-            api_client::instance()->send_message($chatid, self::pin_locked_message($lockeduntil));
-            return json_encode(['status' => 'refused', 'reason' => 'pin_locked',
-                'note' => 'Changes are locked after too many wrong PINs. Do not call it again.']);
-        }
-        return null;
-    }
-
-    /**
-     * Message for writes locked until a time, with the minutes left.
-     *
-     * @param int $lockeduntil Time the lock ends.
-     * @return string
-     */
-    private static function pin_locked_message(int $lockeduntil): string {
-        return get_string('telegram_pin_locked', 'local_jedomi', max(1, (int) ceil(($lockeduntil - time()) / MINSECS)));
-    }
-
-    /**
-     * Message for a user who needs a PIN and has not set one, with the link to set it.
-     *
-     * @return string
-     */
-    private static function pin_missing_message(): string {
-        $url = (new \moodle_url('/local/jedomi/telegram_profile.php'))->out(false);
-        return get_string('telegram_pin_missing', 'local_jedomi', $url);
-    }
-
-    /**
-     * Pseudonym of a user for the log.
-     *
-     * @param int $userid Moodle user id.
-     * @return string
-     */
-    private static function userref(int $userid): string {
-        return \local_jedomi_log_pseudonym('user', $userid);
+        return manager::confirmation_service()->hold($chatid, $userid, $name, $args);
     }
 
     /**
@@ -1094,153 +910,19 @@ class webhook_handler {
             // The PIN is still checked: the user is not blocked by a message Telegram cannot delete.
             \local_jedomi_log('Telegram: the PIN message could not be deleted chat=' . self::chatref($chatid));
         }
-        $check = telegram_pin_service::verify($userid, $pin);
-        switch ($check['result']) {
-            case telegram_pin_service::RESULT_OK:
-                $client->send_message($chatid, self::resolve_held_action($chatid, $actionid, self::RESOLVE_PIN));
-                break;
-            case telegram_pin_service::RESULT_WRONG:
-                \local_jedomi_log('Telegram: wrong PIN user=' . self::userref($userid));
-                $client->send_message($chatid, get_string('telegram_pin_wrong', 'local_jedomi', $check['remaining']));
-                break;
-            case telegram_pin_service::RESULT_LOCKED:
-                \local_jedomi_log('Telegram: PIN lockout user=' . self::userref($userid));
-                $client->send_message($chatid, self::pin_locked_message(telegram_pin_service::locked_until($userid)));
-                break;
-            default:
-                $client->send_message($chatid, self::pin_missing_message());
-        }
+        $client->send_message($chatid, manager::confirmation_service()->confirm_with_pin($chatid, $userid, $pin, $actionid));
     }
 
     /**
-     * Callback id of the newest action of a chat that is still waiting for confirmation.
-     *
-     * @param string $chatid Telegram chat id.
-     * @return string|null
-     */
-    private static function waiting_action(string $chatid): ?string {
-        global $DB;
-        $records = $DB->get_records_select(
-            'local_jedomi_telegram_pending_actions',
-            'chatid = :chatid AND timecreated >= :cutoff',
-            ['chatid' => $chatid, 'cutoff' => time() - pending_action_service::EXPIRY],
-            'timecreated DESC, id DESC',
-            'id, callbackid',
-            0,
-            1
-        );
-        $record = reset($records);
-        return $record ? (string) $record->callbackid : null;
-    }
-
-    /**
-     * Callback id of the newest critical action of a chat that is still waiting for the confirmation word.
-     *
-     * @param string $chatid Telegram chat id.
-     * @return string|null
-     */
-    private static function waiting_critical_action(string $chatid): ?string {
-        global $DB;
-        $records = $DB->get_records_select(
-            'local_jedomi_telegram_pending_actions',
-            'chatid = :chatid AND timecreated >= :cutoff',
-            ['chatid' => $chatid, 'cutoff' => time() - pending_action_service::EXPIRY],
-            'timecreated DESC, id DESC'
-        );
-        foreach ($records as $record) {
-            $action = json_decode((string) $record->actionjson, true);
-            if (
-                is_array($action) && pending_action_service::severity(
-                    (string) ($action['name'] ?? ''),
-                    (array) ($action['params'] ?? [])
-                ) === pending_action_service::SEVERITY_CRITICAL
-            ) {
-                return (string) $record->callbackid;
-            }
-        }
-        return null;
-    }
-
-    /**
-     * Confirm or cancel a held action of a chat. The action runs once, only for the user who still has the chat linked
-     * and is active, and never after it expires.
-     *
-     * A critical action runs only with the confirmation word typed in the chat; a confirm button for it (from an
-     * older message) is rejected and the action is kept. An administrator or manager who needs a PIN confirms only
-     * with it (Decision 7), except in the 15 minutes after a right PIN, when the button or the word confirms.
+     * Confirm or cancel a held action of a chat (see confirmation_service::resolve()).
      *
      * @param string $chatid Telegram chat id.
      * @param string $actionid Callback id of the held action.
-     * @param string $mode How the user answered: one of the RESOLVE_* constants.
+     * @param string $mode How the user answered: one of the confirmation_service::MODE_* constants.
      * @return string Message for the user.
      */
     private static function resolve_held_action(string $chatid, string $actionid, string $mode): string {
-        global $DB, $USER;
-
-        $pending = $DB->get_record('local_jedomi_telegram_pending_actions', ['callbackid' => $actionid, 'chatid' => $chatid]);
-        if (!$pending) {
-            return get_string('pending_action_not_found', 'local_jedomi');
-        }
-        if ((int) $pending->timecreated < time() - pending_action_service::EXPIRY) {
-            $DB->delete_records('local_jedomi_telegram_pending_actions', ['id' => $pending->id]);
-            return get_string('pending_action_expired', 'local_jedomi');
-        }
-        $action = json_decode($pending->actionjson, true);
-        $critical = is_array($action) && pending_action_service::severity(
-            (string) ($action['name'] ?? ''),
-            (array) ($action['params'] ?? [])
-        ) === pending_action_service::SEVERITY_CRITICAL;
-        $link = self::get_link_by_chat_id($chatid);
-        $confirm = $mode !== self::RESOLVE_CANCEL;
-        if (
-            in_array($mode, [self::RESOLVE_BUTTON, self::RESOLVE_KEYWORD], true) && $link
-                && telegram_pin_service::is_required((int) $link->userid)
-                && !telegram_pin_service::in_window((int) $link->userid)
-        ) {
-            // Outside the 15 minutes after a right PIN, only the PIN confirms (Decision 7, JEDOMI-SEC-016).
-            return get_string('telegram_pin_prompt', 'local_jedomi');
-        }
-        if ($mode === self::RESOLVE_BUTTON && $critical) {
-            return get_string('telegram_confirm_keyword', 'local_jedomi', s(self::confirm_keyword()));
-        }
-        // Removed before it runs, so it can run only once.
-        $DB->delete_records('local_jedomi_telegram_pending_actions', ['id' => $pending->id]);
-        if (!$confirm) {
-            if ($link) {
-                pending_action_service::action_event(false, (string) ($action['name'] ?? ''), 'telegram', (int) $link->userid);
-            }
-            return get_string('confirm_cancelled', 'local_jedomi');
-        }
-
-        $user = $link ? self::get_active_user((int) $link->userid) : null;
-        if (
-            !is_array($action) || !$user || (int) ($action['userid'] ?? 0) !== (int) $user->id
-                || !self::is_user_role_allowed((int) $user->id)
-        ) {
-            return get_string('pending_action_denied', 'local_jedomi');
-        }
-
-        $USER = $user;
-        pending_action_service::action_event(true, (string) ($action['name'] ?? ''), 'telegram', (int) $user->id);
-        try {
-            $result = self::execute_tool(
-                (string) ($action['name'] ?? ''),
-                (array) ($action['params'] ?? []),
-                (int) $user->id,
-                '',
-                [],
-                null,
-                (int) ($pending->courseid ?? 0)
-            );
-        } catch (\Throwable $e) {
-            return get_string('pending_action_failed', 'local_jedomi');
-        }
-        $decoded = json_decode($result, true);
-        if (is_array($decoded) && isset($decoded['error'])) {
-            $denied = is_string($decoded['error']) && str_starts_with($decoded['error'], 'permission_denied');
-            return get_string($denied ? 'pending_action_denied' : 'pending_action_failed', 'local_jedomi');
-        }
-        return get_string('confirm_done', 'local_jedomi');
+        return manager::confirmation_service()->resolve($chatid, $actionid, $mode);
     }
 
     /**
