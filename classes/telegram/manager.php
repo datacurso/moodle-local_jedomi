@@ -31,6 +31,7 @@
 namespace local_jedomi\telegram;
 
 use local_jedomi\messaging\access_guard;
+use local_jedomi\messaging\channel;
 use local_jedomi\messaging\channel_limits;
 use local_jedomi\messaging\confirmation_service;
 use local_jedomi\messaging\continuation;
@@ -70,6 +71,9 @@ class manager {
 
     /** @var string Setting that records a webhook the update could not register again with the new secret. */
     private const NEEDS_REGISTRATION_KEY = 'telegram_webhook_needs_registration';
+
+    /** @var continuation|null Continuation that replaces the self-ping in PHPUnit tests. */
+    private static ?continuation $testcontinuation = null;
 
     /**
      * Key of the encryption used up to 1.6.x: derived from a value of the database and a constant of this code, so a
@@ -523,7 +527,20 @@ class manager {
      * @return continuation
      */
     public static function continuation(): continuation {
-        return new telegram_continuation();
+        return self::$testcontinuation ?? new telegram_continuation();
+    }
+
+    /**
+     * Replace the continuation returned by {@see continuation()}, so no test posts a self-ping. Only for PHPUnit tests.
+     *
+     * @param continuation|null $continuation Replacement, or null to restore the self-ping.
+     * @return void
+     */
+    public static function set_continuation_for_testing(?continuation $continuation): void {
+        if (!defined('PHPUNIT_TEST') || !PHPUNIT_TEST) {
+            throw new \coding_exception('manager::set_continuation_for_testing() is only for PHPUnit tests');
+        }
+        self::$testcontinuation = $continuation;
     }
 
     /**
@@ -533,6 +550,15 @@ class manager {
      */
     public static function channel_limits(): channel_limits {
         return new telegram_limits();
+    }
+
+    /**
+     * The Telegram bot as a channel of the conversation engine, wired with the factories of this class.
+     *
+     * @return channel
+     */
+    public static function channel(): channel {
+        return new telegram_channel();
     }
 
     /**

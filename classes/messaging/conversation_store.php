@@ -169,6 +169,17 @@ class conversation_store {
     }
 
     /**
+     * Whether anything (history or tool loop state) is saved for a chat key.
+     *
+     * @param string $chatkey
+     * @return bool
+     */
+    public function exists(string $chatkey): bool {
+        global $DB;
+        return $DB->record_exists($this->table, ['chatid' => $chatkey]);
+    }
+
+    /**
      * Remove the cached tool loop state of a chat, keeping its history.
      *
      * @param string $chatkey

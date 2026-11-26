@@ -137,6 +137,28 @@ final class conversation_store_test extends \advanced_testcase {
     }
 
     /**
+     * A chat key has a row once something is saved for it, and no longer after it is cleared.
+     *
+     * @dataProvider store_provider
+     * @param string $table
+     * @param string $setting
+     */
+    public function test_exists_follows_the_rows_of_the_chat_key(string $table, string $setting): void {
+        $this->resetAfterTest();
+        $store = $this->store($table, $setting);
+        $this->assertFalse($store->exists('tool_loop_1'));
+
+        $store->set_context('tool_loop_1', ['iteration' => 0]);
+        $store->append('chat_1', 'user', 'hola');
+
+        $this->assertTrue($store->exists('tool_loop_1'));
+        $this->assertTrue($store->exists('chat_1'));
+        $this->assertFalse($store->exists('tool_loop_2'));
+        $store->clear('tool_loop_1');
+        $this->assertFalse($store->exists('tool_loop_1'));
+    }
+
+    /**
      * Writes through a store land only in its table: Telegram data is untouched by another channel.
      */
     public function test_writes_stay_in_the_store_table(): void {
