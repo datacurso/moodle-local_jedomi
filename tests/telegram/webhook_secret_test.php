@@ -256,6 +256,34 @@ final class webhook_secret_test extends \advanced_testcase {
     }
 
     /**
+     * The self-ping carries the encoded chat id and the session generation of the saved tool loop, with the JSON
+     * content type, a five-second timeout and no other header.
+     */
+    public function test_self_ping_carries_the_chat_and_its_session_generation(): void {
+        global $CFG;
+        $this->resetAfterTest();
+        $secret = manager::get_webhook_secret();
+        session::set_context('tool_loop_-1001', ['session_gen' => 1764100000]);
+
+        $request = webhook_handler::self_ping_request('-1001');
+        $fresh = webhook_handler::self_ping_request('783000002');
+
+        $this->assertSame(
+            $CFG->wwwroot . '/local/jedomi/telegram_webhook.php?internal_ping=1&chat_id=-1001&session_gen=1764100000',
+            $request['url']
+        );
+        $this->assertSame(['Content-Type: application/json', 'X-Telegram-Bot-Api-Secret-Token: ' . $secret], $request['headers']);
+        $this->assertSame([
+            'CURLOPT_TIMEOUT' => 5,
+            'CURLOPT_SSL_VERIFYPEER' => true,
+            'CURLOPT_SSL_VERIFYHOST' => 2,
+            'CURLOPT_FOLLOWLOCATION' => false,
+            'CURLOPT_MAXREDIRS' => 0,
+        ], $request['options']);
+        $this->assertStringEndsWith('?internal_ping=1&chat_id=783000002&session_gen=0', $fresh['url'], 'No saved loop: 0');
+    }
+
+    /**
      * FIX-001: dropping the pending updates while the webhook must be registered again registers it with a new secret
      * and only then clears the need; otherwise it keeps the secret.
      */

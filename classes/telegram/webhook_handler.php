@@ -933,44 +933,31 @@ class webhook_handler {
      * @param string $chatid Telegram chat id whose tool loop continues
      */
     private static function self_ping(string $chatid): void {
-        $request = self::self_ping_request($chatid);
-        // The address is the site itself, built from wwwroot only: the cURL security of the site, which blocks private
-        // and local addresses by default, would stop the ping of a site on such an address. The proxy still applies.
-        $curl = new \curl(['ignoresecurity' => true]);
-        $curl->setHeader($request['headers']);
-        $curl->post($request['url'], '{}', $request['options']);
-
-        if (!empty($curl->errno) || (string) $curl->error !== '') {
-            \local_jedomi_log('[TELEGRAM SELF-PING] cURL error: ' . $curl->error . ' for chat=' . self::chatref($chatid));
-        }
+        manager::continuation()->schedule($chatid, self::session_gen($chatid));
     }
 
     /**
      * Address, headers and \curl options of the self-ping to our own webhook.
      *
-     * The secret goes in the same header Telegram uses, never in the address, and TLS is verified (JEDOMI-SEC-004).
-     * Redirects are not followed, so the secret never reaches another address (JEDOMI-SEC-018).
+     * Internal: exposed as a testable entry point; not a stable plugin API. It delegates to the Telegram
+     * continuation (see telegram_continuation::request()).
      *
      * @param string $chatid Telegram chat id whose tool loop continues.
      * @return array ['url' => string, 'headers' => string[], 'options' => array of \curl options keyed by name].
      */
     public static function self_ping_request(string $chatid): array {
-        global $CFG;
-        require_once($CFG->libdir . '/filelib.php');
-        $secret = \local_jedomi\telegram\manager::get_webhook_secret();
-        $stateself = session::get_context('tool_loop_' . $chatid);
-        $sessiongen = (int) ($stateself['session_gen'] ?? 0);
-        $url = $CFG->wwwroot . '/local/jedomi/telegram_webhook.php?internal_ping=1&chat_id=' . urlencode($chatid)
-            . '&session_gen=' . $sessiongen;
-        $options = [
-            'CURLOPT_TIMEOUT'        => 5,
-            'CURLOPT_SSL_VERIFYPEER' => true,
-            'CURLOPT_SSL_VERIFYHOST' => 2,
-            'CURLOPT_FOLLOWLOCATION' => false,
-            'CURLOPT_MAXREDIRS'      => 0,
-        ];
-        $headers = ['Content-Type: application/json', 'X-Telegram-Bot-Api-Secret-Token: ' . $secret];
-        return ['url' => $url, 'headers' => $headers, 'options' => $options];
+        return (new telegram_continuation())->request($chatid, self::session_gen($chatid));
+    }
+
+    /**
+     * Session generation of the saved tool loop of a chat; 0 when none was recorded.
+     *
+     * @param string $chatid Telegram chat id.
+     * @return int
+     */
+    private static function session_gen(string $chatid): int {
+        $state = session::get_context('tool_loop_' . $chatid);
+        return (int) ($state['session_gen'] ?? 0);
     }
 
     /**
@@ -1008,7 +995,7 @@ class webhook_handler {
         }
         if ($denial !== null) {
             // Disabled in the Datacurso AI provider: do not continue the tool loop with the AI.
-            api_client::instance()->send_message($chatid, $denial['message']);
+            manager::transport()->send_text($chatid, $denial['message']);
             return;
         }
 
@@ -1062,7 +1049,7 @@ class webhook_handler {
         bool $internalping = false,
         array $readmap = []
     ): void {
-        global $CFG, $DB;
+        global $DB;
 
         $statekey = 'tool_loop_' . $chatid;
 
@@ -1074,7 +1061,7 @@ class webhook_handler {
                 $lockage = time() - ($existing['locked_at'] ?? time());
                 if ($lockage < self::LOCK_TTL) {
                     // Lock is still valid (< 2 min) — block.
-                    api_client::instance()->send_message(
+                    manager::transport()->send_text(
                         $chatid,
                         get_string('telegram_msg_still_processing', 'local_jedomi')
                     );
@@ -1088,7 +1075,7 @@ class webhook_handler {
             }
 
             // ... ── Send typing indicator so user knows it's processing ──
-            api_client::instance()->send_chat_action($chatid, 'typing');
+            manager::transport()->send_activity($chatid);
 
             // Build messages for the Gateway.
             $messages = session::build_messages_for_gateway($chatid, $text);
@@ -1205,7 +1192,13 @@ class webhook_handler {
         $coursesbyrole = $userctx['courses_by_role'];
         $userlang = $DB->get_field('user', 'lang', ['id' => $userid]) ?: current_language();
 
-        $systemcontent = prompt_builder::build($role, $userlang, $toolnames, $coursesbyrole);
+        $systemcontent = \local_jedomi\messaging\prompt_builder::build(
+            $role,
+            $userlang,
+            $toolnames,
+            $coursesbyrole,
+            manager::channel_limits()
+        );
 
         $messages[0] = ['role' => 'system', 'content' => $systemcontent];
 
@@ -1327,7 +1320,7 @@ class webhook_handler {
             // ... ── Soft guard (~30s): send a keepalive so the user knows we're alive ──
             if ($elapsed >= 30 && !$senttimeoutwarning) {
                 $senttimeoutwarning = true;
-                api_client::instance()->send_message($chatid, get_string('telegram_msg_keepalive', 'local_jedomi'));
+                manager::transport()->send_text($chatid, get_string('telegram_msg_keepalive', 'local_jedomi'));
             }
 
             // ... ── Re-send typing indicator each iteration (Telegram auto-expires after ~6s) ──
@@ -1592,7 +1585,7 @@ class webhook_handler {
                     $iteration <= 20 => '📊',
                     default          => '⚙️',
                 };
-                api_client::instance()->send_message(
+                manager::transport()->send_text(
                     $chatid,
                     $progressicon . ' ' . implode(', ', $tooldisplay) . '…'
                 );
@@ -1605,8 +1598,8 @@ class webhook_handler {
                 // untrusted data markers it may have echoed (REL-003).
                 $content = $anonymizer->restore(\local_jedomi\local\untrusted::strip_markers((string) $content));
 
-                // Markdown and HTML of the answer become the Telegram HTML subset, escaped and balanced.
-                $display = formatter::to_html($content);
+                // Markdown and HTML of the answer become the format of the channel (Telegram: its HTML subset).
+                $display = manager::transport()->format_answer($content);
 
                 // If sanitisation emptied the text, send original as plain text.
                 if (trim(strip_tags($display)) === '') {
@@ -1615,7 +1608,7 @@ class webhook_handler {
                     session::set_context($statekey, []);
                     session::append($chatid, 'assistant', $fallback);
                     \local_jedomi\event\chat_answered::create_for_channel('telegram', null, $userid)->trigger();
-                    api_client::instance()->send_message($chatid, $fallback);
+                    manager::transport()->send_text($chatid, $fallback);
                     return;
                 }
 
@@ -1628,36 +1621,8 @@ class webhook_handler {
                 session::append($chatid, 'assistant', (string) $content);
                 \local_jedomi\event\chat_answered::create_for_channel('telegram', null, $userid)->trigger();
 
-                // If the response is large (> 3800 chars) or contains tabular data
-                // (<pre> block), send as a .txt file instead of chunking multiple messages.
-                if (mb_strlen($display) > 3800 || preg_match('/<pre>/i', $display)) {
-                    $tmpdir = $CFG->dataroot . '/jedomi/telegram';
-                    check_dir_exists($tmpdir, true, true);
-                    $filename = 'chat_' . time() . '_' . bin2hex(random_bytes(4)) . '.txt';
-                    $filepath = $tmpdir . '/' . $filename;
-
-                    // Extract first meaningful line for the caption.
-                    $plaintext = html_entity_decode(strip_tags($display), ENT_QUOTES | ENT_HTML5, 'UTF-8');
-                    $chatlines = explode("\n", $plaintext);
-                    $chatoneliner = '';
-                    foreach ($chatlines as $cline) {
-                        $cline = trim($cline);
-                        if (!empty($cline)) {
-                            $chatoneliner = $cline;
-                            break;
-                        }
-                    }
-                    if (mb_strlen($chatoneliner) > 200) {
-                        $chatoneliner = mb_substr($chatoneliner, 0, 197) . '...';
-                    }
-                    $chatcaption = "📄 {$chatoneliner}";
-
-                    file_put_contents($filepath, $plaintext);
-                    api_client::instance()->send_document($chatid, $filepath, $chatcaption);
-                    @unlink($filepath);
-                } else {
-                    api_client::instance()->send_message($chatid, $display);
-                }
+                // A long or tabular answer is sent as a text file instead of several messages.
+                manager::transport()->send_answer($chatid, $display);
                 return;
             }
 
@@ -1802,7 +1767,7 @@ class webhook_handler {
                     . ' err=' . \local_jedomi\local\safe_error::describe($e));
                 // Fallback: release lock and inform user, don't crash silently.
                 session::set_context($statekey, []);
-                api_client::instance()->send_message($chatid, get_string('telegram_msg_state_save_failed', 'local_jedomi'));
+                manager::transport()->send_text($chatid, get_string('telegram_msg_state_save_failed', 'local_jedomi'));
                 return;
             }
 
@@ -1810,7 +1775,7 @@ class webhook_handler {
                 \local_jedomi_log('[GATELOOP] loop_exit for chat ' . self::chatref($chatid) . ' at iter ' . $iteration
                     . ', elapsed=' . (time() - $loopstart) . 's');
                 session::set_context($statekey, []);
-                api_client::instance()->send_message($chatid, get_string('telegram_msg_max_iterations', 'local_jedomi'));
+                manager::transport()->send_text($chatid, get_string('telegram_msg_max_iterations', 'local_jedomi'));
                 return;
             }
         }
@@ -1818,7 +1783,7 @@ class webhook_handler {
         // ... ── Max iterations reached ──
         \local_jedomi_log('[GATELOOP] max iterations reached for chat ' . self::chatref($chatid));
         session::set_context($statekey, []);
-        api_client::instance()->send_message($chatid, get_string('telegram_msg_max_iterations', 'local_jedomi'));
+        manager::transport()->send_text($chatid, get_string('telegram_msg_max_iterations', 'local_jedomi'));
     }
 
 
@@ -1888,7 +1853,7 @@ class webhook_handler {
      */
     private static function send_typing(string $chatid): bool {
         try {
-            if (api_client::instance()->send_chat_action($chatid, 'typing', self::TYPING_TIMEOUT)) {
+            if (manager::transport()->send_activity($chatid, self::TYPING_TIMEOUT)) {
                 return true;
             }
         } catch (\Throwable $e) {
@@ -1974,7 +1939,7 @@ class webhook_handler {
      */
     private static function release_lock(string $statekey, string $chatid, string $message): void {
         session::set_context($statekey, []);
-        api_client::instance()->send_message($chatid, $message);
+        manager::transport()->send_text($chatid, $message);
     }
 
     /**

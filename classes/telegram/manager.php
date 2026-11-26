@@ -31,9 +31,12 @@
 namespace local_jedomi\telegram;
 
 use local_jedomi\messaging\access_guard;
+use local_jedomi\messaging\channel_limits;
 use local_jedomi\messaging\confirmation_service;
+use local_jedomi\messaging\continuation;
 use local_jedomi\messaging\rate_limiter;
 use local_jedomi\messaging\tool_runner;
+use local_jedomi\messaging\transport;
 
 defined('MOODLE_INTERNAL') || die();
 
@@ -503,6 +506,33 @@ class manager {
             },
             true
         );
+    }
+
+    /**
+     * Transport of the Telegram bot: messages, "typing" and answers through the Bot API client.
+     *
+     * @return transport
+     */
+    public static function transport(): transport {
+        return new telegram_transport();
+    }
+
+    /**
+     * Continuation of the Telegram bot: the self-ping to the Telegram webhook.
+     *
+     * @return continuation
+     */
+    public static function continuation(): continuation {
+        return new telegram_continuation();
+    }
+
+    /**
+     * Limits of the Telegram channel: the Telegram HTML format rules of the system prompt.
+     *
+     * @return channel_limits
+     */
+    public static function channel_limits(): channel_limits {
+        return new telegram_limits();
     }
 
     /**
