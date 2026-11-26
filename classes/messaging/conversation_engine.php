@@ -353,7 +353,7 @@ class conversation_engine {
                 $this->release_lock(
                     $statekey,
                     $chatkey,
-                    get_string('error_question_time_limit', 'local_jedomi', (int) ceil(self::QUESTION_TIME_LIMIT / 60))
+                    $this->channel->message(channel::MESSAGE_QUESTION_TIME_LIMIT, (int) ceil(self::QUESTION_TIME_LIMIT / 60))
                 );
                 return;
             }
@@ -413,7 +413,7 @@ class conversation_engine {
                 $this->channel->transport()->send_text($chatkey, $this->channel->message(channel::MESSAGE_KEEPALIVE));
             }
 
-            // ... ── Re-send typing indicator each iteration (Telegram auto-expires after ~6s) ──
+            // ... ── Re-send the activity status each iteration (a channel may expire it, Telegram after ~6s) ──
             // Only on iterations after the first (avoids double-send with the initial one).
             if ($iteration > 0 && $typingok) {
                 $typingok = $this->send_typing($chatkey);
@@ -474,7 +474,7 @@ class conversation_engine {
             if (\local_jedomi\ai\empty_answer::is_empty($answer)) {
                 \local_jedomi_log('[AI] empty answer on iter ' . $iteration . ' finish=' . ($answer['finish_reason'] ?? ''));
                 if (!empty($state['empty_retried'])) {
-                    $this->release_lock($statekey, $chatkey, get_string('error_empty_answer', 'local_jedomi'));
+                    $this->release_lock($statekey, $chatkey, $this->channel->message(channel::MESSAGE_EMPTY_ANSWER));
                     return;
                 }
                 $state['empty_retried'] = true;
@@ -679,7 +679,7 @@ class conversation_engine {
             }
 
             if (!$hastools) {
-                // ... ── Text response: send to Telegram ──
+                // ... ── Text response: send it through the transport of the channel ──
 
                 // The answer was written from anonymised data: the user gets the real values back, without the
                 // untrusted data markers it may have echoed (REL-003).
@@ -826,7 +826,7 @@ class conversation_engine {
                         $iteration,
                         $name
                     ));
-                    $this->release_lock($statekey, $chatkey, get_string('error_tool_repeated', 'local_jedomi', $name));
+                    $this->release_lock($statekey, $chatkey, $this->channel->message(channel::MESSAGE_TOOL_REPEATED, $name));
                     return;
                 }
                 $state['tool_errors'] = $toolerrors->export();

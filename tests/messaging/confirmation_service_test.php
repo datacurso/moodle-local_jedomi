@@ -518,6 +518,81 @@ final class confirmation_service_test extends \advanced_testcase {
     }
 
     /**
+     * In a channel that cannot ask for a PIN a typed PIN never confirms, and an action held before the user needed a PIN
+     * is not run by the button nor the confirmation word: it stays waiting until it expires.
+     */
+    public function test_channel_without_pin_never_runs_the_writes_of_a_user_who_needs_one(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $adminid = (int) get_admin()->id;
+        $this->links[self::CHAT] = $adminid;
+        $agentid = $this->agent();
+        $service = $this->service(self::OTHER_TABLE, 3000, false);
+        $this->assertFalse($service->pins()->available());
+        // Held while the role needed no PIN, then the rule changes.
+        set_config('telegram_require_pin', 0, 'local_jedomi');
+        $service->hold(self::CHAT, $adminid, 'delete_agent', ['id' => $agentid]);
+        $actionid = $this->ui->shown[0][1]->actionid;
+        set_config('telegram_require_pin', 1, 'local_jedomi');
+
+        $this->assertSame(
+            get_string('pending_action_denied', 'local_jedomi'),
+            $service->confirm_with_pin(self::CHAT, $adminid, '246810', $actionid)
+        );
+        $this->assertSame('pin prompt', $service->resolve(self::CHAT, $actionid, confirmation_service::MODE_KEYWORD));
+        $this->assertSame('pin prompt', $service->resolve(self::CHAT, $actionid, confirmation_service::MODE_BUTTON));
+
+        $this->assertTrue($DB->record_exists('local_jedomi_agents', ['id' => $agentid]));
+        $this->assertSame($actionid, $service->waiting(self::CHAT));
+    }
+
+    /**
+     * The texts of a refused write, for the user and for the AI, are exactly those of the channel: the Telegram PIN
+     * texts and link where the channel confirms with a PIN, and the web chat note where it cannot ask for one.
+     */
+    public function test_pin_refusal_texts_of_each_channel(): void {
+        global $DB;
+        $this->resetAfterTest();
+        set_config('telegram_require_pin', 1, 'local_jedomi');
+        $adminid = (int) get_admin()->id;
+        $linkid = $DB->insert_record('local_jedomi_telegram_links', (object) ['userid' => $adminid, 'chatid' => self::CHAT,
+            'username' => 'linked', 'confirmed' => 1, 'timecreated' => time(), 'lastproactivesent' => 0]);
+        $this->links[self::CHAT] = $adminid;
+        $service = $this->service(self::TELEGRAM_TABLE);
+
+        // No PIN set: the user gets the link to set it, the AI a note naming the channel (Telegram: "a Telegram PIN").
+        $expected = ['status' => 'refused', 'reason' => 'pin_required',
+            'note' => 'The user must set a Test channel PIN in Moodle before any change. Do not call it again.'];
+        $this->assertSame($expected, json_decode((string) $service->hold(self::CHAT, $adminid, 'delete_agent', ['id' => 1]), true));
+        $url = (new \moodle_url('/local/jedomi/telegram_profile.php'))->out(false);
+        $this->assertSame([[self::CHAT, get_string('telegram_pin_missing', 'local_jedomi', $url)]], $this->ui->notified);
+        $this->assertSame(
+            get_string('telegram_pin_missing', 'local_jedomi', $url),
+            $service->confirm_with_pin(self::CHAT, $adminid, '123456', 'none')
+        );
+
+        // Locked after wrong PINs: the user gets the minutes left, the AI the lockout note.
+        telegram_pin_service::set_pin($adminid, '246810');
+        $DB->set_field('local_jedomi_telegram_links', 'pinlockeduntil', time() + 10 * MINSECS, ['id' => $linkid]);
+        $expected = ['status' => 'refused', 'reason' => 'pin_locked',
+            'note' => 'Changes are locked after too many wrong PINs. Do not call it again.'];
+        $this->assertSame($expected, json_decode((string) $service->hold(self::CHAT, $adminid, 'delete_agent', ['id' => 1]), true));
+        $this->assertSame([self::CHAT, get_string('telegram_pin_locked', 'local_jedomi', 10)], $this->ui->notified[1]);
+        $this->assertSame(
+            get_string('telegram_pin_locked', 'local_jedomi', 10),
+            $service->confirm_with_pin(self::CHAT, $adminid, '246810', 'none')
+        );
+
+        // A channel that cannot ask for the PIN sends nothing to the chat; the AI is told to use the web chat.
+        $other = $this->service(self::OTHER_TABLE, 3000, false);
+        $expected = ['status' => 'refused', 'reason' => 'pin_unsupported',
+            'note' => 'Changes of this user need a PIN, which Test channel cannot ask for. Tell the user to make the '
+                . 'change in the Jedomi web chat. Do not call it again.'];
+        $this->assertSame($expected, json_decode((string) $other->hold(self::CHAT, $adminid, 'delete_agent', ['id' => 1]), true));
+        $this->assertSame([], $this->ui->notified);
+    }
+
+    /**
      * Build a service over the given table with a recording confirmation_ui.
      *
      * @param string $table Table of held actions.
@@ -594,6 +669,8 @@ final class confirmation_service_test extends \advanced_testcase {
                 return $links[$chatkey] ?? null;
             },
             $pinconfirmation
+                ? new \local_jedomi\telegram\telegram_pin_policy()
+                : new no_pin_policy(static fn(int $userid): bool => telegram_pin_service::is_required($userid))
         );
     }
 

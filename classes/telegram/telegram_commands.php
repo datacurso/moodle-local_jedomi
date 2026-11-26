@@ -25,7 +25,6 @@
 namespace local_jedomi\telegram;
 
 use local_jedomi\local\service\telegram_link_service;
-use local_jedomi\local\service\telegram_pin_service;
 use local_jedomi\messaging\chat_commands;
 use local_jedomi\messaging\inbound_message;
 
@@ -34,8 +33,8 @@ defined('MOODLE_INTERNAL') || die();
 require_once(__DIR__ . '/../../lib.php');
 
 /**
- * The slash commands of the Telegram bot (/help, /start CODE, /unlink, /new and their aliases), its inline keyboards,
- * the links of local_jedomi_telegram_links with their one-time codes, and the Telegram PIN.
+ * The slash commands of the Telegram bot (/help, /start CODE, /unlink, /new and their aliases), its inline keyboards
+ * and the links of local_jedomi_telegram_links with their one-time codes. The Telegram PIN is telegram_pin_policy.
  */
 class telegram_commands implements chat_commands {
     #[\Override]
@@ -216,43 +215,6 @@ class telegram_commands implements chat_commands {
         // The link, the conversation, the task in progress, the limit and the held actions are removed.
         telegram_link_service::unlink((int) $link->userid);
         api_client::instance()->send_message($chatkey, get_string('telegram_msg_unlinked', 'local_jedomi'));
-    }
-
-    /**
-     * The Telegram PIN of administrators and managers (see telegram_pin_service).
-     *
-     * @param int $userid Linked user.
-     * @return bool
-     */
-    #[\Override]
-    public function pin_required(int $userid): bool {
-        return telegram_pin_service::is_required($userid);
-    }
-
-    #[\Override]
-    public function is_pin(string $text): bool {
-        return telegram_pin_service::is_valid_format($text);
-    }
-
-    #[\Override]
-    public function pin_window_open(int $userid): bool {
-        return telegram_pin_service::in_window($userid);
-    }
-
-    /**
-     * Delete the message with the PIN from the chat (RISK-001).
-     *
-     * @param inbound_message $message Message with the PIN.
-     * @return void
-     */
-    #[\Override]
-    public function hide_pin(inbound_message $message): void {
-        $messageid = (int) $message->messageid;
-        if ($messageid > 0 && !api_client::instance()->delete_message($message->chatkey, $messageid)) {
-            // The PIN is still checked: the user is not blocked by a message Telegram cannot delete.
-            \local_jedomi_log('Telegram: the PIN message could not be deleted chat='
-                . \local_jedomi_log_pseudonym('chat', $message->chatkey));
-        }
     }
 
     /**

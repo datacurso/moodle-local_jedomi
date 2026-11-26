@@ -144,6 +144,24 @@ final class telegram_channel_test extends \advanced_testcase {
     }
 
     /**
+     * The messages that end a question are, in Telegram, the shared strings the engine sent before, with their
+     * parameter.
+     */
+    public function test_messages_that_end_a_question_are_the_shared_strings(): void {
+        $channel = new telegram_channel();
+
+        $this->assertSame(
+            get_string('error_question_time_limit', 'local_jedomi', 10),
+            $channel->message(channel::MESSAGE_QUESTION_TIME_LIMIT, 10)
+        );
+        $this->assertSame(get_string('error_empty_answer', 'local_jedomi'), $channel->message(channel::MESSAGE_EMPTY_ANSWER));
+        $this->assertSame(
+            get_string('error_tool_repeated', 'local_jedomi', 'no_such_tool'),
+            $channel->message(channel::MESSAGE_TOOL_REPEATED, 'no_such_tool')
+        );
+    }
+
+    /**
      * An unknown message key is a coding error.
      */
     public function test_unknown_message_is_a_coding_error(): void {

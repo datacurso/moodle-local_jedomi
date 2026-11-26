@@ -47,7 +47,7 @@ require_once(__DIR__ . '/../../lib.php');
  * local_jedomi_telegram_links. Each piece comes from its factory in manager.
  */
 class telegram_channel implements channel {
-    /** @var string[] Telegram string of each message of the engine. */
+    /** @var string[] Telegram string of each message of the engine; the errors that end a question are the shared ones. */
     private const MESSAGES = [
         channel::MESSAGE_STILL_PROCESSING => 'telegram_msg_still_processing',
         channel::MESSAGE_KEEPALIVE => 'telegram_msg_keepalive',
@@ -55,6 +55,9 @@ class telegram_channel implements channel {
         channel::MESSAGE_STATE_SAVE_FAILED => 'telegram_msg_state_save_failed',
         channel::MESSAGE_MAX_ITERATIONS => 'telegram_msg_max_iterations',
         channel::MESSAGE_NO_ANSWER => 'error_telegram_e006',
+        channel::MESSAGE_QUESTION_TIME_LIMIT => 'error_question_time_limit',
+        channel::MESSAGE_EMPTY_ANSWER => 'error_empty_answer',
+        channel::MESSAGE_TOOL_REPEATED => 'error_tool_repeated',
         channel::MESSAGE_RATE_CHECK_FAILED => 'telegram_msg_rate_check_failed',
         channel::MESSAGE_RATE_LIMITED => 'telegram_msg_rate_limited',
         channel::MESSAGE_PRIVATE_ONLY => 'telegram_msg_private_only',

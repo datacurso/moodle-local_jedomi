@@ -510,7 +510,7 @@ class manager {
                 $userid = $DB->get_field('local_jedomi_telegram_links', 'userid', ['chatid' => $chatid, 'confirmed' => 1]);
                 return $userid === false ? null : (int) $userid;
             },
-            true
+            new telegram_pin_policy()
         );
     }
 
@@ -533,7 +533,7 @@ class manager {
     }
 
     /**
-     * Commands of the Telegram bot: slash commands, inline keyboards, the links and their codes, and the PIN.
+     * Commands of the Telegram bot: slash commands, inline keyboards, the links and their codes.
      *
      * @return chat_commands
      */

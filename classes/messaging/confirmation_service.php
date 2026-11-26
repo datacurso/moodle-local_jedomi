@@ -29,7 +29,6 @@ defined('MOODLE_INTERNAL') || die();
 require_once(__DIR__ . '/../../lib.php');
 
 use local_jedomi\local\service\pending_action_service;
-use local_jedomi\local\service\telegram_pin_service;
 
 /**
  * Actions of a messaging channel (Telegram, WhatsApp) that change data and wait until the user confirms them.
@@ -37,11 +36,11 @@ use local_jedomi\local\service\telegram_pin_service;
  * A tool call that changes data is held in the table of the channel (same shape as
  * local_jedomi_telegram_pending_actions) and shown with the confirmation_ui of the channel. A medium or high action is
  * confirmed with the confirm button or the confirmation word; a critical one only with the word. An administrator or
- * manager who needs a PIN (telegram_pin_service) confirms only with it, except in the 15 minutes after a right PIN. The
- * PIN is kept with the Telegram link, so only a channel built with PIN confirmation can ask for it; any other channel
- * refuses the writes of a user who needs a PIN. An action runs once, only for the user still linked to the chat and
- * still served by the channel, never after it expires, through the tool runner of the channel; confirmations and
- * cancellations are recorded as events with the channel name.
+ * manager who needs a PIN (see pin_policy) confirms only with it, except in the 15 minutes after a right PIN. Only a
+ * channel whose PIN policy is available can ask for the PIN; any other channel (no_pin_policy) refuses the writes of a
+ * user who needs a PIN before holding them and never runs them. The PIN texts come from the policy. An action runs
+ * once, only for the user still linked to the chat and still served by the channel, never after it expires, through
+ * the tool runner of the channel; confirmations and cancellations are recorded as events with the channel name.
  */
 class confirmation_service {
     /** @var string A held action is cancelled. */
@@ -68,7 +67,7 @@ class confirmation_service {
      * @param access_guard $guard Access rules of the channel.
      * @param tool_runner $tools Tool runner of the channel; its channel name is recorded with each answer.
      * @param \Closure $linkeduser Id of the user linked to a chat key: fn(string $chatkey): ?int.
-     * @param bool $pinconfirmation Whether the channel can ask for the PIN.
+     * @param pin_policy $pins PIN of the channel: who needs one, whether the channel can ask for it, and its texts.
      */
     public function __construct(
         /** @var string Table of the held actions. */
@@ -83,8 +82,8 @@ class confirmation_service {
         private readonly tool_runner $tools,
         /** @var \Closure Id of the user linked to a chat key. */
         private readonly \Closure $linkeduser,
-        /** @var bool Whether the channel can ask for the PIN. */
-        private readonly bool $pinconfirmation,
+        /** @var pin_policy PIN of the channel. */
+        private readonly pin_policy $pins,
     ) {
     }
 
@@ -95,6 +94,15 @@ class confirmation_service {
      */
     public function ui(): confirmation_ui {
         return $this->ui;
+    }
+
+    /**
+     * PIN policy of the channel.
+     *
+     * @return pin_policy
+     */
+    public function pins(): pin_policy {
+        return $this->pins;
     }
 
     /**
@@ -124,14 +132,14 @@ class confirmation_service {
             return null;
         }
         $askpin = false;
-        if (telegram_pin_service::is_required($userid)) {
+        if ($this->pins->is_required($userid)) {
             $refusal = $this->pin_refusal($chatkey, $userid);
             if ($refusal !== null) {
                 return $refusal;
             }
             // A right PIN in the last 15 minutes only skips asking it again: the write is still held and shown with its
             // card, and the user confirms it with the button or the confirmation word (JEDOMI-SEC-016).
-            $askpin = !telegram_pin_service::in_window($userid);
+            $askpin = !$this->pins->in_window($userid);
         }
         $card = pending_action_service::card($userid, $name, $args, $severity, $this->ui->details_length());
         if ($card['truncated']) {
@@ -232,8 +240,8 @@ class confirmation_service {
         $confirm = $mode !== self::MODE_CANCEL;
         if (
             in_array($mode, [self::MODE_BUTTON, self::MODE_KEYWORD], true) && $linkeduserid !== null
-                && telegram_pin_service::is_required($linkeduserid)
-                && !telegram_pin_service::in_window($linkeduserid)
+                && $this->pins->is_required($linkeduserid)
+                && !$this->pins->in_window($linkeduserid)
         ) {
             // Outside the 15 minutes after a right PIN, only the PIN confirms (Decision 7, JEDOMI-SEC-016).
             return $this->ui->pin_prompt();
@@ -286,7 +294,8 @@ class confirmation_service {
 
     /**
      * Check a PIN typed in the chat and run the held action with it. The PIN is never logged nor sent to the AI; the
-     * channel removes the message with the PIN from the chat when it can.
+     * channel removes the message with the PIN from the chat when it can. In a channel that cannot ask for the PIN no
+     * PIN is ever checked and the action is not run.
      *
      * @param string $chatkey Chat key of the channel.
      * @param int $userid Linked Moodle user.
@@ -295,18 +304,22 @@ class confirmation_service {
      * @return string Message for the user.
      */
     public function confirm_with_pin(string $chatkey, int $userid, string $pin, string $actionid): string {
-        $check = telegram_pin_service::verify($userid, $pin);
+        if (!$this->pins->available()) {
+            \local_jedomi_log($this->label . ': PIN refused, the channel has no PIN user=' . self::userref($userid));
+            return get_string('pending_action_denied', 'local_jedomi');
+        }
+        $check = $this->pins->verify($userid, $pin);
         switch ($check['result']) {
-            case telegram_pin_service::RESULT_OK:
+            case pin_policy::RESULT_OK:
                 return $this->resolve($chatkey, $actionid, self::MODE_PIN);
-            case telegram_pin_service::RESULT_WRONG:
+            case pin_policy::RESULT_WRONG:
                 \local_jedomi_log($this->label . ': wrong PIN user=' . self::userref($userid));
-                return get_string('telegram_pin_wrong', 'local_jedomi', $check['remaining']);
-            case telegram_pin_service::RESULT_LOCKED:
+                return $this->pins->wrong_message($check['remaining']);
+            case pin_policy::RESULT_LOCKED:
                 \local_jedomi_log($this->label . ': PIN lockout user=' . self::userref($userid));
-                return self::pin_locked_message(telegram_pin_service::locked_until($userid));
+                return $this->pins->locked_message($this->pins->locked_until($userid));
             default:
-                return self::pin_missing_message();
+                return $this->pins->missing_message();
         }
     }
 
@@ -320,22 +333,22 @@ class confirmation_service {
      * @return string|null Result for the AI when the write is refused, or null when the user can confirm with the PIN.
      */
     private function pin_refusal(string $chatkey, int $userid): ?string {
-        if (!$this->pinconfirmation) {
+        if (!$this->pins->available()) {
             \local_jedomi_log($this->label . ': write refused, PIN required but not available user=' . self::userref($userid));
             return json_encode(['status' => 'refused', 'reason' => 'pin_unsupported',
                 'note' => 'Changes of this user need a PIN, which ' . $this->label . ' cannot ask for. Tell the user to '
                     . 'make the change in the Jedomi web chat. Do not call it again.']);
         }
-        if (!telegram_pin_service::has_pin($userid)) {
+        if (!$this->pins->has_pin($userid)) {
             \local_jedomi_log($this->label . ': write refused, PIN required but not set user=' . self::userref($userid));
-            $this->ui->notify($chatkey, self::pin_missing_message());
+            $this->ui->notify($chatkey, $this->pins->missing_message());
             return json_encode(['status' => 'refused', 'reason' => 'pin_required',
-                'note' => 'The user must set a Telegram PIN in Moodle before any change. Do not call it again.']);
+                'note' => 'The user must set a ' . $this->label . ' PIN in Moodle before any change. Do not call it again.']);
         }
-        $lockeduntil = telegram_pin_service::locked_until($userid);
+        $lockeduntil = $this->pins->locked_until($userid);
         if ($lockeduntil > 0) {
             \local_jedomi_log($this->label . ': write refused, PIN lockout user=' . self::userref($userid));
-            $this->ui->notify($chatkey, self::pin_locked_message($lockeduntil));
+            $this->ui->notify($chatkey, $this->pins->locked_message($lockeduntil));
             return json_encode(['status' => 'refused', 'reason' => 'pin_locked',
                 'note' => 'Changes are locked after too many wrong PINs. Do not call it again.']);
         }
@@ -368,8 +381,9 @@ class confirmation_service {
      * afterwards has the action. The others get false, as if the action had already been answered.
      *
      * A row left claimed by a request that died is never offered again (waiting(), waiting_critical() and resolve()
-     * skip it) and is deleted by \local_jedomi\task\cleanup_telegram_sessions with the other held actions older than
-     * 5 minutes, whatever its callbackid.
+     * skip it) and is deleted by the cleanup task of the channel (Telegram: \local_jedomi\task\cleanup_telegram_sessions)
+     * with the other held actions older than 5 minutes, whatever its callbackid. A new channel must clean its table the
+     * same way.
      *
      * @param \stdClass $pending Held action as the request read it.
      * @return bool Whether this request claimed the action.
@@ -402,26 +416,6 @@ class confirmation_service {
             (string) ($action['name'] ?? ''),
             (array) ($action['params'] ?? [])
         ) === pending_action_service::SEVERITY_CRITICAL;
-    }
-
-    /**
-     * Message for writes locked until a time, with the minutes left.
-     *
-     * @param int $lockeduntil Time the lock ends.
-     * @return string
-     */
-    private static function pin_locked_message(int $lockeduntil): string {
-        return get_string('telegram_pin_locked', 'local_jedomi', max(1, (int) ceil(($lockeduntil - time()) / MINSECS)));
-    }
-
-    /**
-     * Message for a user who needs a PIN and has not set one, with the link to set it.
-     *
-     * @return string
-     */
-    private static function pin_missing_message(): string {
-        $url = (new \moodle_url('/local/jedomi/telegram_profile.php'))->out(false);
-        return get_string('telegram_pin_missing', 'local_jedomi', $url);
     }
 
     /**

@@ -41,6 +41,15 @@ use local_jedomi\schema\ws_indexer;
  * local_jedomi_get_tool_definitions() and query_runner), the label named when a tool is not supported, and the closed
  * list of the tools it can run; any other tool is never offered to the AI in the channel. The role used for
  * authorization is always derived from the user id, never taken from the caller.
+ *
+ * What execute() returns is a tool result for the AI, never a text sent to the user as is: the AI writes the answer,
+ * and transport::format_answer() of the channel turns it into the format of that channel. The results therefore use
+ * a small, channel-neutral markup (<b> and plain lines with bullets and emoji), which every channel transport must
+ * accept, and the same texts in every channel. Some of those texts have keys named after Telegram for historical
+ * reasons, but their content names no channel: telegram_permission_denied, telegram_table_name_required,
+ * telegram_search_query_required, telegram_no_tables_found and telegram_sql_query_required (with table_not_found,
+ * non_select_rejected, note_ws_none_configured and agent_prompt_hidden). They are kept so that the Telegram output and
+ * the translations do not change.
  */
 class tool_runner {
     /**
@@ -221,7 +230,7 @@ class tool_runner {
      * @param anonymizer|null $anonymizer Anonymiser of the conversation; the rows of a database query are anonymised
      *                                    by column name with it before they are formatted.
      * @param int $courseid Course stored with a confirmed held action: the role is computed in it; 0 outside a course.
-     * @return string Tool execution result, in the HTML subset of the Telegram messages
+     * @return string Tool execution result for the AI, in the channel-neutral markup described on the class
      */
     public function execute(
         string $name,

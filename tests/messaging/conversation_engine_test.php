@@ -31,13 +31,16 @@ require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/fake_telegram_api_cli
 require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/fake_continuation.php');
 require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/fake_transport.php');
 require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/fake_channel.php');
+require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/neutral_channel.php');
 
 /**
  * Tests for the channel-neutral conversation engine: the AI and tools loop of a chat, run through the pieces of its
  * channel.
  *
  * The channel is the Telegram channel with a recording transport and continuation (fake_channel), so every message,
- * activity status and next leg the engine produces is seen here. The AI service is fake_ai_client.
+ * activity status and next leg the engine produces is seen here. The tests named "neutral" run with neutral_channel
+ * instead, a channel built only from the channel-neutral core, without any piece of Telegram. The AI service is
+ * fake_ai_client.
  *
  * @package    local_jedomi
  * @category   test
@@ -77,6 +80,7 @@ final class conversation_engine_test extends \advanced_testcase {
     protected function tearDown(): void {
         client::set_instance_for_testing(null);
         api_client::set_instance_for_testing(null);
+        neutral_channel::drop_tables();
         parent::tearDown();
     }
 
@@ -100,10 +104,11 @@ final class conversation_engine_test extends \advanced_testcase {
      * @param string $chatkey Chat key.
      * @param int $userid User of the loop.
      * @param array $extrastate State fields that replace the defaults.
+     * @param channel|null $channel Channel of the chat; null for the channel of the tests.
      */
-    private function seed_loop(string $chatkey, int $userid, array $extrastate = []): void {
+    private function seed_loop(string $chatkey, int $userid, array $extrastate = [], ?channel $channel = null): void {
         $now = \core\di::get(\core\clock::class)->time();
-        $this->channel->store()->set_context('tool_loop_' . $chatkey, array_merge([
+        ($channel ?? $this->channel)->store()->set_context('tool_loop_' . $chatkey, array_merge([
             'session_gen' => self::SESSION_GEN,
             'started_at'  => $now,
             'is_locked'   => true,
@@ -311,5 +316,78 @@ final class conversation_engine_test extends \advanced_testcase {
         $this->assertCount(1, $this->ai->calls);
         $this->assertSame(channel::MESSAGE_MAX_ITERATIONS, end($this->channel->transport->sent)['text']);
         $this->assertSame([], $this->channel->store()->get_context('tool_loop_' . $chatkey));
+    }
+
+    /**
+     * A channel that is not Telegram answers through its own pieces: its transport, its store and its name in the event.
+     */
+    public function test_neutral_channel_answers_through_its_own_pieces(): void {
+        global $DB;
+        $channel = new neutral_channel();
+        $userid = (int) $this->getDataGenerator()->create_user()->id;
+        $channel->links['nc100'] = $userid;
+        $this->ai->enqueue_text('Hello.');
+        $sink = $this->redirectEvents();
+
+        $this->with_time_limit(fn() => (new conversation_engine($channel))->run($userid, 'nc100', 'question'));
+
+        $this->assertSame([['kind' => 'answer', 'chatkey' => 'nc100', 'text' => 'Hello.']], $channel->transport->sent);
+        $this->assertSame([
+            ['role' => 'user', 'content' => 'question'],
+            ['role' => 'assistant', 'content' => 'Hello.'],
+        ], $channel->store()->get('nc100'));
+        $this->assertTrue($DB->record_exists(neutral_channel::SESSIONS_TABLE, ['chatid' => 'nc100']));
+        $this->assertSame(0, $DB->count_records('local_jedomi_telegram_sessions'));
+        $answered = array_values(array_filter(
+            $sink->get_events(),
+            static fn($event): bool => $event instanceof \local_jedomi\event\chat_answered
+        ));
+        $this->assertSame(neutral_channel::NAME, $answered[0]->other['channel']);
+    }
+
+    /**
+     * The messages that end a question (time limit, a second answer without text, the same tool error repeated) are
+     * texts of the channel, with their parameter.
+     */
+    public function test_neutral_channel_gives_the_messages_that_end_a_question(): void {
+        $channel = new class extends neutral_channel {
+            /** @var array[] Messages asked for, as [key, parameter]. */
+            public array $asked = [];
+
+            #[\Override]
+            public function message(string $key, mixed $a = null): string {
+                $this->asked[] = [$key, $a];
+                return $key;
+            }
+        };
+        $userid = (int) $this->getDataGenerator()->create_user()->id;
+        foreach (['nc101', 'nc102', 'nc103'] as $chatkey) {
+            $channel->links[$chatkey] = $userid;
+        }
+
+        $this->seed_loop('nc101', $userid, ['started_at' => time() - conversation_engine::QUESTION_TIME_LIMIT - 1], $channel);
+        $this->with_time_limit(fn() => (new conversation_engine($channel))->resume('nc101', 0));
+
+        $this->ai->enqueue_empty('stop');
+        $this->ai->enqueue_empty('stop');
+        $this->seed_loop('nc102', $userid, [], $channel);
+        $this->with_time_limit(fn() => (new conversation_engine($channel))->resume('nc102', 0));
+
+        for ($i = 1; $i <= 5; $i++) {
+            $this->ai->enqueue_tool_calls([['id' => 'call_' . $i, 'type' => 'function',
+                'function' => ['name' => 'no_such_tool', 'arguments' => '{"a":1}']]]);
+        }
+        $this->seed_loop('nc103', $userid, [], $channel);
+        $this->with_time_limit(fn() => (new conversation_engine($channel))->resume('nc103', 0));
+
+        $minutes = (int) ceil(conversation_engine::QUESTION_TIME_LIMIT / 60);
+        $this->assertContains([channel::MESSAGE_QUESTION_TIME_LIMIT, $minutes], $channel->asked);
+        $this->assertContains([channel::MESSAGE_EMPTY_ANSWER, null], $channel->asked);
+        $this->assertContains([channel::MESSAGE_TOOL_REPEATED, 'no_such_tool'], $channel->asked);
+        $this->assertSame(
+            [channel::MESSAGE_QUESTION_TIME_LIMIT, channel::MESSAGE_EMPTY_ANSWER, channel::MESSAGE_TOOL_REPEATED],
+            array_values(array_intersect($channel->transport->texts(), [channel::MESSAGE_QUESTION_TIME_LIMIT,
+                channel::MESSAGE_EMPTY_ANSWER, channel::MESSAGE_TOOL_REPEATED]))
+        );
     }
 }

@@ -48,6 +48,15 @@ interface channel {
     /** @var string Message key: the AI answered without text nor tool calls. */
     public const MESSAGE_NO_ANSWER = 'no_answer';
 
+    /** @var string Message key: the question ran out of its time limit; its parameter is the limit in minutes. */
+    public const MESSAGE_QUESTION_TIME_LIMIT = 'question_time_limit';
+
+    /** @var string Message key: the AI answered without text again after being asked once more. */
+    public const MESSAGE_EMPTY_ANSWER = 'empty_answer';
+
+    /** @var string Message key: the same tool kept failing with the same error; its parameter is the tool name. */
+    public const MESSAGE_TOOL_REPEATED = 'tool_repeated';
+
     /** @var string Message key: the message limit could not be checked, the message must be sent again. */
     public const MESSAGE_RATE_CHECK_FAILED = 'rate_check_failed';
 

@@ -31,8 +31,10 @@ use local_jedomi\local\service\pending_action_service;
  * chat, link (expired link, link codes), unlink, access (active account, allowed role), typed PIN or confirmation word,
  * new conversation, media and the conversation with the AI. Each step that answers ends the message.
  *
- * The words, buttons and records of the help, the link, the PIN and a new conversation come from the commands of the
- * channel (see chat_commands); the texts from its messages.
+ * The words, buttons and records of the help, the link and a new conversation come from the commands of the channel
+ * (see chat_commands); the PIN from the pin_policy of its confirmation service; the texts from its messages. A channel
+ * whose PIN is not available never reads a text as a PIN, and the confirmation word of a user who needs a PIN only gets
+ * the PIN prompt of the channel: such a write is never run from here, whatever the channel.
  */
 final class router {
     /**
@@ -140,15 +142,16 @@ final class router {
         // PIN only while an action waits in the chat; then it never reaches the AI. Otherwise it is a normal message
         // (RES-003).
         $confirmations = $this->channel->confirmation_service();
-        $pinrequired = $commands->pin_required($userid);
+        $pins = $confirmations->pins();
+        $pinrequired = $pins->is_required($userid);
         $waiting = $pinrequired ? $confirmations->waiting($chatkey) : null;
-        if ($waiting !== null && $commands->is_pin($text)) {
+        if ($waiting !== null && $pins->available() && $pins->is_pin($text)) {
             // The PIN is still checked when its message cannot be removed: the user is not blocked by it.
-            $commands->hide_pin($message);
+            $pins->hide($message);
             $transport->send_text($chatkey, $confirmations->confirm_with_pin($chatkey, $userid, $text, $waiting));
             return;
         }
-        if ($pinrequired && !$commands->pin_window_open($userid)) {
+        if ($pinrequired && !$pins->in_window($userid)) {
             if ($waiting !== null && pending_action_service::is_confirm_keyword($text)) {
                 $transport->send_text($chatkey, $confirmations->ui()->pin_prompt());
                 return;

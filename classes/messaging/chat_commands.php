@@ -26,8 +26,8 @@ namespace local_jedomi\messaging;
 
 /**
  * What the router asks a channel (Telegram, WhatsApp) at the steps whose words, buttons or records belong to the
- * channel: the help, the link of a chat and its codes, unlinking, the PIN and a new conversation. The order of the
- * steps belongs to the router.
+ * channel: the help, the link of a chat and its codes, unlinking and a new conversation. The order of the steps
+ * belongs to the router. The PIN is not a command: it comes from the pin_policy of the confirmation service.
  */
 interface chat_commands {
     /**
@@ -120,38 +120,6 @@ interface chat_commands {
      * @return void
      */
     public function unlink(string $chatkey, \stdClass $link): void;
-
-    /**
-     * Whether the user confirms the actions that change data with a PIN in this channel.
-     *
-     * @param int $userid Linked user.
-     * @return bool
-     */
-    public function pin_required(int $userid): bool;
-
-    /**
-     * Whether a text has the format of a PIN.
-     *
-     * @param string $text Trimmed text of the message.
-     * @return bool
-     */
-    public function is_pin(string $text): bool;
-
-    /**
-     * Whether the user typed the right PIN recently enough that actions are confirmed as without a PIN.
-     *
-     * @param int $userid Linked user.
-     * @return bool
-     */
-    public function pin_window_open(int $userid): bool;
-
-    /**
-     * Remove a message with a PIN from the chat, where the channel allows it. The PIN is never logged.
-     *
-     * @param inbound_message $message Message with the PIN.
-     * @return void
-     */
-    public function hide_pin(inbound_message $message): void;
 
     /**
      * Whether a text asks for a new conversation.

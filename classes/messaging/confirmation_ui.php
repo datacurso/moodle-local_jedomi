@@ -70,7 +70,9 @@ interface confirmation_ui {
     public function keyword_prompt(): string;
 
     /**
-     * Message asking the user to type their PIN.
+     * Message asking the user to type their PIN. It answers a confirmation that only the PIN can give; in a channel
+     * whose pin_policy is not available, where no PIN is ever read, it must tell the user to make the change in the
+     * web chat instead.
      *
      * @return string
      */
