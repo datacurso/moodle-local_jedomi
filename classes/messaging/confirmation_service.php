@@ -56,6 +56,9 @@ class confirmation_service {
     /** @var string A held action is confirmed with the right PIN typed in the chat. */
     public const MODE_PIN = 'pin';
 
+    /** @var string Start of the id of a held action while a request claims it (see claim()). */
+    private const CLAIMED_PREFIX = 'claimed:';
+
     /**
      * Constructor.
      *
@@ -166,10 +169,11 @@ class confirmation_service {
      */
     public function waiting(string $chatkey): ?string {
         global $DB;
+        [$select, $params] = $this->waiting_select($chatkey);
         $records = $DB->get_records_select(
             $this->table,
-            'chatid = :chatid AND timecreated >= :cutoff',
-            ['chatid' => $chatkey, 'cutoff' => time() - pending_action_service::EXPIRY],
+            $select,
+            $params,
             'timecreated DESC, id DESC',
             'id, callbackid',
             0,
@@ -187,12 +191,8 @@ class confirmation_service {
      */
     public function waiting_critical(string $chatkey): ?string {
         global $DB;
-        $records = $DB->get_records_select(
-            $this->table,
-            'chatid = :chatid AND timecreated >= :cutoff',
-            ['chatid' => $chatkey, 'cutoff' => time() - pending_action_service::EXPIRY],
-            'timecreated DESC, id DESC'
-        );
+        [$select, $params] = $this->waiting_select($chatkey);
+        $records = $DB->get_records_select($this->table, $select, $params, 'timecreated DESC, id DESC');
         foreach ($records as $record) {
             if (self::is_critical(json_decode((string) $record->actionjson, true))) {
                 return (string) $record->callbackid;
@@ -217,7 +217,9 @@ class confirmation_service {
     public function resolve(string $chatkey, string $actionid, string $mode): string {
         global $DB, $USER;
 
-        $pending = $DB->get_record($this->table, ['callbackid' => $actionid, 'chatid' => $chatkey]);
+        // A claimed id is never answered, so a crafted or leaked token cannot claim the action again.
+        $claimed = str_starts_with($actionid, self::CLAIMED_PREFIX);
+        $pending = $claimed ? false : $DB->get_record($this->table, ['callbackid' => $actionid, 'chatid' => $chatkey]);
         if (!$pending) {
             return get_string('pending_action_not_found', 'local_jedomi');
         }
@@ -341,17 +343,40 @@ class confirmation_service {
     }
 
     /**
+     * Condition for the actions of a chat still waiting: not expired and not claimed.
+     *
+     * @param string $chatkey Chat key of the channel.
+     * @return array The SQL condition and its parameters.
+     */
+    private function waiting_select(string $chatkey): array {
+        global $DB;
+        $notclaimed = $DB->sql_like('callbackid', ':claimed', true, true, true);
+        return [
+            "chatid = :chatid AND timecreated >= :cutoff AND {$notclaimed}",
+            [
+                'chatid' => $chatkey,
+                'cutoff' => time() - pending_action_service::EXPIRY,
+                'claimed' => $DB->sql_like_escape(self::CLAIMED_PREFIX) . '%',
+            ],
+        ];
+    }
+
+    /**
      * Claim a held action for this request and remove it. Only one of several requests that read the action at the
      * same time claims it: each one swaps the id of the action for a random token of its own only while the id is
      * still there, which the database does for one request at a time, so only the request that finds its own token
      * afterwards has the action. The others get false, as if the action had already been answered.
+     *
+     * A row left claimed by a request that died is never offered again (waiting(), waiting_critical() and resolve()
+     * skip it) and is deleted by \local_jedomi\task\cleanup_telegram_sessions with the other held actions older than
+     * 5 minutes, whatever its callbackid.
      *
      * @param \stdClass $pending Held action as the request read it.
      * @return bool Whether this request claimed the action.
      */
     private function claim(\stdClass $pending): bool {
         global $DB;
-        $token = 'claimed:' . random_string(32);
+        $token = self::CLAIMED_PREFIX . random_string(32);
         $DB->set_field_select(
             $this->table,
             'callbackid',

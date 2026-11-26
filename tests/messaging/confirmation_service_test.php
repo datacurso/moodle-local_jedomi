@@ -195,6 +195,83 @@ final class confirmation_service_test extends \advanced_testcase {
     }
 
     /**
+     * An action left claimed (being claimed, or stranded by a request that died) is not waiting any more: the newest
+     * action that is still not claimed is found instead.
+     *
+     * @dataProvider table_provider
+     * @param string $table
+     */
+    public function test_claimed_actions_are_not_waiting(string $table): void {
+        global $DB;
+        $this->resetAfterTest();
+        $service = $this->service($table);
+        $adminid = (int) get_admin()->id;
+        $service->hold(self::CHAT, $adminid, 'delete_agent', ['id' => 1]);
+        $older = $this->ui->shown[0][1]->actionid;
+        $service->hold(self::CHAT, $adminid, 'delete_agent', ['id' => 2]);
+        $newer = $this->ui->shown[1][1]->actionid;
+        $DB->set_field($table, 'timecreated', time() - 10, ['callbackid' => $older]);
+
+        $DB->set_field($table, 'callbackid', 'claimed:' . random_string(32), ['callbackid' => $newer]);
+        $this->assertSame($older, $service->waiting(self::CHAT));
+        $this->assertSame($older, $service->waiting_critical(self::CHAT));
+
+        $DB->set_field($table, 'callbackid', 'claimed:' . random_string(32), ['callbackid' => $older]);
+        $this->assertNull($service->waiting(self::CHAT));
+        $this->assertNull($service->waiting_critical(self::CHAT));
+    }
+
+    /**
+     * The confirmation word does not run a critical action stranded in the claimed state by a request that died.
+     *
+     * @dataProvider table_provider
+     * @param string $table
+     */
+    public function test_confirmation_word_does_not_run_a_stranded_action(string $table): void {
+        global $DB;
+        $this->resetAfterTest();
+        $agentid = $this->agent();
+        $service = $this->service($table);
+        $adminid = (int) get_admin()->id;
+        $this->links[self::CHAT] = $adminid;
+        $service->hold(self::CHAT, $adminid, 'delete_agent', ['id' => $agentid]);
+        $actionid = $this->ui->shown[0][1]->actionid;
+        $DB->set_field($table, 'callbackid', 'claimed:' . random_string(32), ['callbackid' => $actionid]);
+
+        // The word answers the newest critical action waiting in the chat, as the conversation engine does.
+        $waiting = (string) $service->waiting_critical(self::CHAT);
+        $message = $service->resolve(self::CHAT, $waiting, confirmation_service::MODE_KEYWORD);
+
+        $this->assertSame(get_string('pending_action_not_found', 'local_jedomi'), $message);
+        $this->assertTrue($DB->record_exists('local_jedomi_agents', ['id' => $agentid]), 'The action does not run');
+    }
+
+    /**
+     * A claimed id (crafted, or leaked from a request that died) is never resolved: it is not found and nothing runs.
+     *
+     * @dataProvider table_provider
+     * @param string $table
+     */
+    public function test_resolve_refuses_a_claimed_id(string $table): void {
+        global $DB;
+        $this->resetAfterTest();
+        $agentid = $this->agent();
+        $service = $this->service($table);
+        $adminid = (int) get_admin()->id;
+        $this->links[self::CHAT] = $adminid;
+        $service->hold(self::CHAT, $adminid, 'delete_agent', ['id' => $agentid]);
+        $token = 'claimed:' . random_string(32);
+        $DB->set_field($table, 'callbackid', $token, ['callbackid' => $this->ui->shown[0][1]->actionid]);
+
+        $this->assertSame(
+            get_string('pending_action_not_found', 'local_jedomi'),
+            $service->resolve(self::CHAT, $token, confirmation_service::MODE_KEYWORD)
+        );
+        $this->assertTrue($DB->record_exists('local_jedomi_agents', ['id' => $agentid]), 'The action does not run');
+        $this->assertTrue($DB->record_exists($table, ['callbackid' => $token]), 'The stranded row is left to the cleanup task');
+    }
+
+    /**
      * Resolving: an unknown action is not found; an expired one is removed; a button never confirms a critical action.
      *
      * @dataProvider table_provider
