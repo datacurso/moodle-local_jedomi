@@ -51,8 +51,32 @@ class conversation_engine {
     /** Seconds after which the user is told once that the assistant is still working. */
     public const KEEPALIVE_AFTER = 30;
 
+    /** Seconds kept between the end of an AI call and the hard guard. */
+    private const AI_TIMEOUT_MARGIN = 5;
+
+    /** Shortest timeout an AI call gets, however close the hard guard or the time limit of the question is. */
+    private const MIN_AI_TIMEOUT = 5;
+
     /** Longest AI call that fits in one worker (the hard guard less a margin), the top of the timeout settings. */
-    public const MAX_AI_TIMEOUT = self::HARD_GUARD - 5;
+    public const MAX_AI_TIMEOUT = self::HARD_GUARD - self::AI_TIMEOUT_MARGIN;
+
+    /** Seconds the PHP time limit of a worker gets on top of the hard guard. */
+    private const TIME_LIMIT_MARGIN = 20;
+
+    /** Characters of a tool result the AI gets; the rest is cut. */
+    private const TOOL_RESULT_MAX_CHARS = 64000;
+
+    /** Calls of the same tool with the same arguments in a worker that are logged as a possible loop. */
+    private const LOOP_WARNING_REPEATS = 4;
+
+    /** Calls of the same tool with the same arguments in a worker beyond which the question stops as a loop. */
+    private const LOOP_ABORT_REPEATS = 8;
+
+    /** Rounds between two progress messages (rounds 0, 5, 10...). */
+    private const PROGRESS_INTERVAL = 5;
+
+    /** Round that also gets a progress message, the first one after the first answer of the AI. */
+    private const PROGRESS_EXTRA_ITERATION = 1;
 
     /** Seconds a question may take over all its workers; then it stops with a message. */
     public const QUESTION_TIME_LIMIT = 600;
@@ -151,7 +175,7 @@ class conversation_engine {
             if (!empty($existing['is_locked'])) {
                 $lockage = self::now() - ($existing['locked_at'] ?? self::now());
                 if ($lockage < self::LOCK_TTL) {
-                    // Lock is still valid (< 2 min) — block.
+                    // Lock is still valid (younger than LOCK_TTL) — block.
                     $this->channel->transport()->send_text(
                         $chatkey,
                         $this->channel->message(channel::MESSAGE_STILL_PROCESSING)
@@ -302,22 +326,22 @@ class conversation_engine {
         $untrusted = new \local_jedomi\local\untrusted();
 
         // ... ── Tool loop uses state-based iteration ──
-        // Each HTTP worker runs until ~55s, then self-pings so a new worker
+        // Each HTTP worker runs until HARD_GUARD, then self-pings so a new worker
         // picks up at the saved iteration. The user sees a single seamless response.
         $loopstart = self::now();
         $maxiterations = self::MAX_ITERATIONS;
         $hardguard = self::HARD_GUARD; // Seconds — chain to next worker before FPM kills us.
 
-        // Extend PHP execution limit to cover our hard guard + buffer.
+        // Extend PHP execution limit to cover our hard guard + TIME_LIMIT_MARGIN.
         // Without this, php max_execution_time or fpm request_terminate_timeout
         // (often 30s on shared hosts) kills the worker while cURL waits,
         // producing NO error log — just a silent hang.
         $oldlimit = @ini_get('max_execution_time');
-        @set_time_limit($hardguard + 20); // 75s total, safe for most hosts
+        @set_time_limit($hardguard + self::TIME_LIMIT_MARGIN);
         \local_jedomi_log(sprintf(
             '[GATELOOP] time_limit: old=%s new=%d hard_guard=%d',
             $oldlimit ?: 'unlimited',
-            $hardguard + 20,
+            $hardguard + self::TIME_LIMIT_MARGIN,
             $hardguard
         ));
 
@@ -358,7 +382,7 @@ class conversation_engine {
                 return;
             }
 
-            // ... ── Hard guard (~55s): save state + self_ping → next worker ──
+            // ... ── Hard guard (HARD_GUARD): save state + self_ping → next worker ──
             // IMPORTANT: save $iteration + 1 (NEXT expected iteration),
             // NOT $iteration (current). The for loop increments AFTER the
             // body, so saving $iteration means the next worker re-does it.
@@ -383,7 +407,7 @@ class conversation_engine {
                 return;
             }
 
-            // ... ── Medium guard (~40s): self-ping so next worker continues
+            // ... ── Medium guard (MEDIUM_GUARD): self-ping so next worker continues
             // before FPM request_terminate_timeout silently kills this worker.
             // Only on internal iterations (>0).
             if ($elapsed >= self::MEDIUM_GUARD && $iteration > 0) {
@@ -407,7 +431,7 @@ class conversation_engine {
                 return;
             }
 
-            // ... ── Soft guard (~30s): send a keepalive so the user knows we're alive ──
+            // ... ── Soft guard (KEEPALIVE_AFTER): send a keepalive so the user knows we're alive ──
             if ($elapsed >= self::KEEPALIVE_AFTER && !$senttimeoutwarning) {
                 $senttimeoutwarning = true;
                 $this->channel->transport()->send_text($chatkey, $this->channel->message(channel::MESSAGE_KEEPALIVE));
@@ -422,9 +446,9 @@ class conversation_engine {
             // Adaptive AI timeout: shrink as we approach the hard guard
             // so we don't get stuck waiting when FPM is about to kill us,
             // and never past the time limit of the question.
-            $aitimeout = max(5, min(
+            $aitimeout = max(self::MIN_AI_TIMEOUT, min(
                 $timeout,
-                $hardguard - (self::now() - $loopstart) - 5,
+                $hardguard - (self::now() - $loopstart) - self::AI_TIMEOUT_MARGIN,
                 self::QUESTION_TIME_LIMIT - $questionelapsed
             ));
 
@@ -483,6 +507,9 @@ class conversation_engine {
             }
 
             $result = self::parse_answer($answer);
+            // Defensive: empty_answer::is_empty() above already takes every answer parse_answer() finds empty (no tool
+            // calls, no content, no reasoning), so this branch is not reached today. It stays, with its channel
+            // message, in case either rule changes.
             if ($result === null) {
                 \local_jedomi_log('[AI] empty answer on iter ' . $iteration);
                 $this->release_lock($statekey, $chatkey, $this->channel->message(channel::MESSAGE_NO_ANSWER));
@@ -498,139 +525,16 @@ class conversation_engine {
                 $content = $result['content'] ?? '';
                 $hastools = false;
 
-                // ... ── Fallback: text-based TOOL_CALL parsing (for models that
-                // don't support native function calling). ────────────────
-                $tcpattern1 = '/(?:TOOL_CALL|call):\s*(\w+)\s*\n(.+?)\nEND_TOOL_CALL[^\n]*/si';
-                $tcpattern2 = '/<\|(?:tool_call|python_tag)\|>(.+?)<\|\\/\1\|>/si';
-
-                $toolcalls = [];
-                $remainingtext = $content;
-
-                // Try Pattern 1: TOOL_CALL: ...
-                if (preg_match_all($tcpattern1, $content, $tcmatches, PREG_SET_ORDER)) {
-                    $remainingtext = trim(preg_replace($tcpattern1, '', $content));
-                    foreach ($tcmatches as $m) {
-                        $toolname = trim($m[1]);
-                        $argsjson = trim($m[2]);
-                        json_decode($argsjson);
-                        if (json_last_error() !== JSON_ERROR_NONE) {
-                            if (preg_match('/\{.*\}/s', $argsjson, $jsonmatch)) {
-                                $argsjson = $jsonmatch[0];
-                            }
-                        }
-                        json_decode($argsjson);
-                        if (json_last_error() === JSON_ERROR_NONE) {
-                            $toolcalls[] = [
-                                'id' => 'text_' . md5(uniqid('', true)),
-                                'type' => 'function',
-                                'function' => [
-                                    'name' => $toolname,
-                                    'arguments' => $argsjson,
-                                ],
-                            ];
-                        }
-                    }
-                }
-
-                // Try Pattern 2 (broader): allow JSON inline after `call:` with optional newline
-                // before END_TOOL_CALL. Handles variations where the model omits newlines.
-                if (empty($toolcalls)) {
-                    $tcpattern1b = '/(?:TOOL_CALL|call):\s*(\w+)\s*\n?(.+?)(?:\n\s*)?END_TOOL_CALL[^\n]*/si';
-                    if (preg_match_all($tcpattern1b, $content, $tcmatches2, PREG_SET_ORDER)) {
-                        $remainingtext = trim(preg_replace($tcpattern1b, '', $content));
-                        foreach ($tcmatches2 as $m) {
-                            $toolname = trim($m[1]);
-                            $argsjson = trim($m[2]);
-                            json_decode($argsjson);
-                            if (json_last_error() !== JSON_ERROR_NONE) {
-                                if (preg_match('/\{.*\}/s', $argsjson, $jsonmatch)) {
-                                    $argsjson = $jsonmatch[0];
-                                }
-                            }
-                            json_decode($argsjson);
-                            if (json_last_error() === JSON_ERROR_NONE) {
-                                $toolcalls[] = [
-                                    'id' => 'text_' . md5(uniqid('', true)),
-                                    'type' => 'function',
-                                    'function' => [
-                                        'name' => $toolname,
-                                        'arguments' => $argsjson,
-                                    ],
-                                ];
-                            }
-                        }
-                    }
-                }
-
-                // Try Pattern 3: <|tool_call|> (Llama 3 style) — only if patterns 1&2 didn't match.
-                if (empty($toolcalls) && preg_match_all($tcpattern2, $content, $tcmatches, PREG_SET_ORDER)) {
-                    $remainingtext = trim(preg_replace($tcpattern2, '', $content));
-                    foreach ($tcmatches as $m) {
-                        $inner = trim($m[1]);
-                        $decoded = json_decode($inner, true);
-                        if (json_last_error() === JSON_ERROR_NONE && isset($decoded['name'])) {
-                            $toolname = $decoded['name'];
-                            $args = $decoded['arguments'] ?? '{}';
-                            if (is_array($args)) {
-                                $args = json_encode($args, JSON_UNESCAPED_UNICODE);
-                            }
-                        } else {
-                            $parts = explode("\n", $inner, 2);
-                            $toolname = trim($parts[0]);
-                            $args = $parts[1] ?? '{}';
-                        }
-                        json_decode($args);
-                        if (json_last_error() === JSON_ERROR_NONE) {
-                            $toolcalls[] = [
-                                'id' => 'text_' . md5(uniqid('', true)),
-                                'type' => 'function',
-                                'function' => [
-                                    'name' => $toolname,
-                                    'arguments' => $args,
-                                ],
-                            ];
-                        }
-                    }
-                }
-
-                // ... ── Ultra-broad fallback: if content still looks like it has tool calls
-                // but no regex matched, try grabbing everything between 'call:\w+' and
-                // 'END_TOOL_CALL' as raw JSON. This catches unusual line breaks/whitespace.
-                if (empty($toolcalls) && preg_match('/\b(?:TOOL_CALL|call):\s*\w+/i', $content)) {
-                    $tcultra = '/(?:TOOL_CALL|call):\s*(\w+)\s*\n?(.+?)\s*END_TOOL_CALL\s*/si';
-                    if (preg_match_all($tcultra, $content, $tcmatches3, PREG_SET_ORDER)) {
-                        $remainingtext = trim(preg_replace($tcultra, '', $content));
-                        foreach ($tcmatches3 as $m) {
-                            $toolname = trim($m[1]);
-                            // Accept whatever text is between call and END_TOOL_CALL,
-                            // attempt to extract a JSON object.
-                            $raw = trim($m[2]);
-                            if (preg_match('/\{.*\}/s', $raw, $jsonmatch)) {
-                                $raw = $jsonmatch[0];
-                            }
-                            json_decode($raw);
-                            if (json_last_error() === JSON_ERROR_NONE) {
-                                $toolcalls[] = [
-                                    'id' => 'ultra_' . md5(uniqid('', true)),
-                                    'type' => 'function',
-                                    'function' => [
-                                        'name' => $toolname,
-                                        'arguments' => $raw,
-                                    ],
-                                ];
-                            }
-                        }
-                    }
-                }
-
-                if (!empty($toolcalls)) {
+                // ... ── Fallback: tool calls written as text (for models that don't support native function calling) ──
+                $parsed = tool_call_text_parser::parse($content);
+                if (!empty($parsed['tool_calls'])) {
                     $message = [
-                        'tool_calls' => $toolcalls,
-                        'content' => $remainingtext ?: '',
+                        'tool_calls' => $parsed['tool_calls'],
+                        'content' => $parsed['remaining'] ?: '',
                     ];
-                    $content = $remainingtext ?: '';
+                    $content = $parsed['remaining'] ?: '';
                     $hastools = true;
-                } else if (preg_match('/\b(?:TOOL_CALL|call):\s*\w+/i', $content)) {
+                } else if (tool_call_text_parser::looks_like_tool_call($content)) {
                     // Log when content looks like it should have tool calls but none parsed.
                     debugging(
                         $this->channel->label() . ': unparseable tool call in content — ' . mb_substr($content, 0, 500),
@@ -640,7 +544,7 @@ class conversation_engine {
             }
 
             // ... ── Progress messages (icons + lang strings, same as web) ──
-            if ($hastools && ($iteration % 5 === 0 || $iteration === 1)) {
+            if ($hastools && ($iteration % self::PROGRESS_INTERVAL === 0 || $iteration === self::PROGRESS_EXTRA_ITERATION)) {
                 $tooldisplay = [];
                 // Each tool has a progress label in the language of the user; a tool without one shows its name.
                 $toollangkeys = [
@@ -717,7 +621,7 @@ class conversation_engine {
             // ── Synchronisation point 1: re-read state from DB ─────────────
             // If another worker (self-ping) already processed these tools and
             // saved a newer state, skip execution and reload their results.
-            // Only trust the saved iteration if the lock is still active (< 2 min).
+            // Only trust the saved iteration if the lock is still active (younger than LOCK_TTL).
             // A stale iteration without an active lock means the state is from
             // a dead/crashed worker — ignore it and continue processing.
             $freshstate = $this->channel->store()->get_context($statekey);
@@ -753,7 +657,7 @@ class conversation_engine {
                 $callkey = $name . '|' . \local_jedomi\local\repeated_tool_error::args_signature($args);
                 $toolrepeatcounts[$callkey] = ($toolrepeatcounts[$callkey] ?? 0) + 1;
                 $repeatcount = $toolrepeatcounts[$callkey];
-                if ($repeatcount > 8) {
+                if ($repeatcount > self::LOOP_ABORT_REPEATS) {
                     \local_jedomi_log(sprintf(
                         '[GATELOOP] loop_detected chat=%s iter=%d tool=%s key=%s count=%d',
                         self::chatref($chatkey),
@@ -764,7 +668,7 @@ class conversation_engine {
                     ));
                     $looping = true;
                     break;
-                } else if ($repeatcount >= 4) {
+                } else if ($repeatcount >= self::LOOP_WARNING_REPEATS) {
                     \local_jedomi_log(sprintf(
                         '[GATELOOP] loop_warning chat=%s iter=%d tool=%s key=%s count=%d',
                         self::chatref($chatkey),
@@ -807,8 +711,8 @@ class conversation_engine {
                                 $anonymizer
                             );
                     }
-                    if (mb_strlen($toolresult) > 64000) {
-                        $toolresult = mb_substr($toolresult, 0, 64000) . "\n... (truncated)";
+                    if (mb_strlen($toolresult) > self::TOOL_RESULT_MAX_CHARS) {
+                        $toolresult = mb_substr($toolresult, 0, self::TOOL_RESULT_MAX_CHARS) . "\n... (truncated)";
                     }
                 } catch (\Exception $e) {
                     $toolresult = 'Error executing ' . $name . ': ' . \local_jedomi\local\safe_error::for_model($e);

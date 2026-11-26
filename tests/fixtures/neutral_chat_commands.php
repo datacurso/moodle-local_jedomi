@@ -26,8 +26,9 @@
 namespace local_jedomi\messaging;
 
 /**
- * Commands of a channel without slash commands nor link codes: the links come from the channel, "help" asks for the
- * help, and each step records what it was asked for.
+ * Commands of a channel without slash commands: the links come from the channel, "help" asks for the help, and each
+ * step records what it was asked for. By default nothing is a link, unlink or new conversation command and no link
+ * expires; a test turns them on with the public properties.
  *
  * @package    local_jedomi
  * @copyright  2026 Datacurso <developer@datacurso.com>
@@ -36,6 +37,18 @@ namespace local_jedomi\messaging;
 class neutral_chat_commands implements chat_commands {
     /** @var string[] Steps run, as "step:chatkey", in order. */
     public array $calls = [];
+
+    /** @var string[] Texts that are a link command, each with the link request it carries (text => request). */
+    public array $linkrequests = [];
+
+    /** @var bool Whether the link of a chat has expired. */
+    public bool $expired = false;
+
+    /** @var string|null Text that unlinks the chat; null for none. */
+    public ?string $unlinkword = null;
+
+    /** @var string|null Text that starts a new conversation; null for none. */
+    public ?string $newword = null;
 
     /**
      * Constructor.
@@ -66,7 +79,7 @@ class neutral_chat_commands implements chat_commands {
 
     #[\Override]
     public function expire_or_touch(\stdClass $link): bool {
-        return false;
+        return $this->expired;
     }
 
     #[\Override]
@@ -81,12 +94,12 @@ class neutral_chat_commands implements chat_commands {
 
     #[\Override]
     public function is_link_command(string $text): bool {
-        return false;
+        return array_key_exists($text, $this->linkrequests);
     }
 
     #[\Override]
     public function link_request(string $text): ?string {
-        return null;
+        return $this->linkrequests[$text] ?? null;
     }
 
     #[\Override]
@@ -96,7 +109,7 @@ class neutral_chat_commands implements chat_commands {
 
     #[\Override]
     public function is_unlink(string $text): bool {
-        return false;
+        return $this->unlinkword !== null && $text === $this->unlinkword;
     }
 
     #[\Override]
@@ -106,7 +119,7 @@ class neutral_chat_commands implements chat_commands {
 
     #[\Override]
     public function is_new_conversation(string $text): bool {
-        return false;
+        return $this->newword !== null && $text === $this->newword;
     }
 
     #[\Override]

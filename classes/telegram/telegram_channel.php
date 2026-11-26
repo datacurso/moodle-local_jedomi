@@ -47,6 +47,12 @@ require_once(__DIR__ . '/../../lib.php');
  * local_jedomi_telegram_links. Each piece comes from its factory in manager.
  */
 class telegram_channel implements channel {
+    /** Seconds between two "typing" statuses while an AI call waits (Telegram shows each one for about 5 seconds). */
+    public const TYPING_INTERVAL = 4;
+
+    /** Seconds a "typing" status may take while the AI answers, so a slow Telegram never holds the AI call long. */
+    public const TYPING_TIMEOUT = 2;
+
     /** @var string[] Telegram string of each message of the engine; the errors that end a question are the shared ones. */
     private const MESSAGES = [
         channel::MESSAGE_STILL_PROCESSING => 'telegram_msg_still_processing',
@@ -152,12 +158,12 @@ class telegram_channel implements channel {
      */
     #[\Override]
     public function activity_interval(): int {
-        return webhook_handler::TYPING_INTERVAL;
+        return self::TYPING_INTERVAL;
     }
 
     #[\Override]
     public function activity_timeout(): int {
-        return webhook_handler::TYPING_TIMEOUT;
+        return self::TYPING_TIMEOUT;
     }
 
     #[\Override]

@@ -27,6 +27,9 @@ namespace local_jedomi\telegram;
 /**
  * Builds the system prompt sent to the AI for Telegram conversations: the channel-neutral prompt with the Telegram
  * format rules (see telegram_limits).
+ *
+ * Kept for tests; production uses \local_jedomi\messaging\prompt_builder (with the limits of the channel), to which
+ * this thin delegate passes the Telegram limits.
  */
 final class prompt_builder {
     /**

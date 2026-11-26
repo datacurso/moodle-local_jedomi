@@ -36,10 +36,12 @@ use local_jedomi\messaging\conversation_store;
  */
 class session {
     /**
-     * Placeholder system message of a new Telegram conversation.
+     * Placeholder system message of a Telegram conversation built by {@see self::build_messages_for_gateway()}.
      *
-     * webhook_handler always replaces it with {@see prompt_builder::build()} before any AI call, so the rules the AI
-     * gets (untrusted data, no disclosure, language...) live only there and are never copied here (READ-001).
+     * No production code reads it any more: the conversation engine builds its own messages and always sets the system
+     * message with \local_jedomi\messaging\prompt_builder::build() before any AI call, so the rules the AI gets
+     * (untrusted data, no disclosure, language...) live only there and are never copied here (READ-001). Kept for the
+     * tests of build_messages_for_gateway().
      */
     public const ANTI_HALLUCINATION_PROMPT = 'You are Jedomi, an educational assistant built into Moodle LMS. '
         . "Follow these rules:\n"
@@ -129,6 +131,9 @@ class session {
     /**
      * Get the full messages array formatted for the Gateway API
      * (system instruction + context + current user message).
+     *
+     * No production caller any more: the conversation engine builds its messages itself (from the store of the
+     * channel). Kept for the tests.
      *
      * @param string $chatid
      * @param string $currentmessage

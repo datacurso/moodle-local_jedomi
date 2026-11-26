@@ -37,9 +37,12 @@ require_once(__DIR__ . '/../../lib.php');
  * and the links of local_jedomi_telegram_links with their one-time codes. The Telegram PIN is telegram_pin_policy.
  */
 class telegram_commands implements chat_commands {
+    /** Commands that show the help, in lower case: '/help' and its Spanish alias '/ayuda'. */
+    public const HELP_COMMANDS = ['/help', '/ayuda'];
+
     #[\Override]
     public function is_help(string $text): bool {
-        return in_array(strtolower(trim($text)), webhook_handler::HELP_COMMANDS, true);
+        return in_array(strtolower(trim($text)), self::HELP_COMMANDS, true);
     }
 
     #[\Override]
@@ -47,6 +50,12 @@ class telegram_commands implements chat_commands {
         api_client::instance()->send_message($chatkey, self::help_text(), self::linked_keyboard());
     }
 
+    /**
+     * Confirmed link of a chat; the single query of it for the Telegram channel (webhook_handler delegates here).
+     *
+     * @param string $chatkey Telegram chat id.
+     * @return \stdClass|null The confirmed link record, or null when none exists.
+     */
     #[\Override]
     public function find_link(string $chatkey): ?\stdClass {
         global $DB;

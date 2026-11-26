@@ -18,6 +18,7 @@ namespace local_jedomi\messaging;
 
 use local_jedomi\ai\client;
 use local_jedomi\ai\fake_ai_client;
+use local_jedomi\provider_absence_probe;
 
 defined('MOODLE_INTERNAL') || die();
 
@@ -25,6 +26,8 @@ global $CFG;
 require_once($CFG->dirroot . '/local/jedomi/lib.php');
 require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/fake_ai_client.php');
 require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/neutral_channel.php');
+require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/fake_plugin_state.php');
+require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/provider_absence_probe.php');
 
 /**
  * Tests for the router with a channel that is not Telegram and cannot ask for a PIN (neutral_channel): the writes of
@@ -47,15 +50,20 @@ final class router_without_pin_test extends \advanced_testcase {
     #[\Override]
     protected function setUp(): void {
         parent::setUp();
-        if (!class_exists(\aiprovider_datacurso\httpclient\ai_services_api::class)) {
-            $this->markTestSkipped('aiprovider_datacurso is not installed; the engine asks it whether Jedomi is enabled.');
-        }
         $this->resetAfterTest();
-        $GLOBALS['CFG']->forced_plugin_settings['aiprovider_datacurso']['licensekey'] = 'test-license';
-        \core\plugininfo\aiprovider::enable_plugin('datacurso', 1);
+        // Jedomi is enabled through the plugin state seam: the router never asks the Datacurso AI provider, which the
+        // CI does not install.
+        provider_absence_probe::start();
+        \core\di::set(plugin_state::class, fake_plugin_state::enabled());
         $this->ai = new fake_ai_client();
         client::set_instance_for_testing($this->ai);
         $this->channel = new neutral_channel();
+    }
+
+    #[\Override]
+    protected function assertPostConditions(): void {
+        parent::assertPostConditions();
+        $this->assertSame([], provider_absence_probe::touched(), 'The test reached the Datacurso AI provider.');
     }
 
     #[\Override]

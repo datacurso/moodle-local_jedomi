@@ -29,6 +29,10 @@ namespace local_jedomi\messaging;
  * channel when it is built (it is required, so a channel cannot forget it); with it the confirmation service refuses
  * the writes of a user who needs a PIN before holding them (reason pin_unsupported) and never runs them. No text is
  * ever a PIN here, no PIN is ever confirmed, and there are no PIN texts: asking for one is a coding error.
+ *
+ * The rule of who needs a PIN still lives in \local_jedomi\local\service\telegram_pin_service::is_required(), with
+ * the site setting telegram_require_pin (both names are historical: the rule is the same for every channel). A channel
+ * must pass exactly that rule as $required, so a user who needs a PIN on Telegram cannot write without one elsewhere.
  */
 final class no_pin_policy implements pin_policy {
     /**

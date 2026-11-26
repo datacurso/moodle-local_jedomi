@@ -38,31 +38,39 @@ use local_jedomi\messaging\confirmation_service;
 use local_jedomi\messaging\conversation_engine;
 use local_jedomi\messaging\inbound_message;
 use local_jedomi\messaging\router;
-use local_jedomi\messaging\tool_runner;
 
 /**
  * Entry point of the Telegram webhook: acknowledges and deduplicates updates, answers while Jedomi or the integration
  * is disabled, takes the lock of the chat and hands typed messages to the router; handles inline buttons. Its public
  * methods are kept for the webhook, the tasks and the tests, and delegate to the Telegram channel.
+ *
+ * Sends: plain texts go through the transport of the channel (manager::transport()->send_text()); messages with a
+ * keyboard, button answers and message edits stay on api_client, which the transport does not cover.
+ *
+ * The slash commands, with the help ones ('/help' and its Spanish alias '/ayuda'), are in telegram_commands.
  */
 class webhook_handler {
-    /** Longest AI call that fits in one worker (the hard guard less a margin), the top of the timeout setting. */
+    /**
+     * Alias of conversation_engine::MAX_AI_TIMEOUT, kept for tests; production code uses the engine constant.
+     */
     public const MAX_AI_TIMEOUT = conversation_engine::MAX_AI_TIMEOUT;
 
-    /** Seconds a question may take over all its workers; then it stops with a message. */
+    /**
+     * Alias of conversation_engine::QUESTION_TIME_LIMIT, kept for tests; production code uses the engine constant.
+     */
     public const QUESTION_TIME_LIMIT = conversation_engine::QUESTION_TIME_LIMIT;
 
-    /** Seconds between two "typing" statuses while an AI call waits (Telegram shows each one for about 5 seconds). */
-    public const TYPING_INTERVAL = 4;
+    /** Alias of telegram_channel::TYPING_INTERVAL, kept for tests; production code uses the channel constant. */
+    public const TYPING_INTERVAL = telegram_channel::TYPING_INTERVAL;
 
-    /** Seconds a "typing" status may take while the AI answers, so a slow Telegram never holds the AI call long. */
-    public const TYPING_TIMEOUT = 2;
+    /** Alias of telegram_channel::TYPING_TIMEOUT, kept for tests; production code uses the channel constant. */
+    public const TYPING_TIMEOUT = telegram_channel::TYPING_TIMEOUT;
 
-    /** A held action is confirmed with the confirmation word typed in the chat. */
+    /**
+     * A held action is confirmed with the confirmation word typed in the chat. Only read by a reflection test
+     * (webhook_conversation_test), which checks the keyword mode; kept for it.
+     */
     private const RESOLVE_KEYWORD = confirmation_service::MODE_KEYWORD;
-
-    /** Commands that show the help, in lower case: '/help' and its Spanish alias '/ayuda'. */
-    public const HELP_COMMANDS = ['/help', '/ayuda'];
 
     /**
      * Pseudonym of a chat for the technical log, which never keeps the Telegram chat id.
@@ -218,7 +226,7 @@ class webhook_handler {
         }
         $chatid = self::normalise_chat_id((string) $rawchatid);
         if ($chatid !== null) {
-            $client->send_message($chatid, $message);
+            manager::transport()->send_text($chatid, $message);
         }
     }
 
@@ -242,7 +250,7 @@ class webhook_handler {
         }
         $chatid = self::normalise_chat_id((string) $rawchatid);
         if ($chatid !== null && self::get_link_by_chat_id($chatid) !== null) {
-            $client->send_message($chatid, get_string('telegram_msg_unavailable', 'local_jedomi'));
+            manager::transport()->send_text($chatid, get_string('telegram_msg_unavailable', 'local_jedomi'));
         }
     }
 
@@ -263,7 +271,7 @@ class webhook_handler {
         if ($lock === false) {
             \local_jedomi_log('DEDUP: another process is handling chat ' . self::chatref($chatid) . ', skipping');
             // Another process already holds the lock for this chat: the message is not lost without notice.
-            api_client::instance()->send_message($chatid, get_string('telegram_msg_still_processing', 'local_jedomi'));
+            manager::transport()->send_text($chatid, get_string('telegram_msg_still_processing', 'local_jedomi'));
             return;
         }
         try {
@@ -559,15 +567,13 @@ class webhook_handler {
     // ... ── Helpers ──────────────────────────────────────────────────────────────
 
     /**
-     * Fetch the confirmed Telegram link record for a chat id.
+     * Fetch the confirmed Telegram link record for a chat id (see telegram_commands::find_link()).
      *
      * @param  string $chatid Telegram chat id.
      * @return \stdClass|null The confirmed link record, or null when none exists.
      */
     private static function get_link_by_chat_id(string $chatid): ?\stdClass {
-        global $DB;
-        $record = $DB->get_record('local_jedomi_telegram_links', ['chatid' => $chatid, 'confirmed' => 1]);
-        return $record ?: null; // Get_record returns false when not found, cast to null.
+        return manager::commands()->find_link($chatid);
     }
 
     /**
@@ -585,7 +591,7 @@ class webhook_handler {
     /**
      * Current role of the user and their courses grouped by the role held in each one.
      *
-     * @see tool_runner::user_context()
+     * @see \local_jedomi\messaging\tool_runner::user_context()
      * @param  int   $userid
      * @return array  'role', 'course_ids_owned', 'course_ids_enrolled', 'courses_by_role'
      */

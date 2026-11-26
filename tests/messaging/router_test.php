@@ -18,6 +18,7 @@ namespace local_jedomi\messaging;
 
 use local_jedomi\ai\client;
 use local_jedomi\ai\fake_ai_client;
+use local_jedomi\provider_absence_probe;
 use local_jedomi\telegram\api_client;
 use local_jedomi\telegram\fake_telegram_api_client;
 use local_jedomi\telegram\telegram_channel;
@@ -32,6 +33,8 @@ require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/fake_continuation.php
 require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/fake_transport.php');
 require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/fake_media_source.php');
 require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/fake_channel.php');
+require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/fake_plugin_state.php');
+require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/provider_absence_probe.php');
 
 /**
  * Tests for the channel-neutral router of an inbound message, run with the Telegram channel and a recording transport.
@@ -54,10 +57,19 @@ final class router_test extends \advanced_testcase {
     protected function setUp(): void {
         parent::setUp();
         $this->resetAfterTest();
+        // The router never asks the Datacurso AI provider, which the CI does not install.
+        provider_absence_probe::start();
+        \core\di::set(plugin_state::class, fake_plugin_state::enabled());
         $this->telegram = new fake_telegram_api_client();
         api_client::set_instance_for_testing($this->telegram);
         $this->channel = new fake_channel(new telegram_channel());
         $this->channel->mediasource = new fake_media_source();
+    }
+
+    #[\Override]
+    protected function assertPostConditions(): void {
+        parent::assertPostConditions();
+        $this->assertSame([], provider_absence_probe::touched(), 'The test reached the Datacurso AI provider.');
     }
 
     #[\Override]

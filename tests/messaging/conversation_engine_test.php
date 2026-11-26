@@ -18,6 +18,7 @@ namespace local_jedomi\messaging;
 
 use local_jedomi\ai\client;
 use local_jedomi\ai\fake_ai_client;
+use local_jedomi\provider_absence_probe;
 use local_jedomi\telegram\api_client;
 use local_jedomi\telegram\fake_telegram_api_client;
 use local_jedomi\telegram\telegram_channel;
@@ -32,6 +33,8 @@ require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/fake_continuation.php
 require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/fake_transport.php');
 require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/fake_channel.php');
 require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/neutral_channel.php');
+require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/fake_plugin_state.php');
+require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/provider_absence_probe.php');
 
 /**
  * Tests for the channel-neutral conversation engine: the AI and tools loop of a chat, run through the pieces of its
@@ -52,6 +55,9 @@ final class conversation_engine_test extends \advanced_testcase {
     /** @var int Session generation of the seeded loops. */
     private const SESSION_GEN = 5150;
 
+    /** @var int Time of the frozen Moodle clock, far from the real time, so a time() call gives another value. */
+    private const FROZEN = 1000000000;
+
     /** @var fake_channel Channel of the tests. */
     private fake_channel $channel;
 
@@ -61,19 +67,24 @@ final class conversation_engine_test extends \advanced_testcase {
     #[\Override]
     protected function setUp(): void {
         parent::setUp();
-        if (!class_exists(\aiprovider_datacurso\httpclient\ai_services_api::class)) {
-            $this->markTestSkipped('aiprovider_datacurso is not installed; the engine asks it whether Jedomi is enabled.');
-        }
         $this->resetAfterTest();
-        $GLOBALS['CFG']->forced_plugin_settings['aiprovider_datacurso']['licensekey'] = 'test-license';
+        // Jedomi is enabled through the plugin state seam: the engine never asks the Datacurso AI provider, which the
+        // CI does not install.
+        provider_absence_probe::start();
+        \core\di::set(plugin_state::class, fake_plugin_state::enabled());
         $GLOBALS['CFG']->forced_plugin_settings['local_jedomi']['telegram_gateway_timeout'] = 50;
         set_config('telegram_enabled', 1, 'local_jedomi');
-        \core\plugininfo\aiprovider::enable_plugin('datacurso', 1);
         // Nothing reaches Telegram, even from a piece the fake channel takes from the Telegram channel.
         api_client::set_instance_for_testing(new fake_telegram_api_client());
         $this->ai = new fake_ai_client();
         client::set_instance_for_testing($this->ai);
         $this->channel = new fake_channel(new telegram_channel());
+    }
+
+    #[\Override]
+    protected function assertPostConditions(): void {
+        parent::assertPostConditions();
+        $this->assertSame([], provider_absence_probe::touched(), 'The test reached the Datacurso AI provider.');
     }
 
     #[\Override]
@@ -120,6 +131,49 @@ final class conversation_engine_test extends \advanced_testcase {
             ],
             'userid'      => $userid,
         ], $extrastate));
+    }
+
+    /**
+     * A neutral channel with a chat linked to a new active user.
+     *
+     * @param string $chatkey Chat key.
+     * @return array [neutral_channel, int user id]
+     */
+    private function neutral_linked(string $chatkey): array {
+        $channel = new neutral_channel();
+        $userid = (int) $this->getDataGenerator()->create_user()->id;
+        $channel->links[$chatkey] = $userid;
+        return [$channel, $userid];
+    }
+
+    /**
+     * Keep the loop state saved in the store when the AI is called the given time.
+     *
+     * @param channel $channel Channel of the chat.
+     * @param string $chatkey Chat key.
+     * @param int $call Number of the AI call, from 1.
+     * @param array|null $saved Receives the state.
+     */
+    private function capture_state_on_call(channel $channel, string $chatkey, int $call, ?array &$saved): void {
+        $this->ai->oncall = static function (int $number) use ($channel, $chatkey, $call, &$saved): void {
+            if ($number === $call) {
+                $saved = $channel->store()->get_context('tool_loop_' . $chatkey);
+            }
+        };
+    }
+
+    /**
+     * Messages of a role sent to the AI in a call.
+     *
+     * @param int $call Index of the AI call, from 0.
+     * @param string $role Role.
+     * @return array[]
+     */
+    private function messages_of_role(int $call, string $role): array {
+        return array_values(array_filter(
+            $this->ai->calls[$call]['messages'],
+            static fn(array $m): bool => $m['role'] === $role
+        ));
     }
 
     /**
@@ -389,5 +443,227 @@ final class conversation_engine_test extends \advanced_testcase {
             array_values(array_intersect($channel->transport->texts(), [channel::MESSAGE_QUESTION_TIME_LIMIT,
                 channel::MESSAGE_EMPTY_ANSWER, channel::MESSAGE_TOOL_REPEATED]))
         );
+    }
+
+    /**
+     * A new loop locks the chat at the time of the Moodle clock: the saved state carries it, so the lock age of the
+     * next message and of a newer worker is measured with the same clock.
+     */
+    public function test_new_loop_locks_the_chat_at_the_moodle_clock_time(): void {
+        $this->mock_clock_with_frozen(self::FROZEN);
+        [$channel, $userid] = $this->neutral_linked('nc301');
+        $this->enqueue_unknown_tool('call_1');
+        $this->ai->enqueue_text('Done.');
+        $saved = null;
+        $this->capture_state_on_call($channel, 'nc301', 2, $saved);
+
+        $this->with_time_limit(fn() => (new conversation_engine($channel))->run($userid, 'nc301', 'question'));
+
+        $this->assertSame(1, $saved['iteration']);
+        $this->assertTrue($saved['is_locked']);
+        $this->assertSame(self::FROZEN, $saved['locked_at']);
+        $this->assertSame(self::FROZEN, $saved['started_at']);
+    }
+
+    /**
+     * A worker that resumes a loop locks the chat again at the time of the Moodle clock, not at the time of the
+     * worker that saved it.
+     */
+    public function test_resumed_loop_locks_the_chat_again_at_the_moodle_clock_time(): void {
+        $this->mock_clock_with_frozen(self::FROZEN);
+        [$channel, $userid] = $this->neutral_linked('nc302');
+        $this->seed_loop('nc302', $userid, ['locked_at' => self::FROZEN - 100], $channel);
+        $this->enqueue_unknown_tool('call_1');
+        $this->ai->enqueue_text('Done.');
+        $saved = null;
+        $this->capture_state_on_call($channel, 'nc302', 2, $saved);
+
+        $this->with_time_limit(fn() => (new conversation_engine($channel))->resume('nc302', 0));
+
+        $this->assertSame(2, $saved['iteration']);
+        $this->assertSame(self::FROZEN, $saved['locked_at']);
+    }
+
+    /**
+     * After the AI asks for tools, a newer state saved by another worker whose lock is younger than the lock TTL, by
+     * the Moodle clock, is taken: the tools are not run again and the loop goes on from that state.
+     */
+    public function test_newer_state_of_a_live_worker_is_reloaded_instead_of_running_the_tools(): void {
+        $this->mock_clock_with_frozen(self::FROZEN);
+        [$channel, $userid] = $this->neutral_linked('nc303');
+        $this->seed_loop('nc303', $userid, [], $channel);
+        $this->save_newer_state_during_the_first_call($channel, 'nc303', $userid, self::FROZEN - conversation_engine::LOCK_TTL + 1);
+
+        $this->with_time_limit(fn() => (new conversation_engine($channel))->resume('nc303', 0));
+
+        $this->assertCount(2, $this->ai->calls);
+        $this->assertSame([], $this->messages_of_role(1, 'tool'));
+        $this->assertSame(
+            [['role' => 'assistant', 'content' => 'From the newer worker.']],
+            $this->messages_of_role(1, 'assistant')
+        );
+        $this->assertSame(['kind' => 'answer', 'chatkey' => 'nc303', 'text' => 'Done.'], end($channel->transport->sent));
+    }
+
+    /**
+     * A newer state whose lock is as old as the lock TTL, by the Moodle clock, belongs to a dead worker: it is
+     * ignored and the tools of this worker run.
+     */
+    public function test_newer_state_of_a_dead_worker_is_ignored(): void {
+        $this->mock_clock_with_frozen(self::FROZEN);
+        [$channel, $userid] = $this->neutral_linked('nc304');
+        $this->seed_loop('nc304', $userid, [], $channel);
+        $this->save_newer_state_during_the_first_call($channel, 'nc304', $userid, self::FROZEN - conversation_engine::LOCK_TTL);
+
+        $this->with_time_limit(fn() => (new conversation_engine($channel))->resume('nc304', 0));
+
+        $this->assertCount(2, $this->ai->calls);
+        $toolmessages = $this->messages_of_role(1, 'tool');
+        $this->assertCount(1, $toolmessages);
+        $this->assertStringContainsString('permission_denied', $toolmessages[0]['content']);
+        $this->assertStringNotContainsString('From the newer worker.', json_encode($this->ai->calls[1]['messages']));
+    }
+
+    /**
+     * An answer the format of the channel leaves blank, and with no text of its own once the untrusted data markers are
+     * removed, is answered with the "done" message of the channel, which is kept in the history.
+     */
+    public function test_answer_left_without_text_gets_the_done_message(): void {
+        [$channel, $userid] = $this->neutral_linked('nc305');
+        $this->ai->enqueue_text("<<<UNTRUSTED_DATA tool x>>>\n<<<END_UNTRUSTED_DATA>>>\n");
+
+        $this->with_time_limit(fn() => (new conversation_engine($channel))->run($userid, 'nc305', 'question'));
+
+        $this->assertSame([['kind' => 'text', 'chatkey' => 'nc305', 'text' => channel::MESSAGE_DONE]], $channel->transport->sent);
+        $this->assertSame([
+            ['role' => 'user', 'content' => 'question'],
+            ['role' => 'assistant', 'content' => channel::MESSAGE_DONE],
+        ], $channel->store()->get('nc305'));
+        $this->assertSame([], $channel->store()->get_context('tool_loop_nc305'));
+    }
+
+    /**
+     * A first answer without text is asked again once, with the retry message; the second answer reaches the user.
+     */
+    public function test_empty_answer_is_asked_again_once(): void {
+        [$channel, $userid] = $this->neutral_linked('nc306');
+        $this->ai->enqueue_empty('stop');
+        $this->ai->enqueue_text('Here it is.');
+
+        $this->with_time_limit(fn() => (new conversation_engine($channel))->run($userid, 'nc306', 'question'));
+
+        $this->assertCount(2, $this->ai->calls);
+        $this->assertSame(
+            \local_jedomi\ai\empty_answer::retry_message('stop'),
+            end($this->ai->calls[1]['messages'])
+        );
+        $this->assertSame([['kind' => 'answer', 'chatkey' => 'nc306', 'text' => 'Here it is.']], $channel->transport->sent);
+    }
+
+    /**
+     * When the state of the loop cannot be saved after the tools ran, the chat is freed and the user gets the "state
+     * save failed" message of the channel.
+     */
+    public function test_state_that_cannot_be_saved_frees_the_chat_with_a_message(): void {
+        $channel = new class extends neutral_channel {
+            /** @var bool Whether saving a loop state fails. */
+            public bool $failsaves = false;
+
+            #[\Override]
+            public function store(): conversation_store {
+                return new class (self::SESSIONS_TABLE, self::NAME . '_max_turns', $this->failsaves) extends conversation_store {
+                    /**
+                     * Constructor.
+                     *
+                     * @param string $table Session table.
+                     * @param string $setting Max turns setting.
+                     * @param bool $failsaves Whether saving a loop state fails.
+                     */
+                    public function __construct(
+                        string $table,
+                        string $setting,
+                        /** @var bool Whether saving a loop state fails. */
+                        private readonly bool $failsaves,
+                    ) {
+                        parent::__construct($table, $setting);
+                    }
+
+                    #[\Override]
+                    public function set_context(string $chatkey, array $context): void {
+                        if ($this->failsaves && $context !== []) {
+                            throw new \dml_write_exception('State too big');
+                        }
+                        parent::set_context($chatkey, $context);
+                    }
+                };
+            }
+        };
+        $userid = (int) $this->getDataGenerator()->create_user()->id;
+        $channel->links['nc307'] = $userid;
+        $this->seed_loop('nc307', $userid, [], $channel);
+        $channel->failsaves = true;
+        $this->enqueue_unknown_tool('call_1');
+
+        $this->with_time_limit(fn() => (new conversation_engine($channel))->resume('nc307', 0));
+
+        $this->assertCount(1, $this->ai->calls);
+        $this->assertSame(channel::MESSAGE_STATE_SAVE_FAILED, end($channel->transport->sent)['text']);
+        $this->assertSame([], $channel->store()->get_context('tool_loop_nc307'));
+    }
+
+    /**
+     * When the chat is unlinked while the AI answers, the loop stops: the tools it asked for do not run, nothing is
+     * sent and the state of the loop is released.
+     */
+    public function test_access_lost_while_the_ai_answers_stops_the_loop(): void {
+        [$channel, $userid] = $this->neutral_linked('nc308');
+        $this->seed_loop('nc308', $userid, [], $channel);
+        $this->enqueue_unknown_tool('call_1');
+        $this->ai->oncall = static function () use ($channel): void {
+            unset($channel->links['nc308']);
+        };
+
+        $this->with_time_limit(fn() => (new conversation_engine($channel))->resume('nc308', 0));
+
+        $this->assertCount(1, $this->ai->calls);
+        $this->assertSame([], $channel->transport->sent);
+        $this->assertSame([], $channel->store()->get_context('tool_loop_nc308'));
+    }
+
+    /**
+     * Ask for an unknown tool in the first AI call and, while it answers, save a newer state of the loop as another
+     * worker would; the second AI call answers with text.
+     *
+     * @param neutral_channel $channel Channel of the chat.
+     * @param string $chatkey Chat key.
+     * @param int $userid User of the loop.
+     * @param int $lockedat Lock time of the newer state.
+     */
+    private function save_newer_state_during_the_first_call(
+        neutral_channel $channel,
+        string $chatkey,
+        int $userid,
+        int $lockedat
+    ): void {
+        $this->enqueue_unknown_tool('call_1');
+        $this->ai->enqueue_text('Done.');
+        $this->ai->oncall = static function (int $call) use ($channel, $chatkey, $userid, $lockedat): void {
+            if ($call !== 1) {
+                return;
+            }
+            $channel->store()->set_context('tool_loop_' . $chatkey, [
+                'session_gen' => self::SESSION_GEN,
+                'started_at'  => self::FROZEN,
+                'is_locked'   => true,
+                'locked_at'   => $lockedat,
+                'iteration'   => 3,
+                'messages'    => [
+                    ['role' => 'system', 'content' => 'placeholder'],
+                    ['role' => 'user', 'content' => 'hola'],
+                    ['role' => 'assistant', 'content' => 'From the newer worker.'],
+                ],
+                'userid'      => $userid,
+            ]);
+        };
     }
 }

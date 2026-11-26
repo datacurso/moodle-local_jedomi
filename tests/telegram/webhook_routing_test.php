@@ -18,6 +18,9 @@ namespace local_jedomi\telegram;
 
 use local_jedomi\ai\client;
 use local_jedomi\ai\fake_ai_client;
+use local_jedomi\messaging\fake_plugin_state;
+use local_jedomi\messaging\plugin_state;
+use local_jedomi\provider_absence_probe;
 
 defined('MOODLE_INTERNAL') || die();
 
@@ -25,6 +28,8 @@ global $CFG;
 require_once($CFG->dirroot . '/local/jedomi/lib.php');
 require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/fake_ai_client.php');
 require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/fake_telegram_api_client.php');
+require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/fake_plugin_state.php');
+require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/provider_absence_probe.php');
 
 /**
  * Order of the steps a Telegram message goes through: help, message limit, private chat, link, link commands, access,
@@ -48,18 +53,23 @@ final class webhook_routing_test extends \advanced_testcase {
     #[\Override]
     protected function setUp(): void {
         parent::setUp();
-        if (!class_exists(\aiprovider_datacurso\httpclient\ai_services_api::class)) {
-            $this->markTestSkipped('aiprovider_datacurso is not installed; the bot asks it whether Jedomi is enabled.');
-        }
         $this->resetAfterTest();
-        $GLOBALS['CFG']->forced_plugin_settings['aiprovider_datacurso']['licensekey'] = 'test-license';
+        // Jedomi is enabled through the plugin state seam: the bot never asks the Datacurso AI provider, which the CI
+        // does not install.
+        provider_absence_probe::start();
+        \core\di::set(plugin_state::class, fake_plugin_state::enabled());
         set_config('telegram_enabled', 1, 'local_jedomi');
-        \core\plugininfo\aiprovider::enable_plugin('datacurso', 1);
         $this->ai = new fake_ai_client();
         client::set_instance_for_testing($this->ai);
         $this->telegram = new fake_telegram_api_client();
         $this->telegram->files = ['photo-big' => 'jpeg bytes'];
         api_client::set_instance_for_testing($this->telegram);
+    }
+
+    #[\Override]
+    protected function assertPostConditions(): void {
+        parent::assertPostConditions();
+        $this->assertSame([], provider_absence_probe::touched(), 'The test reached the Datacurso AI provider.');
     }
 
     #[\Override]
