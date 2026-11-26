@@ -30,6 +30,9 @@
 
 namespace local_jedomi\telegram;
 
+use local_jedomi\messaging\access_guard;
+use local_jedomi\messaging\rate_limiter;
+
 defined('MOODLE_INTERNAL') || die();
 
 require_once(__DIR__ . '/../../lib.php');
@@ -40,12 +43,6 @@ require_once(__DIR__ . '/../../lib.php');
 class manager {
     /** Constant of the key derivation of 1.6.x, kept only to read a token saved then. */
     private const PEPPER = 'jedomi_telegram_pepper_v1';
-
-    /** Default rate limit: max messages per minute. */
-    private const DEFAULT_RATE_LIMIT = 30;
-
-    /** Default cooldown in minutes when rate limit exceeded. */
-    private const DEFAULT_COOLDOWN = 5;
 
     /** TTL for linking codes (seconds). */
     private const CODE_TTL = 600; // 10 minutes
@@ -438,8 +435,7 @@ class manager {
      * @return int Messages per minute; 0 means no limit.
      */
     public static function get_rate_limit(): int {
-        $val = get_config('local_jedomi', 'telegram_rate_limit');
-        return ($val === false || $val === '') ? self::DEFAULT_RATE_LIMIT : (int) $val;
+        return self::rate_limiter()->limit();
     }
 
     /**
@@ -448,8 +444,25 @@ class manager {
      * @return int Minutes.
      */
     public static function get_cooldown(): int {
-        $val = get_config('local_jedomi', 'telegram_cooldown');
-        return ($val === false || $val === '') ? self::DEFAULT_COOLDOWN : (int) $val;
+        return self::rate_limiter()->cooldown_minutes();
+    }
+
+    /**
+     * Access guard of the Telegram bot: the telegram_enabled and telegram_hidden_roles settings.
+     *
+     * @return access_guard
+     */
+    public static function access_guard(): access_guard {
+        return new access_guard('telegram');
+    }
+
+    /**
+     * Rate limiter of the Telegram bot: local_jedomi_telegram_rate_limit with telegram_rate_limit and telegram_cooldown.
+     *
+     * @return rate_limiter
+     */
+    public static function rate_limiter(): rate_limiter {
+        return new rate_limiter('local_jedomi_telegram_rate_limit', 'telegram_rate_limit', 'telegram_cooldown', '[TELEGRAM RATE]');
     }
 
     /**

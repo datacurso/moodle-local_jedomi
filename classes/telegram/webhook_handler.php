@@ -38,7 +38,7 @@ use local_jedomi\local\service\pending_action_service;
 use local_jedomi\local\service\telegram_link_service;
 use local_jedomi\local\service\telegram_pin_service;
 use local_jedomi\local\service\vision_service;
-use local_jedomi\messaging\plugin_state;
+use local_jedomi\messaging\access_guard;
 use local_jedomi\schema\table_indexer;
 use local_jedomi\schema\ws_indexer;
 
@@ -201,16 +201,15 @@ class webhook_handler {
      * @param array $update Decoded JSON from Telegram webhook
      */
     private static function dispatch(array $update): void {
-        $disabled = \core\di::get(plugin_state::class)->disabled_error();
-        if ($disabled !== null) {
-            self::reply_plugin_disabled($update, $disabled['message']);
-            return;
-        }
-
-        if (!manager::is_enabled()) {
+        $denial = manager::access_guard()->channel_denial();
+        if ($denial !== null && $denial['code'] === access_guard::INTEGRATION_DISABLED) {
             // The administrator turned the integration off: the bot processes nothing, a linked chat is told so.
             \local_jedomi_log('Telegram webhook: integration disabled, update not processed');
             self::reply_integration_disabled($update);
+            return;
+        }
+        if ($denial !== null) {
+            self::reply_plugin_disabled($update, $denial['message']);
             return;
         }
 
@@ -358,7 +357,7 @@ class webhook_handler {
         }
 
         // Check and record rate limiting atomically.
-        $limited = self::check_and_record_rate($chatid);
+        $limited = manager::rate_limiter()->check_and_record($chatid);
         if ($limited === null) {
             // The limit could not be checked: the message is not processed, and the user knows it must be sent again.
             api_client::instance()->send_message($chatid, get_string('telegram_msg_rate_check_failed', 'local_jedomi'));
@@ -1329,13 +1328,13 @@ class webhook_handler {
             return;
         }
 
-        $disabled = \core\di::get(plugin_state::class)->disabled_error();
-        if ($disabled !== null) {
-            // Disabled in the Datacurso AI provider: do not continue the tool loop with the AI.
-            api_client::instance()->send_message($chatid, $disabled['message']);
+        $denial = manager::access_guard()->channel_denial();
+        if ($denial !== null && $denial['code'] === access_guard::INTEGRATION_DISABLED) {
             return;
         }
-        if (!manager::is_enabled()) {
+        if ($denial !== null) {
+            // Disabled in the Datacurso AI provider: do not continue the tool loop with the AI.
+            api_client::instance()->send_message($chatid, $denial['message']);
             return;
         }
 
@@ -2737,90 +2736,7 @@ class webhook_handler {
      * @return bool True if the user is allowed to interact with the bot.
      */
     public static function is_user_role_allowed(int $userid): bool {
-        return \local_jedomi_telegram_role_allowed_for($userid);
-    }
-
-    /**
-     * Record one message against the per-chat rate limit window and report if the chat is blocked.
-     *
-     * Uses a delegated transaction. When the limit cannot be checked or recorded (a database error) the
-     * failure is logged and null is returned, so the message is not processed and the user is told.
-     *
-     * @param  string $chatid Telegram chat id.
-     * @return bool|null True if the chat is currently rate-limited (message must be rejected), null on failure.
-     */
-    private static function check_and_record_rate(string $chatid): ?bool {
-        global $DB;
-        $now = time();
-        $window = 60; // 1 minute
-        $limit = manager::get_rate_limit();
-        $cooldown = manager::get_cooldown() * 60;
-
-        if ($limit <= 0) {
-            return false; // Unlimited.
-        }
-
-        try {
-            $transaction = $DB->start_delegated_transaction();
-        } catch (\Throwable $e) {
-            \local_jedomi_log('[TELEGRAM RATE] limit check failed for chat ' . self::chatref($chatid) . ': '
-                . \local_jedomi\local\safe_error::describe($e));
-            return null;
-        }
-        try {
-            $record = $DB->get_record('local_jedomi_telegram_rate_limit', ['chatid' => $chatid]);
-
-            if (!$record) {
-                $DB->insert_record('local_jedomi_telegram_rate_limit', (object)[
-                    'chatid'      => $chatid,
-                    'windowstart' => $now,
-                    'msgcount'    => 1,
-                    'blockeduntil' => 0,
-                ]);
-                $transaction->allow_commit();
-                return false;
-            }
-
-            // Check if blocked.
-            if ($record->blockeduntil > $now) {
-                $transaction->allow_commit();
-                return true;
-            }
-
-            // Reset window if expired.
-            if ($record->windowstart + $window < $now) {
-                $record->windowstart = $now;
-                $record->msgcount = 1;
-                $record->blockeduntil = 0;
-                $DB->update_record('local_jedomi_telegram_rate_limit', $record);
-                $transaction->allow_commit();
-                return false;
-            }
-
-            // Check limit.
-            if ($record->msgcount >= $limit) {
-                $record->blockeduntil = $now + $cooldown;
-                $DB->update_record('local_jedomi_telegram_rate_limit', $record);
-                $transaction->allow_commit();
-                return true;
-            }
-
-            // Increment.
-            $record->msgcount = $record->msgcount + 1;
-            $DB->update_record('local_jedomi_telegram_rate_limit', $record);
-            $transaction->allow_commit();
-            return false;
-        } catch (\Throwable $e) {
-            \local_jedomi_log('[TELEGRAM RATE] limit check failed for chat ' . self::chatref($chatid) . ': '
-                . \local_jedomi\local\safe_error::describe($e));
-            try {
-                // The rollback throws the error again; it is already handled here.
-                $transaction->rollback($e);
-            } catch (\Throwable $rethrown) {
-                unset($rethrown);
-            }
-            return null;
-        }
+        return manager::access_guard()->role_allowed($userid);
     }
 
     // ... ── User role & SPT helpers (self-contained, no dependency on lib.php) ──
@@ -2863,7 +2779,7 @@ class webhook_handler {
      * @return \stdClass|null The user record, or null when the account can no longer be served.
      */
     private static function get_active_user(int $userid): ?\stdClass {
-        return \local_jedomi_telegram_active_user($userid);
+        return manager::access_guard()->active_user($userid);
     }
 
     /**

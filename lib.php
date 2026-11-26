@@ -1448,14 +1448,28 @@ function local_jedomi_is_telegram_role_allowed(): bool {
 /**
  * Whether the Telegram role rule lets a user use the bot and receive its notifications.
  *
- * Site administrators are always allowed. Otherwise the user is blocked only when every role they hold, at system
- * level or in any course they are enrolled in, is in the telegram_hidden_roles setting. A user without roles is
- * allowed. The profile link, the bot and the notifications all use this rule.
+ * The profile link, the bot and the notifications all use this rule: local_jedomi_channel_role_allowed_for() for the
+ * telegram channel.
  *
  * @param int $userid Moodle user id.
  * @return bool
  */
 function local_jedomi_telegram_role_allowed_for(int $userid): bool {
+    return local_jedomi_channel_role_allowed_for('telegram', $userid);
+}
+
+/**
+ * Whether the role rule of a messaging channel lets a user use the channel.
+ *
+ * Site administrators are always allowed. Otherwise the user is blocked only when every role they hold, at system
+ * level or in any course they are enrolled in, is in the {channel}_hidden_roles setting. A user without roles is
+ * allowed.
+ *
+ * @param string $channel Channel name, the prefix of its settings, e.g. telegram.
+ * @param int $userid Moodle user id.
+ * @return bool
+ */
+function local_jedomi_channel_role_allowed_for(string $channel, int $userid): bool {
     if ($userid <= 0) {
         return false;
     }
@@ -1463,7 +1477,7 @@ function local_jedomi_telegram_role_allowed_for(int $userid): bool {
         return true;
     }
 
-    $hidden = (string) (get_config('local_jedomi', 'telegram_hidden_roles') ?: '');
+    $hidden = (string) (get_config('local_jedomi', $channel . '_hidden_roles') ?: '');
     $hiddenids = array_filter(array_map('intval', explode(',', $hidden)));
     if (empty($hiddenids)) {
         return true; // No restriction configured.
@@ -1495,12 +1509,7 @@ function local_jedomi_telegram_role_allowed_for(int $userid): bool {
  * @return stdClass|null The user record, or null when the account can no longer be served.
  */
 function local_jedomi_telegram_active_user(int $userid): ?stdClass {
-    global $DB;
-    $user = $DB->get_record('user', ['id' => $userid, 'deleted' => 0]);
-    if (!$user || !empty($user->suspended) || $user->auth === 'nologin' || isguestuser($user)) {
-        return null;
-    }
-    return $user;
+    return (new \local_jedomi\messaging\access_guard('telegram'))->active_user($userid);
 }
 
 /**
@@ -1515,14 +1524,14 @@ function local_jedomi_telegram_active_user(int $userid): ?stdClass {
  */
 function local_jedomi_telegram_recipient(int $userid): ?stdClass {
     global $DB;
-    $pluginstate = \core\di::get(\local_jedomi\messaging\plugin_state::class);
-    if (!$pluginstate->is_enabled() || !\local_jedomi\telegram\manager::is_enabled()) {
+    $guard = new \local_jedomi\messaging\access_guard('telegram');
+    if ($guard->channel_denial() !== null) {
         return null;
     }
     $link = $DB->get_record('local_jedomi_telegram_links', ['userid' => $userid, 'confirmed' => 1]);
     if (
         !$link || \local_jedomi\local\service\telegram_link_service::is_expired($link)
-            || local_jedomi_telegram_active_user($userid) === null || !local_jedomi_telegram_role_allowed_for($userid)
+            || $guard->served_user($userid) === null
     ) {
         return null;
     }
