@@ -32,6 +32,7 @@ namespace local_jedomi\telegram;
 
 use local_jedomi\messaging\access_guard;
 use local_jedomi\messaging\rate_limiter;
+use local_jedomi\messaging\tool_runner;
 
 defined('MOODLE_INTERNAL') || die();
 
@@ -43,6 +44,13 @@ require_once(__DIR__ . '/../../lib.php');
 class manager {
     /** Constant of the key derivation of 1.6.x, kept only to read a token saved then. */
     private const PEPPER = 'jedomi_telegram_pepper_v1';
+
+    /** Tools the Telegram channel can run; any other tool is never offered to the AI here. */
+    private const SUPPORTED_TOOLS = [
+        'describe_table', 'search_tables', 'execute_sql', 'get_site_config', 'site_overview', 'ws_search', 'ws_describe',
+        'ws_execute', 'admin_search', 'admin_describe', 'admin_execute', 'create_agent', 'list_agents',
+        'delete_agent', 'my_courses', 'my_grades', 'my_assignments',
+    ];
 
     /** TTL for linking codes (seconds). */
     private const CODE_TTL = 600; // 10 minutes
@@ -463,6 +471,15 @@ class manager {
      */
     public static function rate_limiter(): rate_limiter {
         return new rate_limiter('local_jedomi_telegram_rate_limit', 'telegram_rate_limit', 'telegram_cooldown', '[TELEGRAM RATE]');
+    }
+
+    /**
+     * Tool runner of the Telegram bot: the telegram tool definitions, limited to the tools Telegram can run.
+     *
+     * @return tool_runner
+     */
+    public static function tool_runner(): tool_runner {
+        return new tool_runner('telegram', 'Telegram', self::SUPPORTED_TOOLS);
     }
 
     /**
