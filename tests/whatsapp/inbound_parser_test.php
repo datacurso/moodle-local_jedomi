@@ -205,13 +205,15 @@ final class inbound_parser_test extends \basic_testcase {
     }
 
     /**
-     * Audio, image and document messages carry the media id, type, name and caption.
+     * Audio, image and document messages carry the media id, a file name the services can read, the type without its
+     * parameters and the caption.
      *
      * @dataProvider media_provider
      * @param string $type Message type.
      * @param array $media Media part.
      * @param string $kind Expected media kind.
      * @param string $filename Expected file name.
+     * @param string $mimetype Expected type.
      * @param string $caption Expected caption.
      */
     public function test_media_messages_carry_the_media_id(
@@ -219,6 +221,7 @@ final class inbound_parser_test extends \basic_testcase {
         array $media,
         string $kind,
         string $filename,
+        string $mimetype,
         string $caption
     ): void {
         $message = inbound_parser::parse(self::text_message(['type' => $type, $type => $media, 'text' => null]));
@@ -227,7 +230,7 @@ final class inbound_parser_test extends \basic_testcase {
         $this->assertSame($kind, $message->media->kind);
         $this->assertSame('1037543291543636', $message->media->id);
         $this->assertSame($filename, $message->media->filename);
-        $this->assertSame($media['mime_type'], $message->media->mimetype);
+        $this->assertSame($mimetype, $message->media->mimetype);
         $this->assertSame($caption, $message->caption);
         $this->assertSame('', $message->text);
     }
@@ -238,14 +241,54 @@ final class inbound_parser_test extends \basic_testcase {
      * @return array
      */
     public static function media_provider(): array {
+        $docx = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+        $pptx = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
         return [
             'voice note' => ['audio', ['id' => '1037543291543636', 'mime_type' => 'audio/ogg; codecs=opus', 'voice' => true],
-                media_ref::AUDIO, '', ''],
+                media_ref::AUDIO, 'voice.ogg', 'audio/ogg', ''],
+            'audio file' => ['audio', ['id' => '1037543291543636', 'mime_type' => 'audio/mpeg'],
+                media_ref::AUDIO, '', 'audio/mpeg', ''],
             'image' => ['image', ['id' => '1037543291543636', 'mime_type' => 'image/jpeg', 'caption' => ' My work '],
-                media_ref::IMAGE, '', 'My work'],
+                media_ref::IMAGE, 'photo.jpg', 'image/jpeg', 'My work'],
+            'png image' => ['image', ['id' => '1037543291543636', 'mime_type' => 'IMAGE/PNG'],
+                media_ref::IMAGE, 'photo.png', 'image/png', ''],
+            'webp image' => ['image', ['id' => '1037543291543636', 'mime_type' => 'image/webp'],
+                media_ref::IMAGE, 'photo.webp', 'image/webp', ''],
             'document' => ['document', ['id' => '1037543291543636', 'mime_type' => 'application/pdf',
-                'filename' => 'essay.pdf', 'caption' => 'Essay'], media_ref::DOCUMENT, 'essay.pdf', 'Essay'],
+                'filename' => 'essay.pdf', 'caption' => 'Essay'], media_ref::DOCUMENT, 'essay.pdf', 'application/pdf', 'Essay'],
+            'office document' => ['document', ['id' => '1037543291543636', 'mime_type' => $docx,
+                'filename' => 'notes.docx', 'caption' => 'Summarise'], media_ref::DOCUMENT, 'notes.docx', $docx, 'Summarise'],
+            'document without name' => ['document', ['id' => '1037543291543636', 'mime_type' => $pptx],
+                media_ref::DOCUMENT, 'document.pptx', $pptx, ''],
+            'document of unknown type without name' => ['document', ['id' => '1037543291543636',
+                'mime_type' => 'application/zip'], media_ref::DOCUMENT, 'document', 'application/zip', ''],
         ];
+    }
+
+    /**
+     * Video and sticker messages are not read: they keep their type and have no text nor media, so the student is
+     * asked for text.
+     *
+     * @dataProvider unread_media_provider
+     * @param string $type Message type.
+     */
+    public function test_video_and_sticker_have_no_media(string $type): void {
+        $message = inbound_parser::parse(self::text_message(['type' => $type,
+            $type => ['id' => '1037543291543636', 'mime_type' => 'video/mp4', 'caption' => 'Look'], 'text' => null]));
+
+        $this->assertSame($type, $message->type);
+        $this->assertSame('', $message->text);
+        $this->assertSame('', $message->caption);
+        $this->assertNull($message->media);
+    }
+
+    /**
+     * Media types the channel does not read.
+     *
+     * @return array
+     */
+    public static function unread_media_provider(): array {
+        return ['video' => ['video'], 'sticker' => ['sticker']];
     }
 
     /**

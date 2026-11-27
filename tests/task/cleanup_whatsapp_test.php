@@ -195,4 +195,36 @@ final class cleanup_whatsapp_test extends \advanced_testcase {
         $this->assertSame(2, $DB->count_records('local_jedomi_whatsapp_usage'));
         $this->assertStringContainsString('Removed 2 expired WhatsApp link(s).', $output);
     }
+
+    /**
+     * Temporary media files a killed process left behind are removed once they are older than the limit; a recent file
+     * (a download in progress), the file exactly at the limit and a subdirectory are kept.
+     */
+    public function test_old_media_temporary_files_are_removed(): void {
+        $dir = make_temp_directory(\local_jedomi\whatsapp\whatsapp_media_source::TEMP_DIR);
+        $files = [
+            'old' => self::NOW - cleanup_whatsapp::MEDIA_FILE_TTL - 1,
+            'older' => self::NOW - DAYSECS,
+            'limit' => self::NOW - cleanup_whatsapp::MEDIA_FILE_TTL,
+            'recent' => self::NOW - MINSECS,
+        ];
+        foreach ($files as $name => $mtime) {
+            file_put_contents("{$dir}/{$name}", 'student media');
+            touch("{$dir}/{$name}", $mtime);
+        }
+        mkdir("{$dir}/subdir");
+        touch("{$dir}/subdir", self::NOW - DAYSECS);
+
+        $output = $this->run_cleanup();
+
+        $this->assertFileDoesNotExist("{$dir}/old");
+        $this->assertFileDoesNotExist("{$dir}/older");
+        $this->assertFileExists("{$dir}/limit");
+        $this->assertFileExists("{$dir}/recent");
+        $this->assertDirectoryExists("{$dir}/subdir");
+        $this->assertStringContainsString('Deleted 2 old WhatsApp media temporary file(s).', $output);
+        // A file is never removed while the longest media phase (the largest AI timeout setting) is still running.
+        set_config('ai_timeout', \local_jedomi\ai\client::MAX_TIMEOUT, 'local_jedomi');
+        $this->assertGreaterThan(\local_jedomi\whatsapp\whatsapp_media_source::time_limit(), cleanup_whatsapp::MEDIA_FILE_TTL);
+    }
 }

@@ -22,7 +22,6 @@ use local_jedomi\messaging\channel;
 use local_jedomi\messaging\confirmation_card;
 use local_jedomi\messaging\confirmation_service;
 use local_jedomi\messaging\fake_plugin_state;
-use local_jedomi\messaging\media_ref;
 use local_jedomi\messaging\no_pin_policy;
 use local_jedomi\messaging\plugin_state;
 
@@ -357,13 +356,42 @@ final class whatsapp_channel_test extends \advanced_testcase {
     }
 
     /**
-     * Media is not downloaded yet: the media source refuses every file.
+     * The media source of the channel downloads WhatsApp media.
      */
-    public function test_media_is_not_downloaded_yet(): void {
-        $this->expectException(\moodle_exception::class);
-        (new whatsapp_media_source())->with_file(
-            new media_ref(media_ref::IMAGE, '123', 'a.jpg', 'image/jpeg'),
-            static fn(string $path): array => []
+    public function test_media_source_is_the_whatsapp_one(): void {
+        $this->assertInstanceOf(whatsapp_media_source::class, (new whatsapp_channel())->media_source());
+    }
+
+    /**
+     * What was heard in a voice note is the text of the student: its format characters cannot format the echo.
+     */
+    public function test_heard_text_is_escaped(): void {
+        $heard = (new whatsapp_channel())->message(channel::MESSAGE_HEARD, '*all* my _grades_ ~now~');
+
+        $this->assertSame(get_string('whatsapp_msg_heard', 'local_jedomi', formatter::escape('*all* my _grades_ ~now~')), $heard);
+        $this->assertStringNotContainsString('*all*', $heard);
+        $this->assertStringNotContainsString('_grades_', $heard);
+    }
+
+    /**
+     * Media messages get their own messages: audio and files switched off, a type that cannot be read, and the request
+     * for text names what can be read.
+     */
+    public function test_media_messages_have_their_own_strings(): void {
+        $channel = new whatsapp_channel();
+        $this->assertSame(
+            get_string('whatsapp_msg_audio_disabled', 'local_jedomi'),
+            $channel->message(channel::MESSAGE_AUDIO_DISABLED)
         );
+        $this->assertSame(
+            get_string('whatsapp_msg_files_disabled', 'local_jedomi'),
+            $channel->message(channel::MESSAGE_FILES_DISABLED)
+        );
+        $this->assertSame(
+            get_string('whatsapp_msg_file_unsupported', 'local_jedomi'),
+            $channel->message(channel::MESSAGE_FILE_UNSUPPORTED)
+        );
+        $this->assertSame(get_string('whatsapp_msg_text_only', 'local_jedomi'), $channel->message(channel::MESSAGE_TEXT_ONLY));
+        $this->assertStringContainsString('voice', get_string('whatsapp_msg_text_only', 'local_jedomi'));
     }
 }

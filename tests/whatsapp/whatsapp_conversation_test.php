@@ -330,19 +330,20 @@ final class whatsapp_conversation_test extends \advanced_testcase {
     }
 
     /**
-     * Media is not read yet: an image gets the text only message, is not downloaded and does not reach the AI; it
-     * counts as received media.
+     * A video is not read: the student is asked for text, nothing is downloaded and nothing reaches the AI; it is not
+     * counted as received media.
      */
-    public function test_media_gets_the_text_only_message(): void {
+    public function test_a_video_gets_the_text_only_message(): void {
         $userid = $this->student();
 
-        $this->deliver(['type' => 'image', 'image' => ['id' => '1234567890', 'mime_type' => 'image/jpeg',
+        $this->deliver(['type' => 'video', 'video' => ['id' => '1234567890', 'mime_type' => 'video/mp4',
             'caption' => 'Mire esto']]);
 
         $this->assertSame([], $this->ai->calls);
         $this->assertSame([], $this->client->calls_to('get_media_url'));
         $this->assertSame([get_string('whatsapp_msg_text_only', 'local_jedomi')], array_column($this->sent(), 'text'));
-        $this->assertSame(1, self::usage($userid, 'media'));
+        $this->assertSame(0, self::usage($userid, 'media'));
+        $this->assertSame(1, self::usage($userid, 'inbound'));
     }
 
     /**

@@ -45,8 +45,14 @@ class fake_cloud_api_client extends cloud_api_client {
      */
     public array $responses = [];
 
-    /** @var array<string, array{content: string, mime_type: string}> Media served, keyed by media id. */
+    /**
+     * @var array<string, array{content: string, mime_type: string, file_size?: int}> Media served, keyed by media id. A
+     *      file_size given here is announced by get_media_url() instead of the real size of the content.
+     */
     public array $media = [];
+
+    /** @var array<string, int> Downloads of each media id that answer 404 as an expired address before one succeeds. */
+    public array $expired = [];
 
     /** @var int Messages sent, for the fake wamids. */
     private int $sentcount = 0;
@@ -111,7 +117,7 @@ class fake_cloud_api_client extends cloud_api_client {
             return [
                 'url' => self::MEDIA_URL . $mediaid,
                 'mime_type' => $this->media[$mediaid]['mime_type'],
-                'file_size' => strlen($this->media[$mediaid]['content']),
+                'file_size' => $this->media[$mediaid]['file_size'] ?? strlen($this->media[$mediaid]['content']),
             ];
         });
     }
@@ -122,7 +128,10 @@ class fake_cloud_api_client extends cloud_api_client {
         $args = [$url, $destfile, $maxbytes];
         $answer = $this->record('download_media', $args, function () use ($url, $destfile, $maxbytes): array {
             $mediaid = str_starts_with($url, self::MEDIA_URL) ? substr($url, strlen(self::MEDIA_URL)) : '';
-            if (!isset($this->media[$mediaid])) {
+            if (!isset($this->media[$mediaid]) || ($this->expired[$mediaid] ?? 0) > 0) {
+                if (isset($this->expired[$mediaid])) {
+                    $this->expired[$mediaid]--;
+                }
                 throw new cloud_api_exception(404, 0, 'expired media address');
             }
             $content = $this->media[$mediaid]['content'];

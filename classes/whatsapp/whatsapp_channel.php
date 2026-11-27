@@ -37,7 +37,8 @@ use local_jedomi\messaging\transport;
  *
  * The chat key is wa_ plus the BSUID of the student. Conversations, message limits and held actions are kept in the
  * WhatsApp tables; answers go through whatsapp_transport (phone or BSUID, 24-hour window, parts); held actions are
- * confirmed by text; media is not read yet; long questions continue with a signed self-ping. WhatsApp cannot ask for
+ * confirmed by text; voice notes, photos and documents are downloaded by whatsapp_media_source and read by the media
+ * pipeline; long questions continue with a signed self-ping. WhatsApp cannot ask for
  * the PIN, so a write of a user who needs one is refused with a note to use the web chat.
  *
  * @package    local_jedomi
@@ -73,10 +74,10 @@ class whatsapp_channel implements channel {
         channel::MESSAGE_PRIVATE_ONLY => 'whatsapp_msg_text_only',
         channel::MESSAGE_ACCOUNT_INACTIVE => 'whatsapp_msg_account_inactive',
         channel::MESSAGE_ROLE_BLOCKED => 'whatsapp_msg_role_blocked',
-        channel::MESSAGE_AUDIO_DISABLED => 'whatsapp_msg_text_only',
+        channel::MESSAGE_AUDIO_DISABLED => 'whatsapp_msg_audio_disabled',
         channel::MESSAGE_HEARD => 'whatsapp_msg_heard',
-        channel::MESSAGE_FILES_DISABLED => 'whatsapp_msg_text_only',
-        channel::MESSAGE_FILE_UNSUPPORTED => 'whatsapp_msg_text_only',
+        channel::MESSAGE_FILES_DISABLED => 'whatsapp_msg_files_disabled',
+        channel::MESSAGE_FILE_UNSUPPORTED => 'whatsapp_msg_file_unsupported',
         channel::MESSAGE_TEXT_ONLY => 'whatsapp_msg_text_only',
     ];
 
@@ -190,6 +191,10 @@ class whatsapp_channel implements channel {
     public function message(string $key, mixed $a = null): string {
         if (!isset(self::MESSAGES[$key])) {
             throw new \coding_exception('Unknown message of the WhatsApp channel: ' . $key);
+        }
+        if ($key === channel::MESSAGE_HEARD && is_string($a)) {
+            // What was heard is the text of the student: its format characters must not format the echo.
+            $a = formatter::escape($a);
         }
         return get_string(self::MESSAGES[$key], 'local_jedomi', $a);
     }

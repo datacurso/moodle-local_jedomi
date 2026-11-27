@@ -32,8 +32,12 @@ require_once(__DIR__ . '/../../lib.php');
  * A message of a linked student who receives messages is counted, then, when the student accepted the chat category,
  * handled under the lock of the chat of the BSUID (one message per chat at a time), in the language of the student:
  * SÍ or NO answers the newest held action of the chat; anything else goes through the router of the core with the
- * WhatsApp channel (message limit per minute, confirmation word, NUEVO and the conversation engine). Media is not read
- * yet: a media message reaches the router without its file, so the student gets the text only message.
+ * WhatsApp channel (message limit per minute, confirmation word, NUEVO and the conversation engine). A voice note, photo
+ * or document reaches the router with its media and caption, and the media pipeline of the core reads it (see
+ * whatsapp_media_source); a video or a sticker has no media, so the student is asked for text.
+ *
+ * WhatsApp sends one media per message: several photos sent together arrive as separate messages, each one handled
+ * (and counted by the message limit) on its own, one at a time under the chat lock.
  *
  * @package    local_jedomi
  * @copyright  2026 Datacurso <developer@datacurso.com>
@@ -113,23 +117,21 @@ final class whatsapp_conversation_handler implements conversation_handler {
     }
 
     /**
-     * The message for the core. Media is not read yet, so a media message carries neither its file nor its caption:
-     * the core answers it with the text only message.
+     * The message for the core: a text message with its text, a media message with its media and caption.
      *
      * @param string $chatkey Chat key.
      * @param inbound $message Message.
      * @return inbound_message
      */
     private static function to_message(string $chatkey, inbound $message): inbound_message {
-        $text = $message->media === null ? $message->text : '';
         return new inbound_message(
             inbound::CHANNEL,
             $chatkey,
             $message->wamid,
-            $text,
+            $message->text,
             $message->replyid,
-            null,
-            '',
+            $message->media,
+            $message->media !== null ? $message->caption : '',
             true,
             '',
             $message->wamid

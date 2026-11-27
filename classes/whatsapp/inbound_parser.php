@@ -46,6 +46,18 @@ final class inbound_parser {
         'document' => media_ref::DOCUMENT,
     ];
 
+    /** @var string[] Extension of the file name given to an image or an unnamed document, by type. */
+    private const EXTENSIONS = [
+        'image/jpeg' => 'jpg',
+        'image/png' => 'png',
+        'image/webp' => 'webp',
+        'application/pdf' => 'pdf',
+        'application/msword' => 'doc',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
+        'application/vnd.ms-powerpoint' => 'ppt',
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation' => 'pptx',
+    ];
+
     /**
      * Whether a value is a BSUID.
      *
@@ -143,11 +155,12 @@ final class inbound_parser {
         $caption = '';
         if (isset(self::MEDIA_KINDS[$type]) && is_array($message[$type] ?? null)) {
             $part = $message[$type];
+            $mimetype = self::mimetype($part['mime_type'] ?? null);
             $media = new media_ref(
                 self::MEDIA_KINDS[$type],
                 self::string($part['id'] ?? null),
-                self::string($part['filename'] ?? null),
-                self::string($part['mime_type'] ?? null)
+                self::filename($type, $part, $mimetype),
+                $mimetype
             );
             $caption = self::string($part['caption'] ?? null);
         }
@@ -195,6 +208,42 @@ final class inbound_parser {
             }
         }
         return null;
+    }
+
+    /**
+     * Type of a media part without its parameters, in lowercase ("audio/ogg; codecs=opus" gives "audio/ogg").
+     *
+     * @param mixed $value Raw mime_type.
+     * @return string
+     */
+    public static function mimetype(mixed $value): string {
+        return strtolower(trim(explode(';', self::string($value))[0]));
+    }
+
+    /**
+     * File name of a media part, as the services choose how to read it by its extension: a voice note is ogg, an image
+     * gets a name from its type (WhatsApp sends none), an audio file keeps its type to find its format, and a document
+     * keeps its own name or, without one, gets a name from its type.
+     *
+     * @param string $type Message type.
+     * @param array $part Media part.
+     * @param string $mimetype Type without parameters.
+     * @return string
+     */
+    private static function filename(string $type, array $part, string $mimetype): string {
+        $extension = self::EXTENSIONS[$mimetype] ?? '';
+        switch ($type) {
+            case 'audio':
+                return !empty($part['voice']) ? 'voice.ogg' : '';
+            case 'image':
+                return 'photo.' . ($extension !== '' ? $extension : 'jpg');
+            default:
+                $filename = self::string($part['filename'] ?? null);
+                if ($filename !== '') {
+                    return $filename;
+                }
+                return 'document' . ($extension !== '' ? '.' . $extension : '');
+        }
     }
 
     /**
