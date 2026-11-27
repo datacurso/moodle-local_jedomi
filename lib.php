@@ -429,8 +429,8 @@ function local_jedomi_extend_navigation(\global_navigation $nav): void {
 }
 
 /**
- * Adds a "Jedomi Telegram" link to the user profile navigation.
- * Only shown when Telegram is enabled and the user's role is allowed.
+ * Adds the "Jedomi Telegram" and "Jedomi on WhatsApp" links to the user profile navigation.
+ * Each one is shown when its channel is available and the role of the user is allowed, or the user is linked.
  *
  * @param \core_user\output\myprofile\tree $tree
  * @param stdClass $user
@@ -438,7 +438,7 @@ function local_jedomi_extend_navigation(\global_navigation $nav): void {
  * @param stdClass $course
  */
 function local_jedomi_myprofile_navigation(\core_user\output\myprofile\tree $tree, $user, $iscurrentuser, $course): void {
-    global $USER;
+    global $DB, $USER;
 
     if (!$iscurrentuser) {
         return;
@@ -448,39 +448,53 @@ function local_jedomi_myprofile_navigation(\core_user\output\myprofile\tree $tre
         return;
     }
 
+    $nodes = [];
+
     // Require Telegram enabled AND bot token verified by getMe().
     // If the admin hasn't pasted a valid token yet, don't expose the link.
-    if (!\local_jedomi\telegram\manager::is_enabled()) {
-        return;
+    if (\local_jedomi\telegram\manager::is_enabled() && get_config('local_jedomi', 'telegram_bot_verified')) {
+        // A linked user keeps the way to the link page, where the link can always be removed.
+        $linked = \local_jedomi\local\service\telegram_link_service::get_confirmed_link((int) $USER->id) !== null;
+        if ($linked || local_jedomi_is_telegram_role_allowed()) {
+            $nodes[] = new core_user\output\myprofile\node(
+                'jedomi',
+                'telegram',
+                get_string('telegram_link_title', 'local_jedomi'),
+                null,
+                new moodle_url('/local/jedomi/telegram_profile.php', ['userid' => $user->id])
+            );
+        }
     }
 
-    if (!get_config('local_jedomi', 'telegram_bot_verified')) {
-        return;
+    // WhatsApp needs the channel on, its settings saved and the number students write to.
+    if (
+        \local_jedomi\whatsapp\manager::is_enabled()
+            && \local_jedomi\whatsapp\manager::is_configured()
+            && \local_jedomi\whatsapp\manager::get_display_number() !== ''
+    ) {
+        $linked = $DB->record_exists(\local_jedomi\local\service\whatsapp_link_service::LINKS_TABLE, ['userid' => $USER->id]);
+        if ($linked || local_jedomi_channel_role_allowed_for('whatsapp', (int) $USER->id)) {
+            $nodes[] = new core_user\output\myprofile\node(
+                'jedomi',
+                'whatsapp',
+                get_string('whatsapp_link_title', 'local_jedomi'),
+                null,
+                new moodle_url('/local/jedomi/whatsapp_profile.php', ['userid' => $user->id])
+            );
+        }
     }
 
-    // A linked user keeps the way to the link page, where the link can always be removed.
-    $linked = \local_jedomi\local\service\telegram_link_service::get_confirmed_link((int) $USER->id) !== null;
-    if (!$linked && !local_jedomi_is_telegram_role_allowed()) {
+    if ($nodes === []) {
         return;
     }
-
-    $url = new moodle_url('/local/jedomi/telegram_profile.php', ['userid' => $user->id]);
-    $node = new core_user\output\myprofile\node(
-        'jedomi',
-        'telegram',
-        get_string('telegram_link_title', 'local_jedomi'),
-        null,
-        $url
-    );
-
-    $category = new core_user\output\myprofile\category(
+    $tree->add_category(new core_user\output\myprofile\category(
         'jedomi',
         get_string('pluginname', 'local_jedomi'),
         null
-    );
-
-    $tree->add_category($category);
-    $tree->add_node($node);
+    ));
+    foreach ($nodes as $node) {
+        $tree->add_node($node);
+    }
 }
 
 /**
@@ -1218,77 +1232,27 @@ function local_jedomi_spt_signing_string(array $payload): string {
  * @return array        The signed SPT payload including the 'signature' key.
  */
 function local_jedomi_generate_spt(string $role): array {
-    global $USER, $COURSE, $CFG, $DB;
+    global $USER, $COURSE;
 
-    $sysctx    = context_system::instance();
     $coursectx = (!empty($COURSE->id) && $COURSE->id > 1)
                     ? context_course::instance($COURSE->id)
-                    : $sysctx;
+                    : context_system::instance();
+    [$courseidsowned, $courseidsenrolled] = \local_jedomi\spt::course_ids((int) $USER->id, $role);
 
-    // Real Moodle capabilities, inherited from the role system.
-    $capabilities = [
-        'can_view_all_grades'    => has_capability('moodle/grade:viewall', $coursectx),
-        'can_manage_users'       => has_capability('moodle/user:update', $sysctx),
-        'can_send_messages'      => has_capability('moodle/site:sendmessage', $sysctx),
-        'can_manage_courses'     => has_capability('moodle/course:update', $coursectx),
-        'can_view_reports'       => has_capability('moodle/course:viewhiddenactivities', $coursectx),
-        'can_enrol_users'        => has_capability('enrol/manual:enrol', $coursectx),
-        'can_access_all_groups'  => has_capability('moodle/site:accessallgroups', $coursectx),
-    ];
-
-    // Courses by role (RBAC scope in the gateway).
-    $courseidsowned   = [];   // Courses where the user has authority (teacher / admin / manager).
-    $courseidsenrolled = [];  // Courses where the user is enrolled (student).
-
-    if ($role === 'teacher' || $role === 'manager') {
-        $courses = enrol_get_users_courses($USER->id, true);
-        foreach ($courses as $c) {
-            $ctx = context_course::instance($c->id);
-            if (has_capability('moodle/course:manageactivities', $ctx)) {
-                $courseidsowned[] = (int)$c->id;
-            }
-        }
-    } else if ($role === 'admin') {
-        // An admin needs no course list: they have full access.
-        $courseidsowned = [];
-    } else if ($role === 'student') {
-        // For students: the enrolled courses (used by the gateway to filter).
-        $courses = enrol_get_users_courses($USER->id, true);
-        foreach ($courses as $c) {
-            $courseidsenrolled[] = (int)$c->id;
-        }
-    }
-
-    // Excluded courses are outside Jedomi: they are never signed as courses of the user.
-    $courseidsowned = \local_jedomi\course_access::filter_course_ids($courseidsowned);
-    $courseidsenrolled = \local_jedomi\course_access::filter_course_ids($courseidsenrolled);
-
-    $tools = local_jedomi_get_tool_definitions($role);
-
-    $payload = [
-        'userid'              => (int) $USER->id,
-        'username'            => $USER->username,
-        'role'                => $role,
-        'course_id'           => (int) ($COURSE->id ?? 0),
-        'course_ids_owned'    => $courseidsowned, // Teacher/manager: sus cursos.
-        'course_ids_enrolled' => $courseidsenrolled, // Student: cursos inscritos.
-        'capabilities'        => $capabilities,
-        'tools'               => $tools, // Tool definitions in OpenAI format; the gateway uses them to configure the model.
-        'moodle_url'          => $CFG->wwwroot,
-        'expires'             => time() + 1800, // 30 minutes (conversations with several tool calls).
-    ];
-
-    // HMAC signature with the static secret, the same one the Python gateway uses to verify it.
-    // sesskey() is part of the payload (not the key) to bind the token to the session:
+    $payload = \local_jedomi\spt::payload(
+        (int) $USER->id,
+        $USER->username,
+        $role,
+        (int) ($COURSE->id ?? 0),
+        $courseidsowned,
+        $courseidsenrolled,
+        \local_jedomi\spt::capabilities($coursectx),
+        local_jedomi_get_tool_definitions($role)
+    );
+    // The sesskey() is part of the payload (not the key) to bind the token to the session:
     // if the session changes, the payload changes and the SPT is invalid anyway.
-    $staticsecret = local_jedomi_get_spt_secret();
     $payload['sesskey_hash'] = substr(hash('sha256', sesskey()), 0, 16); // Binding without exposing the sesskey.
-
-    ksort($payload);
-    $signature = hash_hmac('sha256', local_jedomi_spt_signing_string($payload), $staticsecret);
-
-    $payload['signature'] = $signature;
-    return $payload;
+    return \local_jedomi\spt::sign($payload);
 }
 
 /**
@@ -1303,71 +1267,25 @@ function local_jedomi_generate_spt(string $role): array {
  * @return array          The signed SPT payload, or empty array if user not found/deleted.
  */
 function local_jedomi_generate_spt_for_user(int $userid, string $role): array {
-    global $CFG, $DB;
+    global $DB;
 
-    $sysctx = context_system::instance();
     $user = $DB->get_record('user', ['id' => $userid, 'deleted' => 0], 'id, username, firstname, lastname');
     if (!$user) {
         return [];
     }
+    [$courseidsowned, $courseidsenrolled] = \local_jedomi\spt::course_ids($userid, $role);
 
-    // Capabilities for this specific user (not global $USER).
-    $capabilities = [
-        'can_view_all_grades'   => has_capability('moodle/grade:viewall', $sysctx, $userid),
-        'can_manage_users'      => has_capability('moodle/user:update', $sysctx, $userid),
-        'can_send_messages'     => has_capability('moodle/site:sendmessage', $sysctx, $userid),
-        'can_manage_courses'    => has_capability('moodle/course:update', $sysctx, $userid),
-        'can_view_reports'      => has_capability('moodle/course:viewhiddenactivities', $sysctx, $userid),
-        'can_enrol_users'       => has_capability('enrol/manual:enrol', $sysctx, $userid),
-        'can_access_all_groups' => has_capability('moodle/site:accessallgroups', $sysctx, $userid),
-    ];
-
-    // Course lists based on role (same logic as generate_spt but for specific user).
-    $courseidsowned = [];
-    $courseidsenrolled = [];
-
-    if ($role === 'teacher' || $role === 'manager') {
-        $courses = enrol_get_users_courses($userid, true, ['id']);
-        foreach ($courses as $c) {
-            $ctx = context_course::instance($c->id);
-            if (has_capability('moodle/course:manageactivities', $ctx, $userid)) {
-                $courseidsowned[] = (int)$c->id;
-            }
-        }
-    } else if ($role === 'student') {
-        $courses = enrol_get_users_courses($userid, true, ['id']);
-        foreach ($courses as $c) {
-            $courseidsenrolled[] = (int)$c->id;
-        }
-    }
-    // Admin: no course list (full access).
-    // Excluded courses are outside Jedomi: they are never signed as courses of the user.
-    $courseidsowned = \local_jedomi\course_access::filter_course_ids($courseidsowned);
-    $courseidsenrolled = \local_jedomi\course_access::filter_course_ids($courseidsenrolled);
-
-    $tools = local_jedomi_get_tool_definitions($role, (int) $userid);
-
-    $payload = [
-        'userid'              => $userid,
-        'username'            => $user->username,
-        'role'                => $role,
-        'course_id'           => 0,
-        'course_ids_owned'    => $courseidsowned,
-        'course_ids_enrolled' => $courseidsenrolled,
-        'capabilities'        => $capabilities,
-        'tools'               => $tools,
-        'moodle_url'          => $CFG->wwwroot,
-        'expires'             => time() + 1800,
-    ];
-
-    // Same HMAC signing as the existing generate_spt function.
-    $staticsecret = local_jedomi_get_spt_secret();
-
-    ksort($payload);
-    $signature = hash_hmac('sha256', local_jedomi_spt_signing_string($payload), $staticsecret);
-
-    $payload['signature'] = $signature;
-    return $payload;
+    return \local_jedomi\spt::sign(\local_jedomi\spt::payload(
+        $userid,
+        $user->username,
+        $role,
+        0,
+        $courseidsowned,
+        $courseidsenrolled,
+        // Capabilities for this specific user (not global $USER), at system level.
+        \local_jedomi\spt::capabilities(context_system::instance(), $userid),
+        local_jedomi_get_tool_definitions($role, (int) $userid)
+    ));
 }
 
 /**
@@ -1448,14 +1366,28 @@ function local_jedomi_is_telegram_role_allowed(): bool {
 /**
  * Whether the Telegram role rule lets a user use the bot and receive its notifications.
  *
- * Site administrators are always allowed. Otherwise the user is blocked only when every role they hold, at system
- * level or in any course they are enrolled in, is in the telegram_hidden_roles setting. A user without roles is
- * allowed. The profile link, the bot and the notifications all use this rule.
+ * The profile link, the bot and the notifications all use this rule: local_jedomi_channel_role_allowed_for() for the
+ * telegram channel.
  *
  * @param int $userid Moodle user id.
  * @return bool
  */
 function local_jedomi_telegram_role_allowed_for(int $userid): bool {
+    return local_jedomi_channel_role_allowed_for('telegram', $userid);
+}
+
+/**
+ * Whether the role rule of a messaging channel lets a user use the channel.
+ *
+ * Site administrators are always allowed. Otherwise the user is blocked only when every role they hold, at system
+ * level or in any course they are enrolled in, is in the {channel}_hidden_roles setting. A user without roles is
+ * allowed.
+ *
+ * @param string $channel Channel name, the prefix of its settings, e.g. telegram.
+ * @param int $userid Moodle user id.
+ * @return bool
+ */
+function local_jedomi_channel_role_allowed_for(string $channel, int $userid): bool {
     if ($userid <= 0) {
         return false;
     }
@@ -1463,7 +1395,7 @@ function local_jedomi_telegram_role_allowed_for(int $userid): bool {
         return true;
     }
 
-    $hidden = (string) (get_config('local_jedomi', 'telegram_hidden_roles') ?: '');
+    $hidden = (string) (get_config('local_jedomi', $channel . '_hidden_roles') ?: '');
     $hiddenids = array_filter(array_map('intval', explode(',', $hidden)));
     if (empty($hiddenids)) {
         return true; // No restriction configured.
@@ -1495,12 +1427,7 @@ function local_jedomi_telegram_role_allowed_for(int $userid): bool {
  * @return stdClass|null The user record, or null when the account can no longer be served.
  */
 function local_jedomi_telegram_active_user(int $userid): ?stdClass {
-    global $DB;
-    $user = $DB->get_record('user', ['id' => $userid, 'deleted' => 0]);
-    if (!$user || !empty($user->suspended) || $user->auth === 'nologin' || isguestuser($user)) {
-        return null;
-    }
-    return $user;
+    return (new \local_jedomi\messaging\access_guard('telegram'))->active_user($userid);
 }
 
 /**
@@ -1515,13 +1442,14 @@ function local_jedomi_telegram_active_user(int $userid): ?stdClass {
  */
 function local_jedomi_telegram_recipient(int $userid): ?stdClass {
     global $DB;
-    if (local_jedomi_plugin_disabled_error() !== null || !\local_jedomi\telegram\manager::is_enabled()) {
+    $guard = new \local_jedomi\messaging\access_guard('telegram');
+    if ($guard->channel_denial() !== null) {
         return null;
     }
     $link = $DB->get_record('local_jedomi_telegram_links', ['userid' => $userid, 'confirmed' => 1]);
     if (
         !$link || \local_jedomi\local\service\telegram_link_service::is_expired($link)
-            || local_jedomi_telegram_active_user($userid) === null || !local_jedomi_telegram_role_allowed_for($userid)
+            || $guard->served_user($userid) === null
     ) {
         return null;
     }

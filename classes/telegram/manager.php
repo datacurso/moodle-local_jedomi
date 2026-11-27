@@ -30,6 +30,17 @@
 
 namespace local_jedomi\telegram;
 
+use local_jedomi\messaging\access_guard;
+use local_jedomi\messaging\channel;
+use local_jedomi\messaging\channel_limits;
+use local_jedomi\messaging\chat_commands;
+use local_jedomi\messaging\confirmation_service;
+use local_jedomi\messaging\continuation;
+use local_jedomi\messaging\media_source;
+use local_jedomi\messaging\rate_limiter;
+use local_jedomi\messaging\tool_runner;
+use local_jedomi\messaging\transport;
+
 defined('MOODLE_INTERNAL') || die();
 
 require_once(__DIR__ . '/../../lib.php');
@@ -41,11 +52,12 @@ class manager {
     /** Constant of the key derivation of 1.6.x, kept only to read a token saved then. */
     private const PEPPER = 'jedomi_telegram_pepper_v1';
 
-    /** Default rate limit: max messages per minute. */
-    private const DEFAULT_RATE_LIMIT = 30;
-
-    /** Default cooldown in minutes when rate limit exceeded. */
-    private const DEFAULT_COOLDOWN = 5;
+    /** Tools the Telegram channel can run; any other tool is never offered to the AI here. */
+    private const SUPPORTED_TOOLS = [
+        'describe_table', 'search_tables', 'execute_sql', 'get_site_config', 'site_overview', 'ws_search', 'ws_describe',
+        'ws_execute', 'admin_search', 'admin_describe', 'admin_execute', 'create_agent', 'list_agents',
+        'delete_agent', 'my_courses', 'my_grades', 'my_assignments',
+    ];
 
     /** TTL for linking codes (seconds). */
     private const CODE_TTL = 600; // 10 minutes
@@ -61,6 +73,9 @@ class manager {
 
     /** @var string Setting that records a webhook the update could not register again with the new secret. */
     private const NEEDS_REGISTRATION_KEY = 'telegram_webhook_needs_registration';
+
+    /** @var continuation|null Continuation that replaces the self-ping in PHPUnit tests. */
+    private static ?continuation $testcontinuation = null;
 
     /**
      * Key of the encryption used up to 1.6.x: derived from a value of the database and a constant of this code, so a
@@ -438,8 +453,7 @@ class manager {
      * @return int Messages per minute; 0 means no limit.
      */
     public static function get_rate_limit(): int {
-        $val = get_config('local_jedomi', 'telegram_rate_limit');
-        return ($val === false || $val === '') ? self::DEFAULT_RATE_LIMIT : (int) $val;
+        return self::rate_limiter()->limit();
     }
 
     /**
@@ -448,8 +462,123 @@ class manager {
      * @return int Minutes.
      */
     public static function get_cooldown(): int {
-        $val = get_config('local_jedomi', 'telegram_cooldown');
-        return ($val === false || $val === '') ? self::DEFAULT_COOLDOWN : (int) $val;
+        return self::rate_limiter()->cooldown_minutes();
+    }
+
+    /**
+     * Access guard of the Telegram bot: the telegram_enabled and telegram_hidden_roles settings.
+     *
+     * @return access_guard
+     */
+    public static function access_guard(): access_guard {
+        return new access_guard('telegram');
+    }
+
+    /**
+     * Rate limiter of the Telegram bot: local_jedomi_telegram_rate_limit with telegram_rate_limit and telegram_cooldown.
+     *
+     * @return rate_limiter
+     */
+    public static function rate_limiter(): rate_limiter {
+        return new rate_limiter('local_jedomi_telegram_rate_limit', 'telegram_rate_limit', 'telegram_cooldown', '[TELEGRAM RATE]');
+    }
+
+    /**
+     * Tool runner of the Telegram bot: the telegram tool definitions, limited to the tools Telegram can run.
+     *
+     * @return tool_runner
+     */
+    public static function tool_runner(): tool_runner {
+        return new tool_runner('telegram', 'Telegram', self::SUPPORTED_TOOLS);
+    }
+
+    /**
+     * Confirmation service of the Telegram bot: held actions in local_jedomi_telegram_pending_actions, shown with
+     * inline buttons, for the user of the confirmed link of the chat, with the Telegram PIN.
+     *
+     * @return confirmation_service
+     */
+    public static function confirmation_service(): confirmation_service {
+        return new confirmation_service(
+            'local_jedomi_telegram_pending_actions',
+            'Telegram',
+            new telegram_confirmation_ui(),
+            self::access_guard(),
+            self::tool_runner(),
+            static function (string $chatid): ?int {
+                global $DB;
+                $userid = $DB->get_field('local_jedomi_telegram_links', 'userid', ['chatid' => $chatid, 'confirmed' => 1]);
+                return $userid === false ? null : (int) $userid;
+            },
+            new telegram_pin_policy()
+        );
+    }
+
+    /**
+     * Transport of the Telegram bot: messages, "typing" and answers through the Bot API client.
+     *
+     * @return transport
+     */
+    public static function transport(): transport {
+        return new telegram_transport();
+    }
+
+    /**
+     * Media source of the Telegram bot: files downloaded by their file_id through the Bot API client.
+     *
+     * @return media_source
+     */
+    public static function media_source(): media_source {
+        return new telegram_media_source();
+    }
+
+    /**
+     * Commands of the Telegram bot: slash commands, inline keyboards, the links and their codes.
+     *
+     * @return chat_commands
+     */
+    public static function commands(): chat_commands {
+        return new telegram_commands();
+    }
+
+    /**
+     * Continuation of the Telegram bot: the self-ping to the Telegram webhook.
+     *
+     * @return continuation
+     */
+    public static function continuation(): continuation {
+        return self::$testcontinuation ?? new telegram_continuation();
+    }
+
+    /**
+     * Replace the continuation returned by {@see continuation()}, so no test posts a self-ping. Only for PHPUnit tests.
+     *
+     * @param continuation|null $continuation Replacement, or null to restore the self-ping.
+     * @return void
+     */
+    public static function set_continuation_for_testing(?continuation $continuation): void {
+        if (!defined('PHPUNIT_TEST') || !PHPUNIT_TEST) {
+            throw new \coding_exception('manager::set_continuation_for_testing() is only for PHPUnit tests');
+        }
+        self::$testcontinuation = $continuation;
+    }
+
+    /**
+     * Limits of the Telegram channel: the Telegram HTML format rules of the system prompt.
+     *
+     * @return channel_limits
+     */
+    public static function channel_limits(): channel_limits {
+        return new telegram_limits();
+    }
+
+    /**
+     * The Telegram bot as a channel of the conversation engine, wired with the factories of this class.
+     *
+     * @return channel
+     */
+    public static function channel(): channel {
+        return new telegram_channel();
     }
 
     /**

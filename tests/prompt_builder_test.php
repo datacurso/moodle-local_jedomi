@@ -146,6 +146,25 @@ final class prompt_builder_test extends \advanced_testcase {
     }
 
     /**
+     * The Telegram format rules are written in the language of the user, between the parallel tools and the
+     * iterations blocks.
+     */
+    public function test_telegram_format_rules_block_is_kept(): void {
+        $prompt = prompt_builder::build('student', 'pt_br', ['my_courses'], []);
+
+        $this->assertStringContainsString(
+            "  This is MUCH faster than doing them one by one.\n\n"
+                . "⚡ TELEGRAM RULES:\n"
+                . "- The user is WAITING. Don't do extra iterations.\n"
+                . "- Use ONLY Telegram HTML: <b>bold</b>, <i>italic</i>, <code>code</code>.\n"
+                . "- NO markdown. NEVER use **bold** or *italic* — use <b> and <i>.\n"
+                . "- Be concise, direct, respond in pt_br only.\n\n"
+                . "⚡ YOU HAVE MANY ITERATIONS — DO NOT GIVE UP:\n",
+            $prompt
+        );
+    }
+
+    /**
      * READ-001: the placeholder system message of the Telegram session is always replaced by prompt_builder::build()
      * before the AI is called, so it does not keep its own copy of the rules that could drift from them.
      */

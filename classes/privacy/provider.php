@@ -27,12 +27,15 @@ use local_jedomi\agent\agent_manager;
 use local_jedomi\local\service\feedback_service;
 use local_jedomi\local\service\pending_action_service;
 use local_jedomi\local\service\telegram_link_service;
+use local_jedomi\local\service\whatsapp_link_service;
 
 /**
- * Privacy provider for local_jedomi: ratings, pending actions, Telegram data, agents and the data sent outside Moodle.
+ * Privacy provider for local_jedomi: ratings, pending actions, Telegram and WhatsApp data, agents and the data sent
+ * outside Moodle.
  *
  * Every record is personal data of the user it belongs to and lives in that user's context. Telegram records are
- * keyed by chat and belong to the user linked to that chat.
+ * keyed by chat and belong to the user linked to that chat; WhatsApp records are keyed by the BSUID of Meta (the chat
+ * key is 'wa_' plus the BSUID) and belong to the user linked to that BSUID.
  *
  * @package    local_jedomi
  * @copyright  2026 Datacurso <developer@datacurso.com>
@@ -92,6 +95,65 @@ class provider implements
             'chatid' => 'privacy:metadata:local_jedomi_telegram_pending_actions:chatid',
             'actionjson' => 'privacy:metadata:local_jedomi_telegram_pending_actions:actionjson',
         ], 'privacy:metadata:local_jedomi_telegram_pending_actions');
+
+        $collection->add_database_table(whatsapp_link_service::LINKS_TABLE, [
+            'userid' => 'privacy:metadata:local_jedomi_whatsapp_links:userid',
+            'bsuid' => 'privacy:metadata:local_jedomi_whatsapp_links:bsuid',
+            'waid' => 'privacy:metadata:local_jedomi_whatsapp_links:waid',
+            'phone' => 'privacy:metadata:local_jedomi_whatsapp_links:phone',
+            'confirmed' => 'privacy:metadata:local_jedomi_whatsapp_links:confirmed',
+            'consentat' => 'privacy:metadata:local_jedomi_whatsapp_links:consentat',
+            'consentversion' => 'privacy:metadata:local_jedomi_whatsapp_links:consentversion',
+            'consentcategories' => 'privacy:metadata:local_jedomi_whatsapp_links:consentcategories',
+            'optedout' => 'privacy:metadata:local_jedomi_whatsapp_links:optedout',
+            'optoutat' => 'privacy:metadata:local_jedomi_whatsapp_links:optoutat',
+            'lastinbound' => 'privacy:metadata:local_jedomi_whatsapp_links:lastinbound',
+            'lastused' => 'privacy:metadata:local_jedomi_whatsapp_links:lastused',
+            'lastproactivesent' => 'privacy:metadata:local_jedomi_whatsapp_links:lastproactivesent',
+            'timecreated' => 'privacy:metadata:local_jedomi_whatsapp_links:timecreated',
+        ], 'privacy:metadata:local_jedomi_whatsapp_links');
+
+        $collection->add_database_table(whatsapp_link_service::SESSIONS_TABLE, [
+            'chatid' => 'privacy:metadata:local_jedomi_whatsapp_sessions:chatid',
+            'messages' => 'privacy:metadata:local_jedomi_whatsapp_sessions:messages',
+            'usercontext' => 'privacy:metadata:local_jedomi_whatsapp_sessions:usercontext',
+            'iteration' => 'privacy:metadata:local_jedomi_whatsapp_sessions:iteration',
+            'lastactivity' => 'privacy:metadata:local_jedomi_whatsapp_sessions:lastactivity',
+        ], 'privacy:metadata:local_jedomi_whatsapp_sessions');
+
+        $collection->add_database_table(whatsapp_link_service::PENDING_TABLE, [
+            'callbackid' => 'privacy:metadata:local_jedomi_whatsapp_pending:callbackid',
+            'chatid' => 'privacy:metadata:local_jedomi_whatsapp_pending:chatid',
+            'actionjson' => 'privacy:metadata:local_jedomi_whatsapp_pending:actionjson',
+            'courseid' => 'privacy:metadata:local_jedomi_whatsapp_pending:courseid',
+            'timecreated' => 'privacy:metadata:local_jedomi_whatsapp_pending:timecreated',
+        ], 'privacy:metadata:local_jedomi_whatsapp_pending');
+
+        $collection->add_database_table(whatsapp_link_service::RATE_TABLE, [
+            'chatid' => 'privacy:metadata:local_jedomi_whatsapp_rate:chatid',
+            'windowstart' => 'privacy:metadata:local_jedomi_whatsapp_rate:windowstart',
+            'msgcount' => 'privacy:metadata:local_jedomi_whatsapp_rate:msgcount',
+            'blockeduntil' => 'privacy:metadata:local_jedomi_whatsapp_rate:blockeduntil',
+        ], 'privacy:metadata:local_jedomi_whatsapp_rate');
+
+        $collection->add_database_table(whatsapp_link_service::INBOX_TABLE, [
+            'wamid' => 'privacy:metadata:local_jedomi_whatsapp_inbox:wamid',
+            'bsuid' => 'privacy:metadata:local_jedomi_whatsapp_inbox:bsuid',
+            'payload' => 'privacy:metadata:local_jedomi_whatsapp_inbox:payload',
+            'status' => 'privacy:metadata:local_jedomi_whatsapp_inbox:status',
+            'attempts' => 'privacy:metadata:local_jedomi_whatsapp_inbox:attempts',
+            'timecreated' => 'privacy:metadata:local_jedomi_whatsapp_inbox:timecreated',
+            'timeprocessed' => 'privacy:metadata:local_jedomi_whatsapp_inbox:timeprocessed',
+        ], 'privacy:metadata:local_jedomi_whatsapp_inbox');
+
+        $collection->add_database_table(whatsapp_link_service::USAGE_TABLE, [
+            'userid' => 'privacy:metadata:local_jedomi_whatsapp_usage:userid',
+            'period' => 'privacy:metadata:local_jedomi_whatsapp_usage:period',
+            'inbound' => 'privacy:metadata:local_jedomi_whatsapp_usage:inbound',
+            'outservice' => 'privacy:metadata:local_jedomi_whatsapp_usage:outservice',
+            'outtemplate' => 'privacy:metadata:local_jedomi_whatsapp_usage:outtemplate',
+            'media' => 'privacy:metadata:local_jedomi_whatsapp_usage:media',
+        ], 'privacy:metadata:local_jedomi_whatsapp_usage');
 
         $collection->add_database_table('local_jedomi_agents', [
             'userid' => 'privacy:metadata:local_jedomi_agents:userid',
@@ -180,6 +242,15 @@ class provider implements
             'messages' => 'privacy:metadata:telegram:messages',
         ], 'privacy:metadata:telegram');
 
+        // Meta receives the messages directly through the WhatsApp Cloud API, without an intermediary. Jedomi never
+        // uploads media: the media of the user are only downloaded from Meta by their id.
+        $collection->add_external_location_link('whatsapp', [
+            'phone' => 'privacy:metadata:whatsapp:phone',
+            'bsuid' => 'privacy:metadata:whatsapp:bsuid',
+            'messages' => 'privacy:metadata:whatsapp:messages',
+            'media' => 'privacy:metadata:whatsapp:media',
+        ], 'privacy:metadata:whatsapp');
+
         return $collection;
     }
 
@@ -236,6 +307,11 @@ class provider implements
             $telegram = self::export_telegram($userid);
             if ($telegram !== null) {
                 $writer->export_data([get_string('privacy_telegram', 'local_jedomi')], $telegram);
+            }
+
+            $whatsapp = self::export_whatsapp($userid);
+            if ($whatsapp !== null) {
+                $writer->export_data([get_string('privacy_whatsapp', 'local_jedomi')], $whatsapp);
             }
 
             $agents = self::export_agents($userid);
@@ -308,6 +384,8 @@ class provider implements
         return feedback_service::user_has_feedback($userid)
             || pending_action_service::user_has_actions($userid)
             || $DB->record_exists('local_jedomi_telegram_links', ['userid' => $userid])
+            || $DB->record_exists(whatsapp_link_service::LINKS_TABLE, ['userid' => $userid])
+            || $DB->record_exists(whatsapp_link_service::USAGE_TABLE, ['userid' => $userid])
             || $DB->record_exists('local_jedomi_agents', ['userid' => $userid])
             || $DB->record_exists('local_jedomi_query_log', ['userid' => $userid]);
     }
@@ -361,6 +439,87 @@ class provider implements
     }
 
     /**
+     * WhatsApp data of a user: the link with its consent and opt-out and, for its chat, the conversation, the message
+     * limit, the actions waiting for confirmation and the state of the received messages; and the monthly usage. The
+     * encrypted payload of a received message is transient (emptied once processed) and is not exported.
+     *
+     * @param int $userid User id.
+     * @return \stdClass|null Null when the user has no WhatsApp data.
+     */
+    private static function export_whatsapp(int $userid): ?\stdClass {
+        global $DB;
+        $links = $DB->get_records(whatsapp_link_service::LINKS_TABLE, ['userid' => $userid], 'id ASC');
+        $usage = $DB->get_records(whatsapp_link_service::USAGE_TABLE, ['userid' => $userid], 'period ASC');
+        if (empty($links) && empty($usage)) {
+            return null;
+        }
+        $optionaldate = static fn($time): ?string => $time ? transform::datetime($time) : null;
+        $exported = [];
+        foreach ($links as $link) {
+            $chatkey = whatsapp_link_service::chatkey((string) $link->bsuid);
+            $sessions = $DB->get_records_list(
+                whatsapp_link_service::SESSIONS_TABLE,
+                'chatid',
+                [$chatkey, whatsapp_link_service::TOOL_LOOP_PREFIX . $chatkey],
+                'id ASC'
+            );
+            $limit = $DB->get_record(whatsapp_link_service::RATE_TABLE, ['chatid' => $chatkey]);
+            $actions = $DB->get_records(whatsapp_link_service::PENDING_TABLE, ['chatid' => $chatkey], 'id ASC');
+            $inbox = $DB->get_records(whatsapp_link_service::INBOX_TABLE, ['bsuid' => $link->bsuid], 'id ASC');
+            $exported[] = [
+                'bsuid' => $link->bsuid,
+                'waid' => $link->waid,
+                'phone' => $link->phone,
+                'confirmed' => transform::yesno((bool) $link->confirmed),
+                'consentat' => $optionaldate($link->consentat),
+                'consentversion' => $link->consentversion,
+                'consentcategories' => $link->consentcategories,
+                'optedout' => transform::yesno((bool) $link->optedout),
+                'optoutat' => $optionaldate($link->optoutat),
+                'lastinbound' => $optionaldate($link->lastinbound),
+                'lastused' => $optionaldate($link->lastused),
+                'lastproactivesent' => $optionaldate($link->lastproactivesent),
+                'timecreated' => transform::datetime($link->timecreated),
+                // The conversation. The tool loop state (usercontext) is not exported, like in Telegram: it holds a signed
+                // permission token and the real names and emails of other users behind the anonymisation placeholders.
+                'conversations' => array_values(array_map(static fn(\stdClass $session): array => [
+                    'messages' => $session->messages,
+                    'iteration' => $session->iteration === null ? null : (int) $session->iteration,
+                    'lastactivity' => transform::datetime($session->lastactivity),
+                ], $sessions)),
+                'messagelimit' => $limit ? [
+                    'msgcount' => (int) $limit->msgcount,
+                    'windowstart' => transform::datetime($limit->windowstart),
+                    'blockeduntil' => $optionaldate($limit->blockeduntil),
+                ] : null,
+                // The callback id is a short-lived confirmation token and is not exported, like the PIN hash.
+                'pendingactions' => array_values(array_map(static fn(\stdClass $action): array => [
+                    'action' => $action->actionjson,
+                    'courseid' => (int) $action->courseid,
+                    'timecreated' => transform::datetime($action->timecreated),
+                ], $actions)),
+                'inbox' => array_values(array_map(static fn(\stdClass $message): array => [
+                    'wamid' => $message->wamid,
+                    'status' => $message->status,
+                    'attempts' => (int) $message->attempts,
+                    'timecreated' => transform::datetime($message->timecreated),
+                    'timeprocessed' => $optionaldate($message->timeprocessed),
+                ], $inbox)),
+            ];
+        }
+        return (object) [
+            'links' => $exported,
+            'usage' => array_values(array_map(static fn(\stdClass $month): array => [
+                'period' => (int) $month->period,
+                'inbound' => (int) $month->inbound,
+                'outservice' => (int) $month->outservice,
+                'outtemplate' => (int) $month->outtemplate,
+                'media' => (int) $month->media,
+            ], $usage)),
+        ];
+    }
+
+    /**
      * Agents of a user with their results and the queries they ran.
      *
      * @param int $userid User id.
@@ -396,7 +555,8 @@ class provider implements
     }
 
     /**
-     * Delete every record of a user: ratings, pending actions, Telegram data and agents with their results and queries.
+     * Delete every record of a user: ratings, pending actions, Telegram and WhatsApp data and agents with their results
+     * and queries.
      *
      * @param int $userid User id.
      * @return void
@@ -406,6 +566,7 @@ class provider implements
         feedback_service::delete_for_users([$userid]);
         pending_action_service::delete_for_users([$userid]);
         telegram_link_service::unlink($userid);
+        whatsapp_link_service::unlink($userid);
         $agentids = $DB->get_fieldset_select('local_jedomi_agents', 'id', 'userid = ?', [$userid]);
         foreach ($agentids as $agentid) {
             $DB->delete_records('local_jedomi_query_log', ['agentid' => $agentid]);

@@ -25,6 +25,7 @@
 namespace local_jedomi\event;
 
 use local_jedomi\local\service\student_data_service;
+use local_jedomi\local\service\whatsapp_link_service;
 use local_jedomi\telegram\api_client;
 
 /**
@@ -237,7 +238,7 @@ class observers {
     }
 
     /**
-     * Revoke the Telegram link of a user who was suspended (Decision 7).
+     * Revoke the Telegram and WhatsApp links of a user who was suspended (Decision 7).
      *
      * @param \core\event\user_updated $event
      * @return void
@@ -251,27 +252,35 @@ class observers {
         ) {
             \local_jedomi\local\service\telegram_link_service::unlink($userid);
         }
+        if (
+            $DB->record_exists(whatsapp_link_service::LINKS_TABLE, ['userid' => $userid])
+                && $DB->record_exists('user', ['id' => $userid, 'suspended' => 1])
+        ) {
+            whatsapp_link_service::unlink($userid);
+        }
     }
 
     /**
-     * Revoke the Telegram link of a deleted user (Decision 7).
+     * Revoke the Telegram and WhatsApp links of a deleted user (Decision 7).
      *
      * @param \core\event\user_deleted $event
      * @return void
      */
     public static function user_deleted(\core\event\user_deleted $event): void {
         \local_jedomi\local\service\telegram_link_service::unlink((int) $event->objectid);
+        whatsapp_link_service::unlink((int) $event->objectid);
     }
 
     /**
-     * Revoke the Telegram link of a user whose password changed (Decision 7): whoever had the old password cannot keep
-     * acting through the chat.
+     * Revoke the Telegram and WhatsApp links of a user whose password changed (Decision 7): whoever had the old
+     * password cannot keep acting through the chat.
      *
      * @param \core\event\user_password_updated $event
      * @return void
      */
     public static function user_password_updated(\core\event\user_password_updated $event): void {
         \local_jedomi\local\service\telegram_link_service::unlink((int) $event->relateduserid);
+        whatsapp_link_service::unlink((int) $event->relateduserid);
     }
 
     // ... ── Cooldown helpers ─────────────────────────────────────────────────────

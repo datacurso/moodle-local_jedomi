@@ -41,7 +41,7 @@ class telegram_settings_form extends \moodleform {
         'telegram_rate_limit' => [0, 1000],
         'telegram_cooldown' => [0, 1440],
         'telegram_max_turns' => [1, 100],
-        'telegram_gateway_timeout' => [5, \local_jedomi\telegram\webhook_handler::MAX_AI_TIMEOUT],
+        'telegram_gateway_timeout' => [5, \local_jedomi\messaging\conversation_engine::MAX_AI_TIMEOUT],
     ];
 
     /**

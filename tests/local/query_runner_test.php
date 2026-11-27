@@ -400,6 +400,7 @@ final class query_runner_test extends \advanced_testcase {
         $this->assertSame(250, query_runner::row_limit('web'));
         $this->assertSame(250, query_runner::row_limit('unknown'));
         $this->assertSame(50, query_runner::row_limit('telegram'));
+        $this->assertSame(50, query_runner::row_limit('whatsapp'), 'WhatsApp keeps the Telegram limit');
         $this->assertSame(100, query_runner::row_limit('companion'));
         $this->assertSame(1000, query_runner::row_limit('agent'));
 

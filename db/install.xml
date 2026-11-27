@@ -178,5 +178,116 @@
                 <INDEX NAME="timecreated_idx" UNIQUE="false" FIELDS="timecreated"/>
             </INDEXES>
         </TABLE>
+        <TABLE NAME="local_jedomi_whatsapp_links" COMMENT="Links between Moodle users and WhatsApp identities (BSUID)">
+            <FIELDS>
+                <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+                <FIELD NAME="userid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+                <FIELD NAME="bsuid" TYPE="char" LENGTH="160" NOTNULL="true" SEQUENCE="false" COMMENT="Business-scoped user id of Meta: country code, a dot and up to 128 characters, used as it comes"/>
+                <FIELD NAME="waid" TYPE="char" LENGTH="20" NOTNULL="false" SEQUENCE="false" COMMENT="WhatsApp id of Meta (digits without +), only when Meta shares it"/>
+                <FIELD NAME="phone" TYPE="char" LENGTH="20" NOTNULL="false" SEQUENCE="false" COMMENT="Phone number in E.164, only when known"/>
+                <FIELD NAME="confirmed" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+                <FIELD NAME="consentat" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="When the user accepted the consent text"/>
+                <FIELD NAME="consentversion" TYPE="char" LENGTH="20" NOTNULL="false" SEQUENCE="false" COMMENT="Version of the consent text accepted"/>
+                <FIELD NAME="consentcategories" TYPE="char" LENGTH="64" NOTNULL="false" SEQUENCE="false" COMMENT="Comma-separated categories accepted: chat, grades"/>
+                <FIELD NAME="optedout" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="1 after the user asked to stop the messages"/>
+                <FIELD NAME="optoutat" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+                <FIELD NAME="lastinbound" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Last message of the user; opens the 24-hour window"/>
+                <FIELD NAME="lastused" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Last use of the link; the link expires 30 days after it"/>
+                <FIELD NAME="lastproactivesent" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+                <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+            </FIELDS>
+            <KEYS>
+                <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+                <KEY NAME="userid" TYPE="unique" FIELDS="userid"/>
+                <KEY NAME="bsuid" TYPE="unique" FIELDS="bsuid"/>
+            </KEYS>
+            <INDEXES>
+                <INDEX NAME="waid_idx" UNIQUE="false" FIELDS="waid"/>
+                <INDEX NAME="lastinbound_idx" UNIQUE="false" FIELDS="lastinbound"/>
+            </INDEXES>
+        </TABLE>
+        <TABLE NAME="local_jedomi_whatsapp_sessions" COMMENT="Conversational context per WhatsApp chat key (wa_ plus the BSUID)">
+            <FIELDS>
+                <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+                <FIELD NAME="chatid" TYPE="char" LENGTH="170" NOTNULL="true" SEQUENCE="false"/>
+                <FIELD NAME="messages" TYPE="text" NOTNULL="false" SEQUENCE="false"/>
+                <FIELD NAME="usercontext" TYPE="text" NOTNULL="false" SEQUENCE="false"/>
+                <FIELD NAME="iteration" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false" COMMENT="Tool loop iteration of the saved state, to reject stale writes"/>
+                <FIELD NAME="lastactivity" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+            </FIELDS>
+            <KEYS>
+                <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+                <KEY NAME="chatid" TYPE="unique" FIELDS="chatid"/>
+            </KEYS>
+            <INDEXES>
+                <INDEX NAME="lastactivity_idx" UNIQUE="false" FIELDS="lastactivity"/>
+            </INDEXES>
+        </TABLE>
+        <TABLE NAME="local_jedomi_whatsapp_pending" COMMENT="WhatsApp actions waiting for the user's confirmation">
+            <FIELDS>
+                <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+                <FIELD NAME="callbackid" TYPE="char" LENGTH="64" NOTNULL="true" SEQUENCE="false"/>
+                <FIELD NAME="chatid" TYPE="char" LENGTH="170" NOTNULL="true" SEQUENCE="false"/>
+                <FIELD NAME="actionjson" TYPE="text" NOTNULL="true" SEQUENCE="false"/>
+                <FIELD NAME="courseid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Course the role is computed in when the action is confirmed; 0 outside a course"/>
+                <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+            </FIELDS>
+            <KEYS>
+                <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+                <KEY NAME="callbackid" TYPE="unique" FIELDS="callbackid"/>
+            </KEYS>
+            <INDEXES>
+                <INDEX NAME="chatid_idx" UNIQUE="false" FIELDS="chatid"/>
+                <INDEX NAME="timecreated_idx" UNIQUE="false" FIELDS="timecreated"/>
+            </INDEXES>
+        </TABLE>
+        <TABLE NAME="local_jedomi_whatsapp_rate" COMMENT="Rate limiting per WhatsApp chat key">
+            <FIELDS>
+                <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+                <FIELD NAME="chatid" TYPE="char" LENGTH="170" NOTNULL="true" SEQUENCE="false"/>
+                <FIELD NAME="windowstart" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+                <FIELD NAME="msgcount" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+                <FIELD NAME="blockeduntil" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+            </FIELDS>
+            <KEYS>
+                <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+                <KEY NAME="chatid" TYPE="unique" FIELDS="chatid"/>
+            </KEYS>
+        </TABLE>
+        <TABLE NAME="local_jedomi_whatsapp_inbox" COMMENT="WhatsApp messages received from Meta, one row per message; the unique wamid deduplicates retries">
+            <FIELDS>
+                <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+                <FIELD NAME="wamid" TYPE="char" LENGTH="128" NOTNULL="true" SEQUENCE="false" COMMENT="Message id of Meta"/>
+                <FIELD NAME="bsuid" TYPE="char" LENGTH="160" NOTNULL="true" SEQUENCE="false" COMMENT="BSUID of the sender"/>
+                <FIELD NAME="payload" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="Message as received, encrypted with the key of the site; emptied when processed"/>
+                <FIELD NAME="status" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="pending" SEQUENCE="false" COMMENT="pending, processing, done or failed"/>
+                <FIELD NAME="attempts" TYPE="int" LENGTH="5" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+                <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+                <FIELD NAME="timeprocessed" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+            </FIELDS>
+            <KEYS>
+                <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+                <KEY NAME="wamid" TYPE="unique" FIELDS="wamid"/>
+            </KEYS>
+            <INDEXES>
+                <INDEX NAME="status_idx" UNIQUE="false" FIELDS="status"/>
+                <INDEX NAME="timecreated_idx" UNIQUE="false" FIELDS="timecreated"/>
+            </INDEXES>
+        </TABLE>
+        <TABLE NAME="local_jedomi_whatsapp_usage" COMMENT="Monthly WhatsApp message counters per user">
+            <FIELDS>
+                <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+                <FIELD NAME="userid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+                <FIELD NAME="period" TYPE="int" LENGTH="6" NOTNULL="true" SEQUENCE="false" COMMENT="Month as YYYYMM"/>
+                <FIELD NAME="inbound" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+                <FIELD NAME="outservice" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Free-form service messages sent"/>
+                <FIELD NAME="outtemplate" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Template messages sent"/>
+                <FIELD NAME="media" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Media files received"/>
+            </FIELDS>
+            <KEYS>
+                <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+                <KEY NAME="userid-period" TYPE="unique" FIELDS="userid, period"/>
+            </KEYS>
+        </TABLE>
     </TABLES>
 </XMLDB>

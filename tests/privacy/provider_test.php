@@ -24,6 +24,7 @@ use core_privacy\local\request\writer;
 use core_privacy\tests\provider_testcase;
 use local_jedomi\local\service\feedback_service;
 use local_jedomi\local\service\pending_action_service;
+use local_jedomi\local\service\whatsapp_link_service;
 
 /**
  * Tests for the privacy provider of local_jedomi (answer feedback).
@@ -488,5 +489,245 @@ final class provider_test extends provider_testcase {
 
         provider::delete_data_for_user(new approved_contextlist($user, 'local_jedomi', [$context->id]));
         $this->assertFalse($DB->record_exists('local_jedomi_telegram_links', ['userid' => $user->id]));
+    }
+
+    /**
+     * Link a user to WhatsApp without a phone id and give the chat a conversation, its tool loop state, a message limit,
+     * a held action, an inbox row and usage counters.
+     *
+     * @param \stdClass $user User.
+     * @param string $bsuid BSUID of the user.
+     * @return string Chat key of the user.
+     */
+    private function create_whatsapp_data(\stdClass $user, string $bsuid): string {
+        global $DB;
+        $now = time();
+        $chatkey = 'wa_' . $bsuid;
+        $DB->insert_record('local_jedomi_whatsapp_links', (object) ['userid' => $user->id, 'bsuid' => $bsuid,
+            'confirmed' => 1, 'consentat' => $now, 'consentversion' => 'v1', 'consentcategories' => 'chat,grades',
+            'lastinbound' => $now, 'lastused' => $now, 'timecreated' => $now]);
+        $DB->insert_record('local_jedomi_whatsapp_sessions', (object) ['chatid' => $chatkey,
+            'messages' => json_encode([['role' => 'user', 'content' => 'My grades please']]), 'lastactivity' => $now]);
+        $DB->insert_record('local_jedomi_whatsapp_sessions', (object) ['chatid' => 'tool_loop_' . $chatkey,
+            'usercontext' => json_encode([
+                'anonymizer' => ['[person_1]' => 'Bruno Thirdparty', '[email_1]' => 'bruno.thirdparty@example.com'],
+                'spt' => ['userid' => $user->id, 'expires' => $now + 1800,
+                    'signature' => 'sptsignature0123456789abcdef'],
+                'tools' => [['name' => 'my_grades']],
+                'messages' => [['role' => 'user', 'content' => 'My grades please']],
+                'userid' => $user->id,
+            ]),
+            'iteration' => 2, 'lastactivity' => $now]);
+        $DB->insert_record('local_jedomi_whatsapp_rate', (object) ['chatid' => $chatkey, 'windowstart' => $now,
+            'msgcount' => 1, 'blockeduntil' => 0]);
+        $DB->insert_record('local_jedomi_whatsapp_pending', (object) ['callbackid' => random_string(16),
+            'chatid' => $chatkey, 'actionjson' => '{"tool":"my_grades"}', 'courseid' => 0, 'timecreated' => $now]);
+        $DB->insert_record('local_jedomi_whatsapp_inbox', (object) ['wamid' => 'wamid.' . sha1($bsuid), 'bsuid' => $bsuid,
+            'payload' => \local_jedomi\local\secret_store::encrypt('{"text":{"body":"Hello"}}'), 'status' => 'pending',
+            'timecreated' => $now]);
+        $DB->insert_record('local_jedomi_whatsapp_usage', (object) ['userid' => $user->id, 'period' => 202611,
+            'inbound' => 3, 'outservice' => 2]);
+        return $chatkey;
+    }
+
+    /**
+     * Unit 9: the six WhatsApp tables and the delivery to Meta (phone, BSUID, messages and media) are declared.
+     */
+    public function test_metadata_declares_the_whatsapp_tables_and_meta(): void {
+        $tables = [
+            'local_jedomi_whatsapp_links' => ['userid', 'bsuid', 'waid', 'phone', 'consentat', 'consentcategories', 'optedout'],
+            'local_jedomi_whatsapp_sessions' => ['chatid', 'messages'],
+            'local_jedomi_whatsapp_pending' => ['chatid', 'actionjson'],
+            'local_jedomi_whatsapp_rate' => ['chatid', 'msgcount'],
+            'local_jedomi_whatsapp_inbox' => ['wamid', 'bsuid', 'payload'],
+            'local_jedomi_whatsapp_usage' => ['userid', 'period'],
+        ];
+        foreach ($tables as $table => $fields) {
+            $declared = $this->declared_fields($table);
+            $this->assertNotNull($declared, "{$table} must be declared");
+            foreach ($fields as $field) {
+                $this->assertContains($field, $declared, "{$table}.{$field}");
+            }
+        }
+        $meta = $this->declared_fields('whatsapp');
+        $this->assertNotNull($meta, 'The delivery of data to Meta must be declared as an external location');
+        foreach (['phone', 'bsuid', 'messages', 'media'] as $field) {
+            $this->assertContains($field, $meta, $field);
+        }
+        $this->assertStringContainsString('Meta', get_string('privacy:metadata:whatsapp', 'local_jedomi'));
+    }
+
+    /**
+     * Unit 9: Jedomi never uploads media to Meta (design 6.5 and 6.6); the media of the user are only downloaded from
+     * Meta by their id, and the declaration says so in both languages.
+     */
+    public function test_the_media_of_meta_are_declared_as_downloaded_not_sent(): void {
+        global $CFG;
+        $string = [];
+        require($CFG->dirroot . '/local/jedomi/lang/es/local_jedomi.php');
+
+        $english = get_string('privacy:metadata:whatsapp:media', 'local_jedomi');
+        $this->assertStringContainsString('downloaded from Meta', $english);
+        $this->assertStringContainsString('never uploads', $english);
+        $this->assertStringContainsString('se descargan de Meta', $string['privacy:metadata:whatsapp:media']);
+        $this->assertStringContainsString('nunca sube', $string['privacy:metadata:whatsapp:media']);
+    }
+
+    /**
+     * Unit 9: the periods the WhatsApp privacy strings state match the constants that apply them. Privacy metadata
+     * strings take no parameters, so each number is checked against its constant in both languages.
+     */
+    public function test_the_whatsapp_privacy_periods_match_the_constants(): void {
+        global $CFG;
+        $string = [];
+        require($CFG->dirroot . '/local/jedomi/lang/es/local_jedomi.php');
+        $spanish = $string;
+
+        $periods = [
+            'privacy:metadata:local_jedomi_whatsapp_inbox' => [\local_jedomi\task\cleanup_whatsapp::INBOX_TTL, DAYSECS],
+            'privacy:metadata:local_jedomi_whatsapp_links:lastused' => [whatsapp_link_service::EXPIRY, DAYSECS],
+            'privacy:metadata:local_jedomi_whatsapp_links:lastinbound' => [whatsapp_link_service::SERVICE_WINDOW, HOURSECS],
+        ];
+        $units = [DAYSECS => ['days', 'días'], HOURSECS => ['hours', 'horas']];
+        foreach ($periods as $key => [$seconds, $unit]) {
+            $this->assertSame(0, $seconds % $unit, "{$key} is a whole number of units");
+            [$en, $es] = $units[$unit];
+            $amount = intdiv($seconds, $unit);
+            $this->assertStringContainsString("{$amount} {$en}", get_string($key, 'local_jedomi'), "English {$key}");
+            $this->assertStringContainsString("{$amount} {$es}", $spanish[$key], "Spanish {$key}");
+        }
+    }
+
+    /**
+     * Unit 9: every column of the WhatsApp tables in install.xml, except the id, holds data about the user and is
+     * declared in the metadata of its table.
+     */
+    public function test_metadata_declares_every_column_of_the_whatsapp_tables(): void {
+        global $CFG;
+        $xmldb = new \xmldb_file($CFG->dirroot . '/local/jedomi/db/install.xml');
+        $this->assertTrue($xmldb->loadXMLStructure());
+        $checked = 0;
+        foreach ($xmldb->getStructure()->getTables() as $table) {
+            if (strpos($table->getName(), 'local_jedomi_whatsapp_') !== 0) {
+                continue;
+            }
+            $declared = $this->declared_fields($table->getName()) ?? [];
+            foreach ($table->getFields() as $field) {
+                if ($field->getName() !== 'id') {
+                    $this->assertContains($field->getName(), $declared, "{$table->getName()}.{$field->getName()}");
+                }
+            }
+            $checked++;
+        }
+        $this->assertSame(6, $checked, 'The six WhatsApp tables are checked');
+    }
+
+    /**
+     * Unit 9: a WhatsApp link without a phone id puts the user in their context and is exported with the BSUID, the
+     * consent, the opt-out, the conversation and the inbox state, never the encrypted payload nor the tool loop state.
+     */
+    public function test_a_whatsapp_link_without_wa_id_is_found_and_exported(): void {
+        $this->resetAfterTest();
+        $user = $this->getDataGenerator()->create_user();
+        $bsuid = 'US.' . str_repeat('a1B2', 32);
+        $this->create_whatsapp_data($user, $bsuid);
+        $context = \context_user::instance($user->id);
+
+        $this->assertSame([(int) $context->id], array_map('intval', provider::get_contexts_for_userid((int) $user->id)
+            ->get_contextids()));
+        $userlist = new userlist($context, 'local_jedomi');
+        provider::get_users_in_context($userlist);
+        $this->assertSame([(int) $user->id], array_map('intval', $userlist->get_userids()));
+
+        provider::export_user_data(new approved_contextlist($user, 'local_jedomi', [$context->id]));
+
+        $data = writer::with_context($context)->get_data([get_string('privacy_whatsapp', 'local_jedomi')]);
+        $this->assertNotEmpty($data, 'WhatsApp data exported');
+        $link = $data->links[0];
+        $this->assertSame($bsuid, $link['bsuid']);
+        $this->assertNull($link['waid']);
+        $this->assertSame('chat,grades', $link['consentcategories']);
+        $this->assertSame('v1', $link['consentversion']);
+        $this->assertSame(\core_privacy\local\request\transform::yesno(false), $link['optedout']);
+        $this->assertCount(2, $link['conversations']);
+        $this->assertSame([null, 2], array_column($link['conversations'], 'iteration'));
+        $this->assertSame(
+            [json_encode([['role' => 'user', 'content' => 'My grades please']]), null],
+            array_column($link['conversations'], 'messages')
+        );
+        // The tool loop state holds a signed permission token and the real names of other users: never exported.
+        foreach ($link['conversations'] as $conversation) {
+            $this->assertArrayNotHasKey('usercontext', $conversation);
+        }
+        $exported = json_encode($data);
+        $this->assertStringNotContainsString('sptsignature0123456789abcdef', $exported);
+        $this->assertStringNotContainsString('Bruno Thirdparty', $exported);
+        $this->assertStringNotContainsString('bruno.thirdparty@example.com', $exported);
+        $this->assertStringNotContainsString('anonymizer', $exported);
+        $this->assertSame(1, $link['messagelimit']['msgcount']);
+        $this->assertCount(1, $link['pendingactions']);
+        $this->assertSame('pending', $link['inbox'][0]['status']);
+        $this->assertArrayNotHasKey('payload', $link['inbox'][0]);
+        $this->assertSame(3, $data->usage[0]['inbound']);
+    }
+
+    /**
+     * Unit 9: each deletion removes the WhatsApp link with the conversation, the tool loop state, the message limit, the
+     * held actions, the inbox rows and the usage of the user, and keeps those of other users.
+     *
+     * @dataProvider deletion_provider
+     * @param string $method How the data is deleted.
+     */
+    public function test_every_deletion_removes_the_whatsapp_data(string $method): void {
+        global $DB;
+        $this->resetAfterTest();
+        $user = $this->getDataGenerator()->create_user();
+        $other = $this->getDataGenerator()->create_user();
+        $chatkey = $this->create_whatsapp_data($user, 'US.13491208655302741918');
+        $otherkey = $this->create_whatsapp_data($other, 'CO.99999999999');
+        $context = \context_user::instance($user->id);
+
+        if ($method === 'user') {
+            provider::delete_data_for_user(new approved_contextlist($user, 'local_jedomi', [$context->id]));
+        } else if ($method === 'context') {
+            provider::delete_data_for_all_users_in_context($context);
+        } else {
+            provider::delete_data_for_users(new approved_userlist($context, 'local_jedomi', [$user->id]));
+        }
+
+        $count = static fn(string $key, string $bsuid, int $userid): array => [
+            'links' => $DB->count_records('local_jedomi_whatsapp_links', ['userid' => $userid]),
+            'sessions' => $DB->count_records_select(
+                'local_jedomi_whatsapp_sessions',
+                'chatid = ? OR chatid = ?',
+                [$key, whatsapp_link_service::TOOL_LOOP_PREFIX . $key]
+            ),
+            'rate' => $DB->count_records('local_jedomi_whatsapp_rate', ['chatid' => $key]),
+            'pending' => $DB->count_records('local_jedomi_whatsapp_pending', ['chatid' => $key]),
+            'inbox' => $DB->count_records('local_jedomi_whatsapp_inbox', ['bsuid' => $bsuid]),
+            'usage' => $DB->count_records('local_jedomi_whatsapp_usage', ['userid' => $userid]),
+        ];
+        $this->assertSame(
+            ['links' => 0, 'sessions' => 0, 'rate' => 0, 'pending' => 0, 'inbox' => 0, 'usage' => 0],
+            $count($chatkey, 'US.13491208655302741918', (int) $user->id)
+        );
+        $this->assertSame(
+            ['links' => 1, 'sessions' => 2, 'rate' => 1, 'pending' => 1, 'inbox' => 1, 'usage' => 1],
+            $count($otherkey, 'CO.99999999999', (int) $other->id)
+        );
+        $this->assertSame([], provider::get_contexts_for_userid((int) $user->id)->get_contextids());
+    }
+
+    /**
+     * Ways the data of a user is deleted.
+     *
+     * @return array
+     */
+    public static function deletion_provider(): array {
+        return [
+            'for user' => ['user'],
+            'all users in context' => ['context'],
+            'users in context' => ['users'],
+        ];
     }
 }

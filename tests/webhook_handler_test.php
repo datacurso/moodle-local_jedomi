@@ -1254,6 +1254,21 @@ final class webhook_handler_test extends \advanced_testcase {
     }
 
     /**
+     * An answer that the Telegram format leaves without text is sent as written, kept in the history, and frees the chat.
+     */
+    public function test_answer_emptied_by_the_format_is_sent_as_written(): void {
+        $answer = '<img src="chart.png">';
+
+        $telegram = $this->answer_in_telegram('700000035', $answer);
+
+        $this->assertSame([], $telegram->documents);
+        $this->assertSame([$answer], array_column($telegram->sent, 'text'));
+        $history = \local_jedomi\telegram\session::get('700000035');
+        $this->assertSame(['role' => 'assistant', 'content' => $answer], end($history));
+        $this->assertEmpty(\local_jedomi\telegram\session::get_context('tool_loop_700000035'));
+    }
+
+    /**
      * MDL-UNIT-040: when the AI reaches the maximum number of steps, Telegram shows the "too many steps" notice.
      */
     public function test_too_many_steps_show_the_simplify_notice(): void {

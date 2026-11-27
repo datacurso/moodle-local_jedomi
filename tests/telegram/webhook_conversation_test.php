@@ -1169,4 +1169,121 @@ final class webhook_conversation_test extends \advanced_testcase {
         $this->confirm_held('779000091', $callbackid);
         $this->assertSame('Original name', $DB->get_field('course', 'fullname', ['id' => $course->id]));
     }
+
+    /**
+     * Card and buttons of a held action as the chat shows them.
+     *
+     * @return array The first sent message with an inline keyboard.
+     */
+    private function sent_card(): array {
+        $cards = array_values(array_filter($this->telegram->sent, static fn(array $m): bool =>
+            !empty($m['replymarkup']['inline_keyboard'])));
+        $this->assertNotEmpty($cards, 'A card with buttons is sent');
+        return $cards[0];
+    }
+
+    /**
+     * Unit 5: a medium action is shown with its readable card and the confirm and cancel buttons; the confirm button
+     * runs it once and the message of the card says it is done.
+     */
+    public function test_confirm_button_runs_a_held_action_once(): void {
+        global $DB;
+        $adminid = (int) get_admin()->id;
+        $this->link($adminid, '779000100');
+        $args = ['name' => 'Weekly digest', 'prompt' => 'Summarise the week', 'schedule_cron' => '0 8 * * 1'];
+        $this->ai_uses('create_agent', $args, 'It waits for your confirmation.');
+
+        $this->say('779000100', 'Create a weekly digest agent');
+
+        $callbackid = (string) $DB->get_field('local_jedomi_telegram_pending_actions', 'callbackid', ['chatid' => '779000100']);
+        $severity = \local_jedomi\local\service\pending_action_service::severity('create_agent', $args);
+        $card = \local_jedomi\local\service\pending_action_service::card($adminid, 'create_agent', $args, $severity, 3000);
+        $expected = get_string('telegram_confirm_action', 'local_jedomi', '<b>' . s($card['description']) . '</b>'
+            . "\n" . s($card['details']));
+        $sent = $this->sent_card();
+        $this->assertSame($expected, $sent['text']);
+        $this->assertSame(['inline_keyboard' => [[
+            ['text' => get_string('confirm_btn_yes', 'local_jedomi'), 'callback_data' => 'confirm:' . $callbackid],
+            ['text' => get_string('confirm_btn_no', 'local_jedomi'), 'callback_data' => 'cancel:' . $callbackid],
+        ]]], $sent['replymarkup']);
+        $this->assertSame(0, $DB->count_records('local_jedomi_agents'));
+
+        $sink = $this->redirectEvents();
+        $this->press('779000100', 'confirm:' . $callbackid);
+        $events = array_values(array_filter($sink->get_events(), static fn($e): bool =>
+            $e instanceof \local_jedomi\event\action_confirmed));
+        $sink->close();
+        $this->assertSame(1, $DB->count_records('local_jedomi_agents'), 'The confirmed action runs');
+        $this->assertSame(get_string('confirm_done', 'local_jedomi'), end($this->telegram->edited)['text']);
+        $this->assertCount(1, $events);
+        $this->assertSame(['action' => 'create_agent', 'channel' => 'telegram'], $events[0]->other);
+        $this->assertSame(0, $DB->count_records('local_jedomi_telegram_pending_actions'));
+
+        $this->press('779000100', 'confirm:' . $callbackid);
+        $this->assertSame(1, $DB->count_records('local_jedomi_agents'), 'It runs only once');
+        $this->assertSame(get_string('pending_action_not_found', 'local_jedomi'), end($this->telegram->edited)['text']);
+    }
+
+    /**
+     * Unit 5: a critical action asks for the confirmation word and has only the cancel button; its confirm button (from
+     * an older message) only repeats the word; cancelling removes it and tells the user; an expired one is removed.
+     */
+    public function test_cancel_button_and_word_of_a_critical_action(): void {
+        global $DB;
+        [$agentid, $cancel] = $this->held_agent_deletion('779000101');
+        $callbackid = substr($cancel, strlen('cancel:'));
+        $keywordprompt = get_string('telegram_confirm_keyword', 'local_jedomi', s($this->keyword()));
+        $sent = $this->sent_card();
+        $this->assertStringEndsWith("\n\n" . $keywordprompt, $sent['text']);
+        $this->assertSame(['inline_keyboard' => [[
+            ['text' => get_string('confirm_btn_no', 'local_jedomi'), 'callback_data' => $cancel],
+        ]]], $sent['replymarkup']);
+        $this->assertStringContainsString('awaiting_confirmation', json_encode(end($this->ai->calls)));
+        $this->assertStringContainsString('type the confirmation word', json_encode(end($this->ai->calls)));
+
+        $this->press('779000101', 'confirm:' . $callbackid);
+        $this->assertSame($keywordprompt, end($this->telegram->edited)['text']);
+        $this->assertTrue($DB->record_exists('local_jedomi_telegram_pending_actions', ['callbackid' => $callbackid]));
+
+        $edits = count($this->telegram->edited);
+        $this->press('779000101', 'other:' . $callbackid);
+        $this->assertCount($edits, $this->telegram->edited, 'Unknown button data is ignored');
+
+        $sink = $this->redirectEvents();
+        $this->press('779000101', $cancel);
+        $events = array_values(array_filter($sink->get_events(), static fn($e): bool =>
+            $e instanceof \local_jedomi\event\action_cancelled));
+        $sink->close();
+        $this->assertSame(get_string('confirm_cancelled', 'local_jedomi'), end($this->telegram->edited)['text']);
+        $this->assertCount(1, $events);
+        $this->assertSame(['action' => 'delete_agent', 'channel' => 'telegram'], $events[0]->other);
+        $this->assertTrue($DB->record_exists('local_jedomi_agents', ['id' => $agentid]));
+        $this->assertFalse($DB->record_exists('local_jedomi_telegram_pending_actions', ['callbackid' => $callbackid]));
+
+        [, $cancel] = $this->held_agent_deletion('779000101');
+        $DB->set_field('local_jedomi_telegram_pending_actions', 'timecreated', time() - 3600, []);
+        $this->press('779000101', $cancel);
+        $this->assertSame(get_string('pending_action_expired', 'local_jedomi'), end($this->telegram->edited)['text']);
+        $this->assertSame(0, $DB->count_records('local_jedomi_telegram_pending_actions'));
+    }
+
+    /**
+     * Unit 5: the confirmation word confirms the newest critical action that waits in the chat, not a medium one, and
+     * the result is sent as a new message.
+     */
+    public function test_word_confirms_the_newest_critical_action(): void {
+        global $DB;
+        [$agentid] = $this->held_agent_deletion('779000102');
+        $this->ai_uses('create_agent', ['name' => 'Later', 'prompt' => 'Later one', 'schedule_cron' => '0 8 * * 1'], 'Wait.');
+        $this->say('779000102', 'Create another agent');
+        $this->assertSame(2, $DB->count_records('local_jedomi_telegram_pending_actions'));
+        $calls = count($this->ai->calls);
+
+        $this->say('779000102', '  ' . \core_text::strtolower($this->keyword()) . ' ');
+
+        $this->assertSame($calls, count($this->ai->calls), 'The word does not reach the AI');
+        $this->assertFalse($DB->record_exists('local_jedomi_agents', ['id' => $agentid]), 'The critical action runs');
+        $this->assertSame(get_string('confirm_done', 'local_jedomi'), end($this->telegram->sent)['text']);
+        $this->assertSame(1, $DB->count_records('local_jedomi_telegram_pending_actions'), 'The medium action still waits');
+    }
 }

@@ -148,8 +148,9 @@ class provider_upload_service {
      */
     public static function error_for(\Throwable $e, array $statuserrors, array $localerrors): array {
         if ($e instanceof \moodle_exception && $e->module === 'local_jedomi' && $e->errorcode === 'file_error_upload_too_large') {
-            return ['code' => 'file_too_large',
-                'message' => get_string('file_error_upload_too_large', 'local_jedomi', self::max_upload_mb())];
+            // The limit comes with the failure (a channel such as WhatsApp has a smaller one); the upload cap otherwise.
+            $limit = is_numeric($e->a) && (int) $e->a > 0 ? (int) $e->a : self::max_upload_mb();
+            return ['code' => 'file_too_large', 'message' => get_string('file_error_upload_too_large', 'local_jedomi', $limit)];
         }
         if ($e instanceof \moodle_exception && $e->module === 'local_jedomi' && isset($localerrors[$e->errorcode])) {
             [$code, $key] = $localerrors[$e->errorcode];

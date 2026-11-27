@@ -35,6 +35,15 @@ $tasks = [
         'dayofweek' => '*',
     ],
     [
+        'classname' => \local_jedomi\task\cleanup_whatsapp::class,
+        'blocking'  => 0,
+        'minute'    => '*/30', // Every 30 minutes.
+        'hour'      => '*',
+        'day'       => '*',
+        'month'     => '*',
+        'dayofweek' => '*',
+    ],
+    [
         'classname' => \local_jedomi\task\agent_runner::class,
         'blocking'  => 0,
         'minute'    => '*', // Every minute.

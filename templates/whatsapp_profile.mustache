@@ -1,0 +1,128 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template local_jedomi/whatsapp_profile
+
+    WhatsApp profile page: consent, one-time link code with its wa.me link, link state and opt-out state.
+
+    Classes required for JS:
+    * none
+
+    Data attributes required for JS:
+    * none
+
+    Context variables required for this template:
+    * notconfigured bool - The channel is not configured (only administrators reach this state)
+    * roleblocked bool - The role of the user cannot use the channel
+    * linked bool - The account is linked
+    * notlinked bool - The account is not linked
+    * settingsurl string - URL of the Integrations tab of the Jedomi settings
+    * actionurl string - URL the forms post to
+    * sesskey string - Session key
+    * displaynumber string - Number of the institution, digits only
+    * linkedas string - Last digits of the phone of the link, or that it has none
+    * linkedtime int - Time the account was linked
+    * optedout bool - The student stopped the messages (BAJA)
+    * hascode bool - Whether a link code was just generated
+    * code string - One-time link code
+    * message string - Message to send from WhatsApp: JEDOMI and the code
+    * walink string - https://wa.me link that opens WhatsApp with the message
+    * codeexpiry int - Time the code expires
+    * consentformhtml string - Rendered consent form (moodleform), shown while no code is generated
+
+    Example context (json):
+    {
+        "notconfigured": false, "roleblocked": false, "linked": false, "notlinked": true,
+        "settingsurl": "https://example.com/local/jedomi/admin_settings.php?tab=integrations",
+        "actionurl": "https://example.com/local/jedomi/whatsapp_profile.php?userid=2", "sesskey": "abc123",
+        "displaynumber": "573001234567", "linkedas": "", "linkedtime": 0, "optedout": false,
+        "hascode": true, "code": "ABC234", "message": "JEDOMI ABC234",
+        "walink": "https://wa.me/573001234567?text=JEDOMI%20ABC234", "codeexpiry": 1800000600, "consentformhtml": ""
+    }
+}}
+<div class="local_jedomi-whatsapp_profile">
+    <div class="mb-4">
+        <h2 class="h4 mb-0">{{#str}} whatsapp_link_title, local_jedomi {{/str}}</h2>
+        <p class="text-muted small mb-0">{{#str}} whatsapp_link_subtitle, local_jedomi {{/str}}</p>
+    </div>
+
+    {{#notconfigured}}
+    <div class="alert alert-info" role="alert">
+        <strong>{{#str}} whatsapp_not_configured_title, local_jedomi {{/str}}</strong><br>
+        <small>{{#str}} whatsapp_not_configured_desc, local_jedomi {{/str}}
+            <a href="{{settingsurl}}">{{#str}} telegram_admin_settings_link, local_jedomi {{/str}}</a></small>
+    </div>
+    {{/notconfigured}}
+
+    {{#roleblocked}}
+    <div class="alert alert-danger" role="alert">{{#str}} whatsapp_msg_role_blocked, local_jedomi {{/str}}</div>
+    {{/roleblocked}}
+
+    {{#linked}}
+    <div class="card mb-4">
+        <div class="card-header d-flex align-items-center">
+            {{#pix}} i/checkedcircle, core {{/pix}}
+            <strong>{{#str}} whatsapp_status_linked, local_jedomi {{/str}}</strong>
+        </div>
+        <div class="card-body">
+            <p class="mb-1"><strong>{{linkedas}}</strong></p>
+            <p class="text-muted small">{{#str}} whatsapp_linked_on, local_jedomi, {{#userdate}} {{linkedtime}}, {{#str}} strftimedatetime, core_langconfig {{/str}} {{/userdate}} {{/str}}</p>
+            {{#optedout}}
+            <div class="alert alert-warning small" role="status">{{#str}} whatsapp_optedout_notice, local_jedomi {{/str}}</div>
+            {{/optedout}}
+            <form method="post" action="{{actionurl}}">
+                <input type="hidden" name="sesskey" value="{{sesskey}}">
+                <input type="hidden" name="action" value="unlink">
+                <button type="submit" class="btn btn-outline-danger btn-sm">
+                    {{#pix}} e/remove_link, core {{/pix}}{{#str}} unlink, local_jedomi {{/str}}
+                </button>
+            </form>
+        </div>
+    </div>
+    {{/linked}}
+
+    {{#notlinked}}
+    <div class="card mb-4">
+        <div class="card-header"><strong>{{#str}} whatsapp_not_linked, local_jedomi {{/str}}</strong></div>
+        <div class="card-body">
+            {{#hascode}}
+            <div class="local_jedomi-tg-code">{{code}}</div>
+            <p class="text-center text-muted small mb-3">{{#str}} whatsapp_link_code_expiry, local_jedomi, {{#userdate}} {{codeexpiry}}, {{#str}} strftimetime, core_langconfig {{/str}} {{/userdate}} {{/str}}</p>
+            {{#walink}}
+            <div class="mb-3">
+                <a href="{{walink}}" target="_blank" rel="noopener" class="btn btn-success btn-lg btn-block w-100">
+                    {{#str}} whatsapp_open, local_jedomi {{/str}}
+                </a>
+            </div>
+            {{/walink}}
+            <p class="small">{{#str}} whatsapp_link_instructions, local_jedomi, {{displaynumber}} {{/str}}</p>
+            <p class="text-center"><code>{{message}}</code></p>
+            <form method="post" action="{{actionurl}}">
+                <input type="hidden" name="sesskey" value="{{sesskey}}">
+                <input type="hidden" name="action" value="newcode">
+                <button type="submit" class="btn btn-outline-secondary btn-sm">
+                    {{#pix}} i/reload, core {{/pix}}{{#str}} whatsapp_link_new_code, local_jedomi {{/str}}
+                </button>
+            </form>
+            {{/hascode}}
+            {{^hascode}}
+            {{{consentformhtml}}}
+            {{/hascode}}
+        </div>
+    </div>
+    {{/notlinked}}
+</div>
