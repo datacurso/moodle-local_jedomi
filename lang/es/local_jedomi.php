@@ -457,6 +457,10 @@ $string['event_chat_answered'] = 'Respuesta del asistente enviada';
 $string['event_settings_updated'] = 'Configuración de Jedomi actualizada';
 $string['event_telegram_linked'] = 'Cuenta de Telegram vinculada';
 $string['event_telegram_unlinked'] = 'Cuenta de Telegram desvinculada';
+$string['event_whatsapp_linked'] = 'Cuenta de WhatsApp vinculada';
+$string['event_whatsapp_opted_in'] = 'Mensajes de WhatsApp reactivados';
+$string['event_whatsapp_opted_out'] = 'Mensajes de WhatsApp detenidos';
+$string['event_whatsapp_unlinked'] = 'Cuenta de WhatsApp desvinculada';
 $string['execute_sql_error'] = 'Error de base de datos al ejecutar la consulta.';
 $string['export_conversation'] = 'Exportar conversación';
 $string['export_csv_filename'] = 'jedomi_datos';
@@ -1237,6 +1241,49 @@ $string['webhook_not_checked'] = 'Sin verificar. Haga clic en "Verificar webhook
 $string['webhook_ok'] = 'Webhook configurado y funcionando.';
 $string['welcome_message_default'] = '¡Hola, {username}!
 Soy {assistantname}, su asistente IA de Moodle. Pregúnteme sobre cursos, alumnos, notas o configuraciones.';
+$string['whatsapp_consent_accept'] = 'Acepto el texto de consentimiento';
+$string['whatsapp_consent_categories'] = 'Mensajes que deseo recibir';
+$string['whatsapp_consent_category_required'] = 'Elija al menos un tipo de mensaje.';
+$string['whatsapp_consent_chat'] = 'Respuestas a mis preguntas (chat)';
+$string['whatsapp_consent_grades'] = 'Avisos de calificaciones';
+$string['whatsapp_consent_heading'] = 'Consentimiento';
+$string['whatsapp_consent_required'] = 'Debe aceptar el texto de consentimiento para vincular WhatsApp.';
+$string['whatsapp_consent_text'] = 'Jedomi envía mis preguntas, sus respuestas y los datos del curso necesarios para responderlas a través de WhatsApp, un servicio de Meta, y me escribe por WhatsApp solo en las categorías que elija a continuación. Puedo detener los mensajes en cualquier momento enviando BAJA, y eliminar el vínculo y sus datos enviando DESVINCULAR o desde esta página.';
+$string['whatsapp_help'] = '*Jedomi en WhatsApp*
+
+AYUDA: muestra esta ayuda.
+NUEVO: inicia una conversación nueva.
+BAJA (o STOP): detiene los mensajes de Jedomi.
+ALTA (o START): vuelve a recibir los mensajes.
+DESVINCULAR: desvincula su cuenta de Moodle y elimina sus datos.
+
+Cualquier otro mensaje es una pregunta para Jedomi.';
+$string['whatsapp_link_code_expiry'] = 'El código es válido hasta las {$a}.';
+$string['whatsapp_link_generate'] = 'Aceptar y generar el código de vinculación';
+$string['whatsapp_link_instructions'] = 'Abra WhatsApp con el botón y envíe el mensaje tal como aparece, o envíe JEDOMI seguido del código al +{$a} desde su propia cuenta de WhatsApp.';
+$string['whatsapp_link_new_code'] = 'Generar un código nuevo';
+$string['whatsapp_link_subtitle'] = 'Consulte a Jedomi desde WhatsApp y reciba los avisos de sus calificaciones.';
+$string['whatsapp_link_title'] = 'Jedomi en WhatsApp';
+$string['whatsapp_linked_on'] = 'Vinculado el {$a}';
+$string['whatsapp_linked_phone'] = 'Teléfono terminado en {$a}';
+$string['whatsapp_linked_without_phone'] = 'Vinculado sin número de teléfono: WhatsApp no lo compartió.';
+$string['whatsapp_msg_account_inactive'] = 'Su cuenta de Moodle no está activa, por lo que Jedomi no puede atenderla. Contacte con el administrador del sitio.';
+$string['whatsapp_msg_expired_code'] = 'Código inválido o vencido. Genere uno nuevo en su perfil de Moodle, en Jedomi en WhatsApp.';
+$string['whatsapp_msg_link_failed'] = 'Esta cuenta de WhatsApp no se puede vincular en este momento. Inténtelo de nuevo más tarde.';
+$string['whatsapp_msg_link_first'] = 'Para usar Jedomi en WhatsApp, primero vincule su cuenta de Moodle: abra su perfil, entre en Jedomi en WhatsApp, acepte el texto de consentimiento y envíe el código que aparece allí.';
+$string['whatsapp_msg_linked'] = 'Vinculado a Moodle como *{$a}*. Envíe AYUDA para ver los comandos.';
+$string['whatsapp_msg_opted_in'] = 'Volverá a recibir mensajes de Jedomi. Envíe BAJA para detenerlos.';
+$string['whatsapp_msg_opted_out'] = 'No recibirá más mensajes de Jedomi. Envíe ALTA para volver a recibirlos.';
+$string['whatsapp_msg_role_blocked'] = 'Su rol no tiene acceso a Jedomi en WhatsApp.';
+$string['whatsapp_msg_unavailable'] = 'Jedomi no está disponible en WhatsApp en este momento. Inténtelo de nuevo más tarde.';
+$string['whatsapp_msg_unlinked'] = 'Su cuenta de WhatsApp se desvinculó de Moodle y sus datos se eliminaron. Genere un código nuevo en su perfil para volver a vincularla.';
+$string['whatsapp_not_configured_desc'] = 'Introduzca los ajustes de la Cloud API de WhatsApp y el número de la institución en los ajustes de Jedomi.';
+$string['whatsapp_not_configured_title'] = 'WhatsApp todavía no está configurado';
+$string['whatsapp_not_linked'] = 'Sin vincular';
+$string['whatsapp_open'] = 'Abrir WhatsApp';
+$string['whatsapp_optedout_notice'] = 'Detuvo los mensajes de Jedomi. Envíe ALTA desde WhatsApp para volver a recibirlos.';
+$string['whatsapp_status_linked'] = 'Vinculado';
+$string['whatsapp_unlinked_notice'] = 'WhatsApp se desvinculó y sus datos se eliminaron.';
 $string['ws_agent_allowlist_required'] = 'Los agentes no ejecutan ninguna función de servicio web hasta que se guarde una lista de servicios web para el rol de su creador en la pestaña Servicios web.';
 $string['ws_cannot_load_info'] = 'No se puede cargar información de la función: {$a}';
 $string['ws_component'] = 'Componente';

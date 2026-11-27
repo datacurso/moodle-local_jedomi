@@ -429,8 +429,8 @@ function local_jedomi_extend_navigation(\global_navigation $nav): void {
 }
 
 /**
- * Adds a "Jedomi Telegram" link to the user profile navigation.
- * Only shown when Telegram is enabled and the user's role is allowed.
+ * Adds the "Jedomi Telegram" and "Jedomi on WhatsApp" links to the user profile navigation.
+ * Each one is shown when its channel is available and the role of the user is allowed, or the user is linked.
  *
  * @param \core_user\output\myprofile\tree $tree
  * @param stdClass $user
@@ -438,7 +438,7 @@ function local_jedomi_extend_navigation(\global_navigation $nav): void {
  * @param stdClass $course
  */
 function local_jedomi_myprofile_navigation(\core_user\output\myprofile\tree $tree, $user, $iscurrentuser, $course): void {
-    global $USER;
+    global $DB, $USER;
 
     if (!$iscurrentuser) {
         return;
@@ -448,39 +448,53 @@ function local_jedomi_myprofile_navigation(\core_user\output\myprofile\tree $tre
         return;
     }
 
+    $nodes = [];
+
     // Require Telegram enabled AND bot token verified by getMe().
     // If the admin hasn't pasted a valid token yet, don't expose the link.
-    if (!\local_jedomi\telegram\manager::is_enabled()) {
-        return;
+    if (\local_jedomi\telegram\manager::is_enabled() && get_config('local_jedomi', 'telegram_bot_verified')) {
+        // A linked user keeps the way to the link page, where the link can always be removed.
+        $linked = \local_jedomi\local\service\telegram_link_service::get_confirmed_link((int) $USER->id) !== null;
+        if ($linked || local_jedomi_is_telegram_role_allowed()) {
+            $nodes[] = new core_user\output\myprofile\node(
+                'jedomi',
+                'telegram',
+                get_string('telegram_link_title', 'local_jedomi'),
+                null,
+                new moodle_url('/local/jedomi/telegram_profile.php', ['userid' => $user->id])
+            );
+        }
     }
 
-    if (!get_config('local_jedomi', 'telegram_bot_verified')) {
-        return;
+    // WhatsApp needs the channel on, its settings saved and the number students write to.
+    if (
+        \local_jedomi\whatsapp\manager::is_enabled()
+            && \local_jedomi\whatsapp\manager::is_configured()
+            && \local_jedomi\whatsapp\manager::get_display_number() !== ''
+    ) {
+        $linked = $DB->record_exists(\local_jedomi\local\service\whatsapp_link_service::LINKS_TABLE, ['userid' => $USER->id]);
+        if ($linked || local_jedomi_channel_role_allowed_for('whatsapp', (int) $USER->id)) {
+            $nodes[] = new core_user\output\myprofile\node(
+                'jedomi',
+                'whatsapp',
+                get_string('whatsapp_link_title', 'local_jedomi'),
+                null,
+                new moodle_url('/local/jedomi/whatsapp_profile.php', ['userid' => $user->id])
+            );
+        }
     }
 
-    // A linked user keeps the way to the link page, where the link can always be removed.
-    $linked = \local_jedomi\local\service\telegram_link_service::get_confirmed_link((int) $USER->id) !== null;
-    if (!$linked && !local_jedomi_is_telegram_role_allowed()) {
+    if ($nodes === []) {
         return;
     }
-
-    $url = new moodle_url('/local/jedomi/telegram_profile.php', ['userid' => $user->id]);
-    $node = new core_user\output\myprofile\node(
-        'jedomi',
-        'telegram',
-        get_string('telegram_link_title', 'local_jedomi'),
-        null,
-        $url
-    );
-
-    $category = new core_user\output\myprofile\category(
+    $tree->add_category(new core_user\output\myprofile\category(
         'jedomi',
         get_string('pluginname', 'local_jedomi'),
         null
-    );
-
-    $tree->add_category($category);
-    $tree->add_node($node);
+    ));
+    foreach ($nodes as $node) {
+        $tree->add_node($node);
+    }
 }
 
 /**

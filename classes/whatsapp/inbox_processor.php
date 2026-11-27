@@ -219,7 +219,7 @@ class inbox_processor {
     }
 
     /**
-     * The message processor registered in the container, or the default one that does nothing.
+     * The message processor registered in the container, or the chat_processor of the channel.
      *
      * @return message_processor
      */
@@ -227,7 +227,7 @@ class inbox_processor {
         $container = \core\di::get_container();
         return $container->has(message_processor::class)
             ? $container->get(message_processor::class)
-            : new null_message_processor();
+            : new chat_processor();
     }
 
     /**

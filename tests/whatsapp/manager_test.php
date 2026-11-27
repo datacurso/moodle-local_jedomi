@@ -310,4 +310,34 @@ final class manager_test extends \advanced_testcase {
         $this->expectException(\moodle_exception::class);
         manager::set_processing_mode('cron');
     }
+
+    /**
+     * The display number of the institution is kept as digits only, for the wa.me link; empty clears it.
+     */
+    public function test_display_number_is_kept_as_digits(): void {
+        $this->resetAfterTest();
+        $this->assertSame('', manager::get_display_number());
+
+        manager::set_display_number(' +57 (300) 123-4567 ');
+        $this->assertSame('573001234567', manager::get_display_number());
+
+        manager::set_display_number('');
+        $this->assertSame('', manager::get_display_number());
+    }
+
+    /**
+     * A display number with letters, or too short or too long for E.164, is refused.
+     */
+    public function test_an_invalid_display_number_is_refused(): void {
+        $this->resetAfterTest();
+        foreach (['call me', '12345', '1234567890123456', '+57 300 abc'] as $number) {
+            try {
+                manager::set_display_number($number);
+                $this->fail('Accepted an invalid display number');
+            } catch (\moodle_exception $e) {
+                $this->assertSame('config_value_invalid_msg', $e->errorcode);
+            }
+        }
+        $this->assertSame('', manager::get_display_number());
+    }
 }

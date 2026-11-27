@@ -17,10 +17,10 @@
 namespace local_jedomi\whatsapp;
 
 /**
- * Default message processor: it does nothing user-visible and sends nothing.
+ * Message processor that does nothing user-visible and sends nothing.
  *
- * Linking and the conversation through the WhatsApp channel come in later work units; until then a message taken from
- * the inbox is only marked done.
+ * It is no longer the default of the inbox_processor, which uses chat_processor; it can be registered to only mark the
+ * messages of the inbox done.
  *
  * @package    local_jedomi
  * @copyright  2026 Datacurso <developer@datacurso.com>

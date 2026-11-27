@@ -20,7 +20,7 @@ namespace local_jedomi\whatsapp;
  * Port that handles a WhatsApp message taken from the inbox (linking and conversation).
  *
  * The inbox_processor gets it from the container, \core\di::get(message_processor::class), when one is registered,
- * and uses null_message_processor otherwise; a test registers a double with \core\di::set().
+ * and uses chat_processor otherwise; a test registers a double with \core\di::set().
  *
  * @package    local_jedomi
  * @copyright  2026 Datacurso <developer@datacurso.com>

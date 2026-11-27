@@ -72,6 +72,12 @@ class manager {
     /** @var string Pattern of a Graph API version, such as v25.0. */
     private const VERSION_PATTERN = '/^v\d+\.\d+$/D';
 
+    /** @var string Display number of the institution, digits only, for the wa.me link. */
+    private const DISPLAY_NUMBER = 'whatsapp_display_number';
+
+    /** @var string Pattern of a display number in E.164 without the +: 8 to 15 digits, not starting with 0. */
+    private const DISPLAY_NUMBER_PATTERN = '/^[1-9]\d{7,14}$/D';
+
     /**
      * Save the phone number ID; empty clears it.
      *
@@ -246,6 +252,36 @@ class manager {
     public static function get_processing_mode(): string {
         $mode = (string) get_config(self::COMPONENT, self::PROCESSING_MODE);
         return $mode === self::PROCESSING_QUEUE ? self::PROCESSING_QUEUE : self::PROCESSING_INLINE;
+    }
+
+    /**
+     * Save the number students write to, shown on the profile page; empty clears it. Spaces, dashes, brackets and a
+     * leading + are dropped, so only the digits of the E.164 number are kept.
+     *
+     * @param string $number Phone number of the institution.
+     * @throws \moodle_exception config_value_invalid_msg when it is not an E.164 number.
+     */
+    public static function set_display_number(string $number): void {
+        $number = trim($number);
+        if ($number === '') {
+            unset_config(self::DISPLAY_NUMBER, self::COMPONENT);
+            return;
+        }
+        $digits = preg_replace('/^\+|[\s\-().]/', '', $number);
+        if (preg_match(self::DISPLAY_NUMBER_PATTERN, (string) $digits) !== 1) {
+            throw new \moodle_exception('config_value_invalid_msg', 'local_jedomi', '', self::DISPLAY_NUMBER);
+        }
+        set_config(self::DISPLAY_NUMBER, $digits, self::COMPONENT);
+    }
+
+    /**
+     * Display number of the institution as digits only, or an empty string when it is not saved.
+     *
+     * @return string
+     */
+    public static function get_display_number(): string {
+        $number = (string) get_config(self::COMPONENT, self::DISPLAY_NUMBER);
+        return preg_match(self::DISPLAY_NUMBER_PATTERN, $number) === 1 ? $number : '';
     }
 
     /**

@@ -68,23 +68,34 @@ final class whatsapp_link_service {
      * Remove the WhatsApp link of a user and all the data of the channel for it: the conversation, the task in
      * progress, the message limit, the actions waiting for confirmation, the received messages and the usage counters.
      *
+     * Triggers whatsapp_unlinked once when the user had a link, whatever removed it (command, profile page, observers,
+     * a new link that replaces it, expiry).
+     *
      * @param int $userid User id.
+     * @param int|null $actorid User who removed the link; the same user when null.
      * @return void
      */
-    public static function unlink(int $userid): void {
+    public static function unlink(int $userid, ?int $actorid = null): void {
         global $DB;
         $bsuids = $DB->get_fieldset_select(self::LINKS_TABLE, 'bsuid', 'userid = ?', [$userid]);
         $transaction = $DB->start_delegated_transaction();
-        foreach ($bsuids as $bsuid) {
-            $chatkey = self::chatkey((string) $bsuid);
-            $DB->delete_records_list(self::SESSIONS_TABLE, 'chatid', [$chatkey, self::TOOL_LOOP_PREFIX . $chatkey]);
-            $DB->delete_records(self::RATE_TABLE, ['chatid' => $chatkey]);
-            $DB->delete_records(self::PENDING_TABLE, ['chatid' => $chatkey]);
-            $DB->delete_records(self::INBOX_TABLE, ['bsuid' => $bsuid]);
+        try {
+            foreach ($bsuids as $bsuid) {
+                $chatkey = self::chatkey((string) $bsuid);
+                $DB->delete_records_list(self::SESSIONS_TABLE, 'chatid', [$chatkey, self::TOOL_LOOP_PREFIX . $chatkey]);
+                $DB->delete_records(self::RATE_TABLE, ['chatid' => $chatkey]);
+                $DB->delete_records(self::PENDING_TABLE, ['chatid' => $chatkey]);
+                $DB->delete_records(self::INBOX_TABLE, ['bsuid' => $bsuid]);
+            }
+            $DB->delete_records(self::USAGE_TABLE, ['userid' => $userid]);
+            $DB->delete_records(self::LINKS_TABLE, ['userid' => $userid]);
+            $transaction->allow_commit();
+        } catch (\Throwable $e) {
+            $transaction->rollback($e);
         }
-        $DB->delete_records(self::USAGE_TABLE, ['userid' => $userid]);
-        $DB->delete_records(self::LINKS_TABLE, ['userid' => $userid]);
-        $transaction->allow_commit();
+        if ($bsuids) {
+            \local_jedomi\event\whatsapp_unlinked::create_for_user($userid, $actorid)->trigger();
+        }
     }
 
     /**
