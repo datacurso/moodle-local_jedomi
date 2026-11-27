@@ -17,14 +17,17 @@
 namespace local_jedomi\task;
 
 use local_jedomi\local\service\whatsapp_link_service;
+use local_jedomi\whatsapp\held_replies;
+use local_jedomi\whatsapp\usage_meter;
 use local_jedomi\whatsapp\whatsapp_media_source;
 
 /**
  * Scheduled task that cleans up the WhatsApp tables.
  *
- * Removes idle conversations, expired held actions, message limit records no longer needed, inbox rows past the
- * deduplication time whatever their state and links unused for 30 days with their data. Also removes the temporary
- * media files a process killed mid-media left behind.
+ * Removes idle conversations, held replies nobody came back for, expired held actions, message limit records no
+ * longer needed, inbox rows past the deduplication time whatever their state, links unused for 30 days with their data
+ * and the usage counters of past months of users without a link. Also removes the temporary media files a process
+ * killed mid-media left behind.
  *
  * @package    local_jedomi
  * @copyright  2026 Datacurso <developer@datacurso.com>
@@ -72,8 +75,24 @@ class cleanup_whatsapp extends \core\task\scheduled_task {
     public function execute(): void {
         $now = \core\di::get(\core\clock::class)->time();
 
-        $count = self::delete_counted(whatsapp_link_service::SESSIONS_TABLE, 'lastactivity < ?', [$now - self::SESSION_TTL]);
+        global $DB;
+        $held = $DB->sql_like('chatid', ':held', true, true, false);
+        $notheld = $DB->sql_like('chatid', ':held', true, true, true);
+        $heldprefix = $DB->sql_like_escape(whatsapp_link_service::HELD_PREFIX) . '%';
+
+        $count = self::delete_counted(
+            whatsapp_link_service::SESSIONS_TABLE,
+            "lastactivity < :before AND {$notheld}",
+            ['before' => $now - self::SESSION_TTL, 'held' => $heldprefix]
+        );
         mtrace("Deleted {$count} expired WhatsApp session(s).");
+
+        $count = self::delete_counted(
+            whatsapp_link_service::SESSIONS_TABLE,
+            "lastactivity < :before AND {$held}",
+            ['before' => $now - held_replies::TTL, 'held' => $heldprefix]
+        );
+        mtrace("Deleted {$count} expired held WhatsApp reply row(s).");
 
         $count = self::delete_counted(whatsapp_link_service::PENDING_TABLE, 'timecreated < ?', [$now - self::ACTION_TTL]);
         mtrace("Deleted {$count} expired WhatsApp held action(s).");
@@ -94,6 +113,14 @@ class cleanup_whatsapp extends \core\task\scheduled_task {
 
         $count = whatsapp_link_service::unlink_expired();
         mtrace("Removed {$count} expired WhatsApp link(s).");
+
+        // Unlinking keeps the usage so a new link does not reset the monthly limit; past months are no longer needed.
+        $count = self::delete_counted(
+            whatsapp_link_service::USAGE_TABLE,
+            'period < :period AND userid NOT IN (SELECT userid FROM {' . whatsapp_link_service::LINKS_TABLE . '})',
+            ['period' => usage_meter::period()]
+        );
+        mtrace("Deleted {$count} old WhatsApp usage row(s).");
 
         $count = self::delete_old_media_files($now - self::MEDIA_FILE_TTL);
         mtrace("Deleted {$count} old WhatsApp media temporary file(s).");

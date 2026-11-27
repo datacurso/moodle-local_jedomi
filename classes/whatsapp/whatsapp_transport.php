@@ -27,11 +27,12 @@ require_once(__DIR__ . '/../../lib.php');
  * Transport of the WhatsApp channel, over the Cloud API client.
  *
  * The chat key (wa_ plus the BSUID) is resolved to the link of the student, which is addressed by its phone ("to")
- * when Meta shared it and by its BSUID ("recipient") otherwise; only one of them is sent. Free-form messages are sent
- * only while the 24-hour window of the student is open; outside it nothing is sent, the reply stays in the history and
- * the closed window handler is told. Texts are split by paragraph into parts of whatsapp_limits::MESSAGE_LENGTH
- * characters, at most whatsapp_limits::MAX_PARTS messages, the last one a link to the web chat when the answer is
- * longer. The activity marks the latest message of the student as read and shows the typing indicator.
+ * when Meta shared it and by its BSUID ("recipient") otherwise; only one of them is sent. A user at the monthly limit
+ * gets its single notice and nothing else (monthly_cap). Free-form messages are sent only while the 24-hour window of
+ * the student is open; outside it nothing is sent and the closed window handler is given the text. Texts are split by
+ * paragraph into parts of whatsapp_limits::MESSAGE_LENGTH characters, at most whatsapp_limits::MAX_PARTS messages, the
+ * last one a link to the web chat when the answer is longer. The activity marks the latest message of the student as
+ * read and shows the typing indicator.
  *
  * An error of Meta is logged with its HTTP status and error code only, and never shown to the student.
  *
@@ -117,8 +118,12 @@ class whatsapp_transport implements transport {
         if ($link === null) {
             return false;
         }
+        if (!monthly_cap::allows((int) $link->userid)) {
+            monthly_cap::notify($link);
+            return false;
+        }
         if (!window::is_open($link, \core\di::get(\core\clock::class)->time())) {
-            self::closed_window_handler()->reply_held($link);
+            self::closed_window_handler()->reply_held($link, $text);
             return false;
         }
         try {
@@ -127,7 +132,12 @@ class whatsapp_transport implements transport {
             return false;
         }
         $client = cloud_api_client::instance();
-        foreach ($this->parts($text) as $part) {
+        foreach ($this->parts($text) as $index => $part) {
+            if ($index > 0 && !monthly_cap::allows((int) $link->userid)) {
+                // The limit is reached within a long answer: the notice replaces the rest.
+                monthly_cap::notify($link);
+                return false;
+            }
             try {
                 $client->send_text($to, $part);
             } catch (\Throwable $e) {
@@ -177,7 +187,7 @@ class whatsapp_transport implements transport {
     }
 
     /**
-     * Closed window handler registered in the container, or the one that only logs.
+     * Closed window handler registered in the container, or the one that holds the reply and sends reply_ready.
      *
      * @return closed_window_handler
      */
@@ -185,7 +195,7 @@ class whatsapp_transport implements transport {
         $container = \core\di::get_container();
         return $container->has(closed_window_handler::class)
             ? $container->get(closed_window_handler::class)
-            : new null_closed_window_handler();
+            : new whatsapp_closed_window_handler();
     }
 
     /**

@@ -48,6 +48,7 @@ require_once($CFG->dirroot . '/local/jedomi/tests/fixtures/provider_absence_prob
  * @covers     \local_jedomi\whatsapp\whatsapp_transport
  * @covers     \local_jedomi\whatsapp\usage_meter
  * @covers     \local_jedomi\whatsapp\chat_processor
+ * @covers     \local_jedomi\whatsapp\held_replies
  */
 final class whatsapp_conversation_test extends \advanced_testcase {
     /** @var string BSUID of the student. */
@@ -447,5 +448,124 @@ final class whatsapp_conversation_test extends \advanced_testcase {
         $this->say('Hola');
 
         $this->assertCount(1, $this->ai->calls);
+    }
+
+    /**
+     * A reply held while the window was closed is delivered by the next message of the student, before anything
+     * else: that message only opens the window, as the reply_ready template asks, and does not reach the AI.
+     */
+    public function test_the_next_message_delivers_the_held_reply(): void {
+        global $DB;
+        $userid = $this->student(self::WAID, ['lastinbound' => self::NOW - DAYSECS]);
+        $transport = new whatsapp_transport();
+        $transport->send_answer('wa_' . self::BSUID, 'Tiene *2* cursos.');
+        $this->assertCount(1, $this->client->calls_to('send_template'));
+
+        $this->say('ok');
+
+        $this->assertSame(['Tiene *2* cursos.'], array_column($this->sent(), 'text'));
+        $this->assertSame([], $this->ai->calls);
+        $this->assertFalse($DB->record_exists(
+            whatsapp_link_service::SESSIONS_TABLE,
+            ['chatid' => whatsapp_link_service::HELD_PREFIX . 'wa_' . self::BSUID]
+        ));
+        $this->assertSame(1, self::usage($userid, 'outservice'));
+
+        $this->ai->enqueue_text('Hola.');
+        $this->say('Hola');
+        $this->assertCount(1, $this->ai->calls, 'The following message goes to the AI as usual');
+    }
+
+    /**
+     * Hold replies while the window of the student is closed, as the transport does.
+     *
+     * @param string[] $texts Texts held, in order.
+     */
+    private function hold(array $texts): void {
+        $transport = new whatsapp_transport();
+        foreach ($texts as $text) {
+            $transport->send_answer('wa_' . self::BSUID, $text);
+        }
+    }
+
+    /**
+     * Texts still held for the student.
+     *
+     * @return string[]
+     */
+    private function held(): array {
+        global $DB;
+        $link = $DB->get_record(whatsapp_link_service::LINKS_TABLE, ['bsuid' => self::BSUID], '*', MUST_EXIST);
+        return held_replies::peek($link);
+    }
+
+    /**
+     * When Meta rejects a held reply, the ones delivered before it are removed, and the rejected one and those after
+     * it stay held, in order; the message is not routed to the AI. The next message delivers the rest.
+     */
+    public function test_a_failed_held_reply_keeps_it_and_the_following_ones(): void {
+        $this->student(self::WAID, ['lastinbound' => self::NOW - DAYSECS]);
+        $this->hold(['One', 'Two', 'Three']);
+        $attempts = 0;
+        $this->client->responses['send_text'] = function () use (&$attempts): array {
+            $attempts++;
+            if ($attempts === 2) {
+                throw new cloud_api_exception(400, 131047, 'Re-engagement message');
+            }
+            return ['messages' => [['id' => 'wamid.ok' . $attempts]]];
+        };
+
+        $this->say('ok');
+
+        $this->assertSame(['One', 'Two'], array_column($this->sent(), 'text'), 'Delivery stops at the failed reply');
+        $this->assertSame(['Two', 'Three'], $this->held());
+        $this->assertSame([], $this->ai->calls, 'The message only opened the window');
+
+        unset($this->client->responses['send_text']);
+        $this->say('ok');
+
+        $this->assertSame(['One', 'Two', 'Two', 'Three'], array_column($this->sent(), 'text'));
+        $this->assertSame([], $this->held());
+        $this->assertSame([], $this->ai->calls);
+    }
+
+    /**
+     * When no held reply can be sent, every one stays held and the message is not routed to the AI either: the
+     * student gets them with the next message.
+     */
+    public function test_when_no_held_reply_is_sent_all_stay_held(): void {
+        $this->student(self::WAID, ['lastinbound' => self::NOW - DAYSECS]);
+        $this->hold(['One', 'Two']);
+        $this->client->responses['send_text'] = new cloud_api_exception(500, 131000, 'Something went wrong');
+
+        $this->say('Hola');
+
+        $this->assertSame(['One', 'Two'], $this->held());
+        $this->assertSame([], $this->ai->calls);
+
+        unset($this->client->responses['send_text']);
+        $this->say('Hola');
+
+        $this->assertSame(['One', 'One', 'Two'], array_column($this->sent(), 'text'));
+        $this->assertSame([], $this->held());
+        $this->assertSame([], $this->ai->calls);
+    }
+
+    /**
+     * At the monthly limit the student gets one notice and the AI is not called; the next message gets nothing.
+     */
+    public function test_at_the_monthly_cap_the_ai_is_not_called(): void {
+        global $DB;
+        $userid = $this->student();
+        manager::set_monthly_cap(2);
+        $DB->insert_record(whatsapp_link_service::USAGE_TABLE, (object) ['userid' => $userid,
+            'period' => (int) date('Ym', self::NOW), 'inbound' => 0, 'outservice' => 1, 'outtemplate' => 1, 'media' => 0]);
+
+        $this->say('¿Cuántos cursos tengo?');
+        $this->say('¿Y mis tareas?');
+
+        $this->assertSame([], $this->ai->calls);
+        $this->assertSame([get_string('whatsapp_msg_monthly_cap', 'local_jedomi')], array_column($this->sent(), 'text'));
+        $this->assertSame(2, self::usage($userid, 'inbound'), 'Messages received are still counted');
     }
 }

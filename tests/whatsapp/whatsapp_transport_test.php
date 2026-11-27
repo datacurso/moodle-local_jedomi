@@ -163,9 +163,13 @@ final class whatsapp_transport_test extends \advanced_testcase {
             /** @var \stdClass[] Links handed over. */
             public array $links = [];
 
+            /** @var string[] Texts handed over. */
+            public array $texts = [];
+
             #[\Override]
-            public function reply_held(\stdClass $link): void {
+            public function reply_held(\stdClass $link, string $text): void {
                 $this->links[] = $link;
+                $this->texts[] = $text;
             }
         };
         \core\di::set(closed_window_handler::class, $handler);
@@ -175,18 +179,20 @@ final class whatsapp_transport_test extends \advanced_testcase {
         $this->assertSame([], $this->sent());
         $this->assertCount(1, $handler->links);
         $this->assertSame(self::BSUID, $handler->links[0]->bsuid);
+        $this->assertSame(['Respuesta'], $handler->texts);
         $this->assertSame(0, $this->usage('outservice'));
     }
 
     /**
-     * The default closed window handler sends nothing.
+     * The default closed window handler sends no free-form text: it holds the reply and sends the reply_ready template.
      */
-    public function test_the_default_closed_window_handler_sends_nothing(): void {
+    public function test_the_default_closed_window_handler_sends_only_the_template(): void {
         $this->link(self::WAID, self::NOW - 2 * DAYSECS);
 
         $this->assertFalse((new whatsapp_transport())->send_text(self::chatkey(), 'Hola'));
 
-        $this->assertSame([], $this->client->calls);
+        $this->assertSame([], $this->client->calls_to('send_text'));
+        $this->assertCount(1, $this->client->calls_to('send_template'));
     }
 
     /**

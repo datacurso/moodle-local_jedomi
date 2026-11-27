@@ -1456,6 +1456,36 @@ function local_jedomi_telegram_recipient(int $userid): ?stdClass {
     return $link;
 }
 
+/**
+ * The confirmed WhatsApp link of a user who may receive a proactive message of a consent category now.
+ *
+ * Jedomi and the WhatsApp integration must be enabled, the user must have a confirmed link used within the last 30
+ * days, must have accepted the category and not stopped the messages (BAJA), and must have an active account and a
+ * role allowed by the WhatsApp role rule.
+ *
+ * @param int $userid Moodle user id.
+ * @param string $category Consent category of the message (\local_jedomi\whatsapp\consent::GRADES, ::CHAT).
+ * @return stdClass|null The confirmed link, or null when the user may not get the message.
+ */
+function local_jedomi_whatsapp_recipient(int $userid, string $category): ?stdClass {
+    global $DB;
+    $guard = new \local_jedomi\messaging\access_guard('whatsapp');
+    if ($guard->channel_denial() !== null) {
+        return null;
+    }
+    $link = $DB->get_record(\local_jedomi\local\service\whatsapp_link_service::LINKS_TABLE, [
+        'userid' => $userid,
+        'confirmed' => 1,
+    ]);
+    if (
+        !$link || !empty($link->optedout) || \local_jedomi\local\service\whatsapp_link_service::is_expired($link)
+            || !\local_jedomi\whatsapp\consent::accepted($link, $category) || $guard->served_user($userid) === null
+    ) {
+        return null;
+    }
+    return $link;
+}
+
 if (!function_exists('local_jedomi_get_role_allowlist')) {
     /**
      * Get the allowlist of web services for a given role.

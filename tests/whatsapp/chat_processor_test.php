@@ -586,6 +586,28 @@ final class chat_processor_test extends \advanced_testcase {
     }
 
     /**
+     * DESVINCULAR keeps the usage of the month, so unlinking and linking again does not reset the monthly limit.
+     */
+    public function test_desvincular_keeps_the_usage_of_the_month(): void {
+        global $DB;
+        $this->setup_channel();
+        $user = $this->getDataGenerator()->create_user();
+        self::insert_link((int) $user->id);
+        $period = (int) date('Ym', self::NOW);
+        $DB->insert_record(whatsapp_link_service::USAGE_TABLE, (object) ['userid' => $user->id, 'period' => $period,
+            'inbound' => 7, 'outservice' => 9, 'outtemplate' => 1, 'media' => 0]);
+
+        self::process($this->text('Desvincular'));
+
+        $this->assertNull(self::link_of((int) $user->id));
+        $this->assertSame(9, (int) $DB->get_field(
+            whatsapp_link_service::USAGE_TABLE,
+            'outservice',
+            ['userid' => $user->id, 'period' => $period]
+        ));
+    }
+
+    /**
      * A student who stopped the messages can still unlink, and the command is confirmed.
      */
     public function test_opted_out_student_can_unlink(): void {

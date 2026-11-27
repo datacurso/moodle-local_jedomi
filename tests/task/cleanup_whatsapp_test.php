@@ -168,7 +168,8 @@ final class cleanup_whatsapp_test extends \advanced_testcase {
 
     /**
      * Links unused for more than 30 days are removed with the data of their chat; a link used at the limit, a recent
-     * link and the data of other chats are kept.
+     * link and the data of other chats are kept. The usage of the current month is kept, so a new link does not reset
+     * the monthly limit.
      */
     public function test_expired_links_are_removed_with_their_data(): void {
         global $DB;
@@ -192,8 +193,69 @@ final class cleanup_whatsapp_test extends \advanced_testcase {
 
         $this->assertSame(['US.limit', 'US.new'], self::left('local_jedomi_whatsapp_links', 'bsuid'));
         $this->assertSame(['wamid.US.limit', 'wamid.US.new'], self::left('local_jedomi_whatsapp_inbox', 'wamid'));
-        $this->assertSame(2, $DB->count_records('local_jedomi_whatsapp_usage'));
+        $this->assertSame(4, $DB->count_records('local_jedomi_whatsapp_usage'));
         $this->assertStringContainsString('Removed 2 expired WhatsApp link(s).', $output);
+    }
+
+    /**
+     * Held replies outlive the idle conversations: they wait for the next message of the student until HELD_TTL, and
+     * the one at the limit is kept.
+     */
+    public function test_held_replies_wait_until_their_own_limit(): void {
+        global $DB;
+        $held = \local_jedomi\local\service\whatsapp_link_service::HELD_PREFIX;
+        $rows = [
+            $held . 'wa_US.old' => \local_jedomi\whatsapp\held_replies::TTL + 1,
+            $held . 'wa_US.limit' => \local_jedomi\whatsapp\held_replies::TTL,
+            $held . 'wa_US.hour' => HOURSECS,
+            'wa_US.idle' => HOURSECS,
+        ];
+        foreach ($rows as $chatid => $age) {
+            $DB->insert_record('local_jedomi_whatsapp_sessions', (object) ['chatid' => $chatid, 'messages' => '[]',
+                'lastactivity' => self::NOW - $age]);
+        }
+
+        $output = $this->run_cleanup();
+
+        $this->assertSame(
+            [$held . 'wa_US.hour', $held . 'wa_US.limit'],
+            self::left('local_jedomi_whatsapp_sessions', 'chatid')
+        );
+        $this->assertStringContainsString('Deleted 1 expired WhatsApp session(s).', $output);
+        $this->assertStringContainsString('Deleted 1 expired held WhatsApp reply row(s).', $output);
+    }
+
+    /**
+     * The usage of past months of users without a link is removed; the current month, and every month of a linked
+     * user, is kept.
+     */
+    public function test_old_usage_of_unlinked_users_is_removed(): void {
+        global $DB;
+        $linked = (int) $this->getDataGenerator()->create_user()->id;
+        $unlinked = (int) $this->getDataGenerator()->create_user()->id;
+        $DB->insert_record('local_jedomi_whatsapp_links', (object) ['userid' => $linked, 'bsuid' => 'US.linked',
+            'confirmed' => 1, 'timecreated' => self::NOW, 'lastused' => self::NOW]);
+        foreach ([$linked, $unlinked] as $userid) {
+            foreach ([202610, 202611, 202612] as $period) {
+                $DB->insert_record('local_jedomi_whatsapp_usage', (object) ['userid' => $userid, 'period' => $period]);
+            }
+        }
+
+        $output = $this->run_cleanup();
+
+        $this->assertSame([202610, 202611, 202612], array_map('intval', $DB->get_fieldset_select(
+            'local_jedomi_whatsapp_usage',
+            'period',
+            'userid = ? ORDER BY period',
+            [$linked]
+        )));
+        $this->assertSame([202612], array_map('intval', $DB->get_fieldset_select(
+            'local_jedomi_whatsapp_usage',
+            'period',
+            'userid = ?',
+            [$unlinked]
+        )));
+        $this->assertStringContainsString('Deleted 2 old WhatsApp usage row(s).', $output);
     }
 
     /**

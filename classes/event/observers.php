@@ -15,7 +15,7 @@
 // along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
 
 /**
- * Event observer implementations for Telegram proactive notifications.
+ * Event observer implementations for the proactive notifications and the link revocations.
  *
  * @package    local_jedomi
  * @copyright  2026 Datacurso <developer@datacurso.com>
@@ -24,18 +24,22 @@
 
 namespace local_jedomi\event;
 
+use local_jedomi\local\service\notification_dispatcher;
 use local_jedomi\local\service\student_data_service;
 use local_jedomi\local\service\whatsapp_link_service;
+use local_jedomi\task\send_whatsapp_grade_notification;
 use local_jedomi\telegram\api_client;
+use local_jedomi\whatsapp\consent;
 
 /**
- * Event observers that send proactive Telegram notifications to linked users.
+ * Event observers that send proactive notifications to linked users (Telegram and WhatsApp; the failing task alert of
+ * the administrator only on Telegram) and revoke the links of accounts that can no longer use them.
  */
 class observers {
-    /** Minimum seconds between two proactive notifications to the same chat. */
-    private const COOLDOWN = 300;
-
-    /** User preference with the assignments whose grade was notified, with the time and the grade notified. */
+    /**
+     * User preference with the assignments whose grade was notified on each channel, with the time and the grade
+     * notified.
+     */
     private const GRADE_PREFERENCE = 'local_jedomi_grade_notifications';
 
     /** Most scheduled tasks listed in the alert of the administrator. */
@@ -45,15 +49,18 @@ class observers {
     private const MAX_REMEMBERED_GRADES = 20;
 
     /**
-     * Notify student via Telegram when their assignment is graded.
+     * Notify a student on Telegram and WhatsApp when their assignment is graded.
      *
-     * Only a linked student who may use the bot gets it (active account, role allowed for Telegram), only when the
-     * student can see the grade and only when the grade differs from the one last notified for that assignment.
+     * Only a student who may get notifications on a channel gets it there (see
+     * notification_dispatcher::grade_recipients()), only when the student can see the grade and only when the grade
+     * differs from the one last notified on that channel for that assignment. Telegram is sent in this request;
+     * WhatsApp sends the grade_posted template from an ad hoc task (send_whatsapp_grade_notification), so the grading
+     * request never waits for Meta.
      *
      * @param \mod_assign\event\submission_graded $event
      */
     public static function submission_graded(\mod_assign\event\submission_graded $event): void {
-        global $CFG, $DB;
+        global $CFG;
         require_once($CFG->dirroot . '/local/jedomi/lib.php');
 
         // Submission_graded: userid = teacher who graded, relateduserid = student.
@@ -62,8 +69,8 @@ class observers {
             return;
         }
 
-        $link = \local_jedomi_telegram_recipient($studentid);
-        if (!$link) {
+        $recipients = notification_dispatcher::grade_recipients($studentid);
+        if (!$recipients) {
             return;
         }
 
@@ -75,27 +82,118 @@ class observers {
             return;
         }
 
-        // A regrade that leaves the same grade is not notified again.
-        $grade = self::grade_value((int) $event->objectid);
-        $notified = self::grade_notifications($studentid);
-        if (isset($notified[$cmid]) && $notified[$cmid]['grade'] === $grade) {
+        $gradeid = (int) $event->objectid;
+        if (isset($recipients[notification_dispatcher::TELEGRAM])) {
+            $link = $recipients[notification_dispatcher::TELEGRAM];
+            self::notify_grade(notification_dispatcher::TELEGRAM, $link, $studentid, $cm, $gradeid);
+        }
+        if (
+            isset($recipients[notification_dispatcher::WHATSAPP])
+                && !self::grade_already_notified(notification_dispatcher::WHATSAPP, $studentid, $cmid, $gradeid)
+        ) {
+            // A task already queued for this grade record is not queued twice: it sends the grade when it runs.
+            \core\task\manager::queue_adhoc_task(
+                send_whatsapp_grade_notification::for_grade($studentid, (int) $cm->course, $cmid, $gradeid),
+                true
+            );
+        }
+    }
+
+    /**
+     * Send the grade_posted WhatsApp template of a graded assignment, from send_whatsapp_grade_notification.
+     *
+     * Everything is checked again, as it may have changed since the grading: the recipient (channel enabled, link,
+     * grades consent, opt-out, role), the assignment and its grade record, the visibility of the grade, the grade
+     * already notified on WhatsApp and the minimum interval. The grade sent is the one stored now.
+     *
+     * @param int $userid Student.
+     * @param int $courseid Course of the assignment.
+     * @param int $cmid Course module of the assignment.
+     * @param int $gradeid Id of the assign_grades record.
+     */
+    public static function send_whatsapp_grade(int $userid, int $courseid, int $cmid, int $gradeid): void {
+        global $CFG, $DB;
+        require_once($CFG->dirroot . '/local/jedomi/lib.php');
+
+        $link = \local_jedomi_whatsapp_recipient($userid, consent::GRADES);
+        if (!$link) {
             return;
         }
-
-        if (!self::check_grade_cooldown($link, $cmid, $notified)) {
+        $cm = get_coursemodule_from_id('assign', $cmid, $courseid, false, IGNORE_MISSING);
+        if (
+            !$cm || !$DB->record_exists('assign_grades', ['id' => $gradeid, 'assignment' => $cm->instance, 'userid' => $userid])
+                || !student_data_service::assign_grade_is_visible((int) $cm->instance, (int) $cm->course, $userid)
+        ) {
             return;
         }
+        self::notify_grade(notification_dispatcher::WHATSAPP, $link, $userid, $cm, $gradeid);
+    }
 
-        $coursename = $DB->get_field('course', 'fullname', ['id' => $cm->course]) ?: '';
-        $text = get_string_manager()->get_string('telegram_notify_graded', 'local_jedomi', [
-            'assignment' => s($cm->name),
-            'course' => s($coursename),
-        ], self::user_language($studentid));
+    /**
+     * Send a grade notification on one channel, unless that grade was the last one notified there for the assignment,
+     * and remember it for that channel when sent.
+     *
+     * @param string $channel Channel.
+     * @param \stdClass $link Link of the channel.
+     * @param int $userid Student.
+     * @param \stdClass $cm Course module of the assignment.
+     * @param int $gradeid Id of the assign_grades record.
+     */
+    private static function notify_grade(string $channel, \stdClass $link, int $userid, \stdClass $cm, int $gradeid): void {
+        global $DB;
+        $cmid = (int) $cm->id;
+        if (self::grade_already_notified($channel, $userid, $cmid, $gradeid)) {
+            return;
+        }
+        $grade = self::grade_value($gradeid);
+        $notified = self::grade_notifications($userid, $channel);
+        $sent = notification_dispatcher::grade_posted([$channel => $link], $cmid, $notified, [
+            'courseid' => (int) $cm->course,
+            'course' => (string) ($DB->get_field('course', 'fullname', ['id' => $cm->course]) ?: ''),
+            'activity' => (string) $cm->name,
+            'grade' => $channel === notification_dispatcher::WHATSAPP ? self::grade_display($cm, $grade) : '',
+            'lang' => self::user_language($userid),
+        ]);
+        if ($sent) {
+            self::record_grade_notification($userid, $channel, $cmid, $grade);
+        }
+    }
 
-        api_client::instance()->send_message((string) $link->chatid, $text);
+    /**
+     * Whether the grade of a record is the one last notified on a channel for the assignment: a regrade that leaves
+     * the same grade is not notified again.
+     *
+     * @param string $channel Channel.
+     * @param int $userid Student.
+     * @param int $cmid Course module of the assignment.
+     * @param int $gradeid Id of the assign_grades record.
+     * @return bool
+     */
+    private static function grade_already_notified(string $channel, int $userid, int $cmid, int $gradeid): bool {
+        $notified = self::grade_notifications($userid, $channel);
+        return isset($notified[$cmid]) && $notified[$cmid]['grade'] === self::grade_value($gradeid);
+    }
 
-        self::update_cooldown($link);
-        self::record_grade_notification($studentid, $cmid, $grade, $notified);
+    /**
+     * A grade as the gradebook shows it (points, scale item or letter, by the settings of the grade item), as plain
+     * text; empty when there is no grade.
+     *
+     * @param \stdClass $cm Course module of the assignment.
+     * @param string $grade Grade, see grade_value().
+     * @return string
+     */
+    private static function grade_display(\stdClass $cm, string $grade): string {
+        global $CFG;
+        require_once($CFG->libdir . '/gradelib.php');
+        if ($grade === '') {
+            return '';
+        }
+        $item = \grade_item::fetch(['itemtype' => 'mod', 'itemmodule' => 'assign', 'iteminstance' => $cm->instance,
+            'courseid' => $cm->course, 'itemnumber' => 0]);
+        if (!$item) {
+            return $grade;
+        }
+        return html_entity_decode(strip_tags(grade_format_gradevalue((float) $grade, $item)), ENT_QUOTES | ENT_HTML5, 'UTF-8');
     }
 
     /**
@@ -114,34 +212,15 @@ class observers {
     }
 
     /**
-     * Whether a grade notification may be sent: after the minimum interval of the chat, or within it when it is
-     * about an assignment not notified during the interval, so the interval never drops another assignment.
-     *
-     * @param \stdClass $link Telegram link record.
-     * @param int $cmid Course module of the graded assignment.
-     * @param array $notified Notified assignments, see grade_notifications().
-     * @return bool
-     */
-    private static function check_grade_cooldown(\stdClass $link, int $cmid, array $notified): bool {
-        if (self::check_cooldown($link)) {
-            return true;
-        }
-        $since = time() - self::COOLDOWN;
-        $recent = array_filter($notified, static fn(array $entry): bool => $entry['time'] > $since);
-        return !empty($recent) && !isset($recent[$cmid]);
-    }
-
-    /**
-     * Assignments whose grade was notified to a user, with the time and the grade of the last notification.
+     * Assignments whose grade was notified to a user on a channel, with the time and the grade of the last
+     * notification.
      *
      * @param int $userid Student.
+     * @param string $channel Channel.
      * @return array<int, array{time: int, grade: ?string}> Keyed by course module id.
      */
-    private static function grade_notifications(int $userid): array {
-        $stored = json_decode((string) get_user_preferences(self::GRADE_PREFERENCE, '', $userid), true);
-        if (!is_array($stored)) {
-            return [];
-        }
+    private static function grade_notifications(int $userid, string $channel): array {
+        $stored = self::stored_grade_notifications($userid)[$channel] ?? [];
         $notified = [];
         foreach ($stored as $cmid => $entry) {
             if (is_array($entry)) {
@@ -158,21 +237,44 @@ class observers {
     }
 
     /**
-     * Remember the grade of an assignment notified to a user, keeping only the most recent assignments.
+     * The stored notified assignments of a user, keyed by channel. A preference of earlier versions holds one list for
+     * every channel, so it is the list of each channel.
      *
      * @param int $userid Student.
+     * @return array<string, array>
+     */
+    private static function stored_grade_notifications(int $userid): array {
+        $stored = json_decode((string) get_user_preferences(self::GRADE_PREFERENCE, '', $userid), true);
+        if (!is_array($stored)) {
+            return [];
+        }
+        $channels = [notification_dispatcher::TELEGRAM, notification_dispatcher::WHATSAPP];
+        if (array_intersect(array_keys($stored), $channels) === []) {
+            return array_fill_keys($channels, $stored);
+        }
+        return array_map(static fn($list): array => is_array($list) ? $list : [], $stored);
+    }
+
+    /**
+     * Remember the grade of an assignment notified to a user on a channel, keeping only the most recent assignments
+     * of each channel.
+     *
+     * @param int $userid Student.
+     * @param string $channel Channel.
      * @param int $cmid Course module of the assignment.
      * @param string $grade Grade notified.
-     * @param array $notified Notified assignments, see grade_notifications().
      * @return void
      */
-    private static function record_grade_notification(int $userid, int $cmid, string $grade, array $notified): void {
-        $notified[$cmid] = ['time' => time(), 'grade' => $grade];
+    private static function record_grade_notification(int $userid, string $channel, int $cmid, string $grade): void {
+        $notified = self::grade_notifications($userid, $channel);
+        $notified[$cmid] = ['time' => \core\di::get(\core\clock::class)->time(), 'grade' => $grade];
         uasort($notified, static fn(array $a, array $b): int => $b['time'] <=> $a['time']);
-        $stored = [];
+        $list = [];
         foreach (array_slice($notified, 0, self::MAX_REMEMBERED_GRADES, true) as $id => $entry) {
-            $stored[$id] = [$entry['time'], $entry['grade']];
+            $list[$id] = [$entry['time'], $entry['grade']];
         }
+        $stored = self::stored_grade_notifications($userid);
+        $stored[$channel] = $list;
         set_user_preference(self::GRADE_PREFERENCE, json_encode($stored), $userid);
     }
 
@@ -203,7 +305,7 @@ class observers {
         }
 
         $link = \local_jedomi_telegram_recipient($userid);
-        if (!$link || !self::check_cooldown($link)) {
+        if (!$link || !notification_dispatcher::interval_passed($link)) {
             return;
         }
 
@@ -234,7 +336,7 @@ class observers {
 
         api_client::instance()->send_message((string) $link->chatid, implode("\n", $lines));
 
-        self::update_cooldown($link);
+        notification_dispatcher::mark_sent(notification_dispatcher::TELEGRAM, $link);
     }
 
     /**
@@ -268,7 +370,8 @@ class observers {
      */
     public static function user_deleted(\core\event\user_deleted $event): void {
         \local_jedomi\local\service\telegram_link_service::unlink((int) $event->objectid);
-        whatsapp_link_service::unlink((int) $event->objectid);
+        // The account is gone: its usage counters go too.
+        whatsapp_link_service::unlink((int) $event->objectid, null, true);
     }
 
     /**
@@ -281,29 +384,5 @@ class observers {
     public static function user_password_updated(\core\event\user_password_updated $event): void {
         \local_jedomi\local\service\telegram_link_service::unlink((int) $event->relateduserid);
         whatsapp_link_service::unlink((int) $event->relateduserid);
-    }
-
-    // ... ── Cooldown helpers ─────────────────────────────────────────────────────
-
-    /**
-     * Check whether enough time has passed since the last proactive message to this link.
-     *
-     * @param \stdClass $link Telegram link record with a lastproactivesent field.
-     * @return bool True if the 5-minute cooldown has elapsed and a message may be sent.
-     */
-    private static function check_cooldown(\stdClass $link): bool {
-        return ($link->lastproactivesent + self::COOLDOWN) <= time();
-    }
-
-    /**
-     * Record the current time as the last proactive send for this link. Only that field is written, so the PIN state
-     * and the last use written meanwhile by the bot are kept (RISK-002).
-     *
-     * @param \stdClass $link Telegram link record to update.
-     */
-    private static function update_cooldown(\stdClass $link): void {
-        global $DB;
-        $link->lastproactivesent = time();
-        $DB->set_field('local_jedomi_telegram_links', 'lastproactivesent', $link->lastproactivesent, ['id' => $link->id]);
     }
 }

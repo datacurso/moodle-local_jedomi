@@ -26,8 +26,8 @@ require_once(__DIR__ . '/../../lib.php');
  * Monthly WhatsApp message counters of each user (local_jedomi_whatsapp_usage): messages received, free-form service
  * messages sent, templates sent and media received, per month of the Moodle clock.
  *
- * The counters are only recorded: no monthly limit is applied yet. A failure to count is logged and never stops the
- * conversation.
+ * The outgoing counters (service messages and templates) feed the monthly limit (monthly_cap). A failure to count is
+ * logged and never stops the conversation.
  *
  * @package    local_jedomi
  * @copyright  2026 Datacurso <developer@datacurso.com>
@@ -85,6 +85,19 @@ final class usage_meter {
             \local_jedomi_log('WhatsApp usage not counted', ['counter' => $counter,
                 'error' => \local_jedomi\local\safe_error::describe($e)]);
         }
+    }
+
+    /**
+     * Outgoing messages of the user in the current month: free-form service messages and templates.
+     *
+     * @param int $userid User id.
+     * @return int
+     */
+    public static function outgoing(int $userid): int {
+        global $DB;
+        $row = $DB->get_record(self::TABLE, ['userid' => $userid, 'period' => self::period()], self::OUTSERVICE . ', '
+            . self::OUTTEMPLATE);
+        return $row ? (int) $row->{self::OUTSERVICE} + (int) $row->{self::OUTTEMPLATE} : 0;
     }
 
     /**

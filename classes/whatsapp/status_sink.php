@@ -20,7 +20,7 @@ namespace local_jedomi\whatsapp;
  * Port that records the delivery statuses of value.statuses[]; they never go to the inbox.
  *
  * The intake gets it from the container, \core\di::get(status_sink::class), when one is registered, and uses
- * log_status_sink otherwise; a test registers a double with \core\di::set().
+ * whatsapp_status_sink otherwise; a test registers a double with \core\di::set().
  *
  * @package    local_jedomi
  * @copyright  2026 Datacurso <developer@datacurso.com>

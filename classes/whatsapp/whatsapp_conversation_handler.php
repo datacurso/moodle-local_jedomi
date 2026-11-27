@@ -30,10 +30,12 @@ require_once(__DIR__ . '/../../lib.php');
  * Conversation of the WhatsApp channel: the default conversation_handler of the chat_processor.
  *
  * A message of a linked student who receives messages is counted, then, when the student accepted the chat category,
- * handled under the lock of the chat of the BSUID (one message per chat at a time), in the language of the student:
- * SÍ or NO answers the newest held action of the chat; anything else goes through the router of the core with the
- * WhatsApp channel (message limit per minute, confirmation word, NUEVO and the conversation engine). A voice note, photo
- * or document reaches the router with its media and caption, and the media pipeline of the core reads it (see
+ * handled under the lock of the chat of the BSUID (one message per chat at a time), in the language of the student.
+ * A student at the monthly limit gets its single notice and the AI is not called (monthly_cap). Replies held while the
+ * window was closed are delivered first, and that message only opens the window, as the reply_ready template asks.
+ * Otherwise SÍ or NO answers the newest held action of the chat; anything else goes through the router of the core with
+ * the WhatsApp channel (message limit per minute, confirmation word, NUEVO and the conversation engine). A voice note,
+ * photo or document reaches the router with its media and caption, and the media pipeline of the core reads it (see
  * whatsapp_media_source); a video or a sticker has no media, so the student is asked for text.
  *
  * WhatsApp sends one media per message: several photos sent together arrive as separate messages, each one handled
@@ -54,9 +56,13 @@ final class whatsapp_conversation_handler implements conversation_handler {
 
         $channel = new whatsapp_channel();
         $chatkey = whatsapp_link_service::chatkey((string) $link->bsuid);
-        user_language::run($userid, static function () use ($channel, $chatkey, $message, $link): void {
-            if (!self::accepted_chat($link)) {
+        user_language::run($userid, static function () use ($channel, $chatkey, $message, $link, $userid): void {
+            if (!consent::accepted($link, consent::CHAT)) {
                 $channel->transport()->send_text($chatkey, get_string('whatsapp_msg_chat_not_accepted', 'local_jedomi'));
+                return;
+            }
+            if (!monthly_cap::allows($userid)) {
+                monthly_cap::notify($link);
                 return;
             }
             $lock = self::acquire_chat_lock($chatkey);
@@ -68,7 +74,9 @@ final class whatsapp_conversation_handler implements conversation_handler {
                 return;
             }
             try {
-                self::route($channel, $chatkey, $message);
+                if (!self::deliver_held($channel, $chatkey, $link)) {
+                    self::route($channel, $chatkey, $message);
+                }
             } finally {
                 if ($lock !== null) {
                     $lock->release();
@@ -93,6 +101,41 @@ final class whatsapp_conversation_handler implements conversation_handler {
             \local_jedomi_log('WhatsApp: chat lock not available (' . get_class($e) . '), proceeding without it');
             return null;
         }
+    }
+
+    /**
+     * Send the replies held while the window of the student was closed, in order, and remove the ones sent.
+     *
+     * Delivery stops at the first reply that is not sent (an error of Meta, the monthly limit): that reply and the
+     * following ones stay held for the next message. The message that found held replies is not routed, whether they
+     * were all sent or not, so the student gets them before any new answer.
+     *
+     * @param whatsapp_channel $channel Channel.
+     * @param string $chatkey Chat key.
+     * @param \stdClass $link Link of the student.
+     * @return bool Whether there were held replies.
+     */
+    private static function deliver_held(whatsapp_channel $channel, string $chatkey, \stdClass $link): bool {
+        $texts = held_replies::peek($link);
+        if ($texts === []) {
+            return false;
+        }
+        $sent = 0;
+        foreach ($texts as $text) {
+            if (!$channel->transport()->send_text($chatkey, $text)) {
+                break;
+            }
+            $sent++;
+        }
+        held_replies::acknowledge($link, $texts, $sent);
+        if ($sent < count($texts)) {
+            \local_jedomi_log('WhatsApp: held replies not all sent, the rest waits for the next message', [
+                'chat' => \local_jedomi_log_pseudonym('wa', (string) $link->bsuid),
+                'sent' => $sent,
+                'held' => count($texts),
+            ]);
+        }
+        return true;
     }
 
     /**
@@ -136,16 +179,5 @@ final class whatsapp_conversation_handler implements conversation_handler {
             '',
             $message->wamid
         );
-    }
-
-    /**
-     * Whether the student accepted the chat category of the consent.
-     *
-     * @param \stdClass $link Link.
-     * @return bool
-     */
-    private static function accepted_chat(\stdClass $link): bool {
-        $categories = array_map('trim', explode(',', (string) ($link->consentcategories ?? '')));
-        return in_array(consent::CHAT, $categories, true);
     }
 }

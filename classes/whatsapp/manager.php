@@ -84,6 +84,35 @@ class manager {
     /** @var int Characters of the contact of a person kept for the prompt. */
     public const ESCALATION_CONTACT_LENGTH = 200;
 
+    /** @var string Prefix of the setting with the name of an approved template; the template key follows. */
+    private const TEMPLATE_NAME_PREFIX = 'whatsapp_template_';
+
+    /** @var string Pattern of a template name of Meta: lowercase letters, digits and underscores. */
+    private const TEMPLATE_NAME_PATTERN = '/^[a-z0-9_]{1,512}$/D';
+
+    /** @var string Setting with the language code of the approved templates. */
+    private const TEMPLATE_LANGUAGE = 'whatsapp_template_language';
+
+    /** @var string Pattern of a language code of Meta, such as es, es_MX or pt_BR. */
+    private const LANGUAGE_PATTERN = '/^[a-z]{2,3}(_[A-Z]{2})?$/D';
+
+    /** @var string Language of the templates when the site language cannot be used. */
+    public const DEFAULT_TEMPLATE_LANGUAGE = 'es';
+
+    /** @var string Setting with the most outgoing messages per user and month. */
+    private const MONTHLY_CAP = 'whatsapp_monthly_cap';
+
+    /** @var string Setting with the error codes of a failed status that mean the user stopped the messages. */
+    private const OPT_OUT_ERROR_CODES = 'whatsapp_optout_error_codes';
+
+    /**
+     * @var int[] Error codes of a failed status that mean the user stopped the messages, until the administrator sets
+     * others. Meta does not document a code for a user who blocked the number; 131050 (the user stopped receiving
+     * marketing messages from the business) is the only explicit one. The list is to be confirmed in the manual tests
+     * with the test number (design 6.8), which is why it is a setting.
+     */
+    public const DEFAULT_OPT_OUT_ERROR_CODES = [131050];
+
     /**
      * Save the phone number ID; empty clears it.
      *
@@ -301,6 +330,145 @@ class manager {
     public static function get_display_number(): string {
         $number = (string) get_config(self::COMPONENT, self::DISPLAY_NUMBER);
         return preg_match(self::DISPLAY_NUMBER_PATTERN, $number) === 1 ? $number : '';
+    }
+
+    /**
+     * Save the name of the approved template of a catalog template; empty restores the catalog name.
+     *
+     * @param string $template One of the templates constants.
+     * @param string $name Name of the template approved by Meta.
+     * @throws \coding_exception For an unknown template.
+     * @throws \moodle_exception config_value_invalid_msg when it is not a template name of Meta.
+     */
+    public static function set_template_name(string $template, string $name): void {
+        $setting = self::template_setting($template);
+        $name = trim($name);
+        if ($name === '') {
+            unset_config($setting, self::COMPONENT);
+            return;
+        }
+        if (preg_match(self::TEMPLATE_NAME_PATTERN, $name) !== 1) {
+            throw new \moodle_exception('config_value_invalid_msg', 'local_jedomi', '', $setting);
+        }
+        set_config($setting, $name, self::COMPONENT);
+    }
+
+    /**
+     * Name of the approved template of a catalog template: the saved one, or the catalog name.
+     *
+     * @param string $template One of the templates constants.
+     * @return string
+     * @throws \coding_exception For an unknown template.
+     */
+    public static function get_template_name(string $template): string {
+        $name = (string) get_config(self::COMPONENT, self::template_setting($template));
+        return preg_match(self::TEMPLATE_NAME_PATTERN, $name) === 1 ? $name : $template;
+    }
+
+    /**
+     * Save the language code of the approved templates; empty restores the default.
+     *
+     * @param string $code Language code of Meta, such as es, es_MX or pt_BR.
+     * @throws \moodle_exception config_value_invalid_msg when it is not a language code of Meta.
+     */
+    public static function set_template_language(string $code): void {
+        $code = trim($code);
+        if ($code === '') {
+            unset_config(self::TEMPLATE_LANGUAGE, self::COMPONENT);
+            return;
+        }
+        if (preg_match(self::LANGUAGE_PATTERN, $code) !== 1) {
+            throw new \moodle_exception('config_value_invalid_msg', 'local_jedomi', '', self::TEMPLATE_LANGUAGE);
+        }
+        set_config(self::TEMPLATE_LANGUAGE, $code, self::COMPONENT);
+    }
+
+    /**
+     * Language code of the approved templates: the saved one, otherwise the site language in the form of Meta (es_mx
+     * becomes es_MX), otherwise DEFAULT_TEMPLATE_LANGUAGE.
+     *
+     * @return string
+     */
+    public static function get_template_language(): string {
+        global $CFG;
+        $code = (string) get_config(self::COMPONENT, self::TEMPLATE_LANGUAGE);
+        if (preg_match(self::LANGUAGE_PATTERN, $code) === 1) {
+            return $code;
+        }
+        if (preg_match('/^([a-z]{2,3})(?:_([a-z]{2}))?(?:_|$)/', (string) ($CFG->lang ?? ''), $matches) === 1) {
+            return $matches[1] . (isset($matches[2]) ? '_' . strtoupper($matches[2]) : '');
+        }
+        return self::DEFAULT_TEMPLATE_LANGUAGE;
+    }
+
+    /**
+     * Save the most outgoing messages (replies, notices and templates) per user and month; 0 removes the limit.
+     *
+     * @param int $cap Limit.
+     * @throws \moodle_exception config_value_invalid_msg for a negative limit.
+     */
+    public static function set_monthly_cap(int $cap): void {
+        if ($cap < 0) {
+            throw new \moodle_exception('config_value_invalid_msg', 'local_jedomi', '', self::MONTHLY_CAP);
+        }
+        set_config(self::MONTHLY_CAP, $cap, self::COMPONENT);
+    }
+
+    /**
+     * Most outgoing messages per user and month; 0, the default, means no limit.
+     *
+     * @return int
+     */
+    public static function get_monthly_cap(): int {
+        return max(0, (int) get_config(self::COMPONENT, self::MONTHLY_CAP));
+    }
+
+    /**
+     * Save the error codes of a failed status that mean the user stopped the messages, separated by commas or spaces;
+     * empty restores DEFAULT_OPT_OUT_ERROR_CODES.
+     *
+     * @param string $codes Error codes.
+     * @throws \moodle_exception config_value_invalid_msg when a code is not a number.
+     */
+    public static function set_opt_out_error_codes(string $codes): void {
+        $parts = preg_split('/[\s,]+/', trim($codes), -1, PREG_SPLIT_NO_EMPTY);
+        if ($parts === [] || $parts === false) {
+            unset_config(self::OPT_OUT_ERROR_CODES, self::COMPONENT);
+            return;
+        }
+        foreach ($parts as $part) {
+            if (preg_match('/^\d{1,10}$/D', $part) !== 1) {
+                throw new \moodle_exception('config_value_invalid_msg', 'local_jedomi', '', self::OPT_OUT_ERROR_CODES);
+            }
+        }
+        set_config(self::OPT_OUT_ERROR_CODES, implode(',', array_unique(array_map('intval', $parts))), self::COMPONENT);
+    }
+
+    /**
+     * Error codes of a failed status that mean the user stopped the messages.
+     *
+     * @return int[]
+     */
+    public static function get_opt_out_error_codes(): array {
+        $saved = (string) get_config(self::COMPONENT, self::OPT_OUT_ERROR_CODES);
+        if ($saved === '') {
+            return self::DEFAULT_OPT_OUT_ERROR_CODES;
+        }
+        return array_values(array_map('intval', array_filter(explode(',', $saved), 'is_numeric')));
+    }
+
+    /**
+     * Setting of the name of a catalog template.
+     *
+     * @param string $template Template.
+     * @return string
+     * @throws \coding_exception For an unknown template.
+     */
+    private static function template_setting(string $template): string {
+        if (!templates::is_known($template)) {
+            throw new \coding_exception('Unknown WhatsApp template: ' . $template);
+        }
+        return self::TEMPLATE_NAME_PREFIX . $template;
     }
 
     /**

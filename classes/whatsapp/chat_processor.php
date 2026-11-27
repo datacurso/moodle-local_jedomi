@@ -278,8 +278,7 @@ final class chat_processor implements message_processor {
      * @return bool
      */
     private static function is_expired(\stdClass $link): bool {
-        $cutoff = self::now() - whatsapp_link_service::EXPIRY;
-        return (int) $link->lastused < $cutoff && (int) $link->timecreated < $cutoff;
+        return whatsapp_link_service::is_expired($link);
     }
 
     /**

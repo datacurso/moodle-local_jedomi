@@ -254,6 +254,37 @@ final class whatsapp_events_test extends \advanced_testcase {
     }
 
     /**
+     * Unlinking keeps the usage counters (the monthly limit must not reset on a new link); deleting the user removes
+     * them, while a suspension or a password change keeps them.
+     */
+    public function test_only_the_deletion_of_the_user_removes_the_usage(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $user = $this->getDataGenerator()->create_user();
+        $usage = static fn(): int => $DB->count_records(whatsapp_link_service::USAGE_TABLE, ['userid' => $user->id]);
+        $DB->insert_record(whatsapp_link_service::USAGE_TABLE, (object) ['userid' => $user->id, 'period' => 202611,
+            'outservice' => 4]);
+
+        self::insert_link((int) $user->id);
+        whatsapp_link_service::unlink((int) $user->id);
+        $this->assertSame(1, $usage(), 'A plain unlink keeps the usage');
+
+        self::insert_link((int) $user->id);
+        \core\event\user_password_updated::create_from_user($user)->trigger();
+        $this->assertFalse($DB->record_exists(whatsapp_link_service::LINKS_TABLE, ['userid' => $user->id]));
+        $this->assertSame(1, $usage(), 'A password change keeps the usage');
+
+        self::insert_link((int) $user->id);
+        $user->suspended = 1;
+        user_update_user($user, false);
+        $this->assertFalse($DB->record_exists(whatsapp_link_service::LINKS_TABLE, ['userid' => $user->id]));
+        $this->assertSame(1, $usage(), 'A suspension keeps the usage');
+
+        delete_user($DB->get_record('user', ['id' => $user->id]));
+        $this->assertSame(0, $usage(), 'Deleting the user removes the usage');
+    }
+
+    /**
      * Unlinking a user without a WhatsApp link triggers nothing.
      */
     public function test_unlink_without_link_triggers_nothing(): void {

@@ -101,4 +101,13 @@ $definitions = [
         'simpledata' => true,
         'ttl'        => 86400,
     ],
+
+    // Delivery statuses of WhatsApp messages already handled (hash of the message id and the state), so a status Meta
+    // delivers again is not handled twice. MODE_APPLICATION so every web server sees them; one week covers the retries.
+    'whatsapp_statuses' => [
+        'mode'       => cache_store::MODE_APPLICATION,
+        'simplekeys' => true,
+        'simpledata' => true,
+        'ttl'        => 7 * 86400,
+    ],
 ];

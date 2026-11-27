@@ -460,7 +460,7 @@ class provider implements
             $sessions = $DB->get_records_list(
                 whatsapp_link_service::SESSIONS_TABLE,
                 'chatid',
-                [$chatkey, whatsapp_link_service::TOOL_LOOP_PREFIX . $chatkey],
+                whatsapp_link_service::session_keys($chatkey),
                 'id ASC'
             );
             $limit = $DB->get_record(whatsapp_link_service::RATE_TABLE, ['chatid' => $chatkey]);
@@ -566,7 +566,7 @@ class provider implements
         feedback_service::delete_for_users([$userid]);
         pending_action_service::delete_for_users([$userid]);
         telegram_link_service::unlink($userid);
-        whatsapp_link_service::unlink($userid);
+        whatsapp_link_service::unlink($userid, null, true);
         $agentids = $DB->get_fieldset_select('local_jedomi_agents', 'id', 'userid = ?', [$userid]);
         foreach ($agentids as $agentid) {
             $DB->delete_records('local_jedomi_query_log', ['agentid' => $agentid]);

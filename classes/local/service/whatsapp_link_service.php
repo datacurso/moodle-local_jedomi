@@ -48,6 +48,9 @@ final class whatsapp_link_service {
     /** @var string Prefix of the session row that keeps the tool loop state of a chat (see conversation_engine). */
     public const TOOL_LOOP_PREFIX = 'tool_loop_';
 
+    /** @var string Prefix of the session row that keeps the replies held while the window was closed (held_replies). */
+    public const HELD_PREFIX = 'held_';
+
     /** @var int Seconds a link can go unused before it expires. */
     public const EXPIRY = 30 * DAYSECS;
 
@@ -65,29 +68,46 @@ final class whatsapp_link_service {
     }
 
     /**
+     * Chat keys of the session rows of a chat: the conversation, the tool loop state and the held replies.
+     *
+     * @param string $chatkey Chat key.
+     * @return string[]
+     */
+    public static function session_keys(string $chatkey): array {
+        return [$chatkey, self::TOOL_LOOP_PREFIX . $chatkey, self::HELD_PREFIX . $chatkey];
+    }
+
+    /**
      * Remove the WhatsApp link of a user and all the data of the channel for it: the conversation, the task in
-     * progress, the message limit, the actions waiting for confirmation, the received messages and the usage counters.
+     * progress, the held replies, the message limit, the actions waiting for confirmation and the received messages.
+     *
+     * The usage counters are kept, so unlinking and linking again does not reset the monthly limit; they are removed
+     * only with $deleteusage, when the user is deleted or asks for the deletion of the data (privacy), and the cleanup
+     * task removes the past months of users without a link.
      *
      * Triggers whatsapp_unlinked once when the user had a link, whatever removed it (command, profile page, observers,
      * a new link that replaces it, expiry).
      *
      * @param int $userid User id.
      * @param int|null $actorid User who removed the link; the same user when null.
+     * @param bool $deleteusage Whether the usage counters of the user are removed too.
      * @return void
      */
-    public static function unlink(int $userid, ?int $actorid = null): void {
+    public static function unlink(int $userid, ?int $actorid = null, bool $deleteusage = false): void {
         global $DB;
         $bsuids = $DB->get_fieldset_select(self::LINKS_TABLE, 'bsuid', 'userid = ?', [$userid]);
         $transaction = $DB->start_delegated_transaction();
         try {
             foreach ($bsuids as $bsuid) {
                 $chatkey = self::chatkey((string) $bsuid);
-                $DB->delete_records_list(self::SESSIONS_TABLE, 'chatid', [$chatkey, self::TOOL_LOOP_PREFIX . $chatkey]);
+                $DB->delete_records_list(self::SESSIONS_TABLE, 'chatid', self::session_keys($chatkey));
                 $DB->delete_records(self::RATE_TABLE, ['chatid' => $chatkey]);
                 $DB->delete_records(self::PENDING_TABLE, ['chatid' => $chatkey]);
                 $DB->delete_records(self::INBOX_TABLE, ['bsuid' => $bsuid]);
             }
-            $DB->delete_records(self::USAGE_TABLE, ['userid' => $userid]);
+            if ($deleteusage) {
+                $DB->delete_records(self::USAGE_TABLE, ['userid' => $userid]);
+            }
             $DB->delete_records(self::LINKS_TABLE, ['userid' => $userid]);
             $transaction->allow_commit();
         } catch (\Throwable $e) {
@@ -143,6 +163,7 @@ final class whatsapp_link_service {
             $newkey = self::chatkey($new);
             self::move_unique_chat(self::SESSIONS_TABLE, $oldkey, $newkey);
             self::move_unique_chat(self::SESSIONS_TABLE, self::TOOL_LOOP_PREFIX . $oldkey, self::TOOL_LOOP_PREFIX . $newkey);
+            self::move_unique_chat(self::SESSIONS_TABLE, self::HELD_PREFIX . $oldkey, self::HELD_PREFIX . $newkey);
             self::move_unique_chat(self::RATE_TABLE, $oldkey, $newkey);
             $DB->set_field(self::PENDING_TABLE, 'chatid', $newkey, ['chatid' => $oldkey]);
             $DB->set_field(self::INBOX_TABLE, 'bsuid', $new, ['bsuid' => $previous]);
@@ -167,6 +188,17 @@ final class whatsapp_link_service {
             return;
         }
         $DB->set_field($table, 'chatid', $to, ['chatid' => $from]);
+    }
+
+    /**
+     * Whether a link went unused for more than EXPIRY (since its last use, or since it was created when never used).
+     *
+     * @param \stdClass $link Link.
+     * @return bool
+     */
+    public static function is_expired(\stdClass $link): bool {
+        $cutoff = \core\di::get(\core\clock::class)->time() - self::EXPIRY;
+        return (int) ($link->lastused ?? 0) < $cutoff && (int) $link->timecreated < $cutoff;
     }
 
     /**

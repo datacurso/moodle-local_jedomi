@@ -21,17 +21,25 @@ defined('MOODLE_INTERNAL') || die();
 require_once(__DIR__ . '/../../lib.php');
 
 /**
- * Default closed window handler: it sends nothing and only logs that a reply waits in the history.
+ * Default closed window handler: the reply is held for the next message of the student and, when it is the first one
+ * held and the student accepted the chat category, the reply_ready template tells the student to write any message to
+ * see it. Further replies held before the student writes again send no other template.
  *
  * @package    local_jedomi
  * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-final class null_closed_window_handler implements closed_window_handler {
+final class whatsapp_closed_window_handler implements closed_window_handler {
     #[\Override]
-    public function reply_held(\stdClass $link): void {
-        \local_jedomi_log('WhatsApp: window closed, the reply waits in the history', [
+    public function reply_held(\stdClass $link, string $text): void {
+        if (!held_replies::hold($link, $text)) {
+            return;
+        }
+        \local_jedomi_log('WhatsApp: window closed, the reply waits for the next message', [
             'chat' => \local_jedomi_log_pseudonym('wa', (string) ($link->bsuid ?? '')),
         ]);
+        if (consent::accepted($link, consent::CHAT)) {
+            template_sender::send($link, templates::REPLY_READY, []);
+        }
     }
 }

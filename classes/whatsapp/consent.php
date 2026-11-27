@@ -80,6 +80,18 @@ final class consent {
     }
 
     /**
+     * Whether a link records the acceptance of a category in its consentcategories field.
+     *
+     * @param \stdClass $link Link.
+     * @param string $category One of the CATEGORIES.
+     * @return bool
+     */
+    public static function accepted(\stdClass $link, string $category): bool {
+        $categories = array_map('trim', explode(',', (string) ($link->consentcategories ?? '')));
+        return in_array($category, $categories, true);
+    }
+
+    /**
      * Encode the consent for the cache of the link codes.
      *
      * @return string

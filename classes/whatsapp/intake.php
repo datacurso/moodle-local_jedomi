@@ -345,12 +345,12 @@ class intake {
     }
 
     /**
-     * The status sink registered in the container, or the default one that logs failed statuses.
+     * The status sink registered in the container, or whatsapp_status_sink.
      *
      * @return status_sink
      */
     private static function status_sink(): status_sink {
         $container = \core\di::get_container();
-        return $container->has(status_sink::class) ? $container->get(status_sink::class) : new log_status_sink();
+        return $container->has(status_sink::class) ? $container->get(status_sink::class) : new whatsapp_status_sink();
     }
 }
