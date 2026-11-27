@@ -31,6 +31,11 @@ use local_jedomi\messaging\channel_limits;
  */
 class telegram_limits implements channel_limits {
     #[\Override]
+    public function progress_messages(): bool {
+        return true;
+    }
+
+    #[\Override]
     public function format_rules(string $userlang): string {
         return "⚡ TELEGRAM RULES:\n"
             . "- The user is WAITING. Don't do extra iterations.\n"

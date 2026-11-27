@@ -33,7 +33,7 @@ use local_jedomi\task\process_whatsapp_inbox;
  * entry[].changes[].value.messages[] is stored in the inbox, deduplicated by its unique wamid and encrypted, with a
  * rescue ad hoc task; statuses go to the status sink; Meta gets an early empty 200 and, in inline mode, the new
  * messages are processed in the same request. An internal error after a row is saved is never returned to Meta: the
- * rescue task retries it.
+ * rescue task retries it. With internal=1 the request is the self-ping of a long question (see internal_ping).
  *
  * @package    local_jedomi
  * @copyright  2026 Datacurso <developer@datacurso.com>
@@ -56,8 +56,20 @@ class intake {
      * @param array $query Query parameters; PHP names hub.mode, hub.verify_token and hub.challenge with underscores.
      * @param string $rawbody Raw body, exactly as received (php://input).
      * @param string|null $signature X-Hub-Signature-256 header; null when missing.
+     * @param string|null $internalsignature X-Jedomi-Signature header of an internal ping; null when missing.
      */
-    public function handle(string $method, array $query, string $rawbody, ?string $signature): void {
+    public function handle(
+        string $method,
+        array $query,
+        string $rawbody,
+        ?string $signature,
+        ?string $internalsignature = null
+    ): void {
+        if (self::param($query, 'internal') === '1') {
+            // The self-ping of a long question, authenticated by the internal HMAC only (never by Meta's signature).
+            (new internal_ping())->handle($method, $rawbody, $internalsignature);
+            return;
+        }
         if ($method === 'GET') {
             $this->verify($query);
             return;

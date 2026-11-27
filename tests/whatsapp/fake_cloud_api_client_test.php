@@ -44,7 +44,7 @@ final class fake_cloud_api_client_test extends \advanced_testcase {
         $this->assertSame('wamid.fake.2', $second['messages'][0]['id']);
         $this->assertSame(['send_text', 'send_buttons', 'mark_read_typing'], array_column($fake->calls, 'method'));
         $this->assertSame([$to, 'Hello'], $fake->calls[0]['args']);
-        $this->assertSame(['wamid.in'], $fake->calls[2]['args']);
+        $this->assertSame(['wamid.in', null], $fake->calls[2]['args'], 'The usual timeout is recorded as null');
         $this->assertSame([['method' => 'send_text', 'args' => [$to, 'Hello']]], $fake->calls_to('send_text'));
     }
 

@@ -43,6 +43,11 @@ final class prompt_builder_test extends \advanced_testcase {
             public function format_rules(string $userlang): string {
                 return "⚡ TEST CHANNEL RULES:\n- Plain text only, in {$userlang}.\n\n";
             }
+
+            #[\Override]
+            public function progress_messages(): bool {
+                return true;
+            }
         };
     }
 

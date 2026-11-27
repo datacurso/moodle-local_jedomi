@@ -36,7 +36,8 @@ require_once(__DIR__ . '/../../lib.php');
  * consent given on the profile page. An identity that is not linked only gets the linking instructions. BAJA/STOP
  * and ALTA/START stop and resume the messages, DESVINCULAR removes the link with the data of the channel and AYUDA
  * shows the help. A student who stopped the messages gets no other reply. Any other text, NUEVO included, goes to the
- * conversation_handler.
+ * conversation_handler (whatsapp_conversation_handler unless another one is registered). Link code attempts of an
+ * identity that is not linked are limited by the message limit per minute of the channel.
  *
  * @package    local_jedomi
  * @copyright  2026 Datacurso <developer@datacurso.com>
@@ -75,6 +76,10 @@ final class chat_processor implements message_processor {
         // a code-shaped word (as "TAREA5") stays plain text for the conversation, or silence after BAJA.
         $code = link_codes::parse($message->text, $link !== null);
         if ($code !== null) {
+            if (self::code_attempts_limited($message)) {
+                // Past the limit nothing is tried nor answered, so codes cannot be guessed quickly.
+                return;
+            }
             $this->link($message, $code, $guard);
             return;
         }
@@ -343,7 +348,25 @@ final class chat_processor implements message_processor {
     }
 
     /**
-     * Conversation handler registered in the container, or the one that does nothing.
+     * Whether an identity, linked or not, sent more link codes than the message limit per minute of the channel
+     * allows. The limit is kept under the chat key of the BSUID; a sender without BSUID cannot link and is not
+     * counted. When the limit cannot be checked, the attempt is refused.
+     *
+     * @param inbound $message Message with a code.
+     * @return bool
+     */
+    private static function code_attempts_limited(inbound $message): bool {
+        if ($message->bsuid === '') {
+            return false;
+        }
+        $limited = (new whatsapp_channel())->rate_limiter()->check_and_record(
+            whatsapp_link_service::chatkey($message->bsuid)
+        );
+        return $limited !== false;
+    }
+
+    /**
+     * Conversation handler registered in the container, or the WhatsApp conversation.
      *
      * @return conversation_handler
      */
@@ -351,7 +374,7 @@ final class chat_processor implements message_processor {
         $container = \core\di::get_container();
         return $container->has(conversation_handler::class)
             ? $container->get(conversation_handler::class)
-            : new null_conversation_handler();
+            : new whatsapp_conversation_handler();
     }
 
     /**

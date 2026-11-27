@@ -20,7 +20,7 @@ namespace local_jedomi\whatsapp;
  * Port of the WhatsApp conversation: a message of a linked student who receives messages, other than a command.
  *
  * The chat_processor gets it from the container, \core\di::get(conversation_handler::class), when one is registered,
- * and uses null_conversation_handler otherwise; a test registers a double with \core\di::set().
+ * and uses whatsapp_conversation_handler otherwise; a test registers a double with \core\di::set().
  *
  * @package    local_jedomi
  * @copyright  2026 Datacurso <developer@datacurso.com>

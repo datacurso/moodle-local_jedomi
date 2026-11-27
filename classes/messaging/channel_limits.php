@@ -35,4 +35,12 @@ interface channel_limits {
      * @return string
      */
     public function format_rules(string $userlang): string;
+
+    /**
+     * Whether the conversation engine sends a progress line (icon and tool names) while the tools run. The notice that
+     * the assistant is still working (channel::MESSAGE_KEEPALIVE) is sent in every channel.
+     *
+     * @return bool
+     */
+    public function progress_messages(): bool;
 }

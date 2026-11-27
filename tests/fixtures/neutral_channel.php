@@ -177,6 +177,11 @@ class neutral_channel implements channel {
             public function format_rules(string $userlang): string {
                 return 'Plain text only.';
             }
+
+            #[\Override]
+            public function progress_messages(): bool {
+                return true;
+            }
         };
     }
 

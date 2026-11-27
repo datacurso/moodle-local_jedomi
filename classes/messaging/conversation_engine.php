@@ -543,8 +543,11 @@ class conversation_engine {
                 }
             }
 
-            // ... ── Progress messages (icons + lang strings, same as web) ──
-            if ($hastools && ($iteration % self::PROGRESS_INTERVAL === 0 || $iteration === self::PROGRESS_EXTRA_ITERATION)) {
+            // ... ── Progress messages (icons + lang strings, same as web), in the channels that show them ──
+            if (
+                $hastools && $this->channel->limits()->progress_messages()
+                && ($iteration % self::PROGRESS_INTERVAL === 0 || $iteration === self::PROGRESS_EXTRA_ITERATION)
+            ) {
                 $tooldisplay = [];
                 // Each tool has a progress label in the language of the user; a tool without one shows its name.
                 $toollangkeys = [

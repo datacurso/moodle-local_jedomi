@@ -16,23 +16,20 @@
 
 namespace local_jedomi\whatsapp;
 
+use local_jedomi\messaging\media_ref;
+use local_jedomi\messaging\media_source;
+
 /**
- * Default conversation handler: it does nothing and sends nothing.
- *
- * The conversation through the WhatsApp channel comes in a later work unit.
+ * Media source of the WhatsApp channel. Media is not downloaded yet: the conversation handler answers a media message
+ * with the text only message before the core asks for a file, so any call here is refused.
  *
  * @package    local_jedomi
  * @copyright  2026 Datacurso <developer@datacurso.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-final class null_conversation_handler implements conversation_handler {
-    /**
-     * Do nothing.
-     *
-     * @param inbound $message Message.
-     * @param \stdClass $link Link of the sender.
-     * @param \stdClass $user Account of the link.
-     */
-    public function handle(inbound $message, \stdClass $link, \stdClass $user): void {
+class whatsapp_media_source implements media_source {
+    #[\Override]
+    public function with_file(media_ref $ref, callable $callback): array {
+        throw new \moodle_exception('whatsapp_msg_text_only', 'local_jedomi');
     }
 }

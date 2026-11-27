@@ -213,16 +213,25 @@ class cloud_api_client {
      * Mark a received message as read and show the typing indicator to its sender.
      *
      * @param string $messageid Id (wamid) of the received message.
+     * @param int|null $timeout Seconds this request may take in total; null for the usual timeout of the client.
      * @return array Answer of Meta.
      * @throws cloud_api_exception
      */
-    public function mark_read_typing(string $messageid): array {
-        $answer = $this->request('mark_read_typing', $this->messages_url(), [
-            'messaging_product' => 'whatsapp',
-            'status' => 'read',
-            'message_id' => $messageid,
-            'typing_indicator' => ['type' => 'text'],
-        ]);
+    public function mark_read_typing(string $messageid, ?int $timeout = null): array {
+        $usual = $this->timeout;
+        if ($timeout !== null) {
+            $this->timeout = max(1, $timeout);
+        }
+        try {
+            $answer = $this->request('mark_read_typing', $this->messages_url(), [
+                'messaging_product' => 'whatsapp',
+                'status' => 'read',
+                'message_id' => $messageid,
+                'typing_indicator' => ['type' => 'text'],
+            ]);
+        } finally {
+            $this->timeout = $usual;
+        }
         // Meta confirms a read receipt with {"success": true}.
         if (($answer['success'] ?? null) !== true) {
             $this->fail('mark_read_typing', self::HTTP_OK_UNUSABLE, 0, 'answer without success');

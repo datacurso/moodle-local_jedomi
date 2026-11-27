@@ -257,6 +257,55 @@ final class chat_processor_test extends \advanced_testcase {
     }
 
     /**
+     * Link code attempts of an identity that is not linked are limited per minute by the WhatsApp rate limiter: past
+     * the limit nothing is tried nor answered, so codes cannot be guessed quickly; another identity is not affected.
+     */
+    public function test_link_code_attempts_of_unlinked_senders_are_rate_limited(): void {
+        global $DB;
+        $this->setup_channel();
+        set_config('whatsapp_rate_limit', 2, 'local_jedomi');
+        $user = $this->getDataGenerator()->create_user();
+        $code = self::code((int) $user->id);
+
+        self::process($this->text('JEDOMI ABC234'));
+        self::process($this->text('JEDOMI ABC235'));
+        self::process($this->text('JEDOMI ' . $code));
+
+        $this->assertSame(0, $DB->count_records(whatsapp_link_service::LINKS_TABLE));
+        $expected = get_string('whatsapp_msg_expired_code', 'local_jedomi');
+        $this->assertSame([$expected, $expected], array_column($this->sent(), 'text'));
+        $this->assertTrue($DB->record_exists(
+            whatsapp_link_service::RATE_TABLE,
+            ['chatid' => whatsapp_link_service::chatkey(self::BSUID)]
+        ));
+
+        self::process($this->text('JEDOMI ' . $code, self::OTHER));
+        $this->assertSame(self::OTHER, self::link_of((int) $user->id)->bsuid);
+    }
+
+    /**
+     * JEDOMI <code> attempts of a linked sender count in the same per-minute limit: past it nothing is tried nor
+     * answered, so a linked identity cannot guess codes quickly either.
+     */
+    public function test_link_code_attempts_of_linked_senders_are_rate_limited(): void {
+        $this->setup_channel();
+        set_config('whatsapp_rate_limit', 2, 'local_jedomi');
+        $owner = $this->getDataGenerator()->create_user();
+        self::insert_link((int) $owner->id, self::BSUID, self::WAID);
+        $other = $this->getDataGenerator()->create_user();
+        $code = self::code((int) $other->id);
+
+        self::process($this->text('JEDOMI ABC234'));
+        self::process($this->text('JEDOMI ABC235'));
+        self::process($this->text('JEDOMI ' . $code));
+
+        $this->assertSame(self::BSUID, self::link_of((int) $owner->id)->bsuid, 'The limited code relinks nothing');
+        $this->assertNull(self::link_of((int) $other->id));
+        $expected = get_string('whatsapp_msg_expired_code', 'local_jedomi');
+        $this->assertSame([$expected, $expected], array_column($this->sent(), 'text'));
+    }
+
+    /**
      * The code of a suspended account links nothing.
      */
     public function test_code_of_a_suspended_account_links_nothing(): void {

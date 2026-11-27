@@ -78,6 +78,12 @@ class manager {
     /** @var string Pattern of a display number in E.164 without the +: 8 to 15 digits, not starting with 0. */
     private const DISPLAY_NUMBER_PATTERN = '/^[1-9]\d{7,14}$/D';
 
+    /** @var string Setting with the contact of a person that students are offered when they need one. */
+    private const ESCALATION_CONTACT = 'whatsapp_escalation_contact';
+
+    /** @var int Characters of the contact of a person kept for the prompt. */
+    public const ESCALATION_CONTACT_LENGTH = 200;
+
     /**
      * Save the phone number ID; empty clears it.
      *
@@ -252,6 +258,19 @@ class manager {
     public static function get_processing_mode(): string {
         $mode = (string) get_config(self::COMPONENT, self::PROCESSING_MODE);
         return $mode === self::PROCESSING_QUEUE ? self::PROCESSING_QUEUE : self::PROCESSING_INLINE;
+    }
+
+    /**
+     * Contact of a person (an email address, a phone or an office) that the assistant offers when a student needs a
+     * person, as the policy of Meta asks; empty when none is saved. It is one line of at most
+     * ESCALATION_CONTACT_LENGTH characters, since it is written into the prompt of the AI.
+     *
+     * @return string
+     */
+    public static function get_escalation_contact(): string {
+        $contact = (string) get_config(self::COMPONENT, self::ESCALATION_CONTACT);
+        $contact = trim(preg_replace('/[\p{C}\s]+/u', ' ', fix_utf8($contact)) ?? '');
+        return \core_text::substr($contact, 0, self::ESCALATION_CONTACT_LENGTH);
     }
 
     /**

@@ -97,8 +97,8 @@ class fake_cloud_api_client extends cloud_api_client {
     }
 
     #[\Override]
-    public function mark_read_typing(string $messageid): array {
-        return $this->record('mark_read_typing', [$messageid], fn(): array => ['success' => true]);
+    public function mark_read_typing(string $messageid, ?int $timeout = null): array {
+        return $this->record('mark_read_typing', [$messageid, $timeout], fn(): array => ['success' => true]);
     }
 
     #[\Override]

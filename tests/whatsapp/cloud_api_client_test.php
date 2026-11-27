@@ -452,6 +452,22 @@ final class cloud_api_client_test extends \advanced_testcase {
         $client->send_list(recipient_ref::phone('1'), 'Choose', 'Open', []);
     }
 
+    /**
+     * A timeout given to mark_read_typing limits that request only; the next request has the usual timeout again.
+     */
+    public function test_mark_read_typing_with_its_own_timeout(): void {
+        $client = self::client([['{"success":true}', 200], ['{"success":true}', 200]]);
+
+        $client->mark_read_typing('wamid.in', 3);
+        $client->mark_read_typing('wamid.in');
+
+        $this->assertCount(2, $client->curls);
+        $first = $client->curls[0]->calls[0]['options'];
+        $this->assertSame(3, $first['CURLOPT_TIMEOUT']);
+        $this->assertSame(3, $first['CURLOPT_CONNECTTIMEOUT']);
+        $this->assertSame(30, $client->curls[1]->calls[0]['options']['CURLOPT_TIMEOUT']);
+    }
+
     public function test_mark_read_typing(): void {
         $client = self::client([['{"success":true}', 200]]);
 

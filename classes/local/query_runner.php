@@ -47,13 +47,14 @@ class query_runner {
     /**
      * @var array<string, array{0: int, 1: int}> Row limit and time limit (ms) of the queries of each channel.
      *
-     * The chat channels answer a person who waits, so they keep few rows and a short time; Telegram shows fewer rows
-     * because its messages are short; the agents run unattended, so they get more rows and more time. The AI is told
+     * The chat channels answer a person who waits, so they keep few rows and a short time; Telegram and WhatsApp show
+     * fewer rows because their messages are short; the agents run unattended, so they get more rows and more time. The AI is told
      * the limits of its channel (see local_jedomi_get_tool_definitions()).
      */
     public const CHANNEL_LIMITS = [
         'web' => [100, self::TIMEOUT_MS],
         'telegram' => [50, self::TIMEOUT_MS],
+        'whatsapp' => [50, self::TIMEOUT_MS],
         'companion' => [100, self::TIMEOUT_MS],
         'agent' => [1000, 30000],
     ];
@@ -70,7 +71,7 @@ class query_runner {
      * The web chat uses the sql_row_limit_web setting of the General tab (its CHANNEL_LIMITS row is the default), kept
      * within WEB_ROW_LIMIT_MIN and WEB_ROW_LIMIT_MAX; the other channels keep their fixed limits.
      *
-     * @param string $channel web, telegram, companion or agent; anything else gets the web chat limit.
+     * @param string $channel web, telegram, whatsapp, companion or agent; anything else gets the web chat limit.
      * @return int
      */
     public static function row_limit(string $channel): int {
@@ -96,7 +97,7 @@ class query_runner {
     /**
      * Time limit of a query in a channel, in milliseconds.
      *
-     * @param string $channel web, telegram, companion or agent; anything else gets the web chat limit.
+     * @param string $channel web, telegram, whatsapp, companion or agent; anything else gets the web chat limit.
      * @return int
      */
     public static function time_limit_ms(string $channel): int {
@@ -120,8 +121,8 @@ class query_runner {
      * @param array $params Bound parameters.
      * @param int $userid User the query runs for: courses they do not manage are refused unless they manage every one.
      * @param int $maxrows Maximum rows returned.
-     * @param string $channel web, telegram or companion: the query that reaches the database is recorded in the query
-     *     profiler with its channel; empty for none.
+     * @param string $channel web, telegram, whatsapp or companion: the query that reaches the database is recorded in the
+     *     query profiler with its channel; empty for none.
      * @return array Rows (arrays), truncated (bool: more rows exist) and execution_ms (int).
      * @throws \moodle_exception non_select_rejected, a sql_guard reason, query_timeout or execute_sql_error.
      */

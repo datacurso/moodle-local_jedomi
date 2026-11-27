@@ -18,7 +18,8 @@
  * WhatsApp (Meta Cloud API) webhook public endpoint.
  *
  * GET answers the verification handshake; POST notifications are checked with the X-Hub-Signature-256 header over the
- * raw body. Everything else is done by \local_jedomi\whatsapp\intake.
+ * raw body; ?internal=1 is the self-ping of a long question, signed with the internal secret of the plugin (header
+ * X-Jedomi-Signature). Everything else is done by \local_jedomi\whatsapp\intake.
  *
  * @package    local_jedomi
  * @copyright  2026 Datacurso <developer@datacurso.com>
@@ -35,6 +36,7 @@ require_once(__DIR__ . '/lib.php');
 $method = (string) ($_SERVER['REQUEST_METHOD'] ?? '');
 // PHP names the hub.* parameters of the handshake with underscores.
 $query = [
+    'internal' => (string) optional_param('internal', 0, PARAM_INT),
     'hub_mode' => optional_param('hub_mode', '', PARAM_ALPHA),
     'hub_verify_token' => optional_param('hub_verify_token', '', PARAM_RAW),
     'hub_challenge' => optional_param('hub_challenge', '', PARAM_RAW),
@@ -42,6 +44,8 @@ $query = [
 // The raw bytes are read before anything decodes them: the signature covers exactly these bytes.
 $rawbody = $method === 'POST' ? (string) file_get_contents('php://input') : '';
 $signature = isset($_SERVER['HTTP_X_HUB_SIGNATURE_256']) ? (string) $_SERVER['HTTP_X_HUB_SIGNATURE_256'] : null;
+$internalsignature = isset($_SERVER[\local_jedomi\whatsapp\internal_ping::SERVER_KEY])
+    ? (string) $_SERVER[\local_jedomi\whatsapp\internal_ping::SERVER_KEY] : null;
 
 if ($method === 'POST') {
     // Processing goes on after the early response to Meta.
@@ -57,7 +61,7 @@ if ($method === 'POST') {
 }
 
 try {
-    (new \local_jedomi\whatsapp\intake())->handle($method, $query, $rawbody, $signature);
+    (new \local_jedomi\whatsapp\intake())->handle($method, $query, $rawbody, $signature, $internalsignature);
 } catch (\Throwable $e) {
     // JEDOMI-SEC-009: the class, the error code and the line, never the message (it can quote a query or a user).
     local_jedomi_log('WhatsApp webhook: UNCAUGHT ' . \local_jedomi\local\safe_error::describe($e) . ' at '
