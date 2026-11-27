@@ -618,5 +618,104 @@ function xmldb_local_jedomi_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2026111908, 'local', 'jedomi');
     }
 
+    if ($oldversion < 2026112600) {
+        // WhatsApp channel (Meta Cloud API): links keyed by the BSUID of Meta, conversations, held actions and message
+        // limits keyed by 'wa_' plus the BSUID, the inbox of received messages deduplicated by wamid, and the monthly
+        // usage counters.
+        $tables = [];
+
+        $table = new xmldb_table('local_jedomi_whatsapp_links');
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+        $table->add_field('userid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('bsuid', XMLDB_TYPE_CHAR, '160', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('waid', XMLDB_TYPE_CHAR, '20', null, null, null, null);
+        $table->add_field('phone', XMLDB_TYPE_CHAR, '20', null, null, null, null);
+        $table->add_field('confirmed', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('consentat', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('consentversion', XMLDB_TYPE_CHAR, '20', null, null, null, null);
+        $table->add_field('consentcategories', XMLDB_TYPE_CHAR, '64', null, null, null, null);
+        $table->add_field('optedout', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('optoutat', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('lastinbound', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('lastused', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('lastproactivesent', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+        $table->add_key('userid', XMLDB_KEY_UNIQUE, ['userid']);
+        $table->add_key('bsuid', XMLDB_KEY_UNIQUE, ['bsuid']);
+        $table->add_index('waid_idx', XMLDB_INDEX_NOTUNIQUE, ['waid']);
+        $table->add_index('lastinbound_idx', XMLDB_INDEX_NOTUNIQUE, ['lastinbound']);
+        $tables[] = $table;
+
+        $table = new xmldb_table('local_jedomi_whatsapp_sessions');
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+        $table->add_field('chatid', XMLDB_TYPE_CHAR, '170', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('messages', XMLDB_TYPE_TEXT, null, null, null, null, null);
+        $table->add_field('usercontext', XMLDB_TYPE_TEXT, null, null, null, null, null);
+        $table->add_field('iteration', XMLDB_TYPE_INTEGER, '10', null, null, null, null);
+        $table->add_field('lastactivity', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+        $table->add_key('chatid', XMLDB_KEY_UNIQUE, ['chatid']);
+        $table->add_index('lastactivity_idx', XMLDB_INDEX_NOTUNIQUE, ['lastactivity']);
+        $tables[] = $table;
+
+        $table = new xmldb_table('local_jedomi_whatsapp_pending');
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+        $table->add_field('callbackid', XMLDB_TYPE_CHAR, '64', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('chatid', XMLDB_TYPE_CHAR, '170', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('actionjson', XMLDB_TYPE_TEXT, null, null, XMLDB_NOTNULL, null, null);
+        $table->add_field('courseid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+        $table->add_key('callbackid', XMLDB_KEY_UNIQUE, ['callbackid']);
+        $table->add_index('chatid_idx', XMLDB_INDEX_NOTUNIQUE, ['chatid']);
+        $table->add_index('timecreated_idx', XMLDB_INDEX_NOTUNIQUE, ['timecreated']);
+        $tables[] = $table;
+
+        $table = new xmldb_table('local_jedomi_whatsapp_rate');
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+        $table->add_field('chatid', XMLDB_TYPE_CHAR, '170', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('windowstart', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('msgcount', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('blockeduntil', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+        $table->add_key('chatid', XMLDB_KEY_UNIQUE, ['chatid']);
+        $tables[] = $table;
+
+        $table = new xmldb_table('local_jedomi_whatsapp_inbox');
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+        $table->add_field('wamid', XMLDB_TYPE_CHAR, '128', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('bsuid', XMLDB_TYPE_CHAR, '160', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('payload', XMLDB_TYPE_TEXT, null, null, null, null, null);
+        $table->add_field('status', XMLDB_TYPE_CHAR, '20', null, XMLDB_NOTNULL, null, 'pending');
+        $table->add_field('attempts', XMLDB_TYPE_INTEGER, '5', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('timeprocessed', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+        $table->add_key('wamid', XMLDB_KEY_UNIQUE, ['wamid']);
+        $table->add_index('status_idx', XMLDB_INDEX_NOTUNIQUE, ['status']);
+        $table->add_index('timecreated_idx', XMLDB_INDEX_NOTUNIQUE, ['timecreated']);
+        $tables[] = $table;
+
+        $table = new xmldb_table('local_jedomi_whatsapp_usage');
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+        $table->add_field('userid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('period', XMLDB_TYPE_INTEGER, '6', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('inbound', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('outservice', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('outtemplate', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('media', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+        $table->add_key('userid-period', XMLDB_KEY_UNIQUE, ['userid', 'period']);
+        $tables[] = $table;
+
+        foreach ($tables as $table) {
+            if (!$dbman->table_exists($table)) {
+                $dbman->create_table($table);
+            }
+        }
+        upgrade_plugin_savepoint(true, 2026112600, 'local', 'jedomi');
+    }
+
     return true;
 }
