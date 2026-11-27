@@ -121,18 +121,7 @@ class webhook_handler {
      */
     public static function acknowledge(): void {
         $ack = self::acknowledgement();
-        http_response_code(200);
-        foreach ($ack['headers'] as $header) {
-            header($header);
-        }
-        echo $ack['body'];
-        if (ob_get_level()) {
-            ob_flush();
-        }
-        flush();
-        if (function_exists('fastcgi_finish_request')) {
-            fastcgi_finish_request();
-        }
+        \core\di::get(\local_jedomi\messaging\http_responder::class)->send_and_close(200, $ack['headers'], $ack['body']);
     }
 
     /**

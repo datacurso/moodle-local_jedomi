@@ -88,6 +88,77 @@ final class whatsapp_link_service {
     }
 
     /**
+     * Move the link of a BSUID that Meta replaced (system message user_changed_user_id or user_changed_number) to the
+     * new BSUID, with the conversation, the task in progress, the message limit, the held actions and the received
+     * messages of the student, in one transaction.
+     *
+     * When the new BSUID is already linked, nothing changes: a link is never overwritten. Chat rows of the new BSUID
+     * that exist without a link win over the old ones, which are dropped instead of breaking the unique keys.
+     *
+     * @param string $previous BSUID Meta gave in system.previous_user_id.
+     * @param string $new New BSUID of the user.
+     * @param string|null $newwaid New phone (wa_id) of a number change; null when Meta did not share it.
+     * @param bool $numberchanged Whether the phone changed: the old phone is then replaced, or cleared, so nothing is
+     *     sent to a number the student no longer has.
+     * @return bool Whether a link was moved.
+     */
+    public static function change_identity(
+        string $previous,
+        string $new,
+        ?string $newwaid = null,
+        bool $numberchanged = false
+    ): bool {
+        global $DB;
+        if ($previous === '' || $new === '' || $previous === $new) {
+            return false;
+        }
+        $link = $DB->get_record(self::LINKS_TABLE, ['bsuid' => $previous]);
+        if (!$link || $DB->record_exists(self::LINKS_TABLE, ['bsuid' => $new])) {
+            return false;
+        }
+
+        $transaction = $DB->start_delegated_transaction();
+        try {
+            $update = (object) ['id' => $link->id, 'bsuid' => $new];
+            if ($numberchanged) {
+                $update->waid = $newwaid;
+                $update->phone = null;
+            } else if ($newwaid !== null && empty($link->waid)) {
+                $update->waid = $newwaid;
+            }
+            $DB->update_record(self::LINKS_TABLE, $update);
+
+            $oldkey = self::chatkey($previous);
+            $newkey = self::chatkey($new);
+            self::move_unique_chat(self::SESSIONS_TABLE, $oldkey, $newkey);
+            self::move_unique_chat(self::SESSIONS_TABLE, self::TOOL_LOOP_PREFIX . $oldkey, self::TOOL_LOOP_PREFIX . $newkey);
+            self::move_unique_chat(self::RATE_TABLE, $oldkey, $newkey);
+            $DB->set_field(self::PENDING_TABLE, 'chatid', $newkey, ['chatid' => $oldkey]);
+            $DB->set_field(self::INBOX_TABLE, 'bsuid', $new, ['bsuid' => $previous]);
+            $transaction->allow_commit();
+        } catch (\Throwable $e) {
+            $transaction->rollback($e);
+        }
+        return true;
+    }
+
+    /**
+     * Rename the chat key of a table with a unique chatid; when the new key is taken, the old row is dropped.
+     *
+     * @param string $table Table.
+     * @param string $from Old chat key.
+     * @param string $to New chat key.
+     */
+    private static function move_unique_chat(string $table, string $from, string $to): void {
+        global $DB;
+        if ($DB->record_exists($table, ['chatid' => $to])) {
+            $DB->delete_records($table, ['chatid' => $from]);
+            return;
+        }
+        $DB->set_field($table, 'chatid', $to, ['chatid' => $from]);
+    }
+
+    /**
      * Remove every link unused for more than EXPIRY (since its last use, or since it was created when never used),
      * with the data of its chat.
      *

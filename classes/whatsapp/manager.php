@@ -57,6 +57,18 @@ class manager {
     /** @var string Setting that turns the channel on. */
     private const ENABLED = 'whatsapp_enabled';
 
+    /** @var string Setting of the processing mode of the webhook (clear text). */
+    private const PROCESSING_MODE = 'whatsapp_processing_mode';
+
+    /** @var string The webhook answers Meta early and processes the message in the same request; the default. */
+    public const PROCESSING_INLINE = 'inline';
+
+    /**
+     * @var string The webhook only stores the message and the rescue ad hoc task processes it, for sites whose proxies
+     * hold the early response back or that run a dedicated ad hoc task worker.
+     */
+    public const PROCESSING_QUEUE = 'queue';
+
     /** @var string Pattern of a Graph API version, such as v25.0. */
     private const VERSION_PATTERN = '/^v\d+\.\d+$/D';
 
@@ -206,6 +218,34 @@ class manager {
      */
     public static function is_enabled(): bool {
         return (bool) get_config(self::COMPONENT, self::ENABLED);
+    }
+
+    /**
+     * Save the processing mode of the webhook; empty restores the default.
+     *
+     * @param string $mode PROCESSING_INLINE or PROCESSING_QUEUE.
+     * @throws \moodle_exception config_value_invalid_msg for any other value.
+     */
+    public static function set_processing_mode(string $mode): void {
+        $mode = trim($mode);
+        if ($mode === '') {
+            unset_config(self::PROCESSING_MODE, self::COMPONENT);
+            return;
+        }
+        if (!in_array($mode, [self::PROCESSING_INLINE, self::PROCESSING_QUEUE], true)) {
+            throw new \moodle_exception('config_value_invalid_msg', 'local_jedomi', '', self::PROCESSING_MODE);
+        }
+        set_config(self::PROCESSING_MODE, $mode, self::COMPONENT);
+    }
+
+    /**
+     * Processing mode of the webhook: PROCESSING_QUEUE only when saved so, PROCESSING_INLINE otherwise.
+     *
+     * @return string
+     */
+    public static function get_processing_mode(): string {
+        $mode = (string) get_config(self::COMPONENT, self::PROCESSING_MODE);
+        return $mode === self::PROCESSING_QUEUE ? self::PROCESSING_QUEUE : self::PROCESSING_INLINE;
     }
 
     /**

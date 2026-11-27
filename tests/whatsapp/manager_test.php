@@ -285,4 +285,29 @@ final class manager_test extends \advanced_testcase {
         // The client is obtained only through cloud_api_client::instance(), as the Telegram client.
         $this->assertFalse(method_exists(manager::class, 'client'));
     }
+
+    /**
+     * The webhook processes inline by default; queue is kept, and an unknown saved value falls back to inline.
+     */
+    public function test_processing_mode_defaults_to_inline(): void {
+        $this->resetAfterTest();
+
+        $this->assertSame(manager::PROCESSING_INLINE, manager::get_processing_mode());
+
+        manager::set_processing_mode(manager::PROCESSING_QUEUE);
+        $this->assertSame(manager::PROCESSING_QUEUE, manager::get_processing_mode());
+
+        set_config('whatsapp_processing_mode', 'other', 'local_jedomi');
+        $this->assertSame(manager::PROCESSING_INLINE, manager::get_processing_mode());
+    }
+
+    /**
+     * Saving an unknown processing mode is refused.
+     */
+    public function test_an_unknown_processing_mode_is_refused(): void {
+        $this->resetAfterTest();
+
+        $this->expectException(\moodle_exception::class);
+        manager::set_processing_mode('cron');
+    }
 }
